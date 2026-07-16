@@ -242,6 +242,11 @@ const DEFAULT_RALPH_RUN_LEASE_DURATION_MS = 2 * 60_000;
 const MAX_RALPH_WORK_ITEM_STATE_HISTORY = 100;
 const MAX_RALPH_OPERATION_LEDGER_ENTRIES = 2_000;
 const DEFAULT_RALPH_MCP_TIMEOUT_MS = 5 * 60_000;
+const RALPH_MEDIA_BRIDGE_POLL_MS = 250;
+const RALPH_MEDIA_BRIDGE_RESPONSE_TIMEOUT_MS = 30_000;
+const RALPH_MEDIA_BRIDGE_REQUEST_PATH_ENV = "MACHDOCH_MEDIA_BRIDGE_REQUEST_PATH";
+const RALPH_MEDIA_BRIDGE_RESPONSE_PATH_ENV = "MACHDOCH_MEDIA_BRIDGE_RESPONSE_PATH";
+const RALPH_MEDIA_BRIDGE_TOKEN_ENV = "MACHDOCH_MEDIA_BRIDGE_TOKEN";
 const DEFAULT_RALPH_WORK_ITEM_LEASE_MS = 10 * 60_000;
 const DEFAULT_RALPH_WORK_ITEM_DEFER_MS = 30 * 60_000;
 const MAX_RALPH_CHECKPOINT_BLOCK_RESULTS = 1_000;
@@ -288,6 +293,7 @@ export const RALPH_BLOCK_TYPES = [
   "MCP_TOOL",
   "MCP_RESOURCE",
   "MCP_PROMPT",
+  "MEDIA_FLOW",
   "NOTE",
   "GROUP",
   "END",
@@ -333,6 +339,26 @@ export type RalphInputFieldType =
   | "images";
 export type RalphInputValue = string | number | boolean | string[] | null;
 export type RalphAskUserMode = "missingOnly" | "alwaysAsk" | "confirmOnly";
+export type RalphMediaFlowRunPolicy = "wait" | "submit-and-continue";
+export type RalphMediaFlowApprovalPolicy =
+  | "inherit-workspace"
+  | "always-review-preflight";
+
+export type RalphMediaInputBinding =
+  | { source: "variable"; variableName: string }
+  | { source: "literal"; value: string | number | boolean }
+  | { source: "path"; path: string }
+  | { source: "media-asset"; assetId: string };
+
+export interface RalphMediaOutputBinding {
+  source:
+    | "run-id"
+    | "status"
+    | "asset-ids"
+    | "first-asset-id"
+    | "quality-report-ids";
+  variableName: string;
+}
 
 export {
   MAX_RALPH_RESULT_CHARS,
@@ -457,6 +483,12 @@ export interface RalphInputRequest {
   interview?: {
     turn: number;
     maxTurns: number;
+  };
+  mediaFlow?: {
+    stage: "preflight" | "human-review" | "provider-review";
+    flowId: string;
+    revisionId: string;
+    runId: string;
   };
 }
 
@@ -764,6 +796,16 @@ export interface RalphMcpPromptBlock extends RalphBaseBlock {
   arguments?: Record<string, unknown>;
 }
 
+export interface RalphMediaFlowBlock extends RalphBaseBlock {
+  type: "MEDIA_FLOW";
+  flowId: string;
+  revisionId: string;
+  inputBindings: Record<string, RalphMediaInputBinding>;
+  outputBindings: Record<string, RalphMediaOutputBinding>;
+  runPolicy: RalphMediaFlowRunPolicy;
+  approvalPolicy: RalphMediaFlowApprovalPolicy;
+}
+
 export interface RalphNoteBlock extends RalphBaseBlock {
   type: "NOTE";
   text: string;
@@ -807,6 +849,7 @@ export type RalphFlowBlock =
   | RalphMcpToolBlock
   | RalphMcpResourceBlock
   | RalphMcpPromptBlock
+  | RalphMediaFlowBlock
   | RalphNoteBlock
   | RalphGroupBlock
   | RalphEndBlock;
@@ -1156,6 +1199,20 @@ export interface RalphOperationLedgerEntry {
   routedToBlockId?: string;
 }
 
+export interface RalphMediaRunCheckpoint {
+  blockId: string;
+  flowId: string;
+  revisionId: string;
+  runId: string;
+  inputBindings: Record<string, RalphMediaResolvedInputBinding>;
+  submittedAt?: string;
+}
+
+export interface RalphMediaResolvedInputBinding {
+  source: "literal" | "path" | "media-asset";
+  value: string | number | boolean;
+}
+
 export interface RalphFinalReportCheckpointArtifact {
   blockId: string;
   jsonPath?: string;
@@ -1216,6 +1273,7 @@ export interface RalphRunCheckpoint {
   nextRetryAt?: string;
   segment?: number;
   operationLedger?: Record<string, RalphOperationLedgerEntry>;
+  mediaRuns?: Record<string, RalphMediaRunCheckpoint>;
   finalReports?: RalphFinalReportCheckpointArtifact[];
   history?: {
     simpleJsonlPath?: string;
@@ -1303,6 +1361,7 @@ interface RalphResultContext {
   autonomy?: RalphRunAutonomyMetadata;
   finalReports?: RalphFinalReportArtifact[];
   operationLedger?: Map<string, RalphOperationLedgerEntry>;
+  mediaRuns?: Map<string, RalphMediaRunCheckpoint>;
   currentOperationId?: string;
 }
 
@@ -11101,6 +11160,423 @@ const executeMcpPromptBlock = async (
   }
 };
 
+interface RalphMediaBridgeAsset {
+  id: string;
+  kind: "image" | "report";
+}
+
+interface RalphMediaBridgeHumanReview {
+  status: "queued" | "pending" | "approved" | "rejected";
+  selectedAssetIds: string[];
+}
+
+interface RalphMediaBridgeRunDetail {
+  id: string;
+  status:
+    | "queued"
+    | "running"
+    | "needs-review"
+    | "waiting-for-review"
+    | "canceling"
+    | "completed"
+    | "failed"
+    | "canceled";
+  currentStep: string;
+  error: string | null;
+  assets: RalphMediaBridgeAsset[];
+  humanReviews: RalphMediaBridgeHumanReview[];
+}
+
+interface RalphMediaBridgeResponse {
+  schemaVersion: 1;
+  requestId: string;
+  ok: boolean;
+  detail?: RalphMediaBridgeRunDetail;
+  error?: string;
+}
+
+type RalphMediaBridgeRequest =
+  | {
+      action: "ensure-run";
+      runId: string;
+      flowId: string;
+      revisionId: string;
+      inputBindings: Record<string, RalphMediaResolvedInputBinding>;
+      approvalPolicy: RalphMediaFlowApprovalPolicy;
+    }
+  | { action: "inspect-run"; runId: string };
+
+const waitForRalphMediaBridgePoll = async (
+  signal?: AbortSignal,
+): Promise<void> => {
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const finish = (callback: () => void): void => {
+      if (handle) clearTimeout(handle);
+      signal?.removeEventListener("abort", handleAbort);
+      callback();
+    };
+    const handleAbort = (): void => {
+      finish(() =>
+        rejectPromise(
+          signal?.reason ?? new Error("Ralph media wait was cancelled."),
+        ),
+      );
+    };
+    const handle = setTimeout(
+      () => finish(resolvePromise),
+      RALPH_MEDIA_BRIDGE_POLL_MS,
+    );
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
+};
+
+const removeRalphMediaBridgeFile = async (path: string): Promise<void> => {
+  try {
+    await unlink(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+};
+
+const requestRalphMediaBridge = async (
+  request: RalphMediaBridgeRequest,
+  signal?: AbortSignal,
+): Promise<RalphMediaBridgeRunDetail> => {
+  const requestPath = process.env[RALPH_MEDIA_BRIDGE_REQUEST_PATH_ENV]?.trim();
+  const responsePath = process.env[RALPH_MEDIA_BRIDGE_RESPONSE_PATH_ENV]?.trim();
+  const token = process.env[RALPH_MEDIA_BRIDGE_TOKEN_ENV]?.trim();
+  if (!requestPath || !responsePath || !token) {
+    throw new Error(
+      "Media Studio is unavailable in this Ralph runtime. Run the flow from the desktop app.",
+    );
+  }
+
+  const requestId = randomUUID();
+  const temporaryPath = `${requestPath}.${process.pid}.${requestId}.tmp`;
+  await removeRalphMediaBridgeFile(responsePath);
+  await writeFile(
+    temporaryPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      requestId,
+      token,
+      ...request,
+    }),
+    { encoding: "utf8", mode: 0o600 },
+  );
+  await rename(temporaryPath, requestPath);
+
+  const deadline = Date.now() + RALPH_MEDIA_BRIDGE_RESPONSE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) {
+      throw signal.reason ?? new Error("Ralph media bridge request was cancelled.");
+    }
+    try {
+      const raw = await readFile(responsePath, "utf8");
+      const response = JSON.parse(raw) as RalphMediaBridgeResponse;
+      if (response.requestId !== requestId) {
+        await waitForRalphMediaBridgePoll(signal);
+        continue;
+      }
+      await removeRalphMediaBridgeFile(responsePath);
+      if (!response.ok || !response.detail) {
+        throw new Error(response.error || "Media Studio rejected the Ralph bridge request.");
+      }
+      return response.detail;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await waitForRalphMediaBridgePoll(signal);
+  }
+
+  throw new Error("Media Studio did not answer the Ralph bridge request within 30 seconds.");
+};
+
+const resolveRalphMediaInputBindings = (
+  block: RalphMediaFlowBlock,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Record<string, RalphMediaResolvedInputBinding> => {
+  return Object.fromEntries(
+    Object.entries(block.inputBindings).map(([inputId, binding]) => {
+      if (binding.source === "variable") {
+        const value = context.variables[binding.variableName];
+        if (value === undefined) {
+          throw new Error(
+            `Media input ${inputId} references unavailable Ralph variable ${binding.variableName}.`,
+          );
+        }
+        return [inputId, { source: "literal", value }] as const;
+      }
+      if (binding.source === "literal") {
+        const value =
+          typeof binding.value === "string"
+            ? resolveTemplateText(binding.value, context)
+            : binding.value;
+        return [inputId, { source: "literal", value }] as const;
+      }
+      if (binding.source === "path") {
+        const path = resolveWorkspaceContainedUtilityPath(
+          resolveTemplateText(binding.path, context),
+          config.workspaceRoot,
+        );
+        return [inputId, { source: "path", value: path }] as const;
+      }
+      const assetId = binding.assetId.trim();
+      if (!assetId) {
+        throw new Error(`Media input ${inputId} requires a stable asset id.`);
+      }
+      return [inputId, { source: "media-asset", value: assetId }] as const;
+    }),
+  );
+};
+
+const createRalphMediaInputRequest = (
+  block: RalphMediaFlowBlock,
+  context: RalphResultContext,
+  runId: string,
+  stage: NonNullable<RalphInputRequest["mediaFlow"]>["stage"],
+): RalphInputRequest => ({
+  id: randomUUID(),
+  runId: context.runId,
+  blockId: block.id,
+  blockType: block.type,
+  title:
+    stage === "preflight"
+      ? `Review ${block.title} preflight`
+      : `Review ${block.title} in Media Studio`,
+  prompt:
+    stage === "preflight"
+      ? "Confirm this pinned Media Studio revision before Ralph enqueues a durable run."
+      : "The media run released its compute lease and is waiting for a decision in Media Studio. Return here after resolving it.",
+  fields: [],
+  submitLabel: stage === "preflight" ? "Approve and run" : "Check review status",
+  cancelLabel: stage === "preflight" ? "Cancel" : "Stop waiting",
+  createdAt: new Date().toISOString(),
+  mediaFlow: {
+    stage,
+    flowId: block.flowId,
+    revisionId: block.revisionId,
+    runId,
+  },
+});
+
+const getRalphMediaPublishedAssetIds = (
+  detail: RalphMediaBridgeRunDetail,
+): string[] => {
+  const approvedIds = detail.humanReviews.flatMap((review) =>
+    review.status === "approved" ? review.selectedAssetIds : [],
+  );
+  if (detail.humanReviews.length > 0) {
+    return [...new Set(approvedIds)];
+  }
+  return detail.assets
+    .filter((asset) => asset.kind === "image")
+    .map((asset) => asset.id);
+};
+
+const applyRalphMediaOutputBindings = (
+  block: RalphMediaFlowBlock,
+  detail: RalphMediaBridgeRunDetail,
+  context: RalphResultContext,
+): Record<string, string> => {
+  const assetIds = getRalphMediaPublishedAssetIds(detail);
+  const reportIds = detail.assets
+    .filter((asset) => asset.kind === "report")
+    .map((asset) => asset.id);
+  const values: Record<string, string> = {};
+  for (const binding of Object.values(block.outputBindings)) {
+    const value =
+      binding.source === "run-id"
+        ? detail.id
+        : binding.source === "status"
+          ? detail.status
+          : binding.source === "first-asset-id"
+            ? assetIds[0] ?? ""
+            : JSON.stringify(
+                binding.source === "quality-report-ids" ? reportIds : assetIds,
+              );
+    context.variables[binding.variableName] = value;
+    values[binding.variableName] = value;
+  }
+  return values;
+};
+
+const executeMediaFlowBlock = async (
+  block: RalphMediaFlowBlock,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+  options: RalphRunOptions,
+): Promise<RalphExecutionStepResult> => {
+  const operationKey = context.currentOperationId ?? `${context.runId}:${block.id}`;
+  const generatedRunId = `ralph-media-${createHash("sha256")
+    .update(`${context.runId}\0${block.id}\0${block.revisionId}\0${operationKey}`)
+    .digest("hex")
+    .slice(0, 48)}`;
+  const checkpoint = context.mediaRuns?.get(block.id);
+  if (
+    checkpoint &&
+    (checkpoint.flowId !== block.flowId || checkpoint.revisionId !== block.revisionId)
+  ) {
+    return {
+      blockId: block.id,
+      output: "ERROR",
+      status: "error",
+      attempt: 1,
+      summary: `${block.title} cannot resume because its pinned Media Studio revision changed.`,
+      error: "The durable media checkpoint does not match this block revision.",
+    };
+  }
+  const runId = checkpoint?.runId ?? generatedRunId;
+  const pendingInput = getPendingInputForBlock(block, options);
+  const response = getMatchingInputResponse(block, options);
+
+  if (pendingInput?.mediaFlow?.stage === "preflight") {
+    if (!response) {
+      return {
+        kind: "input-wait",
+        request: pendingInput,
+        summary: `${block.title} is waiting for Media Studio preflight approval.`,
+      };
+    }
+    if (response.action === "cancel") {
+      return {
+        blockId: block.id,
+        output: "CANCELLED",
+        status: "completed",
+        attempt: 1,
+        summary: `${block.title} preflight was cancelled.`,
+      };
+    }
+  } else if (block.approvalPolicy === "always-review-preflight" && !checkpoint) {
+    return {
+      kind: "input-wait",
+      request: createRalphMediaInputRequest(block, context, runId, "preflight"),
+      summary: `${block.title} is waiting for Media Studio preflight approval.`,
+    };
+  }
+
+  const inputBindings = checkpoint?.inputBindings ??
+    resolveRalphMediaInputBindings(block, config, context);
+  context.mediaRuns?.set(block.id, {
+    blockId: block.id,
+    flowId: block.flowId,
+    revisionId: block.revisionId,
+    runId,
+    inputBindings,
+    submittedAt: checkpoint?.submittedAt ?? new Date().toISOString(),
+  });
+
+  let detail = await requestRalphMediaBridge(
+    checkpoint
+      ? { action: "inspect-run", runId }
+      : {
+          action: "ensure-run",
+          runId,
+          flowId: block.flowId,
+          revisionId: block.revisionId,
+          inputBindings,
+          approvalPolicy: block.approvalPolicy,
+        },
+    options.signal,
+  );
+
+  if (block.runPolicy === "submit-and-continue") {
+    return {
+      blockId: block.id,
+      output: "SUCCESS",
+      status: "completed",
+      attempt: 1,
+      summary: `${block.title} submitted detached Media Studio run ${runId}.`,
+      data: {
+        mediaRun: { source: "media-run", workspaceRoot: config.workspaceRoot, runId },
+        detached: true,
+      },
+    };
+  }
+
+  while (["queued", "running", "canceling"].includes(detail.status)) {
+    await waitForRalphMediaBridgePoll(options.signal);
+    detail = await requestRalphMediaBridge(
+      { action: "inspect-run", runId },
+      options.signal,
+    );
+  }
+
+  if (detail.status === "waiting-for-review" || detail.status === "needs-review") {
+    if (response?.action === "cancel") {
+      return {
+        blockId: block.id,
+        output: "CANCELLED",
+        status: "completed",
+        attempt: 1,
+        summary: `${block.title} stopped waiting; Media Studio still owns run ${runId}.`,
+        data: { runId, mediaRunContinues: true },
+      };
+    }
+    const stage = detail.status === "waiting-for-review" ? "human-review" : "provider-review";
+    return {
+      kind: "input-wait",
+      request:
+        pendingInput?.mediaFlow?.runId === runId
+          ? pendingInput
+          : createRalphMediaInputRequest(block, context, runId, stage),
+      summary: `${block.title} requires a Media Studio review for run ${runId}.`,
+    };
+  }
+
+  if (detail.status === "canceled") {
+    return {
+      blockId: block.id,
+      output: "CANCELLED",
+      status: "completed",
+      attempt: 1,
+      summary: `${block.title} media run was canceled.`,
+      data: { runId },
+    };
+  }
+  if (detail.status === "failed") {
+    return {
+      blockId: block.id,
+      output: "ERROR",
+      status: "error",
+      attempt: 1,
+      summary: `${block.title} media run failed: ${detail.error ?? detail.currentStep}`,
+      error: detail.error ?? detail.currentStep,
+      data: { runId },
+    };
+  }
+
+  const boundOutputs = applyRalphMediaOutputBindings(block, detail, context);
+  const assetIds = getRalphMediaPublishedAssetIds(detail);
+  return {
+    blockId: block.id,
+    output: assetIds.length > 0 || Object.keys(block.outputBindings).length === 0
+      ? "SUCCESS"
+      : "PARTIAL",
+    status: "completed",
+    attempt: 1,
+    summary: `${block.title} completed Media Studio run ${runId} with ${assetIds.length} published asset${assetIds.length === 1 ? "" : "s"}.`,
+    data: {
+      mediaRun: {
+        source: "media-run",
+        workspaceRoot: config.workspaceRoot,
+        runId,
+        outputAssetIds: assetIds,
+      },
+      outputs: boundOutputs,
+    },
+  };
+};
+
 const executeBlock = async (
   flow: RalphFlow,
   block: RalphFlowBlock,
@@ -11144,6 +11620,8 @@ const executeBlock = async (
       return executeMcpResourceBlock(block, config, context, options);
     case "MCP_PROMPT":
       return executeMcpPromptBlock(block, config, context, options);
+    case "MEDIA_FLOW":
+      return executeMediaFlowBlock(block, config, context, options);
     case "NOTE":
     case "GROUP":
       return {
@@ -11295,6 +11773,9 @@ const isRalphBlockReplaySafe = (block: RalphFlowBlock): boolean => {
     return true;
   }
   if (block.type === "MCP_RESOURCE" || block.type === "MCP_PROMPT") {
+    return true;
+  }
+  if (block.type === "MEDIA_FLOW") {
     return true;
   }
   if (block.type !== "UTILITY") {
@@ -12076,6 +12557,7 @@ export const runRalphFlow = async (
     ...(autonomyMetadata ? { autonomy: autonomyMetadata } : {}),
     finalReports: restoredFinalReports,
     operationLedger: new Map(Object.entries(checkpoint?.operationLedger ?? {})),
+    mediaRuns: new Map(Object.entries(checkpoint?.mediaRuns ?? {})),
   };
   runtimeState.resultContext = resultContext;
   const errorCounts = restoreRalphNumberMap(checkpoint?.errorCounts);
@@ -12146,6 +12628,7 @@ export const runRalphFlow = async (
           -MAX_RALPH_OPERATION_LEDGER_ENTRIES,
         ),
       ),
+      mediaRuns: Object.fromEntries(resultContext.mediaRuns ?? []),
       finalReports: (resultContext.finalReports ?? []).map((artifact) => ({
         blockId: artifact.block.id,
         ...(artifact.jsonPath ? { jsonPath: artifact.jsonPath } : {}),

@@ -89,6 +89,21 @@ describe("ralph-block-factory helper", () => {
     });
   });
 
+  it("creates a safe pinned media-flow bridge that waits by default", () => {
+    expect(createBlock(createFlow(), "MEDIA_FLOW")).toMatchObject({
+      id: "media-flow-1",
+      type: "MEDIA_FLOW",
+      title: "Run Media Flow",
+      flowId: "",
+      revisionId: "",
+      inputBindings: {},
+      outputBindings: {},
+      runPolicy: "wait",
+      approvalPolicy: "inherit-workspace",
+      settings: { retry: { mode: "finite", maxRetries: 0 } },
+    });
+  });
+
   it("creates default UI analysis config for existing preview servers", () => {
     expect(createDefaultUtilityConfig("UI_ANALYZE")).toMatchObject({
       type: "UI_ANALYZE",

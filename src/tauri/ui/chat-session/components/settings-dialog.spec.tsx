@@ -80,6 +80,7 @@ const createSettingsDialogProps = (
     onSave: vi.fn(async () => true),
   },
   mcpSetup: {
+    workspaceRoot: "C:\\Project",
     scope: "user",
     document: {
       scope: "user",
@@ -236,6 +237,24 @@ const renderSettingsDialog = (props: SettingsDialogProps): void => {
 };
 
 describe("SettingsDialog", () => {
+  it("offers credentials for remote media providers", () => {
+    const onProviderChange = vi.fn();
+    const props = createSettingsDialogProps({
+      providerSetup: {
+        ...createSettingsDialogProps().providerSetup,
+        onProviderChange,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    expect(screen.getByRole("button", { name: "Quiver" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Recraft" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Quiver" }));
+    expect(onProviderChange).toHaveBeenCalledWith("quiver");
+  });
+
   it("validates provider API key drafts before auto-saving", async () => {
     const onSave = vi.fn(async () => true);
     const props = createSettingsDialogProps({

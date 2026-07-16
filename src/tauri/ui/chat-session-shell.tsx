@@ -43,6 +43,8 @@ import {
 } from "./lib/shell-store";
 import { cn } from "./lib/utils";
 import { useRalphActivity } from "./ralph/use-ralph-activity";
+import { useMediaActivity } from "./media/use-media-activity";
+import { useMediaShutdownGuard } from "./media/use-media-shutdown-guard";
 import {
   ensurePersistentSchedulerService,
   listSchedulerJobs,
@@ -75,6 +77,12 @@ const RalphApp = lazy(async () => {
   const module = await import("./ralph/ralph-app");
 
   return { default: module.RalphApp };
+});
+
+const MediaStudio = lazy(async () => {
+  const module = await import("./media/media-studio");
+
+  return { default: module.MediaStudio };
 });
 
 const appLoadingFallback = (
@@ -140,6 +148,19 @@ export const ChatSession = (): JSX.Element => {
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(null);
+  const [pendingMediaSection, setPendingMediaSection] = useState<
+    "generate" | "library" | null
+  >(null);
+  const [pendingMediaAssetId, setPendingMediaAssetId] = useState<string | null>(
+    null,
+  );
+  const [pendingMediaImportPath, setPendingMediaImportPath] = useState<
+    string | null
+  >(null);
+  const [pendingMediaDraftPrompt, setPendingMediaDraftPrompt] = useState<
+    string | null
+  >(null);
   const previousChatRunningRef = useRef(false);
   const appShellInteractionRevisionRef = useRef(0);
   const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -147,6 +168,8 @@ export const ChatSession = (): JSX.Element => {
   appShellStateRef.current = appShellState;
   const activeApp = appShellState.activeApp;
   const ralphActivity = useRalphActivity(activeApp);
+  const mediaActivity = useMediaActivity(activeApp);
+  useMediaShutdownGuard();
 
   const chatRunning = controller.hasRunningSession;
   const chatActivity = toActivityState(chatRunning, chatCompletedSinceView);
@@ -450,6 +473,7 @@ export const ChatSession = (): JSX.Element => {
               activeApp={activeApp}
               chatActivity={chatActivity}
               ralphActivity={ralphActivity}
+              mediaActivity={mediaActivity}
               onSelectApp={selectApp}
               onOpenScheduler={() => setSchedulerOpen(true)}
               onOpenMissionControl={() => controller.missionControl.setOpen(true)}
@@ -480,7 +504,7 @@ export const ChatSession = (): JSX.Element => {
                           controller.conversation.showScrollToNewestButton
                         }
                         onClick={controller.conversation.onScrollToNewest}
-                        className="bottom-4 left-1/2 -translate-x-1/2"
+                        className="bottom-4 right-4"
                       />
                     </div>
 
@@ -489,6 +513,15 @@ export const ChatSession = (): JSX.Element => {
                         <SessionComposer
                           key={controller.composer.activeSession.id}
                           {...controller.composer}
+                          onBrowseMediaAssets={() => {
+                            setPendingMediaSection("library");
+                            selectApp("media");
+                          }}
+                          onCreateMediaAsset={(prompt) => {
+                            setPendingMediaDraftPrompt(prompt);
+                            setPendingMediaSection("generate");
+                            selectApp("media");
+                          }}
                         />
                       </div>
                     </footer>
@@ -503,6 +536,37 @@ export const ChatSession = (): JSX.Element => {
                   <RalphApp
                     isActive
                     providerStatuses={controller.titlebar.providerStatuses}
+                    onOpenMediaRun={(runId) => {
+                      setPendingMediaRunId(runId);
+                      selectApp("media");
+                    }}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+
+            {activeApp === "media" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <MediaStudio
+                    providerStatuses={controller.titlebar.providerStatuses}
+                    onOpenProviderSettings={controller.openProviderSettings}
+                    workspaceRoot={controller.composer.activeSession.workspace}
+                    openRunId={pendingMediaRunId}
+                    onOpenRunHandled={() => setPendingMediaRunId(null)}
+                    openSection={pendingMediaSection}
+                    onOpenSectionHandled={() => setPendingMediaSection(null)}
+                    openAssetId={pendingMediaAssetId}
+                    onOpenAssetHandled={() => setPendingMediaAssetId(null)}
+                    importPath={pendingMediaImportPath}
+                    onImportPathHandled={() => setPendingMediaImportPath(null)}
+                    draftPrompt={pendingMediaDraftPrompt}
+                    onDraftPromptHandled={() => setPendingMediaDraftPrompt(null)}
+                    onSendAssetToChat={(reference) => {
+                      if (controller.attachMediaAssetToChat(reference)) {
+                        selectApp("chat");
+                      }
+                    }}
                   />
                 </Suspense>
               </div>
@@ -579,6 +643,16 @@ export const ChatSession = (): JSX.Element => {
       <AttachmentImagePreviewDialog
         preview={controller.attachmentImagePreview.preview}
         onOpenChange={controller.attachmentImagePreview.onOpenChange}
+        onEditMediaAsset={(attachment) => {
+          controller.attachmentImagePreview.onOpenChange(false);
+          setPendingMediaAssetId(attachment.assetId);
+          selectApp("media");
+        }}
+        onSaveToMediaLibrary={(attachment) => {
+          controller.attachmentImagePreview.onOpenChange(false);
+          setPendingMediaImportPath(attachment.path);
+          selectApp("media");
+        }}
       />
 
       {controller.filePreview.preview ? (

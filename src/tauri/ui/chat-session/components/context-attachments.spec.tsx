@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach } from "vitest";
-import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import type {
+  ChatSessionContextAttachment,
+  ChatSessionPathContextAttachment,
+} from "../../chat-session.model";
 import {
+  ContextAttachmentMenuButton,
   ContextAttachmentsList,
   MessageAttachmentsList,
 } from "./context-attachments";
@@ -11,7 +15,7 @@ afterEach(() => {
 });
 
 const createAttachment = (
-  overrides: Partial<ChatSessionContextAttachment> = {},
+  overrides: Partial<ChatSessionPathContextAttachment> = {},
 ): ChatSessionContextAttachment => ({
   id: "attachment-1",
   path: "C:\\Screenshots\\screen.png",
@@ -19,6 +23,75 @@ const createAttachment = (
   name: "screen.png",
   parent: "C:\\Screenshots",
   ...overrides,
+});
+
+describe("ContextAttachmentMenuButton", () => {
+  it("opens the Media Library picker from the context menu", async () => {
+    const onBrowseMediaAssets = vi.fn();
+    render(
+      <ContextAttachmentMenuButton
+        onSelectFiles={vi.fn()}
+        onSelectFolders={vi.fn()}
+        onSelectImages={vi.fn()}
+        onBrowseMediaAssets={onBrowseMediaAssets}
+      />,
+    );
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Add context" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Media Library" }),
+    );
+
+    expect(onBrowseMediaAssets).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a new Media Studio creation from the context menu", async () => {
+    const onCreateMediaAsset = vi.fn();
+    render(
+      <ContextAttachmentMenuButton
+        onSelectFiles={vi.fn()}
+        onSelectFolders={vi.fn()}
+        onSelectImages={vi.fn()}
+        onCreateMediaAsset={onCreateMediaAsset}
+      />,
+    );
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Add context" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Create in Media Studio",
+      }),
+    );
+
+    expect(onCreateMediaAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Media Library unavailable when the active model cannot use images", async () => {
+    render(
+      <ContextAttachmentMenuButton
+        onSelectFiles={vi.fn()}
+        onSelectFolders={vi.fn()}
+        onSelectImages={vi.fn()}
+        onBrowseMediaAssets={vi.fn()}
+        mediaLibraryDisabled
+        mediaLibraryDisabledReason="Choose a vision-capable model"
+      />,
+    );
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Add context" }),
+      { button: 0, ctrlKey: false },
+    );
+    const item = await screen.findByRole("menuitem", { name: "Media Library" });
+    expect(item.getAttribute("aria-disabled")).toBe("true");
+    expect(item.getAttribute("title")).toBe("Choose a vision-capable model");
+  });
 });
 
 describe("ContextAttachmentsList", () => {

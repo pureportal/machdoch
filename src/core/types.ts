@@ -323,9 +323,12 @@ export interface AgentModelAdapter {
 }
 
 export interface TaskCustomizationMatch {
+  id?: string;
+  bodyHash?: string;
   kind: DiscoveredInstruction["kind"];
   name: string;
   path: string;
+  scope?: InstructionScope;
   priority: number;
   body: string;
   reason: string;
@@ -450,6 +453,13 @@ export interface TaskExecutionTimelineEvent {
   metadata?: Record<string, string | number | boolean>;
 }
 
+export interface TaskExecutionTimeoutState {
+  startedAt: number;
+  lastActivityAt: number;
+  idleTimeoutMs: number | null;
+  absoluteTimeoutMs: number | null;
+}
+
 export interface TaskExecutionProgress {
   task: string;
   mode: RunMode;
@@ -468,6 +478,7 @@ export interface TaskExecutionProgress {
   };
   actionOutput?: TaskActionOutput;
   timelineEvent?: TaskExecutionTimelineEvent;
+  timeout?: TaskExecutionTimeoutState;
 }
 
 export type TaskExecutionProgressHandler = (
@@ -514,7 +525,55 @@ export interface TaskExecutionNarrative {
   followUps: string[];
 }
 
-export type TaskExecutionFileChangeKind = "added" | "modified" | "deleted";
+export type TaskExecutionFileChangeOperation =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "type-changed";
+
+export type TaskExecutionFileEntryType =
+  | "text"
+  | "binary"
+  | "gitlink"
+  | "symlink"
+  | "mode";
+
+export type TaskExecutionFileLineAnalysis =
+  | {
+      state: "complete";
+      additions: number;
+      deletions: number;
+    }
+  | {
+      state: "not-applicable";
+      reason: "binary" | "gitlink" | "symlink" | "mode-only";
+    }
+  | {
+      state: "failed";
+      code: "git-failed";
+      message: string;
+    };
+
+export type TaskExecutionFileChangeStage =
+  | { state: "complete" }
+  | { state: "failed"; code: string; message: string };
+
+export interface TaskExecutionFileChangeCompleteness {
+  discovery: TaskExecutionFileChangeStage;
+  startSnapshots: TaskExecutionFileChangeStage;
+  finishSnapshots: TaskExecutionFileChangeStage;
+  renameAnalysis: TaskExecutionFileChangeStage;
+  lineAnalysis: TaskExecutionFileChangeStage;
+  persistence: TaskExecutionFileChangeStage;
+}
+
+export interface TaskExecutionFileChangeIssue {
+  stage: keyof TaskExecutionFileChangeCompleteness;
+  code: string;
+  message: string;
+  repositoryPath?: string;
+}
 
 export interface TaskExecutionChangedLineRange {
   oldStart: number;
@@ -525,26 +584,38 @@ export interface TaskExecutionChangedLineRange {
 
 export interface TaskExecutionFileChange {
   path: string;
-  kind: TaskExecutionFileChangeKind;
+  oldPath?: string;
+  operation: TaskExecutionFileChangeOperation;
+  entryType: TaskExecutionFileEntryType;
   repositoryPath?: string;
-  additions?: number;
-  deletions?: number;
-  binary?: true;
+  oldMode: string;
+  newMode: string;
+  oldObjectId?: string;
+  newObjectId?: string;
+  oldCommit?: string;
+  newCommit?: string;
+  lineAnalysis: TaskExecutionFileLineAnalysis;
   ranges?: TaskExecutionChangedLineRange[];
+  hunkCount?: number;
+  storedId?: number;
 }
 
 export interface TaskExecutionFileChanges {
   files: TaskExecutionFileChange[];
+  changeSetId?: string;
   totalFiles: number;
   additions: number;
   deletions: number;
   binaryFiles: number;
-  lineCountsComplete: boolean;
-  coverage: "complete" | "partial";
-  truncated: boolean;
+  gitlinkFiles: number;
+  symlinkFiles: number;
+  modeOnlyFiles: number;
+  failedFiles: number;
+  status: "complete" | "partial" | "failed";
+  completeness: TaskExecutionFileChangeCompleteness;
   attribution: "workspace-observed";
-  repositoryCount?: number;
-  warnings?: string[];
+  repositoryCount: number;
+  issues: TaskExecutionFileChangeIssue[];
 }
 
 export interface TaskExecutionOptions {
@@ -561,7 +632,9 @@ export interface TaskExecutionOptions {
   instructionAudience?: InstructionTargetAudience;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
+  /** Absolute execution limit. Use `null` to disable it. */
   maxDurationMs?: number | null;
+  /** Inactivity limit. Use `null` to disable it independently. */
   idleTimeoutMs?: number | null;
 }
 

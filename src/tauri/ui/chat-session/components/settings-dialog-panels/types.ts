@@ -78,6 +78,7 @@ export interface WorkspaceSettingsControls {
 }
 
 export interface McpSettingsControls {
+  workspaceRoot: string | null;
   scope: McpConfigScope;
   document: McpConfigDocument;
   draft: string;

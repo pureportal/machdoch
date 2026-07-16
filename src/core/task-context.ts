@@ -14,6 +14,10 @@ import type {
   ResolvedTaskContext,
   TaskCustomizationMatch,
 } from "./types.js";
+import {
+  createStableInstructionId,
+  getInstructionBodyHash,
+} from "./provider-enrollment/instruction-compiler.js";
 import type { ToolName } from "./runtime-contract.generated.js";
 
 const STOP_WORDS = new Set([
@@ -312,6 +316,28 @@ const findMatchedInstructionMetadataTerms = (
   );
 };
 
+const createInstructionMatch = (
+  instruction: DiscoveredInstruction,
+  kind: TaskCustomizationMatch["kind"],
+  reason: string,
+): TaskCustomizationMatch => {
+  return {
+    id: createStableInstructionId({
+      name: instruction.name,
+      path: instruction.path,
+      ...(instruction.scope ? { scope: instruction.scope } : {}),
+    }),
+    bodyHash: getInstructionBodyHash(instruction.body),
+    kind,
+    name: instruction.name,
+    path: instruction.path,
+    ...(instruction.scope ? { scope: instruction.scope } : {}),
+    priority: instruction.priority ?? 0,
+    body: instruction.body,
+    reason,
+  };
+};
+
 /**
  * Collects instruction matches for the current effective task.
  */
@@ -361,26 +387,24 @@ const findApplicableInstructions = (
       mode === "always" ? ("always-on" as const) : instruction.kind;
 
     if (mode === "always") {
-      matches.push({
-        kind: matchKind,
-        name: instruction.name,
-        path: instruction.path,
-        priority: instruction.priority ?? 0,
-        body: instruction.body,
-        reason: createAlwaysInstructionReason(instruction),
-      });
+      matches.push(
+        createInstructionMatch(
+          instruction,
+          matchKind,
+          createAlwaysInstructionReason(instruction),
+        ),
+      );
       continue;
     }
 
     if (explicitlyReferenced) {
-      matches.push({
-        kind: matchKind,
-        name: instruction.name,
-        path: instruction.path,
-        priority: instruction.priority ?? 0,
-        body: instruction.body,
-        reason: "Explicitly requested instruction.",
-      });
+      matches.push(
+        createInstructionMatch(
+          instruction,
+          matchKind,
+          "Explicitly requested instruction.",
+        ),
+      );
       continue;
     }
 
@@ -427,14 +451,9 @@ const findApplicableInstructions = (
       continue;
     }
 
-    matches.push({
-      kind: matchKind,
-      name: instruction.name,
-      path: instruction.path,
-      priority: instruction.priority ?? 0,
-      body: instruction.body,
-      reason: reasons.join("; "),
-    });
+    matches.push(
+      createInstructionMatch(instruction, matchKind, reasons.join("; ")),
+    );
   }
 
   return matches.sort(compareInstructionMatches);

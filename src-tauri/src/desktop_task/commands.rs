@@ -1,6 +1,7 @@
 use std::{
+    collections::HashSet,
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Child,
     process::Stdio,
     sync::atomic::{AtomicBool, Ordering},
@@ -29,8 +30,8 @@ use super::{
         terminate_child_process_tree,
     },
     progress::{create_bridge_progress, emit_progress_event},
-    DesktopTaskRunRequest, DesktopTaskRunResponse, DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS,
-    DESKTOP_TASK_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
+    DesktopMediaAssetReference, DesktopTaskRunRequest, DesktopTaskRunResponse,
+    DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS, DESKTOP_TASK_IDLE_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
 };
 
 #[cfg(target_os = "windows")]
@@ -45,6 +46,60 @@ fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, S
             format_diagnostic_snippet(trimmed_stdout)
         )
     })
+}
+
+fn resolve_media_asset_reference_paths(
+    app_handle: &tauri::AppHandle,
+    workspace_path: &Path,
+    references: Vec<DesktopMediaAssetReference>,
+) -> Result<Vec<String>, String> {
+    if references.len() > 20 {
+        return Err("A desktop task can attach at most 20 Media Studio assets.".to_string());
+    }
+    let mut seen_asset_ids = HashSet::new();
+    let mut paths = Vec::with_capacity(references.len());
+    for reference in references {
+        if reference.source.trim() != "media-asset" {
+            return Err("Media Studio attachment source must be `media-asset`.".to_string());
+        }
+        if reference.kind.trim() != "image" {
+            return Err("Only Media Studio image assets can be attached to Chat.".to_string());
+        }
+        if reference
+            .rendition
+            .as_deref()
+            .is_some_and(|rendition| rendition.trim() != "original")
+        {
+            return Err(
+                "Chat model input currently requires the original Media Studio rendition."
+                    .to_string(),
+            );
+        }
+        if reference
+            .display_name
+            .as_deref()
+            .is_some_and(|name| name.chars().count() > 256)
+        {
+            return Err("Media Studio attachment displayName exceeds 256 characters.".to_string());
+        }
+        let asset_id = reference.asset_id.trim();
+        if asset_id.is_empty() || asset_id.chars().count() > 256 {
+            return Err("Media Studio attachment assetId is invalid.".to_string());
+        }
+        let reference_workspace = resolve_workspace_root_path(&reference.workspace_root)?;
+        if reference_workspace != workspace_path {
+            return Err(
+                "Media Studio attachment workspace does not match the active Chat workspace."
+                    .to_string(),
+            );
+        }
+        if !seen_asset_ids.insert(asset_id.to_string()) {
+            continue;
+        }
+        let asset_path = crate::media::resolve_published_image_asset_path(app_handle, asset_id)?;
+        paths.push(asset_path.to_string_lossy().to_string());
+    }
+    Ok(paths)
 }
 
 fn stop_shared_cli_after_wait_error(
@@ -85,11 +140,21 @@ pub(super) fn execute_desktop_task(
         reasoning,
         conversation_context,
         image_paths,
+        media_asset_references,
         task_id,
         session_id: _,
     } = request;
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
+    let mut resolved_image_paths = image_paths.unwrap_or_default();
+    resolved_image_paths.extend(resolve_media_asset_reference_paths(
+        &app_handle,
+        &workspace_path,
+        media_asset_references.unwrap_or_default(),
+    )?);
+    if resolved_image_paths.len() > 20 {
+        return Err("A desktop task can attach at most 20 images.".to_string());
+    }
 
     let normalized_task = task.trim();
 
@@ -115,7 +180,7 @@ pub(super) fn execute_desktop_task(
         model: normalized_model.as_deref(),
         reasoning: normalized_reasoning.as_deref(),
         conversation_context_file: conversation_context_path.as_deref(),
-        image_paths: image_paths.as_deref().unwrap_or(&[]),
+        image_paths: &resolved_image_paths,
     });
     let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
 
@@ -182,8 +247,10 @@ pub(super) fn execute_desktop_task(
         }
     };
     let progress_app_handle = app_handle.clone();
+    let storage_app_handle = app_handle.clone();
     let progress_window_label = window_label.clone();
     let progress_task_id = task_id.clone();
+    let storage_task_id = task_id.clone();
 
     let activity = create_desktop_task_activity();
     let stderr_activity = activity.clone();
@@ -233,7 +300,7 @@ pub(super) fn execute_desktop_task(
                 }
 
                 if desktop_task_activity_elapsed(&activity)
-                    >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS)
+                    >= Duration::from_millis(DESKTOP_TASK_IDLE_TIMEOUT_MS)
                 {
                     emit_progress_event(
                         &progress_app_handle,
@@ -243,7 +310,7 @@ pub(super) fn execute_desktop_task(
                             normalized_task,
                             normalized_mode.as_deref(),
                             "cancelled",
-                            "Execution exceeded the desktop safety timeout; stopping the task.",
+                            "Execution produced no structured progress before the desktop inactivity timeout; stopping the task.",
                             false,
                         ),
                     );
@@ -259,8 +326,8 @@ pub(super) fn execute_desktop_task(
 
                     let failure_tail = format_command_failure(&stderr_text, &stdout_text);
                     return Err(format!(
-                        "The shared CLI exceeded the desktop safety timeout of {} and was stopped. {}",
-                        format_timeout_duration(DESKTOP_TASK_TIMEOUT_MS),
+                        "The shared CLI produced no structured progress for {} and was stopped. {}",
+                        format_timeout_duration(DESKTOP_TASK_IDLE_TIMEOUT_MS),
                         failure_tail
                     ));
                 }
@@ -309,7 +376,14 @@ pub(super) fn execute_desktop_task(
     )?;
 
     if !stdout_text.trim().is_empty() {
-        if let Ok(response) = parse_desktop_task_response(&stdout_text) {
+        if let Ok(mut response) = parse_desktop_task_response(&stdout_text) {
+            if let Err(error) = super::file_changes::persist_response(
+                &storage_app_handle,
+                storage_task_id.as_deref(),
+                &mut response,
+            ) {
+                super::file_changes::annotate_persistence_failure(&mut response, &error);
+            }
             return Ok(response);
         }
     }
@@ -321,7 +395,15 @@ pub(super) fn execute_desktop_task(
         ));
     }
 
-    parse_desktop_task_response(&stdout_text)
+    let mut response = parse_desktop_task_response(&stdout_text)?;
+    if let Err(error) = super::file_changes::persist_response(
+        &storage_app_handle,
+        storage_task_id.as_deref(),
+        &mut response,
+    ) {
+        super::file_changes::annotate_persistence_failure(&mut response, &error);
+    }
+    Ok(response)
 }
 
 #[cfg(test)]

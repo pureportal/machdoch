@@ -1,6 +1,13 @@
-import { Loader2, TriangleAlert } from "lucide-react";
+import { ImagePlus, Images, Loader2, TriangleAlert } from "lucide-react";
 import type { JSX } from "react";
-import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import {
+  isMediaAssetContextAttachment,
+  isPathContextAttachment,
+  type ChatSessionContextAttachment,
+  type ChatSessionMediaAssetAttachment,
+  type ChatSessionPathContextAttachment,
+} from "../../chat-session.model";
+import { Button } from "../../components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -19,12 +26,28 @@ export interface AttachmentImagePreview {
 export interface AttachmentImagePreviewDialogProps {
   preview: AttachmentImagePreview | null;
   onOpenChange: (open: boolean) => void;
+  onEditMediaAsset?: (attachment: ChatSessionMediaAssetAttachment) => void;
+  onSaveToMediaLibrary?: (
+    attachment: ChatSessionPathContextAttachment,
+  ) => void;
 }
 
 export const AttachmentImagePreviewDialog = ({
   preview,
   onOpenChange,
+  onEditMediaAsset,
+  onSaveToMediaLibrary,
 }: AttachmentImagePreviewDialogProps): JSX.Element => {
+  const mediaAttachment =
+    preview && isMediaAssetContextAttachment(preview.attachment)
+      ? preview.attachment
+      : null;
+  const pathImageAttachment =
+    preview &&
+    isPathContextAttachment(preview.attachment) &&
+    preview.attachment.kind === "image"
+      ? preview.attachment
+      : null;
   return (
     <Dialog open={Boolean(preview)} onOpenChange={onOpenChange}>
       {preview ? (
@@ -34,7 +57,9 @@ export const AttachmentImagePreviewDialog = ({
               {preview.attachment.name}
             </DialogTitle>
             <DialogDescription className="truncate font-mono text-xs text-slate-500">
-              {preview.attachment.path}
+              {isMediaAssetContextAttachment(preview.attachment)
+                ? `Media Studio asset · ${preview.attachment.assetId}`
+                : preview.attachment.path}
             </DialogDescription>
           </DialogHeader>
 
@@ -63,6 +88,35 @@ export const AttachmentImagePreviewDialog = ({
               />
             ) : null}
           </div>
+          {mediaAttachment && onEditMediaAsset ? (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-950 px-5 py-3">
+              <p className="text-xs text-slate-500">
+                Crop, resize, convert, retag, or inspect lineage without changing the source.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onEditMediaAsset(mediaAttachment)}
+                className="h-8 shrink-0 border-orange-400/25 bg-orange-500/10 px-3 text-xs text-orange-100 hover:bg-orange-500/15"
+              >
+                <Images className="h-3.5 w-3.5" /> Edit in Media Studio
+              </Button>
+            </div>
+          ) : pathImageAttachment && onSaveToMediaLibrary ? (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-950 px-5 py-3">
+              <p className="text-xs text-slate-500">
+                Validate and ingest immutable bytes before using Media Studio transforms or lineage.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onSaveToMediaLibrary(pathImageAttachment)}
+                className="h-8 shrink-0 border-orange-400/25 bg-orange-500/10 px-3 text-xs text-orange-100 hover:bg-orange-500/15"
+              >
+                <ImagePlus className="h-3.5 w-3.5" /> Save to Media Library
+              </Button>
+            </div>
+          ) : null}
         </DialogContent>
       ) : null}
     </Dialog>

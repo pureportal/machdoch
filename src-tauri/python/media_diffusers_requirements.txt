@@ -1,0 +1,10 @@
+# Runtime contract: media-diffusers-worker/1.3.0 (Python >=3.10)
+# Torch wheels are platform/accelerator specific; the desktop bundle must select
+# the matching official wheel while preserving this tested version tuple.
+torch==2.13.0
+diffusers==0.39.0
+transformers==5.13.0
+accelerate==1.14.0
+peft==0.19.1
+safetensors==0.8.0
+Pillow==12.3.0

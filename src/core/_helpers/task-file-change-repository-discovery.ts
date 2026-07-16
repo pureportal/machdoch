@@ -1,38 +1,13 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { mapWithConcurrencyLimit } from "./task-file-change-concurrency.js";
 
-const DEFAULT_MAX_DEPTH = 2;
-const DEFAULT_MAX_REPOSITORIES = 16;
-const DEFAULT_MAX_DIRECTORIES = 2_000;
-const DEFAULT_TIME_BUDGET_MS = 1_000;
-const DIRECTORY_READ_CONCURRENCY = 8;
-const REPOSITORY_VALIDATION_CONCURRENCY = 4;
-const GIT_INSPECTION_TIMEOUT_MS = 3_000;
-const GIT_INSPECTION_MAX_BYTES = 64 * 1024;
-const DEFAULT_IGNORED_DIRECTORY_NAMES = [
-  ".cache",
-  ".pnpm-store",
-  ".venv",
-  ".yarn",
-  "__pycache__",
-  "build",
-  "coverage",
-  "dist",
-  "node_modules",
-  "out",
-  "target",
-  "venv",
-] as const;
+const DIRECTORY_READ_CONCURRENCY = 16;
+const REPOSITORY_VALIDATION_CONCURRENCY = 8;
+const DIRECTORY_BATCH_SIZE = 256;
+const GIT_INSPECTION_TIMEOUT_MS = 30_000;
 
 export interface DiscoveredGitRepository {
   root: string;
@@ -44,16 +19,7 @@ export interface DiscoveredGitRepository {
 export interface GitRepositoryDiscoveryResult {
   workspaceRoot: string;
   repositories: DiscoveredGitRepository[];
-  warnings: string[];
-  truncated: boolean;
-}
-
-export interface GitRepositoryDiscoveryOptions {
-  maxDepth?: number;
-  maxRepositories?: number;
-  maxDirectories?: number;
-  timeBudgetMs?: number;
-  ignoredDirectoryNames?: readonly string[];
+  issues: string[];
 }
 
 interface RepositoryCandidate {
@@ -65,13 +31,7 @@ interface DirectoryInspection {
   path: string;
   hasGitMarker: boolean;
   childDirectories: string[];
-  readable: boolean;
-}
-
-interface RepositoryScanResult {
-  candidates: RepositoryCandidate[];
-  warnings: string[];
-  truncated: boolean;
+  error?: string;
 }
 
 const isPathWithin = (parentPath: string, candidatePath: string): boolean => {
@@ -88,18 +48,6 @@ const isPathWithin = (parentPath: string, candidatePath: string): boolean => {
 const getPathKey = (value: string): string => {
   const normalized = resolve(value);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-};
-
-const getBoundedInteger = (
-  value: number | undefined,
-  fallback: number,
-  minimum: number,
-): number => {
-  if (value === undefined || !Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return Math.max(minimum, Math.floor(value));
 };
 
 const hasGitMarkerInAncestors = (workspaceRoot: string): boolean => {
@@ -122,7 +70,6 @@ const hasGitMarkerInAncestors = (workspaceRoot: string): boolean => {
 
 const inspectDirectory = async (
   directoryPath: string,
-  ignoredDirectoryNames: ReadonlySet<string>,
 ): Promise<DirectoryInspection> => {
   try {
     const entries = await readdir(directoryPath, { withFileTypes: true });
@@ -130,117 +77,60 @@ const inspectDirectory = async (
     let hasGitMarker = false;
 
     for (const entry of entries) {
-      const normalizedName = entry.name.toLowerCase();
-
-      if (normalizedName === ".git") {
+      if (entry.name.toLowerCase() === ".git") {
         hasGitMarker = entry.isDirectory() || entry.isFile();
         continue;
       }
 
-      if (
-        entry.isDirectory() &&
-        !entry.isSymbolicLink() &&
-        !ignoredDirectoryNames.has(normalizedName)
-      ) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         childDirectories.push(join(directoryPath, entry.name));
       }
     }
 
     childDirectories.sort((left, right) => left.localeCompare(right));
-    return {
-      path: directoryPath,
-      hasGitMarker,
-      childDirectories,
-      readable: true,
-    };
-  } catch {
+    return { path: directoryPath, hasGitMarker, childDirectories };
+  } catch (error) {
     return {
       path: directoryPath,
       hasGitMarker: false,
       childDirectories: [],
-      readable: false,
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 };
 
 const scanWorkspaceForRepositoryCandidates = async (
   workspaceRoot: string,
-  options: GitRepositoryDiscoveryOptions,
-): Promise<RepositoryScanResult> => {
-  const maxDepth = getBoundedInteger(
-    options.maxDepth,
-    DEFAULT_MAX_DEPTH,
-    0,
-  );
-  const maxRepositories = getBoundedInteger(
-    options.maxRepositories,
-    DEFAULT_MAX_REPOSITORIES,
-    1,
-  );
-  const maxDirectories = getBoundedInteger(
-    options.maxDirectories,
-    DEFAULT_MAX_DIRECTORIES,
-    1,
-  );
-  const timeBudgetMs = getBoundedInteger(
-    options.timeBudgetMs,
-    DEFAULT_TIME_BUDGET_MS,
-    1,
-  );
-  const ignoredDirectoryNames = new Set(
-    (options.ignoredDirectoryNames ?? DEFAULT_IGNORED_DIRECTORY_NAMES).map(
-      (name) => name.toLowerCase(),
-    ),
-  );
-  const candidateByPath = new Map<string, RepositoryCandidate>();
-  const warnings: string[] = [];
-  const startedAt = Date.now();
-  let frontier = [workspaceRoot];
-  let visitedDirectories = 0;
-  let truncated = false;
-  let hadUnreadableDirectory = false;
+): Promise<{
+  candidates: RepositoryCandidate[];
+  issues: string[];
+}> => {
+  const candidatesByPath = new Map<string, RepositoryCandidate>();
+  const issues: string[] = [];
+  const pendingDirectories = [workspaceRoot];
+  let offset = 0;
 
   if (hasGitMarkerInAncestors(workspaceRoot)) {
-    candidateByPath.set(getPathKey(workspaceRoot), {
+    candidatesByPath.set(getPathKey(workspaceRoot), {
       path: workspaceRoot,
       source: "workspace",
     });
   }
 
-  for (let depth = 0; depth <= maxDepth && frontier.length > 0; depth += 1) {
-    if (Date.now() - startedAt >= timeBudgetMs) {
-      truncated = true;
-      warnings.push("Repository discovery reached its time limit.");
-      break;
-    }
-
-    const remainingDirectoryCapacity = maxDirectories - visitedDirectories;
-
-    if (remainingDirectoryCapacity <= 0) {
-      truncated = true;
-      warnings.push("Repository discovery reached its directory limit.");
-      break;
-    }
-
-    const directories = frontier.slice(0, remainingDirectoryCapacity);
-
-    if (directories.length < frontier.length) {
-      truncated = true;
-      warnings.push("Repository discovery reached its directory limit.");
-    }
-
-    visitedDirectories += directories.length;
+  while (offset < pendingDirectories.length) {
+    const batch = pendingDirectories.slice(offset, offset + DIRECTORY_BATCH_SIZE);
+    offset += batch.length;
     const inspections = await mapWithConcurrencyLimit(
-      directories,
+      batch,
       DIRECTORY_READ_CONCURRENCY,
-      (directoryPath) =>
-        inspectDirectory(directoryPath, ignoredDirectoryNames),
+      inspectDirectory,
     );
-    const nextFrontier: string[] = [];
 
     for (const inspection of inspections) {
-      if (!inspection.readable) {
-        hadUnreadableDirectory = true;
+      if (inspection.error) {
+        issues.push(
+          `Could not scan ${relative(workspaceRoot, inspection.path) || "."}: ${inspection.error}`,
+        );
         continue;
       }
 
@@ -249,74 +139,82 @@ const scanWorkspaceForRepositoryCandidates = async (
           getPathKey(inspection.path) === getPathKey(workspaceRoot)
             ? "workspace"
             : "nested";
-
-        if (candidateByPath.size < maxRepositories) {
-          candidateByPath.set(getPathKey(inspection.path), {
-            path: inspection.path,
-            source,
-          });
-        } else if (!candidateByPath.has(getPathKey(inspection.path))) {
-          truncated = true;
-        }
+        candidatesByPath.set(getPathKey(inspection.path), {
+          path: inspection.path,
+          source,
+        });
       }
 
-      if (depth < maxDepth) {
-        nextFrontier.push(...inspection.childDirectories);
+      pendingDirectories.push(...inspection.childDirectories);
+    }
+  }
+
+  return { candidates: Array.from(candidatesByPath.values()), issues };
+};
+
+const runGitInspection = async (
+  cwd: string,
+  args: readonly string[],
+): Promise<string> => {
+  return await new Promise<string>((resolvePromise, rejectPromise) => {
+    const child = spawn(
+      "git",
+      ["--no-optional-locks", "-c", "core.quotePath=false", ...args],
+      { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+    );
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
       }
-    }
 
-    if (candidateByPath.size >= maxRepositories && nextFrontier.length > 0) {
-      truncated = true;
-      warnings.push("Repository discovery reached its repository limit.");
-      break;
-    }
+      settled = true;
+      child.kill();
+      rejectPromise(new Error("Git repository inspection timed out."));
+    }, GIT_INSPECTION_TIMEOUT_MS);
 
-    frontier = nextFrontier;
-  }
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.once("error", (error) => {
+      if (settled) {
+        return;
+      }
 
-  if (hadUnreadableDirectory) {
-    warnings.push("Some workspace folders could not be scanned for repositories.");
-  }
+      settled = true;
+      clearTimeout(timeout);
+      rejectPromise(error);
+    });
+    child.once("close", (code) => {
+      if (settled) {
+        return;
+      }
 
-  return {
-    candidates: Array.from(candidateByPath.values()),
-    warnings: Array.from(new Set(warnings)),
-    truncated,
-  };
+      settled = true;
+      clearTimeout(timeout);
+
+      if (code !== 0) {
+        rejectPromise(
+          new Error(Buffer.concat(stderr).toString("utf8").trim() || `Git exited with ${code}.`),
+        );
+        return;
+      }
+
+      resolvePromise(Buffer.concat(stdout).toString("utf8"));
+    });
+  });
 };
 
 const inspectGitRepository = async (
   candidate: RepositoryCandidate,
   workspaceRoot: string,
 ): Promise<DiscoveredGitRepository | undefined> => {
-  const output = await new Promise<string>((resolvePromise, rejectPromise) => {
-    execFile(
-      "git",
-      [
-        "--no-optional-locks",
-        "-c",
-        "core.quotePath=false",
-        "rev-parse",
-        "--is-inside-work-tree",
-        "--show-toplevel",
-      ],
-      {
-        cwd: candidate.path,
-        encoding: "utf8",
-        maxBuffer: GIT_INSPECTION_MAX_BYTES,
-        timeout: GIT_INSPECTION_TIMEOUT_MS,
-        windowsHide: true,
-      },
-      (error, stdout) => {
-        if (error) {
-          rejectPromise(error);
-          return;
-        }
-
-        resolvePromise(stdout);
-      },
-    );
-  });
+  const output = await runGitInspection(candidate.path, [
+    "rev-parse",
+    "--is-inside-work-tree",
+    "--show-toplevel",
+  ]);
   const outputLines = output.trimEnd().split(/\r?\n/u);
   const isInsideWorkTree = outputLines.shift()?.trim() === "true";
   const rawGitRoot = outputLines.join("\n").trim();
@@ -360,24 +258,24 @@ const inspectGitRepository = async (
 
 export const discoverWorkspaceGitRepositories = async (
   workspaceRoot: string,
-  options: GitRepositoryDiscoveryOptions = {},
 ): Promise<GitRepositoryDiscoveryResult> => {
   const normalizedWorkspaceRoot = await realpath(workspaceRoot).catch(() =>
     resolve(workspaceRoot),
   );
-  const scan = await scanWorkspaceForRepositoryCandidates(
-    normalizedWorkspaceRoot,
-    options,
-  );
-  let hadValidationFailure = false;
+  const scan = await scanWorkspaceForRepositoryCandidates(normalizedWorkspaceRoot);
+  const issues = [...scan.issues];
   const inspectedRepositories = await mapWithConcurrencyLimit(
     scan.candidates,
     REPOSITORY_VALIDATION_CONCURRENCY,
-    async (candidate) => {
+    async (candidate): Promise<DiscoveredGitRepository | undefined> => {
       try {
         return await inspectGitRepository(candidate, normalizedWorkspaceRoot);
-      } catch {
-        hadValidationFailure = true;
+      } catch (error) {
+        issues.push(
+          `Could not inspect ${relative(normalizedWorkspaceRoot, candidate.path) || "."}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
         return undefined;
       }
     },
@@ -397,12 +295,6 @@ export const discoverWorkspaceGitRepositories = async (
     }
   }
 
-  const warnings = [...scan.warnings];
-
-  if (hadValidationFailure) {
-    warnings.push("Some Git repository candidates could not be inspected.");
-  }
-
   const repositories = Array.from(repositoriesByRoot.values()).sort(
     (left, right) => {
       if (left.workspacePath === ".") {
@@ -420,7 +312,6 @@ export const discoverWorkspaceGitRepositories = async (
   return {
     workspaceRoot: normalizedWorkspaceRoot,
     repositories,
-    warnings: Array.from(new Set(warnings)),
-    truncated: scan.truncated,
+    issues: Array.from(new Set(issues)),
   };
 };

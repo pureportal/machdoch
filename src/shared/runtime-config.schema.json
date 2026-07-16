@@ -82,7 +82,7 @@
     },
     "UserApiProvider": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google", "langdock"]
+      "enum": ["openai", "anthropic", "google", "langdock", "quiver", "recraft"]
     },
     "AgentCliProvider": {
       "type": "string",
@@ -298,6 +298,12 @@
           "type": "string"
         },
         "langdock": {
+          "type": "string"
+        },
+        "quiver": {
+          "type": "string"
+        },
+        "recraft": {
           "type": "string"
         }
       }
@@ -585,6 +591,70 @@
         }
       }
     },
+    "ProviderEnrollmentInstructionsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["native-when-available"] },
+        "unmanagedNative": { "type": "string", "enum": ["adopt", "allow", "fail"] },
+        "strictConflicts": { "type": "boolean" },
+        "fallback": { "type": "string", "enum": ["automatic"] },
+        "failOnTruncation": { "type": "boolean" }
+      }
+    },
+    "ProviderEnrollmentMcpConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["direct-native"] },
+        "fallback": { "type": "string", "enum": ["per-server-stdio-proxy"] },
+        "compatibilityServerName": { "type": "string", "minLength": 1 },
+        "unmanagedNative": { "type": "string", "enum": ["adopt", "allow", "fail"] },
+        "approvals": { "type": "string", "enum": ["never"] },
+        "progressiveDiscoveryThresholdPercent": { "type": "number", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "ProviderEnrollmentPersistentSyncConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "watch": { "type": "boolean" },
+        "daemonAtLogin": { "type": "boolean" },
+        "debounceMs": { "type": "integer", "minimum": 50, "maximum": 60000 },
+        "filesystemConvergenceTargetMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
+        "fullRescanIntervalMs": { "type": "integer", "minimum": 10000, "maximum": 86400000 },
+        "autoReloadOwnedSessions": { "type": "boolean" }
+      }
+    },
+    "ProviderEnrollmentProviderConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "ProviderEnrollmentProvidersConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codex-cli": { "$ref": "#/$defs/ProviderEnrollmentProviderConfig" },
+        "claude-cli": { "$ref": "#/$defs/ProviderEnrollmentProviderConfig" },
+        "copilot-cli": { "$ref": "#/$defs/ProviderEnrollmentProviderConfig" }
+      }
+    },
+    "ProviderEnrollmentConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "type": "integer", "const": 1 },
+        "enabled": { "type": "boolean" },
+        "instructions": { "$ref": "#/$defs/ProviderEnrollmentInstructionsConfig" },
+        "mcp": { "$ref": "#/$defs/ProviderEnrollmentMcpConfig" },
+        "persistentSync": { "$ref": "#/$defs/ProviderEnrollmentPersistentSyncConfig" },
+        "providers": { "$ref": "#/$defs/ProviderEnrollmentProvidersConfig" }
+      }
+    },
     "UserConfigFile": {
       "type": "object",
       "additionalProperties": false,
@@ -615,6 +685,9 @@
         },
         "agentCliPaths": {
           "$ref": "#/$defs/UserAgentCliPaths"
+        },
+        "providerEnrollment": {
+          "$ref": "#/$defs/ProviderEnrollmentConfigFile"
         }
       }
     },
@@ -815,7 +888,9 @@
       "openai": "OPENAI_API_KEY",
       "anthropic": "ANTHROPIC_API_KEY",
       "google": "GOOGLE_API_KEY",
-      "langdock": "LANGDOCK_API_KEY"
+      "langdock": "LANGDOCK_API_KEY",
+      "quiver": "QUIVERAI_API_KEY",
+      "recraft": "RECRAFT_API_KEY"
     },
     "agentCliProviderEnvKeys": {
       "codex-cli": "MACHDOCH_CODEX_CLI_PATH",

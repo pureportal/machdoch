@@ -14,6 +14,7 @@ import {
   getLatestCompletedSessionResponseAt,
   getLatestRunningTaskId,
   getSessionTitle,
+  isMediaAssetContextAttachment,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
   normalizeShellState,
@@ -115,6 +116,12 @@ const getSessionPersistenceTimestamp = (
 
   for (const message of session.messages) {
     timestamp = Math.max(timestamp, message.createdAt ?? 0);
+  }
+
+  for (const tombstoneTimestamp of Object.values(
+    session.messageTombstones ?? {},
+  )) {
+    timestamp = Math.max(timestamp, tombstoneTimestamp);
   }
 
   return timestamp;
@@ -370,6 +377,9 @@ const getAttachmentAddTimestamp = (
 const createAttachmentPersistenceIdentity = (
   attachment: ChatSessionContextAttachment,
 ): string => {
+  if (isMediaAssetContextAttachment(attachment)) {
+    return `media:${attachment.workspaceRoot.toLowerCase()}:${attachment.assetId}`;
+  }
   const normalizedPath = attachment.path.trim().replace(/\\/gu, "/");
   const isCaseInsensitiveWindowsReference =
     /^[a-z]:\//iu.test(normalizedPath) ||
@@ -407,6 +417,23 @@ const pruneTimestampRecord = (
       .sort((left, right) => right[1] - left[1])
       .slice(0, maxEntries),
   );
+};
+
+const mergeSessionMessageTombstones = (
+  ...sessions: readonly ChatSessionRecord[]
+): Record<string, number> => {
+  return pruneTimestampRecord(
+    mergeTimestampRecords(
+      ...sessions.map((session) => session.messageTombstones),
+    ),
+  );
+};
+
+const filterMessageTombstones = (
+  messages: readonly ChatSessionMessage[],
+  tombstones: Readonly<Record<string, number>>,
+): ChatSessionMessage[] => {
+  return messages.filter((message) => tombstones[message.id] === undefined);
 };
 
 interface ComposerAttachmentBranchMetadata {
@@ -1173,6 +1200,21 @@ const mergeSessionConcurrentFields = (
           baseSession.promptContextHistory,
           latestSession.promptContextHistory,
         );
+  const messageTombstones = mergeSessionMessageTombstones(
+    primarySession,
+    localSession,
+    baseSession,
+    latestSession,
+  );
+  const messages = filterMessageTombstones(
+    mergeSessionMessagesForPersistence(
+      primarySession,
+      localSession,
+      baseSession,
+      latestSession,
+    ),
+    messageTombstones,
+  );
 
   return {
     ...primarySession,
@@ -1273,12 +1315,8 @@ const mergeSessionConcurrentFields = (
       latestSession.sessionMemory,
     ),
     ...mergedComposer,
-    messages: mergeSessionMessagesForPersistence(
-      primarySession,
-      localSession,
-      baseSession,
-      latestSession,
-    ),
+    messageTombstones,
+    messages,
     promptHistory,
     promptContextHistory,
   };
@@ -1296,6 +1334,7 @@ const createNewSessionConcurrentBase = (
     draftAttachmentsUpdatedAt: session.createdAt,
     draftAttachmentAddedAt: {},
     draftAttachmentTombstones: {},
+    messageTombstones: {},
     messages: [],
     promptHistory: [],
     promptContextHistory: [],
@@ -1613,6 +1652,11 @@ const mergeExternalSessionWithCurrentState = (
   );
 
   if (externalMessageRegression) {
+    const messageTombstones = mergeSessionMessageTombstones(
+      currentSession,
+      externalSession,
+    );
+
     return preserveCurrentComposerInput(
       {
         ...externalSession,
@@ -1620,11 +1664,15 @@ const mergeExternalSessionWithCurrentState = (
           externalSession.updatedAt,
           currentSession.updatedAt,
         ),
-        messages: mergeAppendOnlyMessages(
-          currentSession.messages,
-          currentSession.messages,
-          currentSession.messages,
-          externalSession.messages,
+        messageTombstones,
+        messages: filterMessageTombstones(
+          mergeAppendOnlyMessages(
+            currentSession.messages,
+            currentSession.messages,
+            currentSession.messages,
+            externalSession.messages,
+          ),
+          messageTombstones,
         ),
       },
       currentSession,
@@ -1667,6 +1715,7 @@ const createSessionMutationComparable = (
     draftContextAttachments: session.draftContextAttachments,
     manualTitle: session.manualTitle,
     tags: session.tags,
+    messageTombstones: session.messageTombstones,
     messages: session.messages,
     promptHistory: session.promptHistory,
     promptContextHistory: session.promptContextHistory,
@@ -2206,7 +2255,7 @@ export const mergeShellStateForPersistence = (
   );
   const mergedState: ShellPersistedState = {
     ...latestState,
-    version: 1,
+    version: 2,
     activeSessionId: activeSessionId ?? latestState.activeSessionId,
     activeSessionUpdatedAt,
     sessions,

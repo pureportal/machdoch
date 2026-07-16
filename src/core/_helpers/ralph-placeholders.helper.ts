@@ -121,6 +121,18 @@ const getProducedVariables = (block: RalphFlowBlock): RalphFlowVariable[] => {
     ];
   }
 
+  if (block.type === "MEDIA_FLOW") {
+    return Object.values(block.outputBindings).map((binding) => ({
+      name: binding.variableName,
+      type:
+        binding.source === "asset-ids" || binding.source === "quality-report-ids"
+          ? "text"
+          : "string",
+      default: "",
+      required: false,
+    }));
+  }
+
   return [];
 };
 
@@ -260,6 +272,16 @@ export const getRalphPromptLikeTexts = (block: RalphFlowBlock): string[] => {
       ];
     case "UTILITY":
       return collectRalphTemplateTexts(block.utility);
+    case "MEDIA_FLOW":
+      return Object.values(block.inputBindings).flatMap((binding) => {
+        if (binding.source === "variable") {
+          return [`{{${binding.variableName}:string}}`];
+        }
+        if (binding.source === "path") {
+          return [binding.path];
+        }
+        return [];
+      });
     case "START":
     case "PACK":
     case "NOTE":

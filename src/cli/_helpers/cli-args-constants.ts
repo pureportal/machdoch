@@ -10,6 +10,7 @@ import type {
   InstructionCliAction,
   InstructionCliScope,
   McpCliAction,
+  ProviderSyncCliAction,
   RalphCliAction,
   RalphCliGenerationMode,
   RalphCliGenerationTarget,
@@ -93,6 +94,8 @@ export const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
   "usage",
   "lifecycle-hook",
   "cleanup",
+  "proxy",
+  "broker",
 ]);
 export const MCP_ACTIONS_REQUIRING_SERVER: ReadonlySet<McpCliAction> = new Set([
   "discover",
@@ -103,12 +106,22 @@ export const MCP_ACTIONS_REQUIRING_SERVER: ReadonlySet<McpCliAction> = new Set([
   "call-tool",
   "read-resource",
   "get-prompt",
+  "proxy",
 ]);
 export const MCP_ACTIONS_REQUIRING_TARGET: ReadonlySet<McpCliAction> = new Set([
   "oauth-finish",
   "call-tool",
   "read-resource",
   "get-prompt",
+]);
+export const PROVIDER_SYNC_ACTIONS: ReadonlySet<ProviderSyncCliAction> = new Set([
+  "plan",
+  "enable",
+  "status",
+  "disable",
+  "refresh",
+  "doctor",
+  "daemon",
 ]);
 export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
   "list",

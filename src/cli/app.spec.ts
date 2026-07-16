@@ -1443,7 +1443,7 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow(
-      "Expected --provider to be followed by openai, anthropic, google, langdock.",
+      "Expected --provider to be followed by openai, anthropic, google, langdock, quiver, recraft.",
     );
 
     expect(() =>

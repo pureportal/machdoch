@@ -43,6 +43,14 @@ import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
+import { compileInstructionBundle } from "./provider-enrollment/instruction-compiler.js";
+import {
+  createApiEnrollmentSection,
+  createApiEnrollmentSnapshot,
+  loadMcpInitializationInstructionSections,
+  type ApiEnrollmentSnapshot,
+} from "./provider-enrollment/api-enrollment.js";
+import type { CompiledInstructionBundle } from "./provider-enrollment/types.js";
 import {
   compactTraceText,
   limitText,
@@ -932,6 +940,9 @@ const runExecutorCycle = async (
   onActionOutput: TaskActionOutputHandler | undefined,
   onStreamActivity: (() => void) | undefined,
   runId: string | undefined,
+  instructionBundle: CompiledInstructionBundle,
+  apiEnrollment: ApiEnrollmentSnapshot,
+  mcpInitializationSections: readonly string[],
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
 
@@ -958,7 +969,11 @@ const runExecutorCycle = async (
   );
   const loopState: AgentLoopState = {
     executedTools: [],
-    outputSections: [...contextSections, ...conversationContext.sections],
+    outputSections: [
+      ...contextSections,
+      ...conversationContext.sections,
+      createApiEnrollmentSection(apiEnrollment),
+    ],
     traceLines: [],
     memoryUpdates: [],
   };
@@ -1010,6 +1025,17 @@ const runExecutorCycle = async (
         metadata: {
           executorIteration,
           modelCall: modelCallSequence,
+          enrollmentBundleDigest: instructionBundle.digest,
+          enrollmentInstructionCount:
+            instructionBundle.sources.reduce(
+              (count, source) => count + source.sourceIds.length,
+              0,
+            ) + instructionBundle.omittedSources.reduce(
+              (count, source) => count + source.sourceIds.length,
+              0,
+            ),
+          enrollmentCoverageComplete: apiEnrollment.coverageSummary.complete,
+          enrollmentRoute: "api-request",
         },
       },
     },
@@ -1042,6 +1068,7 @@ const runExecutorCycle = async (
         conversationContext,
         continuationRequest,
         systemPromptSections ?? [],
+        mcpInitializationSections,
       ),
       userPrompt: createExecutorUserPrompt(
         config,
@@ -1842,6 +1869,18 @@ const runModelDrivenLoop = async (
   onStreamActivity: (() => void) | undefined,
   runId: string | undefined,
 ): Promise<TaskExecutionResult> => {
+  const mcpInitializationSections = await loadMcpInitializationInstructionSections(
+    config.workspaceRoot,
+  );
+  const instructionBundle = compileInstructionBundle(
+    taskContext,
+    systemPromptSections ?? [],
+  );
+  const apiEnrollment = await createApiEnrollmentSnapshot(
+    config.provider === "unconfigured" ? "openai" : config.provider,
+    instructionBundle,
+    config.workspaceRoot,
+  );
   let cycleResult = await runExecutorCycle(
     task,
     config,
@@ -1859,6 +1898,9 @@ const runModelDrivenLoop = async (
     onActionOutput,
     onStreamActivity,
     runId,
+    instructionBundle,
+    apiEnrollment,
+    mcpInitializationSections,
   );
   let executorIterations = 1;
   const decisions: TaskAutopilotDecision[] = [];
@@ -1953,6 +1995,9 @@ const runModelDrivenLoop = async (
       onActionOutput,
       onStreamActivity,
       runId,
+      instructionBundle,
+      apiEnrollment,
+      mcpInitializationSections,
     );
     executorIterations += 1;
 

@@ -21,6 +21,7 @@ import type {
   TaskExecutionProgress,
   TaskExecutionResult,
 } from "../../../../core/types.js";
+import type { MediaAssetReference } from "../../../../core/media/contracts.js";
 import type {
   RalphInputValue,
 } from "../../../../core/ralph.js";
@@ -39,6 +40,8 @@ import {
   getLatestRunningTaskId,
   getSessionOverviewStatus,
   getSessionTitle,
+  isMediaAssetContextAttachment,
+  isPathContextAttachment,
   isSessionWorkspaceLocked,
   isQuickVoiceSession,
   MAX_SMART_CONTEXT_PACKS,
@@ -48,6 +51,7 @@ import {
   rememberRecentWorkspace,
   removeRecentWorkspace,
   type ChatSessionContextAttachment,
+  type ChatSessionPathContextAttachment,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
   type ChatSessionQueuedMessage,
@@ -108,8 +112,10 @@ import {
   appendContextAttachmentsToTask,
   appendTranscriptToDraft,
   appendDraftBlock,
+  areContextAttachmentRecordsEqual,
   clampQuickVoiceMessageLimit,
   createContextAttachment,
+  createContextAttachmentFromMediaAsset,
   createContextAttachmentFromReference,
   createContextAttachmentsFromTaskBlock,
   getImageAttachmentPaths,
@@ -120,6 +126,7 @@ import {
   type DialogSelection,
   type FileDropTarget,
 } from "./session-context-attachments";
+import { readMediaAssetReferencePreview } from "../../media/media-runtime";
 import {
   applySmartContextPackToComposer,
   cloneContextAttachmentsForPack,
@@ -227,9 +234,12 @@ interface ChatInputNeededState {
 }
 
 interface ComposerStatusMessage {
+  sessionId: string;
   text: string;
   tone: "success" | "error" | "info" | null;
 }
+
+const COMPOSER_STATUS_TIMEOUT_MS = 6_000;
 
 type PromptEnhancementPendingPlacement = "composer-blocker" | "message";
 
@@ -292,11 +302,7 @@ const areComposerAttachmentsEqual = (
 
       return (
         candidate !== undefined &&
-        attachment.id === candidate.id &&
-        attachment.path === candidate.path &&
-        attachment.kind === candidate.kind &&
-        attachment.name === candidate.name &&
-        attachment.parent === candidate.parent
+        areContextAttachmentRecordsEqual(attachment, candidate)
       );
     })
   );
@@ -501,7 +507,7 @@ interface AttachmentImagePreviewState {
 type FilePreviewTarget =
   | {
       kind: "attachment";
-      attachment: ChatSessionContextAttachment;
+      attachment: ChatSessionPathContextAttachment;
       workspaceRoot: string | null | undefined;
     }
   | {
@@ -647,6 +653,8 @@ export const useChatSessionController = (
   const activeTaskRouteHydrationSignatureRef = useRef<string | null>(null);
   const [attachmentImagePreview, setAttachmentImagePreview] =
     useState<AttachmentImagePreviewState | null>(null);
+  const attachmentImagePreviewObjectUrlRef = useRef<string | null>(null);
+  const attachmentImagePreviewRequestRef = useRef(0);
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
   const [runningTaskMessageAction, setRunningTaskMessageAction] =
     useState<RunningTaskMessageAction>(DEFAULT_RUNNING_TASK_MESSAGE_ACTION);
@@ -663,6 +671,29 @@ export const useChatSessionController = (
     useState<PromptEnhancementPreviewState | null>(null);
   const [chatInterview, setChatInterview] =
     useState<ChatInterviewDialogState | null>(null);
+
+  useEffect(() => {
+    if (!promptEnhancementStatus) {
+      return;
+    }
+
+    const status = promptEnhancementStatus;
+    const timeoutId = window.setTimeout(() => {
+      setPromptEnhancementStatus((current) =>
+        current === status ? null : current,
+      );
+    }, COMPOSER_STATUS_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [promptEnhancementStatus]);
+
+  useEffect(() => () => {
+    attachmentImagePreviewRequestRef.current += 1;
+    if (attachmentImagePreviewObjectUrlRef.current) {
+      URL.revokeObjectURL(attachmentImagePreviewObjectUrlRef.current);
+      attachmentImagePreviewObjectUrlRef.current = null;
+    }
+  }, []);
   const [chatInputNeeded, setChatInputNeeded] =
     useState<ChatInputNeededState | null>(null);
   const queuedSessionMessages = state.shellState.queuedSessionMessages;
@@ -2260,6 +2291,54 @@ export const useChatSessionController = (
     attachment: ChatSessionContextAttachment,
     workspaceRoot = state.activeSession.workspace,
   ): void => {
+    if (isMediaAssetContextAttachment(attachment)) {
+      setFilePreview(null);
+      if (attachment.kind !== "image") {
+        return;
+      }
+      const previewRequest = ++attachmentImagePreviewRequestRef.current;
+      setAttachmentImagePreview({
+        attachment,
+        source: null,
+        loading: true,
+        error: null,
+      });
+      void readMediaAssetReferencePreview(attachment.assetId, 1_024)
+        .then((blob) => {
+          const source = URL.createObjectURL(blob);
+          if (attachmentImagePreviewRequestRef.current !== previewRequest) {
+            URL.revokeObjectURL(source);
+            return;
+          }
+          if (attachmentImagePreviewObjectUrlRef.current) {
+            URL.revokeObjectURL(attachmentImagePreviewObjectUrlRef.current);
+          }
+          attachmentImagePreviewObjectUrlRef.current = source;
+          setAttachmentImagePreview((current) =>
+            current &&
+            current.attachment.id === attachment.id &&
+            isMediaAssetContextAttachment(current.attachment) &&
+            current.attachment.assetId === attachment.assetId
+              ? { ...current, source, loading: false, error: null }
+              : current,
+          );
+        })
+        .catch((error) => {
+          if (attachmentImagePreviewRequestRef.current !== previewRequest) {
+            return;
+          }
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to resolve Media Studio image preview.";
+          setAttachmentImagePreview((current) =>
+            current?.attachment.id === attachment.id
+              ? { ...current, source: null, loading: false, error: message }
+              : current,
+          );
+        });
+      return;
+    }
     if (attachment.kind === "image") {
       setFilePreview(null);
       setAttachmentImagePreview({
@@ -2278,6 +2357,7 @@ export const useChatSessionController = (
             if (
               !current ||
               current.attachment.id !== attachment.id ||
+              !isPathContextAttachment(current.attachment) ||
               current.attachment.path !== attachment.path
             ) {
               return current;
@@ -2302,6 +2382,7 @@ export const useChatSessionController = (
             if (
               !current ||
               current.attachment.id !== attachment.id ||
+              !isPathContextAttachment(current.attachment) ||
               current.attachment.path !== attachment.path
             ) {
               return current;
@@ -2340,6 +2421,11 @@ export const useChatSessionController = (
   };
 
   const handleCloseAttachmentImagePreview = (): void => {
+    attachmentImagePreviewRequestRef.current += 1;
+    if (attachmentImagePreviewObjectUrlRef.current) {
+      URL.revokeObjectURL(attachmentImagePreviewObjectUrlRef.current);
+      attachmentImagePreviewObjectUrlRef.current = null;
+    }
     setAttachmentImagePreview(null);
   };
 
@@ -2828,6 +2914,36 @@ export const useChatSessionController = (
     [composerState.commitHistoryPreview, state.updateActiveSession],
   );
 
+  const attachMediaAssetToChat = useCallback(
+    (reference: MediaAssetReference): boolean => {
+      const activeWorkspace = state.activeSession.workspace?.trim() ?? "";
+      if (
+        !activeWorkspace ||
+        reference.workspaceRoot.trim() !== activeWorkspace ||
+        reference.kind !== "image"
+      ) {
+        return false;
+      }
+      composerState.commitHistoryPreview();
+      const attachment = createContextAttachmentFromMediaAsset(reference);
+      state.updateActiveSession((session) => {
+        const updatedAt = Date.now();
+        return {
+          ...session,
+          draftContextAttachments: mergeContextAttachments(
+            session.draftContextAttachments,
+            [attachment],
+          ),
+          draftAttachmentsUpdatedAt: updatedAt,
+          composerUpdatedAt: updatedAt,
+          updatedAt,
+        };
+      });
+      return true;
+    },
+    [composerState.commitHistoryPreview, state.activeSession.workspace, state.updateActiveSession],
+  );
+
   const handleAppendDroppedText = useCallback(
     (text: string, target: FileDropTarget): void => {
       const normalizedText = text.trim();
@@ -3130,10 +3246,19 @@ export const useChatSessionController = (
 
       if (pack.contextAttachments.length > 0) {
         try {
-          const resolution = await resolveDroppedPaths(
-            pack.contextAttachments.map((attachment) => attachment.path),
+          const mediaAttachments = pack.contextAttachments.filter(
+            isMediaAssetContextAttachment,
           );
-          contextAttachments = resolution.entries.map(createContextAttachment);
+          const pathAttachments = pack.contextAttachments.filter(
+            isPathContextAttachment,
+          );
+          const resolution = await resolveDroppedPaths(
+            pathAttachments.map((attachment) => attachment.path),
+          );
+          contextAttachments = [
+            ...mediaAttachments,
+            ...resolution.entries.map(createContextAttachment),
+          ];
         } catch (error) {
           console.error("Failed to revalidate context pack paths", error);
         }
@@ -3754,7 +3879,11 @@ export const useChatSessionController = (
         !promptEnhancementWebSearchAvailable
       ) {
         const error = PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON;
-        setPromptEnhancementStatus({ tone: "error", text: error });
+        setPromptEnhancementStatus({
+          sessionId: submission.sessionSnapshot.id,
+          tone: "error",
+          text: error,
+        });
         throw new Error(error);
       }
 
@@ -3858,6 +3987,7 @@ export const useChatSessionController = (
           wasCancelled
             ? null
             : {
+                sessionId: pending.sessionId,
                 tone: "error",
                 text: `Prompt enhancement failed: ${message}`,
               },
@@ -5830,6 +5960,7 @@ export const useChatSessionController = (
             composerClearGuard: submission.composerClearGuard,
           });
           setPromptEnhancementStatus({
+            sessionId: submission.sessionSnapshot.id,
             tone: "error",
             text: message,
           });
@@ -6144,6 +6275,7 @@ export const useChatSessionController = (
       onCloseWindow: windowControls.onCloseWindow,
     },
     missionControl: remoteMissionControl,
+    attachMediaAssetToChat,
     openProviderSettings: () => settingsActions.openSettings("providers"),
     sidebar: {
       totalSessions: state.shellState.sessions.length,
@@ -6220,10 +6352,13 @@ export const useChatSessionController = (
       promptEnhancementPreview: conversationPromptEnhancementPreview,
       workspaceRoot: state.activeSession.workspace,
       aiContextMessageLimit,
+      isSessionRunning: activeSessionExecuting,
       bottomRef: state.bottomRef,
       showScrollToNewestButton: state.showScrollToNewestButton,
       onScrollToNewest: state.scrollToNewest,
       onRetryTask: taskSubmission.handleRetryTask,
+      onRetryMessage: taskSubmission.handleRetryMessage,
+      onEditMessage: taskSubmission.handleEditMessage,
       onContinueTask: taskSubmission.handleContinueTask,
       onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
@@ -6304,7 +6439,11 @@ export const useChatSessionController = (
       promptEnhancementWebSearchUnavailableReason:
         PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON,
       promptEnhancementPending: composerPromptEnhancementPending,
-      statusMessage: promptEnhancementStatus,
+      statusMessage:
+        promptEnhancementStatus?.sessionId === activeComposerSession.id
+          ? promptEnhancementStatus
+          : null,
+      onStatusMessageDismiss: () => setPromptEnhancementStatus(null),
       contextAttachments: activeComposerSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
       matchedContextPackIds,
@@ -6478,6 +6617,7 @@ export const useChatSessionController = (
         onSave: runtime.handleWebSearchSetupSave,
       },
       mcpSetup: {
+        workspaceRoot: state.activeSession.workspace,
         scope: runtime.mcpConfigScope,
         document: runtime.mcpConfigDocument,
         draft: runtime.mcpConfigDraft,

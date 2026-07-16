@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.33.0"
+version = "0.34.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -16,12 +16,17 @@ tauri-build = { version = "2", features = [] }
 base64 = "0.22"
 async-stream = "0.3"
 axum = "0.8"
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 enigo = "0.6.1"
 getrandom = "0.3"
 github-copilot-sdk = { version = "=1.0.7-preview.2", default-features = false }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+ort = "=2.0.0-rc.12"
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
+resvg = { version = "0.47.0", default-features = false, features = ["system-fonts", "text"] }
+roxmltree = "0.21.1"
+rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -32,7 +37,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-mcp-bridge = "0.11.2"
 tauri-plugin-opener = "2.5"
 tauri-plugin-store = "2.4"
-tokio = { version = "1", features = ["net", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "sync", "time"] }
 xcap = "0.9.4"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
@@ -46,6 +51,7 @@ windows = { version = "0.61", features = [
   "Win32_Security",
   "Win32_System_Console",
   "Win32_System_JobObjects",
+  "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_UI_Shell",
   "Win32_UI_Input_KeyboardAndMouse",

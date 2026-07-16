@@ -5,6 +5,7 @@ import {
   getSessionOverviewStatus,
   getSessionTitle,
   hasUnreadCompletedSessionResponse,
+  isMediaAssetContextAttachment,
   isQuickVoiceSession,
   isSessionArchived,
   normalizeShellState,
@@ -281,7 +282,12 @@ export const createSessionHistoryIndex = (
       }
 
       for (const attachment of session.draftContextAttachments) {
-        searchParts.push(attachment.name, attachment.path, attachment.parent ?? "");
+        searchParts.push(
+          attachment.name,
+          isMediaAssetContextAttachment(attachment)
+            ? `${attachment.assetId} ${attachment.workspaceRoot}`
+            : `${attachment.path} ${attachment.parent ?? ""}`,
+        );
       }
     }
 

@@ -27,6 +27,7 @@ import {
   Globe2,
   GripVertical,
   History,
+  Images,
   Keyboard,
   LayoutGrid,
   LoaderCircle,
@@ -63,6 +64,10 @@ import {
   getSupportedImageInputExtensions,
   modelSupportsImageInput,
 } from "../../../core/model-capabilities.js";
+import type {
+  MediaFlowHead,
+  MediaFlowRevision,
+} from "../../../core/media/contracts.js";
 import {
   createImportedRalphStarterFlow,
   createUpgradedRalphStarterFlowWithReport,
@@ -87,6 +92,8 @@ import type {
   RalphInputField,
   RalphInputFieldType,
   RalphInputValue,
+  RalphMediaInputBinding,
+  RalphMediaOutputBinding,
   RalphPromptBlock,
   RalphPosition,
   RalphRunResult,
@@ -421,6 +428,7 @@ export interface RalphFlowEditorProps {
   providerOptions?: readonly RuntimeProvider[];
   generationPromptHistory?: readonly string[];
   onGenerationPromptHistoryChange?: (history: string[]) => void;
+  onOpenMediaRun?: (runId: string) => void;
 }
 
 interface RalphGenerationJob {
@@ -541,6 +549,7 @@ export const RalphFlowEditor = ({
   providerOptions = DEFAULT_RUNTIME_PROVIDER_OPTIONS,
   generationPromptHistory = EMPTY_RALPH_AI_PROMPT_HISTORY,
   onGenerationPromptHistoryChange,
+  onOpenMediaRun,
 }: RalphFlowEditorProps): JSX.Element => {
   const [flows, setFlows] = useState<RalphFlowSummary[]>([]);
   const [revisions, setRevisions] = useState<RalphFlowRevisionSummary[]>([]);
@@ -625,6 +634,15 @@ export const RalphFlowEditor = ({
   const [flowsLoading, setFlowsLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [mediaFlowHeads, setMediaFlowHeads] = useState<MediaFlowHead[]>([]);
+  const [mediaFlowRevisions, setMediaFlowRevisions] = useState<
+    MediaFlowRevision[]
+  >([]);
+  const [mediaFlowCatalogLoading, setMediaFlowCatalogLoading] = useState(false);
+  const [mediaFlowCatalogError, setMediaFlowCatalogError] = useState<
+    string | null
+  >(null);
+  const [mediaFlowCatalogRefresh, setMediaFlowCatalogRefresh] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [activeRuns, setActiveRuns] = useState<ActiveRalphRun[]>([]);
   const [generationJob, setGenerationJob] = useState<RalphGenerationJob | null>(
@@ -679,6 +697,7 @@ export const RalphFlowEditor = ({
   const utilityJsonBlockIdRef = useRef<string | null>(null);
   const utilityJsonBaselineRef = useRef("");
   const utilityJsonDirtyRef = useRef(false);
+  const mediaFlowCatalogRequestRef = useRef(0);
   const initialPromptAppliedRef = useRef(false);
   workspaceRootRef.current = workspaceRoot;
   lastRunRef.current = lastRun;
@@ -1479,6 +1498,50 @@ export const RalphFlowEditor = ({
     () => runHistory.find((run) => run.id === selectedRunId) ?? null,
     [runHistory, selectedRunId],
   );
+  const selectedMediaFlowId =
+    selectedBlock?.type === "MEDIA_FLOW" ? selectedBlock.flowId.trim() : null;
+  useEffect(() => {
+    if (selectedMediaFlowId === null) {
+      mediaFlowCatalogRequestRef.current += 1;
+      setMediaFlowHeads([]);
+      setMediaFlowRevisions([]);
+      setMediaFlowCatalogLoading(false);
+      setMediaFlowCatalogError(null);
+      return;
+    }
+
+    const request = ++mediaFlowCatalogRequestRef.current;
+    setMediaFlowCatalogLoading(true);
+    setMediaFlowCatalogError(null);
+    void import("../media/media-runtime")
+      .then(async ({ getMediaFlow, listMediaFlows }) => {
+        const heads = await listMediaFlows();
+        const selectedHead = heads.find(
+          (head) => head.flowId === selectedMediaFlowId,
+        );
+        const history = selectedHead
+          ? await getMediaFlow(selectedHead.flowId)
+          : null;
+        if (mediaFlowCatalogRequestRef.current !== request) return;
+        setMediaFlowHeads(heads);
+        setMediaFlowRevisions(history?.revisions ?? []);
+      })
+      .catch((error: unknown) => {
+        if (mediaFlowCatalogRequestRef.current !== request) return;
+        setMediaFlowHeads([]);
+        setMediaFlowRevisions([]);
+        setMediaFlowCatalogError(
+          error instanceof Error
+            ? error.message
+            : "Media Studio flow history could not be loaded.",
+        );
+      })
+      .finally(() => {
+        if (mediaFlowCatalogRequestRef.current === request) {
+          setMediaFlowCatalogLoading(false);
+        }
+      });
+  }, [mediaFlowCatalogRefresh, selectedMediaFlowId]);
   const filteredRunHistory = useMemo(() => {
     const query = runHistoryQuery.trim().toLocaleLowerCase();
 
@@ -1661,6 +1724,11 @@ export const RalphFlowEditor = ({
   const visiblePendingInput =
     pendingInput && !inputSubmitting && !pendingInputSupersededByActiveRun
       ? pendingInput
+      : null;
+  const visiblePendingMediaReview =
+    visiblePendingInput?.mediaFlow?.stage === "human-review" ||
+    visiblePendingInput?.mediaFlow?.stage === "provider-review"
+      ? visiblePendingInput.mediaFlow
       : null;
   const pendingInputContinuationInProgress = Boolean(
     pendingInput && (inputSubmitting || pendingInputSupersededByActiveRun),
@@ -3103,6 +3171,231 @@ export const RalphFlowEditor = ({
         : block,
     );
     setMessage(null);
+  };
+
+  const updateSelectedMediaBindings = (
+    kind: "input" | "output",
+    value: string,
+  ): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") {
+      return;
+    }
+
+    const parsed = parseJsonDraft(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      setMessage(`Media ${kind} bindings must be a JSON object.`);
+      return;
+    }
+
+    updateBlock(selectedBlock.id, (block) => {
+      if (block.type !== "MEDIA_FLOW") {
+        return block;
+      }
+      return kind === "input"
+        ? {
+            ...block,
+            inputBindings: parsed as Record<string, RalphMediaInputBinding>,
+          }
+        : {
+            ...block,
+            outputBindings: parsed as Record<string, RalphMediaOutputBinding>,
+          };
+    });
+    setMessage(null);
+  };
+
+  const updateSelectedMediaInputBinding = (
+    inputId: string,
+    binding: RalphMediaInputBinding,
+  ): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") return;
+    updateBlock(selectedBlock.id, (block) =>
+      block.type === "MEDIA_FLOW"
+        ? {
+            ...block,
+            inputBindings: { ...block.inputBindings, [inputId]: binding },
+          }
+        : block,
+    );
+  };
+
+  const updateSelectedMediaOutputBinding = (
+    outputId: string,
+    binding: RalphMediaOutputBinding,
+  ): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") return;
+    updateBlock(selectedBlock.id, (block) =>
+      block.type === "MEDIA_FLOW"
+        ? {
+            ...block,
+            outputBindings: { ...block.outputBindings, [outputId]: binding },
+          }
+        : block,
+    );
+  };
+
+  const renameSelectedMediaBinding = (
+    kind: "input" | "output",
+    currentId: string,
+    nextIdValue: string,
+  ): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") return;
+    const nextId = nextIdValue.trim();
+    if (!nextId || nextId === currentId) return;
+    const bindings =
+      kind === "input"
+        ? selectedBlock.inputBindings
+        : selectedBlock.outputBindings;
+    if (Object.hasOwn(bindings, nextId)) {
+      setMessage(`Media ${kind} binding ${nextId} already exists.`);
+      return;
+    }
+    updateBlock(selectedBlock.id, (block) => {
+      if (block.type !== "MEDIA_FLOW") return block;
+      if (kind === "input") {
+        const { [currentId]: binding, ...inputBindings } = block.inputBindings;
+        return binding
+          ? { ...block, inputBindings: { ...inputBindings, [nextId]: binding } }
+          : block;
+      }
+      const { [currentId]: binding, ...outputBindings } = block.outputBindings;
+      return binding
+        ? { ...block, outputBindings: { ...outputBindings, [nextId]: binding } }
+        : block;
+    });
+    setMessage(null);
+  };
+
+  const removeSelectedMediaBinding = (
+    kind: "input" | "output",
+    bindingId: string,
+  ): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") return;
+    updateBlock(selectedBlock.id, (block) => {
+      if (block.type !== "MEDIA_FLOW") return block;
+      if (kind === "input") {
+        const inputBindings = { ...block.inputBindings };
+        delete inputBindings[bindingId];
+        return { ...block, inputBindings };
+      }
+      const outputBindings = { ...block.outputBindings };
+      delete outputBindings[bindingId];
+      return { ...block, outputBindings };
+    });
+  };
+
+  const addSelectedMediaBinding = (kind: "input" | "output"): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") return;
+    const bindings =
+      kind === "input"
+        ? selectedBlock.inputBindings
+        : selectedBlock.outputBindings;
+    const prefix = kind === "input" ? "mediaInput" : "mediaOutput";
+    let index = Object.keys(bindings).length + 1;
+    while (Object.hasOwn(bindings, `${prefix}${index}`)) index += 1;
+    const bindingId = `${prefix}${index}`;
+    if (kind === "input") {
+      updateSelectedMediaInputBinding(bindingId, {
+        source: "variable",
+        variableName: "",
+      });
+    } else {
+      updateSelectedMediaOutputBinding(bindingId, {
+        source: "first-asset-id",
+        variableName: "",
+      });
+    }
+  };
+
+  const wireSelectedMediaOutcomePattern = (): void => {
+    if (!selectedBlock || selectedBlock.type !== "MEDIA_FLOW") return;
+    const mediaBlockId = selectedBlock.id;
+    updateDraftFlow((flow) => {
+      const mediaBlock = flow.blocks.find(
+        (block) => block.id === mediaBlockId && block.type === "MEDIA_FLOW",
+      );
+      if (!mediaBlock) return flow;
+      let next = flow;
+      const ensureEnd = (
+        status: "success" | "failed" | "cancelled" | "review",
+        title: string,
+        yOffset: number,
+      ): string => {
+        const existing = next.blocks.find(
+          (block) => block.type === "END" && (block.status ?? "success") === status,
+        );
+        if (existing) return existing.id;
+        const created = createBlock(next, "END");
+        if (created.type !== "END") return created.id;
+        const end = {
+          ...created,
+          title,
+          status,
+          position: {
+            x: (mediaBlock.position?.x ?? 0) + RALPH_CANVAS_X_GAP,
+            y: (mediaBlock.position?.y ?? 0) + yOffset,
+          },
+        };
+        next = { ...next, blocks: [...next.blocks, end] };
+        return end.id;
+      };
+      const successEndId = ensureEnd("success", "Media complete", -120);
+      const reviewEndId = ensureEnd("review", "Media needs review", 40);
+      const cancelledEndId = ensureEnd("cancelled", "Media canceled", 200);
+      const failedEndId = ensureEnd("failed", "Media failed", 360);
+
+      const start = next.blocks.find((block) => block.type === "START");
+      const alreadyReachable = next.edges.some((edge) => edge.to === mediaBlockId);
+      if (start && !alreadyReachable) {
+        const startSuccess = next.edges.find(
+          (edge) => edge.from === start.id && edge.fromOutput === "SUCCESS",
+        );
+        if (!startSuccess || startSuccess.to === successEndId) {
+          const edges = next.edges.filter((edge) => edge.id !== startSuccess?.id);
+          const base = { ...next, edges };
+          next = {
+            ...base,
+            edges: [
+              ...edges,
+              {
+                id: createEdgeId(base, start.id, "SUCCESS", mediaBlockId),
+                from: start.id,
+                fromOutput: "SUCCESS",
+                to: mediaBlockId,
+              },
+            ],
+          };
+        }
+      }
+
+      const targets = [
+        ["SUCCESS", successEndId],
+        ["PARTIAL", reviewEndId],
+        ["REVIEW_REQUIRED", reviewEndId],
+        ["CANCELLED", cancelledEndId],
+        ["ERROR", failedEndId],
+      ] as const;
+      for (const [output, target] of targets) {
+        if (
+          next.edges.some(
+            (edge) => edge.from === mediaBlockId && edge.fromOutput === output,
+          )
+        ) {
+          continue;
+        }
+        const edge = {
+          id: createEdgeId(next, mediaBlockId, output, target),
+          from: mediaBlockId,
+          fromOutput: output,
+          to: target,
+        };
+        next = { ...next, edges: [...next.edges, edge] };
+      }
+      return next;
+    });
+    setMessage(
+      "Wired success, partial, review, cancellation, and failure outcomes without replacing custom routes.",
+    );
   };
 
   const applyUtilityJsonDraft = (): void => {
@@ -8898,6 +9191,517 @@ export const RalphFlowEditor = ({
                       </div>
                     ) : null}
 
+                    {selectedBlock.type === "MEDIA_FLOW" ? (
+                      <div className="grid gap-3 rounded-lg bg-orange-950/20 p-3 text-sm text-slate-100 ring-1 ring-orange-400/20">
+                        <div className="grid gap-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-semibold text-orange-100">
+                              Pinned Media Studio flow
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Refresh Media Studio flows"
+                              title="Refresh saved Media Studio flows"
+                              disabled={mediaFlowCatalogLoading}
+                              onClick={() =>
+                                setMediaFlowCatalogRefresh((value) => value + 1)
+                              }
+                              className="h-7 w-7 text-orange-200 hover:bg-orange-500/10 hover:text-orange-100"
+                            >
+                              <RefreshCw
+                                className={cn(
+                                  "h-3.5 w-3.5",
+                                  mediaFlowCatalogLoading && "animate-spin",
+                                )}
+                              />
+                            </Button>
+                          </div>
+                          <p className="text-xs leading-5 text-slate-400">
+                            Ralph stores the immutable revision and durable media run id. Media
+                            Studio remains responsible for execution, review, and publication.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={wireSelectedMediaOutcomePattern}
+                            className="mt-1 h-8 justify-self-start border-orange-400/25 bg-orange-500/10 px-2.5 text-xs text-orange-100 hover:bg-orange-500/15"
+                          >
+                            <Route className="h-3.5 w-3.5" /> Wire safe outcomes
+                          </Button>
+                        </div>
+                        {mediaFlowHeads.length > 0 ? (
+                          <label className="grid gap-1.5">
+                            <span className="font-medium">Saved flow</span>
+                            <select
+                              value={
+                                mediaFlowHeads.some(
+                                  (head) => head.flowId === selectedBlock.flowId,
+                                )
+                                  ? selectedBlock.flowId
+                                  : ""
+                              }
+                              aria-label="Saved Media Studio flow"
+                              onChange={(event) => {
+                                const head = mediaFlowHeads.find(
+                                  (candidate) =>
+                                    candidate.flowId === event.target.value,
+                                );
+                                if (!head) return;
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "MEDIA_FLOW"
+                                    ? {
+                                        ...block,
+                                        flowId: head.flowId,
+                                        revisionId: head.headRevisionId,
+                                      }
+                                    : block,
+                                );
+                              }}
+                              className="h-9 rounded-md border border-orange-400/20 bg-slate-950 px-3 text-xs text-slate-100"
+                            >
+                              <option value="">Choose a saved flow…</option>
+                              {mediaFlowHeads.map((head) => (
+                                <option key={head.flowId} value={head.flowId}>
+                                  {head.name} · revision {head.headRevisionNumber}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        {mediaFlowCatalogError ? (
+                          <p className="rounded-md border border-amber-400/20 bg-amber-500/10 px-2.5 py-2 text-xs leading-5 text-amber-100">
+                            Saved Media Studio flows are unavailable: {mediaFlowCatalogError}
+                          </p>
+                        ) : null}
+                        <label className="grid gap-1.5">
+                          <span className="font-medium">Flow id</span>
+                          <Input
+                            value={selectedBlock.flowId}
+                            aria-label="Media flow id"
+                            placeholder="media-flow-id"
+                            onChange={(event) => {
+                              const flowId = event.target.value;
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "MEDIA_FLOW" ? { ...block, flowId } : block,
+                              );
+                            }}
+                            className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                          />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="font-medium">Pinned revision</span>
+                          {mediaFlowRevisions.length > 0 ? (
+                            <select
+                              value={selectedBlock.revisionId}
+                              aria-label="Media flow revision id"
+                              onChange={(event) => {
+                                const revisionId = event.target.value;
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "MEDIA_FLOW"
+                                    ? { ...block, revisionId }
+                                    : block,
+                                );
+                              }}
+                              className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 font-mono text-xs text-slate-100"
+                            >
+                              {mediaFlowRevisions.map((revision) => (
+                                <option
+                                  key={revision.revisionId}
+                                  value={revision.revisionId}
+                                >
+                                  r{revision.revisionNumber} · {revision.changeSummary}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              value={selectedBlock.revisionId}
+                              aria-label="Media flow revision id"
+                              placeholder="mfr-…"
+                              onChange={(event) => {
+                                const revisionId = event.target.value;
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "MEDIA_FLOW"
+                                    ? { ...block, revisionId }
+                                    : block,
+                                );
+                              }}
+                              className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                            />
+                          )}
+                        </label>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="grid gap-1.5">
+                            <span className="font-medium">Run policy</span>
+                            <select
+                              value={selectedBlock.runPolicy}
+                              aria-label="Media flow run policy"
+                              onChange={(event) => {
+                                const runPolicy = event.target.value as
+                                  | "wait"
+                                  | "submit-and-continue";
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "MEDIA_FLOW"
+                                    ? { ...block, runPolicy }
+                                    : block,
+                                );
+                              }}
+                              className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-xs text-slate-100"
+                            >
+                              <option value="wait">Wait for outputs</option>
+                              <option value="submit-and-continue">Submit and continue</option>
+                            </select>
+                          </label>
+                          <label className="grid gap-1.5">
+                            <span className="font-medium">Approval</span>
+                            <select
+                              value={selectedBlock.approvalPolicy}
+                              aria-label="Media flow approval policy"
+                              onChange={(event) => {
+                                const approvalPolicy = event.target.value as
+                                  | "inherit-workspace"
+                                  | "always-review-preflight";
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "MEDIA_FLOW"
+                                    ? { ...block, approvalPolicy }
+                                    : block,
+                                );
+                              }}
+                              className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-xs text-slate-100"
+                            >
+                              <option value="inherit-workspace">Inherit workspace policy</option>
+                              <option value="always-review-preflight">Always review preflight</option>
+                            </select>
+                          </label>
+                        </div>
+                        <section className="grid gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-medium text-slate-100">Inputs</div>
+                              <p className="mt-0.5 text-xs leading-5 text-slate-400">
+                                Map each Media Studio variable to a Ralph value. Provider setup
+                                and model presteps stay inside the pinned media revision.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => addSelectedMediaBinding("input")}
+                              className="h-8 shrink-0 border-orange-400/25 bg-orange-500/10 px-2.5 text-xs text-orange-100 hover:bg-orange-500/15"
+                            >
+                              <Plus className="h-3.5 w-3.5" /> Add
+                            </Button>
+                          </div>
+                          {Object.entries(selectedBlock.inputBindings).length === 0 ? (
+                            <div className="rounded-md border border-dashed border-slate-700 px-3 py-4 text-center text-xs text-slate-500">
+                              This revision has no bound inputs.
+                            </div>
+                          ) : (
+                            Object.entries(selectedBlock.inputBindings).map(
+                              ([inputId, binding]) => (
+                                <div
+                                  key={inputId}
+                                  className="grid gap-2 rounded-md border border-slate-800 bg-slate-950/70 p-2.5"
+                                >
+                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,0.8fr)_auto] gap-2">
+                                    <Input
+                                      defaultValue={inputId}
+                                      aria-label={`Media input id ${inputId}`}
+                                      title="Media Studio variable id"
+                                      onBlur={(event) =>
+                                        renameSelectedMediaBinding(
+                                          "input",
+                                          inputId,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                                    />
+                                    <select
+                                      value={binding.source}
+                                      aria-label={`Media input source ${inputId}`}
+                                      onChange={(event) => {
+                                        const source = event.target
+                                          .value as RalphMediaInputBinding["source"];
+                                        updateSelectedMediaInputBinding(
+                                          inputId,
+                                          source === "variable"
+                                            ? { source, variableName: "" }
+                                            : source === "literal"
+                                              ? { source, value: "" }
+                                              : source === "path"
+                                                ? { source, path: "" }
+                                                : { source, assetId: "" },
+                                        );
+                                      }}
+                                      className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+                                    >
+                                      <option value="variable">Ralph variable</option>
+                                      <option value="literal">Fixed value</option>
+                                      <option value="path">Workspace path</option>
+                                      <option value="media-asset">Media asset</option>
+                                    </select>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      aria-label={`Remove media input ${inputId}`}
+                                      onClick={() =>
+                                        removeSelectedMediaBinding("input", inputId)
+                                      }
+                                      className="h-8 w-8 text-slate-500 hover:bg-rose-500/10 hover:text-rose-200"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                  {binding.source === "variable" ? (
+                                    <Input
+                                      value={binding.variableName}
+                                      list={`ralph-media-variables-${selectedBlock.id}`}
+                                      aria-label={`Ralph variable for ${inputId}`}
+                                      placeholder="prompt"
+                                      onChange={(event) =>
+                                        updateSelectedMediaInputBinding(inputId, {
+                                          ...binding,
+                                          variableName: event.target.value,
+                                        })
+                                      }
+                                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                                    />
+                                  ) : binding.source === "literal" ? (
+                                    <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-2">
+                                      <select
+                                        value={typeof binding.value}
+                                        aria-label={`Literal type for ${inputId}`}
+                                        onChange={(event) => {
+                                          const type = event.target.value;
+                                          updateSelectedMediaInputBinding(inputId, {
+                                            source: "literal",
+                                            value:
+                                              type === "number"
+                                                ? 0
+                                                : type === "boolean"
+                                                  ? false
+                                                  : "",
+                                          });
+                                        }}
+                                        className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+                                      >
+                                        <option value="string">Text</option>
+                                        <option value="number">Number</option>
+                                        <option value="boolean">Boolean</option>
+                                      </select>
+                                      {typeof binding.value === "boolean" ? (
+                                        <select
+                                          value={String(binding.value)}
+                                          aria-label={`Literal value for ${inputId}`}
+                                          onChange={(event) =>
+                                            updateSelectedMediaInputBinding(inputId, {
+                                              source: "literal",
+                                              value: event.target.value === "true",
+                                            })
+                                          }
+                                          className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+                                        >
+                                          <option value="false">False</option>
+                                          <option value="true">True</option>
+                                        </select>
+                                      ) : (
+                                        <Input
+                                          type={
+                                            typeof binding.value === "number"
+                                              ? "number"
+                                              : "text"
+                                          }
+                                          value={String(binding.value)}
+                                          aria-label={`Literal value for ${inputId}`}
+                                          placeholder="Value"
+                                          onChange={(event) =>
+                                            updateSelectedMediaInputBinding(inputId, {
+                                              source: "literal",
+                                              value:
+                                                typeof binding.value === "number"
+                                                  ? Number(event.target.value)
+                                                  : event.target.value,
+                                            })
+                                          }
+                                          className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                                        />
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={
+                                        binding.source === "path"
+                                          ? binding.path
+                                          : binding.assetId
+                                      }
+                                      aria-label={`${binding.source === "path" ? "Workspace path" : "Media asset id"} for ${inputId}`}
+                                      placeholder={
+                                        binding.source === "path"
+                                          ? "assets/reference.png"
+                                          : "asset-…"
+                                      }
+                                      onChange={(event) =>
+                                        updateSelectedMediaInputBinding(
+                                          inputId,
+                                          binding.source === "path"
+                                            ? {
+                                                source: "path",
+                                                path: event.target.value,
+                                              }
+                                            : {
+                                                source: "media-asset",
+                                                assetId: event.target.value,
+                                              },
+                                        )
+                                      }
+                                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                                    />
+                                  )}
+                                </div>
+                              ),
+                            )
+                          )}
+                        </section>
+                        <section className="grid gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-medium text-slate-100">Outputs</div>
+                              <p className="mt-0.5 text-xs leading-5 text-slate-400">
+                                Publish stable run and approved asset references into declared
+                                Ralph variables. Binary media never enters the Ralph checkpoint.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={selectedBlock.runPolicy === "submit-and-continue"}
+                              onClick={() => addSelectedMediaBinding("output")}
+                              className="h-8 shrink-0 border-orange-400/25 bg-orange-500/10 px-2.5 text-xs text-orange-100 hover:bg-orange-500/15"
+                            >
+                              <Plus className="h-3.5 w-3.5" /> Add
+                            </Button>
+                          </div>
+                          {Object.entries(selectedBlock.outputBindings).length === 0 ? (
+                            <div className="rounded-md border border-dashed border-slate-700 px-3 py-4 text-center text-xs text-slate-500">
+                              No run outputs are bound.
+                            </div>
+                          ) : (
+                            Object.entries(selectedBlock.outputBindings).map(
+                              ([outputId, binding]) => (
+                                <div
+                                  key={outputId}
+                                  className="grid gap-2 rounded-md border border-slate-800 bg-slate-950/70 p-2.5"
+                                >
+                                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <Input
+                                      defaultValue={outputId}
+                                      aria-label={`Media output id ${outputId}`}
+                                      title="Binding id"
+                                      onBlur={(event) =>
+                                        renameSelectedMediaBinding(
+                                          "output",
+                                          outputId,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      aria-label={`Remove media output ${outputId}`}
+                                      onClick={() =>
+                                        removeSelectedMediaBinding("output", outputId)
+                                      }
+                                      className="h-8 w-8 text-slate-500 hover:bg-rose-500/10 hover:text-rose-200"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                  <div className="grid grid-cols-[minmax(8rem,0.8fr)_minmax(0,1fr)] gap-2">
+                                    <select
+                                      value={binding.source}
+                                      aria-label={`Media output source ${outputId}`}
+                                      onChange={(event) =>
+                                        updateSelectedMediaOutputBinding(outputId, {
+                                          ...binding,
+                                          source: event.target
+                                            .value as RalphMediaOutputBinding["source"],
+                                        })
+                                      }
+                                      className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+                                    >
+                                      <option value="run-id">Run id</option>
+                                      <option value="status">Terminal status</option>
+                                      <option value="asset-ids">Approved asset ids</option>
+                                      <option value="first-asset-id">First approved asset</option>
+                                      <option value="quality-report-ids">Quality report ids</option>
+                                    </select>
+                                    <Input
+                                      value={binding.variableName}
+                                      list={`ralph-media-variables-${selectedBlock.id}`}
+                                      aria-label={`Ralph output variable for ${outputId}`}
+                                      placeholder="generatedAssetId"
+                                      onChange={(event) =>
+                                        updateSelectedMediaOutputBinding(outputId, {
+                                          ...binding,
+                                          variableName: event.target.value,
+                                        })
+                                      }
+                                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                                    />
+                                  </div>
+                                </div>
+                              ),
+                            )
+                          )}
+                        </section>
+                        <datalist id={`ralph-media-variables-${selectedBlock.id}`}>
+                          {setupVariables.map((variable) => (
+                            <option key={variable.name} value={variable.name} />
+                          ))}
+                        </datalist>
+                        <RalphInspectorDetails
+                          title="Advanced bindings JSON"
+                          help="Edit the complete typed binding maps when bulk changes are faster than the guided controls."
+                        >
+                          <RalphInspectorField label="Input bindings JSON">
+                            <Textarea
+                              key={`${selectedBlock.id}-media-input-bindings`}
+                              defaultValue={formatJsonDraft(selectedBlock.inputBindings)}
+                              aria-label="Media flow input bindings JSON"
+                              onBlur={(event) =>
+                                updateSelectedMediaBindings("input", event.target.value)
+                              }
+                              className="min-h-28 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+                            />
+                          </RalphInspectorField>
+                          <RalphInspectorField label="Output bindings JSON">
+                            <Textarea
+                              key={`${selectedBlock.id}-media-output-bindings`}
+                              defaultValue={formatJsonDraft(selectedBlock.outputBindings)}
+                              aria-label="Media flow output bindings JSON"
+                              onBlur={(event) =>
+                                updateSelectedMediaBindings("output", event.target.value)
+                              }
+                              className="min-h-28 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+                            />
+                          </RalphInspectorField>
+                        </RalphInspectorDetails>
+                        {selectedBlock.runPolicy === "submit-and-continue" ? (
+                          <p className="rounded-md border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+                            Detached runs cannot expose output bindings. Review and cancellation
+                            remain owned by Media Studio.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     {selectedBlock.type === "MCP_TOOL" ||
                     selectedBlock.type === "MCP_RESOURCE" ||
                     selectedBlock.type === "MCP_PROMPT" ? (
@@ -10719,6 +11523,19 @@ export const RalphFlowEditor = ({
                             Waiting
                           </span>
                         </div>
+                        {visiblePendingMediaReview ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenMediaRun?.(visiblePendingMediaReview.runId)
+                            }
+                            disabled={!onOpenMediaRun}
+                            className="flex w-fit items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold text-orange-100 transition hover:border-orange-300/50 hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Images className="h-3.5 w-3.5" />
+                            Open run in Media Studio
+                          </button>
+                        ) : null}
                         <div className="grid gap-3">
                           {visiblePendingInput.fields.map((field) => (
                             <label

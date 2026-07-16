@@ -424,6 +424,28 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
       "Use only when a discovered MCP prompt materially helps the requested flow.",
     ],
   },
+  MEDIA_FLOW: {
+    type: "MEDIA_FLOW",
+    role: "Run one pinned Media Studio flow revision through the durable media runtime.",
+    requiredFields: [
+      "id",
+      "type",
+      "title",
+      "flowId",
+      "revisionId",
+      "inputBindings",
+      "outputBindings",
+      "runPolicy",
+      "approvalPolicy",
+    ],
+    optionalFields: ["position", "size", "settings", "parentGroupId"],
+    outputs: ["SUCCESS", "PARTIAL", "REVIEW_REQUIRED", "CANCELLED", "ERROR"],
+    generationNotes: [
+      "Use only when workspace context supplies an exact Media Studio flow id and immutable revision id.",
+      "Never invent provider payloads or media node internals; MEDIA_FLOW is the only Ralph-to-media bridge.",
+      "Use wait when downstream blocks consume outputs. submit-and-continue cannot define output bindings.",
+    ],
+  },
   NOTE: {
     type: "NOTE",
     role: "Visual annotation only.",

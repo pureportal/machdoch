@@ -198,4 +198,44 @@ describe("coerceRalphFlowBlockRecord", () => {
       });
     },
   );
+
+  it("coerces the dedicated media-flow bridge without preserving malformed bindings", () => {
+    expect(
+      coerceRalphFlowBlockRecord({
+        id: "media",
+        type: "MEDIA_FLOW",
+        title: "Generate assets",
+        flowId: "flow:product",
+        revisionId: "mfr-123",
+        runPolicy: "submit-and-continue",
+        approvalPolicy: "always-review-preflight",
+        inputBindings: {
+          subject: { source: "variable", variableName: "productName" },
+          count: { source: "literal", value: 3 },
+          source: { source: "media-asset", assetId: "asset-1" },
+          ignored: { source: "literal", value: { unsafe: true } },
+        },
+        outputBindings: {
+          images: { source: "asset-ids", variableName: "generatedAssets" },
+          ignored: { source: "provider-url", variableName: "url" },
+        },
+      }),
+    ).toEqual({
+      id: "media",
+      type: "MEDIA_FLOW",
+      title: "Generate assets",
+      flowId: "flow:product",
+      revisionId: "mfr-123",
+      runPolicy: "submit-and-continue",
+      approvalPolicy: "always-review-preflight",
+      inputBindings: {
+        subject: { source: "variable", variableName: "productName" },
+        count: { source: "literal", value: 3 },
+        source: { source: "media-asset", assetId: "asset-1" },
+      },
+      outputBindings: {
+        images: { source: "asset-ids", variableName: "generatedAssets" },
+      },
+    });
+  });
 });

@@ -1,8 +1,9 @@
 import { Play, RotateCcw } from "lucide-react";
-import type { JSX } from "react";
+import { type JSX, useMemo } from "react";
 import { StatusBadge } from "../../../../common/_components/status-badge";
 import type { TaskExecutionResult } from "../../../../core/types.js";
 import { Button } from "../../components/ui/button";
+import { normalizeTaskExecutionFileChanges } from "../../chat-session.model";
 import { getRelatedFileButtonLabel } from "../_helpers/execution-message.tsx";
 import { ExecutionFileChanges } from "./execution-file-changes";
 
@@ -25,7 +26,10 @@ export const ExecutionInsightRow = ({
   onRetryTask,
   onContinueTask,
 }: ExecutionInsightRowProps): JSX.Element | null => {
-  const fileChanges = execution.fileChanges;
+  const fileChanges = useMemo(
+    () => normalizeTaskExecutionFileChanges(execution.fileChanges),
+    [execution.fileChanges],
+  );
   const changedFiles = fileChanges?.files ?? [];
   const changedFilePaths = new Set(changedFiles.map((file) => file.path));
   const relatedFiles = (execution.response?.relatedFiles ?? []).filter(
@@ -33,11 +37,7 @@ export const ExecutionInsightRow = ({
   );
   const verification = execution.response?.verification ?? [];
   const continuationCount = execution.autopilot?.continuationCount ?? 0;
-  const canRetryTask =
-    !!onRetryTask &&
-    (execution.status === "blocked" ||
-      execution.status === "cancelled" ||
-      execution.status === "unsupported");
+  const canRetryTask = Boolean(onRetryTask);
   const canContinueTask =
     !!onContinueTask &&
     (execution.status === "executed" ||

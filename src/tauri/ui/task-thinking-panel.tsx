@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { createTaskTimeoutIndicator } from "./_helpers/task-timeout-indicator.helper";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
 import type { TaskPanelTone } from "./task-panel";
@@ -215,6 +216,21 @@ const createLegacyTimelineEvents = (
   }));
 };
 
+const createUniqueRenderKeys = (
+  entries: readonly { id: string }[],
+): string[] => {
+  const occurrences = new Map<string, number>();
+
+  return entries.map((entry) => {
+    const occurrence = occurrences.get(entry.id) ?? 0;
+    occurrences.set(entry.id, occurrence + 1);
+
+    return occurrence === 0
+      ? entry.id
+      : `${entry.id}\0duplicate-${occurrence}`;
+  });
+};
+
 export interface TaskThinkingPanelProps {
   thinking: TaskThinkingTrace;
 }
@@ -241,6 +257,14 @@ export const TaskThinkingPanel = ({
         : createLegacyTimelineEvents(thinking),
     [thinking.entries, thinking.startedAt, thinking.timelineEvents],
   );
+  const timelineEventKeys = useMemo(
+    () => createUniqueRenderKeys(timelineEvents),
+    [timelineEvents],
+  );
+  const actionOutputLineKeys = useMemo(
+    () => createUniqueRenderKeys(actionOutputLines),
+    [actionOutputLines],
+  );
   const latestTimelineEvent = timelineEvents.at(-1);
   const visibleModelStream: VisibleModelStream | undefined =
     modelStream && modelStream.kind !== "assistant"
@@ -254,6 +278,20 @@ export const TaskThinkingPanel = ({
       : thinking.completedAt ?? latestTimelineEvent?.timestamp ?? thinking.startedAt) -
       thinking.startedAt,
   );
+  const timeoutIndicator = isRunning
+    ? createTaskTimeoutIndicator(thinking.timeout, currentTimeMs)
+    : undefined;
+  const timeoutProgressFillClassName =
+    (timeoutIndicator?.progress ?? 0) >= 0.9
+      ? "bg-rose-300/70"
+      : (timeoutIndicator?.progress ?? 0) >= 0.75
+        ? "bg-amber-300/75"
+        : "bg-sky-400/70";
+  const timeoutValueText = timeoutIndicator
+    ? timeoutIndicator.kind === "absolute"
+      ? `${formatElapsedTime(timeoutIndicator.remainingMs)} until the absolute execution timeout`
+      : `${formatElapsedTime(timeoutIndicator.remainingMs)} until timeout if no further activity`
+    : undefined;
   const [isCollapsed, setIsCollapsed] = useState<boolean>(!isRunning);
   const [activeView, setActiveView] = useState<PanelView>("timeline");
   const replayExport = useMemo(
@@ -355,31 +393,36 @@ export const TaskThinkingPanel = ({
             "app-thinking-header",
             isCollapsed
               ? "gap-0 px-3 py-1.5"
-              : "gap-3 px-5 py-4 border-b border-slate-800/90",
+              : "gap-0 border-b border-slate-800/90 px-4 py-2.5",
           )}
         >
           <div
             className={cn(
               "flex gap-3",
-              isCollapsed ? "items-center gap-2" : "items-start",
+              isCollapsed ? "items-center gap-2" : "items-center gap-2.5",
             )}
           >
             <div
               className={cn(
                 "app-thinking-main-icon flex items-center justify-center border border-sky-500/20 bg-sky-500/10 text-sky-200",
-                isCollapsed ? "h-5 w-5 rounded-md" : "h-9 w-9 rounded-2xl",
+                isCollapsed ? "h-5 w-5 rounded-md" : "h-8 w-8 rounded-xl",
               )}
             >
               <HeaderIcon
                 className={cn(
-                  isCollapsed ? "h-2.5 w-2.5" : "h-4 w-4",
+                  isCollapsed ? "h-2.5 w-2.5" : "h-3.5 w-3.5",
                   isRunning && "animate-spin",
                 )}
               />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
+                <div
+                  className={cn(
+                    "min-w-0",
+                    !isCollapsed && "flex items-center gap-2.5",
+                  )}
+                >
                   <CardTitle
                     className={cn(
                       "font-semibold text-slate-100",
@@ -394,17 +437,10 @@ export const TaskThinkingPanel = ({
                       <span>{formatElapsedTime(elapsedMs)}</span>
                     </div>
                   ) : (
-                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
-                        <Clock3 className="h-3 w-3" />
+                    <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium tabular-nums text-slate-400">
+                      <Clock3 className="h-3 w-3 text-slate-500" />
+                      <span aria-label={`Elapsed time ${formatElapsedTime(elapsedMs)}`}>
                         {formatElapsedTime(elapsedMs)}
-                      </span>
-                      <span className="rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
-                        {timelineEvents.length} event
-                        {timelineEvents.length === 1 ? "" : "s"}
-                      </span>
-                      <span className="rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
-                        {formatTokenUsage(thinking.tokenUsage)}
                       </span>
                     </div>
                   )}
@@ -422,7 +458,7 @@ export const TaskThinkingPanel = ({
                     "app-thinking-toggle inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-slate-100",
                     isCollapsed
                       ? "h-5 px-2 text-[10px]"
-                      : "h-8 px-3 text-xs",
+                      : "h-7 px-2.5 text-[11px]",
                   )}
                 >
                   <ToggleIcon
@@ -522,7 +558,7 @@ export const TaskThinkingPanel = ({
 
                     return (
                       <li
-                        key={event.id}
+                        key={timelineEventKeys[index]}
                         className="app-thinking-entry grid grid-cols-[4.25rem_auto_minmax(0,1fr)] gap-3"
                       >
                         <span className="pt-0.5 text-right font-mono text-[11px] text-slate-500">
@@ -638,9 +674,9 @@ export const TaskThinkingPanel = ({
                         Stdout / stderr
                       </p>
                       <div className="mt-2 max-h-40 overflow-y-auto font-mono text-[11px] leading-5">
-                        {actionOutputLines.map((line) => (
+                        {actionOutputLines.map((line, index) => (
                           <div
-                            key={line.id}
+                            key={actionOutputLineKeys[index]}
                             className={cn(
                               "grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border-l-2 pl-2",
                               outputLineClasses[line.stream],
@@ -694,6 +730,25 @@ export const TaskThinkingPanel = ({
               ) : null}
             </div>
           </CardContent>
+        ) : null}
+        {timeoutIndicator ? (
+          <div
+            role="progressbar"
+            aria-label="AI chat timeout progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={timeoutIndicator.progressPercent}
+            aria-valuetext={timeoutValueText}
+            className="app-thinking-timeout-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden bg-slate-800/80"
+          >
+            <div
+              className={cn(
+                "h-full transition-[width,background-color] duration-500",
+                timeoutProgressFillClassName,
+              )}
+              style={{ width: `${timeoutIndicator.progressPercent}%` }}
+            />
+          </div>
         ) : null}
       </Card>
     </div>

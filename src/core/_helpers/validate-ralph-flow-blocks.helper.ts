@@ -16,6 +16,9 @@ import type {
 
 const BLOCK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/u;
 const INPUT_FIELD_ID_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/u;
+const MEDIA_FLOW_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
+const MEDIA_BINDING_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/u;
+const RALPH_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/u;
 const INPUT_FIELD_TYPES_REQUIRING_OPTIONS = new Set(["select", "multiselect"]);
 
 interface ValidateRalphFlowBlocksOptions {
@@ -348,6 +351,103 @@ export const validateRalphFlowBlocks = ({
         `${blockLabel} references context packs, but Ralph currently stores pack ids as metadata and does not inject pack contents at runtime.`,
         { blockId: block.id },
       );
+    }
+
+    if (block.type === "MEDIA_FLOW") {
+      if (!MEDIA_FLOW_ID_PATTERN.test(block.flowId)) {
+        addRalphValidationIssue(
+          errors,
+          "media-flow-id-invalid",
+          `${blockLabel} requires a pinned Media Studio flow id.`,
+          { blockId: block.id },
+        );
+      }
+      if (!MEDIA_FLOW_ID_PATTERN.test(block.revisionId)) {
+        addRalphValidationIssue(
+          errors,
+          "media-flow-revision-invalid",
+          `${blockLabel} requires a pinned Media Studio revision id.`,
+          { blockId: block.id },
+        );
+      }
+      const ralphVariableNames = new Set(
+        (flow.variables ?? []).map((variable) => variable.name),
+      );
+      const inputEntries = Object.entries(block.inputBindings);
+      const outputEntries = Object.entries(block.outputBindings);
+      if (inputEntries.length > 32) {
+        addRalphValidationIssue(
+          errors,
+          "media-flow-input-limit",
+          `${blockLabel} may bind at most 32 Media Studio inputs.`,
+          { blockId: block.id },
+        );
+      }
+      if (outputEntries.length > 32) {
+        addRalphValidationIssue(
+          errors,
+          "media-flow-output-limit",
+          `${blockLabel} may bind at most 32 Media Studio outputs.`,
+          { blockId: block.id },
+        );
+      }
+      for (const [inputId, binding] of inputEntries) {
+        if (!MEDIA_BINDING_ID_PATTERN.test(inputId)) {
+          addRalphValidationIssue(
+            errors,
+            "media-flow-input-id-invalid",
+            `${blockLabel} input binding \`${inputId}\` is not a valid Media Studio variable id.`,
+            { blockId: block.id },
+          );
+        }
+        if (
+          (binding.source === "variable" &&
+            (!RALPH_VARIABLE_NAME_PATTERN.test(binding.variableName) ||
+              !ralphVariableNames.has(binding.variableName))) ||
+          (binding.source === "path" && !binding.path.trim()) ||
+          (binding.source === "media-asset" && !binding.assetId.trim())
+        ) {
+          addRalphValidationIssue(
+            errors,
+            "media-flow-input-binding-invalid",
+            `${blockLabel} input binding \`${inputId}\` is incomplete or references an undeclared Ralph variable.`,
+            { blockId: block.id },
+          );
+        }
+      }
+      for (const [outputId, binding] of outputEntries) {
+        if (!MEDIA_BINDING_ID_PATTERN.test(outputId)) {
+          addRalphValidationIssue(
+            errors,
+            "media-flow-output-id-invalid",
+            `${blockLabel} output binding \`${outputId}\` is invalid.`,
+            { blockId: block.id },
+          );
+        }
+        if (!RALPH_VARIABLE_NAME_PATTERN.test(binding.variableName)) {
+          addRalphValidationIssue(
+            errors,
+            "media-flow-output-variable-invalid",
+            `${blockLabel} output \`${outputId}\` requires a valid Ralph variable name.`,
+            { blockId: block.id },
+          );
+        } else if (!ralphVariableNames.has(binding.variableName)) {
+          addRalphValidationIssue(
+            errors,
+            "media-flow-output-variable-undeclared",
+            `${blockLabel} output \`${outputId}\` references undeclared Ralph variable \`${binding.variableName}\`.`,
+            { blockId: block.id },
+          );
+        }
+      }
+      if (block.runPolicy === "submit-and-continue" && outputEntries.length > 0) {
+        addRalphValidationIssue(
+          errors,
+          "media-flow-detached-output",
+          `${blockLabel} cannot bind outputs while using submit-and-continue.`,
+          { blockId: block.id },
+        );
+      }
     }
 
     if (block.settings?.packs && block.settings.packs.length > 0) {

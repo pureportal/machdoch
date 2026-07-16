@@ -214,12 +214,19 @@ describe("user config API key helpers", () => {
       "openai",
       "sk-test-openai-key-1234567890",
     );
+    await saveUserApiKey("quiver", "quiver-test-key-1234567890");
+    await saveUserApiKey("recraft", "recraft-test-key-1234567890");
     const apiKeys = await loadUserApiKeys();
+    const env = await loadWorkspaceEnv(configDirectory);
     const availability = await getUserProviderAvailability();
 
     expect(savedPath).toBe(join(configDirectory, "user-config.json"));
     expect(getUserConfigPath()).toBe(join(configDirectory, "user-config.json"));
     expect(apiKeys.openai).toBe("sk-test-openai-key-1234567890");
+    expect(apiKeys.quiver).toBe("quiver-test-key-1234567890");
+    expect(apiKeys.recraft).toBe("recraft-test-key-1234567890");
+    expect(env.QUIVERAI_API_KEY).toBe("quiver-test-key-1234567890");
+    expect(env.RECRAFT_API_KEY).toBe("recraft-test-key-1234567890");
     expect(availability).toEqual([
       { provider: "openai", configured: true },
       { provider: "anthropic", configured: false },

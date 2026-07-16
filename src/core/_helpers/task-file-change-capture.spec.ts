@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -89,18 +89,18 @@ describe("task file change capture", () => {
       additions: 2,
       deletions: 0,
       repositoryCount: 2,
-      coverage: "complete",
+      status: "complete",
     });
     expect(result?.files).toEqual([
       expect.objectContaining({
         path: "api/source.ts",
         repositoryPath: "api",
-        kind: "modified",
+        operation: "modified",
       }),
       expect.objectContaining({
         path: "ui/created.ts",
         repositoryPath: "ui",
-        kind: "added",
+        operation: "added",
       }),
     ]);
   });
@@ -126,7 +126,7 @@ describe("task file change capture", () => {
     expect(result?.files).toEqual([
       expect.objectContaining({
         path: "source.ts",
-        kind: "modified",
+        operation: "modified",
       }),
     ]);
   });
@@ -148,10 +148,58 @@ describe("task file change capture", () => {
     expect(result?.files).toEqual([
       expect.objectContaining({
         path: "created.ts",
-        kind: "added",
-        additions: 1,
+        operation: "added",
+        lineAnalysis: {
+          state: "complete",
+          additions: 1,
+          deletions: 0,
+        },
       }),
     ]);
+  });
+
+  it("captures a repository created after the task starts", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-file-changes-created-repository-"),
+    );
+    workspacesToClean.push(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await initializeGitWorkspace(workspaceRoot);
+    await writeFile(join(workspaceRoot, "created.ts"), "new\n", "utf8");
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 1,
+      deletions: 0,
+      repositoryCount: 1,
+      status: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "created.ts",
+        operation: "added",
+        entryType: "text",
+        lineAnalysis: {
+          state: "complete",
+          additions: 1,
+          deletions: 0,
+        },
+      }),
+    ]);
+  });
+
+  it("omits file-change metadata when a non-Git workspace stays unchanged", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-file-changes-non-git-"),
+    );
+    workspacesToClean.push(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    expect(capture).toBeDefined();
+    await expect(capture?.finish()).resolves.toBeUndefined();
   });
 
   it("reports tracked edits, new untracked files, line counts, and hunk ranges", async () => {
@@ -181,27 +229,67 @@ describe("task file change capture", () => {
       totalFiles: 2,
       additions: 4,
       deletions: 1,
-      lineCountsComplete: true,
-      coverage: "complete",
-      truncated: false,
+      status: "complete",
       attribution: "workspace-observed",
     });
     expect(sourceChange).toMatchObject({
-      kind: "modified",
-      additions: 2,
-      deletions: 1,
+      operation: "modified",
+      lineAnalysis: {
+        state: "complete",
+        additions: 2,
+        deletions: 1,
+      },
     });
     expect(sourceChange?.ranges?.length).toBeGreaterThan(0);
     expect(newFileChange).toMatchObject({
-      kind: "added",
-      additions: 2,
-      deletions: 0,
+      operation: "added",
+      lineAnalysis: {
+        state: "complete",
+        additions: 2,
+        deletions: 0,
+      },
       ranges: [
         {
           oldStart: 0,
           oldLines: 0,
           newStart: 1,
           newLines: 2,
+        },
+      ],
+    });
+  });
+
+  it("streams patches without retaining very large changed lines", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    const sourcePath = join(workspaceRoot, "generated.txt");
+    await writeFile(sourcePath, `${"a".repeat(512 * 1_024)}\n`, "utf8");
+    await commitWorkspace(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await writeFile(sourcePath, `${"b".repeat(512 * 1_024)}\n`, "utf8");
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 1,
+      deletions: 1,
+      status: "complete",
+    });
+    expect(result?.files[0]).toMatchObject({
+      path: "generated.txt",
+      entryType: "text",
+      lineAnalysis: {
+        state: "complete",
+        additions: 1,
+        deletions: 1,
+      },
+      ranges: [
+        {
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 1,
         },
       ],
     });
@@ -222,9 +310,12 @@ describe("task file change capture", () => {
     expect(result?.files).toEqual([
       expect.objectContaining({
         path: "source.ts",
-        kind: "modified",
-        additions: 1,
-        deletions: 0,
+        operation: "modified",
+        lineAnalysis: {
+          state: "complete",
+          additions: 1,
+          deletions: 0,
+        },
       }),
     ]);
   });
@@ -256,14 +347,199 @@ describe("task file change capture", () => {
 
     expect(result).toMatchObject({
       totalFiles: 1,
-      lineCountsComplete: false,
-      coverage: "complete",
+      additions: 1,
+      deletions: 1,
+      status: "complete",
     });
     expect(result?.files).toEqual([
-      {
+      expect.objectContaining({
         path: "existing-untracked.ts",
-        kind: "modified",
-      },
+        operation: "modified",
+        lineAnalysis: {
+          state: "complete",
+          additions: 1,
+          deletions: 1,
+        },
+      }),
+    ]);
+  });
+
+  it("reports submodule references without adding fake text lines", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    const submoduleSource = await createGitWorkspace();
+    await writeFile(join(submoduleSource, "source.ts"), "one\n", "utf8");
+    await commitWorkspace(submoduleSource);
+    await runGit(workspaceRoot, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      "-q",
+      submoduleSource,
+      "modules/dependency",
+    ]);
+    await commitWorkspace(workspaceRoot);
+    const submoduleRoot = join(workspaceRoot, "modules", "dependency");
+    await runGit(submoduleRoot, ["config", "user.name", "Machdoch Test"]);
+    await runGit(submoduleRoot, [
+      "config",
+      "user.email",
+      "machdoch-test@example.com",
+    ]);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await writeFile(join(submoduleRoot, "source.ts"), "one\ntwo\n", "utf8");
+    await runGit(submoduleRoot, ["add", "--all"]);
+    await runGit(submoduleRoot, ["commit", "-q", "-m", "Advance submodule"]);
+
+    const result = await capture?.finish();
+    const gitlink = result?.files.find(
+      (file) => file.entryType === "gitlink",
+    );
+
+    expect(result).toMatchObject({
+      additions: 1,
+      deletions: 0,
+      gitlinkFiles: 1,
+      status: "complete",
+    });
+    expect(gitlink).toMatchObject({
+      path: "modules/dependency",
+      entryType: "gitlink",
+      lineAnalysis: { state: "not-applicable", reason: "gitlink" },
+    });
+    expect(gitlink?.oldCommit).not.toBe(gitlink?.newCommit);
+  });
+
+  it("reports pure renames without inventing line changes", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    const oldPath = join(workspaceRoot, "before.ts");
+    const newPath = join(workspaceRoot, "after.ts");
+    await writeFile(oldPath, "one\ntwo\n", "utf8");
+    await commitWorkspace(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await rename(oldPath, newPath);
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 0,
+      deletions: 0,
+      status: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "after.ts",
+        oldPath: "before.ts",
+        operation: "renamed",
+        entryType: "text",
+        lineAnalysis: {
+          state: "complete",
+          additions: 0,
+          deletions: 0,
+        },
+      }),
+    ]);
+  });
+
+  it("classifies binary changes without treating them as unavailable lines", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    const binaryPath = join(workspaceRoot, "asset.bin");
+    await writeFile(binaryPath, Buffer.from([0, 1, 2, 3]));
+    await commitWorkspace(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await writeFile(binaryPath, Buffer.from([0, 1, 2, 4]));
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 0,
+      deletions: 0,
+      binaryFiles: 1,
+      failedFiles: 0,
+      status: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "asset.bin",
+        operation: "modified",
+        entryType: "binary",
+        lineAnalysis: {
+          state: "not-applicable",
+          reason: "binary",
+        },
+      }),
+    ]);
+  });
+
+  it("honors path-based binary attributes during line analysis", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    const attributedPath = join(workspaceRoot, "payload.dat");
+    await writeFile(join(workspaceRoot, ".gitattributes"), "*.dat -diff\n", "utf8");
+    await writeFile(attributedPath, "plain text before\n", "utf8");
+    await commitWorkspace(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await writeFile(attributedPath, "plain text after\n", "utf8");
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 0,
+      deletions: 0,
+      binaryFiles: 1,
+      failedFiles: 0,
+      status: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "payload.dat",
+        operation: "modified",
+        entryType: "binary",
+        lineAnalysis: {
+          state: "not-applicable",
+          reason: "binary",
+        },
+      }),
+    ]);
+  });
+
+  it("reports mode-only changes without inventing content lines", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    const scriptPath = join(workspaceRoot, "script.sh");
+    await writeFile(scriptPath, "echo ready\n", "utf8");
+    await commitWorkspace(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await runGit(workspaceRoot, ["update-index", "--chmod=+x", "script.sh"]);
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 0,
+      deletions: 0,
+      modeOnlyFiles: 1,
+      failedFiles: 0,
+      status: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "script.sh",
+        operation: "modified",
+        entryType: "mode",
+        oldMode: "100644",
+        newMode: "100755",
+        lineAnalysis: {
+          state: "not-applicable",
+          reason: "mode-only",
+        },
+      }),
     ]);
   });
 
@@ -281,6 +557,17 @@ describe("task file change capture", () => {
 
     expect(firstResult).toBe(secondResult);
     await expect(firstResult).resolves.toMatchObject({ totalFiles: 1 });
+  });
+
+  it("can dispose an abandoned capture without attempting a final diff", async () => {
+    const workspaceRoot = await createGitWorkspace();
+    await writeFile(join(workspaceRoot, "source.ts"), "one\n", "utf8");
+    await commitWorkspace(workspaceRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await capture?.dispose();
+
+    await expect(capture?.finish()).resolves.toBeUndefined();
   });
 
   it("omits file-change metadata when the workspace did not change", async () => {

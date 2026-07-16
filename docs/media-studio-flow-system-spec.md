@@ -1,7 +1,7 @@
 # Media Studio And Media Flow System Specification
 
-Status: Implementation plan
-Date: 2026-07-13
+Status: Living implementation specification
+Date: 2026-07-14
 Scope: A first-class machdoch app for local-first media generation, editing, automation, asset lineage, and flow-based media workflows. This is separate from normal chat and Ralph.
 
 ## Source Baseline
@@ -3450,6 +3450,79 @@ End-to-end flows to keep as fixtures:
 
 ## Implementation Notes
 
+Current implementation baseline (2026-07-14): the app shell, semantic graph/compiler,
+revisioned flows, durable SQLite/CAS assets and lineage, deterministic browser fixtures,
+native bounded image utilities, OpenAI GPT Image 2 generation and multi-reference edit,
+Library/Runs/Models surfaces, Chat and Ralph handoffs, and editable XYFlow authoring are
+implemented. Phase gates below remain normative: a feature appearing in the UI does not
+declare a phase complete until its complete gate has passed.
+
+The first shipped background-removal engine is the bundled, model-free
+`border-matte-v1` profile. It estimates a background color from bounded border samples,
+removes only matching pixels connected to the image boundary, optionally preserves a
+soft transition, and publishes both the transparent cutout and exact grayscale matte as
+immutable assets with identical source lineage. It is intentionally described as a
+studio-background utility, not general AI segmentation. The decoded image is capped at
+25 million pixels and JPEG output is rejected rather than silently flattening alpha.
+
+`operation.alpha-matte` is also implemented as the pinned `alpha-channel-v1` local
+utility. It extracts (or explicitly inverts) the exact 8-bit source alpha channel into an
+opaque grayscale matte, records transparent/soft/opaque pixel counts, drops unrelated
+profile/metadata payloads, applies bounded crop/resize operations while retaining matte
+semantics, and rejects JPEG so a downstream transform cannot silently quantize the mask.
+The Library hides generation/background-removal actions for matte assets and routes matte
+transforms through the semantic Flow path so lineage and the technical `alpha-matte` tag
+remain intact.
+
+`operation.auto-tag` is implemented with the pinned `technical-metadata-v1` profile.
+It is a pass-through semantic node that derives only reproducible technical vocabulary:
+container format, square/landscape/portrait shape, bounded resolution class, and known
+asset roles such as transparent cutout. It never claims semantic content recognition.
+The guided background-removal and alpha-extraction recipes insert this node automatically;
+advanced users can inspect, move, remove, or reuse the same explicit node in Flow.
+
+`operation.composite` is implemented as the pinned `center-alpha-over-v1` local
+utility with two typed, named inputs: `foreground` and `background`. The Library offers
+a guided background chooser, then opens the result as an editable semantic Flow instead
+of hiding fit or opacity decisions. The background defines the bounded output canvas;
+the foreground uses explicit contain, cover, or stretch fitting and integer opacity before
+source-over alpha composition. Native and browser-fixture executors preserve ordered
+foreground/background lineage separately, publish lossless PNG output, apply the explicit
+technical-tag step, and reject oversized canvases before allocation. This is a deterministic
+two-image primitive; layer stacks, masks, blend modes, color matching, and ICC conversion
+remain separate future nodes rather than implicit composite behavior.
+
+`operation.contact-sheet` is implemented as the pinned `grid-contact-sheet-v1`
+local utility. Library exposes a guided, keyboard-accessible chooser for two to eight
+images, records click order as immutable source-lineage order, and opens the result as an
+editable Flow. The explicit node owns bounded columns, cell dimensions, gap, background,
+and stable one-based labels; it composes with contain-style thumbnails, publishes one PNG,
+and then applies the visible technical-tag node. Native and browser-fixture outputs record
+the exact render settings and ordered source ids in a typed operation summary so Library
+can distinguish a Contact sheet from a generic derivative. This comparison artifact does
+not itself rank, approve, or reject candidates; those remain explicit quality/human-review
+steps so rendering a grid cannot silently make a selection decision.
+
+The Create Image recipe now exposes a prompt-only **Generate & choose** path for two
+or more candidates. It compiles the same semantic generation task with an explicit
+`control.human-review` node and a one-output publication bound, pins that flow revision,
+and uses the normal provider/fixture executor rather than a separate comparison service.
+Candidate bytes and provider completion are durable before the run enters
+`waiting-for-review`; compute leases are released, no candidate appears in the active
+Library, and the Runs surface records an append-only approve/reject decision. A reviewer
+can replace a single selection directly, and only the approved immutable candidate becomes
+Library-visible. Native OpenAI completion and deterministic browser fixtures share this
+contract. Reference-image edits remain on the normal direct-edit path until that adapter
+also finalizes through the same review-aware completion path.
+
+Model-backed matting remains an installable follow-on pack. Do not bundle BRIA RMBG 2.0
+weights as a generally commercial default: its published self-hosted model terms are
+non-commercial unless a separate commercial agreement applies. BiRefNet is the preferred
+first model-pack candidate because its official repository/model card publishes MIT terms,
+but packaging still requires an exact-weight license snapshot, calibration fixtures,
+runtime/VRAM profiling, checksum allowlist, and quality comparison against the bundled
+border matte before the catalog may advertise general-scene segmentation.
+
 Use a single semantic graph and compile it into provider-specific execution plans. Do not embed provider request payloads directly in saved flows except as explicit provider override objects.
 
 Recommended internal flow object boundaries:
@@ -3600,7 +3673,7 @@ Providers/runtimes:
 
 - OpenAI GPT Image 2 generation and edit adapter, including multiple references, partial preview handling where requested, current size/format constraints, refusal metadata, and immediate asset ingestion.
 - Local PyTorch/Diffusers FLUX.2 klein 4B pack for text-to-image and supported image-to-image/reference behavior, with exact license/variant metadata and balanced/low-memory profiles.
-- One local background-removal/matting pack selected after license and quality evaluation; return both cutout and matte so downstream compositing is reproducible.
+- Bundled `border-matte-v1` for bounded, model-free uniform studio backgrounds, returning both cutout and exact matte. Add a separately installed BiRefNet-class general-scene pack only after the license, checksum, runtime, and calibrated-quality gate above passes.
 - Mock adapters remain user-selectable in developer/test builds.
 
 UX:

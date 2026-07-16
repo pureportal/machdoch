@@ -14,6 +14,10 @@ import type {
   RalphInputFieldType,
   RalphInputOption,
   RalphInputValue,
+  RalphMediaFlowApprovalPolicy,
+  RalphMediaFlowRunPolicy,
+  RalphMediaInputBinding,
+  RalphMediaOutputBinding,
   RalphPosition,
   RalphRetryPolicy,
   RalphSize,
@@ -24,7 +28,7 @@ import type { ModelProvider } from "../runtime-contract.generated.js";
 
 const RALPH_FLOW_BLOCK_TYPES = [
   "START", "PROMPT", "VALIDATOR", "DECISION", "PACK", "ASK_USER", "INTERVIEW", "UTILITY",
-  "MCP_TOOL", "MCP_RESOURCE", "MCP_PROMPT", "NOTE", "GROUP", "END",
+  "MCP_TOOL", "MCP_RESOURCE", "MCP_PROMPT", "MEDIA_FLOW", "NOTE", "GROUP", "END",
 ] as const satisfies readonly RalphBlockType[];
 
 const RALPH_INPUT_FIELD_TYPES = [
@@ -275,6 +279,73 @@ const coerceMcpArguments = (
   return { ...value };
 };
 
+const coerceMediaInputBindings = (
+  value: unknown,
+): Record<string, RalphMediaInputBinding> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const bindings: Array<[string, RalphMediaInputBinding]> = [];
+  for (const [inputId, binding] of Object.entries(value)) {
+    if (!isRecord(binding)) {
+      continue;
+    }
+    if (binding.source === "variable" && typeof binding.variableName === "string") {
+      bindings.push([inputId, { source: "variable", variableName: binding.variableName }]);
+    } else if (
+      binding.source === "literal" &&
+      (typeof binding.value === "string" ||
+        typeof binding.value === "number" ||
+        typeof binding.value === "boolean")
+    ) {
+      bindings.push([inputId, { source: "literal", value: binding.value }]);
+    } else if (binding.source === "path" && typeof binding.path === "string") {
+      bindings.push([inputId, { source: "path", path: binding.path }]);
+    } else if (
+      binding.source === "media-asset" &&
+      typeof binding.assetId === "string"
+    ) {
+      bindings.push([inputId, { source: "media-asset", assetId: binding.assetId }]);
+    }
+  }
+  return Object.fromEntries(bindings);
+};
+
+const coerceMediaOutputBindings = (
+  value: unknown,
+): Record<string, RalphMediaOutputBinding> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const sources = new Set<RalphMediaOutputBinding["source"]>([
+    "run-id",
+    "status",
+    "asset-ids",
+    "first-asset-id",
+    "quality-report-ids",
+  ]);
+  const bindings: Array<[string, RalphMediaOutputBinding]> = [];
+  for (const [outputId, binding] of Object.entries(value)) {
+    if (
+      !isRecord(binding) ||
+      !sources.has(binding.source as RalphMediaOutputBinding["source"]) ||
+      typeof binding.variableName !== "string"
+    ) {
+      continue;
+    }
+    bindings.push([
+      outputId,
+      {
+        source: binding.source as RalphMediaOutputBinding["source"],
+        variableName: binding.variableName,
+      },
+    ]);
+  }
+  return Object.fromEntries(bindings);
+};
+
 const coerceSettings = (value: unknown): RalphBlockSettings | undefined => {
   if (!isRecord(value)) {
     return undefined;
@@ -497,6 +568,27 @@ export const coerceRalphFlowBlockRecord = (
         promptName:
           typeof record.promptName === "string" ? record.promptName : "",
         ...(mcpArguments ? { arguments: mcpArguments } : {}),
+      };
+    }
+    case "MEDIA_FLOW": {
+      const runPolicy: RalphMediaFlowRunPolicy =
+        record.runPolicy === "submit-and-continue"
+          ? "submit-and-continue"
+          : "wait";
+      const approvalPolicy: RalphMediaFlowApprovalPolicy =
+        record.approvalPolicy === "always-review-preflight"
+          ? "always-review-preflight"
+          : "inherit-workspace";
+      return {
+        ...base,
+        type,
+        flowId: typeof record.flowId === "string" ? record.flowId : "",
+        revisionId:
+          typeof record.revisionId === "string" ? record.revisionId : "",
+        inputBindings: coerceMediaInputBindings(record.inputBindings),
+        outputBindings: coerceMediaOutputBindings(record.outputBindings),
+        runPolicy,
+        approvalPolicy,
       };
     }
     case "NOTE": {

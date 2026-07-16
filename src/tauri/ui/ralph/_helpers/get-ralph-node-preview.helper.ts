@@ -45,6 +45,8 @@ export const getPromptLikeText = (block: RalphFlowBlock): string => {
       return block.uri;
     case "MCP_PROMPT":
       return [block.serverId, block.promptName].filter(Boolean).join(".");
+    case "MEDIA_FLOW":
+      return [block.flowId, block.revisionId].filter(Boolean).join(" · ");
   }
 };
 
@@ -536,6 +538,24 @@ export const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => 
       primary: compactPreviewText(promptText, "MCP prompt not selected"),
       secondary: "Fetches a reusable MCP prompt.",
       chips: block.arguments ? ["arguments"] : [],
+    };
+  }
+
+  if (block.type === "MEDIA_FLOW") {
+    return {
+      primary: compactPreviewText(promptText, "Media flow not pinned"),
+      secondary:
+        block.runPolicy === "submit-and-continue"
+          ? "Submits a detached durable Media Studio run."
+          : "Waits for durable Media Studio outputs.",
+      chips: [
+        block.runPolicy === "wait" ? "wait" : "detached",
+        block.approvalPolicy === "always-review-preflight"
+          ? "preflight review"
+          : "workspace approval",
+        `${Object.keys(block.inputBindings).length} in`,
+        `${Object.keys(block.outputBindings).length} out`,
+      ],
     };
   }
 

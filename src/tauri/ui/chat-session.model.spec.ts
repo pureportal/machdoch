@@ -17,6 +17,7 @@ import {
   isSessionWorkspaceLocked,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
+  normalizeTaskExecutionFileChange,
   normalizeRecentWorkspaces,
   normalizeShellState,
   rememberRecentWorkspace,
@@ -33,6 +34,19 @@ import {
 import { createInitialThinkingTrace } from "./task-thinking.model";
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
+
+describe("normalizeTaskExecutionFileChange", () => {
+  it("rejects the removed legacy file-change shape", () => {
+    expect(
+      normalizeTaskExecutionFileChange({
+        path: "src/source.ts",
+        kind: "modified",
+        additions: 1,
+        deletions: 1,
+      }),
+    ).toBeUndefined();
+  });
+});
 
 describe("normalizeShellState", () => {
   it("removes superseded thinking records that already have terminal output", () => {
@@ -146,6 +160,55 @@ describe("normalizeShellState", () => {
     expect(runningTrace.thinking.entries).toHaveLength(20);
     expect(runningTrace.thinking.actionOutputLines).toHaveLength(30);
     expect(runningTrace.thinking.timelineEvents).toHaveLength(50);
+  });
+
+  it("preserves the active timeout state across session restoration", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "timeout-session",
+      sessions: [
+        {
+          id: "timeout-session",
+          provider: "openai",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "running-trace",
+              role: "agent",
+              content: "running",
+              source: {
+                kind: "thinking",
+                thinking: {
+                  ...createInitialThinkingTrace("ask", 100),
+                  lastActivityAt: 250,
+                  timeout: {
+                    startedAt: 150,
+                    lastActivityAt: 250,
+                    idleTimeoutMs: 1_000,
+                    absoluteTimeoutMs: 5_000,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const source = normalized.sessions[0]?.messages[0]?.source;
+
+    expect(source?.kind).toBe("thinking");
+    if (source?.kind !== "thinking") {
+      throw new Error("Expected a normalized thinking trace.");
+    }
+
+    expect(source.thinking.lastActivityAt).toBe(250);
+    expect(source.thinking.timeout).toEqual({
+      startedAt: 150,
+      lastActivityAt: 250,
+      idleTimeoutMs: 1_000,
+      absoluteTimeoutMs: 5_000,
+    });
   });
 
   it("repairs duplicate persisted message ids without dropping either message", () => {
@@ -454,10 +517,16 @@ describe("normalizeShellState", () => {
                     files: [
                       {
                         path: "src/source.ts",
-                        kind: "modified",
+                        operation: "modified",
+                        entryType: "text",
                         repositoryPath: "api\\service",
-                        additions: 3.4,
-                        deletions: -2,
+                        oldMode: "100644",
+                        newMode: "100644",
+                        lineAnalysis: {
+                          state: "complete",
+                          additions: 3.4,
+                          deletions: -2,
+                        },
                         ranges: [
                           {
                             oldStart: 4,
@@ -472,18 +541,35 @@ describe("normalizeShellState", () => {
                       },
                       {
                         path: "src/invalid.ts",
-                        kind: "unknown",
+                        operation: "unknown",
                       },
                     ],
-                    totalFiles: 2,
+                    totalFiles: 2_000_000,
                     additions: 3,
                     deletions: 0,
                     binaryFiles: 0,
-                    lineCountsComplete: true,
-                    coverage: "complete",
-                    truncated: false,
+                    gitlinkFiles: 0,
+                    symlinkFiles: 0,
+                    modeOnlyFiles: 0,
+                    failedFiles: 0,
+                    status: "complete",
+                    attribution: "workspace-observed",
+                    completeness: {
+                      discovery: { state: "complete" },
+                      startSnapshots: { state: "complete" },
+                      finishSnapshots: { state: "complete" },
+                      renameAnalysis: { state: "complete" },
+                      lineAnalysis: { state: "complete" },
+                      persistence: { state: "complete" },
+                    },
                     repositoryCount: 2,
-                    warnings: ["A bounded warning."],
+                    issues: [
+                      {
+                        stage: "discovery",
+                        code: "scan-note",
+                        message: "Repository discovery note.",
+                      },
+                    ],
                   },
                 },
               },
@@ -563,10 +649,16 @@ describe("normalizeShellState", () => {
           files: [
             {
               path: "src/source.ts",
-              kind: "modified",
+              operation: "modified",
+              entryType: "text",
               repositoryPath: "api/service",
-              additions: 3,
-              deletions: 0,
+              oldMode: "100644",
+              newMode: "100644",
+              lineAnalysis: {
+                state: "complete",
+                additions: 3,
+                deletions: 0,
+              },
               ranges: [
                 {
                   oldStart: 4,
@@ -577,16 +669,32 @@ describe("normalizeShellState", () => {
               ],
             },
           ],
-          totalFiles: 2,
+          totalFiles: 2_000_000,
           additions: 3,
           deletions: 0,
           binaryFiles: 0,
-          lineCountsComplete: true,
-          coverage: "complete",
-          truncated: true,
+          gitlinkFiles: 0,
+          symlinkFiles: 0,
+          modeOnlyFiles: 0,
+          failedFiles: 0,
+          status: "complete",
+          completeness: {
+            discovery: { state: "complete" },
+            startSnapshots: { state: "complete" },
+            finishSnapshots: { state: "complete" },
+            renameAnalysis: { state: "complete" },
+            lineAnalysis: { state: "complete" },
+            persistence: { state: "complete" },
+          },
           attribution: "workspace-observed",
           repositoryCount: 2,
-          warnings: ["A bounded warning."],
+          issues: [
+            {
+              stage: "discovery",
+              code: "scan-note",
+              message: "Repository discovery note.",
+            },
+          ],
         },
       },
     });
@@ -660,6 +768,54 @@ describe("normalizeShellState", () => {
         },
       ],
     });
+    expect(normalized.version).toBe(2);
+    expect(
+      normalized.sessions[0]?.messages[0]?.contextAttachments?.[0],
+    ).toMatchObject({ source: "path" });
+  });
+
+  it("migrates durable Media Studio attachments without inventing paths", () => {
+    const normalized = normalizeShellState({
+      version: 1,
+      activeSessionId: "media-attachment-session",
+      sessions: [
+        {
+          id: "media-attachment-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: "C:\\Project",
+          createdAt: 1,
+          updatedAt: 2,
+          draftContextAttachments: [
+            {
+              id: "media-attachment",
+              source: "media-asset",
+              workspaceRoot: "C:\\Project",
+              assetId: "asset:approved-image",
+              kind: "image",
+              name: "Approved cutout",
+              displayName: "Approved cutout",
+              rendition: "original",
+              path: "media://must-not-survive",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(normalized.version).toBe(2);
+    expect(normalized.sessions[0]?.draftContextAttachments).toEqual([
+      {
+        id: "media-attachment",
+        source: "media-asset",
+        workspaceRoot: "C:\\Project",
+        assetId: "asset:approved-image",
+        kind: "image",
+        name: "Approved cutout",
+        displayName: "Approved cutout",
+        rendition: "original",
+      },
+    ]);
   });
 
   it("repairs persisted context packs", () => {

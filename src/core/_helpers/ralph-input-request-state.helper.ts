@@ -18,6 +18,7 @@ import type {
   RalphRunCheckpoint,
   RalphRunEvent,
   RalphRunOptions,
+  RalphMediaRunCheckpoint,
 } from "../ralph.js";
 
 interface RalphInputContext {
@@ -29,6 +30,7 @@ interface RalphCheckpointContext extends RalphInputContext {
   resultsByBlock: Map<string, RalphBlockExecutionResult>;
   runLog: string[];
   interviewStates: Map<string, RalphInterviewState>;
+  mediaRuns?: Map<string, RalphMediaRunCheckpoint>;
 }
 
 type RalphTemplateResolver<Context extends RalphInputContext> = (
@@ -209,6 +211,9 @@ export const createRunCheckpoint = (
     repeatedFailures: Object.fromEntries(repeatedFailures.entries()),
     ...(pendingInput ? { pendingInput } : {}),
     interviewStates: Object.fromEntries(context.interviewStates.entries()),
+    ...(context.mediaRuns
+      ? { mediaRuns: Object.fromEntries(context.mediaRuns.entries()) }
+      : {}),
   };
 };
 

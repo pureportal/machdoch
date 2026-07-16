@@ -2401,6 +2401,94 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "keeps composer error notifications on the session that produced them",
+    async () => {
+      const baseState = createInitialShellState();
+      const sourceSession = createSession({
+        id: "notification-source-session",
+        manualTitle: "Notification source",
+        updatedAt: 200,
+      });
+      const staySession = createSession({
+        id: "notification-stay-session",
+        manualTitle: "Notification stay",
+        updatedAt: 100,
+      });
+      let rejectEnhancement: ((reason?: unknown) => void) | undefined;
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: sourceSession.id,
+        sessions: [sourceSession, staySession],
+      });
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return new Promise<DesktopTaskRunResponse>((_resolve, reject) => {
+              rejectEnhancement = reject;
+            });
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mock/home/path",
+            ),
+          });
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+      fireEvent.change(
+        screen.getByPlaceholderText(/What should machdoch do next\?/i),
+        { target: { value: "trigger a scoped enhancement failure" } },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await act(async () => {
+        rejectEnhancement?.(new Error("enhancement unavailable"));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const notification = await screen.findByRole("alert");
+
+      expect(
+        within(notification).getByText(
+          "Prompt enhancement failed: enhancement unavailable",
+        ),
+      ).toBeDefined();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session Notification stay" }),
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("heading", { name: "Notification stay" }),
+        ).toBeDefined();
+        expect(screen.queryByRole("alert")).toBeNull();
+      });
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "does not clear the current chat draft when an enhanced queued follow-up finishes after switching sessions",
     async () => {
       const baseState = createInitialShellState();
@@ -4031,6 +4119,234 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "edits an earlier prompt and continues from the retained conversation branch",
+    async () => {
+      const baseState = createInitialShellState();
+      const session = createSession({
+        id: "edit-message-session",
+        messages: [
+          {
+            id: "edit-first-user",
+            taskId: "edit-first-task",
+            role: "user",
+            content: "First prompt",
+            createdAt: 10,
+          },
+          {
+            id: "edit-first-agent",
+            taskId: "edit-first-task",
+            role: "agent",
+            content: "First response",
+            createdAt: 20,
+          },
+          {
+            id: "edit-target-user",
+            taskId: "edit-target-task",
+            role: "user",
+            content: "Second prompt",
+            createdAt: 30,
+          },
+          {
+            id: "edit-target-agent",
+            taskId: "edit-target-task",
+            role: "agent",
+            content: "Second response",
+            createdAt: 40,
+          },
+          {
+            id: "edit-later-user",
+            taskId: "edit-later-task",
+            role: "user",
+            content: "Third prompt",
+            createdAt: 50,
+          },
+          {
+            id: "edit-later-agent",
+            taskId: "edit-later-task",
+            role: "agent",
+            content: "Third response",
+            createdAt: 60,
+          },
+        ],
+        promptHistory: ["First prompt", "Second prompt", "Third prompt"],
+        promptContextHistory: [[], [], []],
+        sessionMemory: [
+          {
+            id: "memory-before-edit",
+            scope: "session",
+            content: "Remembered before the edit point",
+            createdAt: 15,
+            updatedAt: 15,
+          },
+          {
+            id: "memory-after-edit",
+            scope: "session",
+            content: "Remembered after the edit point",
+            createdAt: 45,
+            updatedAt: 45,
+          },
+        ],
+      });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () => new Promise<DesktopTaskRunResponse>(() => {}),
+        );
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      const targetMessage = await screen.findByText("Second prompt");
+      const targetMessageStack = targetMessage.closest(".app-message-stack");
+      expect(targetMessageStack).not.toBeNull();
+
+      fireEvent.click(
+        within(targetMessageStack as HTMLElement).getByRole("button", {
+          name: /^Edit$/i,
+        }),
+      );
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Edit message" }),
+        { target: { value: "Updated second prompt" } },
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /Save and submit/i }),
+      );
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toBe(
+        "Updated second prompt",
+      );
+      expect(
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.conversationContext?.history,
+      ).toEqual([
+        { role: "user", content: "First prompt", createdAt: 10 },
+        { role: "assistant", content: "First response", createdAt: 20 },
+      ]);
+      expect(
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.conversationContext?.sessionMemory,
+      ).toEqual([
+        expect.objectContaining({ id: "memory-before-edit" }),
+      ]);
+      await waitFor(() => {
+        expect(screen.queryByText("Second response")).toBeNull();
+        expect(screen.queryByText("Third prompt")).toBeNull();
+        expect(screen.queryByText("Third response")).toBeNull();
+      });
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "retries an assistant response from its prompt and discards later messages",
+    async () => {
+      const baseState = createInitialShellState();
+      const session = createSession({
+        id: "retry-message-session",
+        messages: [
+          {
+            id: "retry-first-user",
+            taskId: "retry-first-task",
+            role: "user",
+            content: "First prompt",
+            createdAt: 10,
+          },
+          {
+            id: "retry-first-agent",
+            taskId: "retry-first-task",
+            role: "agent",
+            content: "First response",
+            createdAt: 20,
+          },
+          {
+            id: "retry-target-user",
+            taskId: "retry-target-task",
+            role: "user",
+            content: "Retry this prompt",
+            createdAt: 30,
+          },
+          {
+            id: "retry-target-agent",
+            taskId: "retry-target-task",
+            role: "agent",
+            content: "Retry this response",
+            createdAt: 40,
+          },
+          {
+            id: "retry-later-user",
+            taskId: "retry-later-task",
+            role: "user",
+            content: "Later prompt",
+            createdAt: 50,
+          },
+          {
+            id: "retry-later-agent",
+            taskId: "retry-later-task",
+            role: "agent",
+            content: "Later response",
+            createdAt: 60,
+          },
+        ],
+      });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () => new Promise<DesktopTaskRunResponse>(() => {}),
+        );
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      const targetResponse = await screen.findByText("Retry this response");
+      const targetResponseStack = targetResponse.closest(".app-message-stack");
+      expect(targetResponseStack).not.toBeNull();
+
+      fireEvent.click(
+        within(targetResponseStack as HTMLElement).getByRole("button", {
+          name: /^Retry$/i,
+        }),
+      );
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toBe("Retry this prompt");
+      expect(
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.conversationContext?.history,
+      ).toEqual([
+        { role: "user", content: "First prompt", createdAt: 10 },
+        { role: "assistant", content: "First response", createdAt: 20 },
+      ]);
+      await waitFor(() => {
+        expect(screen.queryByText("Retry this response")).toBeNull();
+        expect(screen.queryByText("Later prompt")).toBeNull();
+        expect(screen.queryByText("Later response")).toBeNull();
+      });
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "continues a crashed task as a new running task with a visible user anchor",
     async () => {
       const now = Date.now();
@@ -4599,6 +4915,147 @@ describe("ChatSession component", () => {
     expect(onStopSpeaking).not.toHaveBeenCalled();
   });
 
+  it("edits user messages and retries assistant messages from the feed", () => {
+    const onEditMessage = vi.fn(() => true);
+    const onRetryMessage = vi.fn(() => true);
+    const userMessage = {
+      id: "editable-user-message",
+      taskId: "editable-task",
+      role: "user" as const,
+      content: "Original prompt",
+    };
+    const agentMessage = {
+      id: "retryable-agent-message",
+      taskId: "editable-task",
+      role: "agent" as const,
+      content: "Original response",
+    };
+
+    render(
+      <ConversationFeed
+        visibleMessages={[userMessage, agentMessage]}
+        bottomRef={{ current: null }}
+        onRetryTask={() => {}}
+        onRetryMessage={onRetryMessage}
+        onEditMessage={onEditMessage}
+        onContinueTask={() => {}}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Edit$/i }));
+    const editor = screen.getByRole("textbox", { name: "Edit message" });
+    expect(editor).toHaveProperty("value", "Original prompt");
+
+    fireEvent.change(editor, { target: { value: "Updated prompt" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Save and submit/i }),
+    );
+
+    expect(onEditMessage).toHaveBeenCalledWith(userMessage, "Updated prompt");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Retry$/i }));
+    expect(onRetryMessage).toHaveBeenCalledWith(agentMessage);
+  });
+
+  it("keeps Retry on previous responses but only offers Continue on the latest response", () => {
+    const onRetryMessage = vi.fn(() => true);
+    const onContinueTask = vi.fn();
+    const firstAgentMessage = {
+      id: "first-execution-agent",
+      taskId: "first-execution-task",
+      role: "agent" as const,
+      content: "First execution response",
+      source: {
+        kind: "execution" as const,
+        execution: {
+          ...createMockExecutionFixture("First execution prompt"),
+          status: "executed" as const,
+        },
+      },
+    };
+    const latestAgentMessage = {
+      id: "latest-execution-agent",
+      taskId: "latest-execution-task",
+      role: "agent" as const,
+      content: "Latest execution response",
+      source: {
+        kind: "execution" as const,
+        execution: {
+          ...createMockExecutionFixture("Latest execution prompt"),
+          status: "executed" as const,
+        },
+      },
+    };
+
+    render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "first-execution-user",
+            taskId: "first-execution-task",
+            role: "user",
+            content: "First execution prompt",
+          },
+          firstAgentMessage,
+          {
+            id: "latest-execution-user",
+            taskId: "latest-execution-task",
+            role: "user",
+            content: "Latest execution prompt",
+          },
+          latestAgentMessage,
+        ]}
+        bottomRef={{ current: null }}
+        onRetryTask={() => {}}
+        onRetryMessage={onRetryMessage}
+        onContinueTask={onContinueTask}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    const firstResponseActions = screen
+      .getByText("First execution response")
+      .closest(".app-message-stack");
+    const latestResponseActions = screen
+      .getByText("Latest execution response")
+      .closest(".app-message-stack");
+
+    expect(firstResponseActions).not.toBeNull();
+    expect(latestResponseActions).not.toBeNull();
+    expect(
+      within(firstResponseActions as HTMLElement).queryByRole("button", {
+        name: /^Continue$/i,
+      }),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(firstResponseActions as HTMLElement).getByRole("button", {
+        name: /^Retry$/i,
+      }),
+    );
+    fireEvent.click(
+      within(latestResponseActions as HTMLElement).getByRole("button", {
+        name: /^Continue$/i,
+      }),
+    );
+
+    expect(onRetryMessage).toHaveBeenCalledWith(firstAgentMessage);
+    expect(onContinueTask).toHaveBeenCalledWith(latestAgentMessage);
+  });
+
   it("renders user messages with Markdown in the conversation feed", () => {
     const userMarkdown = [
       "**Important.**",
@@ -4872,6 +5329,7 @@ describe("ChatSession component", () => {
       <ExecutionInsightRow
         execution={execution}
         onOpenWorkspaceFile={() => {}}
+        onRetryTask={() => {}}
         onContinueTask={() => {}}
       />,
     );
@@ -4883,11 +5341,13 @@ describe("ChatSession component", () => {
       .getByText(/2 checks/i)
       .closest("[data-slot='badge']");
     const continueButton = screen.getByRole("button", { name: /Continue/i });
+    const retryButton = screen.getByRole("button", { name: /Retry/i });
 
     expect(autoReviewBadge?.className).toContain("bg-transparent");
     expect(checksBadge?.className).toContain("cursor-default");
     expect(continueButton.className).toContain("rounded-lg");
     expect(continueButton.className).toContain("shadow-sm");
+    expect(retryButton.parentElement).toBe(continueButton.parentElement);
   });
 
   it("shows observed file changes with line counts and opens changed files", () => {
@@ -4901,9 +5361,15 @@ describe("ChatSession component", () => {
         files: [
           {
             path: "src/source.ts",
-            kind: "modified" as const,
-            additions: 3,
-            deletions: 1,
+            operation: "modified" as const,
+            entryType: "text" as const,
+            oldMode: "100644",
+            newMode: "100644",
+            lineAnalysis: {
+              state: "complete" as const,
+              additions: 3,
+              deletions: 1,
+            },
             ranges: [
               {
                 oldStart: 4,
@@ -4915,19 +5381,37 @@ describe("ChatSession component", () => {
           },
           {
             path: "src/removed.ts",
-            kind: "deleted" as const,
-            additions: 0,
-            deletions: 2,
+            operation: "deleted" as const,
+            entryType: "text" as const,
+            oldMode: "100644",
+            newMode: "000000",
+            lineAnalysis: {
+              state: "complete" as const,
+              additions: 0,
+              deletions: 2,
+            },
           },
         ],
         totalFiles: 2,
         additions: 3,
         deletions: 3,
         binaryFiles: 0,
-        lineCountsComplete: true,
-        coverage: "complete" as const,
-        truncated: false,
+        gitlinkFiles: 0,
+        symlinkFiles: 0,
+        modeOnlyFiles: 0,
+        failedFiles: 0,
+        status: "complete" as const,
+        completeness: {
+          discovery: { state: "complete" as const },
+          startSnapshots: { state: "complete" as const },
+          finishSnapshots: { state: "complete" as const },
+          renameAnalysis: { state: "complete" as const },
+          lineAnalysis: { state: "complete" as const },
+          persistence: { state: "complete" as const },
+        },
         attribution: "workspace-observed" as const,
+        repositoryCount: 1,
+        issues: [],
       },
     };
 
@@ -4939,7 +5423,7 @@ describe("ChatSession component", () => {
     );
 
     const fileChangesButton = screen.getByRole("button", {
-      name: /2 file changes, 3 additions, 3 deletions/i,
+      name: /2 path changes, 3 additions, 3 deletions/i,
     });
     fireEvent.click(fileChangesButton);
     const sourceButton = screen.getByRole("button", { name: /source\.ts/i });
@@ -4963,27 +5447,50 @@ describe("ChatSession component", () => {
           {
             path: "api/src/source.ts",
             repositoryPath: "api",
-            kind: "modified" as const,
-            additions: 2,
-            deletions: 1,
+            operation: "modified" as const,
+            entryType: "text" as const,
+            oldMode: "100644",
+            newMode: "100644",
+            lineAnalysis: {
+              state: "complete" as const,
+              additions: 2,
+              deletions: 1,
+            },
           },
           {
             path: "ui/src/app.tsx",
             repositoryPath: "ui",
-            kind: "added" as const,
-            additions: 4,
-            deletions: 0,
+            operation: "added" as const,
+            entryType: "text" as const,
+            oldMode: "000000",
+            newMode: "100644",
+            lineAnalysis: {
+              state: "complete" as const,
+              additions: 4,
+              deletions: 0,
+            },
           },
         ],
         totalFiles: 2,
         additions: 6,
         deletions: 1,
         binaryFiles: 0,
-        lineCountsComplete: true,
-        coverage: "complete" as const,
-        truncated: false,
+        gitlinkFiles: 0,
+        symlinkFiles: 0,
+        modeOnlyFiles: 0,
+        failedFiles: 0,
+        status: "complete" as const,
+        completeness: {
+          discovery: { state: "complete" as const },
+          startSnapshots: { state: "complete" as const },
+          finishSnapshots: { state: "complete" as const },
+          renameAnalysis: { state: "complete" as const },
+          lineAnalysis: { state: "complete" as const },
+          persistence: { state: "complete" as const },
+        },
         attribution: "workspace-observed" as const,
         repositoryCount: 2,
+        issues: [],
       },
     };
 
@@ -4996,7 +5503,7 @@ describe("ChatSession component", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /2 file changes across 2 repositories, 6 additions, 1 deletions/i,
+        name: /2 path changes across 2 repositories, 6 additions, 1 deletions/i,
       }),
     );
     const apiChanges = screen.getByRole("region", { name: "api changes" });
@@ -5015,9 +5522,15 @@ describe("ChatSession component", () => {
     const onOpenWorkspaceFile = vi.fn();
     const files = Array.from({ length: 8 }, (_, index) => ({
       path: `src/change-${index + 1}.ts`,
-      kind: "modified" as const,
-      additions: 1,
-      deletions: 0,
+      operation: "modified" as const,
+      entryType: "text" as const,
+      oldMode: "100644",
+      newMode: "100644",
+      lineAnalysis: {
+        state: "complete" as const,
+        additions: 1,
+        deletions: 0,
+      },
       ranges: [
         {
           oldStart: index + 1,
@@ -5035,10 +5548,22 @@ describe("ChatSession component", () => {
         additions: files.length,
         deletions: 0,
         binaryFiles: 0,
-        lineCountsComplete: true,
-        coverage: "complete" as const,
-        truncated: false,
+        gitlinkFiles: 0,
+        symlinkFiles: 0,
+        modeOnlyFiles: 0,
+        failedFiles: 0,
+        status: "complete" as const,
+        completeness: {
+          discovery: { state: "complete" as const },
+          startSnapshots: { state: "complete" as const },
+          finishSnapshots: { state: "complete" as const },
+          renameAnalysis: { state: "complete" as const },
+          lineAnalysis: { state: "complete" as const },
+          persistence: { state: "complete" as const },
+        },
         attribution: "workspace-observed" as const,
+        repositoryCount: 1,
+        issues: [],
       },
     };
 
@@ -5050,7 +5575,7 @@ describe("ChatSession component", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /8 file changes, 8 additions/i }),
+      screen.getByRole("button", { name: /8 path changes, 8 additions/i }),
     );
     const lastFileButton = screen.getByRole("button", {
       name: /change-8\.ts/i,
@@ -5058,6 +5583,119 @@ describe("ChatSession component", () => {
     fireEvent.click(lastFileButton);
 
     expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/change-8.ts");
+  });
+
+  it("loads every durable file-change page on demand", async () => {
+    const firstFile = {
+      path: "modules/dependency",
+      storedId: 11,
+      hunkCount: 0,
+      operation: "modified" as const,
+      entryType: "gitlink" as const,
+      oldMode: "160000",
+      newMode: "160000",
+      oldCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      newCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      lineAnalysis: {
+        state: "not-applicable" as const,
+        reason: "gitlink" as const,
+      },
+    };
+    const secondFile = {
+      path: "src/source.ts",
+      storedId: 12,
+      hunkCount: 3,
+      operation: "modified" as const,
+      entryType: "text" as const,
+      oldMode: "100644",
+      newMode: "100644",
+      lineAnalysis: {
+        state: "complete" as const,
+        additions: 2,
+        deletions: 1,
+      },
+      ranges: [
+        { oldStart: 5, oldLines: 1, newStart: 5, newLines: 2 },
+        { oldStart: 12, oldLines: 2, newStart: 13, newLines: 1 },
+      ],
+    };
+    const getFiles = vi
+      .spyOn(runtime, "getTaskFileChangeFiles")
+      .mockResolvedValueOnce({ files: [firstFile], nextCursor: 11 })
+      .mockResolvedValueOnce({ files: [secondFile] });
+    const getHunks = vi
+      .spyOn(runtime, "getTaskFileChangeHunks")
+      .mockResolvedValueOnce({
+        ranges: [
+          { oldStart: 20, oldLines: 1, newStart: 20, newLines: 2 },
+        ],
+      });
+    const execution = {
+      ...createMockExecutionFixture(
+        "update a large workspace",
+        "/mocked/tauri/path",
+      ),
+      fileChanges: {
+        changeSetId: "changes-123",
+        files: [],
+        totalFiles: 2,
+        additions: 2,
+        deletions: 1,
+        binaryFiles: 0,
+        gitlinkFiles: 1,
+        symlinkFiles: 0,
+        modeOnlyFiles: 0,
+        failedFiles: 0,
+        status: "complete" as const,
+        completeness: {
+          discovery: { state: "complete" as const },
+          startSnapshots: { state: "complete" as const },
+          finishSnapshots: { state: "complete" as const },
+          renameAnalysis: { state: "complete" as const },
+          lineAnalysis: { state: "complete" as const },
+          persistence: { state: "complete" as const },
+        },
+        attribution: "workspace-observed" as const,
+        repositoryCount: 1,
+        issues: [],
+      },
+    };
+
+    render(
+      <ExecutionInsightRow
+        execution={execution}
+        onOpenWorkspaceFile={() => {}}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /2 path changes, 2 additions/i }),
+    );
+    expect(
+      (
+        await screen.findByRole("button", { name: /modules\/dependency/i })
+      ).getAttribute("aria-label"),
+    ).toMatch(/Submodule reference aaaaaaa → bbbbbbb/i);
+    expect(screen.queryByText("+1")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Load more changed paths" }),
+    );
+    expect(
+      (
+        await screen.findByRole("button", { name: /src\/source\.ts/i })
+      ).getAttribute("aria-label"),
+    ).toMatch(/lines 5-6/i);
+    expect(getFiles).toHaveBeenNthCalledWith(1, "changes-123");
+    expect(getFiles).toHaveBeenNthCalledWith(2, "changes-123", 11);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show all 3 line ranges" }),
+    );
+    expect(
+      await screen.findByText("Old lines 20 → new lines 20-21"),
+    ).toBeTruthy();
+    expect(getHunks).toHaveBeenCalledWith("changes-123", 12, 1);
   });
 
   it("shows the AI context cutoff before the first included message", () => {

@@ -8,15 +8,24 @@ import type {
   ConversationMemoryEntry,
   TaskExecutionChangedLineRange,
   TaskExecutionFileChange,
-  TaskExecutionFileChangeKind,
+  TaskExecutionFileChangeCompleteness,
+  TaskExecutionFileChangeIssue,
+  TaskExecutionFileChangeOperation,
+  TaskExecutionFileEntryType,
+  TaskExecutionFileLineAnalysis,
   TaskExecutionFileChanges,
   TaskExecutionTokenUsage,
   TaskExecutionNarrative,
   TaskExecutionResult,
   TaskExecutionSection,
   TaskExecutionStatus,
+  TaskExecutionTimeoutState,
   TaskRunPreview,
 } from "../../core/types.js";
+import type {
+  MediaAssetKind,
+  MediaAssetReference,
+} from "../../core/media/contracts.js";
 import type {
   ReasoningMode,
   RunMode,
@@ -48,13 +57,33 @@ export type ChatSessionContextAttachmentKind =
   | "image"
   | "other";
 
-export interface ChatSessionContextAttachment {
+export interface ChatSessionPathContextAttachment {
   id: string;
+  source?: "path";
   path: string;
   kind: ChatSessionContextAttachmentKind;
   name: string;
   parent?: string;
 }
+
+export interface ChatSessionMediaAssetAttachment extends MediaAssetReference {
+  id: string;
+  name: string;
+}
+
+export type ChatSessionContextAttachment =
+  | ChatSessionPathContextAttachment
+  | ChatSessionMediaAssetAttachment;
+
+export const isPathContextAttachment = (
+  attachment: ChatSessionContextAttachment,
+): attachment is ChatSessionPathContextAttachment =>
+  attachment.source === undefined || attachment.source === "path";
+
+export const isMediaAssetContextAttachment = (
+  attachment: ChatSessionContextAttachment,
+): attachment is ChatSessionMediaAssetAttachment =>
+  attachment.source === "media-asset";
 
 export interface ChatSessionMessagePromptEnhancement {
   originalContent: string;
@@ -82,6 +111,7 @@ export interface ChatSessionRecord {
   draftAttachmentsUpdatedAt?: number;
   draftAttachmentAddedAt?: Record<string, number>;
   draftAttachmentTombstones?: Record<string, number>;
+  messageTombstones?: Record<string, number>;
   historyClearedAt?: number;
   lastReadAt?: number;
   archivedAt?: number;
@@ -170,7 +200,7 @@ export type SessionOverviewStatus =
 export const INTERRUPTED_TASK_CRASH_PREFIX = "**Task crashed.**";
 
 export interface ShellPersistedState {
-  version: 1;
+  version: 2;
   activeSessionId: string;
   activeSessionUpdatedAt: number;
   sessions: ChatSessionRecord[];
@@ -259,9 +289,6 @@ const PERSISTED_VISIBLE_MESSAGE_LIMIT = 400;
 const PROMPT_HISTORY_ENTRY_LIMIT = 100;
 const PROMPT_HISTORY_ENTRY_LENGTH_LIMIT = 8_000;
 const EXECUTION_RESPONSE_MARKDOWN_LIMIT = 32_000;
-const EXECUTION_FILE_CHANGE_LIMIT = 500;
-const EXECUTION_FILE_CHANGE_RANGE_LIMIT = 2_000;
-const EXECUTION_FILE_CHANGE_WARNING_LIMIT = 5;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const MAX_CONTEXT_PACK_NAME_LENGTH = 72;
@@ -609,6 +636,65 @@ const getFallbackAttachmentName = (path: string): string => {
   return name?.trim() || path;
 };
 
+const normalizeTimeoutDuration = (
+  value: unknown,
+): number | null | undefined => {
+  if (value === null) {
+    return null;
+  }
+
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.round(value))
+    : undefined;
+};
+
+const normalizeTaskExecutionTimeoutState = (
+  value: unknown,
+): TaskExecutionTimeoutState | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const startedAt = normalizeOptionalFiniteNumber(value.startedAt);
+  const lastActivityAt = normalizeOptionalFiniteNumber(value.lastActivityAt);
+  const idleTimeoutMs = normalizeTimeoutDuration(value.idleTimeoutMs);
+  const absoluteTimeoutMs = normalizeTimeoutDuration(value.absoluteTimeoutMs);
+
+  if (
+    startedAt === undefined ||
+    lastActivityAt === undefined ||
+    idleTimeoutMs === undefined ||
+    absoluteTimeoutMs === undefined
+  ) {
+    return undefined;
+  }
+
+  const normalizedStartedAt = Math.max(0, startedAt);
+
+  return {
+    startedAt: normalizedStartedAt,
+    lastActivityAt: Math.max(normalizedStartedAt, lastActivityAt),
+    idleTimeoutMs,
+    absoluteTimeoutMs,
+  };
+};
+
+const MEDIA_ASSET_KINDS = new Set<MediaAssetKind>([
+  "prompt",
+  "image",
+  "alpha-matte",
+  "report",
+  "collection",
+]);
+
+const isMediaAssetKind = (value: unknown): value is MediaAssetKind =>
+  typeof value === "string" && MEDIA_ASSET_KINDS.has(value as MediaAssetKind);
+
+const isMediaAssetRendition = (
+  value: unknown,
+): value is NonNullable<MediaAssetReference["rendition"]> =>
+  value === "thumbnail" || value === "preview" || value === "original";
+
 const normalizeContextAttachments = (
   value: unknown,
   idPrefix: string,
@@ -617,7 +703,7 @@ const normalizeContextAttachments = (
     return [];
   }
 
-  const seenPaths = new Set<string>();
+  const seenAttachmentKeys = new Set<string>();
   const attachments: ChatSessionContextAttachment[] = [];
 
   for (const [index, entry] of value.entries()) {
@@ -625,7 +711,46 @@ const normalizeContextAttachments = (
       continue;
     }
 
-    const candidate = entry as Partial<ChatSessionContextAttachment>;
+    const candidate = entry as Record<string, unknown>;
+    if (candidate.source === "media-asset") {
+      const workspaceRoot =
+        typeof candidate.workspaceRoot === "string"
+          ? candidate.workspaceRoot.trim()
+          : "";
+      const assetId =
+        typeof candidate.assetId === "string" ? candidate.assetId.trim() : "";
+      if (!workspaceRoot || !assetId || !isMediaAssetKind(candidate.kind)) {
+        continue;
+      }
+      const dedupeKey = `media:${workspaceRoot.toLowerCase()}:${assetId}`;
+      if (seenAttachmentKeys.has(dedupeKey)) {
+        continue;
+      }
+      seenAttachmentKeys.add(dedupeKey);
+      const displayName =
+        typeof candidate.displayName === "string" && candidate.displayName.trim()
+          ? candidate.displayName.trim()
+          : undefined;
+      attachments.push({
+        id:
+          typeof candidate.id === "string" && candidate.id.trim()
+            ? candidate.id.trim()
+            : `${idPrefix}-${index}`,
+        source: "media-asset",
+        workspaceRoot,
+        assetId,
+        kind: candidate.kind,
+        name:
+          typeof candidate.name === "string" && candidate.name.trim()
+            ? candidate.name.trim()
+            : displayName ?? `Media asset ${assetId.slice(0, 12)}`,
+        ...(displayName ? { displayName } : {}),
+        ...(isMediaAssetRendition(candidate.rendition)
+          ? { rendition: candidate.rendition }
+          : {}),
+      });
+      continue;
+    }
     const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
 
     if (!path) {
@@ -634,16 +759,17 @@ const normalizeContextAttachments = (
 
     const dedupeKey = path.toLowerCase();
 
-    if (seenPaths.has(dedupeKey)) {
+    if (seenAttachmentKeys.has(dedupeKey)) {
       continue;
     }
 
-    seenPaths.add(dedupeKey);
+    seenAttachmentKeys.add(dedupeKey);
     attachments.push({
       id:
         typeof candidate.id === "string" && candidate.id.trim()
           ? candidate.id.trim()
           : `${idPrefix}-${index}`,
+      source: "path",
       path,
       kind: isContextAttachmentKind(candidate.kind)
         ? candidate.kind
@@ -936,6 +1062,9 @@ export const createSession = (
   const draftAttachmentTombstones = normalizeTimestampRecord(
     overrides.draftAttachmentTombstones,
   );
+  const messageTombstones = normalizeTimestampRecord(
+    overrides.messageTombstones,
+  );
   const composerUpdatedAt = Math.max(
     legacyComposerUpdatedAt,
     draftUpdatedAt,
@@ -963,6 +1092,7 @@ export const createSession = (
     draftAttachmentsUpdatedAt,
     draftAttachmentAddedAt,
     draftAttachmentTombstones,
+    messageTombstones,
     ...(historyClearedAt !== undefined ? { historyClearedAt } : {}),
     lastReadAt:
       typeof overrides.lastReadAt === "number" ? overrides.lastReadAt : now,
@@ -982,7 +1112,9 @@ export const createSession = (
     draftContextAttachments,
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
     tags: normalizeSessionTags(overrides.tags),
-    messages: overrides.messages ?? [],
+    messages: (overrides.messages ?? []).filter(
+      (message) => messageTombstones[message.id] === undefined,
+    ),
     promptHistory: overrides.promptHistory ?? [],
     promptContextHistory: overrides.promptContextHistory ?? [],
     sessionMemoryEnabled: isQuickTaskSession
@@ -1024,7 +1156,7 @@ export const createInitialShellState = (): ShellPersistedState => {
   const initialSession = createSession();
 
   return {
-    version: 1,
+    version: 2,
     activeSessionId: initialSession.id,
     activeSessionUpdatedAt: 0,
     sessions: [initialSession],
@@ -1326,13 +1458,31 @@ const normalizeNonNegativeInteger = (
     : Math.max(0, Math.round(normalized));
 };
 
-const isTaskExecutionFileChangeKind = (
+const isTaskExecutionFileChangeOperation = (
   value: unknown,
-): value is TaskExecutionFileChangeKind => {
-  return value === "added" || value === "modified" || value === "deleted";
+): value is TaskExecutionFileChangeOperation => {
+  return (
+    value === "added" ||
+    value === "modified" ||
+    value === "deleted" ||
+    value === "renamed" ||
+    value === "type-changed"
+  );
 };
 
-const normalizeTaskExecutionChangedLineRange = (
+const isTaskExecutionFileEntryType = (
+  value: unknown,
+): value is TaskExecutionFileEntryType => {
+  return (
+    value === "text" ||
+    value === "binary" ||
+    value === "gitlink" ||
+    value === "symlink" ||
+    value === "mode"
+  );
+};
+
+export const normalizeTaskExecutionChangedLineRange = (
   value: unknown,
 ): TaskExecutionChangedLineRange | undefined => {
   if (!isRecord(value)) {
@@ -1356,115 +1506,280 @@ const normalizeTaskExecutionChangedLineRange = (
   return { oldStart, oldLines, newStart, newLines };
 };
 
-const normalizeTaskExecutionFileChanges = (
+const normalizeTaskExecutionFileLineAnalysis = (
   value: unknown,
-): TaskExecutionFileChanges | undefined => {
+): TaskExecutionFileLineAnalysis | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
 
-  const normalizedFiles = new Map<string, TaskExecutionFileChange>();
-  let remainingRanges = EXECUTION_FILE_CHANGE_RANGE_LIMIT;
+  if (value.state === "complete") {
+    const additions = normalizeNonNegativeInteger(value.additions);
+    const deletions = normalizeNonNegativeInteger(value.deletions);
 
-  if (Array.isArray(value.files)) {
-    for (const entry of value.files) {
+    return additions === undefined || deletions === undefined
+      ? undefined
+      : { state: "complete", additions, deletions };
+  }
+
+  if (
+    value.state === "not-applicable" &&
+    (value.reason === "binary" ||
+      value.reason === "gitlink" ||
+      value.reason === "symlink" ||
+      value.reason === "mode-only")
+  ) {
+    return { state: "not-applicable", reason: value.reason };
+  }
+
+  if (
+    value.state === "failed" &&
+    value.code === "git-failed"
+  ) {
+    return {
+      state: "failed",
+      code: value.code,
+      message: normalizeString(value.message, "Line analysis failed.").slice(
+        0,
+        4_000,
+      ),
+    };
+  }
+
+  return undefined;
+};
+
+const normalizeFileChangeStage = (
+  value: unknown,
+): TaskExecutionFileChangeCompleteness["discovery"] | undefined => {
+  if (isRecord(value) && value.state === "complete") {
+    return { state: "complete" };
+  }
+
+  if (isRecord(value) && value.state === "failed") {
+    return {
+      state: "failed",
+      code: normalizeString(value.code, "unknown").slice(0, 100),
+      message: normalizeString(value.message, "File-change stage failed.").slice(
+        0,
+        4_000,
+      ),
+    };
+  }
+
+  return undefined;
+};
+
+export const normalizeTaskExecutionFileChange = (
+  value: unknown,
+): TaskExecutionFileChange | undefined => {
+  if (
+    !isRecord(value) ||
+    !isTaskExecutionFileChangeOperation(value.operation) ||
+    !isTaskExecutionFileEntryType(value.entryType)
+  ) {
+    return undefined;
+  }
+
+  const path = normalizeString(value.path).trim().slice(0, 4_000);
+  const oldPath = normalizeString(value.oldPath).trim().slice(0, 4_000);
+  const repositoryPath = normalizeString(value.repositoryPath)
+    .trim()
+    .replace(/\\/gu, "/")
+    .slice(0, 4_000);
+  const oldMode = normalizeString(value.oldMode).trim().slice(0, 12);
+  const newMode = normalizeString(value.newMode).trim().slice(0, 12);
+  const lineAnalysis = normalizeTaskExecutionFileLineAnalysis(
+    value.lineAnalysis,
+  );
+  const ranges: TaskExecutionChangedLineRange[] = [];
+
+  if (Array.isArray(value.ranges)) {
+    for (const range of value.ranges) {
+      const normalizedRange = normalizeTaskExecutionChangedLineRange(range);
+
+      if (normalizedRange) {
+        ranges.push(normalizedRange);
+      }
+    }
+  }
+
+  if (!path || !oldMode || !newMode || !lineAnalysis) {
+    return undefined;
+  }
+
+  const oldObjectId = normalizeString(value.oldObjectId).trim().slice(0, 128);
+  const newObjectId = normalizeString(value.newObjectId).trim().slice(0, 128);
+  const oldCommit = normalizeString(value.oldCommit).trim().slice(0, 128);
+  const newCommit = normalizeString(value.newCommit).trim().slice(0, 128);
+  const hunkCount = normalizeNonNegativeInteger(value.hunkCount);
+  const storedId = normalizeNonNegativeInteger(value.storedId);
+
+  return {
+    path,
+    ...(oldPath && oldPath !== path ? { oldPath } : {}),
+    operation: value.operation,
+    entryType: value.entryType,
+    ...(repositoryPath ? { repositoryPath } : {}),
+    oldMode,
+    newMode,
+    ...(oldObjectId ? { oldObjectId } : {}),
+    ...(newObjectId ? { newObjectId } : {}),
+    ...(oldCommit ? { oldCommit } : {}),
+    ...(newCommit ? { newCommit } : {}),
+    lineAnalysis,
+    ...(ranges.length > 0 ? { ranges } : {}),
+    ...(hunkCount !== undefined ? { hunkCount } : {}),
+    ...(storedId !== undefined ? { storedId } : {}),
+  };
+};
+
+export const normalizeTaskExecutionFileChanges = (
+  value: unknown,
+): TaskExecutionFileChanges | undefined => {
+  if (!isRecord(value) || !Array.isArray(value.files)) {
+    return undefined;
+  }
+
+  const normalizedFiles = new Map<string, TaskExecutionFileChange>();
+
+  for (const entry of value.files) {
+    const file = normalizeTaskExecutionFileChange(entry);
+
+    if (!file) {
+      continue;
+    }
+    normalizedFiles.set(
+      `${file.repositoryPath ?? "."}\0${file.oldPath ?? ""}\0${file.path}`,
+      file,
+    );
+  }
+
+  const files = Array.from(normalizedFiles.values());
+  const totalFiles = normalizeNonNegativeInteger(value.totalFiles);
+  const additions = normalizeNonNegativeInteger(value.additions);
+  const deletions = normalizeNonNegativeInteger(value.deletions);
+  const binaryFiles = normalizeNonNegativeInteger(value.binaryFiles);
+  const gitlinkFiles = normalizeNonNegativeInteger(value.gitlinkFiles);
+  const symlinkFiles = normalizeNonNegativeInteger(value.symlinkFiles);
+  const modeOnlyFiles = normalizeNonNegativeInteger(value.modeOnlyFiles);
+  const failedFiles = normalizeNonNegativeInteger(value.failedFiles);
+  const repositoryCount = normalizeNonNegativeInteger(value.repositoryCount);
+
+  if (
+    totalFiles === undefined ||
+    additions === undefined ||
+    deletions === undefined ||
+    binaryFiles === undefined ||
+    gitlinkFiles === undefined ||
+    symlinkFiles === undefined ||
+    modeOnlyFiles === undefined ||
+    failedFiles === undefined ||
+    repositoryCount === undefined ||
+    totalFiles < files.length ||
+    (totalFiles > 0 && repositoryCount === 0) ||
+    (value.status !== "complete" &&
+      value.status !== "partial" &&
+      value.status !== "failed") ||
+    value.attribution !== "workspace-observed"
+  ) {
+    return undefined;
+  }
+
+  const normalizedIssues: TaskExecutionFileChangeIssue[] = [];
+
+  if (Array.isArray(value.issues)) {
+    for (const entry of value.issues) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+
+      const stage = entry.stage;
       if (
-        normalizedFiles.size >= EXECUTION_FILE_CHANGE_LIMIT ||
-        !isRecord(entry) ||
-        !isTaskExecutionFileChangeKind(entry.kind)
+        stage !== "discovery" &&
+        stage !== "startSnapshots" &&
+        stage !== "finishSnapshots" &&
+        stage !== "renameAnalysis" &&
+        stage !== "lineAnalysis" &&
+        stage !== "persistence"
       ) {
         continue;
       }
 
-      const path = normalizeString(entry.path).trim().slice(0, 4_000);
       const repositoryPath = normalizeString(entry.repositoryPath)
         .trim()
-        .replace(/\\/gu, "/")
         .slice(0, 4_000);
-
-      if (!path) {
-        continue;
-      }
-
-      const additions = normalizeNonNegativeInteger(entry.additions);
-      const deletions = normalizeNonNegativeInteger(entry.deletions);
-      const ranges = Array.isArray(entry.ranges)
-        ? entry.ranges
-            .map(normalizeTaskExecutionChangedLineRange)
-            .filter(
-              (range): range is TaskExecutionChangedLineRange =>
-                range !== undefined,
-            )
-            .slice(0, remainingRanges)
-        : [];
-      remainingRanges -= ranges.length;
-
-      normalizedFiles.set(path, {
-        path,
-        kind: entry.kind,
+      normalizedIssues.push({
+        stage,
+        code: normalizeString(entry.code, "unknown").slice(0, 100),
+        message: normalizeString(
+          entry.message,
+          "File-change tracking failed.",
+        ).slice(0, 4_000),
         ...(repositoryPath ? { repositoryPath } : {}),
-        ...(additions !== undefined ? { additions } : {}),
-        ...(deletions !== undefined ? { deletions } : {}),
-        ...(entry.binary === true ? { binary: true } : {}),
-        ...(ranges.length > 0 ? { ranges } : {}),
       });
     }
   }
 
-  const files = Array.from(normalizedFiles.values());
-  const storedTotalFiles = normalizeNonNegativeInteger(value.totalFiles) ?? 0;
-  const totalFiles = Math.min(
-    1_000_000,
-    Math.max(files.length, storedTotalFiles),
-  );
-
-  if (totalFiles === 0) {
+  if (totalFiles === 0 && normalizedIssues.length === 0) {
     return undefined;
   }
 
-  const fallbackAdditions = files.reduce(
-    (total, file) => total + (file.additions ?? 0),
-    0,
+  if (!isRecord(value.completeness)) {
+    return undefined;
+  }
+
+  const rawCompleteness = value.completeness;
+  const discovery = normalizeFileChangeStage(rawCompleteness.discovery);
+  const startSnapshots = normalizeFileChangeStage(
+    rawCompleteness.startSnapshots,
   );
-  const fallbackDeletions = files.reduce(
-    (total, file) => total + (file.deletions ?? 0),
-    0,
+  const finishSnapshots = normalizeFileChangeStage(
+    rawCompleteness.finishSnapshots,
   );
-  const fallbackBinaryFiles = files.filter((file) => file.binary === true).length;
-  const additions = normalizeNonNegativeInteger(value.additions) ?? fallbackAdditions;
-  const deletions = normalizeNonNegativeInteger(value.deletions) ?? fallbackDeletions;
-  const binaryFiles = normalizeNonNegativeInteger(value.binaryFiles) ?? fallbackBinaryFiles;
-  const fallbackRepositoryCount = new Set(
-    files
-      .map((file) => file.repositoryPath)
-      .filter((path): path is string => path !== undefined),
-  ).size;
-  const storedRepositoryCount = normalizeNonNegativeInteger(
-    value.repositoryCount,
+  const renameAnalysis = normalizeFileChangeStage(
+    rawCompleteness.renameAnalysis,
   );
-  const repositoryCount =
-    storedRepositoryCount === undefined && fallbackRepositoryCount === 0
-      ? undefined
-      : Math.min(
-          1_000,
-          Math.max(fallbackRepositoryCount, storedRepositoryCount ?? 0),
-        );
-  const warnings = normalizeStringArray(value.warnings)
-    .slice(0, EXECUTION_FILE_CHANGE_WARNING_LIMIT)
-    .map((warning) => warning.slice(0, 500));
+  const lineAnalysis = normalizeFileChangeStage(rawCompleteness.lineAnalysis);
+  const persistence = normalizeFileChangeStage(rawCompleteness.persistence);
+
+  if (
+    !discovery ||
+    !startSnapshots ||
+    !finishSnapshots ||
+    !renameAnalysis ||
+    !lineAnalysis ||
+    !persistence
+  ) {
+    return undefined;
+  }
+
+  const completeness: TaskExecutionFileChangeCompleteness = {
+    discovery,
+    startSnapshots,
+    finishSnapshots,
+    renameAnalysis,
+    lineAnalysis,
+    persistence,
+  };
+  const changeSetId = normalizeString(value.changeSetId).trim().slice(0, 128);
 
   return {
     files,
+    ...(changeSetId ? { changeSetId } : {}),
     totalFiles,
     additions,
     deletions,
     binaryFiles,
-    lineCountsComplete: value.lineCountsComplete === true,
-    coverage: value.coverage === "complete" ? "complete" : "partial",
-    truncated: value.truncated === true || totalFiles > files.length,
+    gitlinkFiles,
+    symlinkFiles,
+    modeOnlyFiles,
+    failedFiles,
+    status: value.status,
+    completeness,
     attribution: "workspace-observed",
-    ...(repositoryCount !== undefined ? { repositoryCount } : {}),
-    ...(warnings.length > 0 ? { warnings } : {}),
+    repositoryCount,
+    issues: normalizedIssues,
   };
 };
 
@@ -1709,12 +2024,18 @@ const normalizeThinkingTrace = (
     value.startedAt,
     entries[0]?.timestamp ?? 0,
   );
+  const lastActivityAt = normalizeOptionalFiniteNumber(value.lastActivityAt);
+  const timeout = normalizeTaskExecutionTimeoutState(value.timeout);
   const completedAt = normalizeFiniteNumber(value.completedAt, 0);
 
   return {
     status,
     mode: normalizeStoredRunMode(value.mode),
     startedAt,
+    ...(lastActivityAt !== undefined
+      ? { lastActivityAt: Math.max(startedAt, lastActivityAt) }
+      : {}),
+    ...(timeout ? { timeout } : {}),
     entries:
       status === "complete"
         ? entries.slice(-COMPLETED_THINKING_ENTRY_LIMIT)
@@ -2266,7 +2587,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   );
 
   return {
-    version: 1,
+    version: 2,
     activeSessionId: hasActiveSession
       ? (candidate.activeSessionId as string)
       : normalizedSessions[0].id,

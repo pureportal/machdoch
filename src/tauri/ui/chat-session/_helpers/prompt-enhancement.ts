@@ -1,4 +1,7 @@
-import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import {
+  isMediaAssetContextAttachment,
+  type ChatSessionContextAttachment,
+} from "../../chat-session.model";
 
 export const PROMPT_ENHANCEMENT_MODES = [
   "off",
@@ -39,6 +42,9 @@ const formatAttachmentKind = (attachment: ChatSessionContextAttachment): string 
 const formatAttachmentLine = (
   attachment: ChatSessionContextAttachment,
 ): string | null => {
+  if (isMediaAssetContextAttachment(attachment)) {
+    return `- Attached Media Studio ${attachment.kind} (${attachment.name.trim()}): asset ${attachment.assetId}`;
+  }
   const path = attachment.path.trim();
 
   if (!path) {

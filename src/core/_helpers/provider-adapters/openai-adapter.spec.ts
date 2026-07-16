@@ -4,7 +4,7 @@ import type {
   AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
+import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import {
   OpenAIResponsesAdapter,
   createOpenAIMultiAgentConfig,
@@ -242,7 +242,7 @@ describe("OpenAI Responses conformance", () => {
       ],
     });
     expect(calls[0]?.options).toMatchObject({
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
     });
     expect(calls[1]?.body).toMatchObject({
       previous_response_id: "resp_1",
@@ -303,7 +303,9 @@ describe("OpenAI Responses conformance", () => {
         },
         betas: ["responses_multi_agent=v1"],
       }),
-      expect.objectContaining({ timeout: TASK_EXECUTION_TIMEOUT_MS }),
+      expect.objectContaining({
+        timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
+      }),
     );
   });
 

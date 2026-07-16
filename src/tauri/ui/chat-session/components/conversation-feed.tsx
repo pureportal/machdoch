@@ -1,8 +1,10 @@
 import {
   Bot,
+  Check,
   Copy,
   Download,
   History,
+  Pencil,
   Play,
   RotateCcw,
   Save,
@@ -10,6 +12,7 @@ import {
   User,
   Volume2,
   WandSparkles,
+  X,
 } from "lucide-react";
 import {
   memo,
@@ -27,6 +30,7 @@ import {
 } from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "../../components/ui/button";
+import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { TaskThinkingPanel } from "../../task-thinking-panel";
 import {
@@ -60,8 +64,11 @@ export interface ConversationFeedProps {
   } | null;
   workspaceRoot?: string | null;
   aiContextMessageLimit?: number;
+  isSessionRunning?: boolean;
   bottomRef: RefObject<HTMLDivElement | null>;
   onRetryTask: (message: ChatSessionMessage) => void;
+  onRetryMessage?: (message: ChatSessionMessage) => boolean;
+  onEditMessage?: (message: ChatSessionMessage, content: string) => boolean;
   onContinueTask: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
@@ -208,13 +215,52 @@ const saveMarkdownDownload = (content: string, fileName: string): void => {
   }
 };
 
+const getRetryableAgentMessageIds = (
+  messages: readonly ChatSessionMessage[],
+): ReadonlySet<string> => {
+  const userTaskIds = new Set<string>();
+  const retryableAgentMessageIds = new Set<string>();
+  let hasPriorUserMessage = false;
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      hasPriorUserMessage = true;
+      userTaskIds.add(message.taskId ?? message.id);
+      continue;
+    }
+
+    if (
+      message.source?.kind === "thinking" ||
+      message.source?.kind === "preview"
+    ) {
+      continue;
+    }
+
+    if (
+      (message.taskId && userTaskIds.has(message.taskId)) ||
+      (!message.taskId && hasPriorUserMessage)
+    ) {
+      retryableAgentMessageIds.add(message.id);
+    }
+  }
+
+  return retryableAgentMessageIds;
+};
+
 interface ConversationMessageRowProps {
   aiContextMessageLimit: number;
+  canContinueMessage: boolean;
+  canRetryMessage: boolean;
+  editContent: string;
+  isEditing: boolean;
   isAiContextStart: boolean;
   isOriginalPromptExpanded: boolean;
   isSpeakingMessage: boolean;
   message: ChatSessionMessage;
   onContinueTask: (message: ChatSessionMessage) => void;
+  onCancelEditing: () => void;
+  onEditContentChange: (content: string) => void;
+  onEditMessage?: (message: ChatSessionMessage) => void;
   onOpenAttachment?: (attachment: ChatSessionContextAttachment) => void;
   onOpenMessageContextMenu: (
     event: MouseEvent<HTMLDivElement>,
@@ -224,6 +270,7 @@ interface ConversationMessageRowProps {
   ) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
   onRetryTask: (message: ChatSessionMessage) => void;
+  onRetryMessage?: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onSpeakMessage: (message: ChatSessionMessage) => void;
   onStopSpeaking: () => void;
@@ -234,15 +281,23 @@ interface ConversationMessageRowProps {
 
 const ConversationMessageRow = memo(function ConversationMessageRow({
   aiContextMessageLimit,
+  canContinueMessage,
+  canRetryMessage,
+  editContent,
+  isEditing,
   isAiContextStart,
   isOriginalPromptExpanded,
   isSpeakingMessage,
   message,
+  onCancelEditing,
   onContinueTask,
+  onEditContentChange,
+  onEditMessage,
   onOpenAttachment,
   onOpenMessageContextMenu,
   onOpenWorkspaceFile,
   onRetryTask,
+  onRetryMessage,
   onSaveMessageAsContextPack,
   onSpeakMessage,
   onStopSpeaking,
@@ -283,6 +338,20 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
       : [];
   const canSaveMessageAsContextPack =
     message.role === "user" && Boolean(onSaveMessageAsContextPack);
+  const showInlineRetry =
+    message.role === "agent" &&
+    canRetryMessage &&
+    shouldRenderBubble &&
+    !showCrashRecoveryActions &&
+    message.source?.kind !== "execution";
+  const retryMessage = (): void => {
+    if (onRetryMessage) {
+      onRetryMessage(message);
+      return;
+    }
+
+    onRetryTask(message);
+  };
 
   return (
     <div className="app-message-container grid w-full gap-6 [contain-intrinsic-size:auto_180px] [content-visibility:auto]">
@@ -343,14 +412,18 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
                   : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
                 message.role === "user" && originalPromptContent && "pr-14",
+                isEditing && "w-full pr-5",
               )}
-              onContextMenu={(event) =>
-                onOpenMessageContextMenu(
-                  event,
-                  message,
-                  renderedContent,
-                  canSaveMessageAsContextPack,
-                )
+              onContextMenu={
+                isEditing
+                  ? undefined
+                  : (event) =>
+                      onOpenMessageContextMenu(
+                        event,
+                        message,
+                        renderedContent,
+                        canSaveMessageAsContextPack,
+                      )
               }
             >
               {message.role === "agent" &&
@@ -392,7 +465,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 </Button>
               ) : null}
 
-              {message.role === "user" && originalPromptContent ? (
+              {message.role === "user" && originalPromptContent && !isEditing ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -419,18 +492,72 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 </Button>
               ) : null}
 
-              <MessageMarkdown
-                content={renderedContent}
-                workspaceRoot={workspaceRoot}
-                onOpenWorkspaceFile={onOpenWorkspaceFile}
-                className={
-                  message.role === "user" ? "app-user-message-text" : undefined
-                }
-              />
+              {isEditing ? (
+                <form
+                  className="grid gap-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    onEditMessage?.(message);
+                  }}
+                >
+                  <Textarea
+                    autoFocus
+                    aria-label="Edit message"
+                    value={editContent}
+                    onChange={(event) => onEditContentChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        onCancelEditing();
+                        return;
+                      }
+
+                      if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey)
+                      ) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    className="max-h-80 min-h-24 resize-none border-slate-600 bg-slate-950/50 text-slate-100 focus-visible:border-sky-400/60 focus-visible:ring-sky-400/20"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onCancelEditing}
+                      className="h-8 rounded-full px-3 text-xs text-slate-300"
+                    >
+                      <X className="mr-1.5 h-3.5 w-3.5" />
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={!editContent.trim()}
+                      className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
+                    >
+                      <Check className="mr-1.5 h-3.5 w-3.5" />
+                      Save and submit
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <MessageMarkdown
+                  content={renderedContent}
+                  workspaceRoot={workspaceRoot}
+                  onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  className={
+                    message.role === "user" ? "app-user-message-text" : undefined
+                  }
+                />
+              )}
             </div>
           ) : null}
 
-          {originalPromptContent && isOriginalPromptExpanded ? (
+          {originalPromptContent && isOriginalPromptExpanded && !isEditing ? (
             <div
               id={originalPromptPanelId}
               className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
@@ -454,11 +581,43 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
             />
           ) : null}
 
+          {message.role === "user" && !message.intent && onEditMessage && !isEditing ? (
+            <div className="app-message-actions flex max-w-[90%] items-center justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onEditMessage(message)}
+                className="h-7 rounded-full px-2.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+              >
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit
+              </Button>
+            </div>
+          ) : null}
+
+          {showInlineRetry ? (
+            <div className="app-message-actions flex max-w-[90%] items-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={retryMessage}
+                className="h-7 rounded-full px-2.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+              >
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                Retry
+              </Button>
+            </div>
+          ) : null}
+
           {message.source?.kind === "execution" ? (
             <ExecutionInsightRow
               execution={message.source.execution}
-              onRetryTask={() => onRetryTask(message)}
-              onContinueTask={() => onContinueTask(message)}
+              onRetryTask={canRetryMessage ? retryMessage : undefined}
+              onContinueTask={
+                canContinueMessage ? () => onContinueTask(message) : undefined
+              }
               onOpenWorkspaceFile={onOpenWorkspaceFile}
             />
           ) : null}
@@ -469,22 +628,24 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onRetryTask(message)}
+                onClick={retryMessage}
                 className="h-8 rounded-full border-amber-500/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
               >
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
                 Retry
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onContinueTask(message)}
-                className="h-8 rounded-full border-emerald-500/30 bg-emerald-500/10 px-3 text-xs text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
-              >
-                <Play className="mr-1.5 h-3.5 w-3.5" />
-                Continue
-              </Button>
+              {canContinueMessage ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onContinueTask(message)}
+                  className="h-8 rounded-full border-emerald-500/30 bg-emerald-500/10 px-3 text-xs text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
+                >
+                  <Play className="mr-1.5 h-3.5 w-3.5" />
+                  Continue
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -499,8 +660,11 @@ export const ConversationFeed = ({
   promptEnhancementPreview = null,
   workspaceRoot,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
+  isSessionRunning = false,
   bottomRef,
   onRetryTask,
+  onRetryMessage,
+  onEditMessage,
   onContinueTask,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
@@ -512,6 +676,8 @@ export const ConversationFeed = ({
   const [expandedOriginalPromptIds, setExpandedOriginalPromptIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
   const [renderedMessageLimit, setRenderedMessageLimit] = useState(
     INITIAL_RENDERED_MESSAGE_LIMIT,
   );
@@ -529,6 +695,37 @@ export const ConversationFeed = ({
       return next;
     });
   }, []);
+
+  const cancelEditing = useCallback((): void => {
+    setEditingMessageId(null);
+    setEditContent("");
+  }, []);
+
+  const startEditing = useCallback((message: ChatSessionMessage): void => {
+    setEditingMessageId(message.id);
+    setEditContent(getRenderedMessageContent(message));
+  }, []);
+
+  const submitEditedMessage = useCallback(
+    (message: ChatSessionMessage): void => {
+      if (!onEditMessage?.(message, editContent)) {
+        return;
+      }
+
+      cancelEditing();
+    },
+    [cancelEditing, editContent, onEditMessage],
+  );
+
+  useEffect(() => {
+    if (
+      editingMessageId &&
+      (isSessionRunning ||
+        !visibleMessages.some((message) => message.id === editingMessageId))
+    ) {
+      cancelEditing();
+    }
+  }, [cancelEditing, editingMessageId, isSessionRunning, visibleMessages]);
 
   useEffect(() => {
     if (!messageContextMenu) {
@@ -678,6 +875,9 @@ export const ConversationFeed = ({
     : "";
   const renderedMessages = visibleMessages.slice(-renderedMessageLimit);
   const hiddenMessageCount = visibleMessages.length - renderedMessages.length;
+  const retryableAgentMessageIds = getRetryableAgentMessageIds(visibleMessages);
+  const latestRetryableAgentMessageId =
+    Array.from(retryableAgentMessageIds).at(-1) ?? null;
 
   return (
     <div className="app-conversation-feed mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
@@ -706,12 +906,32 @@ export const ConversationFeed = ({
           key={message.id}
           message={message}
           aiContextMessageLimit={normalizedAiContextMessageLimit}
+          canContinueMessage={
+            !isSessionRunning && message.id === latestRetryableAgentMessageId
+          }
+          canRetryMessage={
+            !isSessionRunning && retryableAgentMessageIds.has(message.id)
+          }
+          editContent={editingMessageId === message.id ? editContent : ""}
+          isEditing={editingMessageId === message.id}
           isAiContextStart={cutoffMessageId === message.id}
           isOriginalPromptExpanded={expandedOriginalPromptIds.has(message.id)}
           isSpeakingMessage={voicePlayback.speakingMessageId === message.id}
           voicePlaybackSupported={voicePlayback.supported}
           workspaceRoot={workspaceRoot}
           onRetryTask={onRetryTask}
+          onRetryMessage={
+            onRetryMessage ? (target) => void onRetryMessage(target) : undefined
+          }
+          onEditMessage={
+            onEditMessage && !isSessionRunning
+              ? editingMessageId === message.id
+                ? submitEditedMessage
+                : startEditing
+              : undefined
+          }
+          onEditContentChange={setEditContent}
+          onCancelEditing={cancelEditing}
           onContinueTask={onContinueTask}
           onSaveMessageAsContextPack={onSaveMessageAsContextPack}
           onOpenWorkspaceFile={onOpenWorkspaceFile}

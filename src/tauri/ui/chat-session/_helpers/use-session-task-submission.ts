@@ -32,9 +32,13 @@ import {
 } from "../../task-thinking.model";
 import {
   appendContextAttachmentsToTask,
+  areContextAttachmentRecordsEqual,
+  createContextAttachmentsFromTaskBlock,
   createPromptHistoryUpdate,
+  getImageAttachmentMediaReferences,
   getImageAttachmentPaths,
 } from "./session-context-attachments";
+import { getRenderedMessageContent } from "./execution-message.tsx";
 import {
   createContinuationTaskPrompt,
   createExecutionFromTerminalProgress,
@@ -96,11 +100,7 @@ const areContextAttachmentsEqual = (
 
       return (
         candidate !== undefined &&
-        attachment.id === candidate.id &&
-        attachment.path === candidate.path &&
-        attachment.kind === candidate.kind &&
-        attachment.name === candidate.name &&
-        attachment.parent === candidate.parent
+        areContextAttachmentRecordsEqual(attachment, candidate)
       );
     })
   );
@@ -202,6 +202,7 @@ export interface SubmitTaskToSessionOptions {
   promptHistoryContent?: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   messageIntent?: TaskActionPromptKind;
+  conversationCutoffMessageId?: string;
 }
 
 export interface SessionOperationConflictSubmission {
@@ -213,6 +214,134 @@ export interface SessionOperationConflictSubmission {
   promptHistoryContent: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
 }
+
+const getMessageTaskId = (message: ChatSessionMessage): string =>
+  message.taskId ?? message.id;
+
+const getUserMessageContextAttachments = (
+  message: ChatSessionMessage,
+): ChatSessionContextAttachment[] => {
+  if (message.contextAttachments?.length) {
+    return message.contextAttachments.map((attachment) => ({ ...attachment }));
+  }
+
+  return createContextAttachmentsFromTaskBlock(
+    message.content,
+    `message-resubmission-context-${message.id}`,
+  );
+};
+
+const rebuildPromptHistory = (
+  messages: readonly ChatSessionMessage[],
+): Pick<ChatSessionRecord, "promptHistory" | "promptContextHistory"> => {
+  let history: Pick<
+    ChatSessionRecord,
+    "promptHistory" | "promptContextHistory"
+  > = {
+    promptHistory: [],
+    promptContextHistory: [],
+  };
+
+  for (const message of messages) {
+    if (message.role !== "user") {
+      continue;
+    }
+
+    const content =
+      message.promptEnhancement?.originalContent.trim() ||
+      getRenderedMessageContent(message).trim();
+
+    if (!content) {
+      continue;
+    }
+
+    history = createPromptHistoryUpdate(
+      history,
+      content,
+      getUserMessageContextAttachments(message),
+    );
+  }
+
+  return history;
+};
+
+const createConversationBranch = (
+  session: ChatSessionRecord,
+  cutoffMessageId: string,
+): ChatSessionRecord | null => {
+  const cutoffIndex = session.messages.findIndex(
+    (message) => message.id === cutoffMessageId,
+  );
+
+  if (cutoffIndex < 0) {
+    return null;
+  }
+
+  const cutoffMessage = session.messages[cutoffIndex];
+  const messages = session.messages.slice(0, cutoffIndex);
+  const removedMessages = session.messages.slice(cutoffIndex);
+  const promptHistory = rebuildPromptHistory(messages);
+  const branchTimestamp = Date.now();
+  const messageTombstones = { ...session.messageTombstones };
+
+  for (const message of removedMessages) {
+    messageTombstones[message.id] = Math.max(
+      messageTombstones[message.id] ?? 0,
+      branchTimestamp,
+    );
+  }
+
+  const cutoffCreatedAt = cutoffMessage?.createdAt;
+  const sessionMemory =
+    typeof cutoffCreatedAt === "number"
+      ? session.sessionMemory.filter(
+          (entry) => entry.createdAt < cutoffCreatedAt,
+        )
+      : session.sessionMemory;
+
+  return {
+    ...session,
+    messages,
+    messageTombstones,
+    promptHistory: promptHistory.promptHistory,
+    promptContextHistory: promptHistory.promptContextHistory,
+    sessionMemory,
+  };
+};
+
+const findSourceUserMessage = (
+  session: ChatSessionRecord,
+  agentMessage: ChatSessionMessage,
+): ChatSessionMessage | null => {
+  const agentMessageIndex = session.messages.findIndex(
+    (message) => message.id === agentMessage.id,
+  );
+
+  if (agentMessageIndex < 0) {
+    return null;
+  }
+
+  let nearestUserMessage: ChatSessionMessage | null = null;
+
+  for (let index = agentMessageIndex - 1; index >= 0; index -= 1) {
+    const candidate = session.messages[index];
+
+    if (candidate?.role !== "user") {
+      continue;
+    }
+
+    nearestUserMessage ??= candidate;
+
+    if (
+      agentMessage.taskId &&
+      getMessageTaskId(candidate) === agentMessage.taskId
+    ) {
+      return candidate;
+    }
+  }
+
+  return nearestUserMessage;
+};
 
 export const useSessionTaskSubmission = (options: {
   state: ChatSessionShellStateController;
@@ -317,11 +446,11 @@ export const useSessionTaskSubmission = (options: {
         return false;
       }
 
-      const sessionSnapshot = currentSession ?? submittedSessionSnapshot;
+      const sourceSessionSnapshot = currentSession ?? submittedSessionSnapshot;
       const sessionSnapshotReasoning = normalizeSessionReasoningOverride(
-        sessionSnapshot.reasoning,
-        sessionSnapshot.provider,
-        sessionSnapshot.model,
+        sourceSessionSnapshot.reasoning,
+        sourceSessionSnapshot.provider,
+        sourceSessionSnapshot.model,
       );
       const hasActiveTaskForSession = [
         ...currentOptions.activeDesktopTasksRef.current.values(),
@@ -329,8 +458,19 @@ export const useSessionTaskSubmission = (options: {
 
       if (
         hasActiveTaskForSession ||
-        getSessionOverviewStatus(sessionSnapshot) === "running"
+        getSessionOverviewStatus(sourceSessionSnapshot) === "running"
       ) {
+        return false;
+      }
+
+      const sessionSnapshot = submitOptions.conversationCutoffMessageId
+        ? createConversationBranch(
+            sourceSessionSnapshot,
+            submitOptions.conversationCutoffMessageId,
+          )
+        : sourceSessionSnapshot;
+
+      if (!sessionSnapshot) {
         return false;
       }
 
@@ -348,6 +488,8 @@ export const useSessionTaskSubmission = (options: {
         visibleMessageContent,
       );
       const imagePaths = getImageAttachmentPaths(contextAttachments);
+      const mediaAssetReferences =
+        getImageAttachmentMediaReferences(contextAttachments);
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
       const taskStartedAt = Date.now();
@@ -803,7 +945,14 @@ export const useSessionTaskSubmission = (options: {
 
           sessionFound = true;
 
-          const sessionWithoutArchive = removeSessionArchiveFlag(session);
+          const unarchivedSession = removeSessionArchiveFlag(session);
+          const sessionWithoutArchive =
+            submitOptions.conversationCutoffMessageId
+              ? createConversationBranch(
+                  unarchivedSession,
+                  submitOptions.conversationCutoffMessageId,
+                ) ?? unarchivedSession
+              : unarchivedSession;
           const shouldClearComposer =
             submitOptions.clearDraft &&
             isComposerClearGuardCurrent(
@@ -907,6 +1056,13 @@ export const useSessionTaskSubmission = (options: {
           ...prev,
           ...(submitOptions.activateSession ? { activeSessionId: sessionId } : {}),
           sessions: nextSessions,
+          ...(submitOptions.conversationCutoffMessageId
+            ? {
+                queuedSessionMessages: prev.queuedSessionMessages.filter(
+                  (message) => message.sessionId !== sessionId,
+                ),
+              }
+            : {}),
         };
       });
 
@@ -928,6 +1084,7 @@ export const useSessionTaskSubmission = (options: {
       const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
         conversationContext: taskConversationContext,
         ...(imagePaths.length > 0 ? { imagePaths } : {}),
+        ...(mediaAssetReferences.length > 0 ? { mediaAssetReferences } : {}),
         model: sessionSnapshot.model,
         provider: sessionSnapshot.provider,
         ...(sessionSnapshotReasoning
@@ -1077,6 +1234,81 @@ export const useSessionTaskSubmission = (options: {
     [],
   );
 
+  const handleEditMessage = useCallback(
+    (message: ChatSessionMessage, content: string): boolean => {
+      const normalizedContent = content.trim();
+
+      if (message.role !== "user" || message.intent || !normalizedContent) {
+        return false;
+      }
+
+      const sourceSession = getMessageSourceSession(message);
+
+      return submitTaskToSession({
+        sessionSnapshot: sourceSession,
+        task: normalizedContent,
+        contextAttachments: getUserMessageContextAttachments(message),
+        clearDraft: false,
+        activateSession: true,
+        visibleMessageContent: normalizedContent,
+        promptHistoryContent: normalizedContent,
+        conversationCutoffMessageId: message.id,
+      });
+    },
+    [getMessageSourceSession, submitTaskToSession],
+  );
+
+  const handleRetryMessage = useCallback(
+    (message: ChatSessionMessage): boolean => {
+      if (
+        message.role !== "agent" ||
+        message.source?.kind === "thinking" ||
+        message.source?.kind === "preview"
+      ) {
+        return false;
+      }
+
+      const sourceSession = getMessageSourceSession(message);
+      const sourceUserMessage = findSourceUserMessage(sourceSession, message);
+
+      if (!sourceUserMessage) {
+        return false;
+      }
+
+      const visibleMessageContent = getRenderedMessageContent(
+        sourceUserMessage,
+      ).trim();
+      const task =
+        sourceUserMessage.intent && message.source?.kind === "execution"
+          ? message.source.execution.task.trim()
+          : visibleMessageContent;
+
+      if (!task || !visibleMessageContent) {
+        return false;
+      }
+
+      return submitTaskToSession({
+        sessionSnapshot: sourceSession,
+        task,
+        contextAttachments: getUserMessageContextAttachments(sourceUserMessage),
+        clearDraft: false,
+        activateSession: true,
+        visibleMessageContent,
+        promptHistoryContent:
+          sourceUserMessage.promptEnhancement?.originalContent ??
+          visibleMessageContent,
+        ...(sourceUserMessage.promptEnhancement
+          ? { promptEnhancement: sourceUserMessage.promptEnhancement }
+          : {}),
+        ...(sourceUserMessage.intent
+          ? { messageIntent: sourceUserMessage.intent }
+          : {}),
+        conversationCutoffMessageId: sourceUserMessage.id,
+      });
+    },
+    [getMessageSourceSession, submitTaskToSession],
+  );
+
   const handleRetryTask = useCallback(
     (message: ChatSessionMessage): void => {
       if (isRecoveredTaskCrashMessage(message)) {
@@ -1181,6 +1413,8 @@ export const useSessionTaskSubmission = (options: {
 
   return {
     submitTaskToSession,
+    handleEditMessage,
+    handleRetryMessage,
     handleRetryTask,
     handleContinueTask,
   };

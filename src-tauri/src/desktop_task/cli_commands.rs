@@ -25,8 +25,9 @@ use super::{
         read_stderr, terminate_child_process_tree,
     },
     registry::normalize_task_id,
-    InstructionCommandRequest, McpCommandRequest, SchedulerCommandRequest,
-    TaskInterviewCommandRequest, DESKTOP_TASK_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
+    InstructionCommandRequest, McpCommandRequest, ProviderSyncCommandRequest,
+    SchedulerCommandRequest, TaskInterviewCommandRequest, AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
+    DESKTOP_TASK_WAIT_POLL_MS,
 };
 
 #[cfg(target_os = "windows")]
@@ -64,6 +65,13 @@ const MCP_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     command_name: "MCP",
     parse_name: "MCP",
     failure_name: "MCP",
+};
+
+const PROVIDER_SYNC_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "provider-sync",
+    command_name: "provider sync",
+    parse_name: "provider sync",
+    failure_name: "provider sync",
 };
 
 const INSTRUCTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -297,7 +305,7 @@ fn run_auxiliary_json_command(
     let output = run_bounded_auxiliary_cli_command(
         &mut cli_command.command,
         spec.command_name,
-        Some(DESKTOP_TASK_TIMEOUT_MS),
+        Some(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
         None,
     )?;
 
@@ -401,6 +409,16 @@ pub(super) fn start_scheduler_service(request: SchedulerCommandRequest) -> Resul
 
 pub(super) fn execute_mcp_command(request: McpCommandRequest) -> Result<Value, String> {
     run_auxiliary_json_command(&request.workspace_root, request.arguments, &MCP_CLI_SPEC)
+}
+
+pub(super) fn execute_provider_sync_command(
+    request: ProviderSyncCommandRequest,
+) -> Result<Value, String> {
+    run_auxiliary_json_command(
+        &request.workspace_root,
+        request.arguments,
+        &PROVIDER_SYNC_CLI_SPEC,
+    )
 }
 
 pub(super) fn execute_instruction_command(

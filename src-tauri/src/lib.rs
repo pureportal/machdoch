@@ -3,6 +3,7 @@ mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
 mod launcher;
+mod media;
 mod remote_control;
 mod runtime_contract_generated;
 mod runtime_snapshot;
@@ -86,11 +87,11 @@ pub fn run() {
     builder
         .manage(desktop_task::AttachmentPathGrantMap::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
-        .manage(desktop_task::DesktopTaskLimiter::default())
         .manage(desktop_shell::DesktopLaunchId(
             desktop_shell::create_desktop_launch_id(),
         ))
         .manage(desktop_shell::QuickVoiceShortcutState::default())
+        .manage(media::MediaRuntimeState::default())
         .manage(remote_control::RemoteControlState::default())
         .manage(shell_state::ShellStateStoreLock::default())
         .manage(ui_operation::CrossWindowOperationState::default())
@@ -111,6 +112,10 @@ pub fn run() {
 
             if let Err(error) = remote_control::sync_remote_control_startup(app.handle()) {
                 eprintln!("Failed to initialize Mission Control: {error}");
+            }
+
+            if let Err(error) = media::initialize_runtime(app.handle()) {
+                eprintln!("Failed to initialize Media Studio: {error}");
             }
 
             desktop_shell::apply_startup_mode(app.handle(), launch_context);
@@ -146,6 +151,8 @@ pub fn run() {
             desktop_task::get_active_desktop_task_ids,
             desktop_task::get_active_desktop_tasks,
             desktop_task::get_recent_desktop_task_results,
+            desktop_task::get_task_file_change_files,
+            desktop_task::get_task_file_change_hunks,
             desktop_task::open_attached_path,
             desktop_task::open_ralph_flow_in_explorer,
             desktop_task::open_workspace_path,
@@ -157,12 +164,61 @@ pub fn run() {
             desktop_task::resolve_dropped_paths,
             desktop_task::run_instruction_command,
             desktop_task::run_mcp_command,
+            desktop_task::run_provider_sync_command,
             desktop_task::run_ralph_command,
             desktop_task::run_scheduler_command,
             desktop_task::start_scheduler_service,
             desktop_task::run_task_interview_command,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
+            media::media_cancel_run,
+            media::media_analyze_image_quality,
+            media::media_enqueue_fixture_run,
+            media::media_generate_images,
+            media::media_generate_svg,
+            media::media_execute_remote_image_edit_flow,
+            media::media_enqueue_mock_remote_run,
+            media::media_export_asset,
+            media::media_export_flow_revision,
+            media::media_get_run_detail,
+            media::media_get_model_catalog,
+            media::media_get_flow,
+            media::media_plan_model_install,
+            media::media_start_model_install,
+            media::media_get_model_install_job,
+            media::media_cancel_model_install,
+            media::media_plan_model_removal,
+            media::media_remove_model,
+            media::media_initialize_runtime,
+            media::media_import_image,
+            media::media_inspect_hardware,
+            media::media_inspect_flow_import,
+            media::media_import_flow,
+            media::media_inspect_local_model,
+            media::media_import_local_model,
+            media::media_probe_local_model,
+            media::media_inspect_model_addon,
+            media::media_inspect_civitai_model_addon,
+            media::media_download_civitai_model_addon,
+            media::media_import_model_addon,
+            media::media_plan_model_addon_removal,
+            media::media_remove_model_addon,
+            media::media_list_assets,
+            media::media_list_flows,
+            media::media_set_asset_tags,
+            media::media_auto_tag_asset,
+            media::media_plan_asset_deletion,
+            media::media_delete_asset,
+            media::media_execute_local_image_flow,
+            media::media_list_runs,
+            media::media_save_flow_revision,
+            media::media_read_asset_preview,
+            media::media_read_quality_report,
+            media::media_retry_fixture_run,
+            media::media_resolve_human_review,
+            media::media_resolve_provider_review,
+            media::media_wake_provider_reconciliation,
+            media::media_transform_image,
             remote_control::disable_remote_control_server,
             remote_control::enable_remote_control_server,
             remote_control::forget_remote_control_pairings,

@@ -13,7 +13,7 @@ export interface OnboardingState {
   skippedAt?: number;
 }
 
-export type MainAppId = "chat" | "ralph" | "marketplace";
+export type MainAppId = "chat" | "ralph" | "media" | "marketplace";
 export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
 
 export interface AppShellState {
@@ -79,6 +79,7 @@ export const DEFAULT_APP_SHELL_STATE = {
   lastViewedAt: {
     chat: 0,
     ralph: 0,
+    media: 0,
     marketplace: 0,
   },
 } as const satisfies AppShellState;
@@ -160,7 +161,11 @@ const normalizeStringHistory = (value: unknown, limit: number): string[] => {
 };
 
 const normalizeMainAppId = (value: unknown): MainAppId => {
-  return normalizeOneOf(value, ["chat", "ralph", "marketplace"], "chat");
+  return normalizeOneOf(
+    value,
+    ["chat", "ralph", "media", "marketplace"],
+    "chat",
+  );
 };
 
 export const normalizeRunningTaskMessageAction = (
@@ -192,6 +197,10 @@ export const normalizeAppShellState = (value: unknown): AppShellState => {
         typeof lastViewedAt.ralph === "number"
           ? lastViewedAt.ralph
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.ralph,
+      media:
+        typeof lastViewedAt.media === "number"
+          ? lastViewedAt.media
+          : DEFAULT_APP_SHELL_STATE.lastViewedAt.media,
       marketplace:
         typeof lastViewedAt.marketplace === "number"
           ? lastViewedAt.marketplace

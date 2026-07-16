@@ -2,7 +2,7 @@ import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import type { InstructionAudience, InstructionMode } from "../../core/types.js";
-import type { ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
+import type { AgentCliProvider, ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
 import {
   INSTRUCTION_ACTIONS,
   INSTRUCTION_ACTIONS_REQUIRING_SUBJECT,
@@ -12,6 +12,7 @@ import {
   MCP_ACTIONS,
   MCP_ACTIONS_REQUIRING_SERVER,
   MCP_ACTIONS_REQUIRING_TARGET,
+  PROVIDER_SYNC_ACTIONS,
   RALPH_ACTIONS,
   RALPH_ACTIONS_REQUIRING_SUBJECT,
   RALPH_GENERATION_MODES,
@@ -49,6 +50,8 @@ export type {
   InstructionCliOptions,
   InstructionCliScope,
   McpCliAction,
+  ProviderSyncCliAction,
+  ProviderSyncCliOptions,
   McpCliOptions,
   ParsedCliArgs,
   RalphCliAction,
@@ -65,6 +68,7 @@ import type {
   InstructionCliAction,
   InstructionCliScope,
   McpCliAction,
+  ProviderSyncCliAction,
   ParsedCliArgs,
   RalphCliAction,
   RalphCliGenerationMode,
@@ -357,6 +361,7 @@ export const parseCliArgs = (
 
   const rawMode = normalizeOptionalString(values?.mode);
   const rawProvider = normalizeOptionalString(values?.provider);
+  const isProviderSyncCommand = positionals[0] === "provider-sync";
   const rawRuntimeProvider = normalizeOptionalString(
     values?.["runtime-provider"],
   );
@@ -662,7 +667,14 @@ export const parseCliArgs = (
     );
   }
 
-  if (rawProvider && !VALID_PROVIDERS.has(rawProvider as UserApiProvider)) {
+  if (
+    rawProvider &&
+    !VALID_PROVIDERS.has(rawProvider as UserApiProvider) &&
+    !(
+      isProviderSyncCommand &&
+      ["codex-cli", "claude-cli", "copilot-cli"].includes(rawProvider)
+    )
+  ) {
     fail(`Expected --provider to be followed by ${VALID_PROVIDER_DESCRIPTION}.`);
   }
 
@@ -1009,6 +1021,57 @@ export const parseCliArgs = (
       },
       {
         interview,
+      },
+    );
+  }
+
+  if (first === "provider-sync") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch provider-sync` cannot be combined with --quick or --task.");
+    }
+    const [rawAction, ...extraPositionals] = rest;
+    const actionText = normalizeOptionalString(rawAction) ?? "status";
+    if (!PROVIDER_SYNC_ACTIONS.has(actionText as ProviderSyncCliAction)) {
+      fail(
+        `Expected \`machdoch provider-sync\` action to be one of ${Array.from(
+          PROVIDER_SYNC_ACTIONS,
+        ).join(", ")}.`,
+      );
+    }
+    if (extraPositionals.length > 0) {
+      fail(
+        `Command \`provider-sync ${actionText}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+    if (
+      rawModel ||
+      rawDefaultModel ||
+      rawReasoning ||
+      rawRuntimeProvider ||
+      rawMode ||
+      sessionMemoryEnabled !== undefined ||
+      globalMemoryEnabled !== undefined ||
+      agentLimits ||
+      rawConversationContextFile ||
+      rawContextPaths ||
+      rawImagePaths
+    ) {
+      fail("`machdoch provider-sync` cannot be combined with runtime override options.");
+    }
+    return createParsedArgs(
+      {
+        json,
+        verbose,
+        workspaceRoot,
+        command: "provider-sync",
+      },
+      {
+        providerSync: {
+          action: actionText as ProviderSyncCliAction,
+          ...(rawProvider
+            ? { provider: rawProvider as AgentCliProvider }
+            : {}),
+        },
       },
     );
   }

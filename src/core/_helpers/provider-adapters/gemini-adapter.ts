@@ -22,7 +22,7 @@ import type {
   ReasoningMode,
 } from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
+import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import {
@@ -327,7 +327,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
             ...this.createConfig(params.model, params.tools),
             ...createGeminiThinkingConfig(params.model, params.reasoning),
             httpOptions: {
-              timeout: TASK_EXECUTION_TIMEOUT_MS,
+              timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
             },
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
@@ -386,7 +386,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
               startParams.reasoning,
             ),
             httpOptions: {
-              timeout: TASK_EXECUTION_TIMEOUT_MS,
+              timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
             },
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },

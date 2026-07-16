@@ -372,6 +372,42 @@ export interface UserReviewModelConfigFile {
   model?: string;
 }
 
+export interface ProviderEnrollmentInstructionsConfigFile {
+  mode?: "native-when-available";
+  unmanagedNative?: "adopt" | "allow" | "fail";
+  strictConflicts?: boolean;
+  fallback?: "automatic";
+  failOnTruncation?: boolean;
+}
+
+export interface ProviderEnrollmentMcpConfigFile {
+  mode?: "direct-native";
+  fallback?: "per-server-stdio-proxy";
+  compatibilityServerName?: string;
+  unmanagedNative?: "adopt" | "allow" | "fail";
+  approvals?: "never";
+  progressiveDiscoveryThresholdPercent?: number;
+}
+
+export interface ProviderEnrollmentPersistentSyncConfigFile {
+  enabled?: boolean;
+  watch?: boolean;
+  daemonAtLogin?: boolean;
+  debounceMs?: number;
+  filesystemConvergenceTargetMs?: number;
+  fullRescanIntervalMs?: number;
+  autoReloadOwnedSessions?: boolean;
+}
+
+export interface ProviderEnrollmentConfigFile {
+  schemaVersion?: 1;
+  enabled?: boolean;
+  instructions?: ProviderEnrollmentInstructionsConfigFile;
+  mcp?: ProviderEnrollmentMcpConfigFile;
+  persistentSync?: ProviderEnrollmentPersistentSyncConfigFile;
+  providers?: Partial<Record<AgentCliProvider, { enabled?: boolean }>>;
+}
+
 export interface UserConfigFile {
   apiKeys?: UserProviderApiKeys;
   agentCliPaths?: UserAgentCliPaths;
@@ -382,6 +418,7 @@ export interface UserConfigFile {
   agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
   reviewModel?: UserReviewModelConfigFile;
+  providerEnrollment?: ProviderEnrollmentConfigFile;
 }
 
 export interface UserAgentLimitsSettings {

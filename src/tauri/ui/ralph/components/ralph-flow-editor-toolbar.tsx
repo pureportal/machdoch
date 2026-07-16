@@ -1,5 +1,6 @@
 import {
   Globe2,
+  Images,
   LayoutGrid,
   Redo2,
   Route,
@@ -183,21 +184,28 @@ export const RalphFlowEditorToolbar = ({
                   <Button
                     type="button"
                     variant="ghost"
-                    aria-label="Add MCP block"
-                    title="Add MCP block"
+                    aria-label="Add integration block"
+                    title="Add integration block"
                     className="h-7 w-7 rounded-md p-0 text-slate-300 hover:bg-slate-800 hover:text-white"
                   >
                     <Globe2 className="h-4 w-4 text-violet-300" />
                   </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
-              <TooltipContent side="bottom">MCP</TooltipContent>
+              <TooltipContent side="bottom">Integrations</TooltipContent>
             </Tooltip>
             <DropdownMenuContent
               align="end"
               sideOffset={5}
               className="z-[90] min-w-36 rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
             >
+              <DropdownMenuItem
+                onSelect={() => onAddBlock("MEDIA_FLOW")}
+                className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-orange-200 outline-none focus:bg-orange-500/15 focus:text-orange-100"
+              >
+                <Images className="h-3.5 w-3.5 shrink-0 text-orange-300" />
+                <span className="min-w-0 truncate">Media Studio flow</span>
+              </DropdownMenuItem>
               {MCP_BLOCK_ACTIONS.map((action) => (
                 <DropdownMenuItem
                   key={action.type}

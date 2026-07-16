@@ -5,12 +5,13 @@ import {
   useState,
   type MutableRefObject,
 } from "react";
-import type {
-  ChatSessionMessage,
-  ChatSessionContextAttachment,
-  ChatSessionRecord,
-  SmartContextPack,
-  ShellPersistedState,
+import {
+  isMediaAssetContextAttachment,
+  type ChatSessionMessage,
+  type ChatSessionContextAttachment,
+  type ChatSessionRecord,
+  type SmartContextPack,
+  type ShellPersistedState,
 } from "../../chat-session.model";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -136,13 +137,24 @@ const isRuntimeReasoningMode = (
 
 const createAttachmentSnapshot = (
   attachment: ChatSessionContextAttachment,
-): RemoteShellAttachmentSnapshot => ({
-  id: attachment.id,
-  kind: attachment.kind,
-  name: attachment.name,
-  path: attachment.path,
-  ...(attachment.parent ? { parent: attachment.parent } : {}),
-});
+): RemoteShellAttachmentSnapshot =>
+  isMediaAssetContextAttachment(attachment)
+    ? {
+        id: attachment.id,
+        source: "media-asset",
+        kind: attachment.kind,
+        name: attachment.name,
+        workspaceRoot: attachment.workspaceRoot,
+        assetId: attachment.assetId,
+      }
+    : {
+        id: attachment.id,
+        source: "path",
+        kind: attachment.kind,
+        name: attachment.name,
+        path: attachment.path,
+        ...(attachment.parent ? { parent: attachment.parent } : {}),
+      };
 
 const createMessageSourceSnapshot = (
   message: ChatSessionMessage,

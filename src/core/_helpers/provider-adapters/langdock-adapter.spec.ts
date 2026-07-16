@@ -3,7 +3,7 @@ import type {
   AgentModelStartParams,
   AgentModelToolSpec,
 } from "../../types.js";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
+import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import {
   LangdockChatCompletionsAdapter,
   createLangdockReasoningConfig,
@@ -210,7 +210,7 @@ describe("Langdock Chat Completions conformance", () => {
     expect(calls[0]?.body).not.toHaveProperty("stream_options");
     expect(calls[0]?.body).not.toHaveProperty("reasoning_effort");
     expect(calls[0]?.options).toMatchObject({
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
     });
     expect(calls[1]?.body).toMatchObject({
       messages: [

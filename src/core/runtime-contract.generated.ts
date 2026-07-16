@@ -19,7 +19,7 @@ export type ConfiguredModelProvider = (typeof VALID_MODEL_PROVIDERS)[number];
 export const MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli", "unconfigured"] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 
-export const USER_API_PROVIDERS = ["openai", "anthropic", "google", "langdock"] as const;
+export const USER_API_PROVIDERS = ["openai", "anthropic", "google", "langdock", "quiver", "recraft"] as const;
 export type UserApiProvider = (typeof USER_API_PROVIDERS)[number];
 
 export const AGENT_CLI_PROVIDERS = ["codex-cli", "claude-cli", "copilot-cli"] as const;
@@ -60,7 +60,9 @@ export const PROVIDER_ENV_KEY_BY_PROVIDER = {
   "openai": "OPENAI_API_KEY",
   "anthropic": "ANTHROPIC_API_KEY",
   "google": "GOOGLE_API_KEY",
-  "langdock": "LANGDOCK_API_KEY"
+  "langdock": "LANGDOCK_API_KEY",
+  "quiver": "QUIVERAI_API_KEY",
+  "recraft": "RECRAFT_API_KEY"
 } as const satisfies Record<UserApiProvider, string>;
 export const AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER = {
   "codex-cli": "MACHDOCH_CODEX_CLI_PATH",
@@ -318,6 +320,42 @@ export interface UserReviewModelConfigFile {
   model?: string;
 }
 
+export interface ProviderEnrollmentInstructionsConfigFile {
+  mode?: "native-when-available";
+  unmanagedNative?: "adopt" | "allow" | "fail";
+  strictConflicts?: boolean;
+  fallback?: "automatic";
+  failOnTruncation?: boolean;
+}
+
+export interface ProviderEnrollmentMcpConfigFile {
+  mode?: "direct-native";
+  fallback?: "per-server-stdio-proxy";
+  compatibilityServerName?: string;
+  unmanagedNative?: "adopt" | "allow" | "fail";
+  approvals?: "never";
+  progressiveDiscoveryThresholdPercent?: number;
+}
+
+export interface ProviderEnrollmentPersistentSyncConfigFile {
+  enabled?: boolean;
+  watch?: boolean;
+  daemonAtLogin?: boolean;
+  debounceMs?: number;
+  filesystemConvergenceTargetMs?: number;
+  fullRescanIntervalMs?: number;
+  autoReloadOwnedSessions?: boolean;
+}
+
+export interface ProviderEnrollmentConfigFile {
+  schemaVersion?: 1;
+  enabled?: boolean;
+  instructions?: ProviderEnrollmentInstructionsConfigFile;
+  mcp?: ProviderEnrollmentMcpConfigFile;
+  persistentSync?: ProviderEnrollmentPersistentSyncConfigFile;
+  providers?: Partial<Record<AgentCliProvider, { enabled?: boolean }>>;
+}
+
 export interface UserConfigFile {
   apiKeys?: UserProviderApiKeys;
   agentCliPaths?: UserAgentCliPaths;
@@ -328,6 +366,7 @@ export interface UserConfigFile {
   agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
   reviewModel?: UserReviewModelConfigFile;
+  providerEnrollment?: ProviderEnrollmentConfigFile;
 }
 
 export interface UserAgentLimitsSettings {

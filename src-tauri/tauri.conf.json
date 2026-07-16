@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -45,6 +45,10 @@
   },
   "bundle": {
     "active": true,
+    "resources": [
+      "python/media_diffusers_worker.py",
+      "python/media_diffusers_requirements.txt"
+    ],
     "targets": [
       "msi",
       "nsis",

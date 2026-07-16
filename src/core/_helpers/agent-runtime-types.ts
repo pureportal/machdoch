@@ -33,9 +33,6 @@ export const MAX_CONFIGURED_AUTOPILOT_ITERATIONS =
   AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max;
 export const MAX_CONSECUTIVE_IDENTICAL_TOOL_ERRORS = 2;
 export const MAX_FINAL_RESPONSE_ITEMS = 4;
-export const TASK_EXECUTION_TIMEOUT_MS = 20 * 60 * 1_000;
-export const TASK_EXECUTION_TIMEOUT_REASON_PREFIX =
-  "Execution stopped after exceeding the safety timeout";
 
 export type TaskFinalResponseStatus = "completed" | "blocked";
 

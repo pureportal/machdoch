@@ -4,6 +4,20 @@ import { writeStdoutLine } from "./_helpers/cli-io.js";
 export const runCli = async (argv: string[]): Promise<void> => {
   const args = parseCliArgs(argv);
 
+  const isInternalProviderProcess =
+    args.command === "provider-sync" ||
+    (args.command === "mcp" &&
+      (args.mcp?.action === "proxy" || args.mcp?.action === "broker"));
+  if (args.command !== "help" && !isInternalProviderProcess) {
+    const { ensureAutomaticProviderSync } = await import(
+      "./_helpers/cli-provider-sync-commands.js"
+    );
+    await ensureAutomaticProviderSync(args.workspaceRoot).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`machdoch provider-sync: ${message}`);
+    });
+  }
+
   switch (args.command) {
     case "help": {
       writeStdoutLine(getHelpText());
@@ -94,6 +108,13 @@ export const runCli = async (argv: string[]): Promise<void> => {
     case "mcp": {
       const { printMcpSummary } = await import("./_helpers/cli-mcp-commands.js");
       await printMcpSummary(args);
+      return;
+    }
+    case "provider-sync": {
+      const { printProviderSyncSummary } = await import(
+        "./_helpers/cli-provider-sync-commands.js"
+      );
+      await printProviderSyncSummary(args);
       return;
     }
     case "run": {

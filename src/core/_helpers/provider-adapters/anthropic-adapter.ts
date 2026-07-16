@@ -20,7 +20,7 @@ import type {
   ReasoningMode,
 } from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
+import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import {
@@ -188,7 +188,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         }
 
         return await this.client.messages.create(request, {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
         });
       },
@@ -257,7 +257,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         }
 
         return await this.client.messages.create(request, {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
         });
       },
@@ -284,7 +284,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
     );
 
     const stream = this.client.messages.stream(request, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
       ...(requestSignal ? { signal: requestSignal } : {}),
     });
     const toolCallsByIndex = new Map<number, AnthropicToolUseBlock>();

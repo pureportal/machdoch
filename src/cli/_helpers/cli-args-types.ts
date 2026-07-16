@@ -5,6 +5,7 @@ import type {
 } from "../../core/types.js";
 import type {
   ModelProvider,
+  AgentCliProvider,
   ReasoningMode,
   RuntimeAgentLimitOverrides,
   RunMode,
@@ -18,6 +19,7 @@ export type CommandName =
   | "ralph"
   | "scheduler"
   | "mcp"
+  | "provider-sync"
   | "set-api"
   | "set-config"
   | "set-global-memory"
@@ -82,7 +84,18 @@ export type McpCliAction =
   | "get-prompt"
   | "usage"
   | "lifecycle-hook"
-  | "cleanup";
+  | "cleanup"
+  | "proxy"
+  | "broker";
+
+export type ProviderSyncCliAction =
+  | "plan"
+  | "enable"
+  | "status"
+  | "disable"
+  | "refresh"
+  | "doctor"
+  | "daemon";
 
 export type InstructionCliAction =
   | "list"
@@ -210,6 +223,11 @@ export interface McpCliOptions {
   apply?: boolean;
 }
 
+export interface ProviderSyncCliOptions {
+  action: ProviderSyncCliAction;
+  provider?: AgentCliProvider;
+}
+
 export interface InstructionCliOptions {
   action: InstructionCliAction;
   subject?: string;
@@ -236,6 +254,7 @@ export interface ParsedCliArgs {
   ralph?: RalphCliOptions;
   scheduler?: SchedulerCliOptions;
   mcp?: McpCliOptions;
+  providerSync?: ProviderSyncCliOptions;
   instructions?: InstructionCliOptions;
   mode?: RunMode;
   provider?: UserApiProvider;

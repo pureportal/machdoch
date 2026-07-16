@@ -12,6 +12,7 @@ import {
   Hourglass,
   LayoutGrid,
   MessageSquareText,
+  Images,
   Octagon,
   Package,
   Play,
@@ -112,6 +113,14 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
         badgeClassName: "text-violet-300",
         miniMapColor: "#a78bfa",
         badgeLabel: "MCP",
+      };
+    case "MEDIA_FLOW":
+      return {
+        icon: Images,
+        nodeClassName: "border-orange-400/55 bg-orange-950 text-orange-50",
+        badgeClassName: "text-orange-300",
+        miniMapColor: "#fb923c",
+        badgeLabel: "MEDIA FLOW",
       };
     case "NOTE":
       return {

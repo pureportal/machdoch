@@ -22,9 +22,10 @@ import {
   isAgentCliProvider,
 } from "./_helpers/agent-cli-providers.js";
 import {
-  TASK_EXECUTION_TIMEOUT_MS,
-  TASK_EXECUTION_TIMEOUT_REASON_PREFIX,
-} from "./_helpers/agent-runtime-types.js";
+  createManagedTaskExecutionTimeout,
+  resolveTaskExecutionTimeouts,
+  type ManagedTaskExecutionTimeout,
+} from "./_helpers/task-execution-timeouts.js";
 import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
 import { resolveTaskContext } from "./task-context.js";
@@ -40,68 +41,6 @@ import type {
   TaskExecutionState,
 } from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
-
-const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
-  const candidate = handle as ReturnType<typeof setTimeout> & {
-    unref?: () => void;
-  };
-
-  candidate.unref?.();
-};
-
-const normalizeMaxDurationMs = (
-  value: number | null | undefined,
-): number | undefined => {
-  if (value === null) {
-    return undefined;
-  }
-
-  if (!Number.isFinite(value) || value === undefined || value <= 0) {
-    return TASK_EXECUTION_TIMEOUT_MS;
-  }
-
-  return Math.max(1, Math.round(value));
-};
-
-const DEFAULT_TASK_EXECUTION_IDLE_TIMEOUT_MS = 5 * 60 * 1_000;
-
-const normalizeIdleTimeoutMs = (
-  value: number | null | undefined,
-  maxDurationMs: number | undefined,
-): number | undefined => {
-  if (value === null || maxDurationMs === undefined) {
-    return undefined;
-  }
-
-  const normalizedValue =
-    value === undefined || !Number.isFinite(value) || value <= 0
-      ? DEFAULT_TASK_EXECUTION_IDLE_TIMEOUT_MS
-      : Math.max(1, Math.round(value));
-
-  return Math.min(normalizedValue, maxDurationMs);
-};
-
-const formatExecutionDuration = (maxDurationMs: number): string => {
-  if (maxDurationMs % 60_000 === 0) {
-    const minutes = maxDurationMs / 60_000;
-    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
-  }
-
-  if (maxDurationMs % 1_000 === 0) {
-    const seconds = maxDurationMs / 1_000;
-    return `${seconds} second${seconds === 1 ? "" : "s"}`;
-  }
-
-  return `${maxDurationMs}ms`;
-};
-
-const createTaskExecutionTimeoutReason = (maxDurationMs: number): string => {
-  return `${TASK_EXECUTION_TIMEOUT_REASON_PREFIX} of ${formatExecutionDuration(maxDurationMs)}.`;
-};
-
-const createTaskExecutionIdleTimeoutReason = (idleTimeoutMs: number): string => {
-  return `Task execution produced no meaningful progress for ${formatExecutionDuration(idleTimeoutMs)}.`;
-};
 
 const providerIsConfigured = (config: RuntimeConfig): boolean => {
   return config.providerAvailability.some(
@@ -171,118 +110,32 @@ const createLiveExecutionUnavailableMessage = (
   };
 };
 
-const createManagedExecutionSignal = (
-  sourceSignal: AbortSignal | undefined,
-  maxDurationMs: number | undefined,
-  idleTimeoutMs: number | undefined,
-): {
-  signal: AbortSignal;
-  markActivity: () => void;
-  cleanup: () => void;
-} => {
-  const abortController = new AbortController();
-  let absoluteTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  let idleTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const forwardAbort = (): void => {
-    if (!abortController.signal.aborted) {
-      abortController.abort(sourceSignal?.reason);
-    }
-  };
-
-  if (sourceSignal?.aborted) {
-    forwardAbort();
-  } else if (sourceSignal) {
-    sourceSignal.addEventListener("abort", forwardAbort, { once: true });
-  }
-
-  const scheduleIdleTimeout = (): void => {
-    if (idleTimeoutMs === undefined) {
-      return;
-    }
-
-    if (idleTimeoutHandle) {
-      clearTimeout(idleTimeoutHandle);
-    }
-
-    idleTimeoutHandle = setTimeout(() => {
-      idleTimeoutHandle = undefined;
-
-      if (!abortController.signal.aborted) {
-        abortController.abort(createTaskExecutionIdleTimeoutReason(idleTimeoutMs));
-      }
-    }, idleTimeoutMs);
-    unrefTimer(idleTimeoutHandle);
-  };
-
-  if (!abortController.signal.aborted && maxDurationMs !== undefined) {
-    absoluteTimeoutHandle = setTimeout(() => {
-      absoluteTimeoutHandle = undefined;
-
-      if (!abortController.signal.aborted) {
-        abortController.abort(createTaskExecutionTimeoutReason(maxDurationMs));
-      }
-    }, maxDurationMs);
-    unrefTimer(absoluteTimeoutHandle);
-  }
-
-  if (!abortController.signal.aborted && idleTimeoutMs !== undefined) {
-    scheduleIdleTimeout();
-  }
-
-  const markActivity = (): void => {
-    if (!abortController.signal.aborted && idleTimeoutMs !== undefined) {
-      scheduleIdleTimeout();
-    }
-  };
-
-  return {
-    signal: abortController.signal,
-    markActivity,
-    cleanup: (): void => {
-      if (absoluteTimeoutHandle) {
-        clearTimeout(absoluteTimeoutHandle);
-        absoluteTimeoutHandle = undefined;
-      }
-
-      if (idleTimeoutHandle) {
-        clearTimeout(idleTimeoutHandle);
-        idleTimeoutHandle = undefined;
-      }
-
-      if (sourceSignal) {
-        sourceSignal.removeEventListener("abort", forwardAbort);
-      }
-    },
-  };
-};
-
 const createActivityAwareExecutionOptions = (
   options: TaskExecutionOptions,
-  managedSignal: ReturnType<typeof createManagedExecutionSignal>,
+  managedTimeout: ManagedTaskExecutionTimeout,
 ): TaskExecutionOptions => {
   const onStateChange = options.onStateChange;
   const onActionOutput = options.onActionOutput;
+  const onStreamActivity = options.onStreamActivity;
 
   return {
     ...options,
-    signal: managedSignal.signal,
-    ...(onStateChange
-      ? {
-          onStateChange: async (progress): Promise<void> => {
-            managedSignal.markActivity();
-            await onStateChange(progress);
-          },
-        }
-      : {}),
-    ...(onActionOutput
-      ? {
-          onActionOutput: async (output): Promise<void> => {
-            managedSignal.markActivity();
-            await onActionOutput(output);
-          },
-        }
-      : {}),
-    onStreamActivity: managedSignal.markActivity,
+    signal: managedTimeout.signal,
+    onStateChange: async (progress): Promise<void> => {
+      managedTimeout.markActivity();
+      await onStateChange?.({
+        ...progress,
+        timeout: managedTimeout.getState(),
+      });
+    },
+    onActionOutput: async (output): Promise<void> => {
+      managedTimeout.markActivity();
+      await onActionOutput?.(output);
+    },
+    onStreamActivity: (): void => {
+      managedTimeout.markActivity();
+      onStreamActivity?.();
+    },
   };
 };
 
@@ -678,15 +531,17 @@ export const createTaskExecutionController = (
       }
     },
     execute: async (): Promise<TaskExecutionResult> => {
-      const maxDurationMs = normalizeMaxDurationMs(options.maxDurationMs);
-      const managedSignal = createManagedExecutionSignal(
+      const managedTimeout = createManagedTaskExecutionTimeout(
         abortController.signal,
-        maxDurationMs,
-        normalizeIdleTimeoutMs(options.idleTimeoutMs, maxDurationMs),
+        resolveTaskExecutionTimeouts(options),
       );
 
+      let fileChangeCapture: Awaited<
+        ReturnType<typeof startTaskFileChangeCapture>
+      > = undefined;
+
       try {
-        const fileChangeCapture =
+        fileChangeCapture =
           config.mode === "machdoch"
             ? await startTaskFileChangeCapture(config.workspaceRoot)
             : undefined;
@@ -694,23 +549,24 @@ export const createTaskExecutionController = (
           task,
           config,
           customizations,
-          createActivityAwareExecutionOptions(options, managedSignal),
+          createActivityAwareExecutionOptions(options, managedTimeout),
         );
+        const fileChanges = await fileChangeCapture?.finish();
 
         const consolidatedResult = await consolidateTaskExecutionMemory(
           task,
           config,
           result,
           options.conversationContext,
-          { signal: managedSignal.signal },
+          { signal: managedTimeout.signal },
         );
-        const fileChanges = await fileChangeCapture?.finish();
 
         return fileChanges
           ? { ...consolidatedResult, fileChanges }
           : consolidatedResult;
       } finally {
-        managedSignal.cleanup();
+        await fileChangeCapture?.dispose();
+        managedTimeout.cleanup();
       }
     },
   };
@@ -722,11 +578,9 @@ export const executeTask = async (
   customizations: CustomizationDiscoveryResult,
   options: TaskExecutionOptions = {},
 ): Promise<TaskExecutionResult> => {
-  const maxDurationMs = normalizeMaxDurationMs(options.maxDurationMs);
-  const managedSignal = createManagedExecutionSignal(
+  const managedTimeout = createManagedTaskExecutionTimeout(
     options.signal,
-    maxDurationMs,
-    normalizeIdleTimeoutMs(options.idleTimeoutMs, maxDurationMs),
+    resolveTaskExecutionTimeouts(options),
   );
 
   try {
@@ -734,7 +588,7 @@ export const executeTask = async (
       task,
       config,
       customizations,
-      createActivityAwareExecutionOptions(options, managedSignal),
+      createActivityAwareExecutionOptions(options, managedTimeout),
     );
 
     return await consolidateTaskExecutionMemory(
@@ -742,9 +596,9 @@ export const executeTask = async (
       config,
       result,
       options.conversationContext,
-      { signal: managedSignal.signal },
+      { signal: managedTimeout.signal },
     );
   } finally {
-    managedSignal.cleanup();
+    managedTimeout.cleanup();
   }
 };

@@ -45,6 +45,7 @@ export const getRalphLayoutNodeWidth = (block: RalphFlowBlock): number => {
     case "MCP_TOOL":
     case "MCP_RESOURCE":
     case "MCP_PROMPT":
+    case "MEDIA_FLOW":
     case "END":
       return RALPH_LAYOUT_DEFAULT_NODE_WIDTH;
   }
@@ -71,6 +72,7 @@ export const getRalphLayoutNodeHeight = (block: RalphFlowBlock): number => {
     case "MCP_TOOL":
     case "MCP_RESOURCE":
     case "MCP_PROMPT":
+    case "MEDIA_FLOW":
     case "END":
       return RALPH_LAYOUT_NODE_HEIGHT;
   }

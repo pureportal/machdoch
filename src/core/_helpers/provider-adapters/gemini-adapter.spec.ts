@@ -8,7 +8,7 @@ import type {
   AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
+import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import {
   GeminiChatAdapter,
   createGeminiFunctionCallingMode,
@@ -222,7 +222,7 @@ describe("Gemini function-calling conformance", () => {
       config: {
         systemInstruction: "System prompt.",
         httpOptions: {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
         },
         toolConfig: {
           functionCallingConfig: {

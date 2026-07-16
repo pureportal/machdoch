@@ -25,7 +25,7 @@ export const createBlockId = (
   flow: RalphFlow,
   type: RalphBlockType,
 ): string => {
-  const base = type.toLowerCase();
+  const base = type.toLowerCase().replaceAll("_", "-");
   const usedIds = new Set(flow.blocks.map((block) => block.id));
 
   for (let index = 1; index < 1000; index += 1) {
@@ -465,6 +465,23 @@ export const createBlock = (
         promptName: "",
         arguments: {},
         settings,
+      };
+    case "MEDIA_FLOW":
+      return {
+        id,
+        type,
+        title: "Run Media Flow",
+        position,
+        flowId: "",
+        revisionId: "",
+        inputBindings: {},
+        outputBindings: {},
+        runPolicy: "wait",
+        approvalPolicy: "inherit-workspace",
+        settings: {
+          workspace: { mode: "default" },
+          retry: { mode: "finite", maxRetries: 0 },
+        },
       };
     case "NOTE":
       return {

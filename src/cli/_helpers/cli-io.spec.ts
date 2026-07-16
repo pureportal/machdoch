@@ -126,6 +126,28 @@ describe("createVerboseProgressReporter", () => {
     ).toEqual(progress);
   });
 
+  it("preserves repeated structured progress as watchdog heartbeats", () => {
+    const lines: string[] = [];
+    const progress: TaskExecutionProgress = {
+      task: "show README.md",
+      mode: "ask",
+      state: "executing",
+      message: "Waiting for provider output",
+      executedTools: [],
+      outputSections: [],
+      cancellable: true,
+    };
+    const reporter = createVerboseProgressReporter((line) => {
+      lines.push(line);
+    }, { structured: true });
+
+    reporter(progress);
+    reporter(progress);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe(lines[1]);
+  });
+
   it("keeps terminal states out of human verbose progress", () => {
     const lines: string[] = [];
     const reporter = createVerboseProgressReporter((line) => {

@@ -66,11 +66,6 @@ export const createVerboseProgressReporter = (
         createStructuredProgressSnapshot(progress),
       );
 
-      if (snapshotKey === previousSnapshotKey) {
-        return;
-      }
-
-      previousSnapshotKey = snapshotKey;
       writeLine(`${STRUCTURED_PROGRESS_PREFIX}${snapshotKey}`);
       return;
     }

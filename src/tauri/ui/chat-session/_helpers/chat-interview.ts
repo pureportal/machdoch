@@ -8,9 +8,10 @@ import type {
 } from "../../../../core/ralph.js";
 import type { TaskInterviewSession } from "../../../../core/task-interview.js";
 import type { RuntimeProvider } from "../../model-catalog";
-import type {
-  ChatSessionContextAttachment,
-  ChatSessionRecord,
+import {
+  isMediaAssetContextAttachment,
+  type ChatSessionContextAttachment,
+  type ChatSessionRecord,
 } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
 import { createAiContextHistory } from "./ai-context-window";
@@ -120,6 +121,11 @@ export const createTaskInterviewContextNotes = (
   maxHistoryMessages?: number,
 ): string[] => {
   const attachmentNotes = context.contextAttachments.flatMap((attachment) => {
+    if (isMediaAssetContextAttachment(attachment)) {
+      return [
+        `Attached Media Studio ${attachment.kind} (${attachment.name.trim()}): asset ${attachment.assetId}`,
+      ];
+    }
     const path = attachment.path.trim();
 
     if (!path) {

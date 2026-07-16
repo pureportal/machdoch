@@ -163,6 +163,7 @@ export const updatePromptLikeText = (
     case "MCP_TOOL":
     case "MCP_RESOURCE":
     case "MCP_PROMPT":
+    case "MEDIA_FLOW":
     case "END":
       return block;
   }

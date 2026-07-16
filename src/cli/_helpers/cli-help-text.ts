@@ -7,7 +7,7 @@ Usage:
   machdoch --task <task> [--mode <ask|machdoch>]
   machdoch run <task>
   machdoch --quick --task <task> [--mode <ask|machdoch>]
-  machdoch --set-api --provider <openai|anthropic|google|langdock> --key <value>
+  machdoch --set-api --provider <openai|anthropic|google|langdock|quiver|recraft> --key <value>
   machdoch --set-global-memory <on|off>
   machdoch --runtime-provider <openai|anthropic|google|langdock|codex-cli|claude-cli|copilot-cli>
   machdoch --model <name>
@@ -51,6 +51,11 @@ Usage:
   machdoch mcp usage [--json]
   machdoch mcp lifecycle-hook [--agent <provider>] [--phase <phase>] [--json]
   machdoch mcp cleanup [--unused-days <n>] [--never-used-days <n>] [--apply] [--json]
+  machdoch mcp proxy <server-id> [--cwd <path>]
+  machdoch mcp broker [--cwd <path>]
+  machdoch provider-sync plan [--provider <codex-cli|claude-cli|copilot-cli>] [--json]
+  machdoch provider-sync enable|status|disable|refresh|doctor [--json]
+  machdoch provider-sync daemon
   machdoch scheduler list [--json]
   machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
   machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --scheduler-target ralph-flow --scheduled-ralph-flow <id> [--json]
@@ -72,7 +77,7 @@ Options:
                           Override the runtime mode for this command or chat session.
   --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose ask or machdoch.
   --set-api               Save a provider API key into the user-scoped Machdoch config file.
-  --provider <name>       Provider name for --set-api (openai, anthropic, google, langdock).
+  --provider <name>       Provider name for --set-api (openai, anthropic, google, langdock, quiver, recraft).
   --runtime-provider <name>
                           Override the runtime provider for this command or chat session.
   --key <value>           API key value for --set-api.
@@ -228,7 +233,7 @@ Options:
   -h, --help              Show help.
 
 Config settings accepted by \`machdoch config set\`:
-  api.<openai|anthropic|google|langdock>.key
+  api.<openai|anthropic|google|langdock|quiver|recraft>.key
   agent-cli.<codex-cli|claude-cli|copilot-cli>.path
   web-search.provider
   web-search.<perplexity|tavily|serper>.key

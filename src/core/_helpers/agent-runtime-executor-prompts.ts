@@ -5,6 +5,7 @@ import type {
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
+import { compileInstructionBundle } from "../provider-enrollment/instruction-compiler.js";
 
 const BROAD_REASONING_TASK_PATTERN =
   /\b(debug|diagnos(?:e|is)|investigat(?:e|ion)|root cause|analy(?:ze|sis)|compare|research|benchmark|best\s+practices?|optimi(?:se|ze|sation|zation)|performance|security|architecture|design|redesign|migration|workflow|agent|autopilot|orchestrat(?:e|ion)|refactor|whole|entire|system|multi(?:ple|-)?step|multi(?:ple|-)?file)\b/i;
@@ -224,18 +225,20 @@ export const createExecutorSystemPrompt = (
   conversationContext: PreparedConversationPromptContext,
   continuationRequest?: ExecutorContinuationRequest,
   additionalSystemPromptSections: readonly string[] = [],
+  mcpInitializationSections: readonly string[] = [],
 ): string => {
   const strategyProfile = inferTaskStrategyProfile(
     taskContext.task,
     taskContext,
     continuationRequest,
   );
-  const instructionLines =
-    taskContext.applicableInstructions.length > 0
-      ? taskContext.applicableInstructions.map(
-          (instruction) => `${instruction.name}: ${instruction.body}`,
-        )
-      : ["No additional task-specific instructions were discovered."];
+  const instructionBundle = compileInstructionBundle(
+    taskContext,
+    additionalSystemPromptSections,
+  );
+  const instructionText =
+    instructionBundle.renderedText ||
+    "No additional task-specific instructions were discovered.";
   const promptContextLines = taskContext.invokedPrompt
     ? [
         `Resolved prompt: /${taskContext.invokedPrompt.name}`,
@@ -290,8 +293,18 @@ export const createExecutorSystemPrompt = (
     ]
       .filter((line): line is string => line !== undefined)
       .join("\n"),
-    ["<instructions>", ...instructionLines, "</instructions>"].join("\n"),
-    ...additionalSystemPromptSections,
+    [
+      `<instructions digest="${instructionBundle.digest}">`,
+      instructionText,
+      "</instructions>",
+    ].join("\n"),
+    mcpInitializationSections.length > 0
+      ? [
+          "<mcp_server_initialization_instructions>",
+          ...mcpInitializationSections,
+          "</mcp_server_initialization_instructions>",
+        ].join("\n\n")
+      : undefined,
     createMemoryContract(tools, conversationContext),
     conversationContext.uiControlEnabled
       ? [

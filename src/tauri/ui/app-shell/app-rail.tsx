@@ -1,4 +1,5 @@
 import {
+  Aperture,
   CalendarClock,
   Cog,
   MessageSquareText,
@@ -31,6 +32,7 @@ interface AppRailProps {
   activeApp: MainAppId;
   chatActivity: AppActivityState;
   ralphActivity: AppActivityState;
+  mediaActivity: AppActivityState;
   onSelectApp: (app: MainAppId) => void;
   onOpenScheduler: () => void;
   onOpenMissionControl: () => void;
@@ -144,6 +146,7 @@ export const AppRail = ({
   activeApp,
   chatActivity,
   ralphActivity,
+  mediaActivity,
   onSelectApp,
   onOpenScheduler,
   onOpenMissionControl,
@@ -172,6 +175,13 @@ export const AppRail = ({
             active={activeApp === "ralph"}
             activity={ralphActivity}
             onClick={() => onSelectApp("ralph")}
+          />
+          <AppRailButton
+            label="Media Studio"
+            icon={Aperture}
+            active={activeApp === "media"}
+            activity={mediaActivity}
+            onClick={() => onSelectApp("media")}
           />
           <AppRailButton
             label="Marketplace"

@@ -13,10 +13,13 @@ import type {
   TaskConversationContext,
   TaskActionOutput,
   TaskExecutionProgress,
+  TaskExecutionChangedLineRange,
+  TaskExecutionFileChange,
   TaskExecutionResult,
   TaskRunPreview,
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
+import type { MediaAssetReference } from "../../core/media/contracts.js";
 import type {
   RalphGenerationEvent,
   RalphGenerationInterviewSession,
@@ -128,6 +131,22 @@ export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...USER_API_PROVIDERS,
 ];
 
+export const USER_API_KEY_PROVIDER_LABELS: Record<
+  UserApiKeyProvider,
+  string
+> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  langdock: "Langdock",
+  quiver: "Quiver",
+  recraft: "Recraft",
+};
+
+export const getUserApiKeyProviderLabel = (
+  provider: UserApiKeyProvider,
+): string => USER_API_KEY_PROVIDER_LABELS[provider];
+
 export const USER_VOICE_AI_PROVIDER_ORDER: UserVoiceAiProvider[] = [
   ...USER_AUDIO_AI_PROVIDERS,
 ];
@@ -144,6 +163,8 @@ export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
   anthropic: "https://platform.claude.com/settings/keys",
   google: "https://aistudio.google.com/app/apikey",
   langdock: "https://app.langdock.com",
+  quiver: "https://app.quiver.ai",
+  recraft: "https://www.recraft.ai/profile/api",
 };
 
 export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
@@ -326,6 +347,16 @@ export interface DesktopTaskRunResponse {
   preview?: TaskRunPreview;
 }
 
+export interface TaskFileChangePage {
+  files: TaskExecutionFileChange[];
+  nextCursor?: number;
+}
+
+export interface TaskFileChangeHunkPage {
+  ranges: TaskExecutionChangedLineRange[];
+  nextCursor?: number;
+}
+
 export interface DesktopTaskProgressEvent {
   taskId: string;
   progress: TaskExecutionProgress;
@@ -440,8 +471,11 @@ export interface RemoteShellAttachmentSnapshot {
   id: string;
   kind: string;
   name: string;
-  path: string;
+  source: "path" | "media-asset";
+  path?: string;
   parent?: string;
+  workspaceRoot?: string;
+  assetId?: string;
 }
 
 export interface RemoteShellSessionSnapshot {
@@ -978,6 +1012,39 @@ export interface McpCommandCacheResult {
 export interface McpCommandOAuthResult {
   workspaceRoot: string;
   result: McpOAuthFlowResult;
+}
+
+export interface ProviderSyncTargetStatus {
+  provider: "codex-cli" | "claude-cli" | "copilot-cli";
+  scope: "user" | "workspace";
+  state:
+    | "unseen"
+    | "not-installed"
+    | "planning"
+    | "writing"
+    | "filesystem-current"
+    | "awaiting-provider-refresh"
+    | "provider-current"
+    | "degraded";
+  targetPaths: string[];
+  bundleDigest?: string;
+  updatedAt: string;
+  warnings: string[];
+  error?: string;
+}
+
+export interface ProviderSyncStatus {
+  schemaVersion: 1;
+  enabled: boolean;
+  daemon: {
+    running: boolean;
+    pid?: number;
+    autostartInstalled: boolean;
+    autostartPath?: string;
+  };
+  workspaceRoot: string;
+  lastReconciledAt?: string;
+  targets: ProviderSyncTargetStatus[];
 }
 
 export interface RalphListFlowsResult {
@@ -1525,6 +1592,21 @@ const isTaskExecutionProgress = (
     (value.reason === undefined || typeof value.reason === "string") &&
     (value.assistantText === undefined ||
       typeof value.assistantText === "string") &&
+    (value.timeout === undefined ||
+      (isRecord(value.timeout) &&
+        typeof value.timeout.startedAt === "number" &&
+        Number.isFinite(value.timeout.startedAt) &&
+        typeof value.timeout.lastActivityAt === "number" &&
+        Number.isFinite(value.timeout.lastActivityAt) &&
+        value.timeout.lastActivityAt >= value.timeout.startedAt &&
+        (value.timeout.idleTimeoutMs === null ||
+          (typeof value.timeout.idleTimeoutMs === "number" &&
+            Number.isFinite(value.timeout.idleTimeoutMs) &&
+            value.timeout.idleTimeoutMs > 0)) &&
+        (value.timeout.absoluteTimeoutMs === null ||
+          (typeof value.timeout.absoluteTimeoutMs === "number" &&
+            Number.isFinite(value.timeout.absoluteTimeoutMs) &&
+            value.timeout.absoluteTimeoutMs > 0)))) &&
     (value.modelStream === undefined ||
       (isRecord(value.modelStream) &&
         MODEL_STREAM_KINDS.includes(
@@ -2862,7 +2944,13 @@ export const saveUserProviderApiKey = async (
   }
 
   if (!canInvokeTauriCommands()) {
-    return createProviderAvailabilitySnapshot([provider]);
+    const runtimeProvider = SUPPORTED_PROVIDER_ORDER.find(
+      (entry): entry is Extract<RuntimeProvider, UserApiKeyProvider> =>
+        entry === provider,
+    );
+    return createProviderAvailabilitySnapshot(
+      runtimeProvider ? [runtimeProvider] : [],
+    );
   }
 
   try {
@@ -5341,12 +5429,132 @@ export const subscribeToRemoteControlCommands = async (
   }
 };
 
+export const getTaskFileChangeFiles = async (
+  changeSetId: string,
+  afterId?: number,
+  limit = 100,
+): Promise<TaskFileChangePage> => {
+  const normalizedChangeSetId = changeSetId.trim();
+
+  if (!normalizedChangeSetId || !canInvokeTauriCommands()) {
+    return { files: [] };
+  }
+
+  return await tauriCore.invoke<TaskFileChangePage>(
+    "get_task_file_change_files",
+    {
+      request: {
+        changeSetId: normalizedChangeSetId,
+        ...(afterId !== undefined ? { afterId } : {}),
+        limit,
+      },
+    },
+  );
+};
+
+const runProviderSyncCommand = async <Result>(
+  workspaceRoot: string | null | undefined,
+  argumentsList: string[],
+  fallback: () => Result,
+): Promise<Result> => {
+  if (!canInvokeTauriCommands()) {
+    return fallback();
+  }
+  try {
+    return await tauriCore.invoke<Result>("run_provider_sync_command", {
+      request: {
+        workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+const createProviderSyncFallback = (
+  workspaceRoot: string | null | undefined,
+): ProviderSyncStatus => ({
+  schemaVersion: 1,
+  enabled: false,
+  daemon: { running: false, autostartInstalled: false },
+  workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+  targets: [],
+});
+
+export const getProviderSyncStatus = async (
+  workspaceRoot: string | null | undefined,
+): Promise<ProviderSyncStatus> => runProviderSyncCommand(
+  workspaceRoot,
+  ["status"],
+  () => createProviderSyncFallback(workspaceRoot),
+);
+
+export const refreshProviderSync = async (
+  workspaceRoot: string | null | undefined,
+): Promise<ProviderSyncStatus> => runProviderSyncCommand(
+  workspaceRoot,
+  ["refresh"],
+  () => createProviderSyncFallback(workspaceRoot),
+);
+
+export const setProviderSyncEnabled = async (
+  workspaceRoot: string | null | undefined,
+  enabled: boolean,
+): Promise<ProviderSyncStatus> => runProviderSyncCommand(
+  workspaceRoot,
+  [enabled ? "enable" : "disable"],
+  () => ({ ...createProviderSyncFallback(workspaceRoot), enabled }),
+);
+
+export const doctorProviderSync = async (
+  workspaceRoot: string | null | undefined,
+): Promise<Record<string, unknown>> => runProviderSyncCommand(
+  workspaceRoot,
+  ["doctor"],
+  () => ({ healthy: false, status: createProviderSyncFallback(workspaceRoot) }),
+);
+
+export const planProviderSync = async (
+  workspaceRoot: string | null | undefined,
+): Promise<Record<string, unknown>> => runProviderSyncCommand(
+  workspaceRoot,
+  ["plan"],
+  () => ({ enabled: false, workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot), providers: [] }),
+);
+
+export const getTaskFileChangeHunks = async (
+  changeSetId: string,
+  fileId: number,
+  afterOrdinal?: number,
+  limit = 100,
+): Promise<TaskFileChangeHunkPage> => {
+  const normalizedChangeSetId = changeSetId.trim();
+
+  if (!normalizedChangeSetId || !canInvokeTauriCommands()) {
+    return { ranges: [] };
+  }
+
+  return await tauriCore.invoke<TaskFileChangeHunkPage>(
+    "get_task_file_change_hunks",
+    {
+      request: {
+        changeSetId: normalizedChangeSetId,
+        fileId,
+        ...(afterOrdinal !== undefined ? { afterOrdinal } : {}),
+        limit,
+      },
+    },
+  );
+};
+
 export const runDesktopTask = async (
   workspaceRoot: string | null | undefined,
   task: string,
   context: {
     conversationContext?: TaskConversationContext;
     imagePaths?: string[];
+    mediaAssetReferences?: MediaAssetReference[];
     mode?: RuntimeSnapshot["mode"];
     model?: string;
     provider?: RuntimeProvider;
@@ -5366,6 +5574,7 @@ export const runDesktopTask = async (
   const normalizedImagePaths = (context.imagePaths ?? [])
     .map((imagePath) => imagePath.trim())
     .filter((imagePath) => imagePath.length > 0);
+  const mediaAssetReferences = context.mediaAssetReferences ?? [];
   const normalizedMode = context.mode;
   const normalizedProvider = context.provider;
   const normalizedReasoning = context.reasoning;
@@ -5396,6 +5605,9 @@ export const runDesktopTask = async (
         ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),
         ...(normalizedImagePaths.length > 0
           ? { imagePaths: normalizedImagePaths }
+          : {}),
+        ...(mediaAssetReferences.length > 0
+          ? { mediaAssetReferences }
           : {}),
         ...(context.conversationContext
           ? { conversationContext: context.conversationContext }

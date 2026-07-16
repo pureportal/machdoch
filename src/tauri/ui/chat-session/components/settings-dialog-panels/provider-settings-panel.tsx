@@ -1,6 +1,8 @@
 import type { JSX } from "react";
-import { getProviderLabel } from "../../../model-catalog";
-import { USER_API_KEY_PROVIDER_ORDER } from "../../../runtime";
+import {
+  getUserApiKeyProviderLabel,
+  USER_API_KEY_PROVIDER_ORDER,
+} from "../../../runtime";
 import {
   SettingsCard,
   SettingsCredentialForm,
@@ -15,7 +17,7 @@ export interface ProviderSettingsPanelProps {
 export const ProviderSettingsPanel = ({
   setup,
 }: ProviderSettingsPanelProps): JSX.Element => {
-  const providerLabel = getProviderLabel(setup.provider);
+  const providerLabel = getUserApiKeyProviderLabel(setup.provider);
 
   return (
     <SettingsCard title="Model provider keys">
@@ -24,7 +26,7 @@ export const ProviderSettingsPanel = ({
         value={setup.provider}
         options={USER_API_KEY_PROVIDER_ORDER.map((provider) => ({
           value: provider,
-          label: getProviderLabel(provider),
+          label: getUserApiKeyProviderLabel(provider),
         }))}
         disabled={setup.saving}
         onChange={setup.onProviderChange}

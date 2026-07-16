@@ -2,14 +2,20 @@ import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
-import type {
-  ChatSessionContextAttachment,
-  ShellPersistedState,
-  SmartContextPack,
-  SmartContextPackVariable,
+import {
+  createSession,
+  isPathContextAttachment,
+  normalizeShellState,
+  type ChatSessionContextAttachment,
+  type ChatSessionPathContextAttachment,
+  type ShellPersistedState,
+  type SmartContextPack,
+  type SmartContextPackVariable,
 } from "../../chat-session.model";
-import { createSession, normalizeShellState } from "../../chat-session.model";
-import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
+import type {
+  RuntimeProvider,
+} from "../../model-catalog";
+import { getProviderLabel } from "../../model-catalog";
 import { mergeContextAttachments } from "./session-context-attachments";
 
 export interface SaveSmartContextPackInput {
@@ -497,7 +503,8 @@ export const doesSmartContextPackMatchComposer = (
 
   return input.contextAttachments.some((attachment) =>
     pack.trigger.pathPatterns.some((pattern) =>
-      pathMatchesPattern(attachment.path, pattern) ||
+      (isPathContextAttachment(attachment) &&
+        pathMatchesPattern(attachment.path, pattern)) ||
       pathMatchesPattern(attachment.name, pattern),
     ),
   );
@@ -506,6 +513,7 @@ export const doesSmartContextPackMatchComposer = (
 const hasSensitivePathSegment = (
   attachment: ChatSessionContextAttachment,
 ): boolean => {
+  if (!isPathContextAttachment(attachment)) return false;
   const normalizedPath = attachment.path.replace(/\\/gu, "/").toLowerCase();
 
   return /(^|\/)(\.env|id_rsa|id_dsa|\.ssh|secrets?)(\/|$)/u.test(
@@ -515,15 +523,22 @@ const hasSensitivePathSegment = (
 
 const getNormalizedAttachmentPath = (
   attachment: ChatSessionContextAttachment,
-): string => attachment.path.replace(/\\/gu, "/");
+): string =>
+  isPathContextAttachment(attachment)
+    ? attachment.path.replace(/\\/gu, "/")
+    : "";
 
 export const isPromptFileAttachment = (
   attachment: ChatSessionContextAttachment,
-): boolean => getNormalizedAttachmentPath(attachment).endsWith(".prompt.md");
+): attachment is ChatSessionPathContextAttachment =>
+  isPathContextAttachment(attachment) &&
+  getNormalizedAttachmentPath(attachment).endsWith(".prompt.md");
 
 export const isSkillFileAttachment = (
   attachment: ChatSessionContextAttachment,
-): boolean => /(^|\/)SKILL\.md$/u.test(getNormalizedAttachmentPath(attachment));
+): attachment is ChatSessionPathContextAttachment =>
+  isPathContextAttachment(attachment) &&
+  /(^|\/)SKILL\.md$/u.test(getNormalizedAttachmentPath(attachment));
 
 const getFileNameWithoutSuffix = (name: string, suffix: string): string => {
   return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
@@ -539,7 +554,11 @@ export const getPromptFileInvocationLabel = (
     ".prompt.md",
   ).trim();
 
-  return normalizedName ? `/${normalizedName}` : attachment.path;
+  return normalizedName
+    ? `/${normalizedName}`
+    : isPathContextAttachment(attachment)
+      ? attachment.path
+      : attachment.name;
 };
 
 export const getSkillFileDisplayName = (
@@ -550,7 +569,8 @@ export const getSkillFileDisplayName = (
     .filter(Boolean);
   const parentName = pathParts.at(-2);
 
-  return parentName?.trim() || attachment.name || attachment.path;
+  return parentName?.trim() || attachment.name ||
+    (isPathContextAttachment(attachment) ? attachment.path : attachment.assetId);
 };
 
 export const createSmartContextPackPreview = (
@@ -565,7 +585,10 @@ export const createSmartContextPackPreview = (
   let skillFileCount = 0;
 
   for (const attachment of pack.contextAttachments) {
-    attachmentPathChars += attachment.path.length + attachment.name.length;
+    attachmentPathChars +=
+      (isPathContextAttachment(attachment)
+        ? attachment.path.length
+        : attachment.assetId.length) + attachment.name.length;
 
     if (attachment.kind === "image") {
       imageCount += 1;

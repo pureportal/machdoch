@@ -34,6 +34,7 @@ describe("shell-store normalizers", () => {
         lastViewedAt: {
           chat: 10,
           ralph: "not-a-number",
+          media: 20,
           marketplace: 30,
         },
       }),
@@ -43,12 +44,16 @@ describe("shell-store normalizers", () => {
       lastViewedAt: {
         chat: 10,
         ralph: DEFAULT_APP_SHELL_STATE.lastViewedAt.ralph,
+        media: 20,
         marketplace: 30,
       },
     });
 
     expect(normalizeAppShellState({ activeApp: "settings" }).activeApp).toBe(
       "chat",
+    );
+    expect(normalizeAppShellState({ activeApp: "media" }).activeApp).toBe(
+      "media",
     );
   });
 

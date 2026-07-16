@@ -1,101 +1,299 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import type {
   TaskExecutionChangedLineRange,
   TaskExecutionFileChange,
-  TaskExecutionFileChangeKind,
+  TaskExecutionFileChangeCompleteness,
+  TaskExecutionFileChangeIssue,
+  TaskExecutionFileChangeOperation,
   TaskExecutionFileChanges,
 } from "../types.js";
-import {
-  fingerprintUntrackedFiles,
-  inspectNewUntrackedFiles,
-} from "./task-file-change-inspection.js";
 import { mapWithConcurrencyLimit } from "./task-file-change-concurrency.js";
 import {
   discoverWorkspaceGitRepositories,
   type DiscoveredGitRepository,
 } from "./task-file-change-repository-discovery.js";
 
-const GIT_COMMAND_TIMEOUT_MS = 10_000;
-const GIT_METADATA_MAX_BYTES = 2 * 1024 * 1024;
-const GIT_PATCH_MAX_BYTES = 8 * 1024 * 1024;
-const MAX_RECORDED_FILES = 500;
-const MAX_RECORDED_RANGES = 2_000;
-const MAX_WARNINGS = 5;
+const GIT_COMMAND_TIMEOUT_MS = 60_000;
+const SNAPSHOT_STABILITY_ATTEMPTS = 3;
 const REPOSITORY_START_CONCURRENCY = 4;
 const REPOSITORY_FINISH_CONCURRENCY = 2;
+const GITLINK_HEAD_CONCURRENCY = 8;
+const MAX_GIT_ERROR_OUTPUT_BYTES = 64 * 1_024;
+const MAX_DIFF_CONTROL_LINE_CHARS = 8 * 1_024;
+const ZERO_OBJECT_PATTERN = /^0+$/u;
 
-interface TaskFileChangeCaptureState {
-  baseline: string;
-  gitRoot: string;
-  workspaceRoot: string;
+interface GitCommandOptions {
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  input?: Buffer;
+}
+
+interface RepositoryCaptureState {
+  repository: DiscoveredGitRepository;
+  objectDirectory: string;
+  realIndexPath: string;
+  environment: NodeJS.ProcessEnv;
   pathspec: string;
-  initialUntracked?: Set<string>;
-  initialUntrackedFingerprints?: Map<string, string>;
-  warnings: string[];
+  startTree: string;
+  snapshotSequence: number;
 }
 
-interface ParsedPatchRanges {
-  ranges: Map<string, TaskExecutionChangedLineRange[]>;
-  complete: boolean;
+interface RawDiffEntry {
+  oldMode: string;
+  newMode: string;
+  oldObjectId: string;
+  newObjectId: string;
+  status: string;
+  oldGitPath?: string;
+  gitPath: string;
 }
 
-interface RepositoryCapture {
-  repository: DiscoveredGitRepository;
-  capture: TaskFileChangeCapture;
+interface RepositoryAnalysisResult {
+  files: TaskExecutionFileChange[];
+  issues: TaskExecutionFileChangeIssue[];
 }
 
-interface RepositoryCaptureResult {
-  repository: DiscoveredGitRepository;
-  result: TaskExecutionFileChanges;
+interface GitPathLineAnalysis {
+  oldGitPath?: string;
+  gitPath: string;
+  additions: number | "binary";
+  deletions: number | "binary";
+  ranges: TaskExecutionChangedLineRange[];
 }
 
 export interface TaskFileChangeCapture {
+  dispose(): Promise<void>;
   finish(): Promise<TaskExecutionFileChanges | undefined>;
 }
 
-const runGitCommand = async (
+class GitCommandError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "GitCommandError";
+  }
+}
+
+const parseGitInteger = (value: string): number => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`Git returned an invalid integer: ${value}`);
+  }
+
+  return parsed;
+};
+
+const runGitProcess = async (
   args: readonly string[],
-  cwd: string,
-  maxBuffer = GIT_METADATA_MAX_BYTES,
-  input?: string,
-): Promise<string> => {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = execFile(
+  options: GitCommandOptions,
+  onStdout: (chunk: Buffer) => void,
+): Promise<void> => {
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const child = spawn(
       "git",
       ["--no-optional-locks", "-c", "core.quotePath=false", ...args],
       {
-        cwd,
-        encoding: "utf8",
-        maxBuffer,
-        timeout: GIT_COMMAND_TIMEOUT_MS,
+        cwd: options.cwd,
+        env: {
+          ...process.env,
+          ...options.env,
+          GIT_OPTIONAL_LOCKS: "0",
+        },
+        stdio: [options.input ? "pipe" : "ignore", "pipe", "pipe"],
         windowsHide: true,
       },
-      (error, stdout, stderr) => {
-        if (error) {
-          rejectPromise(Object.assign(error, { stdout, stderr }));
-          return;
-        }
-
-        resolvePromise(stdout);
-      },
     );
+    const stderr: Buffer[] = [];
+    let stderrBytes = 0;
+    let settled = false;
+    const reject = (error: Error): void => {
+      if (settled) {
+        return;
+      }
 
-    if (input !== undefined) {
-      child.stdin?.end(input);
+      settled = true;
+      clearTimeout(timeout);
+      child.kill();
+      rejectPromise(error);
+    };
+    const timeout = setTimeout(() => {
+      reject(
+        new GitCommandError(`Git command timed out: git ${args.join(" ")}`),
+      );
+    }, GIT_COMMAND_TIMEOUT_MS);
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (settled) {
+        return;
+      }
+
+      try {
+        onStdout(chunk);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const remaining = MAX_GIT_ERROR_OUTPUT_BYTES - stderrBytes;
+
+      if (remaining <= 0) {
+        return;
+      }
+
+      const boundedChunk =
+        chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
+      stderr.push(boundedChunk);
+      stderrBytes += boundedChunk.length;
+    });
+    child.once("error", (error) => {
+      reject(new GitCommandError(`Failed to start Git: ${error.message}`));
+    });
+    child.stdin?.once("error", (error) => {
+      reject(new GitCommandError(`Failed to send Git input: ${error.message}`));
+    });
+    child.once("close", (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
+      const stderrText = Buffer.concat(stderr).toString("utf8").trim();
+
+      if (code !== 0) {
+        rejectPromise(
+          new GitCommandError(
+            `Git command failed (${code ?? "unknown"}): git ${args.join(" ")}${
+              stderrText ? `\n${stderrText}` : ""
+            }`,
+          ),
+        );
+        return;
+      }
+
+      resolvePromise();
+    });
+
+    if (options.input) {
+      child.stdin?.end(options.input);
     }
   });
 };
 
-const addWarning = (warnings: string[], warning: string): void => {
-  if (warnings.length < MAX_WARNINGS && !warnings.includes(warning)) {
-    warnings.push(warning);
-  }
+const runGitCommand = async (
+  args: readonly string[],
+  options: GitCommandOptions,
+): Promise<Buffer> => {
+  const stdout: Buffer[] = [];
+  await runGitProcess(args, options, (chunk) => stdout.push(chunk));
+  return Buffer.concat(stdout);
 };
 
-const splitNulOutput = (value: string): string[] => {
-  return value.split("\0").filter((entry) => entry.length > 0);
+const runGitText = async (
+  args: readonly string[],
+  options: GitCommandOptions,
+): Promise<string> => {
+  return (await runGitCommand(args, options)).toString("utf8");
+};
+
+const runGitPatchRangeAnalysis = async (
+  args: readonly string[],
+  options: GitCommandOptions,
+  analyses: GitPathLineAnalysis[],
+): Promise<void> => {
+  const decoder = new StringDecoder("utf8");
+  let pendingLine = "";
+  let discardingLine = false;
+  let analysisIndex = -1;
+
+  const processLine = (line: string): void => {
+    if (line.startsWith("diff --git ")) {
+      analysisIndex += 1;
+      if (analysisIndex >= analyses.length) {
+        throw new Error("Git returned more patch sections than changed paths.");
+      }
+      return;
+    }
+
+    if (!line.startsWith("@@ ")) {
+      return;
+    }
+
+    if (analysisIndex < 0) {
+      throw new Error("Git returned a hunk before its changed-path header.");
+    }
+
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/u.exec(line);
+    if (!hunk) {
+      return;
+    }
+
+    analyses[analysisIndex]?.ranges.push({
+      oldStart: parseGitInteger(hunk[1] ?? "0"),
+      oldLines: parseGitInteger(hunk[2] ?? "1"),
+      newStart: parseGitInteger(hunk[3] ?? "0"),
+      newLines: parseGitInteger(hunk[4] ?? "1"),
+    });
+  };
+  const consumeText = (value: string): void => {
+    let text = value;
+
+    while (text.length > 0) {
+      if (discardingLine) {
+        const newlineIndex = text.indexOf("\n");
+        if (newlineIndex < 0) {
+          return;
+        }
+
+        discardingLine = false;
+        text = text.slice(newlineIndex + 1);
+        continue;
+      }
+
+      const newlineIndex = text.indexOf("\n");
+      if (newlineIndex < 0) {
+        if (
+          pendingLine.length + text.length >
+          MAX_DIFF_CONTROL_LINE_CHARS
+        ) {
+          pendingLine = "";
+          discardingLine = true;
+        } else {
+          pendingLine += text;
+        }
+        return;
+      }
+
+      const lineFragment = text.slice(0, newlineIndex);
+      if (
+        pendingLine.length + lineFragment.length <=
+        MAX_DIFF_CONTROL_LINE_CHARS
+      ) {
+        pendingLine += lineFragment;
+        processLine(
+          pendingLine.endsWith("\r") ? pendingLine.slice(0, -1) : pendingLine,
+        );
+      }
+      pendingLine = "";
+      text = text.slice(newlineIndex + 1);
+    }
+  };
+
+  await runGitProcess(args, options, (chunk) =>
+    consumeText(decoder.write(chunk)),
+  );
+  consumeText(decoder.end());
+  if (!discardingLine && pendingLine) {
+    processLine(pendingLine);
+  }
+
+  if (analysisIndex + 1 !== analyses.length) {
+    throw new Error("Git patch sections did not match the changed-path list.");
+  }
 };
 
 const isPathWithin = (parentPath: string, candidatePath: string): boolean => {
@@ -109,787 +307,953 @@ const isPathWithin = (parentPath: string, candidatePath: string): boolean => {
   );
 };
 
-const normalizeWorkspacePath = (
-  gitPath: string,
-  gitRoot: string,
-  workspaceRoot: string,
-): string | undefined => {
-  const absolutePath = resolve(gitRoot, gitPath);
-  const workspacePath = relative(workspaceRoot, absolutePath);
-
-  if (
-    workspacePath.length === 0 ||
-    !isPathWithin(workspaceRoot, absolutePath)
-  ) {
-    return undefined;
-  }
-
-  return workspacePath.replace(/\\/gu, "/");
+const getPathKey = (value: string): string => {
+  const normalized = resolve(value);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 };
 
-const parseUntrackedPaths = (
-  output: string,
-  gitRoot: string,
-  workspaceRoot: string,
-): Set<string> => {
-  const paths = new Set<string>();
+const resolveGitPath = (repositoryRoot: string, value: string): string => {
+  const trimmed = value.trim();
+  return isAbsolute(trimmed) ? trimmed : resolve(repositoryRoot, trimmed);
+};
 
-  for (const gitPath of splitNulOutput(output)) {
-    const path = normalizeWorkspacePath(gitPath, gitRoot, workspaceRoot);
+const createRepositoryPathspec = (
+  repository: DiscoveredGitRepository,
+): string => {
+  const workspaceFromRoot = relative(repository.root, repository.captureRoot);
 
-    if (path) {
-      paths.add(path);
+  return workspaceFromRoot
+    ? `:(top,literal)${workspaceFromRoot.replace(/\\/gu, "/")}`
+    : ".";
+};
+
+const splitNulBuffer = (value: Buffer): Buffer[] => {
+  const entries: Buffer[] = [];
+  let start = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== 0) {
+      continue;
     }
+
+    if (index > start) {
+      entries.push(value.subarray(start, index));
+    }
+
+    start = index + 1;
+  }
+
+  if (start < value.length) {
+    entries.push(value.subarray(start));
+  }
+
+  return entries;
+};
+
+const parseGitlinkPaths = (output: Buffer): string[] => {
+  const paths: string[] = [];
+
+  for (const record of splitNulBuffer(output)) {
+    const text = record.toString("utf8");
+    const separator = text.indexOf("\t");
+
+    if (separator < 0 || !text.startsWith("160000 ")) {
+      continue;
+    }
+
+    paths.push(text.slice(separator + 1));
   }
 
   return paths;
 };
 
-const mapGitStatusToChangeKind = (
-  status: string,
-): TaskExecutionFileChangeKind => {
-  if (status.startsWith("A")) {
+const refreshGitlinks = async (
+  state: RepositoryCaptureState,
+  gitlinkPaths: readonly string[],
+): Promise<void> => {
+  const updates = (
+    await mapWithConcurrencyLimit(
+      gitlinkPaths,
+      GITLINK_HEAD_CONCURRENCY,
+      async (gitPath): Promise<string | undefined> => {
+        const absolutePath = resolve(state.repository.root, gitPath);
+
+        if (
+          !isPathWithin(state.repository.captureRoot, absolutePath) ||
+          !existsSync(absolutePath)
+        ) {
+          return undefined;
+        }
+
+        try {
+          const head = (
+            await runGitText(["rev-parse", "--verify", "HEAD"], {
+              cwd: absolutePath,
+            })
+          ).trim();
+          return head ? `160000 ${head}\t${gitPath}\0` : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+    )
+  ).filter((update): update is string => update !== undefined);
+
+  if (updates.length > 0) {
+    await runGitCommand(["update-index", "-z", "--index-info"], {
+      cwd: state.repository.root,
+      env: state.environment,
+      input: Buffer.from(updates.join(""), "utf8"),
+    });
+  }
+};
+
+const captureTreeOnce = async (
+  state: RepositoryCaptureState,
+): Promise<string> => {
+  state.snapshotSequence += 1;
+  const indexPath = join(
+    state.objectDirectory,
+    `snapshot-${state.snapshotSequence}.index`,
+  );
+  const environment = { ...state.environment, GIT_INDEX_FILE: indexPath };
+
+  try {
+    if (existsSync(state.realIndexPath)) {
+      await copyFile(state.realIndexPath, indexPath);
+    } else {
+      await runGitCommand(["read-tree", "--empty"], {
+        cwd: state.repository.root,
+        env: environment,
+      });
+    }
+
+    const initialGitlinks = parseGitlinkPaths(
+      await runGitCommand(["ls-files", "--stage", "-z"], {
+        cwd: state.repository.root,
+        env: environment,
+      }),
+    );
+    await runGitCommand(
+      ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
+      {
+        cwd: state.repository.root,
+        env: environment,
+        input: Buffer.from(`${state.pathspec}\0`, "utf8"),
+      },
+    );
+    const finalGitlinks = parseGitlinkPaths(
+      await runGitCommand(["ls-files", "--stage", "-z"], {
+        cwd: state.repository.root,
+        env: environment,
+      }),
+    );
+    await refreshGitlinks(
+      { ...state, environment },
+      Array.from(new Set([...initialGitlinks, ...finalGitlinks])),
+    );
+
+    return (
+      await runGitText(["write-tree"], {
+        cwd: state.repository.root,
+        env: environment,
+      })
+    ).trim();
+  } finally {
+    await rm(indexPath, { force: true }).catch(() => undefined);
+    await rm(`${indexPath}.lock`, { force: true }).catch(() => undefined);
+  }
+};
+
+const captureStableTree = async (
+  state: RepositoryCaptureState,
+): Promise<string> => {
+  let previousTree: string | undefined;
+
+  for (let attempt = 0; attempt < SNAPSHOT_STABILITY_ATTEMPTS; attempt += 1) {
+    const tree = await captureTreeOnce(state);
+
+    if (tree === previousTree) {
+      return tree;
+    }
+
+    previousTree = tree;
+  }
+
+  throw new GitCommandError(
+    "The workspace kept changing while its file snapshot was captured.",
+  );
+};
+
+const createEmptyTree = async (
+  state: RepositoryCaptureState,
+): Promise<string> => {
+  state.snapshotSequence += 1;
+  const indexPath = join(state.objectDirectory, `empty-${state.snapshotSequence}.index`);
+  const environment = { ...state.environment, GIT_INDEX_FILE: indexPath };
+
+  try {
+    await runGitCommand(["read-tree", "--empty"], {
+      cwd: state.repository.root,
+      env: environment,
+    });
+    return (
+      await runGitText(["write-tree"], {
+        cwd: state.repository.root,
+        env: environment,
+      })
+    ).trim();
+  } finally {
+    await rm(indexPath, { force: true }).catch(() => undefined);
+  }
+};
+
+const createRepositoryCaptureState = async (
+  repository: DiscoveredGitRepository,
+  artifactRoot: string,
+  repositoryIndex: number,
+  captureStart: boolean,
+): Promise<RepositoryCaptureState> => {
+  const objectDirectory = join(
+    artifactRoot,
+    `repository-${repositoryIndex}`,
+    "objects",
+  );
+  await mkdir(objectDirectory, { recursive: true });
+  const [realIndexOutput, realObjectOutput] = await Promise.all([
+    runGitText(["rev-parse", "--git-path", "index"], { cwd: repository.root }),
+    runGitText(["rev-parse", "--git-path", "objects"], { cwd: repository.root }),
+  ]);
+  const realObjectDirectory = resolveGitPath(repository.root, realObjectOutput);
+  const alternateSeparator = process.platform === "win32" ? ";" : ":";
+  const inheritedAlternates = process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  const environment: NodeJS.ProcessEnv = {
+    GIT_OBJECT_DIRECTORY: objectDirectory,
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: [realObjectDirectory, inheritedAlternates]
+      .filter((entry): entry is string => Boolean(entry))
+      .join(alternateSeparator),
+  };
+  const state: RepositoryCaptureState = {
+    repository,
+    objectDirectory,
+    realIndexPath: resolveGitPath(repository.root, realIndexOutput),
+    environment,
+    pathspec: createRepositoryPathspec(repository),
+    startTree: "",
+    snapshotSequence: 0,
+  };
+  state.startTree = captureStart
+    ? await captureStableTree(state)
+    : await createEmptyTree(state);
+  return state;
+};
+
+const createGitPathKey = (
+  oldGitPath: string | undefined,
+  gitPath: string,
+): string => {
+  return `${oldGitPath ?? ""}\0${gitPath}`;
+};
+
+const parseNumstatValue = (value: string): number | "binary" => {
+  if (value === "-") {
+    return "binary";
+  }
+
+  return parseGitInteger(value);
+};
+
+const parseRawDiffAndNumstat = (
+  output: Buffer,
+): { entries: RawDiffEntry[]; analyses: GitPathLineAnalysis[] } => {
+  const tokens = splitNulBuffer(output);
+  const entries: RawDiffEntry[] = [];
+  const analyses: GitPathLineAnalysis[] = [];
+  let index = 0;
+
+  while (index < tokens.length) {
+    const header = tokens[index]?.toString("utf8");
+    if (!header?.startsWith(":")) {
+      break;
+    }
+    index += 1;
+
+    const match =
+      /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])(\d*)$/u.exec(
+        header,
+      );
+
+    if (!match) {
+      throw new Error(`Unexpected Git raw diff record: ${header}`);
+    }
+
+    const firstPath = tokens[index]?.toString("utf8");
+    index += 1;
+
+    if (!firstPath) {
+      throw new Error("Git raw diff record did not contain a path.");
+    }
+
+    const status = match[5] ?? "M";
+    const hasTwoPaths = status === "R" || status === "C";
+    const secondPath = hasTwoPaths ? tokens[index]?.toString("utf8") : undefined;
+
+    if (hasTwoPaths) {
+      index += 1;
+    }
+
+    if (hasTwoPaths && !secondPath) {
+      throw new Error("Git rename record did not contain its destination path.");
+    }
+
+    entries.push({
+      oldMode: match[1] ?? "000000",
+      newMode: match[2] ?? "000000",
+      oldObjectId: match[3] ?? "",
+      newObjectId: match[4] ?? "",
+      status,
+      ...(hasTwoPaths ? { oldGitPath: firstPath } : {}),
+      gitPath: secondPath ?? firstPath,
+    });
+  }
+
+  while (index < tokens.length) {
+    const record = tokens[index]?.toString("utf8");
+    index += 1;
+    const match = /^(\d+|-)\t(\d+|-)\t(.*)$/su.exec(record ?? "");
+    if (!match) {
+      throw new Error(`Unexpected Git numstat record: ${record ?? ""}`);
+    }
+
+    const additions = parseNumstatValue(match[1] ?? "0");
+    const deletions = parseNumstatValue(match[2] ?? "0");
+    if ((additions === "binary") !== (deletions === "binary")) {
+      throw new Error("Git returned inconsistent binary line statistics.");
+    }
+    const inlinePath = match[3] ?? "";
+    const oldGitPath = inlinePath
+      ? undefined
+      : tokens[index]?.toString("utf8");
+    const gitPath = inlinePath
+      ? inlinePath
+      : tokens[index + 1]?.toString("utf8");
+
+    if (!inlinePath) {
+      index += 2;
+    }
+
+    if (!gitPath || (!inlinePath && !oldGitPath)) {
+      throw new Error("Git numstat rename record did not contain both paths.");
+    }
+
+    analyses.push({
+      ...(oldGitPath ? { oldGitPath } : {}),
+      gitPath,
+      additions,
+      deletions,
+      ranges: [],
+    });
+  }
+
+  if (entries.length !== analyses.length) {
+    throw new Error("Git raw and numstat outputs contained different path counts.");
+  }
+
+  for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+    const entry = entries[entryIndex];
+    const analysis = analyses[entryIndex];
+    if (
+      !entry ||
+      !analysis ||
+      createGitPathKey(entry.oldGitPath, entry.gitPath) !==
+        createGitPathKey(analysis.oldGitPath, analysis.gitPath)
+    ) {
+      throw new Error("Git raw and numstat path ordering did not match.");
+    }
+  }
+
+  return { entries, analyses };
+};
+
+const mapOperation = (entry: RawDiffEntry): TaskExecutionFileChangeOperation => {
+  if (entry.status === "A") {
     return "added";
   }
 
-  if (status.startsWith("D")) {
+  if (entry.status === "D") {
     return "deleted";
+  }
+
+  if (entry.status === "R") {
+    return "renamed";
+  }
+
+  if (entry.status === "T") {
+    return "type-changed";
   }
 
   return "modified";
 };
 
-const parseNameStatus = (
-  output: string,
-  state: TaskFileChangeCaptureState,
-): { changes: Map<string, TaskExecutionFileChange>; order: string[] } => {
-  const tokens = splitNulOutput(output);
-  const changes = new Map<string, TaskExecutionFileChange>();
-  const order: string[] = [];
-
-  for (let index = 0; index + 1 < tokens.length; index += 2) {
-    const status = tokens[index];
-    const gitPath = tokens[index + 1];
-
-    if (!status || !gitPath) {
-      continue;
-    }
-
-    const path = normalizeWorkspacePath(
-      gitPath,
-      state.gitRoot,
-      state.workspaceRoot,
-    );
-
-    if (!path) {
-      continue;
-    }
-
-    changes.set(path, {
-      path,
-      kind: mapGitStatusToChangeKind(status),
-    });
-    order.push(path);
-  }
-
-  return { changes, order };
+const normalizeWorkspacePath = (
+  gitPath: string,
+  repository: DiscoveredGitRepository,
+  workspaceRoot: string,
+): string => {
+  const absolutePath = resolve(repository.root, gitPath);
+  return relative(workspaceRoot, absolutePath).replace(/\\/gu, "/");
 };
 
-const parseNumstat = (
-  output: string,
-  state: TaskFileChangeCaptureState,
-): { stats: Map<string, Pick<TaskExecutionFileChange, "additions" | "deletions" | "binary">>; order: string[] } => {
-  const stats = new Map<
-    string,
-    Pick<TaskExecutionFileChange, "additions" | "deletions" | "binary">
-  >();
-  const order: string[] = [];
-
-  for (const record of splitNulOutput(output)) {
-    const firstTab = record.indexOf("\t");
-    const secondTab = record.indexOf("\t", firstTab + 1);
-
-    if (firstTab <= 0 || secondTab <= firstTab) {
-      continue;
-    }
-
-    const additionsText = record.slice(0, firstTab);
-    const deletionsText = record.slice(firstTab + 1, secondTab);
-    const gitPath = record.slice(secondTab + 1);
-    const path = normalizeWorkspacePath(
-      gitPath,
-      state.gitRoot,
-      state.workspaceRoot,
-    );
-
-    if (!path) {
-      continue;
-    }
-
-    if (additionsText === "-" || deletionsText === "-") {
-      stats.set(path, { binary: true });
-    } else {
-      const additions = Number.parseInt(additionsText, 10);
-      const deletions = Number.parseInt(deletionsText, 10);
-
-      if (Number.isFinite(additions) && Number.isFinite(deletions)) {
-        stats.set(path, { additions, deletions });
-      }
-    }
-
-    order.push(path);
-  }
-
-  return { stats, order };
+const getPresentObjectId = (value: string): string | undefined => {
+  return ZERO_OBJECT_PATTERN.test(value) ? undefined : value;
 };
 
-const parsePatchRanges = (
-  patch: string,
-  orderedPaths: readonly string[],
-): ParsedPatchRanges => {
-  const sectionStarts = Array.from(patch.matchAll(/^diff --git /gmu), (match) =>
-    match.index,
-  ).filter((index): index is number => index !== undefined);
-
-  if (sectionStarts.length !== orderedPaths.length) {
-    return { ranges: new Map(), complete: false };
+const analyzeRegularFile = (
+  entry: RawDiffEntry,
+  analysis: GitPathLineAnalysis | undefined,
+  repositoryAnalysisFailure: string | undefined,
+): Pick<
+  TaskExecutionFileChange,
+  "entryType" | "lineAnalysis" | "ranges" | "hunkCount"
+> => {
+  if (
+    entry.oldObjectId === entry.newObjectId &&
+    entry.oldMode !== entry.newMode
+  ) {
+    return {
+      entryType: "mode",
+      lineAnalysis: { state: "not-applicable", reason: "mode-only" },
+      hunkCount: 0,
+    };
   }
 
-  const ranges = new Map<string, TaskExecutionChangedLineRange[]>();
-
-  for (let index = 0; index < sectionStarts.length; index += 1) {
-    const start = sectionStarts[index];
-    const path = orderedPaths[index];
-
-    if (start === undefined || !path) {
-      continue;
-    }
-
-    const end = sectionStarts[index + 1] ?? patch.length;
-    const section = patch.slice(start, end);
-    const fileRanges = Array.from(
-      section.matchAll(
-        /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gmu,
-      ),
-      (match): TaskExecutionChangedLineRange => ({
-        oldStart: Number.parseInt(match[1] ?? "0", 10),
-        oldLines: Number.parseInt(match[2] ?? "1", 10),
-        newStart: Number.parseInt(match[3] ?? "0", 10),
-        newLines: Number.parseInt(match[4] ?? "1", 10),
-      }),
-    );
-
-    if (fileRanges.length > 0) {
-      ranges.set(path, fileRanges);
-    }
+  if (entry.oldObjectId === entry.newObjectId) {
+    return {
+      entryType: "text",
+      lineAnalysis: { state: "complete", additions: 0, deletions: 0 },
+      hunkCount: 0,
+    };
   }
 
-  return { ranges, complete: true };
+  if (analysis?.additions === "binary" || analysis?.deletions === "binary") {
+    return {
+      entryType: "binary",
+      lineAnalysis: { state: "not-applicable", reason: "binary" },
+      hunkCount: 0,
+    };
+  }
+
+  if (repositoryAnalysisFailure || !analysis) {
+    return {
+      entryType: "text",
+      lineAnalysis: {
+        state: "failed",
+        code: "git-failed",
+        message:
+          repositoryAnalysisFailure ??
+          "Git did not return line statistics for this path.",
+      },
+      hunkCount: 0,
+    };
+  }
+
+  const { additions, deletions, ranges } = analysis;
+  if ((additions > 0 || deletions > 0) && ranges.length === 0) {
+    return {
+      entryType: "text",
+      lineAnalysis: {
+        state: "failed",
+        code: "git-failed",
+        message: "Git returned line statistics without changed-line coordinates.",
+      },
+      hunkCount: 0,
+    };
+  }
+
+  return {
+    entryType: "text",
+    lineAnalysis: { state: "complete", additions, deletions },
+    ...(ranges.length > 0 ? { ranges } : {}),
+    hunkCount: ranges.length,
+  };
 };
 
-const reconcileInitialUntrackedFiles = async (
-  state: TaskFileChangeCaptureState,
-  finalUntracked: ReadonlySet<string>,
-  changes: Map<string, TaskExecutionFileChange>,
-  warnings: string[],
-): Promise<void> => {
-  if (!state.initialUntracked || !state.initialUntrackedFingerprints) {
-    return;
-  }
-
-  const monitoredPaths = Array.from(state.initialUntrackedFingerprints.keys());
-  const existingMonitoredPaths = monitoredPaths.filter((path) =>
-    existsSync(resolve(state.workspaceRoot, path)),
+const analyzeDiffEntry = (
+  state: RepositoryCaptureState,
+  entry: RawDiffEntry,
+  analysis: GitPathLineAnalysis | undefined,
+  repositoryAnalysisFailure: string | undefined,
+  workspaceRoot: string,
+): TaskExecutionFileChange => {
+  const path = normalizeWorkspacePath(
+    entry.gitPath,
+    state.repository,
+    workspaceRoot,
   );
-  const existingMonitoredPathSet = new Set(existingMonitoredPaths);
-  const finalFingerprints = await fingerprintUntrackedFiles(
-    existingMonitoredPaths,
-    state.workspaceRoot,
-  );
+  const oldPath = entry.oldGitPath
+    ? normalizeWorkspacePath(entry.oldGitPath, state.repository, workspaceRoot)
+    : undefined;
+  const base = {
+    path,
+    ...(oldPath && oldPath !== path ? { oldPath } : {}),
+    operation: mapOperation(entry),
+    ...(state.repository.workspacePath !== "." ||
+    state.repository.source === "nested"
+      ? { repositoryPath: state.repository.workspacePath }
+      : {}),
+    oldMode: entry.oldMode,
+    newMode: entry.newMode,
+    ...(getPresentObjectId(entry.oldObjectId)
+      ? { oldObjectId: entry.oldObjectId }
+      : {}),
+    ...(getPresentObjectId(entry.newObjectId)
+      ? { newObjectId: entry.newObjectId }
+      : {}),
+  } satisfies Omit<
+    TaskExecutionFileChange,
+    "entryType" | "lineAnalysis" | "ranges" | "hunkCount"
+  >;
 
-  if (!finalFingerprints.complete) {
-    addWarning(
-      warnings,
-      "Some files that were already untracked could not be rechecked.",
-    );
+  if (entry.oldMode === "160000" || entry.newMode === "160000") {
+    return {
+      ...base,
+      entryType: "gitlink",
+      lineAnalysis: { state: "not-applicable", reason: "gitlink" },
+      ...(getPresentObjectId(entry.oldObjectId)
+        ? { oldCommit: entry.oldObjectId }
+        : {}),
+      ...(getPresentObjectId(entry.newObjectId)
+        ? { newCommit: entry.newObjectId }
+        : {}),
+      hunkCount: 0,
+    };
   }
 
-  for (const path of monitoredPaths) {
-    if (!existingMonitoredPathSet.has(path)) {
-      changes.set(path, { path, kind: "deleted" });
-      continue;
-    }
-
-    const initialFingerprint = state.initialUntrackedFingerprints.get(path);
-    const finalFingerprint = finalFingerprints.fingerprints.get(path);
-
-    if (!initialFingerprint || !finalFingerprint) {
-      continue;
-    }
-
-    if (initialFingerprint === finalFingerprint) {
-      if (changes.get(path)?.kind === "added") {
-        changes.delete(path);
-      }
-      continue;
-    }
-
-    changes.set(path, { path, kind: "modified" });
+  if (entry.oldMode === "120000" || entry.newMode === "120000") {
+    return {
+      ...base,
+      entryType: "symlink",
+      lineAnalysis: { state: "not-applicable", reason: "symlink" },
+      hunkCount: 0,
+    };
   }
 
-  for (const path of state.initialUntracked) {
-    if (
-      !state.initialUntrackedFingerprints.has(path) &&
-      !finalUntracked.has(path) &&
-      !changes.has(path)
-    ) {
-      changes.set(path, { path, kind: "deleted" });
-    }
-  }
+  return {
+    ...base,
+    ...analyzeRegularFile(entry, analysis, repositoryAnalysisFailure),
+  };
 };
 
-const createDiffArguments = (
-  state: TaskFileChangeCaptureState,
-  formatArguments: readonly string[],
+const createTreeDiffArguments = (
+  state: RepositoryCaptureState,
+  finishTree: string,
+  outputArguments: readonly string[],
 ): string[] => {
   return [
-    "diff",
+    "diff-tree",
+    "--no-commit-id",
+    "-r",
+    ...outputArguments,
+    "--full-index",
+    "-M50%",
+    "-l0",
+    "--diff-algorithm=histogram",
+    "--no-color",
     "--no-ext-diff",
     "--no-textconv",
-    "--no-renames",
-    ...formatArguments,
-    state.baseline,
+    state.startTree,
+    finishTree,
     "--",
     state.pathspec,
   ];
 };
 
-const mergeTrackedChanges = (
-  nameStatusOutput: string | undefined,
-  numstatOutput: string | undefined,
-  state: TaskFileChangeCaptureState,
-): { changes: Map<string, TaskExecutionFileChange>; order: string[] } => {
-  const parsedNames = nameStatusOutput
-    ? parseNameStatus(nameStatusOutput, state)
-    : { changes: new Map<string, TaskExecutionFileChange>(), order: [] };
-  const parsedStats = numstatOutput
-    ? parseNumstat(numstatOutput, state)
-    : { stats: new Map(), order: [] };
-
-  for (const [path, stats] of parsedStats.stats) {
-    const existing = parsedNames.changes.get(path) ?? {
-      path,
-      kind: "modified" as const,
-    };
-    parsedNames.changes.set(path, { ...existing, ...stats });
-  }
-
-  return {
-    changes: parsedNames.changes,
-    order: parsedNames.order.length > 0 ? parsedNames.order : parsedStats.order,
-  };
-};
-
-const copyFileWithoutRanges = (
-  file: TaskExecutionFileChange,
-): TaskExecutionFileChange => {
-  return {
-    path: file.path,
-    kind: file.kind,
-    ...(file.repositoryPath ? { repositoryPath: file.repositoryPath } : {}),
-    ...(file.additions !== undefined ? { additions: file.additions } : {}),
-    ...(file.deletions !== undefined ? { deletions: file.deletions } : {}),
-    ...(file.binary ? { binary: true } : {}),
-  };
-};
-
-const limitRecordedFiles = (
-  allFiles: readonly TaskExecutionFileChange[],
-): { files: TaskExecutionFileChange[]; truncated: boolean } => {
-  let remainingRanges = MAX_RECORDED_RANGES;
-  let rangesTruncated = false;
-  const files = allFiles.slice(0, MAX_RECORDED_FILES).map((file) => {
-    if (!file.ranges || file.ranges.length === 0) {
-      return file;
-    }
-
-    const ranges = file.ranges.slice(0, remainingRanges);
-    remainingRanges -= ranges.length;
-
-    if (ranges.length < file.ranges.length) {
-      rangesTruncated = true;
-    }
-
-    return ranges.length > 0
-      ? { ...file, ranges }
-      : copyFileWithoutRanges(file);
-  });
-
-  return {
-    files,
-    truncated: allFiles.length > files.length || rangesTruncated,
-  };
-};
-
-const createFileChangeResult = (
-  changes: Map<string, TaskExecutionFileChange>,
-  warnings: string[],
-): TaskExecutionFileChanges | undefined => {
-  const allFiles = Array.from(changes.values()).sort((left, right) =>
-    left.path.localeCompare(right.path),
-  );
-
-  if (allFiles.length === 0) {
-    return undefined;
-  }
-
-  const additions = allFiles.reduce(
-    (total, file) => total + (file.additions ?? 0),
-    0,
-  );
-  const deletions = allFiles.reduce(
-    (total, file) => total + (file.deletions ?? 0),
-    0,
-  );
-  const binaryFiles = allFiles.filter((file) => file.binary === true).length;
-  const limitedFiles = limitRecordedFiles(allFiles);
-
-  return {
-    files: limitedFiles.files,
-    totalFiles: allFiles.length,
-    additions,
-    deletions,
-    binaryFiles,
-    lineCountsComplete: allFiles.every(
-      (file) => file.additions !== undefined && file.deletions !== undefined,
-    ),
-    coverage: warnings.length > 0 ? "partial" : "complete",
-    truncated: limitedFiles.truncated,
-    attribution: "workspace-observed",
-    ...(warnings.length > 0 ? { warnings: warnings.slice(0, MAX_WARNINGS) } : {}),
-  };
-};
-
-const finishTaskFileChangeCapture = async (
-  state: TaskFileChangeCaptureState,
-): Promise<TaskExecutionFileChanges | undefined> => {
-  const [nameStatusResult, numstatResult, patchResult, untrackedResult] =
-    await Promise.allSettled([
-      runGitCommand(
-        createDiffArguments(state, ["--name-status", "-z"]),
-        state.gitRoot,
-      ),
-      runGitCommand(
-        createDiffArguments(state, ["--numstat", "-z"]),
-        state.gitRoot,
-      ),
-      runGitCommand(
-        createDiffArguments(state, [
-          "--unified=0",
-          "--diff-algorithm=histogram",
-          "--no-color",
-        ]),
-        state.gitRoot,
-        GIT_PATCH_MAX_BYTES,
-      ),
-      runGitCommand(
-        ["ls-files", "--others", "--exclude-standard", "-z", "--", state.pathspec],
-        state.gitRoot,
-      ),
-    ]);
-  const warnings = [...state.warnings];
-
-  if (nameStatusResult.status === "rejected") {
-    addWarning(warnings, "Some file status details could not be captured.");
-  }
-
-  if (numstatResult.status === "rejected") {
-    addWarning(warnings, "Some changed-line counts could not be captured.");
-  }
-
-  const tracked = mergeTrackedChanges(
-    nameStatusResult.status === "fulfilled" ? nameStatusResult.value : undefined,
-    numstatResult.status === "fulfilled" ? numstatResult.value : undefined,
-    state,
-  );
-
-  if (patchResult.status === "fulfilled") {
-    const parsedPatch = parsePatchRanges(patchResult.value, tracked.order);
-
-    if (!parsedPatch.complete) {
-      addWarning(warnings, "Some changed-line ranges could not be captured.");
-    } else {
-      for (const [path, ranges] of parsedPatch.ranges) {
-        const existing = tracked.changes.get(path);
-
-        if (existing) {
-          tracked.changes.set(path, { ...existing, ranges });
-        }
-      }
-    }
-  } else {
-    addWarning(warnings, "Some changed-line ranges could not be captured.");
-  }
-
-  if (state.initialUntracked && untrackedResult.status === "fulfilled") {
-    const finalUntracked = parseUntrackedPaths(
-      untrackedResult.value,
-      state.gitRoot,
-      state.workspaceRoot,
-    );
-    const newUntracked = Array.from(finalUntracked)
-      .filter((path) => !state.initialUntracked?.has(path))
-      .sort((left, right) => left.localeCompare(right));
-
-    for (const path of newUntracked) {
-      if (!tracked.changes.has(path)) {
-        tracked.changes.set(path, { path, kind: "added" });
-      }
-    }
-
-    await reconcileInitialUntrackedFiles(
-      state,
-      finalUntracked,
-      tracked.changes,
-      warnings,
-    );
-
-    await inspectNewUntrackedFiles(
-      newUntracked,
-      tracked.changes,
-      state.workspaceRoot,
-    );
-  } else {
-    addWarning(warnings, "Untracked file changes could not be fully captured.");
-  }
-
-  return createFileChangeResult(tracked.changes, warnings);
-};
-
-const startGitRepositoryFileChangeCapture = async (
+const analyzeRepository = async (
+  state: RepositoryCaptureState,
+  finishTree: string,
   workspaceRoot: string,
-  repository: DiscoveredGitRepository,
-): Promise<TaskFileChangeCapture | undefined> => {
+): Promise<RepositoryAnalysisResult> => {
+  let entries: RawDiffEntry[];
+  let analyses: GitPathLineAnalysis[];
+
   try {
-    let hasHead = true;
-    let headBaseline = "";
-
-    try {
-      headBaseline = (
-        await runGitCommand(["rev-parse", "--verify", "HEAD"], repository.root)
-      ).trim();
-    } catch {
-      hasHead = false;
-    }
-
-    if (!isPathWithin(repository.root, repository.captureRoot)) {
-      return undefined;
-    }
-
-    const workspaceFromRoot = relative(repository.root, repository.captureRoot);
-    const pathspec = workspaceFromRoot
-      ? `:(top,literal)${workspaceFromRoot.replace(/\\/gu, "/")}`
-      : ".";
-    const [stashResult, untrackedResult] = await Promise.allSettled([
-      runGitCommand(["stash", "create"], repository.root),
-      runGitCommand(
-        [
-          "ls-files",
-          ...(hasHead ? [] : ["--cached"]),
-          "--others",
-          "--exclude-standard",
-          "-z",
-          "--",
-          pathspec,
-        ],
-        repository.root,
-      ),
-    ]);
-    const stashBaseline =
-      stashResult.status === "fulfilled" ? stashResult.value.trim() : "";
-    const baseline =
-      stashBaseline ||
-      headBaseline ||
-      (
-        await runGitCommand(
-          ["hash-object", "-t", "tree", "-w", "--stdin"],
-          repository.root,
-          GIT_METADATA_MAX_BYTES,
-          "",
-        )
-      ).trim();
-
-    const warnings: string[] = [];
-    const initialUntracked =
-      untrackedResult.status === "fulfilled"
-        ? parseUntrackedPaths(
-            untrackedResult.value,
-            repository.root,
-            workspaceRoot,
-          )
-        : undefined;
-
-    if (!initialUntracked) {
-      addWarning(warnings, "The initial untracked file set could not be captured.");
-    }
-
-    const initialUntrackedFingerprintResult = initialUntracked
-      ? await fingerprintUntrackedFiles(
-          Array.from(initialUntracked).sort((left, right) =>
-            left.localeCompare(right),
-          ),
-          workspaceRoot,
-        )
-      : undefined;
-
-    if (
-      initialUntrackedFingerprintResult &&
-      !initialUntrackedFingerprintResult.complete
-    ) {
-      addWarning(
-        warnings,
-        "Some files that were already untracked could not be monitored.",
-      );
-    }
-
-    const state: TaskFileChangeCaptureState = {
-      baseline,
-      gitRoot: repository.root,
-      workspaceRoot,
-      pathspec,
-      ...(initialUntracked ? { initialUntracked } : {}),
-      ...(initialUntrackedFingerprintResult
-        ? {
-            initialUntrackedFingerprints:
-              initialUntrackedFingerprintResult.fingerprints,
-          }
-        : {}),
-      warnings,
-    };
-
-    let finishPromise: Promise<TaskExecutionFileChanges | undefined> | undefined;
-
+    const rawDiff = await runGitCommand(
+      createTreeDiffArguments(state, finishTree, [
+        "--raw",
+        "--numstat",
+        "-z",
+      ]),
+      { cwd: state.repository.root, env: state.environment },
+    );
+    ({ entries, analyses } = parseRawDiffAndNumstat(rawDiff));
+  } catch (error) {
     return {
-      finish: () => {
-        finishPromise ??= finishTaskFileChangeCapture(state);
-        return finishPromise;
-      },
+      files: [],
+      issues: [
+        {
+          stage: "renameAnalysis",
+          code: "git-diff-failed",
+          message: error instanceof Error ? error.message : String(error),
+          repositoryPath: state.repository.workspacePath,
+        },
+      ],
     };
-  } catch {
-    return undefined;
   }
+
+  if (entries.length === 0) {
+    return { files: [], issues: [] };
+  }
+
+  let repositoryAnalysisFailure: string | undefined;
+  try {
+    await runGitPatchRangeAnalysis(
+      createTreeDiffArguments(state, finishTree, ["--patch", "--unified=0"]),
+      { cwd: state.repository.root, env: state.environment },
+      analyses,
+    );
+  } catch (error) {
+    repositoryAnalysisFailure =
+      error instanceof Error ? error.message : String(error);
+  }
+
+  const files = entries.map((entry, index) =>
+    analyzeDiffEntry(
+      state,
+      entry,
+      analyses[index],
+      repositoryAnalysisFailure,
+      workspaceRoot,
+    ),
+  );
+
+  return { files, issues: [] };
 };
 
-const createAggregatedFileChangeResult = (
-  repositoryResults: readonly RepositoryCaptureResult[],
-  initialWarnings: readonly string[],
+const createStage = (
+  issuesByStage: ReadonlyMap<
+    TaskExecutionFileChangeIssue["stage"],
+    TaskExecutionFileChangeIssue
+  >,
+  stage: TaskExecutionFileChangeIssue["stage"],
+): TaskExecutionFileChangeCompleteness[typeof stage] => {
+  const issue = issuesByStage.get(stage);
+
+  return issue
+    ? { state: "failed", code: issue.code, message: issue.message }
+    : { state: "complete" };
+};
+
+const createResult = (
+  files: readonly TaskExecutionFileChange[],
+  repositoryCount: number,
+  issues: readonly TaskExecutionFileChangeIssue[],
 ): TaskExecutionFileChanges | undefined => {
-  if (repositoryResults.length === 0) {
+  if (files.length === 0 && issues.length === 0) {
     return undefined;
   }
 
-  const warnings: string[] = [];
-
-  for (const warning of initialWarnings) {
-    addWarning(warnings, warning);
-  }
-
-  const orderedResults = [...repositoryResults].sort(
+  const orderedFiles = [...files].sort(
     (left, right) =>
-      left.repository.workspacePath.length -
-        right.repository.workspacePath.length ||
-      left.repository.workspacePath.localeCompare(
-        right.repository.workspacePath,
-      ),
+      (left.repositoryPath ?? ".").localeCompare(right.repositoryPath ?? ".") ||
+      left.path.localeCompare(right.path),
   );
-  const filesByPath = new Map<string, TaskExecutionFileChange>();
-  let duplicateFiles = 0;
+  const allIssues = [...issues];
+  let additions = 0;
+  let deletions = 0;
+  let binaryFiles = 0;
+  let gitlinkFiles = 0;
+  let symlinkFiles = 0;
+  let modeOnlyFiles = 0;
+  let failedFiles = 0;
+  const lineIssueKeys = new Set<string>();
 
-  for (const entry of orderedResults) {
-    for (const warning of entry.result.warnings ?? []) {
-      addWarning(
-        warnings,
-        repositoryResults.length > 1
-          ? `${entry.repository.workspacePath}: ${warning}`
-          : warning,
-      );
-    }
-
-    for (const file of entry.result.files) {
-      const shouldIncludeRepositoryPath =
-        repositoryResults.length > 1 ||
-        entry.repository.workspacePath !== ".";
-
-      if (filesByPath.has(file.path)) {
-        duplicateFiles += 1;
+  for (const file of orderedFiles) {
+    if (file.lineAnalysis.state === "complete") {
+      additions += file.lineAnalysis.additions;
+      deletions += file.lineAnalysis.deletions;
+    } else if (file.lineAnalysis.state === "failed") {
+      failedFiles += 1;
+      const repositoryPath = file.repositoryPath ?? ".";
+      const issueKey = [
+        repositoryPath,
+        file.lineAnalysis.code,
+        file.lineAnalysis.message,
+      ].join("\0");
+      if (!lineIssueKeys.has(issueKey)) {
+        lineIssueKeys.add(issueKey);
+        allIssues.push({
+          stage: "lineAnalysis",
+          code: file.lineAnalysis.code,
+          message: file.lineAnalysis.message,
+          ...(file.repositoryPath
+            ? { repositoryPath: file.repositoryPath }
+            : {}),
+        });
       }
+    }
 
-      filesByPath.set(file.path, {
-        ...file,
-        ...(shouldIncludeRepositoryPath
-          ? { repositoryPath: entry.repository.workspacePath }
-          : {}),
-      });
+    if (file.entryType === "binary") {
+      binaryFiles += 1;
+    } else if (file.entryType === "gitlink") {
+      gitlinkFiles += 1;
+    } else if (file.entryType === "symlink") {
+      symlinkFiles += 1;
+    } else if (file.entryType === "mode") {
+      modeOnlyFiles += 1;
+    }
+  }
+  const issuesByStage = new Map<
+    TaskExecutionFileChangeIssue["stage"],
+    TaskExecutionFileChangeIssue
+  >();
+
+  for (const issue of allIssues) {
+    if (!issuesByStage.has(issue.stage)) {
+      issuesByStage.set(issue.stage, issue);
     }
   }
 
-  const allFiles = Array.from(filesByPath.values()).sort((left, right) =>
-    left.path.localeCompare(right.path),
-  );
-
-  if (allFiles.length === 0) {
-    return undefined;
-  }
-
-  const hasUnstoredFiles = repositoryResults.some(
-    (entry) =>
-      entry.result.truncated ||
-      entry.result.totalFiles > entry.result.files.length,
-  );
-  const limitedFiles = limitRecordedFiles(allFiles);
-  const summedTotalFiles = repositoryResults.reduce(
-    (total, entry) => total + entry.result.totalFiles,
-    0,
-  );
-  const totalFiles = hasUnstoredFiles
-    ? Math.max(allFiles.length, summedTotalFiles - duplicateFiles)
-    : allFiles.length;
-  const additions = hasUnstoredFiles
-    ? repositoryResults.reduce(
-        (total, entry) => total + entry.result.additions,
-        0,
-      )
-    : allFiles.reduce((total, file) => total + (file.additions ?? 0), 0);
-  const deletions = hasUnstoredFiles
-    ? repositoryResults.reduce(
-        (total, entry) => total + entry.result.deletions,
-        0,
-      )
-    : allFiles.reduce((total, file) => total + (file.deletions ?? 0), 0);
-  const binaryFiles = hasUnstoredFiles
-    ? repositoryResults.reduce(
-        (total, entry) => total + entry.result.binaryFiles,
-        0,
-      )
-    : allFiles.filter((file) => file.binary === true).length;
+  const completeness: TaskExecutionFileChangeCompleteness = {
+    discovery: createStage(issuesByStage, "discovery"),
+    startSnapshots: createStage(issuesByStage, "startSnapshots"),
+    finishSnapshots: createStage(issuesByStage, "finishSnapshots"),
+    renameAnalysis: createStage(issuesByStage, "renameAnalysis"),
+    lineAnalysis: createStage(issuesByStage, "lineAnalysis"),
+    persistence: createStage(issuesByStage, "persistence"),
+  };
 
   return {
-    files: limitedFiles.files,
-    totalFiles,
+    files: orderedFiles,
+    totalFiles: orderedFiles.length,
     additions,
     deletions,
     binaryFiles,
-    lineCountsComplete: repositoryResults.every(
-      (entry) => entry.result.lineCountsComplete,
-    ),
-    coverage:
-      warnings.length > 0 ||
-      repositoryResults.some((entry) => entry.result.coverage === "partial")
-        ? "partial"
-        : "complete",
-    truncated: hasUnstoredFiles || limitedFiles.truncated,
+    gitlinkFiles,
+    symlinkFiles,
+    modeOnlyFiles,
+    failedFiles,
+    status:
+      allIssues.length === 0
+        ? "complete"
+        : orderedFiles.length > 0
+          ? "partial"
+          : "failed",
+    completeness,
     attribution: "workspace-observed",
-    repositoryCount: repositoryResults.length,
-    ...(warnings.length > 0 ? { warnings } : {}),
+    repositoryCount,
+    issues: allIssues,
   };
 };
 
-const finishRepositoryCaptures = async (
-  captures: readonly RepositoryCapture[],
-  initialWarnings: readonly string[],
+const finishCapture = async (
+  workspaceRoot: string,
+  artifactRoot: string,
+  startStates: readonly RepositoryCaptureState[],
+  startIssues: readonly TaskExecutionFileChangeIssue[],
 ): Promise<TaskExecutionFileChanges | undefined> => {
-  const outcomes = await mapWithConcurrencyLimit(
-    captures,
-    REPOSITORY_FINISH_CONCURRENCY,
-    async (entry) => {
+  const issues = [...startIssues];
+  const finishDiscovery = await discoverWorkspaceGitRepositories(workspaceRoot);
+
+  for (const issue of finishDiscovery.issues) {
+    issues.push({
+      stage: "discovery",
+      code: "repository-discovery-failed",
+      message: issue,
+    });
+  }
+
+  const startRoots = new Set(
+    startStates.map((state) => getPathKey(state.repository.root)),
+  );
+  const states = [...startStates];
+  const newRepositories = finishDiscovery.repositories.filter(
+    (repository) => !startRoots.has(getPathKey(repository.root)),
+  );
+  const newRepositoryOutcomes = await mapWithConcurrencyLimit(
+    newRepositories,
+    REPOSITORY_START_CONCURRENCY,
+    async (repository, index) => {
       try {
         return {
-          entry,
-          result: await entry.capture.finish(),
-          failed: false,
+          state: await createRepositoryCaptureState(
+            repository,
+            artifactRoot,
+            startStates.length + index,
+            false,
+          ),
         };
-      } catch {
-        return { entry, result: undefined, failed: true };
+      } catch (error) {
+        return {
+          issue: {
+            stage: "finishSnapshots" as const,
+            code: "new-repository-snapshot-failed",
+            message: error instanceof Error ? error.message : String(error),
+            repositoryPath: repository.workspacePath,
+          },
+        };
       }
     },
   );
-  const warnings = [...initialWarnings];
-  const repositoryResults: RepositoryCaptureResult[] = [];
 
-  for (const outcome of outcomes) {
-    if (outcome.failed) {
-      addWarning(
-        warnings,
-        `${outcome.entry.repository.workspacePath}: File changes could not be finalized.`,
-      );
-      continue;
-    }
-
-    if (outcome.result) {
-      repositoryResults.push({
-        repository: outcome.entry.repository,
-        result: outcome.result,
-      });
+  for (const outcome of newRepositoryOutcomes) {
+    if (outcome.state) {
+      states.push(outcome.state);
+    } else if (outcome.issue) {
+      issues.push(outcome.issue);
     }
   }
 
-  return createAggregatedFileChangeResult(repositoryResults, warnings);
+  const outcomes = await mapWithConcurrencyLimit(
+    states,
+    REPOSITORY_FINISH_CONCURRENCY,
+    async (state): Promise<RepositoryAnalysisResult> => {
+      try {
+        const finishTree = await captureStableTree(state);
+        return await analyzeRepository(state, finishTree, workspaceRoot);
+      } catch (error) {
+        return {
+          files: [],
+          issues: [
+            {
+              stage: "finishSnapshots",
+              code:
+                error instanceof GitCommandError &&
+                error.message.includes("kept changing")
+                  ? "snapshot-unstable"
+                  : "snapshot-failed",
+              message: error instanceof Error ? error.message : String(error),
+              repositoryPath: state.repository.workspacePath,
+            },
+          ],
+        };
+      }
+    },
+  );
+  const files = outcomes.flatMap((outcome) => outcome.files);
+
+  for (const outcome of outcomes) {
+    issues.push(...outcome.issues);
+  }
+
+  return createResult(files, states.length, issues);
+};
+
+const createFailedCapture = (
+  issue: TaskExecutionFileChangeIssue,
+): TaskFileChangeCapture => {
+  const result = createResult([], 0, [issue]);
+  const finishPromise = Promise.resolve(result);
+
+  return {
+    dispose: async () => undefined,
+    finish: () => finishPromise,
+  };
 };
 
 export const startTaskFileChangeCapture = async (
   workspaceRoot: string,
 ): Promise<TaskFileChangeCapture | undefined> => {
+  let discovery: Awaited<ReturnType<typeof discoverWorkspaceGitRepositories>>;
+
   try {
-    const discovery = await discoverWorkspaceGitRepositories(workspaceRoot);
+    discovery = await discoverWorkspaceGitRepositories(workspaceRoot);
+  } catch (error) {
+    return createFailedCapture({
+      stage: "discovery",
+      code: "repository-discovery-failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 
-    if (discovery.repositories.length === 0) {
-      return undefined;
-    }
+  let artifactRoot: string;
 
-    const startedCaptures = await mapWithConcurrencyLimit(
+  try {
+    artifactRoot = await mkdtemp(join(tmpdir(), "machdoch-file-changes-"));
+  } catch (error) {
+    return createFailedCapture({
+      stage: "startSnapshots",
+      code: "capture-initialization-failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const issues: TaskExecutionFileChangeIssue[] = discovery.issues.map(
+    (message) => ({
+      stage: "discovery",
+      code: "repository-discovery-failed",
+      message,
+    }),
+  );
+  const states = (
+    await mapWithConcurrencyLimit(
       discovery.repositories,
       REPOSITORY_START_CONCURRENCY,
-      async (repository): Promise<RepositoryCapture | undefined> => {
-        const capture = await startGitRepositoryFileChangeCapture(
-          discovery.workspaceRoot,
-          repository,
-        );
-
-        return capture ? { repository, capture } : undefined;
+      async (repository, index): Promise<RepositoryCaptureState | undefined> => {
+        try {
+          return await createRepositoryCaptureState(
+            repository,
+            artifactRoot,
+            index,
+            true,
+          );
+        } catch (error) {
+          issues.push({
+            stage: "startSnapshots",
+            code:
+              error instanceof GitCommandError &&
+              error.message.includes("kept changing")
+                ? "snapshot-unstable"
+                : "snapshot-failed",
+            message: error instanceof Error ? error.message : String(error),
+            repositoryPath: repository.workspacePath,
+          });
+          return undefined;
+        }
       },
+    )
+  ).filter((state): state is RepositoryCaptureState => state !== undefined);
+  let finishPromise: Promise<TaskExecutionFileChanges | undefined> | undefined;
+  let cleanupPromise: Promise<void> | undefined;
+  let disposed = false;
+  const cleanup = (): Promise<void> => {
+    cleanupPromise ??= rm(artifactRoot, { force: true, recursive: true }).catch(
+      () => undefined,
     );
-    const captures: RepositoryCapture[] = [];
-    const warnings = [...discovery.warnings];
+    return cleanupPromise;
+  };
 
-    for (let index = 0; index < startedCaptures.length; index += 1) {
-      const capture = startedCaptures[index];
-      const repository = discovery.repositories[index];
-
-      if (capture) {
-        captures.push(capture);
-      } else if (repository) {
-        addWarning(
-          warnings,
-          `${repository.workspacePath}: File changes could not be monitored.`,
-        );
+  return {
+    dispose: async () => {
+      disposed = true;
+      if (finishPromise) {
+        await finishPromise.catch(() => undefined);
+        return;
       }
-    }
 
-    if (captures.length === 0) {
-      return undefined;
-    }
+      await cleanup();
+    },
+    finish: () => {
+      if (disposed) {
+        return Promise.resolve(undefined);
+      }
 
-    let finishPromise: Promise<TaskExecutionFileChanges | undefined> | undefined;
-
-    return {
-      finish: () => {
-        finishPromise ??= finishRepositoryCaptures(captures, warnings).catch(
-          () => undefined,
-        );
-        return finishPromise;
-      },
-    };
-  } catch {
-    return undefined;
-  }
+      finishPromise ??= finishCapture(
+        discovery.workspaceRoot,
+        artifactRoot,
+        states,
+        issues,
+      )
+        .catch((error) =>
+          createResult([], states.length, [
+            ...issues,
+            {
+              stage: "finishSnapshots",
+              code: "capture-finalization-failed",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          ]),
+        )
+        .finally(cleanup);
+      return finishPromise;
+    },
+  };
 };

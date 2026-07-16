@@ -64,6 +64,13 @@ vi.mock("../runtime", () => ({
   subscribeToDesktopTaskProgress: vi.fn(),
 }));
 
+const mediaRuntimeMocks = vi.hoisted(() => ({
+  listMediaFlows: vi.fn(),
+  getMediaFlow: vi.fn(),
+}));
+
+vi.mock("../media/media-runtime", () => mediaRuntimeMocks);
+
 class MockResizeObserver {
   observe(): void {}
   unobserve(): void {}
@@ -80,6 +87,7 @@ const renderRalphFlowEditor = (
       | "onFlowLibraryModeChange"
       | "generationPromptHistory"
       | "onGenerationPromptHistoryChange"
+      | "onOpenMediaRun"
     >
   > = {},
 ): ReturnType<typeof render> => {
@@ -169,6 +177,15 @@ describe("RalphFlowEditor", () => {
     vi.mocked(showRalphRunLog).mockReset();
     vi.mocked(showRalphFlow).mockReset();
     vi.mocked(subscribeToDesktopTaskProgress).mockReset();
+    mediaRuntimeMocks.listMediaFlows.mockReset();
+    mediaRuntimeMocks.getMediaFlow.mockReset();
+    mediaRuntimeMocks.listMediaFlows.mockResolvedValue([]);
+    mediaRuntimeMocks.getMediaFlow.mockResolvedValue({
+      schemaVersion: 1,
+      flowId: "media-flow-1",
+      head: null,
+      revisions: [],
+    });
     desktopProgressListener = null;
     vi.mocked(subscribeToDesktopTaskProgress).mockImplementation(
       async (listener) => {
@@ -1556,7 +1573,7 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Add MCP block" }), {
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add integration block" }), {
       button: 0,
       ctrlKey: false,
     });
@@ -1594,6 +1611,103 @@ describe("RalphFlowEditor", () => {
         query: "{{query:string}}",
       },
     });
+  });
+
+  it("pins a saved Media Studio flow without requiring raw revision ids", async () => {
+    const mediaFlow = {
+      schemaVersion: 1 as const,
+      flowId: "media-product-flow",
+      name: "Product variants",
+      description: "Generate and review product variants",
+      headRevisionId: "mfr-product-v3",
+      headRevisionNumber: 3,
+      createdAt: "2026-07-14T10:00:00.000Z",
+      updatedAt: "2026-07-14T12:00:00.000Z",
+      documentDigest: "sha256:document",
+      executionDigest: "sha256:execution",
+      layoutDigest: "sha256:layout",
+    };
+    mediaRuntimeMocks.listMediaFlows.mockResolvedValue([mediaFlow]);
+    mediaRuntimeMocks.getMediaFlow.mockResolvedValue({
+      schemaVersion: 1,
+      flowId: mediaFlow.flowId,
+      head: mediaFlow,
+      revisions: [
+        {
+          schemaVersion: 1,
+          revisionId: mediaFlow.headRevisionId,
+          flowId: mediaFlow.flowId,
+          revisionNumber: 3,
+          parentRevisionId: "mfr-product-v2",
+          createdAt: mediaFlow.updatedAt,
+          changeSummary: "Approved production recipe",
+          documentDigest: mediaFlow.documentDigest,
+          executionDigest: mediaFlow.executionDigest,
+          layoutDigest: mediaFlow.layoutDigest,
+          nodeCount: 7,
+          edgeCount: 6,
+          isHead: true,
+          flow: {},
+          layout: {},
+        },
+      ],
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Add integration block" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Media Studio flow" }),
+    );
+
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Saved Media Studio flow" }),
+      { target: { value: mediaFlow.flowId } },
+    );
+    expect((screen.getByLabelText("Media flow id") as HTMLInputElement).value)
+      .toBe(mediaFlow.flowId);
+    const revisionSelect = (await screen.findByRole("combobox", {
+      name: "Media flow revision id",
+    })) as HTMLSelectElement;
+    expect(revisionSelect.value).toBe(mediaFlow.headRevisionId);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Wire safe outcomes" }),
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+    await waitFor(() => expect(saveRalphFlow).toHaveBeenCalled());
+    const savedMediaFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
+    const savedMediaBlock = savedMediaFlow?.blocks.find(
+      (block) => block.type === "MEDIA_FLOW",
+    );
+    expect(
+      savedMediaBlock,
+    ).toMatchObject({
+      type: "MEDIA_FLOW",
+      flowId: mediaFlow.flowId,
+      revisionId: mediaFlow.headRevisionId,
+      runPolicy: "wait",
+    });
+    expect(
+      savedMediaFlow?.edges
+        .filter((edge) => edge.from === savedMediaBlock?.id)
+        .map((edge) => edge.fromOutput),
+    ).toEqual([
+      "SUCCESS",
+      "PARTIAL",
+      "REVIEW_REQUIRED",
+      "CANCELLED",
+      "ERROR",
+    ]);
+    expect(
+      savedMediaFlow?.blocks
+        .filter((block) => block.type === "END")
+        .map((block) => block.status)
+        .sort(),
+    ).toEqual(["cancelled", "failed", "review", "success"]);
   });
 
   it("edits end status and validator selected block scope", async () => {
@@ -2873,6 +2987,83 @@ describe("RalphFlowEditor", () => {
       await screen.findByText("Input response submitted. Continuation is running."),
     ).toBeTruthy();
     expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
+  });
+
+  it("opens a suspended media review at its durable run id", async () => {
+    const flow = createRunnableFlow();
+    const onOpenMediaRun = vi.fn();
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+    vi.mocked(runRalphFlow).mockResolvedValue({
+      run: {
+        runId: "2026-07-14T12-00-00-000Z",
+        flow: flow.id,
+        status: "waiting-for-input",
+        summary: "Media review is waiting in Media Studio.",
+        missingVariables: [],
+        unknownVariables: [],
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+          errorIssues: [],
+          warningIssues: [],
+          variables: [],
+        },
+        events: [],
+        blockResults: [],
+        pendingInput: {
+          id: "media-review-request",
+          runId: "2026-07-14T12-00-00-000Z",
+          blockId: "render-assets",
+          blockType: "MEDIA_FLOW",
+          title: "Review Render Assets in Media Studio",
+          prompt: "Approve the generated candidates before Ralph continues.",
+          fields: [],
+          submitLabel: "Check review status",
+          cancelLabel: "Stop waiting",
+          createdAt: "2026-07-14T12:00:00.000Z",
+          mediaFlow: {
+            stage: "human-review",
+            flowId: "media-product-shot",
+            revisionId: "mfr-product-shot-v4",
+            runId: "ralph-media-f2c22dd8",
+          },
+        },
+      },
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}", {
+      onOpenMediaRun,
+    });
+    await screen.findByText(/Ready to run/u, undefined, { timeout: 5_000 });
+    const runButton = screen
+      .getAllByRole("button", { name: "Run Ralph flow" })
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(runButton).toBeTruthy();
+    fireEvent.click(runButton as HTMLElement);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open run in Media Studio",
+      }),
+    );
+    expect(onOpenMediaRun).toHaveBeenCalledWith("ralph-media-f2c22dd8");
   });
 
   it("preserves entered values when the same pending input request is refreshed", async () => {

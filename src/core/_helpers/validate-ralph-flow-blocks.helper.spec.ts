@@ -40,6 +40,38 @@ const codes = (issues: readonly RalphValidationIssue[]): string[] => {
 };
 
 describe("validateRalphFlowBlocks", () => {
+  it("validates pinned media flow bindings and detached output safety", () => {
+    const validation = validateBlocks(
+      createFlow({
+        variables: [
+          { name: "productName", type: "string", required: true },
+          { name: "generatedAssets", type: "text", required: false },
+        ],
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "media",
+            type: "MEDIA_FLOW",
+            title: "Generate assets",
+            flowId: "flow:product",
+            revisionId: "mfr-123",
+            runPolicy: "submit-and-continue",
+            approvalPolicy: "inherit-workspace",
+            inputBindings: {
+              subject: { source: "variable", variableName: "productName" },
+            },
+            outputBindings: {
+              images: { source: "asset-ids", variableName: "generatedAssets" },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(codes(validation.errors)).toContain("media-flow-detached-output");
+    expect(codes(validation.errors)).not.toContain("media-flow-input-binding-invalid");
+  });
+
   it("accepts a valid block set and returns discovered block ids and starts", () => {
     const validation = validateBlocks(createFlow());
 

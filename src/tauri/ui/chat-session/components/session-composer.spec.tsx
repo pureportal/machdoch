@@ -47,6 +47,9 @@ const renderSessionComposer = ({
   canSendMessage = false,
   onSend = vi.fn(),
   onDraftChange = vi.fn(),
+  onCreateMediaAsset,
+  statusMessage = null,
+  onStatusMessageDismiss = vi.fn(),
 }: {
   activeSession?: ChatSessionRecord;
   chooserProviders?: RuntimeProvider[];
@@ -56,6 +59,12 @@ const renderSessionComposer = ({
   canSendMessage?: boolean;
   onSend?: (draft: string) => void;
   onDraftChange?: (draft: string) => void;
+  onCreateMediaAsset?: (prompt: string) => void;
+  statusMessage?: {
+    text: string;
+    tone: "success" | "error" | "info" | null;
+  } | null;
+  onStatusMessageDismiss?: () => void;
 } = {}): void => {
   render(
     <TooltipProvider>
@@ -85,7 +94,8 @@ const renderSessionComposer = ({
         promptEnhancementMode="off"
         promptEnhancementWebSearchAvailable
         promptEnhancementWebSearchUnavailableReason="Configure web search."
-        statusMessage={null}
+        statusMessage={statusMessage}
+        onStatusMessageDismiss={onStatusMessageDismiss}
         contextAttachments={[]}
         contextPacks={[]}
         matchedContextPackIds={[]}
@@ -118,6 +128,7 @@ const renderSessionComposer = ({
         onSelectContextFiles={vi.fn().mockResolvedValue(undefined)}
         onSelectContextFolders={vi.fn().mockResolvedValue(undefined)}
         onSelectContextImages={vi.fn().mockResolvedValue(undefined)}
+        onCreateMediaAsset={onCreateMediaAsset}
         onPasteContextImages={vi.fn().mockResolvedValue(undefined)}
         onOpenContextAttachment={vi.fn()}
         onRemoveContextAttachment={vi.fn()}
@@ -146,6 +157,28 @@ const renderSessionComposer = ({
 };
 
 describe("SessionComposer", () => {
+  it("hands the current creative brief to Media Studio", async () => {
+    const onCreateMediaAsset = vi.fn();
+    renderSessionComposer({
+      activeSession: createSession({ draft: "A moonlit glass pavilion" }),
+      onCreateMediaAsset,
+    });
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Create in Media Studio",
+      }),
+    );
+
+    expect(onCreateMediaAsset).toHaveBeenCalledWith(
+      "A moonlit glass pavilion",
+    );
+  });
+
   it("updates the textarea immediately and publishes canonical state", () => {
     const onDraftChange = vi.fn();
     renderSessionComposer({ canSendMessage: true, onDraftChange });
@@ -189,6 +222,33 @@ describe("SessionComposer", () => {
     });
 
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("shows errors in a dismissible overlay without changing composer layout", () => {
+    const onStatusMessageDismiss = vi.fn();
+
+    renderSessionComposer({
+      statusMessage: {
+        text: "The request could not start because the session is already running.",
+        tone: "error",
+      },
+      onStatusMessageDismiss,
+    });
+
+    const notification = screen.getByRole("alert");
+    const overlay = notification.parentElement;
+
+    expect(notification.className).toContain("app-session-notification");
+    expect(overlay?.className).toContain("absolute");
+    expect(document.querySelector(".app-composer-status")).toBeNull();
+
+    fireEvent.click(
+      within(notification).getByRole("button", {
+        name: "Dismiss notification",
+      }),
+    );
+
+    expect(onStatusMessageDismiss).toHaveBeenCalledOnce();
   });
 
   it("places the reasoning icon next to the selected session model", () => {

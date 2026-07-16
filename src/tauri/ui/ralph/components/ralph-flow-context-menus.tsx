@@ -319,6 +319,7 @@ export const renderWorkflowBlockButtons = (
     <RalphAddBlockContextMenuButton label="Decision" type="DECISION" onClick={() => addBlock("DECISION")} />
     <RalphAddBlockContextMenuButton label="Pack" type="PACK" onClick={() => addBlock("PACK")} />
     <RalphAddBlockContextMenuButton label="Utility" type="UTILITY" onClick={() => addBlock("UTILITY")} />
+    <RalphAddBlockContextMenuButton label="Media Flow" type="MEDIA_FLOW" onClick={() => addBlock("MEDIA_FLOW")} />
     <RalphAddBlockContextMenuButton label="End" type="END" onClick={() => addBlock("END")} />
   </>
 );

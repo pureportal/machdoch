@@ -40,7 +40,14 @@ pub const MODEL_PROVIDERS: [&str; 8] = [
     "copilot-cli",
     "unconfigured",
 ];
-pub const USER_API_PROVIDERS: [&str; 4] = ["openai", "anthropic", "google", "langdock"];
+pub const USER_API_PROVIDERS: [&str; 6] = [
+    "openai",
+    "anthropic",
+    "google",
+    "langdock",
+    "quiver",
+    "recraft",
+];
 pub const AGENT_CLI_PROVIDERS: [&str; 3] = ["codex-cli", "claude-cli", "copilot-cli"];
 pub const USER_WEB_SEARCH_PROVIDERS: [&str; 3] = ["perplexity", "tavily", "serper"];
 pub const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
@@ -62,11 +69,13 @@ pub const RUNTIME_ENV_KEYS: [&str; 13] = [
     "LANGDOCK_REGION",
     "LANGDOCK_BASE_URL",
 ];
-pub const PROVIDER_ENV_KEYS: [(&str, &str); 4] = [
+pub const PROVIDER_ENV_KEYS: [(&str, &str); 6] = [
     ("openai", "OPENAI_API_KEY"),
     ("anthropic", "ANTHROPIC_API_KEY"),
     ("google", "GOOGLE_API_KEY"),
     ("langdock", "LANGDOCK_API_KEY"),
+    ("quiver", "QUIVERAI_API_KEY"),
+    ("recraft", "RECRAFT_API_KEY"),
 ];
 pub const AGENT_CLI_PROVIDER_ENV_KEYS: [(&str, &str); 3] = [
     ("codex-cli", "MACHDOCH_CODEX_CLI_PATH"),

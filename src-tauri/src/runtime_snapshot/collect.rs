@@ -84,6 +84,7 @@ pub(super) fn get_provider_availability(
 ) -> Vec<ProviderAvailability> {
     let mut availability = PROVIDER_ENV_KEYS
         .iter()
+        .filter(|(provider, _)| VALID_MODEL_PROVIDERS.contains(provider))
         .map(|(provider, env_key)| ProviderAvailability {
             provider: provider.to_string(),
             configured: has_configured_value(env.get(*env_key).map(String::as_str)),

@@ -2,13 +2,18 @@ import {
   FileText,
   FolderOpen,
   Image,
+  Images,
   Link,
   Plus,
+  WandSparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
 import type { JSX } from "react";
-import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import {
+  isMediaAssetContextAttachment,
+  type ChatSessionContextAttachment,
+} from "../../chat-session.model";
 import { isLinkContextAttachment } from "../_helpers/session-context-attachments";
 import { Button } from "../../components/ui/button";
 import {
@@ -38,6 +43,7 @@ const getAttachmentIcon = (
 const getAttachmentKindLabel = (
   attachment: ChatSessionContextAttachment,
 ): string => {
+  if (isMediaAssetContextAttachment(attachment)) return "Media Studio";
   switch (attachment.kind) {
     case "directory":
       return "folder";
@@ -53,7 +59,8 @@ const getAttachmentKindLabel = (
 
 const shouldShowAttachmentKindLabel = (
   attachment: ChatSessionContextAttachment,
-): boolean => attachment.kind !== "image";
+): boolean =>
+  isMediaAssetContextAttachment(attachment) || attachment.kind !== "image";
 
 export const formatContextAttachmentKind = (
   attachment: ChatSessionContextAttachment,
@@ -80,6 +87,9 @@ const getAttachmentActionLabel = (
 const getAttachmentActionTitle = (
   attachment: ChatSessionContextAttachment,
 ): string => {
+  if (isMediaAssetContextAttachment(attachment)) {
+    return `Preview Media Studio asset: ${attachment.assetId}`;
+  }
   switch (attachment.kind) {
     case "directory":
       return `Open folder: ${attachment.path}`;
@@ -95,15 +105,26 @@ const getAttachmentActionTitle = (
   }
 };
 
+const getAttachmentReferenceTitle = (
+  attachment: ChatSessionContextAttachment,
+): string =>
+  isMediaAssetContextAttachment(attachment)
+    ? `Media Studio asset ${attachment.assetId}`
+    : attachment.path;
+
 export interface ContextAttachmentMenuButtonProps {
   onSelectFiles: () => Promise<void>;
   onSelectFolders: () => Promise<void>;
   onSelectImages: () => Promise<void>;
+  onBrowseMediaAssets?: () => void;
+  onCreateMediaAsset?: () => void;
   buttonLabel?: string;
   buttonTitle?: string;
   disabled?: boolean;
   imageInputDisabled?: boolean;
   imageInputDisabledReason?: string | null;
+  mediaLibraryDisabled?: boolean;
+  mediaLibraryDisabledReason?: string | null;
   className?: string;
   iconClassName?: string;
   menuSide?: "top" | "right" | "bottom" | "left";
@@ -113,11 +134,15 @@ export const ContextAttachmentMenuButton = ({
   onSelectFiles,
   onSelectFolders,
   onSelectImages,
+  onBrowseMediaAssets,
+  onCreateMediaAsset,
   buttonLabel = "Add context",
   buttonTitle = "Add context",
   disabled = false,
   imageInputDisabled = false,
   imageInputDisabledReason,
+  mediaLibraryDisabled = false,
+  mediaLibraryDisabledReason,
   className,
   iconClassName,
   menuSide = "bottom",
@@ -155,6 +180,28 @@ export const ContextAttachmentMenuButton = ({
           <Image className="h-3.5 w-3.5 text-sky-300" />
           Images
         </DropdownMenuItem>
+        {onBrowseMediaAssets ? (
+          <DropdownMenuItem
+            disabled={mediaLibraryDisabled}
+            title={mediaLibraryDisabledReason ?? "Choose from Media Studio"}
+            onSelect={() => {
+              if (!mediaLibraryDisabled) onBrowseMediaAssets();
+            }}
+            className="rounded-lg text-xs text-orange-100 focus:bg-orange-500/10 focus:text-orange-50 disabled:text-slate-600"
+          >
+            <Images className="h-3.5 w-3.5 text-orange-300" />
+            Media Library
+          </DropdownMenuItem>
+        ) : null}
+        {onCreateMediaAsset ? (
+          <DropdownMenuItem
+            onSelect={onCreateMediaAsset}
+            className="rounded-lg text-xs text-orange-100 focus:bg-orange-500/10 focus:text-orange-50"
+          >
+            <WandSparkles className="h-3.5 w-3.5 text-orange-300" />
+            Create in Media Studio
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           onSelect={() => {
             void onSelectFiles();
@@ -241,7 +288,7 @@ export const ContextAttachmentsList = ({
                   "border-sky-400/30 bg-sky-400/10 text-sky-50",
                 compact ? "h-7 px-2 text-[11px]" : "h-8 px-2.5 text-xs",
               )}
-              title={attachment.path}
+              title={getAttachmentReferenceTitle(attachment)}
             >
               {onOpen ? (
                 <button

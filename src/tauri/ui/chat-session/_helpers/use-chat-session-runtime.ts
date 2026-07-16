@@ -33,6 +33,7 @@ import {
   saveUserGlobalMemoryEnabled,
   saveMcpConfigDocument,
   refreshMcpDiscoveryCache,
+  refreshProviderSync,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
   saveWorkspaceDefaultMode,
@@ -41,6 +42,7 @@ import {
   subscribeToUserSettingsChanged,
   createFallbackMcpConfigDocument,
   createMcpConfigRawWithPreset,
+  getUserApiKeyProviderLabel,
   MCP_PRESET_SUMMARIES,
   USER_API_KEY_PROVIDER_ORDER,
   saveUserWebSearchActiveProvider,
@@ -199,7 +201,7 @@ export interface ChatSessionRuntimeController {
 
 const isUserApiKeyProvider = (
   provider: RuntimeProvider,
-): provider is UserApiKeyProvider => {
+): provider is Extract<RuntimeProvider, UserApiKeyProvider> => {
   return USER_API_KEY_PROVIDER_ORDER.includes(provider as UserApiKeyProvider);
 };
 
@@ -840,6 +842,14 @@ export const useChatSessionRuntime = (
   }, []);
 
   useEffect(() => {
+    const workspaceRoot = options.activeSessionWorkspace?.trim();
+    if (!workspaceRoot || !isTauri()) return;
+    void refreshProviderSync(workspaceRoot).catch((error) => {
+      console.error("Failed to reconcile automatic provider enrollment", error);
+    });
+  }, [options.activeSessionWorkspace]);
+
+  useEffect(() => {
     let cancelled = false;
 
     void loadUserVoiceSettings()
@@ -1432,7 +1442,7 @@ export const useChatSessionRuntime = (
         console.error("Failed to open provider API key settings", error);
         setProviderSetupMessage({
           tone: "error",
-          text: `Could not open ${getProviderLabel(provider)} API key settings.`,
+          text: `Could not open ${getUserApiKeyProviderLabel(provider)} API key settings.`,
         });
       }
     },
@@ -1506,7 +1516,7 @@ export const useChatSessionRuntime = (
       }
       setProviderSetupMessage({
         tone: "success",
-        text: `${getProviderLabel(provider)} API key saved.`,
+        text: `${getUserApiKeyProviderLabel(provider)} API key saved.`,
       });
 
       const submittedWorkspaceKey = createRuntimeSnapshotRequestKey(

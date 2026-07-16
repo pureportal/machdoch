@@ -27,6 +27,7 @@ use super::{
         terminate_child_process_tree,
     },
     progress::{create_bridge_progress, emit_progress_event},
+    ralph_media_bridge::RalphMediaBridge,
     registry::normalize_task_id,
     OpenRalphFlowPathRequest, RalphCommandRequest, DESKTOP_TASK_WAIT_POLL_MS,
     RALPH_COMMAND_TIMEOUT_MS,
@@ -120,6 +121,14 @@ pub(super) fn execute_ralph_command(
             return Err(error);
         }
     };
+    let media_bridge = match RalphMediaBridge::create() {
+        Ok(bridge) => bridge,
+        Err(error) => {
+            cleanup_temporary_files(&payload_paths);
+            return Err(error);
+        }
+    };
+    media_bridge.configure_command(&mut cli_command.command);
 
     cli_command
         .command
@@ -173,8 +182,10 @@ pub(super) fn execute_ralph_command(
     let progress_task_id = task_id.clone();
     let activity = create_desktop_task_activity();
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
-    let stderr_worker =
-        thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id, activity));
+    let stderr_app_handle = app_handle.clone();
+    let stderr_worker = thread::spawn(move || {
+        read_stderr(stderr, stderr_app_handle, window_label, task_id, activity)
+    });
 
     let started_at = Instant::now();
     let status = loop {
@@ -190,6 +201,21 @@ pub(super) fn execute_ralph_command(
                 ));
             }
             Ok(None) => {
+                if let Err(error) =
+                    media_bridge.service_pending_request(&app_handle, &workspace_path)
+                {
+                    terminate_child_process_tree(&mut child);
+                    let _ = child.wait();
+                    let cleanup_result =
+                        join_cli_output_and_cleanup(stdout_worker, stderr_worker, None);
+                    cleanup_temporary_files(&payload_paths);
+                    return match cleanup_result {
+                        Ok(_) => Err(error),
+                        Err(cleanup_error) => Err(format!(
+                            "{error}. Additionally failed to collect Ralph CLI output: {cleanup_error}"
+                        )),
+                    };
+                }
                 if cancel_flag.load(Ordering::SeqCst) {
                     emit_progress_event(
                         &progress_app_handle,

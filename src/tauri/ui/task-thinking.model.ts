@@ -1,6 +1,7 @@
 import type {
   TaskExecutionProgress,
   TaskExecutionState,
+  TaskExecutionTimeoutState,
   TaskExecutionTimelineEvent,
   TaskExecutionTokenUsage,
 } from "../../core/types.js";
@@ -51,6 +52,28 @@ const ACTION_OUTPUT_LINE_LENGTH_LIMIT = 240;
 const TIMELINE_EVENT_LIMIT = 120;
 const TIMELINE_DETAIL_LIMIT = 600;
 
+const getNextGeneratedIdIndex = (
+  entries: readonly { id: string }[],
+  prefix: "thinking" | "timeline" | "output",
+): number => {
+  let highestIndex = entries.length - 1;
+
+  for (const entry of entries) {
+    if (!entry.id.startsWith(`${prefix}-`)) {
+      continue;
+    }
+
+    const separatorIndex = entry.id.lastIndexOf("-");
+    const parsedIndex = Number(entry.id.slice(separatorIndex + 1));
+
+    if (Number.isSafeInteger(parsedIndex) && parsedIndex >= 0) {
+      highestIndex = Math.max(highestIndex, parsedIndex);
+    }
+  }
+
+  return highestIndex + 1;
+};
+
 export interface TaskThinkingEntry {
   id: string;
   label: string;
@@ -96,6 +119,8 @@ export interface TaskThinkingTrace {
   status: "running" | "complete";
   mode: RunMode;
   startedAt: number;
+  lastActivityAt?: number;
+  timeout?: TaskExecutionTimeoutState;
   entries: TaskThinkingEntry[];
   task?: string;
   completedAt?: number;
@@ -119,6 +144,7 @@ export const createInitialThinkingTrace = (
     status: "running",
     mode,
     startedAt: timestamp,
+    lastActivityAt: timestamp,
     entries: [
       {
         id: createThinkingEntryId(timestamp, 0),
@@ -391,6 +417,7 @@ const createTimelineEvents = (
   const startedAt = trace.startedAt ?? trace.entries[0]?.timestamp ?? timestamp;
   const existingEvents = trace.timelineEvents ?? [];
   const candidates: TaskThinkingTimelineEvent[] = [];
+  const startIndex = getNextGeneratedIdIndex(existingEvents, "timeline");
 
   if (progress.timelineEvent) {
     candidates.push(
@@ -398,7 +425,7 @@ const createTimelineEvents = (
         progress.timelineEvent,
         timestamp,
         startedAt,
-        existingEvents.length + candidates.length,
+        startIndex + candidates.length,
       ),
     );
   }
@@ -408,7 +435,7 @@ const createTimelineEvents = (
       progress,
       timestamp,
       startedAt,
-      existingEvents.length + candidates.length,
+      startIndex + candidates.length,
     ),
   );
 
@@ -416,7 +443,7 @@ const createTimelineEvents = (
     progress,
     timestamp,
     startedAt,
-    existingEvents.length + candidates.length,
+    startIndex + candidates.length,
   );
 
   if (candidates.length === 0 && stateEvent) {
@@ -567,13 +594,14 @@ const createActionOutputLines = (
   }
 
   const existingLines = trace.actionOutputLines ?? [];
+  const startIndex = getNextGeneratedIdIndex(existingLines, "output");
   const normalizedChunk = output.chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const nextLines = normalizedChunk
     .split("\n")
     .map(limitOutputLine)
     .filter((line) => line.length > 0)
     .map((line, index) => ({
-      id: `output-${timestamp}-${existingLines.length + index}`,
+      id: `output-${timestamp}-${startIndex + index}`,
       toolName: output.toolName,
       stream: output.stream,
       text: line,
@@ -594,6 +622,22 @@ export const appendThinkingProgress = (
 ): TaskThinkingTrace => {
   const nextStatus = progress.cancellable ? trace.status : "complete";
   const startedAt = trace.startedAt ?? trace.entries[0]?.timestamp ?? timestamp;
+  const timeout = progress.timeout
+    ? progress.timeout
+    : trace.timeout
+      ? {
+          ...trace.timeout,
+          lastActivityAt: Math.max(trace.timeout.lastActivityAt, timestamp),
+        }
+      : undefined;
+  const lastActivityAt = Math.max(
+    trace.lastActivityAt ?? startedAt,
+    timeout?.lastActivityAt ?? timestamp,
+  );
+  const hasActivityChange = lastActivityAt !== trace.lastActivityAt;
+  const hasTimeoutChange =
+    timeout !== trace.timeout &&
+    (timeout !== undefined || trace.timeout !== undefined);
   const task = progress.task.trim() || trace.task;
   const previousTimelineEvents = trace.timelineEvents ?? [];
   const nextTimelineEvents = createTimelineEvents(trace, progress, timestamp);
@@ -603,20 +647,23 @@ export const appendThinkingProgress = (
   const nextEntries = createThinkingEntriesFromProgress(
     progress,
     timestamp,
-    trace.entries.length,
+    getNextGeneratedIdIndex(trace.entries, "thinking"),
   );
   const hasProgressExtras =
     progress.assistantText !== undefined ||
     progress.modelStream !== undefined ||
     progress.actionOutput !== undefined ||
     progress.timelineEvent !== undefined ||
+    progress.timeout !== undefined ||
     hasTimelineChanges ||
     task !== trace.task;
 
   if (
     nextEntries.length === 0 &&
     nextStatus === trace.status &&
-    !hasProgressExtras
+    !hasProgressExtras &&
+    !hasActivityChange &&
+    !hasTimeoutChange
   ) {
     return trace;
   }
@@ -677,7 +724,9 @@ export const appendThinkingProgress = (
       !hasTimelineChanges &&
       nextTokenUsage === trace.tokenUsage &&
       completedAt === trace.completedAt &&
-      task === trace.task
+      task === trace.task &&
+      !hasActivityChange &&
+      !hasTimeoutChange
     ) {
       return trace;
     }
@@ -686,6 +735,8 @@ export const appendThinkingProgress = (
       ...trace,
       status: nextStatus,
       startedAt,
+      lastActivityAt,
+      ...(timeout ? { timeout } : {}),
       ...(task ? { task } : {}),
       ...(completedAt !== undefined ? { completedAt } : {}),
       ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
@@ -704,6 +755,8 @@ export const appendThinkingProgress = (
     ...trace,
     status: nextStatus,
     startedAt,
+    lastActivityAt,
+    ...(timeout ? { timeout } : {}),
     ...(task ? { task } : {}),
     ...(completedAt !== undefined ? { completedAt } : {}),
     entries: limitedEntries,

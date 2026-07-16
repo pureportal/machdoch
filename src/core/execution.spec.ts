@@ -1510,6 +1510,7 @@ describe("executeTask", () => {
 
   it("stops model-driven execution after the high safety timeout when a provider turn wedges", async () => {
     const workspaceRoot = await createWorkspace();
+    const progress: TaskExecutionProgress[] = [];
 
     const hangingAdapter: AgentModelAdapter = {
       startTurn: ({ signal }: AgentModelStartParams) => {
@@ -1550,6 +1551,9 @@ describe("executeTask", () => {
       {
         modelAdapter: hangingAdapter,
         maxDurationMs: 25,
+        onStateChange: (snapshot) => {
+          progress.push(snapshot);
+        },
       },
     );
 
@@ -1557,10 +1561,15 @@ describe("executeTask", () => {
     expect(result.summary).toContain("safety timeout");
     expect(result.reason).toContain("25ms");
     expect(result.outputSections.at(-1)?.title).toBe("Execution limit");
+    expect(progress[0]?.timeout).toMatchObject({
+      idleTimeoutMs: 25,
+      absoluteTimeoutMs: 25,
+    });
   }, 10_000);
 
   it("keeps model-driven execution alive when stream progress arrives before the idle timeout", async () => {
     const workspaceRoot = await createWorkspace();
+    const onStreamActivity = vi.fn();
     const streamingAdapter: AgentModelAdapter = {
       startTurn: ({ signal, onStreamEvent }: AgentModelStartParams) => {
         return new Promise((resolve, reject) => {
@@ -1620,12 +1629,45 @@ describe("executeTask", () => {
         modelAdapter: streamingAdapter,
         maxDurationMs: 1_000,
         idleTimeoutMs: 250,
-        onStateChange: () => undefined,
+        onStreamActivity,
       },
     );
 
     expect(result.status).toBe("executed");
     expect(result.reason).toBeUndefined();
+    expect(onStreamActivity).toHaveBeenCalled();
+  }, 10_000);
+
+  it("classifies an idle timeout as an execution limit", async () => {
+    const workspaceRoot = await createWorkspace();
+    const hangingAdapter: AgentModelAdapter = {
+      startTurn: ({ signal }: AgentModelStartParams) =>
+        new Promise((_, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new Error(String(signal.reason))),
+            { once: true },
+          );
+        }),
+      continueTurn: (): Promise<never> => {
+        throw new Error("The hanging adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "wait without producing progress",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: hangingAdapter,
+        maxDurationMs: 1_000,
+        idleTimeoutMs: 25,
+      },
+    );
+
+    expect(result.status).toBe("cancelled");
+    expect(result.reason).toContain("without meaningful progress");
+    expect(result.outputSections.at(-1)?.title).toBe("Execution limit");
   }, 10_000);
 
   it("guards against repeated identical failing tool calls in model-driven execution", async () => {

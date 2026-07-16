@@ -2,10 +2,13 @@ import {
   getImageInputMediaTypeForPath,
 } from "../../../../core/model-capabilities.js";
 import {
+  isMediaAssetContextAttachment,
+  isPathContextAttachment,
   type ChatSessionContextAttachment,
   type ChatSessionContextAttachmentKind,
   type ChatSessionRecord,
 } from "../../chat-session.model";
+import type { MediaAssetReference } from "../../../../core/media/contracts.js";
 import type { DroppedPathEntry } from "../../runtime";
 
 export type FileDropTarget = "active-session" | "quick-task";
@@ -75,8 +78,11 @@ const normalizeDroppedPathKind = (
 };
 
 const formatContextAttachmentKind = (
-  attachment: Pick<ChatSessionContextAttachment, "kind" | "path">,
+  attachment: ChatSessionContextAttachment,
 ): string => {
+  if (isMediaAssetContextAttachment(attachment)) {
+    return `Media Studio ${attachment.kind}`;
+  }
   switch (attachment.kind) {
     case "directory":
       return "folder";
@@ -91,9 +97,9 @@ const formatContextAttachmentKind = (
 };
 
 export const isLinkContextAttachment = (
-  attachment: Pick<ChatSessionContextAttachment, "kind" | "path">,
+  attachment: ChatSessionContextAttachment,
 ): boolean => {
-  if (attachment.kind !== "other") {
+  if (!isPathContextAttachment(attachment) || attachment.kind !== "other") {
     return false;
   }
 
@@ -123,6 +129,7 @@ export const createContextAttachment = (
 
   return {
     id: crypto.randomUUID(),
+    source: "path",
     path: entry.path,
     kind: normalizeDroppedPathKind(entry),
     name: entry.name,
@@ -141,29 +148,48 @@ export const createContextAttachmentFromReference = (
 
   return {
     id: crypto.randomUUID(),
+    source: "path",
     path: normalizedValue,
     kind: "other",
     name: getLinkAttachmentName(normalizedValue),
   };
 };
 
+export const createContextAttachmentFromMediaAsset = (
+  reference: MediaAssetReference,
+): ChatSessionContextAttachment => ({
+  ...reference,
+  id: crypto.randomUUID(),
+  name:
+    reference.displayName?.trim() ||
+    `Media asset ${reference.assetId.slice(0, 12)}`,
+  rendition: reference.rendition ?? "original",
+});
+
+export const getContextAttachmentIdentity = (
+  attachment: ChatSessionContextAttachment,
+): string =>
+  isMediaAssetContextAttachment(attachment)
+    ? `media:${attachment.workspaceRoot.toLowerCase()}:${attachment.assetId}`
+    : `path:${attachment.path.toLowerCase()}`;
+
 export const mergeContextAttachments = (
   existing: ChatSessionContextAttachment[],
   incoming: ChatSessionContextAttachment[],
 ): ChatSessionContextAttachment[] => {
-  const seenPaths = new Set(
-    existing.map((attachment) => attachment.path.toLowerCase()),
+  const seenAttachments = new Set(
+    existing.map(getContextAttachmentIdentity),
   );
   const merged = [...existing];
 
   for (const attachment of incoming) {
-    const dedupeKey = attachment.path.toLowerCase();
+    const dedupeKey = getContextAttachmentIdentity(attachment);
 
-    if (seenPaths.has(dedupeKey)) {
+    if (seenAttachments.has(dedupeKey)) {
       continue;
     }
 
-    seenPaths.add(dedupeKey);
+    seenAttachments.add(dedupeKey);
     merged.push(attachment);
   }
 
@@ -184,20 +210,24 @@ const createContextAttachmentsTaskBlock = (
       return "";
     }
 
-    return `Use this ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`;
+    return isMediaAssetContextAttachment(attachment)
+      ? `Use this Media Studio ${attachment.kind} asset: "${attachment.assetId}"`
+      : `Use this ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`;
   }
 
+  const containsMediaAsset = attachments.some(isMediaAssetContextAttachment);
   return [
-    "Use these paths:",
+    containsMediaAsset ? "Use these attachments:" : "Use these paths:",
     ...attachments.map(
-      (attachment) =>
-        `- ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`,
+      (attachment) => isMediaAssetContextAttachment(attachment)
+        ? `- Media Studio ${attachment.kind} asset: "${attachment.assetId}"`
+        : `- ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`,
     ),
   ].join("\n");
 };
 
 const CONTEXT_ATTACHMENTS_TASK_BLOCK_PATTERN =
-  /(?:\r?\n){2,}(?:Use this (?:file|image|folder|path|link): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path|link): "[^"\r\n]+")+)\s*$/u;
+  /(?:\r?\n){2,}(?:Use this (?:file|image|folder|path|link): "[^"\r\n]+"|Use this Media Studio (?:prompt|image|alpha-matte|report|collection) asset: "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path|link): "[^"\r\n]+")+|Use these attachments:(?:\r?\n- (?:(?:file|image|folder|path|link): "[^"\r\n]+"|Media Studio (?:prompt|image|alpha-matte|report|collection) asset: "[^"\r\n]+"))+)\s*$/u;
 const CONTEXT_ATTACHMENTS_TASK_BLOCK_CAPTURE_PATTERN =
   /(?:\r?\n){2,}(Use this (?:file|image|folder|path|link): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path|link): "[^"\r\n]+")+)\s*$/u;
 const SINGLE_CONTEXT_ATTACHMENT_LINE_PATTERN =
@@ -281,6 +311,7 @@ export const createContextAttachmentsFromTaskBlock = (
 
     attachments.push({
       id: `${idPrefix}-${attachments.length}`,
+      source: "path",
       path,
       kind,
       name: label === "link" ? getLinkAttachmentName(path) : getAttachmentNameFromPath(path),
@@ -293,10 +324,62 @@ export const createContextAttachmentsFromTaskBlock = (
 
 export const getImageAttachmentPaths = (
   attachments: ChatSessionContextAttachment[],
-): string[] => {
-  return attachments
-    .filter((attachment) => attachment.kind === "image")
-    .map((attachment) => attachment.path);
+): string[] =>
+  attachments.flatMap((attachment) =>
+    isPathContextAttachment(attachment) && attachment.kind === "image"
+      ? [attachment.path]
+      : [],
+  );
+
+export const getImageAttachmentMediaReferences = (
+  attachments: ChatSessionContextAttachment[],
+): MediaAssetReference[] =>
+  attachments.flatMap((attachment) =>
+    isMediaAssetContextAttachment(attachment) && attachment.kind === "image"
+      ? [
+          {
+            source: "media-asset",
+            workspaceRoot: attachment.workspaceRoot,
+            assetId: attachment.assetId,
+            kind: attachment.kind,
+            ...(attachment.displayName
+              ? { displayName: attachment.displayName }
+              : {}),
+            ...(attachment.rendition
+              ? { rendition: attachment.rendition }
+              : {}),
+          } satisfies MediaAssetReference,
+        ]
+      : [],
+  );
+
+export const areContextAttachmentRecordsEqual = (
+  attachment: ChatSessionContextAttachment,
+  otherAttachment: ChatSessionContextAttachment,
+): boolean => {
+  if (
+    attachment.id !== otherAttachment.id ||
+    attachment.name !== otherAttachment.name ||
+    attachment.kind !== otherAttachment.kind ||
+    getContextAttachmentIdentity(attachment) !==
+      getContextAttachmentIdentity(otherAttachment)
+  ) {
+    return false;
+  }
+  if (
+    isMediaAssetContextAttachment(attachment) &&
+    isMediaAssetContextAttachment(otherAttachment)
+  ) {
+    return (
+      attachment.displayName === otherAttachment.displayName &&
+      attachment.rendition === otherAttachment.rendition
+    );
+  }
+  return (
+    isPathContextAttachment(attachment) &&
+    isPathContextAttachment(otherAttachment) &&
+    attachment.parent === otherAttachment.parent
+  );
 };
 
 const areContextAttachmentsEqual = (
@@ -312,8 +395,7 @@ const areContextAttachmentsEqual = (
 
     return (
       otherAttachment !== undefined &&
-      attachment.path === otherAttachment.path &&
-      attachment.kind === otherAttachment.kind
+      areContextAttachmentRecordsEqual(attachment, otherAttachment)
     );
   });
 };

@@ -83,16 +83,14 @@ export interface AgentComposerProps {
   toolbarControls?: ReactNode;
   toggles?: AgentComposerToggle[];
   actions?: AgentComposerAction[];
-  statusMessage?: {
-    text: string;
-    tone: "success" | "error" | "info" | null;
-  } | null;
   runningTaskMessageAction?: RunningTaskMessageAction;
   queuedMessages?: AgentComposerQueuedMessage[];
   onModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
+  onBrowseMediaAssets?: () => void;
+  onCreateMediaAsset?: (prompt: string) => void;
   onPasteContextImages: (files: File[]) => Promise<void>;
   onOpenContextAttachment?: (attachment: ChatSessionContextAttachment) => void;
   onRemoveContextAttachment: (attachmentId: string) => void;
@@ -368,13 +366,14 @@ export const AgentComposer = ({
   toolbarControls,
   toggles = [],
   actions = [],
-  statusMessage,
   runningTaskMessageAction,
   queuedMessages = [],
   onModelSelection,
   onSelectContextFiles,
   onSelectContextFolders,
   onSelectContextImages,
+  onBrowseMediaAssets,
+  onCreateMediaAsset,
   onPasteContextImages,
   onOpenContextAttachment,
   onRemoveContextAttachment,
@@ -465,9 +464,17 @@ export const AgentComposer = ({
       onSelectFiles={onSelectContextFiles}
       onSelectFolders={onSelectContextFolders}
       onSelectImages={onSelectContextImages}
+      onBrowseMediaAssets={onBrowseMediaAssets}
+      onCreateMediaAsset={
+        onCreateMediaAsset
+          ? () => onCreateMediaAsset(bufferedDraft.value.trim())
+          : undefined
+      }
       disabled={inputBlocked}
       imageInputDisabled={!imageInputSupported}
       imageInputDisabledReason={imageInputDisabledReason}
+      mediaLibraryDisabled={!imageInputSupported}
+      mediaLibraryDisabledReason={imageInputDisabledReason}
       menuSide={styles.attachmentMenuSide}
       className={styles.attachmentButton}
       iconClassName={styles.attachmentIcon}
@@ -673,21 +680,6 @@ export const AgentComposer = ({
 
         {queuedMessagesPanel}
 
-        {statusMessage?.text ? (
-          <p
-            aria-live="polite"
-            className={cn(
-              "app-composer-status px-1 text-xs leading-6",
-              statusMessage.tone === "error"
-                ? "text-rose-300"
-                : statusMessage.tone === "success"
-                  ? "text-emerald-300"
-                  : "text-slate-400",
-            )}
-          >
-            {statusMessage.text}
-          </p>
-        ) : null}
       </div>
     </div>
   );

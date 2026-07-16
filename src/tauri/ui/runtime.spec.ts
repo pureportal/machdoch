@@ -21,6 +21,9 @@ import {
   finishMcpOAuth,
   forgetRemoteControlPairings,
   getRemoteControlStatus,
+  getProviderSyncStatus,
+  getTaskFileChangeFiles,
+  getTaskFileChangeHunks,
   loadActiveDesktopTaskIds,
   loadActiveDesktopTasks,
   loadDesktopLaunchId,
@@ -53,6 +56,10 @@ import {
   loadUserReviewModelSettings,
   resolveDroppedPaths,
   refreshMcpDiscoveryCache,
+  refreshProviderSync,
+  setProviderSyncEnabled,
+  doctorProviderSync,
+  planProviderSync,
   resumeRalphRun,
   runRalphFlow,
   runDesktopTask,
@@ -66,12 +73,111 @@ import {
   resolveAttachedImagePreviewSource,
   resolveWorkspaceFilePreviewSource,
   subscribeToRemoteControlCommands,
+  subscribeToDesktopTaskProgress,
   syncChatCompletionIndicator,
 } from "./runtime";
 import {
   desktopEventListeners,
   listenMock,
 } from "./test/tauri-test-mocks";
+
+describe("desktop runtime file-change paging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    enableInvokeMock();
+    isTauriMock.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    disableInvokeMock();
+  });
+
+  it("pages changed files through the durable change-set reference", async () => {
+    const page = {
+      files: [{ path: "src/example.ts", storedId: 13 }],
+      nextCursor: 13,
+    };
+    invokeMock.mockResolvedValueOnce(page);
+
+    await expect(
+      getTaskFileChangeFiles(" changes-123 ", 7, 25),
+    ).resolves.toEqual(page);
+    expect(invokeMock).toHaveBeenCalledWith("get_task_file_change_files", {
+      request: { changeSetId: "changes-123", afterId: 7, limit: 25 },
+    });
+  });
+
+  it("pages all hunks for a stored changed file", async () => {
+    const page = {
+      ranges: [{ oldStart: 4, oldLines: 1, newStart: 4, newLines: 2 }],
+      nextCursor: 8,
+    };
+    invokeMock.mockResolvedValueOnce(page);
+
+    await expect(
+      getTaskFileChangeHunks("changes-123", 13, 3, 50),
+    ).resolves.toEqual(page);
+    expect(invokeMock).toHaveBeenCalledWith("get_task_file_change_hunks", {
+      request: {
+        changeSetId: "changes-123",
+        fileId: 13,
+        afterOrdinal: 3,
+        limit: 50,
+      },
+    });
+  });
+
+  it("returns empty pages when the desktop bridge is unavailable", async () => {
+    disableInvokeMock();
+
+    await expect(getTaskFileChangeFiles("changes-123")).resolves.toEqual({
+      files: [],
+    });
+    await expect(getTaskFileChangeHunks("changes-123", 13)).resolves.toEqual({
+      ranges: [],
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("desktop provider enrollment bridge", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    enableInvokeMock();
+    isTauriMock.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    disableInvokeMock();
+  });
+
+  it("routes status, refresh, enablement, plan, and doctor through the native CLI bridge", async () => {
+    const result = {
+      schemaVersion: 1,
+      enabled: true,
+      daemon: { running: true, autostartInstalled: true },
+      workspaceRoot: "C:\\Project",
+      targets: [],
+    };
+    invokeMock.mockResolvedValue(result);
+
+    await getProviderSyncStatus("C:\\Project");
+    await refreshProviderSync("C:\\Project");
+    await setProviderSyncEnabled("C:\\Project", true);
+    await setProviderSyncEnabled("C:\\Project", false);
+    await planProviderSync("C:\\Project");
+    await doctorProviderSync("C:\\Project");
+
+    expect(invokeMock.mock.calls.map(([, payload]) => payload)).toEqual([
+      { request: { workspaceRoot: "C:\\Project", arguments: ["status"] } },
+      { request: { workspaceRoot: "C:\\Project", arguments: ["refresh"] } },
+      { request: { workspaceRoot: "C:\\Project", arguments: ["enable"] } },
+      { request: { workspaceRoot: "C:\\Project", arguments: ["disable"] } },
+      { request: { workspaceRoot: "C:\\Project", arguments: ["plan"] } },
+      { request: { workspaceRoot: "C:\\Project", arguments: ["doctor"] } },
+    ]);
+  });
+});
 
 describe("desktop runtime fullscreen detection", () => {
   beforeEach(() => {
@@ -104,6 +210,49 @@ describe("desktop runtime fullscreen detection", () => {
       detectFullscreenWindowOnMonitor({ x: 0, y: 0, width: 1920, height: 1080 }),
     ).resolves.toBe(false);
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts valid timeout state and rejects malformed desktop progress", async () => {
+    const received: unknown[] = [];
+    const unsubscribe = await subscribeToDesktopTaskProgress((event) => {
+      received.push(event);
+    });
+    const progress = {
+      task: "Inspect the workspace",
+      mode: "ask",
+      state: "executing",
+      message: "Waiting for provider output",
+      executedTools: [],
+      outputSections: [],
+      cancellable: true,
+      timeout: {
+        startedAt: 100,
+        lastActivityAt: 150,
+        idleTimeoutMs: 1_000,
+        absoluteTimeoutMs: 5_000,
+      },
+    };
+
+    desktopEventListeners.get("desktop-task-progress")?.({
+      payload: { taskId: "task-1", timestamp: 150, progress },
+    });
+    desktopEventListeners.get("desktop-task-progress")?.({
+      payload: {
+        taskId: "task-1",
+        timestamp: 151,
+        progress: {
+          ...progress,
+          timeout: { ...progress.timeout, idleTimeoutMs: -1 },
+        },
+      },
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      progress: { timeout: progress.timeout },
+    });
+
+    unsubscribe();
   });
 
   it("syncs the chat completion indicator through the Rust command", async () => {
@@ -1228,6 +1377,16 @@ describe("desktop runtime fullscreen detection", () => {
 
     await runDesktopTask(" C:\\Docs ", " Inspect notes ", {
       imagePaths: [" C:\\Docs\\screen.png "],
+      mediaAssetReferences: [
+        {
+          source: "media-asset",
+          workspaceRoot: "C:\\Docs",
+          assetId: "asset:approved-image",
+          kind: "image",
+          displayName: "Approved image",
+          rendition: "original",
+        },
+      ],
       mode: "ask",
       sessionId: "session-456",
       taskId: "task-123",
@@ -1238,6 +1397,16 @@ describe("desktop runtime fullscreen detection", () => {
         workspaceRoot: "C:\\Docs",
         task: "Inspect notes",
         imagePaths: ["C:\\Docs\\screen.png"],
+        mediaAssetReferences: [
+          {
+            source: "media-asset",
+            workspaceRoot: "C:\\Docs",
+            assetId: "asset:approved-image",
+            kind: "image",
+            displayName: "Approved image",
+            rendition: "original",
+          },
+        ],
         mode: "ask",
         sessionId: "session-456",
         taskId: "task-123",

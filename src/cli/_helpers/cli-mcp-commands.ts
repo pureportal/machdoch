@@ -264,9 +264,28 @@ export const printMcpSummary = async (
   args: ParsedCliArgs,
 ): Promise<void> => {
   const options: McpCliOptions = args.mcp ?? fail("No MCP action was provided.");
+  let proxyOwnsClientLifecycle = false;
 
   try {
     switch (options.action) {
+      case "proxy": {
+        proxyOwnsClientLifecycle = true;
+        const serverId = options.serverId ??
+          fail("Expected a server id after `machdoch mcp proxy`.");
+        const { runMcpStdioProxy } = await import(
+          "../../core/provider-enrollment/mcp-proxy/server.js"
+        );
+        await runMcpStdioProxy(args.workspaceRoot, serverId);
+        return;
+      }
+      case "broker": {
+        proxyOwnsClientLifecycle = true;
+        const { runMcpStdioProxy } = await import(
+          "../../core/provider-enrollment/mcp-proxy/server.js"
+        );
+        await runMcpStdioProxy(args.workspaceRoot);
+        return;
+      }
       case "servers": {
         const config = await loadMcpConfig(args.workspaceRoot);
 
@@ -461,6 +480,8 @@ export const printMcpSummary = async (
       }
     }
   } finally {
-    await mcpClientManager.closeAll();
+    if (!proxyOwnsClientLifecycle) {
+      await mcpClientManager.closeAll();
+    }
   }
 };

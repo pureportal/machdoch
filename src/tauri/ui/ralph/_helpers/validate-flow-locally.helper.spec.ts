@@ -106,6 +106,62 @@ describe("Ralph flow editor local validation helpers", () => {
     expect(issueMessages(createConnectedFlow({ variables: undefined }))).toEqual([]);
   });
 
+  it("validates pinned Media Studio identity and typed bindings before save", () => {
+    const flow = createConnectedFlow({
+      variables: [{ name: "assetId", type: "string", required: false }],
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "media-flow",
+          type: "MEDIA_FLOW",
+          title: "Generate assets",
+          flowId: "",
+          revisionId: "",
+          inputBindings: {
+            prompt: { source: "variable", variableName: "missingPrompt" },
+          },
+          outputBindings: {
+            result: { source: "first-asset-id", variableName: "missingOutput" },
+          },
+          runPolicy: "submit-and-continue",
+          approvalPolicy: "inherit-workspace",
+        },
+        { id: "end", type: "END", title: "End", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-media",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "media-flow",
+        },
+        {
+          id: "media-end",
+          from: "media-flow",
+          fromOutput: "SUCCESS",
+          to: "end",
+        },
+      ],
+    });
+
+    const messages = issueMessages(flow);
+    expect(messages).toContain(
+      "Generate assets requires a pinned Media Studio flow id.",
+    );
+    expect(messages).toContain(
+      "Generate assets requires a pinned Media Studio revision id.",
+    );
+    expect(messages).toContain(
+      "Generate assets input binding prompt is incomplete or references an undeclared Ralph variable.",
+    );
+    expect(messages).toContain(
+      "Generate assets output result requires a declared Ralph variable.",
+    );
+    expect(messages).toContain(
+      "Generate assets cannot bind outputs while using submit-and-continue.",
+    );
+  });
+
   it("flags duplicate aliases only inside the selected scope and outside the current flow", () => {
     const flow = createConnectedFlow({
       id: "review-flow",

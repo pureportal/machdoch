@@ -624,11 +624,20 @@ export const getUserProviderAvailability = async (): Promise<
   ProviderAvailability[]
 > => {
   const apiKeys = await loadUserApiKeys();
+  const availability: ProviderAvailability[] = [];
 
-  return USER_API_PROVIDERS.map((provider) => ({
-    provider,
-    configured: hasConfiguredValue(apiKeys[provider]),
-  }));
+  for (const provider of USER_API_PROVIDERS) {
+    if (!isConfiguredModelProvider(provider)) {
+      continue;
+    }
+
+    availability.push({
+      provider,
+      configured: hasConfiguredValue(apiKeys[provider]),
+    });
+  }
+
+  return availability;
 };
 
 /**

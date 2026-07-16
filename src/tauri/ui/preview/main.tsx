@@ -12,6 +12,13 @@ if (!rootElement) {
 document.addEventListener(
   "contextmenu",
   (event) => {
+    if (
+      event.target instanceof Element &&
+      event.target.closest("[data-app-context-menu-trigger]")
+    ) {
+      return;
+    }
+
     event.preventDefault();
   },
   { capture: true },

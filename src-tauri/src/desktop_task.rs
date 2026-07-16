@@ -3,13 +3,8 @@ use std::{
     fs,
     io::Read,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex,
-    },
-    time::Duration,
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,12 +15,14 @@ mod cli_commands;
 mod commands;
 mod diagnostics;
 mod dropped_paths;
+mod file_changes;
 mod paths;
 mod payload;
 mod payload_files;
 mod process;
 mod progress;
 mod ralph;
+mod ralph_media_bridge;
 mod registry;
 
 use attachment_paths::resolve_attached_path;
@@ -34,16 +31,20 @@ use attachments::{
     save_clipboard_image_attachment_sync,
 };
 use cli_commands::{
-    execute_instruction_command, execute_mcp_command, execute_scheduler_command,
-    execute_task_interview_command, start_scheduler_service as start_scheduler_service_process,
+    execute_instruction_command, execute_mcp_command, execute_provider_sync_command,
+    execute_scheduler_command, execute_task_interview_command,
+    start_scheduler_service as start_scheduler_service_process,
 };
 use commands::execute_desktop_task;
 #[cfg(test)]
 use diagnostics::format_timeout_duration;
 use dropped_paths::resolve_dropped_paths_sync;
+use file_changes::{
+    FileChangeHunkPage, FileChangeHunkPageRequest, FileChangePage, FileChangePageRequest,
+};
 use paths::{format_path_for_ui, resolve_workspace_relative_path};
 use process::open_path_in_system_shell;
-use progress::{create_bridge_progress, create_progress_timestamp, emit_progress_event};
+use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
 use registry::{
     acknowledge_completed_task_results, active_task_ids, active_task_summaries,
@@ -60,62 +61,9 @@ pub fn cleanup_stale_task_context_files() {
     payload::cleanup_stale_conversation_context_files();
 }
 
-const MAX_CONCURRENT_EXTERNAL_TASKS: usize = 2;
-
-pub struct DesktopTaskLimiter {
-    semaphore: Arc<Semaphore>,
-    waiting: AtomicUsize,
-}
-
-impl Default for DesktopTaskLimiter {
-    fn default() -> Self {
-        Self {
-            semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_EXTERNAL_TASKS)),
-            waiting: AtomicUsize::new(0),
-        }
-    }
-}
-
-struct WaitingTaskGuard<'a>(&'a AtomicUsize);
-
-impl Drop for WaitingTaskGuard<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
-impl DesktopTaskLimiter {
-    fn available_permits(&self) -> usize {
-        self.semaphore.available_permits()
-    }
-
-    fn next_queue_position(&self) -> usize {
-        self.waiting.load(Ordering::SeqCst) + 1
-    }
-
-    async fn acquire(&self, cancel_flag: &AtomicBool) -> Result<OwnedSemaphorePermit, String> {
-        self.waiting.fetch_add(1, Ordering::SeqCst);
-        let _waiting_guard = WaitingTaskGuard(&self.waiting);
-        let acquire = self.semaphore.clone().acquire_owned();
-        tokio::pin!(acquire);
-
-        loop {
-            tokio::select! {
-                permit = &mut acquire => {
-                    return permit.map_err(|_| "The desktop task executor is shutting down.".to_string());
-                }
-                _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                    if cancel_flag.load(Ordering::SeqCst) {
-                        return Err("The task was cancelled while waiting for an execution slot.".to_string());
-                    }
-                }
-            }
-        }
-    }
-}
-
-const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
+const DESKTOP_TASK_IDLE_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS: u64 = 60 * 60 * 1_000;
+const AUXILIARY_CLI_COMMAND_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
 const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
@@ -145,8 +93,20 @@ pub struct DesktopTaskRunRequest {
     reasoning: Option<String>,
     conversation_context: Option<Value>,
     image_paths: Option<Vec<String>>,
+    media_asset_references: Option<Vec<DesktopMediaAssetReference>>,
     task_id: Option<String>,
     session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopMediaAssetReference {
+    source: String,
+    workspace_root: String,
+    asset_id: String,
+    kind: String,
+    display_name: Option<String>,
+    rendition: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -216,6 +176,13 @@ pub struct McpCommandRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProviderSyncCommandRequest {
+    workspace_root: String,
+    arguments: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstructionCommandRequest {
     workspace_root: String,
     arguments: Vec<String>,
@@ -269,10 +236,29 @@ pub async fn acknowledge_recent_desktop_task_results(
 }
 
 #[tauri::command]
+pub async fn get_task_file_change_files(
+    app_handle: tauri::AppHandle,
+    request: FileChangePageRequest,
+) -> Result<FileChangePage, String> {
+    tauri::async_runtime::spawn_blocking(move || file_changes::list_files(&app_handle, request))
+        .await
+        .map_err(|error| format!("The file-change reader stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn get_task_file_change_hunks(
+    app_handle: tauri::AppHandle,
+    request: FileChangeHunkPageRequest,
+) -> Result<FileChangeHunkPage, String> {
+    tauri::async_runtime::spawn_blocking(move || file_changes::list_hunks(&app_handle, request))
+        .await
+        .map_err(|error| format!("The changed-hunk reader stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
 pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
-    limiter: tauri::State<'_, DesktopTaskLimiter>,
     window: tauri::WebviewWindow,
     mut request: DesktopTaskRunRequest,
 ) -> Result<DesktopTaskRunResponse, String> {
@@ -311,34 +297,7 @@ pub async fn run_desktop_task(
         }
     }
 
-    if limiter.available_permits() == 0 {
-        emit_progress_event(
-            &app_handle,
-            &window_label,
-            task_id.as_deref(),
-            create_bridge_progress(
-                request.task.trim(),
-                request.mode.as_deref(),
-                "starting",
-                &format!(
-                    "Waiting for an execution slot (queue position {}).",
-                    limiter.next_queue_position()
-                ),
-                true,
-            ),
-        );
-    }
-
-    let execution_permit = match limiter.acquire(&cancel_flag).await {
-        Ok(permit) => permit,
-        Err(error) => {
-            finish_active_task(&state, task_id.as_deref());
-            return Err(error);
-        }
-    };
-
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let _execution_permit = execution_permit;
         execute_desktop_task(app_handle, window_label, request, cancel_flag)
     })
     .await
@@ -573,19 +532,10 @@ pub async fn save_clipboard_image_attachment(
 }
 
 #[tauri::command]
-pub async fn run_scheduler_command(
-    limiter: tauri::State<'_, DesktopTaskLimiter>,
-    request: SchedulerCommandRequest,
-) -> Result<Value, String> {
-    let cancel_flag = AtomicBool::new(false);
-    let execution_permit = limiter.acquire(&cancel_flag).await?;
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let _execution_permit = execution_permit;
-        execute_scheduler_command(request)
-    })
-    .await
-    .map_err(|error| format!("The scheduler command bridge stopped unexpectedly. {error}"))?
+pub async fn run_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute_scheduler_command(request))
+        .await
+        .map_err(|error| format!("The scheduler command bridge stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
@@ -599,7 +549,6 @@ pub async fn start_scheduler_service(request: SchedulerCommandRequest) -> Result
 pub async fn run_ralph_command(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
-    limiter: tauri::State<'_, DesktopTaskLimiter>,
     window: tauri::WebviewWindow,
     mut request: RalphCommandRequest,
 ) -> Result<Value, String> {
@@ -627,16 +576,7 @@ pub async fn run_ralph_command(
         }
     }
 
-    let execution_permit = match limiter.acquire(&cancel_flag).await {
-        Ok(permit) => permit,
-        Err(error) => {
-            finish_active_task(&state, task_id.as_deref());
-            return Err(error);
-        }
-    };
-
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let _execution_permit = execution_permit;
         execute_ralph_command(app_handle, window_label, request, cancel_flag)
     })
     .await
@@ -655,6 +595,17 @@ pub async fn run_mcp_command(request: McpCommandRequest) -> Result<Value, String
 }
 
 #[tauri::command]
+pub async fn run_provider_sync_command(
+    request: ProviderSyncCommandRequest,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute_provider_sync_command(request))
+        .await
+        .map_err(|error| {
+            format!("The provider sync command bridge stopped unexpectedly. {error}")
+        })?
+}
+
+#[tauri::command]
 pub async fn run_instruction_command(request: InstructionCommandRequest) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || execute_instruction_command(request))
         .await
@@ -664,16 +615,12 @@ pub async fn run_instruction_command(request: InstructionCommandRequest) -> Resu
 #[tauri::command]
 pub async fn run_task_interview_command(
     app_handle: tauri::AppHandle,
-    limiter: tauri::State<'_, DesktopTaskLimiter>,
     window: tauri::WebviewWindow,
     request: TaskInterviewCommandRequest,
 ) -> Result<Value, String> {
     let window_label = window.label().to_string();
-    let cancel_flag = AtomicBool::new(false);
-    let execution_permit = limiter.acquire(&cancel_flag).await?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let _execution_permit = execution_permit;
         execute_task_interview_command(app_handle, window_label, request)
     })
     .await
@@ -682,17 +629,19 @@ pub async fn run_task_interview_command(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_timeout_duration, DESKTOP_TASK_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS};
+    use super::{
+        format_timeout_duration, AUXILIARY_CLI_COMMAND_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS,
+    };
 
     #[test]
     fn ralph_command_timeout_allows_long_autonomous_runs() {
-        assert!(RALPH_COMMAND_TIMEOUT_MS > DESKTOP_TASK_TIMEOUT_MS);
+        assert!(RALPH_COMMAND_TIMEOUT_MS > AUXILIARY_CLI_COMMAND_TIMEOUT_MS);
         assert_eq!(
             format_timeout_duration(RALPH_COMMAND_TIMEOUT_MS),
             "12 hours"
         );
         assert_eq!(
-            format_timeout_duration(DESKTOP_TASK_TIMEOUT_MS),
+            format_timeout_duration(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
             "20 minutes"
         );
     }

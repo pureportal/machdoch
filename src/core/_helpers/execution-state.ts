@@ -15,9 +15,9 @@ import type {
   RuntimeConfig,
   ToolName,
 } from "../runtime-contract.generated.js";
-import { TASK_EXECUTION_TIMEOUT_REASON_PREFIX } from "./agent-runtime-types.js";
 import { isTerminalTaskExecutionState } from "./execution-progress.js";
 import { limitText } from "./runtime-text.js";
+import { isTaskExecutionTimeoutReason } from "./task-execution-timeouts.js";
 
 export interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;
@@ -164,7 +164,7 @@ const createCancellationSection = (
   reason: string,
 ): TaskExecutionSection => {
   return {
-    title: reason.startsWith(TASK_EXECUTION_TIMEOUT_REASON_PREFIX)
+    title: isTaskExecutionTimeoutReason(reason)
       ? "Execution limit"
       : "Cancellation",
     lines: [`state: ${state}`, `message: ${message}`, `reason: ${reason}`],
@@ -185,7 +185,7 @@ const createCancelledResult = (
       ? runtime.pendingResult.outputSections
       : runtime.contextSections;
   const reason = getCancellationReason(signal);
-  const timedOut = reason.startsWith(TASK_EXECUTION_TIMEOUT_REASON_PREFIX);
+  const timedOut = isTaskExecutionTimeoutReason(reason);
 
   return createExecutionResult(
     {

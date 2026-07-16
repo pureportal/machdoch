@@ -68,8 +68,7 @@ describe("workspace Git repository discovery", () => {
       "api",
       "ui",
     ]);
-    expect(result.truncated).toBe(false);
-    expect(result.warnings).toEqual([]);
+    expect(result.issues).toEqual([]);
   });
 
   it("supports linked worktrees that use a .git file", async () => {
@@ -94,19 +93,16 @@ describe("workspace Git repository discovery", () => {
     ]);
   });
 
-  it("uses a bounded depth and skips generated dependency trees", async () => {
+  it("discovers repositories at arbitrary depth and inside dependency trees", async () => {
     const workspaceRoot = await createWorkspace();
     await createRepository(join(workspaceRoot, "group", "api"));
     await createRepository(join(workspaceRoot, "node_modules", "ignored"));
 
-    const defaultResult = await discoverWorkspaceGitRepositories(workspaceRoot);
-    const shallowResult = await discoverWorkspaceGitRepositories(workspaceRoot, {
-      maxDepth: 1,
-    });
+    const result = await discoverWorkspaceGitRepositories(workspaceRoot);
 
     expect(
-      defaultResult.repositories.map((repository) => repository.workspacePath),
-    ).toEqual(["group/api"]);
-    expect(shallowResult.repositories).toEqual([]);
+      result.repositories.map((repository) => repository.workspacePath),
+    ).toEqual(["group/api", "node_modules/ignored"]);
+    expect(result.issues).toEqual([]);
   });
 });

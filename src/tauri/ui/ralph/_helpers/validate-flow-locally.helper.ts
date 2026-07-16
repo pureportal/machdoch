@@ -14,6 +14,9 @@ import { getReachableBlockIds } from "./get-reachable-block-ids.helper";
 import { hasLocalFlowCycle } from "./has-local-flow-cycle.helper";
 
 const DEFAULT_RALPH_FLOW_SCOPE: RalphFlowScope = "workspace";
+const MEDIA_FLOW_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
+const MEDIA_BINDING_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/u;
+const RALPH_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/u;
 
 export const RALPH_NOTE_MIN_SIZE = { width: 180, height: 120 };
 export const RALPH_GROUP_MIN_SIZE = { width: 280, height: 180 };
@@ -262,6 +265,90 @@ export const validateFlowLocally = (
         message: `${block.title} references packs, but Ralph currently stores pack ids as metadata and does not inject pack contents at runtime.`,
         blockId: block.id,
       });
+    }
+
+    if (block.type === "MEDIA_FLOW") {
+      if (!MEDIA_FLOW_ID_PATTERN.test(block.flowId)) {
+        issues.push({
+          level: "error",
+          message: `${block.title} requires a pinned Media Studio flow id.`,
+          blockId: block.id,
+        });
+      }
+      if (!MEDIA_FLOW_ID_PATTERN.test(block.revisionId)) {
+        issues.push({
+          level: "error",
+          message: `${block.title} requires a pinned Media Studio revision id.`,
+          blockId: block.id,
+        });
+      }
+      const variableNames = new Set(
+        (flow.variables ?? []).map((variable) => variable.name),
+      );
+      const inputEntries = Object.entries(block.inputBindings);
+      const outputEntries = Object.entries(block.outputBindings);
+      if (inputEntries.length > 32) {
+        issues.push({
+          level: "error",
+          message: `${block.title} may bind at most 32 Media Studio inputs.`,
+          blockId: block.id,
+        });
+      }
+      if (outputEntries.length > 32) {
+        issues.push({
+          level: "error",
+          message: `${block.title} may bind at most 32 Media Studio outputs.`,
+          blockId: block.id,
+        });
+      }
+      for (const [inputId, binding] of inputEntries) {
+        if (!MEDIA_BINDING_ID_PATTERN.test(inputId)) {
+          issues.push({
+            level: "error",
+            message: `${block.title} input binding ${inputId} is not a valid Media Studio variable id.`,
+            blockId: block.id,
+          });
+        }
+        if (
+          (binding.source === "variable" &&
+            (!RALPH_VARIABLE_NAME_PATTERN.test(binding.variableName) ||
+              !variableNames.has(binding.variableName))) ||
+          (binding.source === "path" && !binding.path.trim()) ||
+          (binding.source === "media-asset" && !binding.assetId.trim())
+        ) {
+          issues.push({
+            level: "error",
+            message: `${block.title} input binding ${inputId} is incomplete or references an undeclared Ralph variable.`,
+            blockId: block.id,
+          });
+        }
+      }
+      for (const [outputId, binding] of outputEntries) {
+        if (!MEDIA_BINDING_ID_PATTERN.test(outputId)) {
+          issues.push({
+            level: "error",
+            message: `${block.title} output binding ${outputId} is invalid.`,
+            blockId: block.id,
+          });
+        }
+        if (
+          !RALPH_VARIABLE_NAME_PATTERN.test(binding.variableName) ||
+          !variableNames.has(binding.variableName)
+        ) {
+          issues.push({
+            level: "error",
+            message: `${block.title} output ${outputId} requires a declared Ralph variable.`,
+            blockId: block.id,
+          });
+        }
+      }
+      if (block.runPolicy === "submit-and-continue" && outputEntries.length > 0) {
+        issues.push({
+          level: "error",
+          message: `${block.title} cannot bind outputs while using submit-and-continue.`,
+          blockId: block.id,
+        });
+      }
     }
 
     if (block.settings?.packs && block.settings.packs.length > 0) {

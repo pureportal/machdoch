@@ -1,5 +1,5 @@
 import type { ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
-import type { InstructionCliOptions, McpCliOptions, ParsedCliArgs, RalphCliOptions, SchedulerCliOptions, TaskInterviewCliOptions } from "./cli-args-types.js";
+import type { InstructionCliOptions, McpCliOptions, ParsedCliArgs, ProviderSyncCliOptions, RalphCliOptions, SchedulerCliOptions, TaskInterviewCliOptions } from "./cli-args-types.js";
 
 export const createParsedArgs = (
   base: Omit<
@@ -10,6 +10,7 @@ export const createParsedArgs = (
     | "ralph"
     | "scheduler"
     | "mcp"
+    | "providerSync"
     | "instructions"
     | "provider"
     | "runtimeProvider"
@@ -48,6 +49,7 @@ export const createParsedArgs = (
     ralph?: RalphCliOptions;
     scheduler?: SchedulerCliOptions;
     mcp?: McpCliOptions;
+    providerSync?: ProviderSyncCliOptions;
     instructions?: InstructionCliOptions;
     task?: string;
   },
@@ -89,6 +91,7 @@ export const createParsedArgs = (
     ...(options?.ralph ? { ralph: options.ralph } : {}),
     ...(options?.scheduler ? { scheduler: options.scheduler } : {}),
     ...(options?.mcp ? { mcp: options.mcp } : {}),
+    ...(options?.providerSync ? { providerSync: options.providerSync } : {}),
     ...(options?.instructions ? { instructions: options.instructions } : {}),
   };
 };

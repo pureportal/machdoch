@@ -1,7 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { extname } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
 import {
   createExecutionResult,
@@ -31,6 +29,9 @@ import type {
 } from "../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
 import { normalizeLocalCommandCwd } from "./process-execution.js";
+import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
+import { compileInstructionBundle } from "../provider-enrollment/instruction-compiler.js";
+import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
@@ -49,10 +50,9 @@ const MAX_CAPTURED_STDOUT_CHARS = 512_000;
 const MAX_CAPTURED_STDERR_CHARS = 128_000;
 const MAX_ACTION_OUTPUT_BATCH_CHARS = 32_000;
 const ACTION_OUTPUT_BATCH_INTERVAL_MS = 150;
-const ISOLATED_CODEX_HOME_PREFIX = "machdoch-codex-home-";
 const MAX_EXTERNAL_AGENT_PROMPT_CHARS = 256_000;
 const MAX_EXTERNAL_AGENT_TASK_CHARS = 64_000;
-const MAX_EXTERNAL_AGENT_INSTRUCTION_CHARS = 64_000;
+const MAX_EXTERNAL_AGENT_FALLBACK_INSTRUCTION_CHARS = 128_000;
 const MAX_EXTERNAL_AGENT_CONVERSATION_CHARS = 32_000;
 const MAX_EXTERNAL_AGENT_CONTEXT_CHARS = 64_000;
 const MAX_EXTERNAL_AGENT_ATTACHMENT_CHARS = 16_000;
@@ -240,6 +240,15 @@ const formatSectionForPrompt = (section: TaskExecutionSection): string => {
   );
 };
 
+const isEnrollmentCompatibilityFailure = (
+  stdout: string,
+  stderr: string,
+): boolean => {
+  return /unknown (?:argument|option|flag)|unrecognized (?:argument|option)|unexpected argument|invalid (?:config|configuration)|failed to (?:load|parse).*(?:config|mcp)|developer_instructions|append-system-prompt-file|additional-mcp-config|custom.instructions/iu.test(
+    `${stderr}\n${stdout}`,
+  );
+};
+
 const getExternalAgentDelegationMode = (
   params: ExternalAgentExecutionParams,
 ): ExternalAgentDelegationMode => {
@@ -294,7 +303,7 @@ const createExternalAgentPrompt = (
   config: RuntimeConfig,
   contextSections: TaskExecutionSection[],
   conversationContext: PreparedConversationPromptContext,
-  systemPromptSections: readonly string[],
+  promptFallbackInstructions: string | undefined,
   providerLabel: string,
   attachmentPaths: readonly string[],
   delegationMode: ExternalAgentDelegationMode,
@@ -310,13 +319,13 @@ const createExternalAgentPrompt = (
         )
       : undefined;
   const instructionBlock =
-    systemPromptSections.length > 0
+    promptFallbackInstructions
       ? limitText(
           [
-            "Additional Machdoch system instructions:",
-            ...systemPromptSections,
+            "Machdoch native instruction enrollment failed; apply this exact managed instruction bundle from the prompt fallback:",
+            promptFallbackInstructions,
           ].join("\n\n"),
-          MAX_EXTERNAL_AGENT_INSTRUCTION_CHARS,
+          MAX_EXTERNAL_AGENT_FALLBACK_INSTRUCTION_CHARS,
         )
       : undefined;
   const resolvedContext = limitText(
@@ -546,7 +555,10 @@ const isProviderChildEnvKey = (
   );
 };
 
-const createChildEnv = (provider: AgentCliProvider): NodeJS.ProcessEnv => {
+const createChildEnv = (
+  provider: AgentCliProvider,
+  enrollmentEnv: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv => {
   const childEnv: NodeJS.ProcessEnv = {
     NO_COLOR: "1",
   };
@@ -560,44 +572,9 @@ const createChildEnv = (provider: AgentCliProvider): NodeJS.ProcessEnv => {
     }
   }
 
+  Object.assign(childEnv, enrollmentEnv);
+
   return childEnv;
-};
-
-const resolveCodexHome = (): string | undefined => {
-  const configuredHome = process.env.CODEX_HOME?.trim();
-
-  if (configuredHome) {
-    return configuredHome;
-  }
-
-  const userHome = process.env.USERPROFILE?.trim() || process.env.HOME?.trim();
-  return userHome ? join(userHome, ".codex") : undefined;
-};
-
-const createIsolatedCodexHome = async (): Promise<{
-  path: string;
-  dispose: () => Promise<void>;
-}> => {
-  const path = await mkdtemp(join(tmpdir(), ISOLATED_CODEX_HOME_PREFIX));
-  const sourceHome = resolveCodexHome();
-  await chmod(path, 0o700).catch(() => undefined);
-
-  if (sourceHome) {
-    try {
-      const authPath = join(path, "auth.json");
-      await copyFile(join(sourceHome, "auth.json"), authPath);
-      await chmod(authPath, 0o600).catch(() => undefined);
-    } catch {
-      // Token-based and OS credential-store authentication do not require auth.json.
-    }
-  }
-
-  return {
-    path,
-    dispose: async (): Promise<void> => {
-      await rm(path, { recursive: true, force: true }).catch(() => undefined);
-    },
-  };
 };
 
 const createAbortError = (signal: AbortSignal): Error => {
@@ -727,6 +704,7 @@ const runExternalAgentCommand = async (
   input: string | undefined,
   config: RuntimeConfig,
   provider: AgentCliProvider,
+  enrollmentEnv: NodeJS.ProcessEnv,
   signal: AbortSignal | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
 ): Promise<SpawnedAgentResult> => {
@@ -734,17 +712,9 @@ const runExternalAgentCommand = async (
     throw createAbortError(signal);
   }
 
-  const isolatedCodexHome =
-    provider === "codex-cli" ? await createIsolatedCodexHome() : undefined;
-
-  try {
-    return await new Promise<SpawnedAgentResult>((resolve, reject) => {
+  return await new Promise<SpawnedAgentResult>((resolve, reject) => {
       const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
-      const childEnv = createChildEnv(provider);
-
-      if (isolatedCodexHome) {
-        childEnv.CODEX_HOME = isolatedCodexHome.path;
-      }
+      const childEnv = createChildEnv(provider, enrollmentEnv);
 
       const child = spawn(executable, args, {
         cwd,
@@ -868,9 +838,6 @@ const runExternalAgentCommand = async (
 
       child.stdin?.end();
     });
-  } finally {
-    await isolatedCodexHome?.dispose();
-  }
 };
 
 interface ExternalAgentCommand {
@@ -888,6 +855,7 @@ interface ExternalAgentCommandFactoryParams {
   prompt: string;
   imageInputs: ModelDrivenExecutionParams["imageInputs"];
   delegationMode: ExternalAgentDelegationMode;
+  enrollmentArgs: readonly string[];
 }
 
 type ExternalAgentDelegationMode = "full-access" | "read-only-artifact";
@@ -919,12 +887,11 @@ const createCodexArgs = (
   ];
 
   if (delegationMode === "read-only-artifact") {
-    args.push("--sandbox", "read-only", "--ephemeral", "--ignore-user-config");
+    args.push("--sandbox", "read-only", "--ephemeral");
   } else {
     args.push(
       "--dangerously-bypass-approvals-and-sandbox",
       "--ephemeral",
-      "--ignore-user-config",
     );
   }
 
@@ -956,8 +923,8 @@ const createCodexArgs = (
     args,
     runDetail:
       delegationMode === "read-only-artifact"
-        ? "Running ephemeral codex exec with an isolated Codex home in a read-only artifact-generation sandbox, plus user config, bundled skills, git-repo guard, and execpolicy rules ignored."
-        : "Running ephemeral codex exec with an isolated Codex home, bundled skills and user config ignored, and approvals, sandbox, git-repo guard, and execpolicy rules bypassed.",
+        ? "Running ephemeral codex exec with an isolated Machdoch-managed Codex home in a read-only artifact-generation sandbox."
+        : "Running ephemeral codex exec with an isolated Machdoch-managed Codex home and native instructions/MCP, while approvals and sandbox are bypassed.",
     startMessage:
       delegationMode === "read-only-artifact"
         ? "Starting Codex CLI in constrained read-only artifact mode."
@@ -968,7 +935,7 @@ const createCodexArgs = (
         ? "access: read-only artifact generation"
         : "access: full local access",
       "Codex home: isolated per run",
-      "user config: ignored",
+      "user config: isolated Machdoch projection",
       "bundled skills: disabled",
       "git repo check: skipped",
       "execpolicy rules: ignored",
@@ -982,7 +949,7 @@ const createCodexArgs = (
         delegationMode === "read-only-artifact"
           ? "read-only-artifact"
           : "dangerously-bypass-approvals-and-sandbox",
-      userConfig: "ignored",
+      userConfig: "isolated-machdoch-projection",
       codexHome: "isolated",
       sessionPersistence: "ephemeral",
       bundledSkills: false,
@@ -1003,14 +970,17 @@ const createCodexCommand = ({
   prompt,
   imageInputs,
   delegationMode,
-}: ExternalAgentCommandFactoryParams): ExternalAgentCommand => ({
-  ...createCodexArgs(config, imageInputs, delegationMode),
-  input: prompt,
-});
+  enrollmentArgs,
+}: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
+  const command = createCodexArgs(config, imageInputs, delegationMode);
+  command.args.splice(-1, 0, ...enrollmentArgs);
+  return { ...command, input: prompt };
+};
 
 const createClaudeCommand = ({
   config,
   prompt,
+  enrollmentArgs,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
   const args = [
@@ -1022,6 +992,7 @@ const createClaudeCommand = ({
     config.model,
     "--dangerously-skip-permissions",
     "--no-session-persistence",
+    ...enrollmentArgs,
   ];
   const maxTurns = getExecutorTurnLimit(config);
 
@@ -1056,6 +1027,7 @@ const createClaudeCommand = ({
 const createCopilotCommand = ({
   config,
   prompt,
+  enrollmentArgs,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const effort = mapReasoningToCopilotCliEffort(
     config.model,
@@ -1067,6 +1039,7 @@ const createCopilotCommand = ({
     "--autopilot",
     "--no-ask-user",
     "--secret-env-vars=GH_TOKEN",
+    ...enrollmentArgs,
   ];
 
   args.push(`--model=${config.model}`);
@@ -1162,23 +1135,51 @@ const executeExternalAgentCliTask = async (
 
   const imagePaths = (params.imageInputs ?? []).map((imageInput) => imageInput.path);
   const delegationMode = getExternalAgentDelegationMode(params);
-  const prompt = createExternalAgentPrompt(
+  let enrollment: MaterializedCliEnrollment | undefined;
+  let enrollmentFailure: string | undefined;
+
+  try {
+    enrollment = await materializeCliEnrollment({
+      provider,
+      executable: binary.executable,
+      runId: params.runId ?? `external-${Date.now()}-${process.pid}`,
+      workspaceRoot: executionConfig.workspaceRoot,
+      taskContext: params.taskContext,
+      additionalSystemPromptSections: params.systemPromptSections ?? [],
+    });
+  } catch (error) {
+    enrollmentFailure = error instanceof Error ? error.message : String(error);
+  }
+
+  let fallbackBundle = enrollment
+    ? undefined
+    : compileInstructionBundle(
+        params.taskContext,
+        params.systemPromptSections ?? [],
+      );
+  const activeInstructionBundle = enrollment?.instructionBundle ?? fallbackBundle;
+  const enrollmentInstructionCount = activeInstructionBundle
+    ? [...activeInstructionBundle.sources, ...activeInstructionBundle.omittedSources]
+        .reduce((count, source) => count + source.sourceIds.length, 0)
+    : 0;
+  let prompt = createExternalAgentPrompt(
     params.task,
     executionConfig,
     params.contextSections,
     params.preparedConversationContext,
-    params.systemPromptSections ?? [],
+    fallbackBundle?.renderedText,
     providerLabel,
     imagePaths,
     delegationMode,
   );
-  const command = createExternalAgentCommand(
+  let command = createExternalAgentCommand(
     provider,
     {
       config: executionConfig,
       prompt,
       imageInputs: params.imageInputs,
       delegationMode,
+      enrollmentArgs: enrollment?.args ?? [],
     },
   );
 
@@ -1201,6 +1202,15 @@ const executeExternalAgentCliTask = async (
         model: params.config.model,
         metadata: {
           binarySource: binary.source ?? "unknown",
+          enrollmentBundleDigest:
+            enrollment?.instructionBundle.digest ?? fallbackBundle?.digest ?? "none",
+          enrollmentInstructionCount:
+            enrollmentInstructionCount,
+          enrollmentCoverageComplete:
+            enrollment?.manifest.coverageSummary.complete ?? false,
+          enrollmentRoute: enrollment
+            ? "native"
+            : "prompt-fallback",
           ...command.metadata,
         },
       },
@@ -1208,15 +1218,127 @@ const executeExternalAgentCliTask = async (
   );
 
   const startedAt = Date.now();
-  const result = await runExternalAgentCommand(
-    binary.executable,
-    command.args,
-    command.input,
-    executionConfig,
-    provider,
-    params.signal,
-    params.onActionOutput,
+  let result: SpawnedAgentResult;
+  try {
+    result = await runExternalAgentCommand(
+      binary.executable,
+      command.args,
+      command.input,
+      executionConfig,
+      provider,
+      enrollment?.env ?? {},
+      params.signal,
+      params.onActionOutput,
+    );
+  } finally {
+    await enrollment?.dispose();
+  }
+  let nativeEnrollmentWarnings = enrollment?.manifest.warnings ?? [];
+  let shouldRetryWithPrompt = Boolean(
+    enrollment &&
+    result.exitCode !== 0 &&
+    isEnrollmentCompatibilityFailure(result.stdout, result.stderr),
   );
+  if (shouldRetryWithPrompt && provider === "codex-cli") {
+    enrollmentFailure = [
+      enrollmentFailure,
+      "The installed Codex CLI rejected developer_instructions; Machdoch retried with an isolated AGENTS file.",
+    ].filter(Boolean).join(" ");
+    try {
+      enrollment = await materializeCliEnrollment({
+        provider,
+        executable: binary.executable,
+        runId: `${params.runId ?? `external-${Date.now()}-${process.pid}`}-agents-fallback`,
+        workspaceRoot: executionConfig.workspaceRoot,
+        taskContext: params.taskContext,
+        additionalSystemPromptSections: params.systemPromptSections ?? [],
+        codexInstructionFallback: true,
+      });
+      nativeEnrollmentWarnings = [
+        ...nativeEnrollmentWarnings,
+        ...enrollment.manifest.warnings,
+      ];
+      prompt = createExternalAgentPrompt(
+        params.task,
+        executionConfig,
+        params.contextSections,
+        params.preparedConversationContext,
+        undefined,
+        providerLabel,
+        imagePaths,
+        delegationMode,
+      );
+      command = createExternalAgentCommand(provider, {
+        config: executionConfig,
+        prompt,
+        imageInputs: params.imageInputs,
+        delegationMode,
+        enrollmentArgs: enrollment.args,
+      });
+      try {
+        result = await runExternalAgentCommand(
+          binary.executable,
+          command.args,
+          command.input,
+          executionConfig,
+          provider,
+          enrollment.env,
+          params.signal,
+          params.onActionOutput,
+        );
+      } finally {
+        await enrollment.dispose();
+      }
+      shouldRetryWithPrompt =
+        result.exitCode !== 0 &&
+        isEnrollmentCompatibilityFailure(result.stdout, result.stderr);
+    } catch (error) {
+      enrollmentFailure = [
+        enrollmentFailure,
+        error instanceof Error ? error.message : String(error),
+      ].filter(Boolean).join(" ");
+      enrollment = undefined;
+      shouldRetryWithPrompt = true;
+    }
+  }
+  if (shouldRetryWithPrompt) {
+    enrollmentFailure = [
+      enrollmentFailure,
+      "The installed provider rejected its native enrollment surface; Machdoch retried automatically with prompt enrollment.",
+    ].filter(Boolean).join(" ");
+    fallbackBundle = compileInstructionBundle(
+      params.taskContext,
+      params.systemPromptSections ?? [],
+    );
+    prompt = createExternalAgentPrompt(
+      params.task,
+      executionConfig,
+      params.contextSections,
+      params.preparedConversationContext,
+      fallbackBundle.renderedText,
+      providerLabel,
+      imagePaths,
+      delegationMode,
+    );
+    command = createExternalAgentCommand(provider, {
+      config: executionConfig,
+      prompt,
+      imageInputs: params.imageInputs,
+      delegationMode,
+      enrollmentArgs: [],
+    });
+    enrollment = undefined;
+    result = await runExternalAgentCommand(
+      binary.executable,
+      command.args,
+      command.input,
+      executionConfig,
+      provider,
+      {},
+      params.signal,
+      params.onActionOutput,
+    );
+  }
   const stdout = cleanCliText(result.stdout);
   const stderr = cleanCliText(result.stderr);
   const durationMs = Date.now() - startedAt;
@@ -1227,6 +1349,15 @@ const executeExternalAgentCliTask = async (
       `binary source: ${binary.source ?? "unknown"}`,
       `model: ${params.config.model}`,
       `reasoning: ${params.config.reasoning}`,
+      `instruction bundle: ${enrollment?.instructionBundle.digest ?? fallbackBundle?.digest ?? "none"}`,
+      `instruction enrollment: ${enrollment?.instructionRoute ?? "prompt fallback"}`,
+      `MCP servers enrolled: ${enrollment?.mcpProjection.servers.length ?? 0}`,
+      ...(enrollmentFailure
+        ? [`enrollment fallback: ${limitText(enrollmentFailure, 500)}`]
+        : []),
+      ...nativeEnrollmentWarnings.map((warning) =>
+        `enrollment warning: ${limitText(warning, 500)}`,
+      ),
       ...command.commandLines,
       `exit code: ${result.exitCode ?? "unknown"}`,
       ...(result.signal ? [`signal: ${result.signal}`] : []),

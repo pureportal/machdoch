@@ -33,6 +33,7 @@ interface SpawnCall {
 const spawnCalls: SpawnCall[] = [];
 
 vi.mock("node:child_process", () => ({
+  spawnSync: vi.fn(() => ({ status: 0, stdout: "", stderr: "" })),
   spawn: vi.fn((executable: string, args: string[], options: Record<string, unknown>) => {
     const child = new EventEmitter() as MockChildProcess;
 
@@ -253,18 +254,18 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "exec",
       "--dangerously-bypass-approvals-and-sandbox",
       "--ephemeral",
-      "--ignore-user-config",
       "--skip-git-repo-check",
       "--ignore-rules",
       "--cd",
       workspaceRoot,
       "--model",
       "gpt-5.5",
+      "--config",
     ]);
     expect(call?.args).not.toContain("--ask-for-approval");
     expect(call?.args).not.toContain("--sandbox");
     expect(call?.args).toContain("--ephemeral");
-    expect(call?.args).toContain("--ignore-user-config");
+    expect(call?.args).not.toContain("--ignore-user-config");
     expect(call?.args).toContain("skills.bundled.enabled=false");
     expect(call?.args).toContain("--skip-git-repo-check");
     expect(call?.args).toContain("--ignore-rules");
@@ -459,7 +460,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--sandbox");
     expect(call?.args).toContain("read-only");
     expect(call?.args).toContain("--ephemeral");
-    expect(call?.args).toContain("--ignore-user-config");
+    expect(call?.args).not.toContain("--ignore-user-config");
     expect(call?.args).not.toContain(
       "--dangerously-bypass-approvals-and-sandbox",
     );
@@ -638,7 +639,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
-  it("passes explicit Codex auth through an isolated disposable Codex home", async () => {
+  it("passes explicit Codex auth through an isolated managed Codex home", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
@@ -656,7 +657,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.CODEX_API_KEY).toBe("codex-explicit-key");
-    expect(childEnv?.CODEX_HOME).toContain("machdoch-codex-home-");
+    expect(childEnv?.CODEX_HOME).toContain("machdoch-provider-enrollment-");
     expect(childEnv?.CODEX_HOME).not.toBe(join(workspaceRoot, ".codex-home"));
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
@@ -721,7 +722,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
-    expect(call?.args).toEqual([
+    expect(call?.args).toEqual(expect.arrayContaining([
       "-p",
       "Follow the Machdoch delegated task prompt supplied on stdin.",
       "--output-format",
@@ -730,11 +731,14 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "claude-sonnet-4-6",
       "--dangerously-skip-permissions",
       "--no-session-persistence",
+      "--append-system-prompt-file",
+      "--mcp-config",
       "--effort",
       "high",
       "--max-turns",
       "7",
-    ]);
+    ]));
+    expect(call?.args).not.toContain("--strict-mcp-config");
     expect(call?.child.stdinText).toContain(
       "You are running as a delegated Claude CLI agent for Machdoch.",
     );
@@ -747,6 +751,38 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(result?.status).toBe("executed");
     expect(result?.response?.markdown).toBe("Claude delegated answer.");
+  });
+
+  it("retries with prompt enrollment when an installed CLI rejects its native enrollment flags", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot, { provider: "claude-cli" });
+    params.taskContext.applicableInstructions = [{
+      kind: "always-on",
+      name: "Fallback policy",
+      path: ".machdoch/instructions.md",
+      priority: 1,
+      body: "Apply the native fallback canary.",
+      reason: "always",
+    }];
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    spawnCalls[0]?.child.stderr.write("error: unknown option --append-system-prompt-file");
+    spawnCalls[0]?.child.emit("close", 1, null);
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(2));
+    const retry = spawnCalls[1];
+    expect(retry?.args).not.toContain("--append-system-prompt-file");
+    expect(retry?.args).not.toContain("--mcp-config");
+    expect(retry?.child.stdinText).toContain("Apply the native fallback canary.");
+    retry?.child.stdout.write("Fallback completed.");
+    retry?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "Fallback completed." },
+    });
   });
 
   it("does not leak Anthropic API keys into Claude CLI authentication", async () => {

@@ -192,13 +192,23 @@ export const saveWorkspaceOffline = async (
 const getProviderAvailability = (
   env: Record<string, string>,
 ): ProviderAvailability[] => {
-  return [
-    ...USER_API_PROVIDERS.map((provider) => ({
+  const apiProviderAvailability: ProviderAvailability[] = [];
+
+  for (const provider of USER_API_PROVIDERS) {
+    if (!isConfiguredModelProvider(provider)) {
+      continue;
+    }
+
+    apiProviderAvailability.push({
       provider,
       configured: hasConfiguredValue(
         env[PROVIDER_ENV_KEY_BY_PROVIDER[provider]],
       ),
-    })),
+    });
+  }
+
+  return [
+    ...apiProviderAvailability,
     ...getAgentCliProviders().map((provider) => ({
       provider,
       configured: resolveAgentCliProviderBinary(provider, env).available,

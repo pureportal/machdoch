@@ -406,11 +406,13 @@ export const mergeLoadedRalphSettings = (
 export interface RalphAppProps {
   isActive: boolean;
   providerStatuses?: readonly RuntimeProviderAvailability[];
+  onOpenMediaRun?: (runId: string) => void;
 }
 
 export const RalphApp = ({
   isActive,
   providerStatuses,
+  onOpenMediaRun,
 }: RalphAppProps): JSX.Element => {
   const [settings, setSettings] = useState<RalphSettings>(
     DEFAULT_RALPH_SETTINGS,
@@ -862,6 +864,7 @@ export const RalphApp = ({
           onGenerationPromptHistoryChange={(generationPromptHistory) =>
             updateSettings({ generationPromptHistory })
           }
+          onOpenMediaRun={onOpenMediaRun}
         />
       </div>
     </section>

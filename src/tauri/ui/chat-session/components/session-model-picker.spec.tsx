@@ -77,8 +77,9 @@ describe("SessionModelPicker", () => {
   });
 
   it("shows no fallback models while refreshing the live catalog", async () => {
-    let resolveCatalog: ((catalog: ProviderModelCatalogSnapshot) => void) | null =
-      null;
+    let resolveCatalog: (catalog: ProviderModelCatalogSnapshot) => void = () => {
+      throw new Error("Catalog resolver was not initialized.");
+    };
     loadProviderModelCatalogMock.mockReturnValue(
       new Promise<ProviderModelCatalogSnapshot>((resolve) => {
         resolveCatalog = resolve;
@@ -96,7 +97,7 @@ describe("SessionModelPicker", () => {
       screen.queryByRole("button", { name: "Choose Copilot CLI Auto" }),
     ).toBeNull();
 
-    resolveCatalog?.(liveCatalog);
+    resolveCatalog(liveCatalog);
 
     expect(await screen.findByText("4 available")).toBeTruthy();
     expect(

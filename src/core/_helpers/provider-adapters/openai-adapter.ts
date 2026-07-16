@@ -18,7 +18,7 @@ import type {
 } from "../../types.js";
 import type { ReasoningMode } from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
+import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
@@ -320,13 +320,13 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
 
         if (request.multi_agent?.enabled) {
           return await this.client.beta.responses.create(request, {
-            timeout: TASK_EXECUTION_TIMEOUT_MS,
+            timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
             ...(requestSignal ? { signal: requestSignal } : {}),
           });
         }
 
         return await this.client.responses.create(request, {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
         });
       },
@@ -391,13 +391,13 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
 
         if (request.multi_agent?.enabled) {
           return await this.client.beta.responses.create(request, {
-            timeout: TASK_EXECUTION_TIMEOUT_MS,
+            timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
             ...(requestSignal ? { signal: requestSignal } : {}),
           });
         }
 
         return await this.client.responses.create(request, {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
         });
       },
@@ -608,7 +608,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
     requestSignal: AbortSignal | undefined,
   ): OpenAIResponseStreamLike {
     const stream = this.client.responses.stream(request, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
       ...(requestSignal ? { signal: requestSignal } : {}),
     });
 
@@ -630,7 +630,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
       stream: true,
     } as BetaResponseCreateParamsStreaming;
     const stream = await this.client.beta.responses.create(streamingRequest, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
       ...(requestSignal ? { signal: requestSignal } : {}),
     });
     let eventHandler: ((event: OpenAIStreamEvent) => void) | undefined;

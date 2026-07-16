@@ -28,10 +28,12 @@ import {
   type ReasoningMode,
   type RunMode,
 } from "../../../../core/runtime-contract.generated.js";
-import type {
-  ChatSessionContextAttachment,
-  SmartContextPack,
-  SmartContextPackVariable,
+import {
+  isMediaAssetContextAttachment,
+  isPathContextAttachment,
+  type ChatSessionContextAttachment,
+  type SmartContextPack,
+  type SmartContextPackVariable,
 } from "../../chat-session.model";
 import type { RalphFlow } from "../../../../core/ralph.js";
 import { Button } from "../../components/ui/button";
@@ -270,7 +272,10 @@ const formatVariableInputValue = (
 
 const formatAttachmentPathInputValue = (
   attachments: ChatSessionContextAttachment[],
-): string => attachments.map((attachment) => attachment.path).join("\n");
+): string =>
+  attachments.flatMap((attachment) =>
+    isPathContextAttachment(attachment) ? [attachment.path] : [],
+  ).join("\n");
 
 const getAttachmentPathKey = (path: string): string => {
   return path.replace(/\\/gu, "/").trim().toLowerCase();
@@ -281,12 +286,15 @@ const createContextAttachmentsFromPathInput = (
   sourceAttachments: ChatSessionContextAttachment[],
 ): ChatSessionContextAttachment[] => {
   const sourceByPath = new Map(
-    sourceAttachments.map((attachment) => [
-      getAttachmentPathKey(attachment.path),
-      attachment,
-    ]),
+    sourceAttachments.flatMap((attachment) =>
+      isPathContextAttachment(attachment)
+        ? [[getAttachmentPathKey(attachment.path), attachment] as const]
+        : [],
+    ),
   );
-  const attachments: ChatSessionContextAttachment[] = [];
+  const attachments: ChatSessionContextAttachment[] = sourceAttachments.filter(
+    isMediaAssetContextAttachment,
+  );
   const seenPaths = new Set<string>();
 
   for (const line of value.split(/\r?\n/u)) {
