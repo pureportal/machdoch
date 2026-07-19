@@ -18,7 +18,7 @@ mod settings;
 mod settings_commands;
 mod settings_types;
 mod types;
-mod user_config;
+pub(crate) mod user_config;
 mod workspace;
 
 use collect::{

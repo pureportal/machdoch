@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RalphFlow, RalphRunResult } from "../../core/ralph.js";
+import { createFlow } from "../../core/__test__/ralph-test-helpers.js";
 import {
   createInterruptedRalphRunResult,
   summarizeRun,
+  validateRalphJsonBatch,
 } from "./cli-ralph-commands.js";
 
 const createRunResult = (
@@ -85,5 +87,51 @@ describe("createInterruptedRalphRunResult", () => {
       blockResults: [],
     });
     expect(result.finishedAt).toEqual(expect.any(String));
+  });
+});
+
+describe("validateRalphJsonBatch", () => {
+  it("runs the complete parser and graph validator without storage", () => {
+    const result = validateRalphJsonBatch(
+      JSON.stringify({ schemaVersion: 1, flows: [createFlow()] }),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.results).toMatchObject([
+      { id: "refactor-flow", valid: true, errors: [] },
+    ]);
+  });
+
+  it("rejects implicit schemas, duplicate ids, and global workspace overrides", () => {
+    const implicitSchema = { ...createFlow() } as Record<string, unknown>;
+    delete implicitSchema.schemaVersion;
+    const workspaceFlow = createFlow({
+      id: "workspace-flow",
+      blocks: createFlow().blocks.map((block) =>
+        block.id === "fix-tsc"
+          ? {
+              ...block,
+              settings: {
+                workspace: { mode: "custom" as const, path: "C:/private" },
+              },
+            }
+          : block,
+      ),
+    });
+    const result = validateRalphJsonBatch(
+      JSON.stringify({
+        schemaVersion: 1,
+        flows: [implicitSchema, createFlow(), createFlow(), workspaceFlow],
+      }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.results[0]?.errors).toContain(
+      "schemaVersion must be explicitly set to 1.",
+    );
+    expect(result.results[2]?.errors.join(" ")).toContain("duplicated");
+    expect(result.results[3]?.errors).toContain(
+      "Global Ralph transfer does not accept custom workspace overrides.",
+    );
   });
 });

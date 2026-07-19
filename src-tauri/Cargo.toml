@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.34.0"
+version = "0.35.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -21,15 +21,28 @@ enigo = "0.6.1"
 getrandom = "0.3"
 github-copilot-sdk = { version = "=1.0.7-preview.2", default-features = false }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+mdns-sd = "=0.20.1"
+network-interface = "=2.0.5"
 ort = "=2.0.0-rc.12"
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 resvg = { version = "0.47.0", default-features = false, features = ["system-fonts", "text"] }
 roxmltree = "0.21.1"
-rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
+# rusqlite 0.40.1 unconditionally uses `#![feature(cfg_select)]`, which is
+# rejected by the stable Rust toolchain used for releases.
+rusqlite = { version = "0.39.0", default-features = false, features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+snow = { version = "=0.10.0", default-features = false, features = [
+  "default-resolver",
+  "std",
+  "use-blake2",
+  "use-chacha20poly1305",
+  "use-curve25519",
+  "use-getrandom",
+] }
+socket2 = "=0.6.0"
 tauri = { version = "2.11", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7"
@@ -37,12 +50,18 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-mcp-bridge = "0.11.2"
 tauri-plugin-opener = "2.5"
 tauri-plugin-store = "2.4"
-tokio = { version = "1", features = ["fs", "io-util", "net", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-util = { version = "=0.7.18", features = ["rt"] }
+unicode-normalization = "=0.1.25"
 xcap = "0.9.4"
+zeroize = { version = "=1.9.0", features = ["derive"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [

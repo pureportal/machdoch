@@ -28,6 +28,7 @@ import {
 } from "../../runtime";
 import {
   appendThinkingProgress,
+  appendTerminalExecutionToThinkingTrace,
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
 import {
@@ -609,8 +610,17 @@ export const useSessionTaskSubmission = (options: {
               ...message,
               content: createExecutionMessageContent(execution),
               source: {
-                kind: "execution" as const,
+                ...message.source,
                 execution,
+                ...(message.source.thinking
+                  ? {
+                      thinking: appendTerminalExecutionToThinkingTrace(
+                        message.source.thinking,
+                        execution,
+                        Date.now(),
+                      ),
+                    }
+                  : {}),
               },
             };
           });
@@ -1192,6 +1202,13 @@ export const useSessionTaskSubmission = (options: {
             });
 
             const executionMessageId = `${taskId}-execution`;
+            const existingExecutionMessage = session.messages.find(
+              (message) => message.id === executionMessageId,
+            );
+            const existingExecutionThinking =
+              existingExecutionMessage?.source?.kind === "execution"
+                ? existingExecutionMessage.source.thinking
+                : undefined;
 
             return currentOptions.applySessionMessageLimit({
               ...session,
@@ -1209,6 +1226,15 @@ export const useSessionTaskSubmission = (options: {
                   source: {
                     kind: "execution",
                     execution: taskRun.execution,
+                    ...(existingExecutionThinking
+                      ? {
+                          thinking: appendTerminalExecutionToThinkingTrace(
+                            existingExecutionThinking,
+                            taskRun.execution,
+                            timestamp,
+                          ),
+                        }
+                      : {}),
                   },
                 },
               ],

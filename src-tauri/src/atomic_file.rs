@@ -51,9 +51,27 @@ pub(crate) fn write_file_atomic(
     }
 }
 
+/// Atomically moves a file to another name in the same directory and makes
+/// the namespace change durable on platforms with an explicit primitive.
+pub(crate) fn rename_file_atomic(source: &Path, destination: &Path) -> io::Result<()> {
+    if source.parent() != destination.parent() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "atomic file moves must stay in one directory",
+        ));
+    }
+    replace_file(source, destination)
+}
+
 #[cfg(not(windows))]
 fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
-    fs::rename(source, destination)
+    fs::rename(source, destination)?;
+    #[cfg(unix)]
+    {
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        File::open(parent)?.sync_all()?;
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -270,5 +288,37 @@ mod tests {
         );
 
         cleanup(&directory);
+    }
+
+    #[test]
+    fn atomic_rename_moves_a_file_within_its_directory() {
+        let directory = temp_test_directory("rename");
+        let source = directory.join("active.json");
+        let destination = directory.join("retired.json");
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        fs::write(&source, "active").expect("source should be written");
+
+        rename_file_atomic(&source, &destination).expect("rename should succeed");
+
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read_to_string(&destination).expect("destination should be readable"),
+            "active"
+        );
+
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn atomic_rename_rejects_cross_directory_moves() {
+        let source = Path::new("first").join("active.json");
+        let destination = Path::new("second").join("retired.json");
+
+        assert_eq!(
+            rename_file_atomic(&source, &destination)
+                .expect_err("cross-directory rename should be rejected")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
     }
 }

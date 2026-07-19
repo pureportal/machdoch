@@ -49,7 +49,7 @@ describe("normalizeTaskExecutionFileChange", () => {
 });
 
 describe("normalizeShellState", () => {
-  it("removes superseded thinking records that already have terminal output", () => {
+  it("moves superseded thinking history onto the terminal output", () => {
     const normalized = normalizeShellState({
       activeSessionId: "terminal-session",
       sessions: [
@@ -67,7 +67,21 @@ describe("normalizeShellState", () => {
               content: "working",
               source: {
                 kind: "thinking",
-                thinking: createInitialThinkingTrace("ask", 1),
+                thinking: {
+                  ...createInitialThinkingTrace("ask", 1),
+                  timelineEvents: [
+                    {
+                      id: "context-loaded",
+                      kind: "state",
+                      phase: "completed",
+                      label: "Context loaded",
+                      detail: "Loaded the prior conversation.",
+                      tone: "success",
+                      timestamp: 2,
+                      elapsedMs: 1,
+                    },
+                  ],
+                },
               },
             },
             {
@@ -88,6 +102,21 @@ describe("normalizeShellState", () => {
     expect(normalized.sessions[0]?.messages.map((message) => message.id)).toEqual([
       "execution",
     ]);
+    const executionSource = normalized.sessions[0]?.messages[0]?.source;
+
+    expect(executionSource?.kind).toBe("execution");
+    if (executionSource?.kind !== "execution") {
+      throw new Error("Expected a normalized execution source.");
+    }
+
+    expect(executionSource.thinking).toMatchObject({
+      status: "complete",
+      startedAt: 1,
+      task: "task",
+    });
+    expect(
+      executionSource.thinking?.timelineEvents?.map((event) => event.label),
+    ).toEqual(["Context loaded", "Preview only"]);
   });
 
   it("compacts completed thinking details while preserving running traces", () => {
@@ -1868,7 +1897,21 @@ describe("createVisibleConversationMessages", () => {
         content: "thinking",
         source: {
           kind: "thinking",
-          thinking: createInitialThinkingTrace("ask", 1),
+          thinking: {
+            ...createInitialThinkingTrace("ask", 1),
+            timelineEvents: [
+              {
+                id: "context-loaded",
+                kind: "state",
+                phase: "completed",
+                label: "Context loaded",
+                detail: "Loaded the prior conversation.",
+                tone: "success",
+                timestamp: 2,
+                elapsedMs: 1,
+              },
+            ],
+          },
         },
       },
       {
@@ -1894,6 +1937,20 @@ describe("createVisibleConversationMessages", () => {
       "execution-task-1",
       "user-task-2",
     ]);
+    const executionSource = visibleMessages[1]?.source;
+
+    expect(executionSource?.kind).toBe("execution");
+    if (executionSource?.kind !== "execution") {
+      throw new Error("Expected visible terminal execution output.");
+    }
+
+    expect(executionSource.thinking).toMatchObject({
+      status: "complete",
+      startedAt: 1,
+    });
+    expect(
+      executionSource.thinking?.timelineEvents?.map((event) => event.label),
+    ).toEqual(["Context loaded", "Completed"]);
   });
 
   it("keeps the terminal response visible when stale thinking arrives later", () => {
@@ -1930,6 +1987,13 @@ describe("createVisibleConversationMessages", () => {
       "user-task-1",
       "execution-task-1",
     ]);
+    const executionSource = visibleMessages[1]?.source;
+
+    expect(executionSource?.kind).toBe("execution");
+    if (executionSource?.kind !== "execution") {
+      throw new Error("Expected visible terminal execution output.");
+    }
+    expect(executionSource.thinking).toBeUndefined();
   });
 
   it("keeps the latest thinking update visible until a terminal response exists", () => {

@@ -1,9 +1,14 @@
 use std::{
     env, fs,
+    io::{Read, Write as _},
     path::{Path, PathBuf},
-    process::Command,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+use serde_json::Value;
+use zeroize::Zeroizing;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -12,6 +17,7 @@ const EMBEDDED_CLI_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/machdo
 const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-node.bin"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
 const RETAINED_PREVIOUS_RUNTIME_FILES_PER_FAMILY: usize = 1;
+const MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
 pub(crate) struct SharedCliCommand {
     pub(crate) command: Command,
@@ -29,6 +35,96 @@ pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliComm
     }
 
     create_embedded_cli_command(args)
+}
+
+fn read_bounded_cli_stream(mut stream: impl Read, stream_name: &str) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    stream
+        .by_ref()
+        .take(MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| format!("The shared CLI {stream_name} stream could not be read."))?;
+    if bytes.len() as u64 > MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES {
+        return Err(format!(
+            "The shared CLI {stream_name} stream exceeded its bounded output limit."
+        ));
+    }
+    Ok(bytes)
+}
+
+pub(crate) fn run_side_effect_free_json_command(
+    args: &[String],
+    input: Zeroizing<Vec<u8>>,
+    command_timeout: Duration,
+) -> Result<Value, String> {
+    let mut shared = create_shared_cli_command(args)?;
+    shared
+        .command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        shared.command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = shared
+        .command
+        .spawn()
+        .map_err(|_| "The side-effect-free shared CLI validator could not start.".to_string())?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "The shared CLI validator did not expose stdin.".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "The shared CLI validator did not expose stdout.".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "The shared CLI validator did not expose stderr.".to_string())?;
+    let input_worker = thread::spawn(move || {
+        let result = stdin.write_all(&input).and_then(|()| stdin.flush());
+        drop(stdin);
+        result.map_err(|_| "The shared CLI validator input could not be written.".to_string())
+    });
+    let stdout_worker = thread::spawn(move || read_bounded_cli_stream(stdout, "stdout"));
+    let stderr_worker = thread::spawn(move || read_bounded_cli_stream(stderr, "stderr"));
+    let started_at = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if started_at.elapsed() >= command_timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err("The shared CLI validator exceeded its safety timeout.".to_string());
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(25)),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err("The shared CLI validator could not be monitored.".to_string());
+            }
+        }
+    };
+    let input_result = input_worker
+        .join()
+        .map_err(|_| "The shared CLI validator input worker stopped unexpectedly.".to_string())?;
+    let stdout = Zeroizing::new(stdout_worker.join().map_err(|_| {
+        "The shared CLI validator output worker stopped unexpectedly.".to_string()
+    })??);
+    let _stderr = Zeroizing::new(stderr_worker.join().map_err(|_| {
+        "The shared CLI validator error worker stopped unexpectedly.".to_string()
+    })??);
+    let status = status?;
+    if !status.success() {
+        return Err("The shared CLI rejected the settings validation request.".to_string());
+    }
+    input_result?;
+    serde_json::from_slice::<Value>(&stdout)
+        .map_err(|_| "The shared CLI validator returned invalid JSON.".to_string())
 }
 
 fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {

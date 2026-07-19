@@ -35,6 +35,13 @@ pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &Window
     };
 
     api.prevent_close();
+    let transfer_state = window
+        .app_handle()
+        .state::<crate::settings_transfer::SettingsTransferState>();
+    transfer_state.request_stop(
+        window.app_handle(),
+        "Settings sharing stopped when the main window was closed.",
+    );
     hide_transient_assistant_windows(window);
     let _ = window.set_skip_taskbar(true);
     let _ = window.hide();

@@ -44,7 +44,8 @@ export type SettingsSection =
   | "appearance"
   | "voice"
   | "memory"
-  | "desktop";
+  | "desktop"
+  | "transfer";
 export type SessionScopeFilter = "all" | "open" | "archived";
 export type SessionConcreteStatusFilter = "unread" | SessionOverviewStatus;
 export type SessionStatusFilter = "any" | SessionConcreteStatusFilter;
@@ -80,6 +81,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   { id: "voice", label: "Voice" },
   { id: "memory", label: "Memory" },
   { id: "desktop", label: "Desktop" },
+  { id: "transfer", label: "Transfer" },
 ];
 
 export const RUN_MODE_ORDER = [

@@ -156,6 +156,7 @@ export const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
   "list",
   "show",
   "validate",
+  "validate-json",
   "delete",
   "save",
   "run",

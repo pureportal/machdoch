@@ -1,5 +1,6 @@
 import type {
   TaskExecutionProgress,
+  TaskExecutionResult,
   TaskExecutionState,
   TaskExecutionTimeoutState,
   TaskExecutionTimelineEvent,
@@ -39,6 +40,14 @@ const THINKING_STATE_TONES: Record<TaskExecutionState, TaskPanelTone> = {
   unsupported: "neutral",
   cancelled: "neutral",
 };
+
+const TERMINAL_EXECUTION_STATE_BY_STATUS = {
+  planned: "planned",
+  executed: "completed",
+  blocked: "blocked",
+  cancelled: "cancelled",
+  unsupported: "unsupported",
+} satisfies Record<TaskExecutionResult["status"], TaskExecutionState>;
 
 const createThinkingEntryId = (timestamp: number, index: number): string => {
   return `thinking-${timestamp}-${index}`;
@@ -770,4 +779,29 @@ export const appendThinkingProgress = (
       : {}),
     ...(nextTokenUsage ? { tokenUsage: nextTokenUsage } : {}),
   };
+};
+
+/**
+ * Finalizes a live trace with the authoritative execution outcome while
+ * retaining every progress event already collected for the task.
+ */
+export const appendTerminalExecutionToThinkingTrace = (
+  trace: TaskThinkingTrace,
+  execution: TaskExecutionResult,
+  timestamp = Date.now(),
+): TaskThinkingTrace => {
+  return appendThinkingProgress(
+    trace,
+    {
+      task: execution.task,
+      mode: execution.mode,
+      state: TERMINAL_EXECUTION_STATE_BY_STATUS[execution.status],
+      message: execution.summary,
+      executedTools: execution.executedTools,
+      outputSections: execution.outputSections,
+      cancellable: false,
+      ...(execution.reason ? { reason: execution.reason } : {}),
+    },
+    timestamp,
+  );
 };

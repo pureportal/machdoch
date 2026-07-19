@@ -166,23 +166,37 @@ const createMessageSourceSnapshot = (
   }
 
   if (source.kind === "execution") {
+    const thinking = source.thinking;
+
     return {
       kind: "execution",
       status: source.execution.status,
       title: source.execution.task,
       summary: source.execution.summary,
       mode: source.execution.mode,
-      entries: source.execution.outputSections
-        .filter((section) => section.audience !== "internal")
-        .flatMap((section) =>
-          section.lines.slice(0, 4).map((line) => ({
-            label: section.title,
-            detail: line,
-            ...(section.tone ? { tone: section.tone } : {}),
-          })),
-        )
-        .slice(0, 24),
-      timeline: [],
+      entries: thinking
+        ? thinking.entries.slice(-24).map((entry) => ({
+            label: entry.label,
+            detail: entry.detail,
+            tone: entry.tone,
+            timestamp: entry.timestamp,
+          }))
+        : source.execution.outputSections
+            .filter((section) => section.audience !== "internal")
+            .flatMap((section) =>
+              section.lines.slice(0, 4).map((line) => ({
+                label: section.title,
+                detail: line,
+                ...(section.tone ? { tone: section.tone } : {}),
+              })),
+            )
+            .slice(0, 24),
+      timeline: (thinking?.timelineEvents ?? []).slice(-40).map((entry) => ({
+        label: entry.label,
+        detail: entry.detail,
+        tone: entry.tone,
+        timestamp: entry.timestamp,
+      })),
     };
   }
 

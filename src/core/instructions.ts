@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -12,8 +12,11 @@ import { randomUUID } from "node:crypto";
 import {
   getRalphFlowConditionalInstructionDirectory,
   getRalphFlowInstructionDirectory,
+  getRalphFlowStorageDirectory,
   type RalphFlowScope,
 } from "./_helpers/create-ralph-storage-paths.helper.js";
+import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
+import { writeFileAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { normalizeFlowId } from "./_helpers/ralph-flow-ids.helper.js";
 import { loadRuntimeConfig } from "./config.js";
 import {
@@ -375,6 +378,48 @@ const resolveWritableInstructionPath = (
   return resolvedPath;
 };
 
+const getInstructionMutationLockTarget = (
+  workspaceRoot: string,
+  scope: WritableInstructionScope,
+  filePath: string,
+  ralphFlow?: RalphFlowInstructionTarget,
+): string => {
+  if (scope === "user") {
+    return join(getUserCustomizationRoot(), "instructions.transfer-boundary");
+  }
+
+  if (scope === "ralph-flow") {
+    const target = normalizeRalphFlowInstructionTarget(ralphFlow);
+
+    if (target.scope === "user") {
+      return join(
+        getRalphFlowStorageDirectory(workspaceRoot, target.scope),
+        ".ralph-flow-directory",
+      );
+    }
+  }
+
+  return filePath;
+};
+
+const withInstructionMutationLock = async <T>(
+  workspaceRoot: string,
+  scope: WritableInstructionScope,
+  filePath: string,
+  ralphFlow: RalphFlowInstructionTarget | undefined,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  return await withCooperativeFileLock(
+    getInstructionMutationLockTarget(
+      workspaceRoot,
+      scope,
+      filePath,
+      ralphFlow,
+    ),
+    operation,
+  );
+};
+
 export const createInstructionFileBody = (
   input: InstructionFileInput,
 ): string => {
@@ -424,22 +469,34 @@ export const writeInstructionFile = async (
     scope === "ralph-flow"
       ? normalizeRalphFlowInstructionTarget(input.ralphFlow)
       : undefined;
-  const existed = existsSync(filePath);
-
-  if (existed && !options.overwrite) {
-    throw new Error(`Instruction file already exists: ${filePath}`);
-  }
-
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, createInstructionFileBody(input), "utf8");
-
-  return {
-    path: filePath,
+  return await withInstructionMutationLock(
+    workspaceRoot,
     scope,
-    name,
-    ...(ralphFlow ? { ralphFlow } : {}),
-    created: !existed,
-  };
+    filePath,
+    ralphFlow,
+    async () => {
+      const existed = existsSync(filePath);
+
+      if (existed && !options.overwrite) {
+        throw new Error(`Instruction file already exists: ${filePath}`);
+      }
+
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFileAtomically(
+        filePath,
+        createInstructionFileBody(input),
+        "utf8",
+      );
+
+      return {
+        path: filePath,
+        scope,
+        name,
+        ...(ralphFlow ? { ralphFlow } : {}),
+        created: !existed,
+      };
+    },
+  );
 };
 
 const readStringAttribute = (
@@ -702,7 +759,14 @@ export const generateInstructionFileWithAgent = async (
   );
   const maxRounds = options.maxRounds ?? DEFAULT_GENERATION_MAX_ROUNDS;
   const generatorResults: TaskExecutionResult[] = [];
-  const existed = existsSync(finalPath);
+  const existingContent = await withInstructionMutationLock(
+    workspaceRoot,
+    scope,
+    finalPath,
+    ralphFlow,
+    async () => existsSync(finalPath) ? await readFile(finalPath, "utf8") : undefined,
+  );
+  const existed = existingContent !== undefined;
   let validatorFeedback: string | undefined;
 
   if (!name) {
@@ -795,8 +859,6 @@ export const generateInstructionFileWithAgent = async (
       includeDiagnostics: true,
       ...(ralphFlow ? { ralphFlow } : {}),
     }));
-  const existingContent = existed ? await readFile(finalPath, "utf8") : undefined;
-
   await mkdir(dirname(finalPath), { recursive: true });
   await mkdir(join(workspaceRoot, ".machdoch", ".instruction-generation"), {
     recursive: true,
@@ -855,8 +917,48 @@ export const generateInstructionFileWithAgent = async (
       continue;
     }
 
-    await writeFile(finalPath, draftContent, "utf8");
+    const committed = await withInstructionMutationLock(
+      workspaceRoot,
+      scope,
+      finalPath,
+      ralphFlow,
+      async () => {
+        const currentContent = existsSync(finalPath)
+          ? await readFile(finalPath, "utf8")
+          : undefined;
+
+        if (currentContent !== existingContent) {
+          return false;
+        }
+
+        await writeFileAtomically(finalPath, draftContent, "utf8");
+        return true;
+      },
+    );
     await rm(draftAbsolutePath, { force: true });
+
+    if (!committed) {
+      return createBlockedGenerationResult(
+        finalPath,
+        scope,
+        name,
+        {
+          valid: false,
+          diagnostics: [
+            {
+              level: "error",
+              code: "instruction-file-conflict",
+              message:
+                "The instruction file changed while generation was running; the generated draft was not applied.",
+              path: finalPath,
+            },
+          ],
+        },
+        generatorResults,
+        "The instruction file changed while generation was running; regenerate from the latest version.",
+        options.ralphFlow,
+      );
+    }
 
     return {
       status: existed ? "updated" : "created",

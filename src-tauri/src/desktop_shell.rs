@@ -34,6 +34,10 @@ pub(crate) const TRAY_MENU_WINDOW_LABEL: &str = "tray-menu";
 pub(crate) const QUICK_VOICE_START_EVENT: &str = "machdoch://quick-voice-start";
 pub(crate) const ADMIN_RELAUNCH_ARG: &str = "--machdoch-admin-relaunch";
 const DESKTOP_TASK_EXIT_GRACE_PERIOD: Duration = Duration::from_millis(1_500);
+const SETTINGS_TRANSFER_EXIT_GRACE_PERIOD: Duration = Duration::from_secs(6);
+// CommitAuthorized is intentionally a point of no return. Match the longest
+// transaction lease so a slow verified commit/rollback is not killed midway.
+const SETTINGS_TRANSFER_COMMIT_EXIT_GRACE_PERIOD: Duration = Duration::from_secs(15 * 60);
 const DESKTOP_TASK_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -89,6 +93,11 @@ pub fn reveal_main_window(app: AppHandle) {
 
 #[tauri::command]
 pub fn hide_main_window_to_tray(app: AppHandle) {
+    let transfer_state = app.state::<crate::settings_transfer::SettingsTransferState>();
+    transfer_state.request_stop(
+        &app,
+        "Settings sharing stopped when Machdoch was hidden to the tray.",
+    );
     window::hide_to_tray(&app);
 }
 
@@ -132,31 +141,64 @@ pub fn quit_machdoch(app: AppHandle) {
     request_graceful_exit(&app);
 }
 
+fn exit_grace_period(transfer_active: bool, transfer_committing: bool) -> Duration {
+    if transfer_committing {
+        SETTINGS_TRANSFER_COMMIT_EXIT_GRACE_PERIOD
+    } else if transfer_active {
+        SETTINGS_TRANSFER_EXIT_GRACE_PERIOD
+    } else {
+        DESKTOP_TASK_EXIT_GRACE_PERIOD
+    }
+}
+
 pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
     if EXIT_REQUESTED.swap(true, Ordering::SeqCst) {
         return;
     }
 
     let app = app.clone();
-    let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
-    let active_task_count = crate::desktop_task::request_all_desktop_task_cancels(&state);
-    drop(state);
+    let active_task_count = {
+        let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
+        crate::desktop_task::request_all_desktop_task_cancels(&state)
+    };
+    let (transfer_active, transfer_committing) = {
+        let transfer_state = app.state::<crate::settings_transfer::SettingsTransferState>();
+        let active = transfer_state.request_stop(
+            &app,
+            "Settings sharing stopped because Machdoch is closing.",
+        );
+        (active, transfer_state.is_commit_critical())
+    };
 
-    if active_task_count == 0 {
+    if active_task_count == 0 && !transfer_active {
         app.exit(0);
         return;
     }
 
     thread::spawn(move || {
-        let deadline = Instant::now() + DESKTOP_TASK_EXIT_GRACE_PERIOD;
+        let mut deadline = Instant::now() + exit_grace_period(transfer_active, transfer_committing);
+        let mut commit_grace_started = transfer_committing;
 
         while Instant::now() < deadline {
-            let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
-            let has_active_tasks =
-                crate::desktop_task::request_all_desktop_task_cancels(&state) > 0;
-            drop(state);
+            let has_active_tasks = {
+                let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
+                crate::desktop_task::request_all_desktop_task_cancels(&state) > 0
+            };
+            let (transfer_active, transfer_committing) = {
+                let transfer_state = app.state::<crate::settings_transfer::SettingsTransferState>();
+                transfer_state.activity()
+            };
 
-            if !has_active_tasks {
+            // CommitAuthorized is the point of no return. It can arrive while
+            // shutdown is already waiting on the shorter cancellation grace
+            // period, so promote the deadline when that transition is first
+            // observed instead of risking process exit during commit/rollback.
+            if transfer_committing && !commit_grace_started {
+                deadline = Instant::now() + SETTINGS_TRANSFER_COMMIT_EXIT_GRACE_PERIOD;
+                commit_grace_started = true;
+            }
+
+            if !has_active_tasks && !transfer_active {
                 break;
             }
 
@@ -165,4 +207,25 @@ pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
 
         app.exit(0);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_transfer_commit_gets_the_longest_exit_grace_period() {
+        assert_eq!(
+            exit_grace_period(true, true),
+            SETTINGS_TRANSFER_COMMIT_EXIT_GRACE_PERIOD
+        );
+        assert_eq!(
+            exit_grace_period(true, false),
+            SETTINGS_TRANSFER_EXIT_GRACE_PERIOD
+        );
+        assert_eq!(
+            exit_grace_period(false, false),
+            DESKTOP_TASK_EXIT_GRACE_PERIOD
+        );
+    }
 }

@@ -136,6 +136,7 @@ import {
   type RalphGenerationInterviewResult,
   type RalphRunDetailResult,
 } from "../runtime";
+import { subscribeToSettingsImport } from "../settings-transfer";
 import { Button } from "../components/ui/button";
 import {
   ContextAttachmentMenuButton,
@@ -692,6 +693,8 @@ export const RalphFlowEditor = ({
   const generationRequestRef = useRef<string | null>(null);
   const generationInterviewRequestRef = useRef<string | null>(null);
   const workspaceRootRef = useRef(workspaceRoot);
+  const isActiveRef = useRef(isActive);
+  const refreshFlowsRef = useRef<() => Promise<void>>(async () => undefined);
   const pendingInputIdRef = useRef<string | null>(null);
   const pendingResumeRequestRef = useRef<string | null>(null);
   const utilityJsonBlockIdRef = useRef<string | null>(null);
@@ -700,6 +703,7 @@ export const RalphFlowEditor = ({
   const mediaFlowCatalogRequestRef = useRef(0);
   const initialPromptAppliedRef = useRef(false);
   workspaceRootRef.current = workspaceRoot;
+  isActiveRef.current = isActive;
   lastRunRef.current = lastRun;
   const activeProvider = runProvider;
   const activeModel = runModel;
@@ -2283,6 +2287,8 @@ export const RalphFlowEditor = ({
     }
   };
 
+  refreshFlowsRef.current = refreshFlows;
+
   const refreshRevisions = async (
     flowId: string,
     scope: RalphFlowScope = selectedScopeRef.current,
@@ -2700,6 +2706,30 @@ export const RalphFlowEditor = ({
 
     void refreshFlows();
   }, [flowLibraryMode, isActive, workspaceRoot]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToSettingsImport((event) => {
+      if (
+        !disposed &&
+        isActiveRef.current &&
+        workspaceRootRef.current &&
+        event.categories.includes("ralph.flows-global")
+      ) {
+        void refreshFlowsRef.current();
+      }
+    }).then((cleanup) => {
+      if (disposed) cleanup();
+      else unsubscribe = cleanup;
+    }).catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     const requestId = reconcileRequestRef.current + 1;

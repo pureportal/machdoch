@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.ts";
 import {
   MAX_RALPH_RESULT_CHARS,
   createRalphFlowFingerprint,
@@ -105,6 +106,69 @@ describe("Ralph flow storage", () => {
         "was not found",
       );
     } finally {
+      if (previousUserConfigRoot === undefined) {
+        delete process.env.MACHDOCH_USER_CONFIG_DIR;
+      } else {
+        process.env.MACHDOCH_USER_CONFIG_DIR = previousUserConfigRoot;
+      }
+    }
+  });
+
+  it("serializes user flow writes with the settings transfer boundary", async () => {
+    const workspaceRoot = await createWorkspace();
+    const userConfigRoot = await mkdtemp(join(tmpdir(), "machdoch-ralph-user-"));
+    const previousUserConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;
+    rootsToClean.push(userConfigRoot);
+    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
+    const boundaryPath = join(
+      userConfigRoot,
+      "ralph",
+      "flows",
+      ".ralph-flow-directory",
+    );
+
+    let releaseBoundary = (): void => undefined;
+    let signalBoundaryHeld = (): void => undefined;
+    const boundaryHeld = new Promise<void>((resolve) => {
+      signalBoundaryHeld = resolve;
+    });
+    const boundaryRelease = new Promise<void>((resolve) => {
+      releaseBoundary = resolve;
+    });
+    const lockHolder = withCooperativeFileLock(boundaryPath, async () => {
+      signalBoundaryHeld();
+      await boundaryRelease;
+    });
+
+    try {
+      await boundaryHeld;
+      let writeSettled = false;
+      const write = writeRalphFlow(
+        workspaceRoot,
+        createFlow({
+          id: "transfer-safe",
+          alias: "transfer-safe",
+          name: "Transfer safe",
+        }),
+        { scope: "user" },
+      ).finally(() => {
+        writeSettled = true;
+      });
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        expect(writeSettled).toBe(false);
+      } finally {
+        releaseBoundary();
+        await lockHolder;
+      }
+
+      await expect(write).resolves.toBe(
+        getRalphFlowPath(workspaceRoot, "transfer-safe", "user"),
+      );
+    } finally {
+      releaseBoundary();
+      await lockHolder;
       if (previousUserConfigRoot === undefined) {
         delete process.env.MACHDOCH_USER_CONFIG_DIR;
       } else {

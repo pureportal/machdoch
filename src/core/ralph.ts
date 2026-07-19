@@ -26,6 +26,7 @@ import {
   type RalphFlowScope,
   type RalphRunLogPaths,
 } from "./_helpers/create-ralph-storage-paths.helper.js";
+import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 export {
   getRalphArtifactDirectory,
   getRalphFlowDirectory,
@@ -1553,65 +1554,72 @@ export const writeRalphFlow = async (
 
   const directory = getRalphFlowStorageDirectory(workspaceRoot, scope);
   await mkdir(directory, { recursive: true });
-  const directoryLock = await acquireRalphFileMutationLock(
-    join(directory, ".ralph-flow-directory"),
-    `flow:${process.pid}:${randomUUID()}`,
-  );
-
-  try {
-    await assertRalphFlowAliasAvailable(workspaceRoot, flow, scope);
-    const flowPath = getRalphFlowPath(workspaceRoot, flow.id, scope);
-    const mutationLock = await acquireRalphFileMutationLock(
-      flowPath,
+  const boundaryPath = join(directory, ".ralph-flow-directory");
+  const writeFlow = async (): Promise<string> => {
+    const directoryLock = await acquireRalphFileMutationLock(
+      boundaryPath,
       `flow:${process.pid}:${randomUUID()}`,
     );
 
     try {
-      if (options.expectedFingerprint !== undefined) {
-        if (!existsSync(flowPath)) {
-          throw new Error("Ralph flow CAS conflict: the expected flow no longer exists.");
+      await assertRalphFlowAliasAvailable(workspaceRoot, flow, scope);
+      const flowPath = getRalphFlowPath(workspaceRoot, flow.id, scope);
+      const mutationLock = await acquireRalphFileMutationLock(
+        flowPath,
+        `flow:${process.pid}:${randomUUID()}`,
+      );
+
+      try {
+        if (options.expectedFingerprint !== undefined) {
+          if (!existsSync(flowPath)) {
+            throw new Error("Ralph flow CAS conflict: the expected flow no longer exists.");
+          }
+          const actualFingerprint = createRalphFlowFingerprint(
+            await readRalphFlowFile(flowPath),
+          );
+          if (actualFingerprint !== options.expectedFingerprint) {
+            throw new Error(
+              `Ralph flow CAS conflict: expected fingerprint ${options.expectedFingerprint}, found ${actualFingerprint}.`,
+            );
+          }
         }
-        const actualFingerprint = createRalphFlowFingerprint(
-          await readRalphFlowFile(flowPath),
-        );
-        if (actualFingerprint !== options.expectedFingerprint) {
-          throw new Error(
-            `Ralph flow CAS conflict: expected fingerprint ${options.expectedFingerprint}, found ${actualFingerprint}.`,
+
+        const now = new Date().toISOString();
+        const storedFlow: RalphFlow = {
+          ...flow,
+          variables: validation.variables,
+          createdAt: flow.createdAt ?? now,
+          updatedAt: now,
+        };
+
+        if (options.createRevision && existsSync(flowPath)) {
+          const revisionDirectory = getRalphRevisionDirectory(
+            workspaceRoot,
+            flow.id,
+            scope,
+          );
+          await mkdir(revisionDirectory, { recursive: true });
+          const revisionPath = createRalphRevisionFilePath(revisionDirectory, now);
+          await writeFileAtomically(
+            revisionPath,
+            await readFile(flowPath, "utf8"),
+            "utf8",
           );
         }
+
+        await writeJsonAtomically(flowPath, storedFlow);
+        return flowPath;
+      } finally {
+        await mutationLock.release();
       }
-
-      const now = new Date().toISOString();
-      const storedFlow: RalphFlow = {
-        ...flow,
-        variables: validation.variables,
-        createdAt: flow.createdAt ?? now,
-        updatedAt: now,
-      };
-
-      if (options.createRevision && existsSync(flowPath)) {
-        const revisionDirectory = getRalphRevisionDirectory(
-          workspaceRoot,
-          flow.id,
-          scope,
-        );
-        await mkdir(revisionDirectory, { recursive: true });
-        const revisionPath = createRalphRevisionFilePath(revisionDirectory, now);
-        await writeFileAtomically(
-          revisionPath,
-          await readFile(flowPath, "utf8"),
-          "utf8",
-        );
-      }
-
-      await writeJsonAtomically(flowPath, storedFlow);
-      return flowPath;
     } finally {
-      await mutationLock.release();
+      await directoryLock.release();
     }
-  } finally {
-    await directoryLock.release();
-  }
+  };
+
+  return scope === "user"
+    ? await withCooperativeFileLock(boundaryPath, writeFlow)
+    : await writeFlow();
 };
 
 export const listRalphFlows = async (
@@ -1695,74 +1703,83 @@ export const deleteRalphFlow = async (
 
   const directory = getRalphFlowStorageDirectory(workspaceRoot, scope);
   await mkdir(directory, { recursive: true });
-  const directoryLock = await acquireRalphFileMutationLock(
-    join(directory, ".ralph-flow-directory"),
-    `flow-delete:${process.pid}:${randomUUID()}`,
-  );
-
-  try {
-    const directPath = getRalphFlowPath(workspaceRoot, normalizedReference, scope);
-    let flowId: string;
-    let flowPath: string;
-
-    if (existsSync(directPath)) {
-      flowPath = directPath;
-      let storedFlowId: string | undefined;
-
-      try {
-        const flow = await readRalphFlowFile(directPath);
-        storedFlowId = normalizeOptionalString(flow.id);
-      } catch {
-        storedFlowId = undefined;
-      }
-
-      flowId = storedFlowId ?? normalizedReference;
-    } else {
-      const resolution = await resolveRalphFlowReference(workspaceRoot, reference, {
-        scope,
-      });
-      flowId = normalizeOptionalString(resolution.flow.id) ?? resolution.id;
-      flowPath = resolution.path;
-    }
-
-    const mutationLock = await acquireRalphFileMutationLock(
-      flowPath,
+  const boundaryPath = join(directory, ".ralph-flow-directory");
+  const deleteFlow = async (): Promise<RalphFlowDeleteResult> => {
+    const directoryLock = await acquireRalphFileMutationLock(
+      boundaryPath,
       `flow-delete:${process.pid}:${randomUUID()}`,
     );
+
     try {
-      if (options.expectedFingerprint !== undefined) {
-        const actualFingerprint = createRalphFlowFingerprint(
-          await readRalphFlowFile(flowPath),
-        );
-        if (actualFingerprint !== options.expectedFingerprint) {
-          throw new Error(
-            `Ralph flow CAS conflict: expected fingerprint ${options.expectedFingerprint}, found ${actualFingerprint}.`,
-          );
+      const directPath = getRalphFlowPath(workspaceRoot, normalizedReference, scope);
+      let flowId: string;
+      let flowPath: string;
+
+      if (existsSync(directPath)) {
+        flowPath = directPath;
+        let storedFlowId: string | undefined;
+
+        try {
+          const flow = await readRalphFlowFile(directPath);
+          storedFlowId = normalizeOptionalString(flow.id);
+        } catch {
+          storedFlowId = undefined;
         }
+
+        flowId = storedFlowId ?? normalizedReference;
+      } else {
+        const resolution = await resolveRalphFlowReference(
+          workspaceRoot,
+          reference,
+          { scope },
+        );
+        flowId = normalizeOptionalString(resolution.flow.id) ?? resolution.id;
+        flowPath = resolution.path;
       }
 
-      await unlink(flowPath);
-
-      const revisionDirectory = getRalphRevisionDirectory(
-        workspaceRoot,
-        flowId,
-        scope,
+      const mutationLock = await acquireRalphFileMutationLock(
+        flowPath,
+        `flow-delete:${process.pid}:${randomUUID()}`,
       );
-      const deletedRevisions = existsSync(revisionDirectory);
-      await rm(revisionDirectory, { recursive: true, force: true });
+      try {
+        if (options.expectedFingerprint !== undefined) {
+          const actualFingerprint = createRalphFlowFingerprint(
+            await readRalphFlowFile(flowPath),
+          );
+          if (actualFingerprint !== options.expectedFingerprint) {
+            throw new Error(
+              `Ralph flow CAS conflict: expected fingerprint ${options.expectedFingerprint}, found ${actualFingerprint}.`,
+            );
+          }
+        }
 
-      return {
-        id: flowId,
-        path: flowPath,
-        revisionDirectory,
-        deletedRevisions,
-      };
+        await unlink(flowPath);
+
+        const revisionDirectory = getRalphRevisionDirectory(
+          workspaceRoot,
+          flowId,
+          scope,
+        );
+        const deletedRevisions = existsSync(revisionDirectory);
+        await rm(revisionDirectory, { recursive: true, force: true });
+
+        return {
+          id: flowId,
+          path: flowPath,
+          revisionDirectory,
+          deletedRevisions,
+        };
+      } finally {
+        await mutationLock.release();
+      }
     } finally {
-      await mutationLock.release();
+      await directoryLock.release();
     }
-  } finally {
-    await directoryLock.release();
-  }
+  };
+
+  return scope === "user"
+    ? await withCooperativeFileLock(boundaryPath, deleteFlow)
+    : await deleteFlow();
 };
 
 export const listRalphFlowRevisions = async (

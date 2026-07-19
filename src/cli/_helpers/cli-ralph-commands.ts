@@ -16,6 +16,7 @@ import {
   listRalphFlowRevisions,
   listRalphFlows,
   parseRalphFlowJson,
+  RALPH_FLOW_SCHEMA_VERSION,
   readRalphRunLog,
   readRalphRunRecord,
   readRalphFlow,
@@ -124,6 +125,148 @@ const readRalphWorkspaceFile = async (
   const resolvedPath = await resolveWorkspaceFile(workspaceRoot, path);
 
   return await readFile(resolvedPath, "utf8");
+};
+
+const MAX_RALPH_JSON_BATCH_BYTES = 32 * 1024 * 1024;
+const MAX_RALPH_JSON_BATCH_FLOWS = 2_000;
+
+const readBoundedStdinText = async (): Promise<string> => {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  for await (const chunk of process.stdin) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_RALPH_JSON_BATCH_BYTES) {
+      fail("The Ralph JSON validation batch exceeds 32 MiB.");
+    }
+    chunks.push(bytes);
+  }
+
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
+};
+
+const readRalphJsonValidationInput = async (
+  args: ParsedCliArgs,
+  options: RalphCliOptions,
+): Promise<string> => {
+  const raw = options.flowJson ??
+    (options.flowJsonFile === "-"
+      ? await readBoundedStdinText()
+      : options.flowJsonFile
+        ? await readRalphWorkspaceFile(args.workspaceRoot, options.flowJsonFile)
+        : fail("Expected --flow-json or --flow-json-file for `machdoch ralph validate-json`."));
+
+  if (Buffer.byteLength(raw, "utf8") > MAX_RALPH_JSON_BATCH_BYTES) {
+    fail("The Ralph JSON validation batch exceeds 32 MiB.");
+  }
+  return raw;
+};
+
+export interface RalphJsonBatchValidationResult {
+  valid: boolean;
+  results: Array<{
+    index: number;
+    id: string | null;
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  }>;
+}
+
+export const validateRalphJsonBatch = (
+  raw: string,
+): RalphJsonBatchValidationResult => {
+  if (Buffer.byteLength(raw, "utf8") > MAX_RALPH_JSON_BATCH_BYTES) {
+    fail("The Ralph JSON validation batch exceeds 32 MiB.");
+  }
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed)) {
+    throw new Error(
+      "Expected a closed Ralph validation batch with schemaVersion 1 and a flows array.",
+    );
+  }
+  const flows = parsed.flows;
+  if (
+    parsed.schemaVersion !== 1 ||
+    Object.keys(parsed).some(
+      (key) => key !== "schemaVersion" && key !== "flows",
+    )
+  ) {
+    throw new Error(
+      "Expected a closed Ralph validation batch with schemaVersion 1 and a flows array.",
+    );
+  }
+  if (!Array.isArray(flows)) {
+    throw new Error(
+      "Expected a closed Ralph validation batch with schemaVersion 1 and a flows array.",
+    );
+  }
+  if (flows.length > MAX_RALPH_JSON_BATCH_FLOWS) {
+    fail(`A Ralph validation batch cannot contain more than ${MAX_RALPH_JSON_BATCH_FLOWS} flows.`);
+  }
+
+  const ids = new Set<string>();
+  const results: RalphJsonBatchValidationResult["results"] = flows.map((entry, index) => {
+    if (!isRecord(entry)) {
+      return {
+        index,
+        id: null,
+        valid: false,
+        errors: ["Expected Ralph flow JSON to be an object."],
+        warnings: [],
+      };
+    }
+
+    let flow: RalphFlow;
+    try {
+      flow = parseRalphFlowJson(JSON.stringify(entry));
+    } catch {
+      return {
+        index,
+        id: null,
+        valid: false,
+        errors: ["Ralph flow JSON could not be parsed."],
+        warnings: [],
+      };
+    }
+
+    const validation = validateRalphFlow(flow);
+    const errors = [...validation.errors];
+    if (entry.schemaVersion !== RALPH_FLOW_SCHEMA_VERSION) {
+      errors.unshift(
+        `schemaVersion must be explicitly set to ${RALPH_FLOW_SCHEMA_VERSION}.`,
+      );
+    }
+    if (flow.id && ids.has(flow.id)) {
+      errors.push(`Ralph flow id \`${flow.id}\` is duplicated in the batch.`);
+    }
+    if (flow.id) ids.add(flow.id);
+    if (
+      flow.blocks.some(
+        (block) =>
+          block.settings?.workspace?.mode === "custom" ||
+          Boolean(block.settings?.workspace?.path),
+      )
+    ) {
+      errors.push(
+        "Global Ralph transfer does not accept custom workspace overrides.",
+      );
+    }
+
+    return {
+      index,
+      id: flow.id || null,
+      valid: errors.length === 0,
+      errors,
+      warnings: [...validation.warnings],
+    };
+  });
+
+  return {
+    valid: results.every((result) => result.valid),
+    results,
+  };
 };
 
 const readRalphParamsFile = async (
@@ -1157,6 +1300,30 @@ export const printRalphSummary = async (
       }
       for (const warning of validation.warnings) {
         writeStdoutLine(`warning: ${warning}`);
+      }
+      return;
+    }
+    case "validate-json": {
+      const validation = validateRalphJsonBatch(
+        await readRalphJsonValidationInput(args, options),
+      );
+
+      if (args.json) {
+        printJson(validation);
+        return;
+      }
+
+      writeStdoutLine(validation.valid ? "valid: true" : "valid: false");
+      for (const result of validation.results) {
+        writeStdoutLine(
+          `- ${result.id ?? `flow-${result.index + 1}`}: ${result.valid ? "valid" : "invalid"}`,
+        );
+        for (const error of result.errors) {
+          writeStdoutLine(`  error: ${error}`);
+        }
+        for (const warning of result.warnings) {
+          writeStdoutLine(`  warning: ${warning}`);
+        }
       }
       return;
     }

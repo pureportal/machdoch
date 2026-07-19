@@ -320,7 +320,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   const originalPromptPanelId = `original-prompt-${message.id}`;
   const thinkingTrace =
     message.source?.kind === "execution"
-      ? createExecutionThinkingTrace(message.source.execution)
+      ? message.source.thinking ??
+        createExecutionThinkingTrace(message.source.execution)
       : message.source?.kind === "thinking"
         ? message.source.thinking
         : null;

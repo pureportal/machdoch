@@ -25,6 +25,7 @@ Usage:
   machdoch interview --prompt <text> [--input-json <json>] [--max-rounds <n>] [--json]
   machdoch ralph list [--scope <user|workspace>] [--json]
   machdoch ralph show|validate <flow> [--scope <user|workspace>] [--json]
+  machdoch ralph validate-json (--flow-json <batch>|--flow-json-file <path|->) [--json]
   machdoch ralph delete <flow> [--expected-fingerprint <sha256>] [--scope <user|workspace>] [--json]
   machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
   machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]

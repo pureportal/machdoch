@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createInitialShellState,
   createSession,
+  createVisibleConversationMessages,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { createMockExecutionFixture } from "../../preview/fixtures";
 import * as runtime from "../../runtime";
+import { appendThinkingProgress } from "../../task-thinking.model";
 import { useSessionTaskSubmission } from "./use-session-task-submission";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
 
@@ -479,6 +481,175 @@ describe("useSessionTaskSubmission", () => {
       expect(onSessionOperationConflict).toHaveBeenCalledTimes(1);
     } finally {
       runDesktopTaskSpy.mockRestore();
+    }
+  });
+
+  it("keeps the accumulated timeline when a task ends at the desktop deadline", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const previousExecution = createMockExecutionFixture("Previous request");
+    const session = createSession({
+      id: "deadline-history-session",
+      messages: [
+        {
+          id: "previous-user",
+          taskId: "previous-task",
+          role: "user",
+          content: "Previous request",
+          createdAt: 100,
+        },
+        {
+          id: "previous-execution",
+          taskId: "previous-task",
+          role: "agent",
+          content: "Previous response",
+          createdAt: 200,
+          source: {
+            kind: "execution",
+            execution: previousExecution,
+          },
+        },
+      ],
+    });
+    const baseState = createInitialShellState();
+    const state = createStateController({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+    let rejectRun: ((reason: Error) => void) | undefined;
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockImplementation(
+        () =>
+          new Promise<runtime.DesktopTaskRunResponse>((_resolve, reject) => {
+            rejectRun = reject;
+          }),
+      );
+
+    try {
+      const { result } = renderHook(() =>
+        useSessionTaskSubmission({
+          state,
+          runtime: {
+            applyLoadedUserMemorySettings: vi.fn(),
+            refreshWorkspaceRuntimeSnapshot: vi.fn(),
+            runtimeSnapshot: null,
+            userMemorySettings: { globalEnabled: true, entries: [] },
+          },
+          voice: { stopSpeaking: vi.fn() },
+          uiControlAvailability: undefined,
+          aiContextMessageLimit: 60,
+          activeDesktopTasksRef: { current: new Map() },
+          ignoredDesktopTaskIdsRef: { current: new Set() },
+          progressHandlersRef: { current: new Map() },
+          applySessionMessageLimit: (entry: ChatSessionRecord) => entry,
+          updateThinkingTrace: vi.fn(),
+        }),
+      );
+
+      expect(
+        result.current.submitTaskToSession({
+          sessionSnapshot: session,
+          task: "Long-running request",
+          contextAttachments: [],
+          clearDraft: false,
+          activateSession: true,
+        }),
+      ).toBe(true);
+
+      const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(taskId).toBeTruthy();
+      act(() => {
+        state.updateSessionById(session.id, (current) => ({
+          ...current,
+          messages: current.messages.map((message) => {
+            if (
+              message.taskId !== taskId ||
+              message.source?.kind !== "thinking"
+            ) {
+              return message;
+            }
+
+            return {
+              ...message,
+              source: {
+                kind: "thinking" as const,
+                thinking: appendThinkingProgress(
+                  message.source.thinking,
+                  {
+                    task: "Long-running request",
+                    mode: "machdoch",
+                    state: "executing",
+                    message: "Read the workspace state.",
+                    executedTools: ["filesystem"],
+                    outputSections: [],
+                    cancellable: true,
+                    timelineEvent: {
+                      kind: "tool-call",
+                      phase: "completed",
+                      label: "Read workspace",
+                      detail: "Inspected the relevant project files.",
+                      tone: "success",
+                      toolName: "filesystem",
+                    },
+                  },
+                  2_000,
+                ),
+              },
+            };
+          }),
+        }));
+        vi.setSystemTime(3_000);
+      });
+
+      await act(async () => {
+        rejectRun?.(
+          new Error(
+            "The shared CLI exceeded the absolute desktop deadline and was stopped.",
+          ),
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const visibleMessages = createVisibleConversationMessages(
+        state.shellState.sessions[0]?.messages ?? [],
+      );
+      const terminalMessage = visibleMessages.find(
+        (message) =>
+          message.taskId === taskId && message.source?.kind === "execution",
+      );
+
+      expect(visibleMessages.map((message) => message.id)).toEqual([
+        "previous-user",
+        "previous-execution",
+        `${taskId}-user`,
+        `${taskId}-execution`,
+      ]);
+      expect(terminalMessage?.source?.kind).toBe("execution");
+      if (terminalMessage?.source?.kind !== "execution") {
+        throw new Error("Expected a terminal execution message.");
+      }
+
+      expect(terminalMessage.source.thinking).toMatchObject({
+        status: "complete",
+        startedAt: 1_000,
+        completedAt: 3_000,
+      });
+      expect(
+        terminalMessage.source.thinking?.timelineEvents?.map((event) => ({
+          label: event.label,
+          elapsedMs: event.elapsedMs,
+        })),
+      ).toEqual([
+        { label: "Read workspace", elapsedMs: 1_000 },
+        { label: "Cancelled", elapsedMs: 2_000 },
+      ]);
+    } finally {
+      runDesktopTaskSpy.mockRestore();
+      vi.useRealTimers();
     }
   });
 

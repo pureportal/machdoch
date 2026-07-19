@@ -54,6 +54,7 @@ export type RalphCliAction =
   | "list"
   | "show"
   | "validate"
+  | "validate-json"
   | "delete"
   | "save"
   | "run"

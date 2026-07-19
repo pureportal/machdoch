@@ -8,7 +8,13 @@ export const runCli = async (argv: string[]): Promise<void> => {
     args.command === "provider-sync" ||
     (args.command === "mcp" &&
       (args.mcp?.action === "proxy" || args.mcp?.action === "broker"));
-  if (args.command !== "help" && !isInternalProviderProcess) {
+  const isSideEffectFreeRalphValidation =
+    args.command === "ralph" && args.ralph?.action === "validate-json";
+  if (
+    args.command !== "help" &&
+    !isInternalProviderProcess &&
+    !isSideEffectFreeRalphValidation
+  ) {
     const { ensureAutomaticProviderSync } = await import(
       "./_helpers/cli-provider-sync-commands.js"
     );

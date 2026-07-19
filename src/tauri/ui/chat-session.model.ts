@@ -36,18 +36,27 @@ import {
   RUNNABLE_PROVIDER_ORDER,
   type RuntimeProvider,
 } from "./model-catalog";
-import type { TaskPanelSource, TaskPanelTone } from "./task-panel";
-import type {
-  TaskThinkingActionOutputLine,
-  TaskThinkingEntry,
-  TaskThinkingModelStream,
-  TaskThinkingSource,
-  TaskThinkingTimelineEvent,
-  TaskThinkingTrace,
+import type { TaskPanelTone } from "./task-panel";
+import {
+  appendTerminalExecutionToThinkingTrace,
+  type TaskThinkingActionOutputLine,
+  type TaskThinkingEntry,
+  type TaskThinkingModelStream,
+  type TaskThinkingSource,
+  type TaskThinkingTimelineEvent,
+  type TaskThinkingTrace,
 } from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 
-export type ChatSessionMessageSource = TaskPanelSource | TaskThinkingSource;
+export type ChatSessionMessageSource =
+  | { kind: "preview"; preview: TaskRunPreview }
+  | {
+      kind: "execution";
+      execution: TaskExecutionResult;
+      /** The durable live trace captured before the terminal result replaced it. */
+      thinking?: TaskThinkingTrace;
+    }
+  | TaskThinkingSource;
 
 export type ChatSessionSpecialKind = "quick-voice";
 
@@ -2088,8 +2097,15 @@ const normalizeMessageSource = (
 
   if (value.kind === "execution") {
     const execution = normalizeTaskExecutionResult(value.execution, fallbackTask);
+    const thinking = normalizeThinkingTrace(value.thinking);
 
-    return execution ? { kind: "execution", execution } : undefined;
+    return execution
+      ? {
+          kind: "execution",
+          execution,
+          ...(thinking ? { thinking } : {}),
+        }
+      : undefined;
   }
 
   if (value.kind === "thinking") {
@@ -2130,6 +2146,78 @@ const normalizeMessagePromptEnhancement = (
   return { originalContent };
 };
 
+const getExecutionTraceCompletionTimestamp = (
+  message: ChatSessionMessage,
+  thinking: TaskThinkingTrace,
+): number => {
+  return Math.max(
+    thinking.startedAt,
+    thinking.entries.at(-1)?.timestamp ?? thinking.startedAt,
+    thinking.timelineEvents?.at(-1)?.timestamp ?? thinking.startedAt,
+    thinking.completedAt ?? thinking.startedAt,
+    message.createdAt ?? thinking.startedAt,
+  );
+};
+
+/**
+ * Moves each task's accumulated live trace onto its following terminal
+ * execution message. The separate thinking message can then be hidden or
+ * compacted without discarding the execution history.
+ */
+const attachPriorThinkingTracesToExecutions = (
+  messages: ChatSessionMessage[],
+): ChatSessionMessage[] => {
+  const latestThinkingByTask = new Map<string, TaskThinkingTrace>();
+  let changed = false;
+  const nextMessages = messages.map((message) => {
+    if (
+      message.role === "agent" &&
+      message.taskId &&
+      message.source?.kind === "thinking"
+    ) {
+      latestThinkingByTask.set(message.taskId, message.source.thinking);
+      return message;
+    }
+
+    if (message.role !== "agent" || message.source?.kind !== "execution") {
+      return message;
+    }
+
+    const priorThinking =
+      message.source.thinking ??
+      (message.taskId ? latestThinkingByTask.get(message.taskId) : undefined);
+
+    if (message.taskId) {
+      latestThinkingByTask.delete(message.taskId);
+    }
+
+    if (!priorThinking) {
+      return message;
+    }
+
+    const completedThinking = appendTerminalExecutionToThinkingTrace(
+      priorThinking,
+      message.source.execution,
+      getExecutionTraceCompletionTimestamp(message, priorThinking),
+    );
+
+    if (message.source.thinking === completedThinking) {
+      return message;
+    }
+
+    changed = true;
+    return {
+      ...message,
+      source: {
+        ...message.source,
+        thinking: completedThinking,
+      },
+    };
+  });
+
+  return changed ? nextMessages : messages;
+};
+
 const normalizeSessionMessages = (
   value: unknown,
   sessionId: string,
@@ -2155,7 +2243,7 @@ const normalizeSessionMessages = (
       source.execution.response?.markdown.trim() === content.trim()
     ) {
       source = {
-        kind: "execution",
+        ...source,
         execution: {
           ...source.execution,
           outputSections: source.execution.outputSections.filter(
@@ -2207,8 +2295,10 @@ const normalizeSessionMessages = (
     messages.push(message);
   }
 
+  const messagesWithExecutionTraces =
+    attachPriorThinkingTracesToExecutions(messages);
   const tasksWithTerminalAgentMessages = new Set(
-    messages.flatMap((message) =>
+    messagesWithExecutionTraces.flatMap((message) =>
       message.role === "agent" &&
       message.taskId &&
       message.source?.kind !== "thinking" &&
@@ -2218,7 +2308,7 @@ const normalizeSessionMessages = (
     ),
   );
 
-  return messages.filter(
+  return messagesWithExecutionTraces.filter(
     (message) =>
       !(
         message.role === "agent" &&
@@ -3404,10 +3494,12 @@ export const deleteExpiredArchivedSessions = (
 export const createVisibleConversationMessages = (
   messages: ChatSessionMessage[],
 ): ChatSessionMessage[] => {
+  const messagesWithExecutionTraces =
+    attachPriorThinkingTracesToExecutions(messages);
   const tasksWithTerminalAgentMessages = new Set<string>();
   const latestThinkingAgentMessageByTask = new Map<string, string>();
 
-  for (const message of messages) {
+  for (const message of messagesWithExecutionTraces) {
     if (message.role !== "agent" || !message.taskId) {
       continue;
     }
@@ -3426,7 +3518,7 @@ export const createVisibleConversationMessages = (
 
   const visibleMessages: ChatSessionMessage[] = [];
 
-  for (const message of messages) {
+  for (const message of messagesWithExecutionTraces) {
     if (message.role !== "agent" || !message.taskId) {
       visibleMessages.push(message);
       continue;

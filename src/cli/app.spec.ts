@@ -1570,7 +1570,25 @@ describe("parseCliArgs", () => {
       parseCliArgs(["ralph", "run", "template", "--flow-json", "{}"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("--flow-json is only valid for `machdoch ralph save`.");
+    ).toThrow(
+      "--flow-json is only valid for `machdoch ralph save` or `machdoch ralph validate-json`.",
+    );
+
+    expect(
+      parseCliArgs(
+        ["ralph", "validate-json", "--flow-json-file", "-", "--json"],
+        { currentWorkingDirectory: "C:/workspace" },
+      ).ralph,
+    ).toMatchObject({
+      action: "validate-json",
+      flowJsonFile: "-",
+    });
+
+    expect(() =>
+      parseCliArgs(["ralph", "validate-json"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch ralph validate-json` expects --flow-json");
 
     expect(() =>
       parseCliArgs(["ralph", "restore", "template"], {

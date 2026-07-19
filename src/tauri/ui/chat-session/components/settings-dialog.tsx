@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Brain,
   FileText,
   Folder,
@@ -32,6 +33,7 @@ import { InstructionSettingsPanel } from "./settings-dialog-panels/instruction-s
 import { MemorySettingsPanel } from "./settings-dialog-panels/memory-settings-panel";
 import { McpSettingsPanel } from "./settings-dialog-panels/mcp-settings-panel";
 import { ProviderSettingsPanel } from "./settings-dialog-panels/provider-settings-panel";
+import { SettingsTransferPanel } from "./settings-dialog-panels/settings-transfer-panel";
 import type {
   AgentLimitsSettingsControls,
   AppearanceSettingsControls,
@@ -59,6 +61,7 @@ const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   voice: Volume2,
   memory: Brain,
   desktop: Monitor,
+  transfer: ArrowLeftRight,
 };
 
 export interface SettingsDialogProps {
@@ -119,6 +122,9 @@ const renderSettingsPanel = ({
 
     case "voice":
       return <VoiceSettingsPanel setup={voiceSetup} />;
+
+    case "transfer":
+      return <SettingsTransferPanel />;
   }
 };
 
@@ -134,7 +140,8 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           </DialogTitle>
           <DialogDescription className="sr-only">
             Configure providers, workspace defaults, web search, appearance,
-            instruction files, MCP servers, voice, memory, and desktop behavior.
+            instruction files, MCP servers, voice, memory, desktop behavior,
+            and secure settings transfer.
           </DialogDescription>
         </DialogHeader>
 

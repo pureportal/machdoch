@@ -1199,6 +1199,7 @@ export const parseCliArgs = (
 
     const action = actionText as RalphCliAction;
     const isWatchCommand = action === "watches";
+    const isJsonValidationCommand = action === "validate-json";
 
     if (!isWatchCommand && extraPositionals.length > 0) {
       fail(
@@ -1226,6 +1227,10 @@ export const parseCliArgs = (
       );
     }
 
+    if (isJsonValidationCommand && normalizeOptionalString(rawSubject)) {
+      fail("`machdoch ralph validate-json` does not accept a flow id.");
+    }
+
     const isGenerationCommand = action === "create" || action === "interview";
 
     if (isGenerationCommand && !rawSchedulerPrompt && !rawSchedulerPromptFile) {
@@ -1236,22 +1241,32 @@ export const parseCliArgs = (
       fail("--prompt and --prompt-file are only valid for `machdoch ralph create` or `machdoch ralph interview`.");
     }
 
-    if (action === "save" && !rawRalphFlowJson && !rawRalphFlowJsonFile) {
+    if (
+      (action === "save" || isJsonValidationCommand) &&
+      !rawRalphFlowJson &&
+      !rawRalphFlowJsonFile
+    ) {
       fail(
-        "`machdoch ralph save` expects --flow-json. Use --flow-json-file for large payloads.",
+        `\`machdoch ralph ${action}\` expects --flow-json. Use --flow-json-file for large payloads.`,
       );
     }
 
-    if (action === "save" && rawRalphFlowJson && rawRalphFlowJsonFile) {
-      fail("Use either --flow-json or --flow-json-file for `machdoch ralph save`, not both.");
+    if (
+      (action === "save" || isJsonValidationCommand) &&
+      rawRalphFlowJson &&
+      rawRalphFlowJsonFile
+    ) {
+      fail(
+        `Use either --flow-json or --flow-json-file for \`machdoch ralph ${action}\`, not both.`,
+      );
     }
 
-    if (action !== "save" && rawRalphFlowJson) {
-      fail("--flow-json is only valid for `machdoch ralph save`.");
+    if (action !== "save" && !isJsonValidationCommand && rawRalphFlowJson) {
+      fail("--flow-json is only valid for `machdoch ralph save` or `machdoch ralph validate-json`.");
     }
 
-    if (action !== "save" && rawRalphFlowJsonFile) {
-      fail("--flow-json-file is only valid for `machdoch ralph save`.");
+    if (action !== "save" && !isJsonValidationCommand && rawRalphFlowJsonFile) {
+      fail("--flow-json-file is only valid for `machdoch ralph save` or `machdoch ralph validate-json`.");
     }
 
     if (

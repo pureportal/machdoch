@@ -55,6 +55,7 @@ import {
   type SchedulerRalphVariableReadinessSummary,
   type ReasoningMode,
 } from "../../runtime";
+import { subscribeToSettingsImport } from "../../settings-transfer";
 import {
   getReasoningModesForProvider,
   normalizeReasoningModeForProvider,
@@ -569,6 +570,7 @@ export const SchedulerPanel = ({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ralphFlowOptions, setRalphFlowOptions] = useState<SchedulerRalphFlowOption[]>([]);
+  const [ralphImportVersion, setRalphImportVersion] = useState(0);
   const [ralphVariables, setRalphVariables] = useState<SchedulerRalphVariable[]>([]);
   const [ralphReadiness, setRalphReadiness] = useState<SchedulerRalphReadinessView>({
     ready: false,
@@ -649,6 +651,25 @@ export const SchedulerPanel = ({
   }, [activeWorkspace, refresh]);
 
   useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToSettingsImport((event) => {
+      if (!disposed && event.categories.includes("ralph.flows-global")) {
+        setRalphImportVersion((current) => current + 1);
+      }
+    }).then((cleanup) => {
+      if (disposed) cleanup();
+      else unsubscribe = cleanup;
+    }).catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!activeWorkspace || form.targetType !== "ralph-flow") {
       setRalphFlowOptions([]);
       return;
@@ -671,7 +692,7 @@ export const SchedulerPanel = ({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspace, form.ralphFlowScope, form.targetType]);
+  }, [activeWorkspace, form.ralphFlowScope, form.targetType, ralphImportVersion]);
 
   useEffect(() => {
     const flowId = form.ralphFlowId.trim();

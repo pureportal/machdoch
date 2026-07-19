@@ -7,6 +7,7 @@ mod media;
 mod remote_control;
 mod runtime_contract_generated;
 mod runtime_snapshot;
+mod settings_transfer;
 mod shared_cli;
 mod shell_state;
 mod ui_control;
@@ -94,12 +95,14 @@ pub fn run() {
         .manage(media::MediaRuntimeState::default())
         .manage(remote_control::RemoteControlState::default())
         .manage(shell_state::ShellStateStoreLock::default())
+        .manage(settings_transfer::SettingsTransferState::default())
         .manage(ui_operation::CrossWindowOperationState::default())
         .manage(runtime_snapshot::McpConfigWriteLock::default())
         .on_window_event(|window, event| {
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
+            settings_transfer::initialize(app.handle()).map_err(std::io::Error::other)?;
             desktop_task::cleanup_stale_task_context_files();
 
             if let Err(error) = desktop_shell::create_tray(app.handle()) {
@@ -232,6 +235,14 @@ pub fn run() {
             shell_state::compare_and_swap_shell_state_patch,
             shell_state::load_shell_state_revision,
             shell_state::load_shell_state_snapshot,
+            settings_transfer::approve_settings_transfer,
+            settings_transfer::confirm_settings_transfer_pairing,
+            settings_transfer::connect_settings_transfer,
+            settings_transfer::get_settings_transfer_catalog,
+            settings_transfer::get_settings_transfer_status,
+            settings_transfer::start_settings_receive,
+            settings_transfer::start_settings_transfer,
+            settings_transfer::stop_settings_transfer,
             ui_operation::begin_cross_window_operation,
             ui_operation::complete_cross_window_operation,
             ui_operation::release_cross_window_operation,

@@ -26,6 +26,32 @@ struct CrossWindowOperationRegistry {
 #[derive(Default)]
 pub struct CrossWindowOperationState(Mutex<CrossWindowOperationRegistry>);
 
+impl CrossWindowOperationState {
+    pub(crate) fn try_begin_internal(
+        &self,
+        operation_id: &str,
+        lease_ms: u64,
+    ) -> Result<Option<String>, String> {
+        let operation_id = normalize_operation_id(operation_id)?.to_string();
+        let mut registry = self
+            .0
+            .lock()
+            .map_err(|_| "The cross-window operation registry is unavailable.".to_string())?;
+        let response = begin_operation(&mut registry, operation_id, Some(lease_ms), Instant::now());
+        Ok(response.acquired.then_some(response.token).flatten())
+    }
+
+    pub(crate) fn release_internal(&self, operation_id: &str, token: &str) -> bool {
+        let Ok(operation_id) = normalize_operation_id(operation_id) else {
+            return false;
+        };
+        let Ok(mut registry) = self.0.lock() else {
+            return false;
+        };
+        settle_operation(&mut registry, operation_id, token, false)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BeginCrossWindowOperationRequest {

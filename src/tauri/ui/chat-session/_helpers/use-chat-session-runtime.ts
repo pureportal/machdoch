@@ -1098,6 +1098,11 @@ export const useChatSessionRuntime = (
             }
           } else if (kind === "mcp") {
             await refreshMcpConfigDocuments();
+          } else if (
+            kind === "provider-enrollment" &&
+            options.activeSessionWorkspace?.trim()
+          ) {
+            await refreshProviderSync(options.activeSessionWorkspace);
           }
         } catch (error) {
           if (!disposed) {
@@ -1123,6 +1128,7 @@ export const useChatSessionRuntime = (
     applyLoadedUserReviewModelSettings,
     applyLoadedUserSpeechToTextSettings,
     applyLoadedUserVoiceSettings,
+    options.activeSessionWorkspace,
     refreshMcpConfigDocuments,
   ]);
 

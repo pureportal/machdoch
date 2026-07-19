@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,6 +6,7 @@ import {
   validateInstructionFileContent,
   writeInstructionFile,
 } from "./instructions.ts";
+import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.ts";
 
 const workspacesToClean: string[] = [];
 const originalUserConfigDirectory = process.env.MACHDOCH_USER_CONFIG_DIR;
@@ -129,6 +131,58 @@ describe("instruction file helpers", () => {
       join(userConfigRoot, "instructions", "global-review.instructions.md"),
     );
     expect(alwaysOn.path).toBe(join(userConfigRoot, "instructions.md"));
+  });
+
+  it("serializes user instruction writes with the settings transfer boundary", async () => {
+    const workspaceRoot = await createWorkspace();
+    const userConfigRoot = join(workspaceRoot, ".user-config");
+    const boundaryPath = join(
+      userConfigRoot,
+      "instructions.transfer-boundary",
+    );
+    const instructionPath = join(
+      userConfigRoot,
+      "instructions",
+      "transfer-safe.instructions.md",
+    );
+    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
+
+    let releaseBoundary = (): void => undefined;
+    let signalBoundaryHeld = (): void => undefined;
+    const boundaryHeld = new Promise<void>((resolve) => {
+      signalBoundaryHeld = resolve;
+    });
+    const boundaryRelease = new Promise<void>((resolve) => {
+      releaseBoundary = resolve;
+    });
+    const lockHolder = withCooperativeFileLock(boundaryPath, async () => {
+      signalBoundaryHeld();
+      await boundaryRelease;
+    });
+    await boundaryHeld;
+
+    let writeSettled = false;
+    const write = writeInstructionFile(workspaceRoot, {
+      name: "Transfer Safe",
+      body: "Do not interleave this write with a settings transfer.",
+      scope: "user",
+    }).finally(() => {
+      writeSettled = true;
+    });
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(writeSettled).toBe(false);
+      expect(existsSync(instructionPath)).toBe(false);
+    } finally {
+      releaseBoundary();
+      await lockHolder;
+    }
+
+    await expect(write).resolves.toMatchObject({
+      path: instructionPath,
+      created: true,
+    });
   });
 
   it("writes Ralph flow instruction files under the flow instruction area", async () => {

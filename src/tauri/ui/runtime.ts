@@ -5231,6 +5231,7 @@ export type UserSettingsChangeKind =
   | "memory"
   | "agent-limits"
   | "review-model"
+  | "provider-enrollment"
   | "mcp";
 
 const emitUserSettingsChanged = async (
