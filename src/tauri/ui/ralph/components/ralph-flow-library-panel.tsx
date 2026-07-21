@@ -274,7 +274,10 @@ export const RalphFlowLibraryPanel = ({
         </div>
       </div>
 
-      <ScrollArea className="min-h-0" type="always">
+      <ScrollArea
+        className="min-h-0 [&_[data-slot=scroll-area-scrollbar]]:border-l-0"
+        type="always"
+      >
         <div className="grid p-2 pr-4">
           {flowsLoading && displayFlowRows.length === 0 ? (
             <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-4 text-sm text-slate-400">

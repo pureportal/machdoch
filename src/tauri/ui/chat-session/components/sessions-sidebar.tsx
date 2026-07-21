@@ -568,7 +568,10 @@ export const SessionsSidebar = ({
         </div>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1" type="always">
+      <ScrollArea
+        className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:border-l-0"
+        type="always"
+      >
         <div className="app-sessions-scroll-content grid gap-4 px-5 py-5 pr-6">
           <div className="app-sessions-filter-stack grid gap-3">
             <div className="relative">
