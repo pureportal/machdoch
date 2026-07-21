@@ -1267,31 +1267,25 @@ describe("Ralph starter flows", () => {
     });
     expect(refactorPass).toMatchObject({
       type: "PROMPT",
-      settings: {
-        timeoutSeconds: 3600,
-      },
       prompt: expect.stringContaining("latest feedback"),
     });
+    expect(refactorPass?.settings).not.toHaveProperty("timeoutSeconds");
     expect(refactorPass).toMatchObject({
       type: "PROMPT",
       prompt: expect.stringContaining("pass count"),
     });
     expect(fixValidationFailures).toMatchObject({
       type: "PROMPT",
-      settings: {
-        timeoutSeconds: 3600,
-      },
     });
+    expect(fixValidationFailures?.settings).not.toHaveProperty("timeoutSeconds");
     expect(finalRefactorScan).toMatchObject({
       type: "UTILITY",
-      settings: {
-        timeoutSeconds: 3600,
-      },
       utility: {
         type: "VALIDATOR_JSON",
         prompt: expect.stringContaining("Ignore unrelated changes"),
       },
     });
+    expect(finalRefactorScan?.settings).not.toHaveProperty("timeoutSeconds");
     expect(flow?.blocks.some((block) => block.id === "change-scope-guard")).toBe(
       false,
     );

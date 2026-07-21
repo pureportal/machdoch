@@ -151,6 +151,10 @@ fn exit_grace_period(transfer_active: bool, transfer_committing: bool) -> Durati
     }
 }
 
+fn combined_transfer_activity(network: (bool, bool), file: (bool, bool)) -> (bool, bool) {
+    (network.0 || file.0, network.1 || file.1)
+}
+
 pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
     if EXIT_REQUESTED.swap(true, Ordering::SeqCst) {
         return;
@@ -161,7 +165,7 @@ pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
         let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
         crate::desktop_task::request_all_desktop_task_cancels(&state)
     };
-    let (transfer_active, transfer_committing) = {
+    let network_activity = {
         let transfer_state = app.state::<crate::settings_transfer::SettingsTransferState>();
         let active = transfer_state.request_stop(
             &app,
@@ -169,6 +173,13 @@ pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
         );
         (active, transfer_state.is_commit_critical())
     };
+    let file_activity = {
+        let file_state = app.state::<crate::settings_transfer::SettingsFileTransferState>();
+        file_state.request_stop();
+        file_state.activity()
+    };
+    let (transfer_active, transfer_committing) =
+        combined_transfer_activity(network_activity, file_activity);
 
     if active_task_count == 0 && !transfer_active {
         app.exit(0);
@@ -184,10 +195,16 @@ pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
                 let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
                 crate::desktop_task::request_all_desktop_task_cancels(&state) > 0
             };
-            let (transfer_active, transfer_committing) = {
+            let network_activity = {
                 let transfer_state = app.state::<crate::settings_transfer::SettingsTransferState>();
                 transfer_state.activity()
             };
+            let file_activity = {
+                let file_state = app.state::<crate::settings_transfer::SettingsFileTransferState>();
+                file_state.activity()
+            };
+            let (transfer_active, transfer_committing) =
+                combined_transfer_activity(network_activity, file_activity);
 
             // CommitAuthorized is the point of no return. It can arrive while
             // shutdown is already waiting on the shorter cancellation grace
@@ -226,6 +243,22 @@ mod tests {
         assert_eq!(
             exit_grace_period(false, false),
             DESKTOP_TASK_EXIT_GRACE_PERIOD
+        );
+    }
+
+    #[test]
+    fn graceful_exit_combines_network_and_file_transfer_activity() {
+        assert_eq!(
+            combined_transfer_activity((false, false), (true, true)),
+            (true, true)
+        );
+        assert_eq!(
+            combined_transfer_activity((true, false), (false, false)),
+            (true, false)
+        );
+        assert_eq!(
+            combined_transfer_activity((false, false), (false, false)),
+            (false, false)
         );
     }
 }

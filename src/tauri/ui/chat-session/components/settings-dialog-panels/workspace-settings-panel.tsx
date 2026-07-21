@@ -11,6 +11,7 @@ import {
   SettingsCard,
   SettingsStatus,
 } from "./shared";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { WorkspaceSettingsControls } from "./types";
 
 export interface WorkspaceSettingsPanelProps {
@@ -82,6 +83,15 @@ export const WorkspaceSettingsPanel = ({
     setup.reasoningModel,
   );
 
+  useSettingsNavigationGuard({
+    dirty: setup.saving,
+    title: "Saving workspace defaults",
+    description:
+      "Wait for the workspace defaults to finish saving before leaving this section.",
+    canDiscard: false,
+    onDiscard: () => undefined,
+  });
+
   return (
     <SettingsCard
       title="Workspace defaults"
@@ -89,6 +99,7 @@ export const WorkspaceSettingsPanel = ({
     >
       <SettingPanel label="Default mode" detail={getDefaultModeDetail(setup)}>
         <ChoiceButtons
+          label="Default workspace mode"
           value={setup.defaultMode}
           options={[
             { value: "ask", label: "Ask" },
@@ -102,7 +113,7 @@ export const WorkspaceSettingsPanel = ({
       </SettingPanel>
 
       {effectiveModeNotice ? (
-        <p className="border-b border-slate-800/75 py-4 text-sm leading-6 text-slate-400">
+        <p role="note" className="border-b border-slate-800/75 py-4 text-sm leading-6 text-amber-200">
           {effectiveModeNotice}
         </p>
       ) : null}
@@ -112,6 +123,7 @@ export const WorkspaceSettingsPanel = ({
         detail={getDefaultModeDetail(setup)}
       >
         <ChoiceButtons
+          label="Default workspace reasoning mode"
           value={defaultReasoning}
           options={workspaceReasoningOptions.map((reasoning) => ({
             value: reasoning,
@@ -125,15 +137,17 @@ export const WorkspaceSettingsPanel = ({
       </SettingPanel>
 
       {effectiveReasoningNotice ? (
-        <p className="border-b border-slate-800/75 py-4 text-sm leading-6 text-slate-400">
+        <p role="note" className="border-b border-slate-800/75 py-4 text-sm leading-6 text-amber-200">
           {effectiveReasoningNotice}
         </p>
       ) : null}
 
-      <p className="border-t border-slate-800 pt-4 text-sm leading-6 text-slate-400">
-        {setup.saving
-          ? "Saving workspace defaults..."
-          : "Workspace defaults are up to date"}
+      <p role="status" aria-live="polite" className="border-t border-slate-800 pt-4 text-sm leading-6 text-slate-400">
+        {!setup.workspaceRoot
+          ? "Select a workspace to change these defaults."
+          : setup.saving
+            ? "Saving workspace defaults…"
+            : "Workspace defaults are up to date."}
       </p>
 
       <SettingsStatus message={setup.message} />

@@ -95,6 +95,7 @@ pub fn run() {
         .manage(media::MediaRuntimeState::default())
         .manage(remote_control::RemoteControlState::default())
         .manage(shell_state::ShellStateStoreLock::default())
+        .manage(settings_transfer::SettingsFileTransferState::default())
         .manage(settings_transfer::SettingsTransferState::default())
         .manage(ui_operation::CrossWindowOperationState::default())
         .manage(runtime_snapshot::McpConfigWriteLock::default())
@@ -236,10 +237,14 @@ pub fn run() {
             shell_state::load_shell_state_revision,
             shell_state::load_shell_state_snapshot,
             settings_transfer::approve_settings_transfer,
+            settings_transfer::cancel_encrypted_settings_file_import,
+            settings_transfer::commit_encrypted_settings_file_import,
             settings_transfer::confirm_settings_transfer_pairing,
             settings_transfer::connect_settings_transfer,
+            settings_transfer::export_encrypted_settings_file,
             settings_transfer::get_settings_transfer_catalog,
             settings_transfer::get_settings_transfer_status,
+            settings_transfer::inspect_encrypted_settings_file,
             settings_transfer::start_settings_receive,
             settings_transfer::start_settings_transfer,
             settings_transfer::stop_settings_transfer,

@@ -149,6 +149,14 @@ fn create_quarantine_path(path: &Path, token: &str) -> PathBuf {
     ))
 }
 
+fn is_path_stale(path: &Path) -> bool {
+    fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+        .is_some_and(|age| age >= STALE_LOCK_AGE)
+}
+
 fn remove_directory_tree(path: &Path) -> io::Result<()> {
     let started = std::time::Instant::now();
 
@@ -206,15 +214,74 @@ fn create_owned_directory_candidate(target: &Path, token: &str) -> Result<PathBu
 
 fn quarantine_stale_lock(path: &Path) -> Result<(), String> {
     let Some(observed) = load_observed_owner(path) else {
-        if fs::metadata(path)
-            .ok()
-            .and_then(|metadata| metadata.modified().ok())
-            .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-            .is_some_and(|age| age >= STALE_LOCK_AGE)
-        {
-            // Current owners are installed as populated directory candidates
-            // in one rename. A delayed remove therefore fails against every
-            // fresh populated owner.
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    continue;
+                };
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                let is_token_owner = file_type.is_dir() && name.starts_with(OWNER_DIRECTORY_PREFIX);
+                let is_legacy_owner = file_type.is_file() && name == OWNER_FILE_NAME;
+                if !is_token_owner && !is_legacy_owner {
+                    continue;
+                }
+
+                let stale_path = entry.path();
+                let metadata_path = if is_token_owner {
+                    let owner_file = owner_path(&stale_path);
+                    if owner_file.exists() {
+                        owner_file
+                    } else {
+                        stale_path.clone()
+                    }
+                } else {
+                    stale_path.clone()
+                };
+                if !is_path_stale(&metadata_path) {
+                    continue;
+                }
+
+                let token = name
+                    .strip_prefix(OWNER_DIRECTORY_PREFIX)
+                    .unwrap_or("legacy-malformed-owner");
+                let quarantine_path = create_quarantine_path(path, token);
+                match fs::rename(&stale_path, &quarantine_path) {
+                    Ok(()) => {
+                        let _ = fs::remove_dir(path);
+                        let cleanup = if is_token_owner {
+                            remove_directory_tree(&quarantine_path)
+                        } else {
+                            fs::remove_file(&quarantine_path)
+                        };
+                        cleanup.map_err(|error| {
+                            format!(
+                                "Failed to remove malformed stale configuration lock {}: {error}",
+                                quarantine_path.display()
+                            )
+                        })?;
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::PermissionDenied | io::ErrorKind::ResourceBusy
+                        ) => {}
+                    Err(error) => {
+                        return Err(format!(
+                            "Failed to quarantine malformed stale configuration lock {}: {error}",
+                            stale_path.display()
+                        ));
+                    }
+                }
+            }
+        }
+
+        if is_path_stale(path) {
+            // Non-recursive removal reaps only a genuinely empty abandoned
+            // lock and preserves any unrecognized user data.
             let _ = fs::remove_dir(path);
         }
         return Ok(());
@@ -508,6 +575,30 @@ mod tests {
 
         with_cooperative_file_lock(&destination, || Ok(()))
             .expect("legacy stale lock should be recovered");
+
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn recovers_a_stale_token_directory_with_truncated_owner_metadata() {
+        let (destination, directory) = test_destination();
+        let path = lock_path(&destination);
+        fs::create_dir(&path).expect("stale lock directory should be created");
+        let owner_directory = path.join("owner.truncated-owner");
+        fs::create_dir(&owner_directory).expect("stale owner directory should be created");
+        fs::write(owner_path(&owner_directory), []).expect("truncated owner should be written");
+        let owner_file = OpenOptions::new()
+            .write(true)
+            .open(owner_path(&owner_directory))
+            .expect("truncated owner should open");
+        owner_file
+            .set_times(FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(180)))
+            .expect("stale owner timestamp should update");
+        drop(owner_file);
+
+        with_cooperative_file_lock(&destination, || Ok(()))
+            .expect("truncated stale lock should be recovered");
 
         assert!(!path.exists());
         let _ = fs::remove_dir_all(directory);

@@ -23,10 +23,32 @@ const LOCK_CLEANUP_RETRY_TIMEOUT_MS = 2_000;
 interface FileLockOwner {
   token: string;
   pid: number;
+  acquiredAt?: string;
+  description?: string;
 }
 
 interface ObservedFileLockOwner extends FileLockOwner {
   ownerPath: string;
+}
+
+export interface CooperativeFileLockOptions {
+  timeoutMs?: number;
+  staleLockAgeMs?: number;
+  ownerDescription?: string;
+}
+
+export interface CooperativeFileLockInspection {
+  lockPath: string;
+  state: "unlocked" | "initializing" | "active" | "orphaned" | "stale";
+  staleAfterMs: number;
+  ageMs?: number;
+  owner?: {
+    token: string;
+    pid: number;
+    processAlive: boolean;
+    acquiredAt?: string;
+    description?: string;
+  };
 }
 
 const wait = async (delayMs: number): Promise<void> => {
@@ -47,7 +69,16 @@ const loadOwnerRecord = async (ownerPath: string): Promise<FileLockOwner | null>
     return typeof parsed.token === "string" &&
       Number.isSafeInteger(parsed.pid) &&
       (parsed.pid ?? 0) > 0
-      ? { token: parsed.token, pid: parsed.pid as number }
+      ? {
+          token: parsed.token,
+          pid: parsed.pid as number,
+          ...(typeof parsed.acquiredAt === "string"
+            ? { acquiredAt: parsed.acquiredAt }
+            : {}),
+          ...(typeof parsed.description === "string"
+            ? { description: parsed.description }
+            : {}),
+        }
       : null;
   } catch {
     return null;
@@ -97,11 +128,12 @@ const createQuarantinePath = (lockPath: string, token: string): string => {
 const createOwnedDirectoryCandidate = async (
   targetPath: string,
   token: string,
+  description?: string,
 ): Promise<string> => {
   const candidatePath = `${targetPath}.candidate.${process.pid}.${token}.${randomUUID()}`;
   await mkdir(candidatePath);
   try {
-    await populateOwnedDirectory(candidatePath, token);
+    await populateOwnedDirectory(candidatePath, token, description);
     return candidatePath;
   } catch (error) {
     await rm(candidatePath, { recursive: true, force: true }).catch(
@@ -114,12 +146,18 @@ const createOwnedDirectoryCandidate = async (
 const populateOwnedDirectory = async (
   parentPath: string,
   token: string,
+  description?: string,
 ): Promise<void> => {
   const ownerPath = join(parentPath, `${OWNER_DIRECTORY_PREFIX}${token}`);
   await mkdir(ownerPath);
   await writeFile(
     join(ownerPath, OWNER_FILE_NAME),
-    JSON.stringify({ token, pid: process.pid } satisfies FileLockOwner),
+    JSON.stringify({
+      token,
+      pid: process.pid,
+      acquiredAt: new Date().toISOString(),
+      ...(description ? { description } : {}),
+    } satisfies FileLockOwner),
     { encoding: "utf8", flag: "wx" },
   );
 };
@@ -167,13 +205,56 @@ const removeCanonicalIfEmpty = async (lockPath: string): Promise<boolean> => {
   }
 };
 
-const quarantineStaleLock = async (lockPath: string): Promise<void> => {
+const quarantineStaleLock = async (
+  lockPath: string,
+  staleLockAgeMs: number,
+): Promise<void> => {
   const owner = await loadObservedOwner(lockPath);
   if (!owner) {
+    const entries = await readdir(lockPath, { withFileTypes: true }).catch(
+      () => [],
+    );
+    const malformedOwnerEntries = entries.filter((entry) =>
+      (entry.isDirectory() && entry.name.startsWith(OWNER_DIRECTORY_PREFIX)) ||
+      (entry.isFile() && entry.name === OWNER_FILE_NAME)
+    );
+
+    for (const entry of malformedOwnerEntries) {
+      const stalePath = join(lockPath, entry.name);
+      const staleMetadata = await stat(
+        entry.isDirectory()
+          ? join(stalePath, OWNER_FILE_NAME)
+          : stalePath,
+      ).catch(() => stat(stalePath).catch(() => null));
+      if (
+        !staleMetadata ||
+        Date.now() - staleMetadata.mtimeMs < staleLockAgeMs
+      ) {
+        continue;
+      }
+
+      const token = entry.name.startsWith(OWNER_DIRECTORY_PREFIX)
+        ? entry.name.slice(OWNER_DIRECTORY_PREFIX.length)
+        : "legacy-malformed-owner";
+      const quarantinePath = createQuarantinePath(lockPath, token);
+      try {
+        // The exact malformed owner child is the compare-and-swap target. A
+        // fresh valid owner has a different token-named path and cannot be
+        // removed by a delayed stale-lock contender.
+        await rename(stalePath, quarantinePath);
+      } catch (error) {
+        if (getErrorCode(error) === "ENOENT") continue;
+        if (TRANSIENT_WINDOWS_ERROR_CODES.has(getErrorCode(error))) continue;
+        throw error;
+      }
+      await removeCanonicalIfEmpty(lockPath);
+      await rm(quarantinePath, { recursive: true, force: true });
+    }
+
     const metadata = await stat(lockPath).catch(() => null);
-    if (metadata && Date.now() - metadata.mtimeMs >= STALE_LOCK_AGE_MS) {
-      // Every current owner is a populated token directory. Non-recursive
-      // removal can only reap an empty legacy lock and fails on a fresh owner.
+    if (metadata && Date.now() - metadata.mtimeMs >= staleLockAgeMs) {
+      // Non-recursive removal reaps only a genuinely empty abandoned lock. It
+      // leaves unknown contents untouched rather than treating them as ours.
       await removeCanonicalIfEmpty(lockPath);
     }
     return;
@@ -184,7 +265,7 @@ const quarantineStaleLock = async (lockPath: string): Promise<void> => {
   );
   if (
     !metadata ||
-    Date.now() - metadata.mtimeMs < STALE_LOCK_AGE_MS ||
+    Date.now() - metadata.mtimeMs < staleLockAgeMs ||
     isProcessAlive(owner.pid)
   ) {
     return;
@@ -214,6 +295,90 @@ const quarantineStaleLock = async (lockPath: string): Promise<void> => {
 
   await removeCanonicalIfEmpty(lockPath);
   await rm(quarantinePath, { recursive: true, force: true });
+};
+
+export const inspectCooperativeFileLock = async (
+  destination: string,
+  options: Pick<CooperativeFileLockOptions, "staleLockAgeMs"> = {},
+): Promise<CooperativeFileLockInspection> => {
+  const lockPath = `${destination}${LOCK_SUFFIX}`;
+  const staleAfterMs = options.staleLockAgeMs ?? STALE_LOCK_AGE_MS;
+  const lockMetadata = await stat(lockPath).catch((error: unknown) => {
+    if (getErrorCode(error) === "ENOENT") return null;
+    throw error;
+  });
+  if (!lockMetadata) {
+    return { lockPath, state: "unlocked", staleAfterMs };
+  }
+
+  const owner = await loadObservedOwner(lockPath);
+  if (!owner) {
+    const ageMs = Math.max(0, Date.now() - lockMetadata.mtimeMs);
+    return {
+      lockPath,
+      state: ageMs >= staleAfterMs ? "stale" : "initializing",
+      staleAfterMs,
+      ageMs,
+    };
+  }
+
+  const ownerMetadata = await stat(join(owner.ownerPath, OWNER_FILE_NAME)).catch(
+    () => null,
+  );
+  const ageMs = Math.max(
+    0,
+    Date.now() - (ownerMetadata?.mtimeMs ?? lockMetadata.mtimeMs),
+  );
+  const processAlive = isProcessAlive(owner.pid);
+  return {
+    lockPath,
+    state: processAlive
+      ? "active"
+      : ageMs >= staleAfterMs
+        ? "stale"
+        : "orphaned",
+    staleAfterMs,
+    ageMs,
+    owner: {
+      token: owner.token,
+      pid: owner.pid,
+      processAlive,
+      ...(owner.acquiredAt ? { acquiredAt: owner.acquiredAt } : {}),
+      ...(owner.description ? { description: owner.description } : {}),
+    },
+  };
+};
+
+const formatLockTimeout = (
+  inspection: CooperativeFileLockInspection,
+  timeoutMs: number,
+): string => {
+  const prefix =
+    `Timed out after ${timeoutMs}ms waiting for configuration lock ${inspection.lockPath}.`;
+  const owner = inspection.owner;
+  if (inspection.state === "active" && owner) {
+    return `${prefix} Lock is actively owned by PID ${owner.pid}` +
+      `${owner.description ? ` (${owner.description})` : ""}` +
+      `${owner.acquiredAt ? ` since ${owner.acquiredAt}` : ""}; ` +
+      "another Machdoch operation is still running.";
+  }
+  if (inspection.state === "orphaned" && owner) {
+    const remainingMs = Math.max(
+      0,
+      inspection.staleAfterMs - (inspection.ageMs ?? 0),
+    );
+    return `${prefix} Owner PID ${owner.pid} is no longer running; ` +
+      `the orphaned lock becomes eligible for safe recovery in about ${remainingMs}ms.`;
+  }
+  if (inspection.state === "stale") {
+    return `${prefix} The lock appears stale but could not be quarantined; ` +
+      "retry the operation and run `machdoch provider-sync doctor` if it persists.";
+  }
+  if (inspection.state === "initializing") {
+    return `${prefix} Owner metadata is not available yet; the lock may be ` +
+      "initializing or may have been abandoned by a process that exited during acquisition.";
+  }
+  return `${prefix} The lock was released while diagnostics were collected; retry the operation.`;
 };
 
 const releaseOwnedLock = async (
@@ -269,79 +434,45 @@ const releaseOwnedLock = async (
 export const withCooperativeFileLock = async <T>(
   destination: string,
   operation: () => Promise<T>,
+  options: CooperativeFileLockOptions = {},
 ): Promise<T> => {
   const lockPath = `${destination}${LOCK_SUFFIX}`;
   const token = randomUUID();
   const startedAt = Date.now();
+  const timeoutMs = options.timeoutMs ?? LOCK_TIMEOUT_MS;
+  const staleLockAgeMs = options.staleLockAgeMs ?? STALE_LOCK_AGE_MS;
+  const ownerDescription = options.ownerDescription?.trim().slice(0, 500);
 
   await mkdir(dirname(destination), { recursive: true });
-  const useWindowsDirectoryCreation = process.platform === "win32";
-  const candidatePath = useWindowsDirectoryCreation
-    ? null
-    : await createOwnedDirectoryCandidate(lockPath, token);
+  // Populate a private candidate before the atomic rename election. This
+  // keeps the canonical lock from ever being observable without owner
+  // metadata, including when a Windows process exits during acquisition.
+  const candidatePath = await createOwnedDirectoryCandidate(
+    lockPath,
+    token,
+    ownerDescription,
+  );
   let acquired = false;
 
   try {
     while (true) {
-      if (useWindowsDirectoryCreation) {
-        try {
-          // Renaming a populated directory onto an existing directory reports
-          // EPERM on Windows. Creating the canonical directory itself is the
-          // atomic winner election there; Rust contenders cannot replace it on
-          // Windows and wait through the short owner-population window.
-          await mkdir(lockPath);
-        } catch (error) {
-          const code = getErrorCode(error);
-          if (await targetExists(lockPath)) {
-            await quarantineStaleLock(lockPath);
-          } else if (
-            code !== "EEXIST" &&
-            !TRANSIENT_WINDOWS_ERROR_CODES.has(code)
-          ) {
-            throw error;
-          }
-
-          if (Date.now() - startedAt >= LOCK_TIMEOUT_MS) {
-            throw new Error(
-              `Timed out waiting for configuration lock ${lockPath}.`,
-              { cause: error },
-            );
-          }
-          await wait(LOCK_RETRY_DELAY_MS);
-          continue;
-        }
-
-        const ownerPath = join(
-          lockPath,
-          `${OWNER_DIRECTORY_PREFIX}${token}`,
-        );
-        try {
-          await populateOwnedDirectory(lockPath, token);
-          acquired = true;
-          break;
-        } catch (error) {
-          await rm(ownerPath, { recursive: true, force: true }).catch(
-            () => undefined,
-          );
-          await removeCanonicalIfEmpty(lockPath).catch(() => undefined);
-          throw error;
-        }
-      }
-
       try {
-        await rename(candidatePath as string, lockPath);
+        await rename(candidatePath, lockPath);
         acquired = true;
         break;
       } catch (error) {
         if (await targetExists(lockPath)) {
-          await quarantineStaleLock(lockPath);
-        } else if (!(await targetExists(candidatePath as string))) {
+          await quarantineStaleLock(lockPath, staleLockAgeMs);
+        } else if (!(await targetExists(candidatePath))) {
           throw error;
         }
 
-        if (Date.now() - startedAt >= LOCK_TIMEOUT_MS) {
+        if (Date.now() - startedAt >= timeoutMs) {
+          const inspection = await inspectCooperativeFileLock(destination, {
+            staleLockAgeMs,
+          });
           throw new Error(
-            `Timed out waiting for configuration lock ${lockPath}.`,
+            formatLockTimeout(inspection, timeoutMs),
             { cause: error },
           );
         }
@@ -349,7 +480,7 @@ export const withCooperativeFileLock = async <T>(
       }
     }
   } finally {
-    if (!acquired && candidatePath) {
+    if (!acquired) {
       await rm(candidatePath, { recursive: true, force: true }).catch(
         () => undefined,
       );

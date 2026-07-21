@@ -13,6 +13,7 @@ import type {
   UserReviewModelSettings,
   ReasoningMode,
   UserWebSearchApiKeyProvider,
+  WebSearchProviderAvailability,
   VoiceAiProvider,
   VoiceProviderAvailability,
   WebSearchProvider,
@@ -35,6 +36,7 @@ export interface SettingsStatusMessage {
 export interface ProviderSetupControls {
   provider: UserApiKeyProvider;
   keyValue: string;
+  loading: boolean;
   saving: boolean;
   message: SettingsStatusMessage | null;
   onProviderChange: (provider: UserApiKeyProvider) => void;
@@ -45,8 +47,10 @@ export interface ProviderSetupControls {
 
 export interface WebSearchSetupControls {
   activeProvider: WebSearchProvider;
+  providerAvailability: WebSearchProviderAvailability[];
   provider: UserWebSearchApiKeyProvider;
   keyValue: string;
+  loading: boolean;
   saving: boolean;
   message: SettingsStatusMessage | null;
   onActiveProviderChange: (provider: WebSearchProvider) => Promise<void> | void;
@@ -118,8 +122,12 @@ export interface InstructionSettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onRefresh: () => Promise<void> | void;
-  onManualSave: (input: InstructionMutationInput) => Promise<void> | void;
-  onGenerate: (input: InstructionMutationInput) => Promise<void> | void;
+  onManualSave: (
+    input: InstructionMutationInput,
+  ) => Promise<boolean | void> | boolean | void;
+  onGenerate: (
+    input: InstructionMutationInput,
+  ) => Promise<boolean | void> | boolean | void;
 }
 
 export interface DesktopSettingsControls {
@@ -135,8 +143,12 @@ export interface AgentLimitsSettingsControls {
   providerAvailability: RuntimeProviderAvailability[];
   saving: boolean;
   message: SettingsStatusMessage | null;
-  onSave: (settings: UserAgentLimitsSettings) => Promise<void> | void;
-  onReviewModelSave: (settings: UserReviewModelSettings) => Promise<void> | void;
+  onSave: (
+    settings: UserAgentLimitsSettings,
+  ) => Promise<boolean | void> | boolean | void;
+  onReviewModelSave: (
+    settings: UserReviewModelSettings,
+  ) => Promise<boolean | void> | boolean | void;
 }
 
 export interface AppearanceSettingsControls {

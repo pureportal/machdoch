@@ -8,7 +8,6 @@ import type {
   AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
-import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import {
   GeminiChatAdapter,
   createGeminiFunctionCallingMode,
@@ -221,9 +220,6 @@ describe("Gemini function-calling conformance", () => {
       message: "Read README.md",
       config: {
         systemInstruction: "System prompt.",
-        httpOptions: {
-          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
-        },
         toolConfig: {
           functionCallingConfig: {
             mode: FunctionCallingConfigMode.VALIDATED,
@@ -232,6 +228,11 @@ describe("Gemini function-calling conformance", () => {
         },
       },
     });
+    expect(sendCalls[0]).not.toEqual(
+      expect.objectContaining({
+        config: expect.objectContaining({ httpOptions: expect.anything() }),
+      }),
+    );
     expect(sendCalls[1]).toMatchObject({
       message: [
         {

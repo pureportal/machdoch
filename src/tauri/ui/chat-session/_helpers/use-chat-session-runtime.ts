@@ -66,6 +66,7 @@ import {
   type UserWebSearchApiKeyProvider,
   type UserWebSearchApiKeys,
   type UserWebSearchSettings,
+  type WebSearchProviderAvailability,
   type WebSearchProvider,
 } from "../../runtime";
 import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
@@ -93,6 +94,7 @@ export interface ChatSessionRuntimeController {
   runtimeError: string | null;
   providerSetupProvider: UserApiKeyProvider;
   providerSetupKey: string;
+  providerSetupLoading: boolean;
   providerSetupSaving: boolean;
   providerSetupMessage: SettingsStatusMessage | null;
   userVoiceSettings: UserVoiceSettings;
@@ -104,8 +106,10 @@ export interface ChatSessionRuntimeController {
   speechInputDeviceSaving: boolean;
   speechToTextSetupMessage: SettingsStatusMessage | null;
   webSearchActiveProvider: WebSearchProvider;
+  webSearchProviderAvailability: WebSearchProviderAvailability[];
   webSearchSetupProvider: UserWebSearchApiKeyProvider;
   webSearchSetupKey: string;
+  webSearchSetupLoading: boolean;
   webSearchSetupSaving: boolean;
   webSearchSetupMessage: SettingsStatusMessage | null;
   userDesktopSettings: UserDesktopSettings;
@@ -163,10 +167,10 @@ export interface ChatSessionRuntimeController {
   handleDesktopSettingsSave: (settings: UserDesktopSettings) => Promise<void>;
   handleAgentLimitsSettingsSave: (
     settings: UserAgentLimitsSettings,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   handleReviewModelSettingsSave: (
     settings: UserReviewModelSettings,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   handleWorkspaceDefaultModeSave: (
     mode: RuntimeSnapshot["mode"],
   ) => Promise<void>;
@@ -284,7 +288,7 @@ const getAgentLimitsSettingsSavedMessage = (
   settings: UserAgentLimitsSettings,
 ): string => {
   if (settings.infinite) {
-    return "Agent loop limits saved. Executor and Machdoch continuation counts are unlimited; the safety timeout still applies.";
+    return "Agent loop limits saved. Executor and Machdoch continuation counts are unlimited; the inactivity safety timeout still applies.";
   }
 
   return `Agent loop limits saved. Executor turns: ${settings.executorTurns}; Machdoch continuations: ${settings.autopilotExecutorIterations}.`;
@@ -403,6 +407,7 @@ export const useChatSessionRuntime = (
   const [providerSetupKeys, setProviderSetupKeys] =
     useState<UserProviderApiKeys>({});
   const [providerSetupKey, setProviderSetupKey] = useState("");
+  const [providerSetupLoading, setProviderSetupLoading] = useState(false);
   const [providerSetupSaving, setProviderSetupSaving] = useState(false);
   const [providerSetupMessage, setProviderSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
@@ -427,11 +432,14 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [webSearchActiveProvider, setWebSearchActiveProvider] =
     useState<WebSearchProvider>("none");
+  const [webSearchProviderAvailability, setWebSearchProviderAvailability] =
+    useState<WebSearchProviderAvailability[]>([]);
   const [webSearchSetupProvider, setWebSearchSetupProvider] =
     useState<UserWebSearchApiKeyProvider>("perplexity");
   const [webSearchSetupKeys, setWebSearchSetupKeys] =
     useState<UserWebSearchApiKeys>({});
   const [webSearchSetupKey, setWebSearchSetupKey] = useState("");
+  const [webSearchSetupLoading, setWebSearchSetupLoading] = useState(false);
   const [webSearchSetupSaving, setWebSearchSetupSaving] = useState(false);
   const [webSearchSetupMessage, setWebSearchSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
@@ -608,6 +616,7 @@ export const useChatSessionRuntime = (
           : settings.activeProvider;
 
       setWebSearchActiveProvider(settings.activeProvider);
+      setWebSearchProviderAvailability(settings.providerAvailability);
       setWebSearchSetupProvider(nextKeyProvider);
       setWebSearchSetupKeys(settings.apiKeys);
     },
@@ -915,6 +924,13 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user voice settings", error);
+        setVoiceSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Voice settings could not be loaded: ${error.message}`
+              : "Voice settings could not be loaded.",
+        });
       });
 
     return () => {
@@ -943,6 +959,13 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user speech-to-text settings", error);
+        setSpeechToTextSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Speech-input settings could not be loaded: ${error.message}`
+              : "Speech-input settings could not be loaded.",
+        });
       });
 
     return () => {
@@ -1064,6 +1087,7 @@ export const useChatSessionRuntime = (
               return;
             }
             setWebSearchActiveProvider(settings.activeProvider);
+            setWebSearchProviderAvailability(settings.providerAvailability);
             const editedProvider = webSearchSetupProviderRef.current;
             setWebSearchSetupKeys({
               ...settings.apiKeys,
@@ -1161,6 +1185,13 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user desktop settings", error);
+        setDesktopSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Desktop settings could not be loaded: ${error.message}`
+              : "Desktop settings could not be loaded.",
+        });
       });
 
     return () => {
@@ -1189,6 +1220,13 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user agent limit settings", error);
+        setAgentLimitsSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Agent limits could not be loaded: ${error.message}`
+              : "Agent limits could not be loaded.",
+        });
       });
 
     return () => {
@@ -1217,6 +1255,13 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user review-model settings", error);
+        setAgentLimitsSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Review-model settings could not be loaded: ${error.message}`
+              : "Review-model settings could not be loaded.",
+        });
       });
 
     return () => {
@@ -1260,6 +1305,13 @@ export const useChatSessionRuntime = (
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load global provider availability", error);
+          setAgentLimitsSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? `Provider availability could not be loaded: ${error.message}`
+                : "Provider availability could not be loaded.",
+          });
         }
       });
 
@@ -1289,6 +1341,7 @@ export const useChatSessionRuntime = (
     setProviderSetupKeys({});
     setProviderSetupKey("");
     setProviderSetupMessage(null);
+    setProviderSetupLoading(true);
 
     void loadUserProviderApiKeys()
       .then((apiKeys) => {
@@ -1302,6 +1355,18 @@ export const useChatSessionRuntime = (
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load user provider API keys", error);
+          setProviderSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? `Provider keys could not be loaded: ${error.message}`
+                : "Provider keys could not be loaded.",
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProviderSetupLoading(false);
         }
       });
 
@@ -1336,6 +1401,7 @@ export const useChatSessionRuntime = (
     setWebSearchSetupKeys({});
     setWebSearchSetupKey("");
     setWebSearchSetupMessage(null);
+    setWebSearchSetupLoading(true);
 
     void loadUserWebSearchSettings()
       .then((settings) => {
@@ -1353,6 +1419,18 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load web-search settings", error);
+        setWebSearchSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Web-search settings could not be loaded: ${error.message}`
+              : "Web-search settings could not be loaded.",
+        });
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setWebSearchSetupLoading(false);
+        }
       });
 
     return () => {
@@ -1381,6 +1459,13 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user memory settings", error);
+        setMemorySetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? `Memory settings could not be loaded: ${error.message}`
+              : "Memory settings could not be loaded.",
+        });
       });
 
     return () => {
@@ -1726,6 +1811,7 @@ export const useChatSessionRuntime = (
         }
 
         setWebSearchActiveProvider(settings.activeProvider);
+        setWebSearchProviderAvailability(settings.providerAvailability);
         setWebSearchSetupKeys((currentKeys) =>
           webSearchSetupEditRevisionRef.current === editRevision
             ? settings.apiKeys
@@ -1791,6 +1877,7 @@ export const useChatSessionRuntime = (
       }
 
       setWebSearchActiveProvider(settings.activeProvider);
+      setWebSearchProviderAvailability(settings.providerAvailability);
       setWebSearchSetupKeys((prev) => ({
         ...settings.apiKeys,
         ...prev,
@@ -1877,7 +1964,7 @@ export const useChatSessionRuntime = (
   );
 
   const handleAgentLimitsSettingsSave = useCallback(
-    async (settings: UserAgentLimitsSettings): Promise<void> => {
+    async (settings: UserAgentLimitsSettings): Promise<boolean> => {
       setAgentLimitsSetupSaving(true);
       setAgentLimitsSetupMessage(null);
 
@@ -1891,6 +1978,7 @@ export const useChatSessionRuntime = (
         });
 
         await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+        return true;
       } catch (error) {
         setAgentLimitsSetupMessage({
           tone: "error",
@@ -1899,6 +1987,7 @@ export const useChatSessionRuntime = (
               ? error.message
               : "Agent loop limits could not be updated.",
         });
+        return false;
       } finally {
         setAgentLimitsSetupSaving(false);
       }
@@ -1911,7 +2000,7 @@ export const useChatSessionRuntime = (
   );
 
   const handleReviewModelSettingsSave = useCallback(
-    async (settings: UserReviewModelSettings): Promise<void> => {
+    async (settings: UserReviewModelSettings): Promise<boolean> => {
       setAgentLimitsSetupSaving(true);
       setAgentLimitsSetupMessage(null);
 
@@ -1925,6 +2014,7 @@ export const useChatSessionRuntime = (
         });
 
         await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+        return true;
       } catch (error) {
         setAgentLimitsSetupMessage({
           tone: "error",
@@ -1933,6 +2023,7 @@ export const useChatSessionRuntime = (
               ? error.message
               : "Review model settings could not be updated.",
         });
+        return false;
       } finally {
         setAgentLimitsSetupSaving(false);
       }
@@ -2678,6 +2769,7 @@ export const useChatSessionRuntime = (
     runtimeError,
     providerSetupProvider,
     providerSetupKey,
+    providerSetupLoading,
     providerSetupSaving,
     providerSetupMessage,
     userVoiceSettings,
@@ -2689,8 +2781,10 @@ export const useChatSessionRuntime = (
     speechInputDeviceSaving,
     speechToTextSetupMessage,
     webSearchActiveProvider,
+    webSearchProviderAvailability,
     webSearchSetupProvider,
     webSearchSetupKey,
+    webSearchSetupLoading,
     webSearchSetupSaving,
     webSearchSetupMessage,
     userDesktopSettings,

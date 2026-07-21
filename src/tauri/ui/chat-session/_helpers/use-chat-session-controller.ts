@@ -964,7 +964,7 @@ export const useChatSessionController = (
   }, [refreshInstructionRegistry, state.catalogOpen, state.settingsSection]);
 
   const handleInstructionManualSave = useCallback(
-    async (input: InstructionMutationInput): Promise<void> => {
+    async (input: InstructionMutationInput): Promise<boolean> => {
       setInstructionRegistrySaving(true);
       setInstructionRegistryMessage(null);
 
@@ -977,6 +977,7 @@ export const useChatSessionController = (
           text: `${result.created ? "Created" : "Updated"} ${result.scope === "user" ? "global" : "workspace"} instruction "${result.name}".`,
         });
         await refreshInstructionRegistry();
+        return true;
       } catch (error) {
         setInstructionRegistryMessage({
           tone: "error",
@@ -985,6 +986,7 @@ export const useChatSessionController = (
             "Instruction file could not be saved.",
           ),
         });
+        return false;
       } finally {
         setInstructionRegistrySaving(false);
       }
@@ -993,7 +995,7 @@ export const useChatSessionController = (
   );
 
   const handleInstructionGenerate = useCallback(
-    async (input: InstructionMutationInput): Promise<void> => {
+    async (input: InstructionMutationInput): Promise<boolean> => {
       setInstructionRegistrySaving(true);
       setInstructionRegistryMessage(null);
 
@@ -1010,6 +1012,7 @@ export const useChatSessionController = (
         if (result.status !== "blocked") {
           await refreshInstructionRegistry();
         }
+        return result.status !== "blocked";
       } catch (error) {
         setInstructionRegistryMessage({
           tone: "error",
@@ -1018,6 +1021,7 @@ export const useChatSessionController = (
             "Instruction generation could not finish.",
           ),
         });
+        return false;
       } finally {
         setInstructionRegistrySaving(false);
       }
@@ -6573,6 +6577,7 @@ export const useChatSessionController = (
       providerSetup: {
         provider: runtime.providerSetupProvider,
         keyValue: runtime.providerSetupKey,
+        loading: runtime.providerSetupLoading,
         saving: runtime.providerSetupSaving,
         message: runtime.providerSetupMessage,
         onProviderChange: runtime.handleProviderSetupProviderChange,
@@ -6607,8 +6612,10 @@ export const useChatSessionController = (
       },
       webSearchSetup: {
         activeProvider: runtime.webSearchActiveProvider,
+        providerAvailability: runtime.webSearchProviderAvailability,
         provider: runtime.webSearchSetupProvider,
         keyValue: runtime.webSearchSetupKey,
+        loading: runtime.webSearchSetupLoading,
         saving: runtime.webSearchSetupSaving,
         message: runtime.webSearchSetupMessage,
         onActiveProviderChange: runtime.handleWebSearchActiveProviderSave,

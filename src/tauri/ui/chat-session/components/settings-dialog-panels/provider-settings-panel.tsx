@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import {
   getUserApiKeyProviderLabel,
   USER_API_KEY_PROVIDER_ORDER,
@@ -18,17 +18,23 @@ export const ProviderSettingsPanel = ({
   setup,
 }: ProviderSettingsPanelProps): JSX.Element => {
   const providerLabel = getUserApiKeyProviderLabel(setup.provider);
+  const [credentialDirty, setCredentialDirty] = useState(false);
 
   return (
     <SettingsCard title="Model provider keys">
       <SettingsProviderChoice
         label="Provider"
+        detail={
+          credentialDirty
+            ? "Save or restore the edited key before switching providers."
+            : undefined
+        }
         value={setup.provider}
         options={USER_API_KEY_PROVIDER_ORDER.map((provider) => ({
           value: provider,
           label: getUserApiKeyProviderLabel(provider),
         }))}
-        disabled={setup.saving}
+        disabled={setup.loading || setup.saving || credentialDirty}
         onChange={setup.onProviderChange}
       />
 
@@ -36,6 +42,7 @@ export const ProviderSettingsPanel = ({
         resetKey={setup.provider}
         providerLabel={providerLabel}
         keyValue={setup.keyValue}
+        loading={setup.loading}
         saving={setup.saving}
         message={setup.message}
         dirtyText="Provider key changes will save automatically"
@@ -45,6 +52,7 @@ export const ProviderSettingsPanel = ({
           title: `Open ${providerLabel} API key settings`,
           onClick: () => setup.onOpenProviderPortal(setup.provider),
         }}
+        onDirtyChange={setCredentialDirty}
         onSave={setup.onSave}
       />
     </SettingsCard>

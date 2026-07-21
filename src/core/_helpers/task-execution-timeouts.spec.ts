@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
   TASK_EXECUTION_IDLE_TIMEOUT_MS,
   createManagedTaskExecutionTimeout,
   resolveTaskExecutionTimeouts,
@@ -11,10 +10,10 @@ describe("task execution timeouts", () => {
     vi.useRealTimers();
   });
 
-  it("resolves the default idle and absolute safety limits", () => {
+  it("defaults to inactivity detection without an absolute runtime limit", () => {
     expect(resolveTaskExecutionTimeouts({})).toEqual({
       idleTimeoutMs: TASK_EXECUTION_IDLE_TIMEOUT_MS,
-      absoluteTimeoutMs: TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
+      absoluteTimeoutMs: undefined,
     });
   });
 
@@ -34,7 +33,16 @@ describe("task execution timeouts", () => {
     });
     expect(resolveTaskExecutionTimeouts({ idleTimeoutMs: null })).toEqual({
       idleTimeoutMs: undefined,
-      absoluteTimeoutMs: TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
+      absoluteTimeoutMs: undefined,
+    });
+    expect(
+      resolveTaskExecutionTimeouts({
+        maxDurationMs: 500,
+        idleTimeoutMs: null,
+      }),
+    ).toEqual({
+      idleTimeoutMs: undefined,
+      absoluteTimeoutMs: 500,
     });
   });
 
@@ -92,6 +100,29 @@ describe("task execution timeouts", () => {
 
     expect(timeout.signal.aborted).toBe(true);
     expect(timeout.signal.reason).not.toContain("without meaningful progress");
+  });
+
+  it("continues beyond sixty minutes while meaningful activity continues", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const timeout = createManagedTaskExecutionTimeout(
+      undefined,
+      resolveTaskExecutionTimeouts({}),
+    );
+
+    for (let interval = 0; interval < 7; interval += 1) {
+      vi.advanceTimersByTime(10 * 60 * 1_000);
+      timeout.markActivity();
+    }
+
+    expect(Date.now()).toBe(70 * 60 * 1_000);
+    expect(timeout.signal.aborted).toBe(false);
+    expect(timeout.getState().absoluteTimeoutMs).toBeNull();
+
+    vi.advanceTimersByTime(TASK_EXECUTION_IDLE_TIMEOUT_MS);
+
+    expect(timeout.signal.aborted).toBe(true);
+    expect(timeout.signal.reason).toContain("without meaningful progress");
   });
 
   it("forwards cancellation from the caller", () => {

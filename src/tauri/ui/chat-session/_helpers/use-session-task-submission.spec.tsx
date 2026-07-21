@@ -484,7 +484,7 @@ describe("useSessionTaskSubmission", () => {
     }
   });
 
-  it("keeps the accumulated timeline when a task ends at the desktop deadline", async () => {
+  it("keeps the accumulated timeline when a task is explicitly cancelled", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     const previousExecution = createMockExecutionFixture("Previous request");
@@ -605,11 +605,7 @@ describe("useSessionTaskSubmission", () => {
       });
 
       await act(async () => {
-        rejectRun?.(
-          new Error(
-            "The shared CLI exceeded the absolute desktop deadline and was stopped.",
-          ),
-        );
+        rejectRun?.(new Error("The task was cancelled by the user."));
         await Promise.resolve();
         await Promise.resolve();
       });

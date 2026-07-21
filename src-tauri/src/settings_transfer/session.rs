@@ -23,8 +23,7 @@ use zeroize::{Zeroize as _, Zeroizing};
 
 use super::{
     categories::{
-        create_category_statuses, snapshot_selected, validate_envelope_categories,
-        zeroize_envelope, MAX_TOTAL_ITEMS, MAX_TOTAL_PLAINTEXT_BYTES,
+        validate_envelope_categories, zeroize_envelope, MAX_TOTAL_ITEMS, MAX_TOTAL_PLAINTEXT_BYTES,
     },
     contract::{
         CategoryAvailabilityState, CategoryEffect, CategorySnapshot,
@@ -41,14 +40,19 @@ use super::{
         parse_resolved_service, random_session_label, select_network_interfaces,
         start_advertisement, start_browser, NetworkSelection, ResolvedRendezvous,
     },
+    encrypted_file::SettingsFileTransferState,
     protocol::{
         accept_noise_responder, connect_noise_initiator, constant_time_eq, create_pairing_context,
         create_random_id, now_millis, perform_sas_initiator, perform_sas_responder, random_array,
         ConnectionPreface, NoiseChannel, WireMessage, MAX_PAYLOAD_CHUNK_BYTES,
     },
+    service::{
+        emit_import_reload_events, prepare_validated_transaction, SensitiveTransferEnvelope,
+        TransferSnapshotSet,
+    },
     transaction::{
-        capture_preview_fingerprint, discard_prepared_transaction, prepare_transaction,
-        IncomingPayloadStage, PreparedTransaction, MAX_WIRE_PAYLOAD_BYTES,
+        capture_preview_fingerprint, discard_prepared_transaction, IncomingPayloadStage,
+        PreparedTransaction, MAX_WIRE_PAYLOAD_BYTES,
     },
 };
 
@@ -114,22 +118,6 @@ struct TransferStateInner {
 #[derive(Clone, Default)]
 pub(crate) struct SettingsTransferState {
     inner: Arc<Mutex<TransferStateInner>>,
-}
-
-struct SnapshotGuard(BTreeMap<SettingsCategoryId, SnapshotAvailability>);
-
-impl Drop for SnapshotGuard {
-    fn drop(&mut self) {
-        super::categories::zeroize_snapshots(&mut self.0);
-    }
-}
-
-struct SensitiveEnvelope(TransferEnvelope);
-
-impl Drop for SensitiveEnvelope {
-    fn drop(&mut self) {
-        zeroize_envelope(&mut self.0);
-    }
 }
 
 struct SessionSuccess {
@@ -1079,23 +1067,6 @@ fn verify_envelope(
     Ok(())
 }
 
-fn local_item_counts(
-    snapshots: &BTreeMap<SettingsCategoryId, SnapshotAvailability>,
-) -> BTreeMap<SettingsCategoryId, u32> {
-    snapshots
-        .iter()
-        .map(|(id, snapshot)| {
-            (
-                *id,
-                match snapshot {
-                    SnapshotAvailability::Available(snapshot) => snapshot.item_count,
-                    SnapshotAvailability::Unavailable(_) => 0,
-                },
-            )
-        })
-        .collect()
-}
-
 pub(crate) async fn inspect_catalog(
     app: AppHandle,
     state: &SettingsTransferState,
@@ -1106,7 +1077,7 @@ pub(crate) async fn inspect_catalog(
     }
     let app_for_snapshot = app.clone();
     let snapshots = tauri::async_runtime::spawn_blocking(move || {
-        snapshot_selected(
+        TransferSnapshotSet::collect(
             &app_for_snapshot,
             &SettingsCategoryId::ALL.into_iter().collect(),
         )
@@ -1118,17 +1089,18 @@ pub(crate) async fn inspect_catalog(
         .filter(|id| id.metadata().default_selected)
         .collect::<BTreeSet<_>>();
     let status = SettingsTransferStatus {
-        categories: create_category_statuses(&selected, &snapshots),
+        categories: snapshots.statuses(&selected),
         network_interfaces: inspect_network_interfaces()?,
         ..SettingsTransferStatus::default()
     };
-    drop(SnapshotGuard(snapshots));
+    drop(snapshots);
     Ok(state.replace_inactive_status(&app, status))
 }
 
 pub(crate) async fn start_send(
     app: AppHandle,
     state: SettingsTransferState,
+    file_state: SettingsFileTransferState,
     request: StartSettingsTransferRequest,
 ) -> Result<SettingsTransferStatus, String> {
     if !state
@@ -1137,6 +1109,7 @@ pub(crate) async fn start_send(
     {
         return Err("TRANSFER_COMMIT_IN_PROGRESS".to_string());
     }
+    let operation = file_state.begin_network_operation()?;
     if request.categories.is_empty() {
         return Err("NO_CATEGORIES_SELECTED".to_string());
     }
@@ -1144,7 +1117,10 @@ pub(crate) async fn start_send(
     let status = SettingsTransferStatus {
         mode: Some(TransferMode::Send),
         phase: TransferPhase::Inspecting,
-        categories: create_category_statuses(&request.categories, &BTreeMap::new()),
+        categories: super::categories::create_category_statuses(
+            &request.categories,
+            &BTreeMap::new(),
+        ),
         network_interfaces: selection.statuses(),
         message: Some("Preparing an encrypted local-network session...".to_string()),
         ..SettingsTransferStatus::default()
@@ -1156,13 +1132,14 @@ pub(crate) async fn start_send(
     let task_state = state.clone();
     let task_app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _operation = operation;
         let selected = request.categories;
         let display_name = sanitize_display_name(&request.display_name);
         let app_for_snapshot = task_app.clone();
         let selected_for_snapshot = selected.clone();
         let result = async {
             let snapshots = tauri::async_runtime::spawn_blocking(move || {
-                snapshot_selected(&app_for_snapshot, &selected_for_snapshot)
+                TransferSnapshotSet::collect(&app_for_snapshot, &selected_for_snapshot)
             })
             .await
             .map_err(|_| "SETTINGS_INSPECTION_FAILED".to_string())??;
@@ -1170,7 +1147,7 @@ pub(crate) async fn start_send(
                 return Err("CANCELLED".to_string());
             }
             task_state.update(&task_app, generation, |status| {
-                status.categories = create_category_statuses(&selected, &snapshots);
+                status.categories = snapshots.statuses(&selected);
             });
             sender_task(
                 SessionTaskContext {
@@ -1183,7 +1160,7 @@ pub(crate) async fn start_send(
                 selected,
                 display_name,
                 selection,
-                SnapshotGuard(snapshots),
+                snapshots,
             )
             .await
         }
@@ -1196,6 +1173,7 @@ pub(crate) async fn start_send(
 pub(crate) async fn start_receive(
     app: AppHandle,
     state: SettingsTransferState,
+    file_state: SettingsFileTransferState,
     request: StartSettingsReceiveRequest,
 ) -> Result<SettingsTransferStatus, String> {
     if !state
@@ -1204,6 +1182,7 @@ pub(crate) async fn start_receive(
     {
         return Err("TRANSFER_COMMIT_IN_PROGRESS".to_string());
     }
+    let operation = file_state.begin_network_operation()?;
     if request.categories.is_empty() {
         return Err("NO_CATEGORIES_SELECTED".to_string());
     }
@@ -1211,7 +1190,10 @@ pub(crate) async fn start_receive(
     let status = SettingsTransferStatus {
         mode: Some(TransferMode::Receive),
         phase: TransferPhase::Inspecting,
-        categories: create_category_statuses(&request.categories, &BTreeMap::new()),
+        categories: super::categories::create_category_statuses(
+            &request.categories,
+            &BTreeMap::new(),
+        ),
         network_interfaces: selection.statuses(),
         message: Some("Inspecting the receiving PC's current settings...".to_string()),
         ..SettingsTransferStatus::default()
@@ -1223,27 +1205,28 @@ pub(crate) async fn start_receive(
     let task_state = state.clone();
     let task_app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _operation = operation;
         let wanted = request.categories;
         let display_name = sanitize_display_name(&request.display_name);
         let app_for_snapshot = task_app.clone();
         let wanted_for_snapshot = wanted.clone();
         let result = async {
             let snapshots = tauri::async_runtime::spawn_blocking(move || {
-                snapshot_selected(&app_for_snapshot, &wanted_for_snapshot)
+                TransferSnapshotSet::collect(&app_for_snapshot, &wanted_for_snapshot)
             })
             .await
             .map_err(|_| "SETTINGS_INSPECTION_FAILED".to_string())??;
             if cancel.is_cancelled() {
                 return Err("CANCELLED".to_string());
             }
-            let counts = local_item_counts(&snapshots);
-            let mut categories = create_category_statuses(&wanted, &snapshots);
+            let counts = snapshots.item_counts();
+            let mut categories = snapshots.statuses(&wanted);
             for category in &mut categories {
                 category.current_item_count = Some(category.item_count);
                 category.item_count = 0;
                 category.byte_count = 0;
             }
-            drop(SnapshotGuard(snapshots));
+            drop(snapshots);
             task_state.update(&task_app, generation, |status| {
                 status.phase = TransferPhase::Discovering;
                 status.categories = categories;
@@ -1548,7 +1531,7 @@ async fn sender_task(
     allowed: BTreeSet<SettingsCategoryId>,
     display_name: String,
     selection: NetworkSelection,
-    mut snapshots: SnapshotGuard,
+    mut snapshots: TransferSnapshotSet,
 ) -> Result<SessionSuccess, String> {
     let SessionTaskContext {
         app,
@@ -1621,7 +1604,7 @@ async fn sender_task(
             }
         }
         categories.sort_by_key(|category| category.id);
-        let envelope = SensitiveEnvelope(TransferEnvelope {
+        let envelope = SensitiveTransferEnvelope(TransferEnvelope {
             protocol_version: PROTOCOL_MAJOR,
             transfer_id: channel.transfer_id()?.to_string(),
             created_at: channel.created_at(),
@@ -2016,49 +1999,6 @@ fn update_receiver_review_status(
     apply_review_to_status(status, review);
 }
 
-fn emit_import_reload_events(app: &AppHandle, categories: &BTreeSet<SettingsCategoryId>) {
-    const USER_SETTINGS_CHANGED_EVENT: &str = "machdoch://user-settings-changed";
-    const DESKTOP_SETTINGS_CHANGED_EVENT: &str = "machdoch://desktop-settings-changed";
-    const APPEARANCE_SETTINGS_CHANGED_EVENT: &str = "machdoch://appearance-settings-changed";
-    let mut kinds = BTreeSet::new();
-    if categories.contains(&SettingsCategoryId::ApiKeys) {
-        kinds.insert("provider-keys");
-        kinds.insert("web-search");
-    }
-    if categories.contains(&SettingsCategoryId::AgentProviderPreferences) {
-        kinds.extend([
-            "web-search",
-            "voice",
-            "speech-to-text",
-            "agent-limits",
-            "review-model",
-            "provider-enrollment",
-        ]);
-    }
-    if categories.contains(&SettingsCategoryId::GlobalMemory) {
-        kinds.insert("memory");
-    }
-    if categories.contains(&SettingsCategoryId::GlobalMcp) {
-        kinds.insert("mcp");
-    }
-    for kind in kinds {
-        let _ = app.emit(
-            USER_SETTINGS_CHANGED_EVENT,
-            serde_json::json!({ "kind": kind, "updatedAt": now_millis() }),
-        );
-    }
-    if categories.contains(&SettingsCategoryId::DesktopAppearance) {
-        if let Ok(settings) = crate::runtime_snapshot::load_user_desktop_settings(app) {
-            let _ = app.emit(DESKTOP_SETTINGS_CHANGED_EVENT, settings);
-        }
-        let _ = app.emit(
-            APPEARANCE_SETTINGS_CHANGED_EVENT,
-            serde_json::json!({ "originWindowLabel": null, "updatedAt": now_millis() }),
-        );
-        let _ = crate::desktop_shell::sync_assistant_bubble_window(app);
-    }
-}
-
 async fn discard_prepared<R: Runtime>(transaction: PreparedTransaction<R>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || discard_prepared_transaction(transaction))
         .await
@@ -2266,7 +2206,7 @@ async fn receiver_task(
     let fingerprint = preview.fingerprint.clone();
     let app_for_prepare = app.clone();
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        prepare_transaction(app_for_prepare, envelope, &fingerprint)
+        prepare_validated_transaction(app_for_prepare, envelope, &fingerprint)
     })
     .await
     .map_err(|_| "TRANSACTION_PREPARE_FAILED".to_string())??;

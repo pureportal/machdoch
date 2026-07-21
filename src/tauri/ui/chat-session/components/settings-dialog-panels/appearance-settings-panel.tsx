@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import type {
@@ -11,10 +11,12 @@ import type {
 import {
   ChoiceButtons,
   SettingsCard,
+  SettingsStatus,
   SettingPanel,
   type ChoiceOption,
 } from "./shared";
 import type { AppearanceSettingsControls } from "./types";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 
 const THEME_OPTIONS = [
   { value: "dark", label: "Dark" },
@@ -65,23 +67,38 @@ export const AppearanceSettingsPanel = ({
 }: {
   setup: AppearanceSettingsControls;
 }): JSX.Element => {
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useSettingsNavigationGuard({
+    dirty: setup.saving,
+    title: "Saving appearance",
+    description: "Wait for the appearance change to finish saving before leaving this section.",
+    canDiscard: false,
+    onDiscard: () => undefined,
+  });
   const savePartial = (
     partial: Partial<AppearanceSettingsControls["settings"]>,
   ): void => {
-    void setup.onSave({
-      ...setup.settings,
-      ...partial,
-      version: 1,
+    setSaveError(null);
+    void Promise.resolve(
+      setup.onSave({
+        ...setup.settings,
+        ...partial,
+        version: 1,
+      }),
+    ).catch((error: unknown) => {
+      console.error("Failed to save appearance settings", error);
+      setSaveError("Appearance settings could not be saved. Try again.");
     });
   };
 
   return (
     <SettingsCard
-      title="Appearance"
-      description="Tune the shell without changing agent behavior."
+      title="Interface"
     >
       <SettingPanel label="Theme">
         <ChoiceButtons
+          label="Theme"
           value={setup.settings.theme}
           options={THEME_OPTIONS}
           disabled={setup.saving}
@@ -91,6 +108,7 @@ export const AppearanceSettingsPanel = ({
 
       <SettingPanel label="Density">
         <ChoiceButtons
+          label="Density"
           value={setup.settings.density}
           options={DENSITY_OPTIONS}
           disabled={setup.saving}
@@ -99,7 +117,7 @@ export const AppearanceSettingsPanel = ({
       </SettingPanel>
 
       <SettingPanel label="Accent">
-        <div className="flex flex-wrap gap-2">
+        <div role="group" aria-label="Accent color" className="flex flex-wrap gap-2">
           {ACCENT_OPTIONS.map((option) => {
             const selected = setup.settings.accent === option.value;
 
@@ -134,6 +152,7 @@ export const AppearanceSettingsPanel = ({
         detail="Controls the launcher material and attention treatment."
       >
         <ChoiceButtons
+          label="Quick Chat bubble style"
           value={setup.settings.quickChatBubbleStyle}
           options={QUICK_CHAT_BUBBLE_STYLE_OPTIONS}
           disabled={setup.saving}
@@ -174,6 +193,13 @@ export const AppearanceSettingsPanel = ({
           </div>
         </div>
       </SettingPanel>
+
+      <p role="status" aria-live="polite" className="text-sm text-slate-400">
+        {setup.saving ? "Saving appearance…" : "Changes apply immediately."}
+      </p>
+      <SettingsStatus
+        message={saveError ? { tone: "error", text: saveError } : null}
+      />
     </SettingsCard>
   );
 };

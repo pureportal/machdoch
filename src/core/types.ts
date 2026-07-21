@@ -632,7 +632,7 @@ export interface TaskExecutionOptions {
   instructionAudience?: InstructionTargetAudience;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
-  /** Absolute execution limit. Use `null` to disable it. */
+  /** Optional absolute execution limit. Omit it or use `null` for no limit. */
   maxDurationMs?: number | null;
   /** Inactivity limit. Use `null` to disable it independently. */
   idleTimeoutMs?: number | null;

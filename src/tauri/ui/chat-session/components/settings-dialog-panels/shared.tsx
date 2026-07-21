@@ -1,8 +1,17 @@
 import { ArrowUpRight, Eye, EyeOff } from "lucide-react";
-import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { cn } from "../../../lib/utils";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { SettingsStatusMessage } from "./types";
 
 export const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 650;
@@ -30,6 +39,7 @@ export interface UseDebouncedAutoSaveParams {
   signature: string;
   delayMs?: number;
   onSave: () => Promise<void> | void;
+  suppressUnmountFlushRef?: RefObject<boolean>;
 }
 
 export const useDebouncedAutoSave = ({
@@ -38,6 +48,7 @@ export const useDebouncedAutoSave = ({
   signature,
   delayMs = SETTINGS_AUTO_SAVE_DEBOUNCE_MS,
   onSave,
+  suppressUnmountFlushRef,
 }: UseDebouncedAutoSaveParams): void => {
   const onSaveRef = useRef(onSave);
   const lastAttemptedSignatureRef = useRef<string | null>(null);
@@ -113,6 +124,7 @@ export const useDebouncedAutoSave = ({
       if (
         latest.dirty &&
         !latest.saving &&
+        !suppressUnmountFlushRef?.current &&
         lastAttemptedSignatureRef.current !== latest.signature
       ) {
         lastAttemptedSignatureRef.current = latest.signature;
@@ -121,7 +133,7 @@ export const useDebouncedAutoSave = ({
         });
       }
     };
-  }, []);
+  }, [suppressUnmountFlushRef]);
 };
 
 export interface SettingsCardProps {
@@ -137,15 +149,25 @@ export const SettingsCard = ({
   children,
   className,
 }: SettingsCardProps): JSX.Element => {
+  const titleId = useId();
+
   return (
-    <section className={cn("grid content-start", className)}>
-      <div className="grid gap-1 border-b border-slate-800/80 pb-4">
-        <h3 className="text-base font-semibold text-slate-100">{title}</h3>
+    <section
+      aria-labelledby={titleId}
+      className={cn(
+        "grid content-start rounded-xl border border-slate-800/80 bg-slate-950/40 shadow-sm shadow-black/10",
+        className,
+      )}
+    >
+      <div className="grid gap-1 border-b border-slate-800/80 bg-slate-900/40 px-4 py-3.5 sm:px-5">
+        <h3 id={titleId} className="text-sm font-semibold text-slate-100">
+          {title}
+        </h3>
         {description ? (
-          <p className="text-sm leading-6 text-slate-400">{description}</p>
+          <p className="text-sm leading-5 text-slate-400">{description}</p>
         ) : null}
       </div>
-      <div className="grid gap-0">{children}</div>
+      <div className="grid gap-3 px-4 pb-4 sm:px-5 sm:pb-5">{children}</div>
     </section>
   );
 };
@@ -169,12 +191,14 @@ export const SettingPanel = ({
     <div
       data-setting-panel
       className={cn(
-        "grid gap-3 border-b border-slate-800/75 py-4 last:border-b-0 md:grid-cols-[12rem_minmax(0,1fr)] md:items-center",
+        "grid min-w-0 gap-3 border-b border-slate-800/75 py-4 last:border-b-0 md:grid-cols-[12rem_minmax(0,1fr)] md:items-center",
         className,
       )}
     >
       <div className="grid gap-1">
-        <p className="text-sm font-medium text-slate-300">{label}</p>
+        <p className="text-sm font-medium text-slate-300">
+          {label}
+        </p>
         {detail ? (
           <p className="text-sm leading-5 text-slate-400">{detail}</p>
         ) : null}
@@ -188,12 +212,14 @@ export interface ChoiceOption<TValue extends string> {
   value: TValue;
   label: string;
   ariaLabel?: string;
+  title?: string;
   disabled?: boolean;
 }
 
 export interface ChoiceButtonsProps<TValue extends string> {
   value: TValue;
   options: ReadonlyArray<ChoiceOption<TValue>>;
+  label?: string;
   disabled?: boolean;
   onChange: (value: TValue) => void;
 }
@@ -201,11 +227,16 @@ export interface ChoiceButtonsProps<TValue extends string> {
 export function ChoiceButtons<TValue extends string>({
   value,
   options,
+  label,
   disabled = false,
   onChange,
 }: ChoiceButtonsProps<TValue>): JSX.Element {
   return (
-    <div className="inline-flex max-w-full flex-nowrap overflow-x-auto rounded-md border border-slate-800 bg-slate-950/90 p-0.5 [scrollbar-width:thin]">
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex max-w-full flex-wrap rounded-lg border border-slate-800 bg-slate-950/90 p-0.5"
+    >
       {options.map((option) => {
         const selected = value === option.value;
 
@@ -215,6 +246,7 @@ export function ChoiceButtons<TValue extends string>({
             type="button"
             variant="outline"
             aria-label={option.ariaLabel}
+            title={option.title}
             aria-pressed={selected}
             disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
@@ -263,6 +295,7 @@ export function SettingsProviderChoice<TValue extends string>({
       <ChoiceButtons
         value={value}
         options={options}
+        label={label}
         disabled={disabled}
         onChange={(nextValue) => {
           void onChange(nextValue);
@@ -283,6 +316,8 @@ export const SettingsStatus = ({
 
   return (
     <p
+      role={message.tone === "error" ? "alert" : "status"}
+      aria-live={message.tone === "error" ? "assertive" : "polite"}
       className={cn(
         "rounded-lg border px-3 py-2 text-sm leading-5",
         message.tone === "error"
@@ -316,6 +351,8 @@ export interface SettingsAutoSaveStatusProps {
   cleanText: string;
   saving: boolean;
   savingText?: string;
+  onSaveNow?: () => Promise<void> | void;
+  saveLabel?: string;
 }
 
 export const SettingsAutoSaveStatus = ({
@@ -323,12 +360,30 @@ export const SettingsAutoSaveStatus = ({
   dirtyText,
   cleanText,
   saving,
-  savingText = "Saving changes...",
+  savingText = "Saving changes…",
+  onSaveNow,
+  saveLabel = "Save now",
 }: SettingsAutoSaveStatusProps): JSX.Element => {
   return (
-    <p className="border-t border-slate-800 pt-4 text-sm leading-6 text-slate-400">
-      {saving ? savingText : dirty ? dirtyText : cleanText}
-    </p>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-4">
+      <p role="status" aria-live="polite" className="text-sm leading-6 text-slate-400">
+        {saving ? savingText : dirty ? dirtyText : cleanText}
+      </p>
+      {dirty && onSaveNow ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={saving}
+          onClick={() => {
+            void onSaveNow();
+          }}
+          className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
+        >
+          {saveLabel}
+        </Button>
+      ) : null}
+    </div>
   );
 };
 
@@ -342,6 +397,7 @@ export interface SettingsCredentialFormProps {
   resetKey: string;
   providerLabel: string;
   keyValue: string;
+  loading?: boolean;
   saving: boolean;
   message: SettingsStatusMessage | null;
   dirtyText: string;
@@ -349,6 +405,7 @@ export interface SettingsCredentialFormProps {
   keyLabel?: string;
   placeholder?: string;
   portalAction?: CredentialPortalAction;
+  onDirtyChange?: (dirty: boolean) => void;
   onSave: (keyValue: string) => Promise<boolean> | boolean;
 }
 
@@ -356,6 +413,7 @@ export const SettingsCredentialForm = ({
   resetKey,
   providerLabel,
   keyValue,
+  loading = false,
   saving,
   message,
   dirtyText,
@@ -363,6 +421,7 @@ export const SettingsCredentialForm = ({
   keyLabel,
   placeholder,
   portalAction,
+  onDirtyChange,
   onSave,
 }: SettingsCredentialFormProps): JSX.Element => {
   const [draftKey, setDraftKey] = useState(keyValue);
@@ -372,6 +431,7 @@ export const SettingsCredentialForm = ({
   const lastResetKeyRef = useRef(resetKey);
   const draftKeyRef = useRef(draftKey);
   const editRevisionRef = useRef(0);
+  const suppressUnmountFlushRef = useRef(false);
   const normalizedDraftKey = draftKey.trim();
   const keyDirty = normalizedDraftKey !== savedKey;
   const validationMessage = getApiKeyValidationMessage(
@@ -379,6 +439,28 @@ export const SettingsCredentialForm = ({
     draftKey,
     keyDirty,
   );
+
+  useSettingsNavigationGuard({
+    dirty: keyDirty || saving,
+    title: saving
+      ? `Saving ${providerLabel} API key`
+      : `Unsaved ${providerLabel} API key`,
+    description: saving
+      ? "Wait for the current credential save to finish before leaving this section."
+      : "The edited credential has not been saved. Discard it to leave this section.",
+    canDiscard: !saving,
+    onDiscard: () => {
+      suppressUnmountFlushRef.current = true;
+      editRevisionRef.current += 1;
+      draftKeyRef.current = savedKey;
+      setDraftKey(savedKey);
+      setKeyVisible(false);
+    },
+  });
+
+  useEffect(() => {
+    onDirtyChange?.(keyDirty);
+  }, [keyDirty, onDirtyChange]);
 
   useEffect(() => {
     if (lastResetKeyRef.current !== resetKey) {
@@ -412,7 +494,7 @@ export const SettingsCredentialForm = ({
   };
 
   const persistDraftKey = async (): Promise<void> => {
-    if (normalizedDraftKey.length === 0) {
+    if (loading || normalizedDraftKey.length === 0) {
       return;
     }
 
@@ -422,7 +504,6 @@ export const SettingsCredentialForm = ({
 
     if (saved) {
       setSavedKey(submittedKey);
-      setLastExternalKey(submittedKey);
 
       if (
         editRevisionRef.current === submittedRevision &&
@@ -436,74 +517,112 @@ export const SettingsCredentialForm = ({
 
   useDebouncedAutoSave({
     dirty: keyDirty && normalizedDraftKey.length > 0 && !validationMessage,
-    saving,
+    saving: saving || loading,
     signature: `${resetKey}:${normalizedDraftKey}`,
     onSave: persistDraftKey,
+    suppressUnmountFlushRef,
   });
 
   return (
     <>
       <SettingPanel label={keyLabel ?? `${providerLabel} API key`}>
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-          <Input
-            type={keyVisible ? "text" : "password"}
-            value={draftKey}
-            onChange={(event) => {
-              updateDraftKey(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void persistDraftKey();
-              }
-            }}
-            placeholder={placeholder ?? `Paste your ${providerLabel} API key`}
-            autoComplete="off"
-            spellCheck={false}
-            aria-invalid={validationMessage ? true : undefined}
-            className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
-          />
-          <div className="flex items-center gap-2 md:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              aria-label={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
-              title={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
-              onClick={() => setKeyVisible((visible) => !visible)}
-              disabled={draftKey.trim().length === 0}
-              className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
-            >
-              {keyVisible ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </Button>
-            {portalAction ? (
+        <div className="grid gap-2">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <Input
+              type={keyVisible ? "text" : "password"}
+              value={draftKey}
+              onChange={(event) => {
+                updateDraftKey(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void persistDraftKey();
+                }
+              }}
+              placeholder={placeholder ?? `Paste your ${providerLabel} API key`}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={keyLabel ?? `${providerLabel} API key`}
+              aria-invalid={validationMessage ? true : undefined}
+              className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+            />
+            <div className="flex items-center gap-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+                title={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+                onClick={() => setKeyVisible((visible) => !visible)}
+                disabled={draftKey.trim().length === 0}
+                className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
+              >
+                {keyVisible ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </Button>
+              {portalAction ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={portalAction.label}
+                  title={portalAction.title ?? portalAction.label}
+                  onClick={() => {
+                    void portalAction.onClick();
+                  }}
+                  className="h-10 w-10 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                >
+                  <ArrowUpRight className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          {keyDirty ? (
+            <div className="flex flex-wrap justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
-                aria-label={portalAction.label}
-                title={portalAction.title ?? portalAction.label}
+                size="sm"
+                disabled={saving || loading}
                 onClick={() => {
-                  void portalAction.onClick();
+                  editRevisionRef.current += 1;
+                  draftKeyRef.current = savedKey;
+                  setDraftKey(savedKey);
+                  setKeyVisible(false);
                 }}
-                className="h-10 w-10 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
               >
-                <ArrowUpRight className="h-4 w-4" />
+                Restore saved key
               </Button>
-            ) : null}
-          </div>
+              <Button
+                type="button"
+                size="sm"
+                disabled={saving || loading || normalizedDraftKey.length === 0}
+                onClick={() => {
+                  void persistDraftKey();
+                }}
+                className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+              >
+                Save key
+              </Button>
+            </div>
+          ) : null}
         </div>
       </SettingPanel>
 
       <SettingsAutoSaveStatus
-        dirty={keyDirty && !validationMessage}
-        dirtyText={dirtyText}
+        dirty={keyDirty}
+        dirtyText={
+          validationMessage ? "Fix the API key before saving" : dirtyText
+        }
         cleanText={cleanText}
-        saving={saving}
+        saving={saving || loading}
+        savingText={loading ? "Loading saved key…" : undefined}
       />
 
       <SettingsStatus message={validationMessage ?? message} />

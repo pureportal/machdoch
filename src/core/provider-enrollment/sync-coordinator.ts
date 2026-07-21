@@ -8,7 +8,10 @@ import {
   getAgentCliProviders,
   resolveAgentCliProviderBinary,
 } from "../_helpers/agent-cli-providers.js";
-import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
+import {
+  inspectCooperativeFileLock,
+  withCooperativeFileLock,
+} from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeFileAtomically, writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import type {
   AgentCliProvider,
@@ -50,6 +53,7 @@ const STATUS_FILE_NAME = "sync-status.json";
 const COVERAGE_FILE_NAME = "coverage-ledger.json";
 const WORKSPACE_REGISTRY_FILE_NAME = "workspace-roots.json";
 const RECONCILE_LOCK_FILE_NAME = "reconcile.state";
+const RECONCILE_LOCK_TIMEOUT_MS = 30_000;
 
 interface ProviderTargetPaths {
   instructionPath: string;
@@ -71,8 +75,19 @@ export const getProviderSyncOwnershipPath = (): string => {
   return join(getProviderEnrollmentStateDirectory(), OWNERSHIP_FILE_NAME);
 };
 
+const normalizeWorkspaceRootIdentity = (workspaceRoot: string): string => {
+  const resolvedRoot = resolve(workspaceRoot);
+  if (process.platform !== "win32") return resolvedRoot;
+  if (resolvedRoot.startsWith("\\\\?\\")) return resolvedRoot;
+  if (resolvedRoot.startsWith("\\\\")) {
+    return `\\\\?\\UNC\\${resolvedRoot.slice(2)}`;
+  }
+  return `\\\\?\\${resolvedRoot}`;
+};
+
 const getWorkspaceStateSuffix = (workspaceRoot: string): string => {
-  const normalized = resolve(workspaceRoot).replaceAll("\\", "/");
+  const normalized = normalizeWorkspaceRootIdentity(workspaceRoot)
+    .replaceAll("\\", "/");
   return sha256(process.platform === "win32" ? normalized.toLocaleLowerCase() : normalized)
     .slice(0, 16);
 };
@@ -99,45 +114,57 @@ const deduplicateWorkspaceRoots = (roots: readonly string[]): string[] => {
   for (const root of roots) {
     const resolvedRoot = resolve(root);
     const key = process.platform === "win32"
-      ? resolvedRoot.toLocaleLowerCase()
+      ? normalizeWorkspaceRootIdentity(resolvedRoot).toLocaleLowerCase()
       : resolvedRoot;
     if (!unique.has(key)) unique.set(key, resolvedRoot);
   }
   return [...unique.values()].sort((left, right) => left.localeCompare(right));
 };
 
-export const loadRegisteredProviderSyncWorkspaces = async (
-  fallbackWorkspaceRoot?: string,
-): Promise<string[]> => {
-  const fallback = fallbackWorkspaceRoot ? [resolve(fallbackWorkspaceRoot)] : [];
+const loadStoredProviderSyncWorkspaceRoots = async (): Promise<string[]> => {
   try {
     const value = JSON.parse(
       await readFile(getProviderSyncWorkspaceRegistryPath(), "utf8"),
     ) as { workspaceRoots?: unknown };
-    const roots = Array.isArray(value.workspaceRoots)
-      ? value.workspaceRoots.filter((root): root is string => typeof root === "string")
+    return Array.isArray(value.workspaceRoots)
+      ? value.workspaceRoots.filter(
+          (root): root is string => typeof root === "string",
+        )
       : [];
-    return deduplicateWorkspaceRoots([...roots, ...fallback])
-      .filter((root) => existsSync(root))
   } catch {
-    return fallback.filter((root) => existsSync(root));
+    return [];
   }
 };
 
-const registerProviderSyncWorkspace = async (workspaceRoot: string): Promise<void> => {
+export const loadRegisteredProviderSyncWorkspaces = async (
+  fallbackWorkspaceRoot?: string,
+): Promise<string[]> => {
+  const fallback = fallbackWorkspaceRoot ? [resolve(fallbackWorkspaceRoot)] : [];
+  const roots = await loadStoredProviderSyncWorkspaceRoots();
+  return deduplicateWorkspaceRoots([...roots, ...fallback])
+    .filter((root) => existsSync(root));
+};
+
+export const registerProviderSyncWorkspace = async (
+  workspaceRoot: string,
+): Promise<void> => {
   const path = getProviderSyncWorkspaceRegistryPath();
   await mkdir(dirname(path), { recursive: true });
   await withCooperativeFileLock(path, async () => {
-    const existingRoots = await loadRegisteredProviderSyncWorkspaces();
+    const storedRoots = await loadStoredProviderSyncWorkspaceRoots();
+    const existingRoots = deduplicateWorkspaceRoots(storedRoots)
+      .filter((root) => existsSync(root));
     const roots = deduplicateWorkspaceRoots([...existingRoots, workspaceRoot])
       .filter((root) => existsSync(root))
     if (
-      roots.length === existingRoots.length &&
-      roots.every((root, index) => root === existingRoots[index])
+      roots.length === storedRoots.length &&
+      roots.every((root, index) => root === storedRoots[index])
     ) {
       return;
     }
     await writeJsonAtomically(path, { schemaVersion: 1, workspaceRoots: roots });
+  }, {
+    ownerDescription: "provider-sync workspace registry update",
   });
 };
 
@@ -555,6 +582,9 @@ export const reconcileProviderSync = async (
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }, {
+    timeoutMs: RECONCILE_LOCK_TIMEOUT_MS,
+    ownerDescription: `provider-sync reconcile for ${workspaceRoot}`,
   });
 };
 
@@ -699,12 +729,19 @@ export const createProviderSyncPlan = async (
 export const doctorProviderSync = async (
   workspaceRoot: string,
 ): Promise<Record<string, unknown>> => {
-  const [plan, status, ownership, coverageRaw, env] = await Promise.all([
+  const lockTarget = join(
+    getProviderEnrollmentStateDirectory(),
+    RECONCILE_LOCK_FILE_NAME,
+  );
+  const { loadProviderSyncDaemonDiagnostic } = await import("./sync-daemon.js");
+  const [plan, status, ownership, coverageRaw, env, reconcileLock, daemonDiagnostic] = await Promise.all([
     createProviderSyncPlan(workspaceRoot),
     loadProviderSyncStatus(workspaceRoot),
     loadOwnershipManifest(getProviderSyncOwnershipPath()),
     readFile(getProviderCoverageLedgerPath(workspaceRoot), "utf8").catch(() => ""),
     loadWorkspaceEnv(workspaceRoot),
+    inspectCooperativeFileLock(lockTarget),
+    loadProviderSyncDaemonDiagnostic(),
   ]);
   const probes = await Promise.all(
     getAgentCliProviders().map(async (provider) => {
@@ -738,7 +775,10 @@ export const doctorProviderSync = async (
       status.targets.every((target) => target.state !== "degraded") &&
       uncovered.length === 0 &&
       missingTargets.length === 0 &&
-      driftedTargets.length === 0,
+      driftedTargets.length === 0 &&
+      reconcileLock.state !== "orphaned" &&
+      reconcileLock.state !== "stale" &&
+      daemonDiagnostic?.outcome !== "error",
     status,
     probes,
     ownership: {
@@ -753,6 +793,10 @@ export const doctorProviderSync = async (
       total: coverage.entries?.length ?? 0,
       uncovered: uncovered.map((entry) => entry.entityId),
     },
+    locks: {
+      reconcile: reconcileLock,
+    },
+    daemonDiagnostic: daemonDiagnostic ?? null,
     plan,
   };
 };

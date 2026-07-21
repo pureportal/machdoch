@@ -14,6 +14,7 @@ import {
   doctorProviderSync,
   loadProviderSyncStatus,
   reconcileProviderSync,
+  registerProviderSyncWorkspace,
   uninstallProviderSyncTargets,
 } from "../../core/provider-enrollment/sync-coordinator.js";
 import {
@@ -100,6 +101,14 @@ export const ensureAutomaticProviderSync = async (
     !(await isProviderSyncAutostartInstalled())
   ) {
     await installProviderSyncAutostart(workspaceRoot);
+  }
+  if (config.persistentSync.watch && await getProviderSyncDaemonPid()) {
+    // The daemon owns reconciliation while it is available. Asking it to
+    // refresh avoids making every foreground Machdoch command contend for the
+    // same global provider-enrollment lock.
+    await registerProviderSyncWorkspace(workspaceRoot);
+    await requestProviderSyncRefresh();
+    return;
   }
   await reconcileProviderSync(workspaceRoot);
   if (config.persistentSync.watch) {

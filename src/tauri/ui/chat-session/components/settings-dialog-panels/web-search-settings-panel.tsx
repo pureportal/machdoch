@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import {
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type WebSearchProvider,
@@ -18,6 +18,13 @@ export interface WebSearchSettingsPanelProps {
 export const WebSearchSettingsPanel = ({
   setup,
 }: WebSearchSettingsPanelProps): JSX.Element => {
+  const [credentialDirty, setCredentialDirty] = useState(false);
+  const providerConfigured = new Map(
+    setup.providerAvailability.map((availability) => [
+      availability.provider,
+      availability.configured,
+    ]),
+  );
   const selectedProviderLabel = getWebSearchProviderLabel(setup.provider);
   const webSearchProviderOptions: ReadonlyArray<{
     value: WebSearchProvider;
@@ -26,6 +33,11 @@ export const WebSearchSettingsPanel = ({
     (provider) => ({
       value: provider,
       label: getWebSearchProviderLabel(provider),
+      disabled: provider !== "none" && !providerConfigured.get(provider),
+      title:
+        provider !== "none" && !providerConfigured.get(provider)
+          ? "Add this provider's API key before selecting it."
+          : undefined,
     }),
   );
 
@@ -36,18 +48,23 @@ export const WebSearchSettingsPanel = ({
         detail="New tasks use this provider when web search is enabled."
         value={setup.activeProvider}
         options={webSearchProviderOptions}
-        disabled={setup.saving}
+        disabled={setup.loading || setup.saving}
         onChange={setup.onActiveProviderChange}
       />
 
       <SettingsProviderChoice
-        label="API keys"
+        label="Manage API key"
+        detail={
+          credentialDirty
+            ? "Save or restore the edited key before switching providers."
+            : undefined
+        }
         value={setup.provider}
         options={USER_WEB_SEARCH_PROVIDER_ORDER.map((provider) => ({
           value: provider,
           label: getWebSearchProviderLabel(provider),
         }))}
-        disabled={setup.saving}
+        disabled={setup.loading || setup.saving || credentialDirty}
         onChange={setup.onProviderChange}
       />
 
@@ -55,10 +72,12 @@ export const WebSearchSettingsPanel = ({
         resetKey={setup.provider}
         providerLabel={selectedProviderLabel}
         keyValue={setup.keyValue}
+        loading={setup.loading}
         saving={setup.saving}
         message={setup.message}
         dirtyText="Web-search key changes will save automatically"
         cleanText="Web-search key is up to date"
+        onDirtyChange={setCredentialDirty}
         onSave={setup.onSave}
       />
     </SettingsCard>

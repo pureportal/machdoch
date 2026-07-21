@@ -46,6 +46,7 @@ export type SettingsSection =
   | "memory"
   | "desktop"
   | "transfer";
+export type SettingsSectionGroup = "Setup" | "Agent" | "Capabilities" | "App" | "Data";
 export type SessionScopeFilter = "all" | "open" | "archived";
 export type SessionConcreteStatusFilter = "unread" | SessionOverviewStatus;
 export type SessionStatusFilter = "any" | SessionConcreteStatusFilter;
@@ -70,18 +71,87 @@ export const normalizeSessionStatusFilterSelection = (
 export const SETTINGS_SECTIONS: ReadonlyArray<{
   id: SettingsSection;
   label: string;
+  group: SettingsSectionGroup;
+  description: string;
+  keywords: readonly string[];
 }> = [
-  { id: "providers", label: "Providers" },
-  { id: "workspace", label: "Workspace" },
-  { id: "instructions", label: "Instructions" },
-  { id: "web-search", label: "Web search" },
-  { id: "mcp", label: "MCP" },
-  { id: "agent", label: "Agent" },
-  { id: "appearance", label: "Appearance" },
-  { id: "voice", label: "Voice" },
-  { id: "memory", label: "Memory" },
-  { id: "desktop", label: "Desktop" },
-  { id: "transfer", label: "Transfer" },
+  {
+    id: "providers",
+    label: "Providers",
+    group: "Setup",
+    description: "Connect the model providers Machdoch can use.",
+    keywords: ["api", "keys", "openai", "anthropic", "google", "media"],
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+    group: "Setup",
+    description: "Set mode and reasoning defaults for the current workspace.",
+    keywords: ["folder", "mode", "reasoning", "defaults"],
+  },
+  {
+    id: "agent",
+    label: "Agent limits",
+    group: "Agent",
+    description: "Control execution limits and the model used for review passes.",
+    keywords: ["turns", "iterations", "review", "model", "infinite"],
+  },
+  {
+    id: "instructions",
+    label: "Instructions",
+    group: "Agent",
+    description: "Create and manage reusable workspace and global guidance.",
+    keywords: ["rules", "prompts", "files", "guidance"],
+  },
+  {
+    id: "memory",
+    label: "Memory",
+    group: "Agent",
+    description: "Control global memory and review the facts it contains.",
+    keywords: ["facts", "global", "remember"],
+  },
+  {
+    id: "web-search",
+    label: "Web search",
+    group: "Capabilities",
+    description: "Choose a search provider and manage its credentials.",
+    keywords: ["perplexity", "tavily", "serper", "api", "internet"],
+  },
+  {
+    id: "voice",
+    label: "Voice",
+    group: "Capabilities",
+    description: "Configure speech input, spoken replies, and audio devices.",
+    keywords: ["microphone", "speech", "audio", "read aloud"],
+  },
+  {
+    id: "mcp",
+    label: "MCP servers",
+    group: "Capabilities",
+    description: "Add and maintain Model Context Protocol integrations.",
+    keywords: ["tools", "servers", "oauth", "integrations", "presets"],
+  },
+  {
+    id: "appearance",
+    label: "Appearance",
+    group: "App",
+    description: "Personalize theme, density, accent, and launcher style.",
+    keywords: ["theme", "dark", "light", "density", "color", "bubble"],
+  },
+  {
+    id: "desktop",
+    label: "Desktop & startup",
+    group: "App",
+    description: "Manage startup, assistant surfaces, retention, and local data.",
+    keywords: ["autostart", "tray", "shortcut", "cache", "archive", "quick chat"],
+  },
+  {
+    id: "transfer",
+    label: "Settings transfer",
+    group: "Data",
+    description: "Move selected global settings securely between computers.",
+    keywords: ["import", "export", "encrypted", "file", "send", "receive"],
+  },
 ];
 
 export const RUN_MODE_ORDER = [

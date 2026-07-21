@@ -4,7 +4,6 @@ import type {
   AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
-import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import {
   AnthropicMessagesAdapter,
   createAnthropicOutputConfig,
@@ -164,9 +163,7 @@ describe("Anthropic Messages conformance", () => {
         },
       ],
     });
-    expect(calls[0]?.options).toMatchObject({
-      timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
-    });
+    expect(calls[0]?.options).not.toHaveProperty("timeout");
     expect(calls[1]?.body).toMatchObject({
       messages: [
         { role: "user", content: "Read README.md" },

@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.35.0"
+version = "0.36.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -13,9 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
 base64 = "0.22"
 async-stream = "0.3"
 axum = "0.8"
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 enigo = "0.6.1"
 getrandom = "0.3"

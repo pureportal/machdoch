@@ -117,6 +117,37 @@ describe("useChatSessionRuntime", () => {
     });
   });
 
+  it("exposes provider-key loading and load failures to settings", async () => {
+    let rejectProviderKeys!: (error: Error) => void;
+    const providerKeys = new Promise<runtime.UserProviderApiKeys>((_resolve, reject) => {
+      rejectProviderKeys = reject;
+    });
+    vi.spyOn(runtime, "loadUserProviderApiKeys").mockReturnValue(providerKeys);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { result } = renderHook(() =>
+      useChatSessionRuntime({
+        activeSessionProvider: "openai",
+        activeSessionWorkspace: "C:\\Project",
+        catalogOpen: true,
+      }),
+    );
+
+    expect(result.current.providerSetupLoading).toBe(true);
+    await act(async () => {
+      rejectProviderKeys(new Error("Credential store unavailable"));
+      await providerKeys.catch(() => undefined);
+    });
+
+    await waitFor(() => {
+      expect(result.current.providerSetupLoading).toBe(false);
+    });
+    expect(result.current.providerSetupMessage).toEqual({
+      tone: "error",
+      text: "Provider keys could not be loaded: Credential store unavailable",
+    });
+  });
+
   it("does not overwrite an MCP draft edited while config documents are loading", async () => {
     let resolveUserDocument!: (document: McpConfigDocument) => void;
     let resolveWorkspaceDocument!: (document: McpConfigDocument) => void;

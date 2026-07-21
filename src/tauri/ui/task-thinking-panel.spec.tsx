@@ -8,11 +8,12 @@ import {
   vi,
 } from "vitest";
 import {
-  TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
   TASK_EXECUTION_IDLE_TIMEOUT_MS,
 } from "../../core/_helpers/task-execution-timeouts.js";
 import { TaskThinkingPanel } from "./task-thinking-panel";
 import type { TaskThinkingTrace } from "./task-thinking.model";
+
+const CONFIGURED_TASK_TIMEOUT_MS = 5 * 60 * 1_000;
 
 const createRunningTrace = (
   startedAt: number,
@@ -75,7 +76,7 @@ describe("TaskThinkingPanel", () => {
             startedAt,
             lastActivityAt: startedAt,
             idleTimeoutMs: TASK_EXECUTION_IDLE_TIMEOUT_MS,
-            absoluteTimeoutMs: TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
+            absoluteTimeoutMs: null,
           },
         })}
       />,
@@ -97,7 +98,7 @@ describe("TaskThinkingPanel", () => {
             startedAt,
             lastActivityAt: now,
             idleTimeoutMs: TASK_EXECUTION_IDLE_TIMEOUT_MS,
-            absoluteTimeoutMs: TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
+            absoluteTimeoutMs: null,
           },
           modelStream: {
             kind: "assistant",
@@ -124,7 +125,7 @@ describe("TaskThinkingPanel", () => {
             startedAt,
             lastActivityAt: startedAt,
             idleTimeoutMs: TASK_EXECUTION_IDLE_TIMEOUT_MS,
-            absoluteTimeoutMs: TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
+            absoluteTimeoutMs: null,
           },
         })}
       />,
@@ -139,7 +140,7 @@ describe("TaskThinkingPanel", () => {
 
   it("shows the absolute execution deadline when it is closer", () => {
     const now = Date.now();
-    const startedAt = now - TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS * 0.95;
+    const startedAt = now - CONFIGURED_TASK_TIMEOUT_MS * 0.95;
 
     render(
       <TaskThinkingPanel
@@ -149,7 +150,7 @@ describe("TaskThinkingPanel", () => {
             startedAt,
             lastActivityAt: now,
             idleTimeoutMs: TASK_EXECUTION_IDLE_TIMEOUT_MS,
-            absoluteTimeoutMs: TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
+            absoluteTimeoutMs: CONFIGURED_TASK_TIMEOUT_MS,
           },
         })}
       />,

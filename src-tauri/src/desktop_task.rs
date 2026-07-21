@@ -62,7 +62,6 @@ pub fn cleanup_stale_task_context_files() {
 }
 
 const DESKTOP_TASK_IDLE_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
-const DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS: u64 = 60 * 60 * 1_000;
 const AUXILIARY_CLI_COMMAND_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;

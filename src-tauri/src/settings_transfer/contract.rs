@@ -307,6 +307,60 @@ pub(crate) struct ConnectSettingsTransferRequest {
     pub(crate) manual_code: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ExportEncryptedSettingsFileRequest {
+    pub(crate) categories: BTreeSet<SettingsCategoryId>,
+    pub(crate) destination_path: String,
+    pub(crate) passphrase: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EncryptedSettingsFileExportResult {
+    pub(crate) categories: Vec<SettingsCategoryId>,
+    pub(crate) item_count: u32,
+    pub(crate) file_bytes: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct InspectEncryptedSettingsFileRequest {
+    pub(crate) operation_id: String,
+    pub(crate) categories: BTreeSet<SettingsCategoryId>,
+    pub(crate) source_path: String,
+    pub(crate) passphrase: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EncryptedSettingsFileImportReview {
+    pub(crate) token: Option<String>,
+    pub(crate) file_created_at: u64,
+    pub(crate) review_expires_at: Option<u64>,
+    pub(crate) effective_categories: Vec<SettingsCategoryId>,
+    pub(crate) categories: Vec<CategoryStatus>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CommitEncryptedSettingsFileImportRequest {
+    pub(crate) token: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CancelEncryptedSettingsFileImportRequest {
+    pub(crate) operation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EncryptedSettingsFileImportResult {
+    pub(crate) categories: Vec<SettingsCategoryId>,
+    pub(crate) recovery_cleanup_pending: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FileSnapshotEntry {

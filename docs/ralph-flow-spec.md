@@ -121,6 +121,8 @@ Every executable block can configure:
 - temperature
 - retry policy
 
+An omitted or `null` timeout does not impose an absolute runtime deadline. Normal inactivity detection, explicit cancellation, and execution failures still apply.
+
 The block inspector should show the most used settings first and hide advanced settings behind "Show more".
 
 Unavailable selected provider/model is a hard run blocker. The UI should offer an AI action to replace unavailable models in the flow.

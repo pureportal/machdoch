@@ -14,6 +14,10 @@ The implementation lives in `src-tauri/src/settings_transfer/`, with its typed U
 Section 11 is retained as a record of product-policy decisions that may be revisited; the shipped
 protocol uses the closed catalog and exact behavior specified in the preceding sections.
 
+Passphrase-encrypted file export/import reuses this catalog, validation, and journaled commit path;
+its container and Settings UX are specified in
+[`encrypted-settings-file-transfer.md`](./encrypted-settings-file-transfer.md).
+
 ## 1. Recommended approach
 
 Build settings sharing as a temporary, one-receiver session owned by the Tauri/Rust backend:

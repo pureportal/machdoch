@@ -4513,7 +4513,7 @@ describe("ChatSession component", () => {
     fireEvent.click(
       await screen.findByRole(
         "button",
-        { name: /^Desktop$/i },
+        { name: /^Desktop & startup$/i },
         { timeout: SLOW_UI_TEST_TIMEOUT_MS },
       ),
     );
@@ -4570,7 +4570,7 @@ describe("ChatSession component", () => {
     fireEvent.click(
       await screen.findByRole(
         "button",
-        { name: /^Desktop$/i },
+        { name: /^Desktop & startup$/i },
         { timeout: SLOW_UI_TEST_TIMEOUT_MS },
       ),
     );
@@ -4615,13 +4615,13 @@ describe("ChatSession component", () => {
     fireEvent.click(
       await screen.findByRole(
         "button",
-        { name: /^Desktop$/i },
+        { name: /^Desktop & startup$/i },
         { timeout: SLOW_UI_TEST_TIMEOUT_MS },
       ),
     );
 
     const hideDurationPanel = screen
-      .getByText(/^Hide duration$/i)
+      .getByText(/^Temporary hide$/i)
       .closest("[data-setting-panel]");
     const aiContextPanel = screen
       .getByText(/^AI context cap$/i)
@@ -4631,9 +4631,6 @@ describe("ChatSession component", () => {
       .closest("[data-setting-panel]");
     const archivedCleanupPanel = screen
       .getByText(/^Archived cleanup$/i)
-      .closest("[data-setting-panel]");
-    const shortcutPanel = screen
-      .getByText(/^Global shortcut$/i)
       .closest("[data-setting-panel]");
     const silencePanel = screen
       .getByText(/^Silence timeout$/i)
@@ -4646,7 +4643,6 @@ describe("ChatSession component", () => {
     expect(aiContextPanel).not.toBeNull();
     expect(inactiveArchivePanel).not.toBeNull();
     expect(archivedCleanupPanel).not.toBeNull();
-    expect(shortcutPanel).not.toBeNull();
     expect(silencePanel).not.toBeNull();
     expect(quickChatPanel).not.toBeNull();
 
@@ -4667,10 +4663,6 @@ describe("ChatSession component", () => {
       { target: { value: "999" } },
     );
     fireEvent.change(
-      within(shortcutPanel as HTMLElement).getByRole("textbox"),
-      { target: { value: "   " } },
-    );
-    fireEvent.change(
       within(silencePanel as HTMLElement).getByRole("spinbutton"),
       { target: { value: "0.1" } },
     );
@@ -4686,7 +4678,6 @@ describe("ChatSession component", () => {
           aiContextMaxMessages: 200,
           inactiveSessionArchiveDays: 365,
           archivedSessionRetentionDays: 365,
-          quickVoiceShortcut: "CommandOrControl+Alt+V",
           quickVoiceSilenceSeconds: 0.8,
           quickVoiceMaxMessages: 200,
         }),

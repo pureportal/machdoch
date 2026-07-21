@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getProviderCoverageLedgerPath,
+  getProviderSyncStatusPath,
+  getProviderSyncWorkspaceRegistryPath,
+  loadRegisteredProviderSyncWorkspaces,
   reconcileProviderSync,
+  registerProviderSyncWorkspace,
   uninstallProviderSyncTargets,
 } from "./sync-coordinator.js";
 
@@ -24,6 +28,45 @@ afterEach(async () => {
 });
 
 describe("provider sync coordinator", () => {
+  it.runIf(process.platform === "win32")(
+    "deduplicates normal and extended-length Windows workspace paths",
+    async () => {
+      const root = await createRoot();
+      const workspaceRoot = join(root, "workspace");
+      const userConfigRoot = join(root, "user-config");
+      await Promise.all([
+        mkdir(workspaceRoot, { recursive: true }),
+        mkdir(userConfigRoot, { recursive: true }),
+      ]);
+      vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+      const extendedWorkspaceRoot = `\\\\?\\${workspaceRoot}`;
+      await mkdir(
+        join(userConfigRoot, "provider-enrollment"),
+        { recursive: true },
+      );
+      await writeFile(
+        getProviderSyncWorkspaceRegistryPath(),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          workspaceRoots: [extendedWorkspaceRoot, workspaceRoot],
+        }, null, 2)}\n`,
+        "utf8",
+      );
+
+      await expect(
+        loadRegisteredProviderSyncWorkspaces(workspaceRoot),
+      ).resolves.toEqual([extendedWorkspaceRoot]);
+      expect(getProviderSyncStatusPath(workspaceRoot)).toBe(
+        getProviderSyncStatusPath(extendedWorkspaceRoot),
+      );
+      await registerProviderSyncWorkspace(workspaceRoot);
+      const compacted = JSON.parse(
+        await readFile(getProviderSyncWorkspaceRegistryPath(), "utf8"),
+      ) as { workspaceRoots: string[] };
+      expect(compacted.workspaceRoots).toEqual([extendedWorkspaceRoot]);
+    },
+  );
+
   it("reconciles user and workspace instruction targets and uninstalls only owned output", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");

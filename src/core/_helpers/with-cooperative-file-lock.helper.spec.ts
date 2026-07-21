@@ -10,7 +10,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { withCooperativeFileLock } from "./with-cooperative-file-lock.helper.ts";
+import {
+  inspectCooperativeFileLock,
+  withCooperativeFileLock,
+} from "./with-cooperative-file-lock.helper.ts";
 
 describe("withCooperativeFileLock", () => {
   it("serializes operations targeting the same file", async () => {
@@ -38,7 +41,7 @@ describe("withCooperativeFileLock", () => {
   });
 
   it.runIf(process.platform === "win32")(
-    "uses the canonical directory as the Windows winner election under contention",
+    "atomically elects a populated Windows candidate under contention",
     async () => {
       const directory = await mkdtemp(join(tmpdir(), "machdoch-win-file-lock-"));
       const destination = join(directory, "config.json");
@@ -105,6 +108,75 @@ describe("withCooperativeFileLock", () => {
     }
   });
 
+  it("reports an active owner on timeout without deleting its lock", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-active-"));
+    const destination = join(directory, "config.json");
+    const lockPath = `${destination}.machdoch.lock`;
+    let markAcquired: () => void = () => undefined;
+    let releaseHolder: () => void = () => undefined;
+    const acquired = new Promise<void>((resolve) => {
+      markAcquired = resolve;
+    });
+    const hold = new Promise<void>((resolve) => {
+      releaseHolder = resolve;
+    });
+
+    const holder = withCooperativeFileLock(destination, async () => {
+      markAcquired();
+      await hold;
+    }, {
+      ownerDescription: "active lock test holder",
+    });
+
+    try {
+      await acquired;
+      await expect(inspectCooperativeFileLock(destination)).resolves.toMatchObject({
+        state: "active",
+        owner: {
+          pid: process.pid,
+          processAlive: true,
+          description: "active lock test holder",
+        },
+      });
+      await expect(withCooperativeFileLock(destination, async () => undefined, {
+        timeoutMs: 60,
+        staleLockAgeMs: 1,
+        ownerDescription: "timing out contender",
+      })).rejects.toThrow(
+        new RegExp(`actively owned by PID ${process.pid}.*active lock test holder`, "u"),
+      );
+      await expect(stat(lockPath)).resolves.toBeDefined();
+    } finally {
+      releaseHolder();
+      await holder;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("explains when a recent orphan is not old enough to reclaim", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-orphan-"));
+    const destination = join(directory, "config.json");
+    const lockPath = `${destination}.machdoch.lock`;
+    const ownerDirectory = join(lockPath, "owner.dead-owner");
+
+    try {
+      await mkdir(ownerDirectory, { recursive: true });
+      await writeFile(
+        join(ownerDirectory, "owner.json"),
+        JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
+        "utf8",
+      );
+
+      await expect(withCooperativeFileLock(destination, async () => undefined, {
+        timeoutMs: 60,
+        staleLockAgeMs: 5_000,
+      })).rejects.toThrow(/Owner PID 2000000000 is no longer running.*safe recovery/iu);
+      await expect(stat(lockPath)).resolves.toBeDefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("serializes two contenders recovering the same stale owner", async () => {
     const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-stale-"));
     const destination = join(directory, "config.json");
@@ -162,6 +234,30 @@ describe("withCooperativeFileLock", () => {
       );
       const staleTime = new Date(Date.now() - 180_000);
       await utimes(ownerPath, staleTime, staleTime);
+
+      await withCooperativeFileLock(destination, async () => undefined);
+
+      await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers a stale token directory with truncated owner metadata", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-truncated-"));
+    const destination = join(directory, "config.json");
+    const lockPath = `${destination}.machdoch.lock`;
+    const ownerDirectory = join(lockPath, "owner.truncated-owner");
+    const ownerPath = join(ownerDirectory, "owner.json");
+
+    try {
+      await mkdir(ownerDirectory, { recursive: true });
+      await writeFile(ownerPath, "", "utf8");
+      const staleTime = new Date(Date.now() - 180_000);
+      await Promise.all([
+        utimes(ownerPath, staleTime, staleTime),
+        utimes(lockPath, staleTime, staleTime),
+      ]);
 
       await withCooperativeFileLock(destination, async () => undefined);
 

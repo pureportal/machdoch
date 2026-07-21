@@ -98,12 +98,14 @@ describe("runRalphFlow", () => {
         expect.objectContaining({ blockId: "success" }),
       ],
     });
-    expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toEqual(
+    const defaultExecutionOptions = vi.mocked(executeTask).mock.calls[0]?.[3];
+
+    expect(defaultExecutionOptions).toEqual(
       expect.objectContaining({
         runId: "ralph-run-1",
-        maxDurationMs: 3_600_000,
       }),
     );
+    expect(defaultExecutionOptions).not.toHaveProperty("maxDurationMs");
   });
 
   it("passes positive prompt timeout settings into task execution options", async () => {

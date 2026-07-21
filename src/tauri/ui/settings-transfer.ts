@@ -113,6 +113,38 @@ export interface StartSettingsTransferRequest {
   interfaceIds: string[];
 }
 
+export interface ExportEncryptedSettingsFileRequest {
+  categories: SettingsCategoryId[];
+  destinationPath: string;
+  passphrase: string;
+}
+
+export interface EncryptedSettingsFileExportResult {
+  categories: SettingsCategoryId[];
+  itemCount: number;
+  fileBytes: number;
+}
+
+export interface InspectEncryptedSettingsFileRequest {
+  operationId: string;
+  categories: SettingsCategoryId[];
+  sourcePath: string;
+  passphrase: string;
+}
+
+export interface EncryptedSettingsFileImportReview {
+  token: string | null;
+  fileCreatedAt: number;
+  reviewExpiresAt: number | null;
+  effectiveCategories: SettingsCategoryId[];
+  categories: SettingsTransferCategory[];
+}
+
+export interface EncryptedSettingsFileImportResult {
+  categories: SettingsCategoryId[];
+  recoveryCleanupPending: boolean;
+}
+
 export const isActiveTransferPhase = (
   phase: SettingsTransferPhase,
 ): boolean =>
@@ -153,6 +185,35 @@ export const approveSettingsTransfer = async (): Promise<void> =>
 
 export const stopSettingsTransfer = async (): Promise<SettingsTransferStatus> =>
   invoke<SettingsTransferStatus>("stop_settings_transfer");
+
+export const exportEncryptedSettingsFile = async (
+  request: ExportEncryptedSettingsFileRequest,
+): Promise<EncryptedSettingsFileExportResult> =>
+  invoke<EncryptedSettingsFileExportResult>("export_encrypted_settings_file", {
+    request,
+  });
+
+export const inspectEncryptedSettingsFile = async (
+  request: InspectEncryptedSettingsFileRequest,
+): Promise<EncryptedSettingsFileImportReview> =>
+  invoke<EncryptedSettingsFileImportReview>("inspect_encrypted_settings_file", {
+    request,
+  });
+
+export const commitEncryptedSettingsFileImport = async (
+  token: string,
+): Promise<EncryptedSettingsFileImportResult> =>
+  invoke<EncryptedSettingsFileImportResult>(
+    "commit_encrypted_settings_file_import",
+    { request: { token } },
+  );
+
+export const cancelEncryptedSettingsFileImport = async (
+  operationId: string,
+): Promise<boolean> =>
+  invoke<boolean>("cancel_encrypted_settings_file_import", {
+    request: { operationId },
+  });
 
 export const subscribeToSettingsTransfer = async (
   onChange: (status: SettingsTransferStatus) => void,

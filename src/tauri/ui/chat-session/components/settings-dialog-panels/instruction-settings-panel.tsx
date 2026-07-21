@@ -36,6 +36,7 @@ import {
   SettingsCard,
   SettingsStatus,
 } from "./shared";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { InstructionSettingsControls } from "./types";
 
 export interface InstructionSettingsPanelProps {
@@ -620,6 +621,11 @@ export const InstructionSettingsPanel = ({
   const [draft, setDraft] = useState<InstructionDraft>(() =>
     createEmptyDraft(workspaceAvailable, "idle", "manual"),
   );
+  const [baselineDraft, setBaselineDraft] = useState<InstructionDraft>(() =>
+    createEmptyDraft(workspaceAvailable, "idle", "manual"),
+  );
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] =
+    useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [scopeFilter, setScopeFilter] =
@@ -678,6 +684,32 @@ export const InstructionSettingsPanel = ({
     !draft.prompt.trim() ||
     scopeBlocked;
   const editingActive = draft.workflow !== "idle";
+  const draftDirty =
+    editingActive &&
+    (draft.workflow === "copy" ||
+      JSON.stringify(draft) !== JSON.stringify(baselineDraft));
+  const editorActionDisabled = setup.saving || draftDirty;
+
+  useSettingsNavigationGuard({
+    dirty: draftDirty || setup.saving,
+    title: setup.saving
+      ? "Saving instruction"
+      : "Discard instruction draft?",
+    description: setup.saving
+      ? "Wait for the current instruction operation to finish before leaving."
+      : "The instruction editor contains changes that have not been saved.",
+    canDiscard: !setup.saving,
+    onDiscard: () => {
+      const emptyDraft = createEmptyDraft(
+        workspaceAvailable,
+        "idle",
+        "manual",
+      );
+      setDraft(emptyDraft);
+      setBaselineDraft(emptyDraft);
+      setDiscardConfirmationOpen(false);
+    },
+  });
 
   useEffect(() => {
     if (!workspaceAvailable && draft.scope === "workspace") {
@@ -685,31 +717,43 @@ export const InstructionSettingsPanel = ({
         ...current,
         scope: "user",
       }));
+      setBaselineDraft((current) => ({
+        ...current,
+        scope: "user",
+      }));
     }
   }, [draft.scope, workspaceAvailable]);
 
   useEffect(() => {
-    if (sortedInstructions.length === 0) {
+    if (filteredInstructions.length === 0) {
       setSelectedKey(null);
       return;
     }
 
     if (
       !selectedKey ||
-      !sortedInstructions.some((instruction) => getInstructionKey(instruction) === selectedKey)
+      !filteredInstructions.some(
+        (instruction) => getInstructionKey(instruction) === selectedKey,
+      )
     ) {
-      setSelectedKey(getInstructionKey(sortedInstructions[0]));
+      setSelectedKey(getInstructionKey(filteredInstructions[0]));
     }
-  }, [selectedKey, sortedInstructions]);
+  }, [filteredInstructions, selectedKey]);
 
   const startManualCreate = (): void => {
     setAdvancedOpen(false);
-    setDraft(createEmptyDraft(workspaceAvailable, "create", "manual"));
+    setDiscardConfirmationOpen(false);
+    const nextDraft = createEmptyDraft(workspaceAvailable, "create", "manual");
+    setDraft(nextDraft);
+    setBaselineDraft(nextDraft);
   };
 
   const startAiGenerate = (): void => {
     setAdvancedOpen(false);
-    setDraft(createEmptyDraft(workspaceAvailable, "generate", "ai"));
+    setDiscardConfirmationOpen(false);
+    const nextDraft = createEmptyDraft(workspaceAvailable, "generate", "ai");
+    setDraft(nextDraft);
+    setBaselineDraft(nextDraft);
   };
 
   const loadInstructionForEditing = (
@@ -723,7 +767,7 @@ export const InstructionSettingsPanel = ({
 
     setSelectedKey(getInstructionKey(instruction));
     setAdvancedOpen(false);
-    setDraft({
+    const nextDraft: InstructionDraft = {
       editorMode: "manual",
       workflow: "edit",
       name: instruction.name,
@@ -738,7 +782,10 @@ export const InstructionSettingsPanel = ({
         instruction.priority === undefined ? "" : String(instruction.priority),
       prompt: instruction.body,
       maxRounds: "2",
-    });
+    };
+    setDraft(nextDraft);
+    setBaselineDraft(nextDraft);
+    setDiscardConfirmationOpen(false);
   };
 
   const copyInstruction = (
@@ -747,7 +794,7 @@ export const InstructionSettingsPanel = ({
   ): void => {
     setSelectedKey(getInstructionKey(instruction));
     setAdvancedOpen(false);
-    setDraft({
+    const nextDraft: InstructionDraft = {
       editorMode: "manual",
       workflow: "copy",
       name: instruction.name,
@@ -762,7 +809,10 @@ export const InstructionSettingsPanel = ({
         instruction.priority === undefined ? "" : String(instruction.priority),
       prompt: instruction.body,
       maxRounds: "2",
-    });
+    };
+    setDraft(nextDraft);
+    setBaselineDraft(nextDraft);
+    setDiscardConfirmationOpen(false);
   };
 
   const generateFromInstruction = (
@@ -777,7 +827,7 @@ export const InstructionSettingsPanel = ({
 
     setSelectedKey(getInstructionKey(instruction));
     setAdvancedOpen(false);
-    setDraft({
+    const nextDraft: InstructionDraft = {
       editorMode: "ai",
       workflow: "generate",
       name: instruction.name,
@@ -792,12 +842,18 @@ export const InstructionSettingsPanel = ({
         instruction.priority === undefined ? "" : String(instruction.priority),
       prompt: "",
       maxRounds: "2",
-    });
+    };
+    setDraft(nextDraft);
+    setBaselineDraft(nextDraft);
+    setDiscardConfirmationOpen(false);
   };
 
   const clearEditor = (): void => {
     setAdvancedOpen(false);
-    setDraft(createEmptyDraft(workspaceAvailable, "idle", "manual"));
+    setDiscardConfirmationOpen(false);
+    const nextDraft = createEmptyDraft(workspaceAvailable, "idle", "manual");
+    setDraft(nextDraft);
+    setBaselineDraft(nextDraft);
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
@@ -809,12 +865,18 @@ export const InstructionSettingsPanel = ({
 
     const input = createMutationInput(draft);
 
-    if (draft.editorMode === "manual") {
-      void setup.onManualSave(input);
-      return;
-    }
+    const saveDraft = async (): Promise<void> => {
+      const saved =
+        draft.editorMode === "manual"
+          ? await setup.onManualSave(input)
+          : await setup.onGenerate(input);
 
-    void setup.onGenerate(input);
+      if (saved !== false) {
+        clearEditor();
+      }
+    };
+
+    void saveDraft();
   };
 
   return (
@@ -834,7 +896,7 @@ export const InstructionSettingsPanel = ({
               <Button
                 type="button"
                 variant="outline"
-                disabled={setup.saving}
+                disabled={editorActionDisabled}
                 onClick={startManualCreate}
                 className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
               >
@@ -844,7 +906,7 @@ export const InstructionSettingsPanel = ({
               <Button
                 type="button"
                 variant="outline"
-                disabled={setup.saving}
+                disabled={editorActionDisabled}
                 onClick={startAiGenerate}
                 className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
               >
@@ -883,6 +945,7 @@ export const InstructionSettingsPanel = ({
               <div className="grid gap-1">
                 <p className="text-xs font-medium text-slate-400">Scope</p>
                 <ChoiceButtons
+                  label="Instruction scope filter"
                   value={scopeFilter}
                   options={SCOPE_FILTER_OPTIONS}
                   disabled={setup.loading}
@@ -892,6 +955,7 @@ export const InstructionSettingsPanel = ({
               <div className="grid gap-1">
                 <p className="text-xs font-medium text-slate-400">Activation</p>
                 <ChoiceButtons
+                  label="Instruction activation filter"
                   value={modeFilter}
                   options={MODE_FILTER_OPTIONS}
                   disabled={setup.loading}
@@ -917,6 +981,7 @@ export const InstructionSettingsPanel = ({
                     <button
                       key={getInstructionKey(instruction)}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => setSelectedKey(getInstructionKey(instruction))}
                       className={cn(
                         "grid gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
@@ -985,7 +1050,7 @@ export const InstructionSettingsPanel = ({
                           <Button
                             type="button"
                             variant="outline"
-                            disabled={setup.saving || !workspaceAvailable}
+                            disabled={editorActionDisabled || !workspaceAvailable}
                             onClick={() => copyInstruction(selectedInstruction, "workspace")}
                             className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
                           >
@@ -995,7 +1060,7 @@ export const InstructionSettingsPanel = ({
                           <Button
                             type="button"
                             variant="outline"
-                            disabled={setup.saving}
+                            disabled={editorActionDisabled}
                             onClick={() => copyInstruction(selectedInstruction, "user")}
                             className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
                           >
@@ -1007,7 +1072,7 @@ export const InstructionSettingsPanel = ({
                         <Button
                           type="button"
                           variant="outline"
-                          disabled={setup.saving}
+                          disabled={editorActionDisabled}
                           onClick={() => loadInstructionForEditing(selectedInstruction)}
                           className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
                         >
@@ -1018,7 +1083,7 @@ export const InstructionSettingsPanel = ({
                       <Button
                         type="button"
                         variant="outline"
-                        disabled={setup.saving}
+                        disabled={editorActionDisabled}
                         onClick={() => generateFromInstruction(selectedInstruction)}
                         className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
                       >
@@ -1110,6 +1175,7 @@ export const InstructionSettingsPanel = ({
                 </p>
               </div>
               <ChoiceButtons
+                label="Applicability test audience"
                 value={tester.audience}
                 options={TEST_AUDIENCE_OPTIONS}
                 onChange={(audience) =>
@@ -1119,6 +1185,7 @@ export const InstructionSettingsPanel = ({
             </div>
             <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
               <Input
+                aria-label="Task to test"
                 value={tester.task}
                 onChange={(event) =>
                   setTester((current) => ({
@@ -1130,6 +1197,7 @@ export const InstructionSettingsPanel = ({
                 placeholder='Task text, e.g. "review src/App.tsx"'
               />
               <Input
+                aria-label="File path to test"
                 value={tester.path}
                 onChange={(event) =>
                   setTester((current) => ({
@@ -1187,15 +1255,54 @@ export const InstructionSettingsPanel = ({
                 type="button"
                 variant="outline"
                 disabled={setup.saving}
-                onClick={clearEditor}
+                onClick={() => {
+                  if (draftDirty) {
+                    setDiscardConfirmationOpen(true);
+                    return;
+                  }
+
+                  clearEditor();
+                }}
                 className="h-8 rounded-lg border-slate-800 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900"
               >
-                Close editor
+                {draftDirty ? "Discard draft" : "Close editor"}
               </Button>
             </div>
 
+            {discardConfirmationOpen ? (
+              <div
+                role="alert"
+                className="flex flex-col gap-3 border-b border-amber-500/20 bg-amber-500/5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p className="text-sm leading-5 text-amber-200">
+                  Discard all changes in this instruction draft?
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDiscardConfirmationOpen(false)}
+                    className="text-slate-300 hover:bg-slate-800"
+                  >
+                    Keep editing
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={clearEditor}
+                  >
+                    Discard draft
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             <SettingPanel label="Name">
               <Input
+                autoFocus
+                aria-label="Instruction name"
                 value={draft.name}
                 onChange={(event) => {
                   setDraft((current) => ({
@@ -1218,6 +1325,7 @@ export const InstructionSettingsPanel = ({
 
             <SettingPanel label="Scope">
               <ChoiceButtons
+                label="Instruction scope"
                 value={draft.scope}
                 options={INSTRUCTION_SCOPE_OPTIONS.map((option) => ({
                   ...option,
@@ -1241,6 +1349,11 @@ export const InstructionSettingsPanel = ({
               }
             >
               <Textarea
+                aria-label={
+                  draft.editorMode === "manual"
+                    ? "Instruction body"
+                    : "Instruction generation request"
+                }
                 value={draft.prompt}
                 rows={draft.editorMode === "manual" ? 8 : 5}
                 onChange={(event) => {
@@ -1273,6 +1386,7 @@ export const InstructionSettingsPanel = ({
               <>
                 <SettingPanel label="Activation">
                   <ChoiceButtons
+                    label="Instruction activation"
                     value={draft.activationMode}
                     options={INSTRUCTION_MODE_OPTIONS}
                     disabled={setup.saving}
@@ -1287,6 +1401,7 @@ export const InstructionSettingsPanel = ({
 
                 <SettingPanel label="Audience">
                   <ChoiceButtons
+                    label="Instruction audience"
                     value={draft.audience}
                     options={INSTRUCTION_AUDIENCE_OPTIONS}
                     disabled={setup.saving}
@@ -1352,6 +1467,7 @@ export const InstructionSettingsPanel = ({
 
                 <SettingPanel label="Priority">
                   <Input
+                    aria-label="Instruction priority"
                     type="number"
                     value={draft.priority}
                     onChange={(event) => {
@@ -1368,6 +1484,7 @@ export const InstructionSettingsPanel = ({
                 {draft.editorMode === "ai" ? (
                   <SettingPanel label="AI revision rounds">
                     <Input
+                      aria-label="AI revision rounds"
                       type="number"
                       min={1}
                       max={4}

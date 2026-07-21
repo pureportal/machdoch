@@ -21,7 +21,6 @@ import type {
 } from "../../types.js";
 import type { ReasoningMode } from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
-import { TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS } from "../task-execution-timeouts.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
@@ -236,7 +235,6 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
         }
 
         return await this.client.chat.completions.create(request, {
-          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
         });
       },
@@ -293,7 +291,6 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
         }
 
         return await this.client.chat.completions.create(request, {
-          timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
         });
       },
@@ -364,7 +361,6 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
 
     try {
       const stream = await this.client.chat.completions.create(streamRequest, {
-        timeout: TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS,
         ...(requestSignal ? { signal: requestSignal } : {}),
       });
 

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { Dialog } from "../../components/ui/dialog";
 import { SettingsDialog, type SettingsDialogProps } from "./settings-dialog";
 
@@ -21,9 +27,11 @@ const createSettingsDialogProps = (
 ): SettingsDialogProps => ({
   settingsSection: "providers",
   onSettingsSectionChange: vi.fn(),
+  onClose: vi.fn(),
   providerSetup: {
     provider: "openai",
     keyValue: "sk-old",
+    loading: false,
     saving: false,
     message: null,
     onProviderChange: vi.fn(),
@@ -70,8 +78,14 @@ const createSettingsDialogProps = (
   },
   webSearchSetup: {
     activeProvider: "none",
+    providerAvailability: [
+      { provider: "perplexity", configured: true },
+      { provider: "tavily", configured: false },
+      { provider: "serper", configured: false },
+    ],
     provider: "perplexity",
     keyValue: "pplx-old",
+    loading: false,
     saving: false,
     message: null,
     onActiveProviderChange: vi.fn(),
@@ -237,6 +251,121 @@ const renderSettingsDialog = (props: SettingsDialogProps): void => {
 };
 
 describe("SettingsDialog", () => {
+  it("exposes every section through grouped, searchable navigation", () => {
+    const onSettingsSectionChange = vi.fn();
+    renderSettingsDialog(
+      createSettingsDialogProps({ onSettingsSectionChange }),
+    );
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    const providers = within(navigation).getByRole("button", {
+      name: "Providers",
+    });
+    const workspace = within(navigation).getByRole("button", {
+      name: "Workspace",
+    });
+
+    expect(providers.getAttribute("aria-current")).toBe("page");
+    fireEvent.keyDown(providers, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(workspace);
+
+    fireEvent.change(screen.getByLabelText("Find settings"), {
+      target: { value: "encrypted file" },
+    });
+    expect(
+      within(navigation).getByRole("button", { name: "Settings transfer" }),
+    ).toBeDefined();
+    expect(
+      within(navigation).queryByRole("button", { name: "Providers" }),
+    ).toBeNull();
+
+    const mobileSection = screen.getByLabelText("Settings section");
+    expect(within(mobileSection).getAllByRole("option")).toHaveLength(11);
+  });
+
+  it("guards section changes while a credential draft is unsaved", async () => {
+    const onSettingsSectionChange = vi.fn();
+    const onSave = vi.fn(async () => true);
+    renderSettingsDialog(
+      createSettingsDialogProps({
+        onSettingsSectionChange,
+        providerSetup: {
+          ...createSettingsDialogProps().providerSetup,
+          loading: true,
+          onSave,
+        },
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText("OpenAI API key"), {
+      target: { value: "sk-edited" },
+    });
+    const workspaceButton = screen.getByRole("button", { name: "Workspace" });
+    workspaceButton.focus();
+    fireEvent.click(workspaceButton);
+
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Unsaved OpenAI API key",
+      }),
+    ).toBeDefined();
+    expect(onSettingsSectionChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(workspaceButton);
+    });
+
+    fireEvent.click(workspaceButton);
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() => {
+      expect(onSettingsSectionChange).toHaveBeenCalledWith("workspace");
+      expect(document.activeElement).toBe(workspaceButton);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dialog open while an immediate setting is still saving", () => {
+    const onClose = vi.fn();
+    renderSettingsDialog(
+      createSettingsDialogProps({
+        settingsSection: "workspace",
+        onClose,
+        workspaceSetup: {
+          ...createSettingsDialogProps().workspaceSetup,
+          saving: true,
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Saving workspace defaults",
+      }),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Discard changes" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps unavailable web-search providers disabled until a key exists", () => {
+    renderSettingsDialog(
+      createSettingsDialogProps({ settingsSection: "web-search" }),
+    );
+
+    expect(
+      screen.getAllByRole("button", { name: "Perplexity" })[0],
+    ).toHaveProperty("disabled", false);
+    expect(screen.getAllByRole("button", { name: "Tavily" })[0]).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
   it("offers credentials for remote media providers", () => {
     const onProviderChange = vi.fn();
     const props = createSettingsDialogProps({
@@ -361,6 +490,34 @@ describe("SettingsDialog", () => {
     });
   });
 
+  it("surfaces an appearance persistence failure", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onSave = vi.fn().mockRejectedValue(new Error("store unavailable"));
+    renderSettingsDialog(
+      createSettingsDialogProps({
+        settingsSection: "appearance",
+        appearanceSetup: {
+          ...createSettingsDialogProps().appearanceSetup,
+          onSave,
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Light" }));
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(
+      alerts.some((alert) =>
+        alert.textContent?.includes("Appearance settings could not be saved"),
+      ),
+    ).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Failed to save appearance settings",
+      expect.any(Error),
+    );
+    consoleError.mockRestore();
+  });
+
   it("saves workspace default mode choices", () => {
     const onDefaultModeChange = vi.fn();
     const props = createSettingsDialogProps({
@@ -398,8 +555,8 @@ describe("SettingsDialog", () => {
     expect(onReasoningModeChange).toHaveBeenCalledWith("xhigh");
   });
 
-  it("loads and saves instruction files from settings", () => {
-    const onManualSave = vi.fn();
+  it("loads and saves instruction files from settings", async () => {
+    const onManualSave = vi.fn(async () => true);
     const props = createSettingsDialogProps({
       settingsSection: "instructions",
       instructionsSetup: {
@@ -433,6 +590,112 @@ describe("SettingsDialog", () => {
         keywords: ["review"],
       }),
     );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Save instruction" }),
+      ).toBeNull();
+    });
+  });
+
+  it("keeps an instruction editor open when persistence fails", async () => {
+    const onManualSave = vi.fn(async () => false);
+    renderSettingsDialog(
+      createSettingsDialogProps({
+        settingsSection: "instructions",
+        instructionsSetup: {
+          ...createSettingsDialogProps().instructionsSetup,
+          onManualSave,
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit selected" }));
+    fireEvent.change(screen.getByLabelText("Instruction body"), {
+      target: { value: "Keep this draft after a failed write." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save instruction" }));
+
+    await waitFor(() => {
+      expect(onManualSave).toHaveBeenCalled();
+    });
+    expect(screen.getByLabelText("Instruction body")).toHaveProperty(
+      "value",
+      "Keep this draft after a failed write.",
+    );
+  });
+
+  it("keeps the visible instruction selection aligned with filters", async () => {
+    renderSettingsDialog(
+      createSettingsDialogProps({
+        settingsSection: "instructions",
+        instructionsSetup: {
+          ...createSettingsDialogProps().instructionsSetup,
+          instructions: [
+            ...createSettingsDialogProps().instructionsSetup.instructions,
+            {
+              kind: "conditional",
+              path: ".machdoch/instructions/testing.instructions.md",
+              name: "Testing Rules",
+              body: "Add focused regression coverage.",
+              applyToPatterns: ["src/**/*.spec.ts"],
+              excludePatterns: [],
+              keywords: ["test"],
+              mode: "auto",
+              scope: "workspace",
+            },
+          ],
+        },
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Search instruction files"), {
+      target: { value: "Testing Rules" },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("button", { name: /Testing Rules/u })
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+    expect(screen.getByText("Add focused regression coverage.")).toBeTruthy();
+    expect(
+      screen.queryByText("Prefer strict TypeScript and targeted tests."),
+    ).toBeNull();
+  });
+
+  it("focuses a newly opened instruction editor and guards its save", async () => {
+    const onClose = vi.fn();
+    const props = createSettingsDialogProps({
+      settingsSection: "instructions",
+      onClose,
+    });
+    const { rerender } = render(
+      <Dialog open>
+        <SettingsDialog {...props} />
+      </Dialog>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Instruction name"),
+    );
+
+    rerender(
+      <Dialog open>
+        <SettingsDialog
+          {...props}
+          instructionsSetup={{ ...props.instructionsSetup, saving: true }}
+        />
+      </Dialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+
+    expect(
+      screen.getByRole("alertdialog", { name: "Saving instruction" }),
+    ).toBeDefined();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("saves a dedicated review model", async () => {
@@ -450,16 +713,42 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dedicated" }));
     fireEvent.click(screen.getByRole("button", { name: "Google" }));
     fireEvent.change(screen.getByLabelText("Review LLM"), {
-      target: { value: "gemini-2.5-flash-lite" },
+      target: { value: "gemini-3.5-flash" },
     });
 
     await waitFor(() => {
       expect(onReviewModelSave).toHaveBeenCalledWith({
         mode: "dedicated",
         provider: "google",
-        model: "gemini-2.5-flash-lite",
+        model: "gemini-3.5-flash",
       });
     });
+  });
+
+  it("does not overwrite an agent-limit failure with a later review save", async () => {
+    const onSave = vi.fn(async () => false);
+    const onReviewModelSave = vi.fn(async () => true);
+    renderSettingsDialog(
+      createSettingsDialogProps({
+        settingsSection: "agent",
+        agentLimitsSetup: {
+          ...createSettingsDialogProps().agentLimitsSetup,
+          onSave,
+          onReviewModelSave,
+        },
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Executor turn limit"), {
+      target: { value: "80" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Dedicated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save now" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalled();
+    });
+    expect(onReviewModelSave).not.toHaveBeenCalled();
   });
 
   it("stages MCP presets and edits servers without showing JSON", () => {

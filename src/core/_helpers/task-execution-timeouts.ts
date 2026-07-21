@@ -4,11 +4,6 @@ import type {
 } from "../types.js";
 
 export const TASK_EXECUTION_IDLE_TIMEOUT_MS = 20 * 60 * 1_000;
-export const TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS = 60 * 60 * 1_000;
-// Provider SDK timeouts are a request ceiling. The managed signal below owns
-// inactivity detection, so an SDK must not abort an active stream first.
-export const TASK_EXECUTION_PROVIDER_REQUEST_TIMEOUT_MS =
-  TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS;
 export const TASK_EXECUTION_TIMEOUT_REASON_PREFIX =
   "Execution stopped after exceeding the safety timeout";
 
@@ -34,8 +29,8 @@ const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
 
 const normalizePositiveDuration = (
   value: number | undefined,
-  fallback: number,
-): number => {
+  fallback?: number,
+): number | undefined => {
   if (value === undefined || !Number.isFinite(value) || value <= 0) {
     return fallback;
   }
@@ -49,10 +44,7 @@ export const resolveTaskExecutionTimeouts = (
   const absoluteTimeoutMs =
     options.maxDurationMs === null
       ? undefined
-      : normalizePositiveDuration(
-          options.maxDurationMs,
-          TASK_EXECUTION_ABSOLUTE_TIMEOUT_MS,
-        );
+      : normalizePositiveDuration(options.maxDurationMs);
   const idleTimeoutMs =
     options.idleTimeoutMs === null ||
     (options.maxDurationMs === null && options.idleTimeoutMs === undefined)

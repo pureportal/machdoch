@@ -70,6 +70,9 @@ export const disableInvokeMock = (): void => {
 };
 
 export const openMock = vi.fn().mockResolvedValue("/mocked/tauri/path");
+export const saveMock = vi
+  .fn()
+  .mockResolvedValue("/mocked/tauri/settings.machdoch-settings");
 export const openUrlMock = vi.fn().mockResolvedValue(undefined);
 export const convertFileSrcMock = vi.fn(
   (filePath: string, protocol = "asset") =>
@@ -184,5 +187,6 @@ export const primaryMonitor = vi.fn(
 export const isTauri = isTauriMock;
 export const listen = listenMock;
 export const open = openMock;
+export const save = saveMock;
 export const openUrl = openUrlMock;
 export const convertFileSrc = convertFileSrcMock;

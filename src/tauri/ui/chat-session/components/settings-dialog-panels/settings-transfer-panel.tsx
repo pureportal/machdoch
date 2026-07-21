@@ -14,6 +14,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   useCallback,
   useEffect,
@@ -28,25 +29,57 @@ import { Textarea } from "../../../components/ui/textarea";
 import { cn } from "../../../lib/utils";
 import {
   approveSettingsTransfer,
+  cancelEncryptedSettingsFileImport,
+  commitEncryptedSettingsFileImport,
   confirmSettingsTransferPairing,
   connectDiscoveredSettingsTransfer,
   connectManualSettingsTransfer,
+  exportEncryptedSettingsFile,
   getSettingsTransferCatalog,
+  inspectEncryptedSettingsFile,
   isActiveTransferPhase,
   startSettingsReceive,
   startSettingsTransfer,
   stopSettingsTransfer,
   subscribeToSettingsTransfer,
   type CategoryEffect,
+  type EncryptedSettingsFileExportResult,
+  type EncryptedSettingsFileImportResult,
+  type EncryptedSettingsFileImportReview,
   type SettingsCategoryId,
   type SettingsTransferCategory,
   type SettingsTransferMode,
   type SettingsTransferStatus,
 } from "../../../settings-transfer";
 import { SettingsCard } from "./shared";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 
-type ConfigurationMode = "landing" | SettingsTransferMode;
+type EncryptedFileMode = "fileExport" | "fileImport";
+type ConfigurationMode = "landing" | SettingsTransferMode | EncryptedFileMode;
 const MAX_MANUAL_CODE_LENGTH = 2_200;
+const FILE_PASSPHRASE_MAX_BYTES = 1_024;
+
+const isSelectableCategory = (
+  category: SettingsTransferCategory,
+): boolean =>
+  category.availability !== "unavailable" &&
+  category.availability !== "unsupported";
+
+const utf8ByteLength = (value: string): number => {
+  let bytes = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    bytes +=
+      codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+  }
+  return bytes;
+};
+
+const createFileInspectionId = (): string => {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+};
 
 const formatBytes = (bytes: number): string => {
   if (bytes <= 0) return "0 B";
@@ -97,6 +130,25 @@ const effectPresentation: Record<
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+const fileImportFailureMessage = (error: unknown): string => {
+  const message = toErrorMessage(error);
+  if (message.includes("COMMIT_AND_ROLLBACK_FAILED")) {
+    return "The import failed and Machdoch could not verify that every original setting was restored. Restart Machdoch now so startup recovery can finish before using or changing settings.";
+  }
+  if (
+    message.includes("COMMIT_ROLLED_BACK_CLEANUP_PENDING") ||
+    message.includes("PREPARED_TRANSACTION_CLEANUP_PENDING") ||
+    message.includes("still requires recovery") ||
+    message.includes("import task stopped unexpectedly")
+  ) {
+    return "The import was not accepted, but its private recovery cleanup is still pending. Restart Machdoch before retrying the import.";
+  }
+  if (message.includes("RECEIVER_SETTINGS_CHANGED")) {
+    return "Settings changed after the review. Inspect the encrypted file again before retrying.";
+  }
+  return `${message} Inspect the file again before retrying.`;
+};
+
 const CategorySelection = ({
   categories,
   selected,
@@ -119,7 +171,7 @@ const CategorySelection = ({
         <label
           key={category.id}
           className={cn(
-            "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-xl border border-slate-800 bg-slate-950/65 px-4 py-3 transition-colors hover:border-slate-700",
+            "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 transition-colors hover:border-slate-700",
             checked && "border-sky-500/30 bg-sky-500/5",
             (disabled || unavailable) && "cursor-not-allowed opacity-65",
           )}
@@ -244,7 +296,7 @@ const ReviewCategories = ({
       return (
         <div
           key={category.id}
-          className="grid gap-2 rounded-xl border border-slate-800 bg-slate-950/65 px-4 py-3"
+          className="grid gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-medium text-slate-100">
@@ -324,7 +376,7 @@ const PairingCategorySummary = ({
       {groups.map((group) => (
         <div
           key={group.label}
-          className="grid content-start gap-2 rounded-xl border border-slate-800 bg-slate-950/65 px-3 py-3"
+          className="grid content-start gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-3"
         >
           <p className="text-xs font-medium text-slate-300">
             {group.label} ({group.categories.length})
@@ -398,6 +450,532 @@ const TransferCategoryProgress = ({
   );
 };
 
+type EncryptedFileResult =
+  | { mode: "fileExport"; value: EncryptedSettingsFileExportResult }
+  | { mode: "fileImport"; value: EncryptedSettingsFileImportResult };
+
+const EncryptedSettingsFilePanel = ({
+  mode,
+  catalog,
+  onBack,
+  onDone,
+  onBusyChange,
+}: {
+  mode: EncryptedFileMode;
+  catalog: SettingsTransferStatus;
+  onBack: () => void;
+  onDone: () => Promise<void>;
+  onBusyChange: (busy: boolean) => void;
+}): JSX.Element => {
+  const [selectedCategories, setSelectedCategories] = useState<
+    Set<SettingsCategoryId>
+  >(
+    () =>
+      new Set(
+        catalog.categories
+          .filter(
+            (category) =>
+              category.selected && isSelectableCategory(category),
+          )
+          .map((category) => category.id),
+      ),
+  );
+  const [filePath, setFilePath] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [passphraseConfirmation, setPassphraseConfirmation] = useState("");
+  const [review, setReview] =
+    useState<EncryptedSettingsFileImportReview | null>(null);
+  const [result, setResult] = useState<EncryptedFileResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const operationInFlight = useRef(false);
+  const inspectionOperationId = useRef<string | null>(null);
+
+  useEffect(() => {
+    onBusyChange(busy);
+
+    return () => {
+      onBusyChange(false);
+    };
+  }, [busy, onBusyChange]);
+
+  useEffect(() => {
+    const selectable = new Set(
+      catalog.categories
+        .filter(isSelectableCategory)
+        .map((category) => category.id),
+    );
+    setSelectedCategories((current) => {
+      const next = new Set([...current].filter((id) => selectable.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [catalog.categories]);
+
+  const cancelCurrentInspection = useCallback(async (): Promise<void> => {
+    const operationId = inspectionOperationId.current;
+    if (!operationId) return;
+    await cancelEncryptedSettingsFileImport(operationId);
+    if (inspectionOperationId.current === operationId) {
+      inspectionOperationId.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      void cancelCurrentInspection().catch(() => undefined);
+    };
+  }, [cancelCurrentInspection]);
+
+  useEffect(() => {
+    if (!review?.token || !review.reviewExpiresAt || busy) return;
+    const token = review.token;
+    const timer = window.setTimeout(
+      () => {
+        if (!mounted.current) return;
+        void (async () => {
+          if (!beginOperation()) return;
+          try {
+            await cancelCurrentInspection().catch(() => undefined);
+          } finally {
+            if (mounted.current) {
+              setReview((current) =>
+                current?.token === token ? null : current,
+              );
+              setLocalError(
+                "The encrypted settings file review expired. Inspect the file again.",
+              );
+            }
+            finishOperation();
+          }
+        })();
+      },
+      Math.max(0, review.reviewExpiresAt - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [busy, review]);
+
+  const selectedCategoryList = useMemo(
+    () => [...selectedCategories].sort(),
+    [selectedCategories],
+  );
+
+  const toggleCategory = (id: SettingsCategoryId): void => {
+    setSelectedCategories((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const beginOperation = (): boolean => {
+    if (operationInFlight.current) return false;
+    operationInFlight.current = true;
+    setBusy(true);
+    setLocalError(null);
+    return true;
+  };
+
+  const finishOperation = (): void => {
+    operationInFlight.current = false;
+    if (mounted.current) setBusy(false);
+  };
+
+  const chooseFile = async (): Promise<void> => {
+    if (!beginOperation()) return;
+    try {
+      const selected =
+        mode === "fileExport"
+          ? await save({
+              title: "Export Encrypted Machdoch Settings",
+              defaultPath: `machdoch-settings-${new Date().toISOString().slice(0, 10)}.machdoch-settings`,
+              filters: [
+                {
+                  name: "Machdoch encrypted settings",
+                  extensions: ["machdoch-settings"],
+                },
+              ],
+            })
+          : await open({
+              title: "Import Encrypted Machdoch Settings",
+              directory: false,
+              multiple: false,
+              filters: [
+                {
+                  name: "Machdoch encrypted settings",
+                  extensions: ["machdoch-settings"],
+                },
+              ],
+            });
+      if (mounted.current && typeof selected === "string") setFilePath(selected);
+    } catch (error) {
+      if (mounted.current) setLocalError(toErrorMessage(error));
+    } finally {
+      finishOperation();
+    }
+  };
+
+  const exportFile = async (): Promise<void> => {
+    if (passphrase !== passphraseConfirmation) {
+      setLocalError("The passphrases do not match.");
+      return;
+    }
+    if (!beginOperation()) return;
+    const submittedPassphrase = passphrase;
+    setPassphrase("");
+    setPassphraseConfirmation("");
+    try {
+      const value = await exportEncryptedSettingsFile({
+        categories: selectedCategoryList,
+        destinationPath: filePath,
+        passphrase: submittedPassphrase,
+      });
+      if (mounted.current) setResult({ mode: "fileExport", value });
+    } catch (error) {
+      if (mounted.current) setLocalError(toErrorMessage(error));
+    } finally {
+      finishOperation();
+    }
+  };
+
+  const inspectFile = async (): Promise<void> => {
+    if (!beginOperation()) return;
+    const submittedPassphrase = passphrase;
+    setPassphrase("");
+    let operationId: string | null = null;
+    let retainedReview = false;
+    try {
+      operationId = createFileInspectionId();
+      inspectionOperationId.current = operationId;
+      const value = await inspectEncryptedSettingsFile({
+        operationId,
+        categories: selectedCategoryList,
+        sourcePath: filePath,
+        passphrase: submittedPassphrase,
+      });
+      if (mounted.current) {
+        retainedReview = value.token !== null;
+        if (!retainedReview && inspectionOperationId.current === operationId) {
+          inspectionOperationId.current = null;
+        }
+        setReview(value);
+      }
+    } catch (error) {
+      if (mounted.current) {
+        setReview(null);
+        setLocalError(toErrorMessage(error));
+      }
+    } finally {
+      if (!retainedReview && operationId) {
+        await cancelEncryptedSettingsFileImport(operationId).catch(() => undefined);
+        if (inspectionOperationId.current === operationId) {
+          inspectionOperationId.current = null;
+        }
+      }
+      finishOperation();
+    }
+  };
+
+  const commitImport = async (): Promise<void> => {
+    if (!review?.token) return;
+    if (!beginOperation()) return;
+    const token = review.token;
+    try {
+      const value = await commitEncryptedSettingsFileImport(token);
+      if (mounted.current) {
+        setResult({ mode: "fileImport", value });
+        setReview(null);
+      }
+    } catch (error) {
+      if (mounted.current) {
+        setReview(null);
+        setLocalError(fileImportFailureMessage(error));
+      }
+    } finally {
+      await cancelCurrentInspection().catch(() => undefined);
+      finishOperation();
+    }
+  };
+
+  const finish = async (): Promise<void> => {
+    if (!beginOperation()) return;
+    try {
+      if (mounted.current) await onDone();
+    } catch (error) {
+      if (mounted.current) setLocalError(toErrorMessage(error));
+    } finally {
+      finishOperation();
+    }
+  };
+
+  const back = async (): Promise<void> => {
+    if (!beginOperation()) return;
+    try {
+      await cancelCurrentInspection();
+      if (mounted.current) onBack();
+    } catch (error) {
+      if (mounted.current) setLocalError(toErrorMessage(error));
+    } finally {
+      finishOperation();
+    }
+  };
+
+  const chooseAnotherFile = async (): Promise<void> => {
+    if (!beginOperation()) return;
+    try {
+      await cancelCurrentInspection();
+      if (mounted.current) {
+        setReview(null);
+        setFilePath("");
+        setLocalError(null);
+      }
+    } catch (error) {
+      if (mounted.current) setLocalError(toErrorMessage(error));
+    } finally {
+      finishOperation();
+    }
+  };
+
+  if (result) {
+    const imported = result.mode === "fileImport";
+    return (
+      <SettingsCard title={imported ? "Encrypted settings imported" : "Encrypted settings exported"}>
+        <div className="grid justify-items-center gap-4 py-8 text-center">
+          <span className="flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+            <CheckCircle2 className="size-7" />
+          </span>
+          <div className="grid max-w-xl gap-2">
+            <h3 className="text-lg font-semibold text-slate-100">Complete</h3>
+            <p className="text-sm leading-6 text-slate-400">
+              {imported
+                ? `${result.value.categories.length} selected categories were committed and verified.`
+                : `${result.value.categories.length} categories (${formatCount(result.value.itemCount)}) were written to a ${formatBytes(result.value.fileBytes)} authenticated encrypted file.`}
+            </p>
+            {imported && result.value.recoveryCleanupPending ? (
+              <p className="text-xs leading-5 text-amber-300">
+                The import is complete. Restart Machdoch to finish removing private recovery data.
+              </p>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            disabled={busy}
+            onClick={() => void finish()}
+            className="bg-slate-100 text-slate-950 hover:bg-white"
+          >
+            {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
+            {busy ? "Refreshing settings…" : "Done"}
+          </Button>
+          {localError ? (
+            <p role="alert" className="text-sm text-rose-300">{localError}</p>
+          ) : null}
+        </div>
+      </SettingsCard>
+    );
+  }
+
+  if (review) {
+    return (
+      <SettingsCard
+        title="Review Encrypted File Import"
+        description="The complete file authenticated and passed the canonical settings validators. Review every replacement before changing live settings."
+      >
+        <div className="grid gap-4 py-5">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs leading-5 text-emerald-100/85">
+            File created {new Date(review.fileCreatedAt).toLocaleString()}. The passphrase and
+            decrypted file bytes are no longer held by the web UI.
+            {review.reviewExpiresAt
+              ? ` This review expires at ${new Date(review.reviewExpiresAt).toLocaleTimeString()}.`
+              : ""}
+          </div>
+          <ReviewCategories categories={review.categories} />
+          {review.token ? (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-100/85">
+              Selected categories use complete replacement, never merge. Machdoch will recheck
+              receiver settings, then journal, apply, read back, and commit all categories or
+              restore all originals.
+            </div>
+          ) : (
+            <p className="text-sm text-amber-300">
+              The file contains none of the categories selected for import. Nothing can be changed.
+            </p>
+          )}
+          {localError ? (
+            <p role="alert" className="text-sm text-rose-300">{localError}</p>
+          ) : null}
+          <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => void back()}
+              className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+            >
+              Cancel
+            </Button>
+            {review.token ? (
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => void commitImport()}
+                className="bg-rose-500 text-white hover:bg-rose-400"
+              >
+                {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                {busy ? "Applying journaled import…" : "Replace selected settings"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => void chooseAnotherFile()}
+                variant="outline"
+              >
+                Choose another file
+              </Button>
+            )}
+          </div>
+        </div>
+      </SettingsCard>
+    );
+  }
+
+  const exporting = mode === "fileExport";
+  const passphraseIsLongEnough = [...passphrase].length >= 12;
+  const passphraseFits = utf8ByteLength(passphrase) <= FILE_PASSPHRASE_MAX_BYTES;
+  return (
+    <SettingsCard
+      title={exporting ? "Export Encrypted File" : "Import Encrypted File"}
+      description={
+        exporting
+          ? "Select the same complete global categories available to direct transfer, then protect them with a unique passphrase."
+          : "Select what this PC is willing to replace. The authenticated file contents and your selection determine the final intersection."
+      }
+    >
+      <div className="grid gap-5 py-5">
+        <CategorySelection
+          categories={catalog.categories}
+          selected={selectedCategories}
+          disabled={busy}
+          onToggle={toggleCategory}
+        />
+        <div className="grid gap-2">
+          <span className="text-sm font-medium text-slate-300">
+            {exporting ? "Encrypted file destination" : "Encrypted settings file"}
+          </span>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              readOnly
+              value={filePath}
+              aria-label={exporting ? "Encrypted file destination" : "Encrypted settings file"}
+              placeholder={exporting ? "Choose where to save the file" : "Choose a .machdoch-settings file"}
+              className="min-w-0 flex-1 border-slate-800 bg-slate-950 text-slate-300"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void chooseFile()}
+              className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+            >
+              {exporting ? "Choose destination" : "Choose file"}
+            </Button>
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <label htmlFor="encrypted-settings-passphrase" className="text-sm font-medium text-slate-300">
+            File passphrase
+          </label>
+          <Input
+            id="encrypted-settings-passphrase"
+            type="password"
+            value={passphrase}
+            maxLength={1024}
+            disabled={busy}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setPassphrase(event.target.value)}
+            className="border-slate-800 bg-slate-950 text-slate-100"
+          />
+          {exporting ? (
+            <>
+              <label htmlFor="encrypted-settings-passphrase-confirmation" className="text-sm font-medium text-slate-300">
+                Confirm passphrase
+              </label>
+              <Input
+                id="encrypted-settings-passphrase-confirmation"
+                type="password"
+                value={passphraseConfirmation}
+                maxLength={1024}
+                disabled={busy}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setPassphraseConfirmation(event.target.value)}
+                className="border-slate-800 bg-slate-950 text-slate-100"
+              />
+              <p className="text-xs leading-5 text-slate-500">
+                Use at least 12 characters and at most 1,024 UTF-8 bytes; several random words are
+                recommended. A lost passphrase cannot be recovered. It is never saved by Machdoch.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs leading-5 text-slate-500">
+              After bounded format checks, authentication failures do not distinguish a wrong
+              passphrase from authenticated header or ciphertext changes.
+            </p>
+          )}
+        </div>
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs leading-5 text-emerald-100/80">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-300" />
+          <span>
+            Argon2id derives a per-file key. ChaCha20-Poly1305 authenticates the versioned header
+            and every encrypted setting before import parsing or review.
+          </span>
+        </div>
+        {localError ? (
+          <p role="alert" className="text-sm text-rose-300">{localError}</p>
+        ) : null}
+        <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => void back()}
+            className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          >
+            Back
+          </Button>
+          <Button
+            type="button"
+            disabled={
+              busy ||
+              selectedCategories.size === 0 ||
+              filePath.length === 0 ||
+              passphrase.length === 0 ||
+              !passphraseFits ||
+              (exporting &&
+                (!passphraseIsLongEnough || passphrase !== passphraseConfirmation))
+            }
+            onClick={() => void (exporting ? exportFile() : inspectFile())}
+            className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+          >
+            {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
+            {busy
+              ? exporting
+                ? "Encrypting and writing…"
+                : "Authenticating and validating…"
+              : exporting
+                ? "Export encrypted file"
+                : "Review encrypted file"}
+          </Button>
+        </div>
+      </div>
+    </SettingsCard>
+  );
+};
+
 export const SettingsTransferPanel = (): JSX.Element => {
   const [status, setStatus] = useState<SettingsTransferStatus | null>(null);
   const [configurationMode, setConfigurationMode] =
@@ -411,6 +989,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
   const [displayName, setDisplayName] = useState("This PC");
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fileOperationBusy, setFileOperationBusy] = useState(false);
   const [pendingPhaseAction, setPendingPhaseAction] = useState<
     "pairing" | "review" | null
   >(null);
@@ -418,6 +997,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
   const copiedResetTimer = useRef<number | null>(null);
+  const statusEventSequence = useRef(0);
+  const operationInFlight = useRef(false);
 
   const applyCatalog = useCallback((catalog: SettingsTransferStatus): void => {
     setStatus(catalog);
@@ -440,11 +1021,10 @@ export const SettingsTransferPanel = (): JSX.Element => {
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
-    let eventSequence = 0;
 
     void subscribeToSettingsTransfer((nextStatus) => {
       if (disposed) return;
-      eventSequence += 1;
+      statusEventSequence.current += 1;
       if (nextStatus.phase === "idle" && nextStatus.mode === null) {
         applyCatalog(nextStatus);
       } else {
@@ -459,13 +1039,16 @@ export const SettingsTransferPanel = (): JSX.Element => {
         if (!disposed) setLocalError(toErrorMessage(error));
       });
 
-    const sequenceBeforeCatalog = eventSequence;
+    const sequenceBeforeCatalog = statusEventSequence.current;
     void getSettingsTransferCatalog()
       .then((catalog) => {
         // An event emitted while catalog inspection was running is newer than
         // this response. The idle catalog event applies its own selections;
         // an active event must not be overwritten by a stale idle response.
-        if (!disposed && eventSequence === sequenceBeforeCatalog) {
+        if (
+          !disposed &&
+          statusEventSequence.current === sequenceBeforeCatalog
+        ) {
           applyCatalog(catalog);
         }
       })
@@ -515,6 +1098,32 @@ export const SettingsTransferPanel = (): JSX.Element => {
     ? Math.min(100, (status.transferredBytes / status.totalBytes) * 100)
     : 0;
 
+  useSettingsNavigationGuard({
+    dirty: active || configurationMode !== "landing",
+    title: commitCritical
+      ? "Settings are being applied"
+      : active
+        ? "Stop settings transfer?"
+        : "Discard transfer setup?",
+    description: commitCritical
+      ? "The journaled settings operation cannot be interrupted. Wait for it to finish before leaving this section."
+      : busy || fileOperationBusy
+        ? "Wait for the current transfer operation to finish before leaving this section."
+        : active
+          ? "Leaving now stops the active transfer and clears its temporary pairing state."
+          : "The current transfer or encrypted-file setup will be discarded.",
+    confirmLabel: active ? "Stop and leave" : "Discard setup",
+    canDiscard: !commitCritical && !busy && !fileOperationBusy,
+    onDiscard: async () => {
+      if (active) {
+        await stopSettingsTransfer();
+      }
+
+      setConfigurationMode("landing");
+      setLocalError(null);
+    },
+  });
+
   const toggleCategory = (id: SettingsCategoryId): void => {
     setSelectedCategories((current) => {
       const next = new Set(current);
@@ -534,6 +1143,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
   };
 
   const run = async (operation: () => Promise<unknown>): Promise<boolean> => {
+    if (operationInFlight.current) return false;
+    operationInFlight.current = true;
     setBusy(true);
     setLocalError(null);
     try {
@@ -543,6 +1154,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
       setLocalError(toErrorMessage(error));
       return false;
     } finally {
+      operationInFlight.current = false;
       setBusy(false);
     }
   };
@@ -582,6 +1194,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
 
   const start = (mode: SettingsTransferMode): void => {
     void run(async () => {
+      const sequenceBeforeStart = statusEventSequence.current;
       const request = {
         categories: selectedCategoryList,
         displayName,
@@ -591,17 +1204,29 @@ export const SettingsTransferPanel = (): JSX.Element => {
         mode === "send"
           ? await startSettingsTransfer(request)
           : await startSettingsReceive(request);
-      setStatus(nextStatus);
+      if (statusEventSequence.current === sequenceBeforeStart) {
+        setStatus(nextStatus);
+      }
     });
   };
 
   const cancel = (): void => {
-    void run(async () => setStatus(await stopSettingsTransfer()));
+    void run(async () => {
+      const sequenceBeforeStop = statusEventSequence.current;
+      const nextStatus = await stopSettingsTransfer();
+      if (statusEventSequence.current === sequenceBeforeStop) {
+        setStatus(nextStatus);
+      }
+    });
   };
 
   const reset = (): void => {
     void run(async () => {
-      applyCatalog(await getSettingsTransferCatalog());
+      const sequenceBeforeCatalog = statusEventSequence.current;
+      const catalog = await getSettingsTransferCatalog();
+      if (statusEventSequence.current === sequenceBeforeCatalog) {
+        applyCatalog(catalog);
+      }
       setConfigurationMode("landing");
       setManualCode("");
       setCopied(false);
@@ -626,7 +1251,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
     return (
       <SettingsCard
         title="Transfer"
-        description="Move selected global Machdoch settings directly between two PCs on the same local network. Nothing is uploaded or retained as a reusable server."
+        description="Move the same selected global Machdoch settings directly over your local network or through a passphrase-encrypted file. Nothing is uploaded."
       >
         <div className="grid gap-3 py-5 md:grid-cols-2">
           <button
@@ -665,20 +1290,94 @@ export const SettingsTransferPanel = (): JSX.Element => {
               </span>
             </span>
           </button>
+          <button
+            type="button"
+            aria-label="Export Encrypted File"
+            onClick={() => setConfigurationMode("fileExport")}
+            className="group grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 text-left transition hover:border-violet-500/35 hover:bg-violet-500/5"
+          >
+            <span className="flex size-10 items-center justify-center rounded-xl border border-violet-500/25 bg-violet-500/10 text-violet-300">
+              <ArrowUpFromLine className="size-5" />
+            </span>
+            <span>
+              <span className="block font-semibold text-slate-100">
+                Export Encrypted File
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-slate-400">
+                Save selected categories in a portable, authenticated passphrase-encrypted file.
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Import Encrypted File"
+            onClick={() => setConfigurationMode("fileImport")}
+            className="group grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 text-left transition hover:border-amber-500/35 hover:bg-amber-500/5"
+          >
+            <span className="flex size-10 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300">
+              <ArrowDownToLine className="size-5" />
+            </span>
+            <span>
+              <span className="block font-semibold text-slate-100">
+                Import Encrypted File
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-slate-400">
+                Authenticate the complete file, choose what to accept, and preview every replacement.
+              </span>
+            </span>
+          </button>
         </div>
         <div className="flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs leading-5 text-emerald-100/80">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-300" />
           <span>
-            Noise XX encrypts device names, categories, manifests, and content. A mandatory
-            six-digit comparison detects first-contact interception. Workspace data has no
-            transfer adapter and can never be selected.
+            Direct transfer uses Noise XX and mandatory code comparison. Files use Argon2id and
+            authenticated encryption. Both paths share one closed, validated category pipeline;
+            workspace data has no transfer adapter and can never be selected.
           </span>
         </div>
+        {localError ? (
+          <p role="alert" className="mt-4 text-sm text-rose-300">{localError}</p>
+        ) : null}
       </SettingsCard>
     );
   }
 
-  if (!active && status.phase === "idle" && configurationMode !== "landing") {
+  if (
+    !active &&
+    status.phase === "idle" &&
+    (configurationMode === "fileExport" || configurationMode === "fileImport")
+  ) {
+    return (
+      <EncryptedSettingsFilePanel
+        mode={configurationMode}
+        catalog={status}
+        onBack={() => setConfigurationMode("landing")}
+        onBusyChange={setFileOperationBusy}
+        onDone={async () => {
+          try {
+            const sequenceBeforeCatalog = statusEventSequence.current;
+            const catalog = await getSettingsTransferCatalog();
+            if (statusEventSequence.current === sequenceBeforeCatalog) {
+              applyCatalog(catalog);
+            }
+            setLocalError(null);
+          } catch (error) {
+            setLocalError(
+              `The file operation completed, but the settings catalog could not be refreshed: ${toErrorMessage(error)}`,
+            );
+          } finally {
+            setConfigurationMode("landing");
+          }
+        }}
+      />
+    );
+  }
+
+  if (
+    !active &&
+    status.phase === "idle" &&
+    (configurationMode === "send" || configurationMode === "receive")
+  ) {
     return (
       <SettingsCard
         title={configurationMode === "send" ? "Transfer Settings" : "Receive Settings"}
@@ -1000,7 +1699,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
         {["inspecting", "connecting", "transferring", "validating", "committing", "rollingBack"].includes(
           status.phase,
         ) ? (
-          <div className="grid justify-items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/65 px-5 py-8 text-center">
+          <div className="grid justify-items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-8 text-center">
             <LoaderCircle className="size-7 animate-spin text-sky-300" />
             <p className="text-sm leading-6 text-slate-300">{status.message}</p>
             {status.phase === "transferring" && status.totalBytes > 0 ? (

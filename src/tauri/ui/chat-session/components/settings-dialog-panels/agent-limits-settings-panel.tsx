@@ -26,6 +26,7 @@ import {
   rebaseDirtySettingsDraft,
   useDebouncedAutoSave,
 } from "./shared";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { AgentLimitsSettingsControls } from "./types";
 import { clampIntegerSetting, parseIntegerSettingInput } from "./number-settings";
 
@@ -111,8 +112,10 @@ export const AgentLimitsSettingsPanel = ({
   );
   const lastExternalSettingsRef = useRef(setup.settings);
   const lastExternalReviewSettingsRef = useRef(setup.reviewModelSettings);
+  const suppressUnmountFlushRef = useRef(false);
   const [providerModelCatalog, setProviderModelCatalog] =
     useState<ProviderModelCatalogSnapshot | null>(null);
+  const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
   const normalizedDraft = normalizeAgentLimitsDraft(draft);
   const dirty = hasAgentLimitsDraftChanges(normalizedDraft, setup.settings);
   const normalizedReviewDraft = normalizeReviewModelDraft(
@@ -147,6 +150,8 @@ export const AgentLimitsSettingsPanel = ({
     setup.providerAvailability.find(
       (provider) => provider.provider === reviewProvider,
     )?.configured ?? false;
+  const reviewDraftValid =
+    normalizedReviewDraft.mode === "base" || reviewProviderConfigured;
   const settingsDirty = dirty || reviewDirty;
   const dirtyText =
     dirty && reviewDirty
@@ -158,19 +163,39 @@ export const AgentLimitsSettingsPanel = ({
     agentLimits: normalizedDraft,
     reviewModel: normalizedReviewDraft,
   });
+  const saveDirtySettings = async (): Promise<void> => {
+    if (dirty) {
+      const limitsSaved = await setup.onSave(normalizedDraft);
+
+      if (limitsSaved === false) {
+        return;
+      }
+    }
+
+    if (reviewDirty && reviewDraftValid) {
+      await setup.onReviewModelSave(normalizedReviewDraft);
+    }
+  };
 
   useDebouncedAutoSave({
-    dirty: settingsDirty,
+    dirty: dirty || (reviewDirty && reviewDraftValid),
     saving: setup.saving,
     signature: autoSaveSignature,
-    onSave: async () => {
-      if (dirty) {
-        await setup.onSave(normalizedDraft);
-      }
+    onSave: saveDirtySettings,
+    suppressUnmountFlushRef,
+  });
 
-      if (reviewDirty) {
-        await setup.onReviewModelSave(normalizedReviewDraft);
-      }
+  useSettingsNavigationGuard({
+    dirty: settingsDirty,
+    title: "Unsaved agent settings",
+    description: setup.saving
+      ? "Wait for the current agent settings save to finish before leaving."
+      : "Execution and review-model changes that have not been saved will be discarded.",
+    canDiscard: !setup.saving,
+    onDiscard: () => {
+      suppressUnmountFlushRef.current = true;
+      setDraft(setup.settings);
+      setReviewDraft(setup.reviewModelSettings);
     },
   });
 
@@ -205,11 +230,15 @@ export const AgentLimitsSettingsPanel = ({
       .then((catalog) => {
         if (!cancelled) {
           setProviderModelCatalog(catalog);
+          setModelCatalogError(null);
         }
       })
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load provider model catalog", error);
+          setModelCatalogError(
+            "The current model catalog could not be loaded. Saved model values remain available.",
+          );
         }
       });
 
@@ -226,6 +255,7 @@ export const AgentLimitsSettingsPanel = ({
           detail="The inactivity safety timeout still applies."
         >
           <ChoiceButtons
+            label="Agent limit mode"
             value={draft.infinite ? "infinite" : "finite"}
             options={[
               { value: "finite", label: "Finite" },
@@ -246,6 +276,7 @@ export const AgentLimitsSettingsPanel = ({
           detail="Model/tool turns inside one executor cycle."
         >
           <Input
+            aria-label="Executor turn limit"
             type="number"
             min={AGENT_LIMIT_BOUNDS.executorTurns.min}
             max={AGENT_LIMIT_BOUNDS.executorTurns.max}
@@ -272,6 +303,7 @@ export const AgentLimitsSettingsPanel = ({
           detail="Executor cycles allowed after review feedback."
         >
           <Input
+            aria-label="Machdoch continuation limit"
             type="number"
             min={AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min}
             max={AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max}
@@ -298,6 +330,7 @@ export const AgentLimitsSettingsPanel = ({
           detail="Applies to validator and memory passes."
         >
           <ChoiceButtons
+            label="Review model mode"
             value={normalizedReviewDraft.mode}
             options={[
               { value: "base", label: "Base" },
@@ -335,10 +368,24 @@ export const AgentLimitsSettingsPanel = ({
               }
             >
               <ChoiceButtons
+                label="Review provider"
                 value={reviewProvider}
                 options={SUPPORTED_PROVIDER_ORDER.map((provider) => ({
                   value: provider,
                   label: getProviderLabel(provider),
+                  disabled:
+                    !setup.providerAvailability.some(
+                      (availability) =>
+                        availability.provider === provider &&
+                        availability.configured,
+                    ) && provider !== reviewProvider,
+                  title: setup.providerAvailability.some(
+                    (availability) =>
+                      availability.provider === provider &&
+                      availability.configured,
+                  )
+                    ? undefined
+                    : "Add this provider's API key before selecting it.",
                 }))}
                 disabled={setup.saving}
                 onChange={(value) => {
@@ -365,7 +412,7 @@ export const AgentLimitsSettingsPanel = ({
               <select
                 aria-label="Review LLM"
                 value={reviewModel}
-                disabled={setup.saving}
+                disabled={setup.saving || !reviewProviderConfigured}
                 onChange={(event) => {
                   setReviewDraft({
                     mode: "dedicated",
@@ -394,8 +441,22 @@ export const AgentLimitsSettingsPanel = ({
         dirtyText={dirtyText}
         cleanText="Agent execution settings are up to date"
         saving={setup.saving}
+        onSaveNow={reviewDraftValid ? saveDirtySettings : undefined}
       />
 
+      <SettingsStatus
+        message={
+          modelCatalogError
+            ? { tone: "error", text: modelCatalogError }
+            : normalizedReviewDraft.mode === "dedicated" &&
+                !reviewProviderConfigured
+              ? {
+                  tone: "error",
+                  text: `${getProviderLabel(reviewProvider)} needs an API key before it can run review passes.`,
+                }
+              : null
+        }
+      />
       <SettingsStatus message={setup.message} />
     </SettingsCard>
   );

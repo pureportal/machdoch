@@ -37,6 +37,7 @@ import {
   SettingsCard,
   SettingsStatus,
 } from "./shared";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { McpSettingsControls } from "./types";
 
 export interface McpSettingsPanelProps {
@@ -655,8 +656,9 @@ export const McpSettingsPanel = ({
     [parsed.error, parsed.servers],
   );
   const validationErrors = validationIssues.filter((issue) => issue.tone === "error");
+  const dirty = setup.draft !== setup.document.raw;
   const disabled = setup.loading || setup.saving || Boolean(parsed.error);
-  const saveDisabled = disabled || validationErrors.length > 0;
+  const saveDisabled = disabled || !dirty || validationErrors.length > 0;
   const actionDisabled =
     setup.loading ||
     setup.saving ||
@@ -694,7 +696,19 @@ export const McpSettingsPanel = ({
     () => parseDiscoverySummary(setup.discoveryOutput),
     [setup.discoveryOutput],
   );
-  const dirty = setup.draft !== setup.document.raw;
+  useSettingsNavigationGuard({
+    dirty: dirty || setup.saving,
+    title: setup.saving
+      ? "Saving MCP server changes"
+      : "Discard MCP server changes?",
+    description: setup.saving
+      ? "Wait for the MCP configuration save to finish before leaving."
+      : "The MCP configuration contains changes that have not been saved.",
+    canDiscard: !setup.saving,
+    onDiscard: () => {
+      setup.onDraftChange(setup.document.raw);
+    },
+  });
   const oauthCallback = oauthCallbackDraft || setup.oauthCallback;
   const normalizedCustomId = normalizeServerId(customDraft.id);
   const customIdAlreadyExists = parsed.servers.some((server, index) => {
@@ -2067,13 +2081,14 @@ export const McpSettingsPanel = ({
           </div>
         </PanelBlock>
 
-        <div className="grid gap-3 border-b border-slate-800 pb-4">
+        <div className="sticky top-0 z-10 -mx-2 grid gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-3 shadow-sm shadow-black/20">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <ChoiceButtons
+                label="MCP configuration scope"
                 value={setup.scope}
                 options={scopeOptions}
-                disabled={setup.loading || setup.saving}
+                disabled={setup.loading || setup.saving || dirty}
                 onChange={setup.onScopeChange}
               />
               <p className="text-xs text-slate-500">
@@ -2092,6 +2107,17 @@ export const McpSettingsPanel = ({
             <div className="flex flex-wrap gap-2">
               {renderCustomServerDialog()}
               {renderPresetDialog()}
+              {dirty ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={setup.saving}
+                  onClick={() => setup.onDraftChange(setup.document.raw)}
+                  className="h-9 rounded-lg px-3 text-sm text-slate-300 hover:bg-slate-900 hover:text-slate-100"
+                >
+                  Discard changes
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 disabled={saveDisabled}

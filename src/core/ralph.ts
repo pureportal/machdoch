@@ -235,7 +235,6 @@ const RALPH_BLOCK_PROGRESS_TRUNCATION_MARKER = `\n[Ralph block progress truncate
 const DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES = 1_000_000;
 const DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_RALPH_UTILITY_CHECK_TIMEOUT_MS = 30 * 60_000;
-const DEFAULT_RALPH_MODEL_BLOCK_TIMEOUT_MS = 60 * 60 * 1_000;
 const DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS = 30;
 const DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS = 100;
 const DEFAULT_RALPH_REPEATED_FAILURE_LIMIT = 3;
@@ -3362,7 +3361,7 @@ const getRalphBlockMaxDurationMs = (block: RalphFlowBlock | undefined): number |
     Number.isFinite(timeoutSeconds) &&
     timeoutSeconds > 0
     ? timeoutSeconds * 1000
-    : DEFAULT_RALPH_MODEL_BLOCK_TIMEOUT_MS;
+    : undefined;
 };
 
 const createExecutionOptions = async (

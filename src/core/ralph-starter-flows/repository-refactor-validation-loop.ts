@@ -1,7 +1,6 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 
-const RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS = 60 * 60;
 const RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
 
 const RALPH_VALIDATOR_SCHEMA = {
@@ -388,7 +387,6 @@ const autonomousRefactoringFlow: RalphFlow = {
         attachments: [],
         packs: [],
         maxIterations: 2,
-        timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
       },
       type: "PROMPT",
       prompt:
@@ -487,7 +485,6 @@ const autonomousRefactoringFlow: RalphFlow = {
         attachments: [],
         packs: [],
         maxIterations: 1,
-        timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
       },
       type: "PROMPT",
       prompt:
@@ -511,9 +508,6 @@ const autonomousRefactoringFlow: RalphFlow = {
       position: { x: 3400, y: -150 },
       size: { width: 300, height: 238 },
       type: "UTILITY",
-      settings: {
-        timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
-      },
       utility: {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
@@ -794,7 +788,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 11,
+  version: 12,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

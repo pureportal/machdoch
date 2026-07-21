@@ -16,6 +16,7 @@ import {
   SettingsProviderChoice,
   SettingsStatus,
 } from "./shared";
+import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { VoiceSettingsControls } from "./types";
 
 const getSpeechToTextProviderLabel = (
@@ -35,6 +36,20 @@ export interface VoiceSettingsPanelProps {
 export const VoiceSettingsPanel = ({
   setup,
 }: VoiceSettingsPanelProps): JSX.Element => {
+  const persistenceBusy =
+    setup.speechToTextProviderSaving ||
+    setup.speechInputDeviceSaving ||
+    setup.aiProviderSaving;
+
+  useSettingsNavigationGuard({
+    dirty: persistenceBusy,
+    title: "Saving speech settings",
+    description:
+      "Wait for the speech setting to finish saving before leaving this section.",
+    canDiscard: false,
+    onDiscard: () => undefined,
+  });
+
   const speechToTextProviderConfigured = new Map(
     setup.speechToTextProviderAvailability.map((provider) => [
       provider.provider,
@@ -52,12 +67,18 @@ export const VoiceSettingsPanel = ({
     !setup.speechInputDevices.some(
       (device) => device.deviceId === setup.speechInputDeviceId,
     );
+  const selectedSystemVoiceMissing =
+    setup.preferredVoiceURI !== null &&
+    !setup.voiceOptions.some(
+      (voice) => voice.voiceURI === setup.preferredVoiceURI,
+    );
+  const voiceOutputAvailable = setup.supported;
 
   return (
-    <SettingsCard title="Voice">
+    <SettingsCard title="Speech">
       <div className="grid gap-0">
         <SettingsProviderChoice
-          label="Speak to text"
+          label="Speech input"
           detail={setup.speechToTextAvailabilityDescription}
           value={setup.speechToTextProvider}
           options={(["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const).map(
@@ -68,13 +89,25 @@ export const VoiceSettingsPanel = ({
               disabled:
                 provider !== "none" &&
                 !speechToTextProviderConfigured.get(provider),
+              title:
+                provider !== "none" &&
+                !speechToTextProviderConfigured.get(provider)
+                  ? "Add this provider's API key before selecting it."
+                  : undefined,
             }),
           )}
           disabled={setup.speechToTextProviderSaving}
           onChange={setup.onSpeechToTextProviderChange}
         />
 
-        <SettingPanel label="Input device">
+        <SettingPanel
+          label="Input device"
+          detail={
+            setup.speechInputDevicesSupported
+              ? undefined
+              : "Microphone selection is unavailable on this device."
+          }
+        >
           <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
             <select
               aria-label="Voice input device"
@@ -139,19 +172,32 @@ export const VoiceSettingsPanel = ({
               label: getVoiceAiProviderLabel(provider),
               disabled:
                 provider !== "none" && !aiVoiceProviderConfigured.get(provider),
+              title:
+                provider !== "none" && !aiVoiceProviderConfigured.get(provider)
+                  ? "Add this provider's API key before selecting it."
+                  : undefined,
             }),
           )}
           disabled={setup.aiProviderSaving}
           onChange={setup.onAiProviderChange}
         />
 
-        <SettingPanel label="Replies">
+        <SettingPanel
+          label="Spoken replies"
+          detail={
+            voiceOutputAvailable
+              ? undefined
+              : "No configured speech output is currently available."
+          }
+        >
           <ChoiceButtons
+            label="Spoken reply behavior"
             value={setup.autoSpeakResponses ? "auto" : "manual"}
             options={[
               { value: "auto", label: "Auto-read new replies" },
               { value: "manual", label: "Manual only" },
             ]}
+            disabled={!voiceOutputAvailable}
             onChange={(value) => {
               setup.onAutoSpeakResponsesChange(value === "auto");
             }}
@@ -162,6 +208,7 @@ export const VoiceSettingsPanel = ({
           <>
             <SettingPanel label="System voice">
               <select
+                aria-label="System voice"
                 value={setup.preferredVoiceURI ?? ""}
                 onChange={(event) => {
                   const nextValue = event.target.value.trim();
@@ -173,6 +220,11 @@ export const VoiceSettingsPanel = ({
                 className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
               >
                 <option value="">System default</option>
+                {selectedSystemVoiceMissing ? (
+                  <option value={setup.preferredVoiceURI ?? ""}>
+                    Selected voice unavailable
+                  </option>
+                ) : null}
                 {setup.voiceOptions.map((voice) => (
                   <option key={voice.voiceURI} value={voice.voiceURI}>
                     {voice.label}
@@ -184,6 +236,7 @@ export const VoiceSettingsPanel = ({
             <SettingPanel label="Speech rate">
               <div className="flex items-center gap-3">
                 <input
+                  aria-label="Speech rate"
                   type="range"
                   min="0.8"
                   max="1.4"

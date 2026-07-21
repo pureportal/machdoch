@@ -601,6 +601,7 @@ export const ChatSession = (): JSX.Element => {
               onSettingsSectionChange={
                 controller.settingsDialog.onSettingsSectionChange
               }
+              onClose={() => controller.setCatalogOpen(false)}
               providerSetup={controller.settingsDialog.providerSetup}
               workspaceSetup={controller.settingsDialog.workspaceSetup}
               instructionsSetup={controller.settingsDialog.instructionsSetup}
