@@ -919,9 +919,9 @@ pub(crate) fn capture_preview_fingerprint<R: Runtime>(
     let root = get_user_config_directory()?;
     secure_directory(&root)?;
     let mut locks = Vec::new();
-    if let Some(path) = provider_enrollment_reconcile_lock_path(&root, categories) {
-        locks.push(acquire_cooperative_file_lock(&path)?);
-    }
+    // Preview capture is read-only. Resource locks provide a stable local view
+    // without waiting for provider reconciliation, while commit takes the
+    // coordinator lock before applying any multi-resource update.
     for path in category_resource_lock_paths(&root, categories) {
         locks.push(acquire_cooperative_file_lock(&path)?);
     }

@@ -1021,11 +1021,9 @@ fn acquire_snapshot_locks(
     selected: &BTreeSet<SettingsCategoryId>,
 ) -> Result<Vec<CooperativeFileLock>, String> {
     let mut locks = Vec::new();
-    // Provider reconciliation takes this coordinator lock before touching any
-    // config files. Matching that order prevents a daemon/transfer deadlock.
-    if let Some(path) = provider_enrollment_reconcile_lock_path(root, selected) {
-        locks.push(acquire_cooperative_file_lock(&path)?);
-    }
+    // Snapshots only read provider-enrollment inputs, so they need the resource
+    // locks that exclude writers but not the coordinator used by reconciliation.
+    // Transactions still take that coordinator before changing multiple inputs.
     for path in category_resource_lock_paths(root, selected) {
         locks.push(acquire_cooperative_file_lock(&path)?);
     }

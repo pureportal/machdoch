@@ -1,12 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.37.0",
+  "version": "0.37.1",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
       "cwd": "..",
-      "script": "npm run dev:ui"
+      "script": "npm run build:cli-bundle && npm run dev:ui"
     },
     "beforeBuildCommand": {
       "cwd": "..",
@@ -18,9 +18,7 @@
   "app": {
     "withGlobalTauri": true,
     "security": {
-      "capabilities": [
-        "default"
-      ]
+      "capabilities": ["default"]
     },
     "windows": [
       {
@@ -49,13 +47,7 @@
       "python/media_diffusers_worker.py",
       "python/media_diffusers_requirements.txt"
     ],
-    "targets": [
-      "msi",
-      "nsis",
-      "deb",
-      "rpm",
-      "appimage"
-    ],
+    "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
