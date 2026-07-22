@@ -22,6 +22,7 @@ import {
   isProviderSyncAutostartInstalled,
   removeProviderSyncAutostart,
 } from "../../core/provider-enrollment/platform-autostart.js";
+import { cleanupProviderNativeState } from "../../core/provider-enrollment/provider-native-cleanup.js";
 import type { ParsedCliArgs, ProviderSyncCliOptions } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 
@@ -140,18 +141,41 @@ export const printProviderSyncSummary = async (
       return;
     }
     case "enable": {
+      const existingConfig = await loadProviderEnrollmentConfig();
+      const wasEnabled = existingConfig.enabled &&
+        existingConfig.persistentSync.enabled;
+      const uninstallWarnings = wasEnabled
+        ? []
+        : await uninstallProviderSyncTargets();
+      const nativeCleanup = wasEnabled
+        ? undefined
+        : await cleanupProviderNativeState(args.workspaceRoot);
       const config = await setPersistentProviderSyncEnabled(true);
-      const autostartPath = config.persistentSync.daemonAtLogin
-        ? await installProviderSyncAutostart(args.workspaceRoot)
-        : undefined;
-      const status = await reconcileProviderSync(args.workspaceRoot);
-      const daemonPid = config.persistentSync.watch
-        ? await startDaemon(args.workspaceRoot)
-        : undefined;
+      let status: Awaited<ReturnType<typeof reconcileProviderSync>>;
+      let autostartPath: string | undefined;
+      let daemonPid: number | undefined;
+      try {
+        status = await reconcileProviderSync(args.workspaceRoot);
+        autostartPath = config.persistentSync.daemonAtLogin
+          ? await installProviderSyncAutostart(args.workspaceRoot)
+          : undefined;
+        daemonPid = config.persistentSync.watch
+          ? await startDaemon(args.workspaceRoot)
+          : undefined;
+      } catch (error) {
+        if (!wasEnabled) {
+          await setPersistentProviderSyncEnabled(false).catch(() => undefined);
+          await removeProviderSyncAutostart().catch(() => undefined);
+          await reconcileProviderSync(args.workspaceRoot).catch(() => undefined);
+        }
+        throw error;
+      }
       const result = {
         ...status,
         daemonStartPid: daemonPid ?? null,
         autostartPath: autostartPath ?? null,
+        ...(nativeCleanup ? { nativeCleanup } : {}),
+        ...(uninstallWarnings.length > 0 ? { uninstallWarnings } : {}),
       };
       if (args.json) printJson(result);
       else printStatusLines({
@@ -168,14 +192,10 @@ export const printProviderSyncSummary = async (
       await setPersistentProviderSyncEnabled(false);
       await stopDaemon();
       await removeProviderSyncAutostart();
-      const warnings = await uninstallProviderSyncTargets();
-      const status = await loadProviderSyncStatus(args.workspaceRoot);
-      const result = { ...status, enabled: false, uninstallWarnings: warnings };
+      const status = await reconcileProviderSync(args.workspaceRoot);
+      const result = { ...status, enabled: false };
       if (args.json) printJson(result);
-      else {
-        printStatusLines({ ...status, enabled: false });
-        for (const warning of warnings) writeStdoutLine(`warning: ${warning}`);
-      }
+      else printStatusLines({ ...status, enabled: false });
       return;
     }
     case "refresh": {

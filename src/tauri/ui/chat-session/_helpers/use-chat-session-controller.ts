@@ -103,6 +103,7 @@ import {
   completeCrossWindowOperation,
   releaseCrossWindowOperation,
 } from "../../lib/cross-window-operation";
+import { subscribeToSettingsImport } from "../../settings-transfer";
 import {
   appendThinkingProgress,
   createInitialThinkingTrace,
@@ -1218,6 +1219,45 @@ export const useChatSessionController = (
 
     void saveRunningTaskMessageAction(runningTaskMessageAction);
   }, [runningTaskMessageAction, runningTaskMessageActionLoaded]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToSettingsImport((event) => {
+      if (!event.categories.includes("preferences.chat-voice")) {
+        return;
+      }
+      void loadRunningTaskMessageAction()
+        .then((action) => {
+          if (!disposed) {
+            setRunningTaskMessageAction(action);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!disposed) {
+            console.error("Failed to reload imported chat preferences", error);
+          }
+        });
+    })
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+          return;
+        }
+        unsubscribe = dispose;
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          console.error("Failed to subscribe to imported chat preferences", error);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   const handleSpeechInputAction = (): void => {
     if (!speechInput.browserSupported) {

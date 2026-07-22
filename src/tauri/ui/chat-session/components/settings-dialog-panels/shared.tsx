@@ -1,4 +1,4 @@
-import { ArrowUpRight, Eye, EyeOff } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Eye, EyeOff, RefreshCw } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -9,8 +9,25 @@ import {
   type RefObject,
 } from "react";
 import { Button } from "../../../components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { cn } from "../../../lib/utils";
+import {
+  doctorProviderSync,
+  getProviderSyncStatus,
+  planProviderSync,
+  refreshProviderSync,
+  setProviderSyncEnabled,
+  type ProviderSyncStatus,
+} from "../../../runtime";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { SettingsStatusMessage } from "./types";
 
@@ -327,6 +344,236 @@ export const SettingsStatus = ({
     >
       {message.text}
     </p>
+  );
+};
+
+export interface ProviderSyncControlProps {
+  workspaceRoot: string | null;
+  showDiagnostics?: boolean;
+  className?: string;
+}
+
+export const ProviderSyncControl = ({
+  workspaceRoot,
+  showDiagnostics = false,
+  className,
+}: ProviderSyncControlProps): JSX.Element => {
+  const warningId = useId();
+  const [status, setStatus] = useState<ProviderSyncStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [message, setMessage] = useState<SettingsStatusMessage | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatus(null);
+    setMessage(null);
+    void getProviderSyncStatus(workspaceRoot)
+      .then((nextStatus) => {
+        if (active) setStatus(nextStatus);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setMessage({
+            tone: "error",
+            text: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [workspaceRoot]);
+
+  const updateEnabled = async (enabled: boolean): Promise<void> => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const nextStatus = await setProviderSyncEnabled(workspaceRoot, enabled);
+      setStatus(nextStatus);
+      setMessage({
+        tone: "success",
+        text: enabled
+          ? "Provider sync enabled. Machdoch now manages provider CLI instructions and MCP."
+          : "Provider sync disabled. Machdoch-owned provider projections were removed.",
+      });
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runDiagnosticAction = async (
+    action: "refresh" | "plan" | "doctor",
+  ): Promise<void> => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (action === "refresh") {
+        const nextStatus = await refreshProviderSync(workspaceRoot);
+        setStatus(nextStatus);
+        setMessage({ tone: "success", text: "Provider projections reconciled." });
+      } else if (action === "plan") {
+        const plan = await planProviderSync(workspaceRoot);
+        const providers = Array.isArray(plan.providers) ? plan.providers.length : 0;
+        setMessage({
+          tone: "success",
+          text: `Plan is current for ${providers} provider surface${providers === 1 ? "" : "s"}.`,
+        });
+      } else {
+        const doctor = await doctorProviderSync(workspaceRoot);
+        setMessage({
+          tone: doctor.healthy === true ? "success" : "error",
+          text: doctor.healthy === true
+            ? "Provider enrollment doctor reports complete coverage."
+            : "Provider enrollment doctor found degraded or pending coverage.",
+        });
+      }
+      setStatus(await getProviderSyncStatus(workspaceRoot));
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enabled = status?.enabled === true;
+  const unavailable = !workspaceRoot?.trim();
+
+  return (
+    <div className={cn("grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3", className)}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid min-w-0 gap-1">
+          <p className="text-sm font-semibold text-slate-100">
+            Sync Machdoch to provider CLIs
+          </p>
+          <p className="text-xs leading-5 text-slate-400">
+            Keep Machdoch instructions and MCP servers available to Codex, Claude, and Copilot CLI.
+          </p>
+        </div>
+        <Button
+          type="button"
+          role="switch"
+          aria-label="Sync Machdoch to provider CLIs"
+          aria-checked={enabled}
+          aria-describedby={!enabled ? warningId : undefined}
+          disabled={busy || status === null || unavailable}
+          onClick={() => {
+            if (enabled) {
+              void updateEnabled(false);
+            } else {
+              setConfirmOpen(true);
+            }
+          }}
+          className={cn(
+            "h-9 min-w-24 rounded-full px-4 text-xs font-semibold",
+            enabled
+              ? "bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+              : "bg-slate-800 text-slate-200 hover:bg-slate-700",
+          )}
+        >
+          {busy ? "Updating…" : enabled ? "Enabled" : "Disabled"}
+        </Button>
+      </div>
+
+      {!enabled ? (
+        <p id={warningId} className="flex items-start gap-2 text-xs leading-5 text-amber-200/80">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Enabling removes existing provider-native instruction, MCP, and customization files or entries before syncing Machdoch settings.
+        </p>
+      ) : null}
+
+      <p className="text-xs text-slate-500">
+        {unavailable
+          ? "Choose a workspace before enabling provider sync."
+          : status === null
+            ? "Loading provider sync status…"
+            : `Sync ${enabled ? "enabled" : "disabled"}${status.daemon.running ? ` · daemon ${status.daemon.pid ?? "running"}` : " · daemon stopped"}`}
+      </p>
+
+      {showDiagnostics ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || unavailable || !enabled}
+            onClick={() => void runDiagnosticAction("refresh")}
+            className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || unavailable}
+            onClick={() => void runDiagnosticAction("plan")}
+            className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
+          >
+            Plan
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || unavailable}
+            onClick={() => void runDiagnosticAction("doctor")}
+            className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
+          >
+            Doctor
+          </Button>
+        </div>
+      ) : null}
+
+      {showDiagnostics && status?.targets.length ? (
+        <div className="grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+          {status.targets.map((target) => (
+            <span key={`${target.provider}-${target.scope}`}>
+              {target.provider} · {target.scope}: {target.state}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <SettingsStatus message={message} />
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent
+          role="alertdialog"
+          aria-describedby={`${warningId}-dialog-description`}
+          className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-md"
+        >
+          <DialogHeader>
+            <DialogTitle>Replace provider-native configuration?</DialogTitle>
+            <DialogDescription id={`${warningId}-dialog-description`}>
+              Machdoch will back up and remove existing Codex, Claude, and Copilot instruction, MCP, and customization files or entries, then sync its own settings.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={busy}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setConfirmOpen(false);
+                void updateEnabled(true);
+              }}
+              className="bg-amber-400 text-slate-950 hover:bg-amber-300"
+            >
+              Remove and enable
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 

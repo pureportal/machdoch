@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -753,6 +753,59 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Claude delegated answer.");
   });
 
+  it.each([
+    ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
+    ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],
+    ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
+  ] as const)("enrolls managed instructions exactly once for %s", async (provider, binaryKey) => {
+    const workspaceRoot = await createWorkspace();
+    process.env[binaryKey] = process.execPath;
+    const canary = `exact-once-${provider}`;
+    const params = createParams(workspaceRoot, { provider });
+    params.taskContext.applicableInstructions = [{
+      kind: "always-on",
+      name: "Exact once policy",
+      path: ".machdoch/instructions.md",
+      priority: 1,
+      body: canary,
+      reason: "always",
+    }];
+    params.contextSections = [
+      ...contextSections,
+      {
+        title: "Instruction context",
+        audience: "internal",
+        lines: [`body: ${canary}`],
+      },
+    ];
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    const childEnv = call.options.env as NodeJS.ProcessEnv;
+    let nativeInstructionText: string;
+    if (provider === "codex-cli") {
+      nativeInstructionText = await readFile(
+        join(childEnv.CODEX_HOME!, "config.toml"),
+        "utf8",
+      );
+    } else if (provider === "claude-cli") {
+      const instructionFlagIndex = call.args.indexOf("--append-system-prompt-file");
+      nativeInstructionText = await readFile(call.args[instructionFlagIndex + 1]!, "utf8");
+    } else {
+      nativeInstructionText = await readFile(
+        join(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS!, "AGENTS.md"),
+        "utf8",
+      );
+    }
+
+    expect(call.child.stdinText).not.toContain(canary);
+    expect(nativeInstructionText.match(new RegExp(canary, "gu"))).toHaveLength(1);
+    call.child.stdout.write("Delegated answer.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it("retries with prompt enrollment when an installed CLI rejects its native enrollment flags", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
@@ -765,6 +818,14 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       body: "Apply the native fallback canary.",
       reason: "always",
     }];
+    params.contextSections = [
+      ...contextSections,
+      {
+        title: "Instruction context",
+        audience: "internal",
+        lines: ["body: Apply the native fallback canary."],
+      },
+    ];
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(params);
     await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
@@ -776,6 +837,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(retry?.args).not.toContain("--append-system-prompt-file");
     expect(retry?.args).not.toContain("--mcp-config");
     expect(retry?.child.stdinText).toContain("Apply the native fallback canary.");
+    expect(
+      retry?.child.stdinText.match(/Apply the native fallback canary\./gu),
+    ).toHaveLength(1);
     retry?.child.stdout.write("Fallback completed.");
     retry?.child.emit("close", 0, null);
 

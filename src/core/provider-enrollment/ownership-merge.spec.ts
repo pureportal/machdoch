@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -82,5 +82,75 @@ describe("provider ownership merge", () => {
     await uninstallManagedTarget(installed.record);
     const uninstalled = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
     expect(uninstalled.mcpServers).toEqual({ custom: { url: "x" } });
+  });
+
+  it("backs up and removes externally changed owned regions when forced", async () => {
+    const root = await createRoot();
+    const path = join(root, "CLAUDE.md");
+    const installed = await installManagedTarget({
+      path,
+      provider: "claude-cli",
+      scope: "user",
+      format: "markdown",
+      payload: "Managed policy",
+    });
+    await writeFile(
+      path,
+      (await readFile(path, "utf8")).replace("Managed policy", "Changed managed policy"),
+      "utf8",
+    );
+
+    const result = await uninstallManagedTarget(installed.record, { force: true });
+
+    expect(result).toMatchObject({ removed: true });
+    expect(result.warning).toContain("backed up");
+    await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("deletes a managed JSON file after its last owned server is removed", async () => {
+    const root = await createRoot();
+    const path = join(root, "mcp.json");
+    const installed = await installManagedTarget({
+      path,
+      provider: "copilot-cli",
+      scope: "user",
+      format: "json",
+      payload: {
+        mcpServers: {
+          "machdoch-test": { type: "local", command: "machdoch", args: [] },
+        },
+      },
+    });
+
+    expect((await uninstallManagedTarget(installed.record)).removed).toBe(true);
+    await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("collapses duplicate managed regions during reconciliation", async () => {
+    const root = await createRoot();
+    const path = join(root, "AGENTS.md");
+    const first = await installManagedTarget({
+      path,
+      provider: "codex-cli",
+      scope: "workspace",
+      format: "markdown",
+      payload: "Managed v1",
+    });
+    const duplicated = `${await readFile(path, "utf8")}\n${await readFile(path, "utf8")}`;
+    await writeFile(path, duplicated, "utf8");
+
+    const reconciled = await installManagedTarget({
+      path,
+      provider: "codex-cli",
+      scope: "workspace",
+      format: "markdown",
+      payload: "Managed v2",
+      previous: first.record,
+    });
+    const content = await readFile(path, "utf8");
+
+    expect(content.match(/machdoch-managed:provider-enrollment:start/gu)).toHaveLength(1);
+    expect(content).toContain("Managed v2");
+    expect(reconciled.warnings).toContainEqual(expect.stringContaining("backed up"));
   });
 });

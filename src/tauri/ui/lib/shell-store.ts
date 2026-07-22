@@ -73,6 +73,8 @@ const BROWSER_SHELL_REVISION_STORAGE_KEY =
 const APP_SHELL_STORAGE_KEY = "machdoch.desktop.app-shell-state";
 const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY =
   "machdoch.desktop.running-task-message-action";
+const RUNNING_TASK_MESSAGE_ACTION_IMPORT_REVISION_KEY =
+  "machdoch.desktop.running-task-message-action-import-revision";
 const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
@@ -264,14 +266,16 @@ export const compareAndSwapShellState = async <T>(
   state: T,
 ): Promise<ShellStateCompareAndSwapResult<T>> => {
   if (canUseTauriStore()) {
-    return invoke<ShellStateCompareAndSwapResult<T>>(
-      "compare_and_swap_shell_state",
-      {
-        request: {
-          expectedRevision,
-          state,
+    return withStoredValueWriteLock(STORAGE_KEY, () =>
+      invoke<ShellStateCompareAndSwapResult<T>>(
+        "compare_and_swap_shell_state",
+        {
+          request: {
+            expectedRevision,
+            state,
+          },
         },
-      },
+      ),
     );
   }
 
@@ -311,14 +315,16 @@ export const compareAndSwapShellStatePatch = async <T>(
   browserState: T,
 ): Promise<ShellStateCompareAndSwapResult<T>> => {
   if (canUseTauriStore()) {
-    return invoke<ShellStateCompareAndSwapResult<T>>(
-      "compare_and_swap_shell_state_patch",
-      {
-        request: {
-          expectedRevision,
-          ...patch,
+    return withStoredValueWriteLock(STORAGE_KEY, () =>
+      invoke<ShellStateCompareAndSwapResult<T>>(
+        "compare_and_swap_shell_state_patch",
+        {
+          request: {
+            expectedRevision,
+            ...patch,
+          },
         },
-      },
+      ),
     );
   }
 
@@ -415,16 +421,40 @@ export const saveRunningTaskMessageAction = async (
   action: RunningTaskMessageAction,
 ): Promise<void> => {
   const normalizedAction = normalizeRunningTaskMessageAction(action);
+  const loadImportRevision = async (): Promise<number> => {
+    return loadStoredValue<number>({
+      storageKey: RUNNING_TASK_MESSAGE_ACTION_IMPORT_REVISION_KEY,
+      fallback: 0,
+      normalize: (value) =>
+        typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+          ? value
+          : 0,
+      parseLocalStorage: Number,
+      tauriErrorMessage:
+        "Failed to load the running task action import revision",
+      localStorageErrorMessage:
+        "Failed to load the running task action import revision from localStorage",
+    });
+  };
+  const requestedRevision = await loadImportRevision();
 
-  await saveRequiredStoredValue({
-    storageKey: RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY,
-    value: normalizedAction,
-    serializeLocalStorage: String,
-    tauriErrorMessage:
-      "Failed to persist running task message action to Tauri store",
-    localStorageErrorMessage:
-      "Failed to persist running task message action to localStorage",
-  });
+  await withStoredValueWriteLock(
+    RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY,
+    async () => {
+      if ((await loadImportRevision()) !== requestedRevision) {
+        return;
+      }
+      await saveRequiredStoredValueUnlocked({
+        storageKey: RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY,
+        value: normalizedAction,
+        serializeLocalStorage: String,
+        tauriErrorMessage:
+          "Failed to persist running task message action to Tauri store",
+        localStorageErrorMessage:
+          "Failed to persist running task message action to localStorage",
+      });
+    },
+  );
 };
 
 export const loadRalphSettings = async (): Promise<RalphSettings> => {
@@ -439,16 +469,64 @@ export const loadRalphSettings = async (): Promise<RalphSettings> => {
 
 export const saveRalphSettings = async (
   settings: RalphSettings,
-): Promise<void> => {
+  baseSettings?: RalphSettings,
+): Promise<RalphSettings> => {
   const normalizedSettings = normalizeRalphSettings(settings);
-
-  await saveRequiredStoredValue({
-    storageKey: RALPH_SETTINGS_STORAGE_KEY,
-    value: normalizedSettings,
-    tauriErrorMessage: "Failed to persist Ralph settings to Tauri store",
-    localStorageErrorMessage:
-      "Failed to persist Ralph settings to localStorage",
-  });
+  const normalizedBase = baseSettings
+    ? normalizeRalphSettings(baseSettings)
+    : null;
+  const fields = [
+    "workspaceRoot",
+    "flowLibraryMode",
+    "generationProvider",
+    "generationModel",
+    "generationReasoning",
+    "generationPromptHistory",
+    "runProvider",
+    "runModel",
+    "runReasoning",
+    "defaultMaxTransitions",
+  ] as const satisfies ReadonlyArray<keyof RalphSettings>;
+  const committed = await withStoredValueWriteLock(
+    RALPH_SETTINGS_STORAGE_KEY,
+    async () => {
+      const latest = await loadRalphSettings();
+      if (!normalizedBase) {
+        await saveRequiredStoredValueUnlocked({
+          storageKey: RALPH_SETTINGS_STORAGE_KEY,
+          value: normalizedSettings,
+          tauriErrorMessage: "Failed to persist Ralph settings to Tauri store",
+          localStorageErrorMessage:
+            "Failed to persist Ralph settings to localStorage",
+        });
+        return normalizedSettings;
+      }
+      const rebased = { ...latest } as RalphSettings;
+      const mutableRebased = rebased as unknown as Record<string, unknown>;
+      const nextRecord = normalizedSettings as unknown as Record<string, unknown>;
+      const baseRecord = normalizedBase as unknown as Record<string, unknown>;
+      for (const field of fields) {
+        if (JSON.stringify(nextRecord[field]) === JSON.stringify(baseRecord[field])) {
+          continue;
+        }
+        if (nextRecord[field] === undefined) {
+          delete mutableRebased[field];
+        } else {
+          mutableRebased[field] = nextRecord[field];
+        }
+      }
+      const normalizedRebased = normalizeRalphSettings(rebased);
+      await saveRequiredStoredValueUnlocked({
+        storageKey: RALPH_SETTINGS_STORAGE_KEY,
+        value: normalizedRebased,
+        tauriErrorMessage: "Failed to persist Ralph settings to Tauri store",
+        localStorageErrorMessage:
+          "Failed to persist Ralph settings to localStorage",
+      });
+      return normalizedRebased;
+    },
+  );
+  return committed;
 };
 
 export const loadOnboardingState =

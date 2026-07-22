@@ -30,7 +30,7 @@ export const DEFAULT_PROVIDER_ENROLLMENT_CONFIG: ProviderEnrollmentConfig = {
     progressiveDiscoveryThresholdPercent: 3,
   },
   persistentSync: {
-    enabled: true,
+    enabled: false,
     watch: true,
     daemonAtLogin: true,
     debounceMs: 500,

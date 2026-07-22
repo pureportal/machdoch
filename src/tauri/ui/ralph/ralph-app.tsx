@@ -58,6 +58,7 @@ import {
   normalizeReasoningModeForProvider,
   REASONING_LABELS,
 } from "../reasoning-options";
+import { subscribeToSettingsImport } from "../settings-transfer";
 
 interface RuntimeModelPickerProps {
   icon: LucideIcon;
@@ -436,18 +437,29 @@ export const RalphApp = ({
 
   settingsRef.current = settings;
 
-  const persistSettings = (next: RalphSettings): void => {
+  const persistSettings = (
+    next: RalphSettings,
+    base: RalphSettings = next,
+  ): void => {
+    const editRevision = settingsEditRevisionRef.current;
     settingsSaveChainRef.current = settingsSaveChainRef.current
       .catch(() => undefined)
-      .then(() => saveRalphSettings(next))
+      .then(async () => {
+        const committed = await saveRalphSettings(next, base);
+        if (settingsEditRevisionRef.current === editRevision) {
+          settingsRef.current = committed;
+          setSettings(committed);
+        }
+      })
       .catch((error: unknown) => {
         console.error("Failed to persist Ralph settings", error);
       });
   };
 
   const updateSettings = (patch: Partial<RalphSettings>): void => {
+    const base = settingsRef.current;
     const normalized = normalizeRalphRuntimeSettings({
-      ...settingsRef.current,
+      ...base,
       ...patch,
       version: 1,
     });
@@ -458,7 +470,7 @@ export const RalphApp = ({
     }
     settingsRef.current = normalized;
     setSettings(normalized);
-    persistSettings(normalized);
+    persistSettings(normalized, base);
   };
   const generationReasoning = settings.generationReasoning
     ? normalizeReasoningModeForProvider(
@@ -521,7 +533,7 @@ export const RalphApp = ({
             normalizedSettings.runModel !== loadedSettings.runModel ||
             settingsEditRevisionRef.current !== editRevisionAtStart
           ) {
-            persistSettings(normalizedSettings);
+            persistSettings(normalizedSettings, loadedSettings);
           }
           setSettingsLoaded(true);
         }
@@ -559,6 +571,50 @@ export const RalphApp = ({
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToSettingsImport((event) => {
+      if (!event.categories.includes("ralph.preferences-global")) {
+        return;
+      }
+      void loadRalphSettings()
+        .then((loadedSettings) => {
+          if (disposed) {
+            return;
+          }
+          const normalizedSettings = normalizeRalphRuntimeSettings(loadedSettings);
+          settingsEditRevisionRef.current += 1;
+          dirtySettingsFieldsRef.current.clear();
+          settingsRef.current = normalizedSettings;
+          setSettings(normalizedSettings);
+        })
+        .catch((error: unknown) => {
+          if (!disposed) {
+            console.error("Failed to reload imported RALPH preferences", error);
+          }
+        });
+    })
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+          return;
+        }
+        unsubscribe = dispose;
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          console.error("Failed to subscribe to imported RALPH preferences", error);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
     };
   }, []);
 

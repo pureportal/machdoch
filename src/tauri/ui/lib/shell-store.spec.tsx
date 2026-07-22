@@ -72,4 +72,69 @@ describe("browser shell-state CAS", () => {
       "two",
     ]);
   });
+
+  it("rebases a queued RALPH edit over newly imported preferences", async () => {
+    const store = await import("./shell-store");
+    const initial = {
+      ...store.DEFAULT_RALPH_SETTINGS,
+      workspaceRoot: "C:/old-workspace",
+      flowLibraryMode: "workspace" as const,
+      generationProvider: "openai" as const,
+      generationModel: "old-generation",
+      runProvider: "openai" as const,
+      runModel: "old-run",
+    };
+    await store.saveRalphSettings(initial);
+    const staleBase = await store.loadRalphSettings();
+
+    await store.saveRalphSettings({
+      ...staleBase,
+      flowLibraryMode: "all",
+      generationProvider: "anthropic",
+      generationModel: "imported-generation",
+      runProvider: "codex-cli",
+      runModel: "imported-run",
+    });
+    const committed = await store.saveRalphSettings(
+      { ...staleBase, workspaceRoot: "C:/new-workspace" },
+      staleBase,
+    );
+
+    expect(committed).toMatchObject({
+      workspaceRoot: "C:/new-workspace",
+      flowLibraryMode: "all",
+      generationProvider: "anthropic",
+      generationModel: "imported-generation",
+      runProvider: "codex-cli",
+      runModel: "imported-run",
+    });
+    await expect(store.loadRalphSettings()).resolves.toEqual(committed);
+  });
+
+  it("drops a running-action save queued before an import revision", async () => {
+    const store = await import("./shell-store");
+    const operations = await import("./cross-window-operation");
+    const operationId =
+      "machdoch:store-write:machdoch.desktop.running-task-message-action";
+    const lease = await operations.beginCrossWindowOperation(operationId);
+    expect(lease).not.toBeNull();
+    if (!lease) {
+      throw new Error("Expected the running-action write lease.");
+    }
+    window.localStorage.setItem(
+      "machdoch.desktop.running-task-message-action",
+      "queue",
+    );
+
+    const queuedSave = store.saveRunningTaskMessageAction("steer");
+    await Promise.resolve();
+    window.localStorage.setItem(
+      "machdoch.desktop.running-task-message-action-import-revision",
+      "1",
+    );
+    await operations.releaseCrossWindowOperation(lease);
+    await queuedSave;
+
+    await expect(store.loadRunningTaskMessageAction()).resolves.toBe("queue");
+  });
 });

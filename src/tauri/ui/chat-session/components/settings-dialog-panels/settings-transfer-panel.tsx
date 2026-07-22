@@ -9,7 +9,6 @@ import {
   Network,
   RefreshCw,
   ShieldCheck,
-  TriangleAlert,
   Wifi,
   X,
   XCircle,
@@ -81,54 +80,62 @@ const createFileInspectionId = (): string => {
   return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
 };
 
-const formatBytes = (bytes: number): string => {
-  if (bytes <= 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-};
-
 const formatCount = (count: number): string =>
   `${count.toLocaleString()} ${count === 1 ? "item" : "items"}`;
 
 const effectPresentation: Record<
   CategoryEffect,
-  { label: string; className: string; detail: string }
+  { label: string; className: string }
 > = {
   replace: {
     label: "Replace",
     className: "border-sky-500/30 bg-sky-500/10 text-sky-200",
-    detail: "The receiver's complete category will become the sender's set.",
   },
   clear: {
     label: "Clear",
     className: "border-rose-500/30 bg-rose-500/10 text-rose-200",
-    detail: "The sender's category is empty, so the receiver's set will be removed.",
   },
   preserveNotSelected: {
-    label: "Keep — not selected",
+    label: "Unchanged — not selected",
     className: "border-slate-700 bg-slate-900/70 text-slate-300",
-    detail: "This category was not requested and remains unchanged.",
   },
   preserveNotOffered: {
-    label: "Keep — not offered",
+    label: "Unchanged — not included",
     className: "border-slate-700 bg-slate-900/70 text-slate-300",
-    detail: "The sender did not make this category available.",
   },
   preserveUnavailable: {
-    label: "Keep — unavailable",
+    label: "Unchanged — unavailable",
     className: "border-amber-500/30 bg-amber-500/10 text-amber-200",
-    detail: "The sender could not safely create a complete snapshot.",
   },
   preserveIncompatible: {
-    label: "Keep — incompatible",
+    label: "Unchanged — incompatible",
     className: "border-amber-500/30 bg-amber-500/10 text-amber-200",
-    detail: "The two versions do not share a compatible category schema.",
   },
 };
 
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const getTransferPhaseLabel = (
+  phase: SettingsTransferStatus["phase"],
+): string => {
+  switch (phase) {
+    case "inspecting":
+      return "Preparing settings…";
+    case "connecting":
+      return "Connecting…";
+    case "transferring":
+      return "Transferring settings…";
+    case "validating":
+      return "Checking settings…";
+    case "committing":
+      return "Applying settings…";
+    case "rollingBack":
+      return "Restoring previous settings…";
+    default:
+      return "Working…";
+  }
+};
 
 const fileImportFailureMessage = (error: unknown): string => {
   const message = toErrorMessage(error);
@@ -194,18 +201,9 @@ const CategorySelection = ({
                 </span>
               ) : null}
               <span className="text-xs text-slate-500">
-                {formatCount(category.itemCount)} · {formatBytes(category.byteCount)}
+                {formatCount(category.itemCount)}
               </span>
             </span>
-            <span className="text-xs leading-5 text-slate-400">
-              {category.description}
-            </span>
-            {category.warning ? (
-              <span className="flex items-start gap-1.5 text-xs leading-5 text-amber-300/90">
-                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-                {category.warning}
-              </span>
-            ) : null}
             {category.reason ? (
               <span className="text-xs leading-5 text-rose-300">
                 Unavailable: {category.reason}
@@ -238,10 +236,6 @@ const InterfaceSelection = ({
       <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
     </summary>
     <div className="grid gap-2 border-t border-slate-800 px-4 py-3">
-      <p className="text-xs leading-5 text-slate-500">
-        Machdoch uses only selected directly connected interfaces. Tunnels and
-        virtual adapters are excluded by default.
-      </p>
       {status.networkInterfaces.map((networkInterface) => (
         <label
           key={networkInterface.id}
@@ -313,22 +307,6 @@ const ReviewCategories = ({
               </span>
             ) : null}
           </div>
-          <p className="text-xs leading-5 text-slate-400">
-            {effect?.detail ?? category.description}
-          </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span>
-              Receiver now:{" "}
-              {category.currentItemCount === null
-                ? "not inspected — unchanged"
-                : formatCount(category.currentItemCount)}
-            </span>
-            {category.effect === "replace" || category.effect === "clear" ? (
-              <span>
-                Incoming: {formatCount(category.itemCount)} · {formatBytes(category.byteCount)}
-              </span>
-            ) : null}
-          </div>
           {category.reason ? (
             <p className="text-xs leading-5 text-amber-300/90">
               {category.reason}
@@ -348,104 +326,26 @@ const PairingCategorySummary = ({
   const labels = new Map(
     status.categories.map((category) => [category.id, category.label]),
   );
-  const localCategories = status.categories
-    .filter((category) => category.selected)
-    .map((category) => category.id);
-  const groups = [
-    {
-      label:
-        status.mode === "send" ? "This PC offered" : "This PC requested",
-      categories: localCategories,
-    },
-    {
-      label:
-        status.mode === "send" ? "Receiver requested" : "Sender offered",
-      categories: status.peerCategories,
-    },
-    {
-      label: "Effective intersection",
-      categories: status.effectiveCategories,
-    },
-  ];
 
   return (
     <div
-      className="grid w-full gap-2 text-left md:grid-cols-3"
-      aria-label="Pairing category negotiation"
+      className="grid w-full max-w-lg gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-left"
+      aria-label="Settings in this transfer"
     >
-      {groups.map((group) => (
-        <div
-          key={group.label}
-          className="grid content-start gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-3"
-        >
-          <p className="text-xs font-medium text-slate-300">
-            {group.label} ({group.categories.length})
-          </p>
-          {group.categories.length > 0 ? (
-            <ul className="grid gap-1 text-[11px] leading-4 text-slate-500">
-              {group.categories.map((id) => (
-                <li key={id}>{labels.get(id) ?? id}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[11px] leading-4 text-slate-600">None</p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const TransferCategoryProgress = ({
-  categories,
-}: {
-  categories: SettingsTransferCategory[];
-}): JSX.Element | null => {
-  const activeCategories = categories.filter(
-    (category) => category.transferTotalBytes > 0,
-  );
-  if (activeCategories.length === 0) return null;
-
-  return (
-    <div
-      className="grid w-full max-w-lg gap-2 text-left"
-      aria-label="Category transfer progress"
-    >
-      {activeCategories.map((category) => {
-        const percentage = Math.min(
-          100,
-          (category.transferredBytes / category.transferTotalBytes) * 100,
-        );
-        return (
-          <div
-            key={category.id}
-            className="grid gap-1 rounded-lg border border-slate-800/80 bg-slate-950 px-3 py-2"
-          >
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="truncate text-slate-300">{category.label}</span>
-              <span className="shrink-0 font-mono text-slate-600">
-                {formatBytes(category.transferredBytes)} /{" "}
-                {formatBytes(category.transferTotalBytes)}
-              </span>
-            </div>
-            <div
-              className="h-1 overflow-hidden rounded-full bg-slate-800"
-              role="progressbar"
-              aria-label={`${category.label} transfer progress`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(percentage)}
-              aria-valuetext={`${formatBytes(category.transferredBytes)} of ${formatBytes(category.transferTotalBytes)}`}
-            >
-              <div
-                aria-hidden="true"
-                className="h-full rounded-full bg-emerald-400 transition-[width]"
-                style={{ width: `${percentage}%` }}
-              />
-            </div>
-          </div>
-        );
-      })}
+      <p className="text-xs font-medium text-slate-300">
+        Settings in this transfer ({status.effectiveCategories.length})
+      </p>
+      {status.effectiveCategories.length > 0 ? (
+        <ul className="flex flex-wrap gap-2 text-xs text-slate-400">
+          {status.effectiveCategories.map((id) => (
+            <li key={id} className="rounded-full bg-slate-900 px-2.5 py-1">
+              {labels.get(id) ?? id}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-slate-500">No matching settings</p>
+      )}
     </div>
   );
 };
@@ -748,15 +648,14 @@ const EncryptedSettingsFilePanel = ({
             <CheckCircle2 className="size-7" />
           </span>
           <div className="grid max-w-xl gap-2">
-            <h3 className="text-lg font-semibold text-slate-100">Complete</h3>
             <p className="text-sm leading-6 text-slate-400">
               {imported
-                ? `${result.value.categories.length} selected categories were committed and verified.`
-                : `${result.value.categories.length} categories (${formatCount(result.value.itemCount)}) were written to a ${formatBytes(result.value.fileBytes)} authenticated encrypted file.`}
+                ? `${result.value.categories.length} categories imported.`
+                : `${result.value.categories.length} categories exported (${formatCount(result.value.itemCount)}).`}
             </p>
             {imported && result.value.recoveryCleanupPending ? (
               <p className="text-xs leading-5 text-amber-300">
-                The import is complete. Restart Machdoch to finish removing private recovery data.
+                Restart Machdoch to finish cleanup.
               </p>
             ) : null}
           </div>
@@ -780,27 +679,23 @@ const EncryptedSettingsFilePanel = ({
   if (review) {
     return (
       <SettingsCard
-        title="Review Encrypted File Import"
-        description="The complete file authenticated and passed the canonical settings validators. Review every replacement before changing live settings."
+        title="Review encrypted file"
+        description="Review what will change before replacing settings."
       >
         <div className="grid gap-4 py-5">
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs leading-5 text-emerald-100/85">
-            File created {new Date(review.fileCreatedAt).toLocaleString()}. The passphrase and
-            decrypted file bytes are no longer held by the web UI.
-            {review.reviewExpiresAt
-              ? ` This review expires at ${new Date(review.reviewExpiresAt).toLocaleTimeString()}.`
-              : ""}
-          </div>
+          {review.reviewExpiresAt ? (
+            <p className="text-xs text-slate-500">
+              Review expires at {new Date(review.reviewExpiresAt).toLocaleTimeString()}.
+            </p>
+          ) : null}
           <ReviewCategories categories={review.categories} />
           {review.token ? (
             <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-100/85">
-              Selected categories use complete replacement, never merge. Machdoch will recheck
-              receiver settings, then journal, apply, read back, and commit all categories or
-              restore all originals.
+              Selected categories replace existing settings; they are not merged.
             </div>
           ) : (
             <p className="text-sm text-amber-300">
-              The file contains none of the categories selected for import. Nothing can be changed.
+              None of the selected categories are in this file.
             </p>
           )}
           {localError ? (
@@ -824,7 +719,7 @@ const EncryptedSettingsFilePanel = ({
                 className="bg-rose-500 text-white hover:bg-rose-400"
               >
                 {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                {busy ? "Applying journaled import…" : "Replace selected settings"}
+                {busy ? "Importing settings…" : "Replace selected settings"}
               </Button>
             ) : (
               <Button
@@ -850,8 +745,8 @@ const EncryptedSettingsFilePanel = ({
       title={exporting ? "Export Encrypted File" : "Import Encrypted File"}
       description={
         exporting
-          ? "Select the same complete global categories available to direct transfer, then protect them with a unique passphrase."
-          : "Select what this PC is willing to replace. The authenticated file contents and your selection determine the final intersection."
+          ? "Choose settings, a file location, and a passphrase."
+          : "Choose settings to replace, then select the encrypted file."
       }
     >
       <div className="grid gap-5 py-5">
@@ -916,23 +811,10 @@ const EncryptedSettingsFilePanel = ({
                 className="border-slate-800 bg-slate-950 text-slate-100"
               />
               <p className="text-xs leading-5 text-slate-500">
-                Use at least 12 characters and at most 1,024 UTF-8 bytes; several random words are
-                recommended. A lost passphrase cannot be recovered. It is never saved by Machdoch.
+                Use at least 12 characters and at most 1,024 UTF-8 bytes. A lost passphrase cannot be recovered.
               </p>
             </>
-          ) : (
-            <p className="text-xs leading-5 text-slate-500">
-              After bounded format checks, authentication failures do not distinguish a wrong
-              passphrase from authenticated header or ciphertext changes.
-            </p>
-          )}
-        </div>
-        <div className="flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs leading-5 text-emerald-100/80">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-300" />
-          <span>
-            Argon2id derives a per-file key. ChaCha20-Poly1305 authenticates the versioned header
-            and every encrypted setting before import parsing or review.
-          </span>
+          ) : null}
         </div>
         {localError ? (
           <p role="alert" className="text-sm text-rose-300">{localError}</p>
@@ -1106,7 +988,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
         ? "Stop settings transfer?"
         : "Discard transfer setup?",
     description: commitCritical
-      ? "The journaled settings operation cannot be interrupted. Wait for it to finish before leaving this section."
+      ? "This step cannot be interrupted. Wait for it to finish before leaving this section."
       : busy || fileOperationBusy
         ? "Wait for the current transfer operation to finish before leaving this section."
         : active
@@ -1237,7 +1119,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
     return (
       <SettingsCard
         title="Transfer"
-        description="Loading the closed global settings catalog…"
+        description="Loading settings…"
       >
         <div className="flex items-center gap-2 py-6 text-sm text-slate-400">
           <LoaderCircle className="size-4 animate-spin" /> Preparing settings
@@ -1251,92 +1133,64 @@ export const SettingsTransferPanel = (): JSX.Element => {
     return (
       <SettingsCard
         title="Transfer"
-        description="Move the same selected global Machdoch settings directly over your local network or through a passphrase-encrypted file. Nothing is uploaded."
+        description="Move selected settings to another PC over your local network or with an encrypted file. Nothing is uploaded."
       >
         <div className="grid gap-3 py-5 md:grid-cols-2">
           <button
             type="button"
             aria-label="Transfer Settings"
             onClick={() => setConfigurationMode("send")}
-            className="group grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 text-left transition hover:border-sky-500/35 hover:bg-sky-500/5"
+            className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-left transition hover:border-sky-500/35 hover:bg-sky-500/5"
           >
             <span className="flex size-10 items-center justify-center rounded-xl border border-sky-500/25 bg-sky-500/10 text-sky-300">
               <ArrowUpFromLine className="size-5" />
             </span>
-            <span>
-              <span className="block font-semibold text-slate-100">
-                Transfer Settings
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-slate-400">
-                Choose exactly what this PC may share, then publish one temporary session.
-              </span>
+            <span className="font-semibold text-slate-100">
+              Transfer Settings
             </span>
           </button>
           <button
             type="button"
             aria-label="Receive Settings"
             onClick={() => setConfigurationMode("receive")}
-            className="group grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 text-left transition hover:border-emerald-500/35 hover:bg-emerald-500/5"
+            className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-left transition hover:border-emerald-500/35 hover:bg-emerald-500/5"
           >
             <span className="flex size-10 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-300">
               <ArrowDownToLine className="size-5" />
             </span>
-            <span>
-              <span className="block font-semibold text-slate-100">
-                Receive Settings
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-slate-400">
-                Discover a live session, compare a secure code, and preview every replacement.
-              </span>
+            <span className="font-semibold text-slate-100">
+              Receive Settings
             </span>
           </button>
           <button
             type="button"
             aria-label="Export Encrypted File"
             onClick={() => setConfigurationMode("fileExport")}
-            className="group grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 text-left transition hover:border-violet-500/35 hover:bg-violet-500/5"
+            className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-left transition hover:border-violet-500/35 hover:bg-violet-500/5"
           >
             <span className="flex size-10 items-center justify-center rounded-xl border border-violet-500/25 bg-violet-500/10 text-violet-300">
               <ArrowUpFromLine className="size-5" />
             </span>
-            <span>
-              <span className="block font-semibold text-slate-100">
-                Export Encrypted File
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-slate-400">
-                Save selected categories in a portable, authenticated passphrase-encrypted file.
-              </span>
+            <span className="font-semibold text-slate-100">
+              Export Encrypted File
             </span>
           </button>
           <button
             type="button"
             aria-label="Import Encrypted File"
             onClick={() => setConfigurationMode("fileImport")}
-            className="group grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 text-left transition hover:border-amber-500/35 hover:bg-amber-500/5"
+            className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-left transition hover:border-amber-500/35 hover:bg-amber-500/5"
           >
             <span className="flex size-10 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300">
               <ArrowDownToLine className="size-5" />
             </span>
-            <span>
-              <span className="block font-semibold text-slate-100">
-                Import Encrypted File
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-slate-400">
-                Authenticate the complete file, choose what to accept, and preview every replacement.
-              </span>
+            <span className="font-semibold text-slate-100">
+              Import Encrypted File
             </span>
           </button>
         </div>
-        <div className="flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-xs leading-5 text-emerald-100/80">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-300" />
-          <span>
-            Direct transfer uses Noise XX and mandatory code comparison. Files use Argon2id and
-            authenticated encryption. Both paths share one closed, validated category pipeline;
-            workspace data has no transfer adapter and can never be selected.
-          </span>
-        </div>
         {localError ? (
-          <p role="alert" className="mt-4 text-sm text-rose-300">{localError}</p>
+          <p role="alert" className="text-sm text-rose-300">{localError}</p>
         ) : null}
       </SettingsCard>
     );
@@ -1383,14 +1237,14 @@ export const SettingsTransferPanel = (): JSX.Element => {
         title={configurationMode === "send" ? "Transfer Settings" : "Receive Settings"}
         description={
           configurationMode === "send"
-            ? "Select the complete global categories this PC is allowed to offer. Empty selected categories intentionally clear the receiver after both approvals."
-            : "Select the categories this PC wants. The final set is the secure intersection with what the sender offers and both versions support."
+            ? "Choose the settings this PC can send. Empty categories clear matching settings after both PCs approve."
+            : "Choose the settings this PC can receive. You’ll review changes before anything is replaced."
         }
       >
         <div className="grid gap-5 py-5">
           <div className="grid gap-2">
             <label htmlFor="settings-transfer-device-name" className="text-sm font-medium text-slate-300">
-              Encrypted device display name
+              Device name
             </label>
             <Input
               id="settings-transfer-device-name"
@@ -1399,9 +1253,6 @@ export const SettingsTransferPanel = (): JSX.Element => {
               onChange={(event) => setDisplayName(event.target.value)}
               className="border-slate-800 bg-slate-950 text-slate-100"
             />
-            <p className="text-xs text-slate-500">
-              This name is sent only after encryption; it is never placed in discovery records.
-            </p>
           </div>
           <CategorySelection
             categories={status.categories}
@@ -1452,8 +1303,13 @@ export const SettingsTransferPanel = (): JSX.Element => {
     const succeeded = status.phase === "completed";
     const cancelled = status.phase === "cancelled";
     const ResultIcon = succeeded ? CheckCircle2 : cancelled ? X : XCircle;
+    const title = succeeded
+      ? "Transfer complete"
+      : cancelled
+        ? "Transfer cancelled"
+        : "Transfer stopped";
     return (
-      <SettingsCard title="Settings sharing result">
+      <SettingsCard title={title}>
         <div className="grid justify-items-center gap-4 py-8 text-center">
           <span
             className={cn(
@@ -1468,19 +1324,13 @@ export const SettingsTransferPanel = (): JSX.Element => {
             <ResultIcon className="size-7" />
           </span>
           <div className="grid max-w-xl gap-2">
-            <h3 className="text-lg font-semibold text-slate-100">
-              {succeeded ? "Complete" : cancelled ? "Cancelled" : "Transfer stopped safely"}
-            </h3>
             <p className="text-sm leading-6 text-slate-400">
               {status.message ?? "The session ended."}
             </p>
             {status.completedLocally ? (
               <p className="text-xs font-medium text-emerald-300">
-                The receiving PC committed and verified the settings locally.
+                Settings were applied and verified on this PC.
               </p>
-            ) : null}
-            {status.errorCode ? (
-              <p className="text-xs text-slate-600">Reference: {status.errorCode}</p>
             ) : null}
           </div>
           <Button
@@ -1499,7 +1349,6 @@ export const SettingsTransferPanel = (): JSX.Element => {
   return (
     <SettingsCard
       title={activeMode === "send" ? "Transfer Settings" : "Receive Settings"}
-      description={status.message ?? "Secure local settings sharing is active."}
     >
       <div className="grid gap-5 py-5">
         {status.phase === "advertising" ? (
@@ -1520,7 +1369,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
             </div>
             <details className="group rounded-xl border border-slate-800 bg-slate-950/55">
               <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm text-slate-300">
-                <span>Manual / QR fallback</span>
+                <span>QR or manual code</span>
                 <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
               </summary>
               <div className="grid gap-4 border-t border-slate-800 p-4 md:grid-cols-[auto_minmax(0,1fr)]">
@@ -1532,10 +1381,6 @@ export const SettingsTransferPanel = (): JSX.Element => {
                   />
                 ) : null}
                 <div className="grid min-w-0 content-start gap-2">
-                  <p className="text-xs leading-5 text-slate-400">
-                    The code carries only temporary addresses, port, session ID, version, and label.
-                    Pairing is still mandatory.
-                  </p>
                   <Textarea
                     readOnly
                     value={status.manualCode ?? ""}
@@ -1573,13 +1418,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
                 >
                   <span className="flex items-center gap-3">
                     <Wifi className="size-4 text-emerald-300" />
-                    <span>
-                      <span className="block text-sm font-medium text-slate-100">
-                        {session.label}
-                      </span>
-                      <span className="block text-xs text-slate-500">
-                        Temporary protocol v{session.protocolVersion} session
-                      </span>
+                    <span className="text-sm font-medium text-slate-100">
+                      {session.label}
                     </span>
                   </span>
                   <span className="text-xs font-medium text-emerald-300">Connect</span>
@@ -1598,10 +1438,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
               </summary>
               <div className="grid gap-3 border-t border-slate-800 p-4">
                 <p className="text-xs leading-5 text-slate-400">
-                  Keep both PCs awake on the same directly connected network. Allow Machdoch through
-                  each OS firewall and ensure multicast DNS (UDP 5353) is not blocked. Guest Wi-Fi often
-                  isolates devices. A manual code bypasses discovery only; encryption and code comparison
-                  remain unchanged.
+                  Make sure both PCs are awake on the same network and Machdoch is allowed through the firewall.
                 </p>
                 <Textarea
                   value={manualCode}
@@ -1640,8 +1477,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
             </div>
             <PairingCategorySummary status={status} />
             <p className="max-w-lg text-sm leading-6 text-slate-400">
-              Compare all six digits with {status.peerName ?? "the other PC"}. A mismatch can mean
-              interception or the wrong session. There is no bypass.
+              Compare this code with {status.peerName ?? "the other PC"}. Continue only if all six digits match.
             </p>
             <Button
               type="button"
@@ -1666,8 +1502,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
         {status.phase === "review" ? (
           <div className="grid gap-4">
             <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-100/85">
-              This preview is complete replacement, never merge. A receiver-side edit after this
-              preview aborts the transaction and requires a fresh review.
+              Selected categories replace existing settings; they are not merged.
             </div>
             <ReviewCategories categories={status.categories} />
             {status.categories.some(
@@ -1701,7 +1536,9 @@ export const SettingsTransferPanel = (): JSX.Element => {
         ) ? (
           <div className="grid justify-items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-8 text-center">
             <LoaderCircle className="size-7 animate-spin text-sky-300" />
-            <p className="text-sm leading-6 text-slate-300">{status.message}</p>
+            <p role="status" aria-live="polite" className="text-sm leading-6 text-slate-300">
+              {getTransferPhaseLabel(status.phase)}
+            </p>
             {status.phase === "transferring" && status.totalBytes > 0 ? (
               <div className="grid w-full max-w-lg gap-2">
                 <div
@@ -1711,7 +1548,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={Math.round(progress)}
-                  aria-valuetext={`${formatBytes(status.transferredBytes)} of ${formatBytes(status.totalBytes)}`}
+                  aria-valuetext={`${Math.round(progress)}% complete`}
                 >
                   <div
                     aria-hidden="true"
@@ -1720,15 +1557,13 @@ export const SettingsTransferPanel = (): JSX.Element => {
                   />
                 </div>
                 <p className="text-xs text-slate-500">
-                  {formatBytes(status.transferredBytes)} of {formatBytes(status.totalBytes)}
+                  {Math.round(progress)}%
                 </p>
-                <TransferCategoryProgress categories={status.categories} />
               </div>
             ) : null}
             {commitCritical ? (
               <p className="max-w-lg text-xs leading-5 text-amber-300/85">
-                Commit authorization is the point of no return. Machdoch will finish and verify the
-                journaled commit or rollback even if this panel closes or the network disconnects.
+                This step cannot be cancelled.
               </p>
             ) : null}
           </div>

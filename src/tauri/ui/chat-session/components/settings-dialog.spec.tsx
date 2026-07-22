@@ -977,4 +977,39 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("Prompts")).toBeDefined();
     expect(screen.getAllByText(/2025-03-26/u).length).toBeGreaterThanOrEqual(1);
   });
+
+  it("warns before enabling provider sync", async () => {
+    renderSettingsDialog(
+      createSettingsDialogProps({ settingsSection: "mcp" }),
+    );
+
+    expect(
+      await screen.findByText(/Enabling removes existing provider-native instruction, MCP, and customization files or entries/u),
+    ).toBeDefined();
+    const syncSwitch = await screen.findByRole("switch", {
+      name: "Sync Machdoch to provider CLIs",
+    });
+    expect(syncSwitch.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(syncSwitch);
+
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Replace provider-native configuration?",
+      }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("alertdialog", {
+          name: "Replace provider-native configuration?",
+        }),
+      ).toBeNull();
+    });
+
+    fireEvent.click(syncSwitch);
+    fireEvent.click(screen.getByRole("button", { name: "Remove and enable" }));
+    await waitFor(() => {
+      expect(syncSwitch.getAttribute("aria-checked")).toBe("true");
+    });
+  });
 });

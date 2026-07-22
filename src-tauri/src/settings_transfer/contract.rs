@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) const PROTOCOL_MAJOR: u16 = 1;
-pub(crate) const PROTOCOL_MINOR: u16 = 0;
+pub(crate) const PROTOCOL_MINOR: u16 = 2;
 pub(crate) const CATEGORY_SCHEMA_VERSION: u16 = 1;
 pub(crate) const SETTINGS_TRANSFER_EVENT: &str = "machdoch://settings-transfer-state";
 
@@ -16,27 +16,36 @@ pub enum SettingsCategoryId {
     AgentProviderPreferences,
     #[serde(rename = "preferences.desktop-appearance")]
     DesktopAppearance,
+    #[serde(rename = "preferences.chat-voice")]
+    ChatVoicePreferences,
     #[serde(rename = "memory.global")]
     GlobalMemory,
     #[serde(rename = "customizations.instructions-global")]
     GlobalInstructions,
     #[serde(rename = "customizations.prompts-global")]
     GlobalPrompts,
+    #[serde(rename = "context-packs.global")]
+    GlobalContextPacks,
     #[serde(rename = "mcp.global")]
     GlobalMcp,
+    #[serde(rename = "ralph.preferences-global")]
+    GlobalRalphPreferences,
     #[serde(rename = "ralph.flows-global")]
     GlobalRalphFlows,
 }
 
 impl SettingsCategoryId {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::ApiKeys,
         Self::AgentProviderPreferences,
         Self::DesktopAppearance,
+        Self::ChatVoicePreferences,
         Self::GlobalMemory,
         Self::GlobalInstructions,
         Self::GlobalPrompts,
+        Self::GlobalContextPacks,
         Self::GlobalMcp,
+        Self::GlobalRalphPreferences,
         Self::GlobalRalphFlows,
     ];
 
@@ -63,6 +72,13 @@ impl SettingsCategoryId {
                 default_selected: true,
                 sensitive: false,
             },
+            Self::ChatVoicePreferences => CategoryMetadata {
+                label: "Chat & Voice Preferences",
+                description: "New-chat defaults, spoken-reply behavior, speech rate, and running-task message behavior.",
+                warning: Some("Provider and model choices may need adjustment when they are unavailable on the receiving computer."),
+                default_selected: true,
+                sensitive: false,
+            },
             Self::GlobalMemory => CategoryMetadata {
                 label: "Global Memory",
                 description: "The complete global memory collection and its enabled state.",
@@ -84,12 +100,26 @@ impl SettingsCategoryId {
                 default_selected: true,
                 sensitive: true,
             },
+            Self::GlobalContextPacks => CategoryMetadata {
+                label: "Global Context Packs",
+                description: "Context packs available in every workspace; workspace-specific packs stay local.",
+                warning: Some("Packs can contain private instructions and references to local files, assets, providers, and models."),
+                default_selected: true,
+                sensitive: true,
+            },
             Self::GlobalMcp => CategoryMetadata {
                 label: "MCP Servers & Registries",
                 description: "Global MCP configuration and marketplace registry sources.",
                 warning: Some("MCP configuration can contain credentials, commands, URLs, and local paths."),
                 default_selected: true,
                 sensitive: true,
+            },
+            Self::GlobalRalphPreferences => CategoryMetadata {
+                label: "Global RALPH Preferences",
+                description: "Portable flow-library, generation, run-model, reasoning, and transition defaults.",
+                warning: Some("Provider and model choices may need adjustment when they are unavailable on the receiving computer."),
+                default_selected: true,
+                sensitive: false,
             },
             Self::GlobalRalphFlows => CategoryMetadata {
                 label: "Global RALPH Flows",

@@ -23,10 +23,13 @@ const CATEGORY_FIXTURES: ReadonlyArray<
   ["credentials.api-keys", "API Keys", false],
   ["preferences.agent-provider", "Agent & Provider Preferences", true],
   ["preferences.desktop-appearance", "Desktop & Appearance", true],
+  ["preferences.chat-voice", "Chat & Voice Preferences", true],
   ["memory.global", "Global Memory", false],
   ["customizations.instructions-global", "Instruction Files", true],
   ["customizations.prompts-global", "Global Prompts", true],
+  ["context-packs.global", "Global Context Packs", true],
   ["mcp.global", "MCP Servers & Registries", true],
+  ["ralph.preferences-global", "Global RALPH Preferences", true],
   ["ralph.flows-global", "Global RALPH Flows", true],
 ];
 
@@ -134,14 +137,18 @@ describe("SettingsTransferPanel", () => {
 
   it("shows the complete closed catalog and starts with only safe defaults", async () => {
     render(<SettingsTransferPanel />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Transfer Settings" }),
-    );
+    const transferButton = await screen.findByRole("button", {
+      name: "Transfer Settings",
+    });
+    expect(screen.queryByText(/Noise XX|Argon2id/u)).toBeNull();
+    fireEvent.click(transferButton);
 
     for (const [, label] of CATEGORY_FIXTURES) {
       expect(screen.getByText(label)).toBeDefined();
     }
-    expect(screen.getByText("Contains credentials.")).toBeDefined();
+    const apiKeys = screen.getByRole("checkbox", { name: /API Keys/u });
+    expect(apiKeys.closest("label")?.textContent).toContain("Sensitive");
+    expect(screen.queryByText("Contains credentials.")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Make available" }));
     await waitFor(() => {
@@ -343,7 +350,7 @@ describe("SettingsTransferPanel", () => {
         },
       });
     });
-    expect(await screen.findByText("Review Encrypted File Import")).toBeDefined();
+    expect(await screen.findByText("Review encrypted file")).toBeDefined();
     expect(screen.getByText("Replace")).toBeDefined();
     expect(screen.getByText("Clear")).toBeDefined();
     for (const [, label] of CATEGORY_FIXTURES) {
@@ -526,7 +533,7 @@ describe("SettingsTransferPanel", () => {
         target: { value: "correct horse battery staple" },
       });
       fireEvent.click(screen.getByRole("button", { name: "Review encrypted file" }));
-      expect(await screen.findByText("Review Encrypted File Import")).toBeDefined();
+      expect(await screen.findByText("Review encrypted file")).toBeDefined();
     };
 
     await selectAndInspect();
@@ -539,7 +546,9 @@ describe("SettingsTransferPanel", () => {
       "The encrypted settings file review expired",
     );
     expect(screen.getByText("Import Encrypted File")).toBeDefined();
-    expect(screen.queryByText("Review Encrypted File Import")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Review encrypted file" }),
+    ).toBeNull();
   });
 
   it("scopes teardown cancellation and retries it after an in-flight inspection settles", async () => {
@@ -656,8 +665,10 @@ describe("SettingsTransferPanel", () => {
     });
     expect(await screen.findByText("123 456")).toBeDefined();
     expect(screen.getByText(/Sender PC/u)).toBeDefined();
-    expect(screen.getByText("Sender offered (3)")).toBeDefined();
-    expect(screen.getByText("Effective intersection (2)")).toBeDefined();
+    const pairingSummary = screen.getByLabelText("Settings in this transfer");
+    expect(pairingSummary.textContent).toContain("Settings in this transfer (2)");
+    expect(pairingSummary.textContent).toContain("Agent & Provider Preferences");
+    expect(pairingSummary.textContent).toContain("Global Memory");
     fireEvent.click(screen.getByRole("button", { name: /Codes match/u }));
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(
@@ -694,8 +705,7 @@ describe("SettingsTransferPanel", () => {
     }
     expect(screen.getByText("Clear")).toBeDefined();
     expect(screen.getByText("Replace")).toBeDefined();
-    expect(screen.getAllByText("Keep — not selected").length).toBe(6);
-    expect(screen.getAllByText(/not inspected — unchanged/u).length).toBe(6);
+    expect(screen.getAllByText("Unchanged — not selected").length).toBe(9);
     fireEvent.click(
       screen.getByRole("button", { name: "Replace selected settings" }),
     );
@@ -725,10 +735,9 @@ describe("SettingsTransferPanel", () => {
         }),
       );
     });
-    expect(
-      await screen.findByLabelText("Category transfer progress"),
-    ).toBeDefined();
-    expect(screen.getByText("128 B / 256 B")).toBeDefined();
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Transferring settings…",
+    );
     expect(
       screen
         .getByRole("progressbar", {
@@ -738,9 +747,12 @@ describe("SettingsTransferPanel", () => {
     ).toBe("50");
     expect(
       screen
-        .getByRole("progressbar", { name: "API Keys transfer progress" })
+        .getByRole("progressbar", {
+          name: "Overall settings transfer progress",
+        })
         .getAttribute("aria-valuetext"),
-    ).toBe("128 B of 256 B");
+    ).toBe("50% complete");
+    expect(screen.queryByLabelText("Category transfer progress")).toBeNull();
   });
 
   it("always asks the backend to stop when the panel unmounts", async () => {
@@ -868,10 +880,10 @@ describe("SettingsTransferPanel", () => {
       );
     });
 
-    expect(screen.getAllByText("Restoring every original setting...")).toHaveLength(2);
-    expect(
-      screen.getByText(/finish and verify the journaled commit or rollback/u),
-    ).toBeDefined();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Restoring previous settings…",
+    );
+    expect(screen.getByText("This step cannot be cancelled.")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 });

@@ -240,6 +240,12 @@ const formatSectionForPrompt = (section: TaskExecutionSection): string => {
   );
 };
 
+const removeManagedInstructionContext = (
+  sections: readonly TaskExecutionSection[],
+): TaskExecutionSection[] => {
+  return sections.filter((section) => section.title !== "Instruction context");
+};
+
 const isEnrollmentCompatibilityFailure = (
   stdout: string,
   stderr: string,
@@ -1107,6 +1113,9 @@ const executeExternalAgentCliTask = async (
     ...params.config,
     workspaceRoot: normalizeLocalCommandCwd(params.config.workspaceRoot),
   };
+  const delegatedContextSections = removeManagedInstructionContext(
+    params.contextSections,
+  );
 
   if (!binary.available || !binary.executable) {
     return createExecutionResult(
@@ -1165,7 +1174,7 @@ const executeExternalAgentCliTask = async (
   let prompt = createExternalAgentPrompt(
     params.task,
     executionConfig,
-    params.contextSections,
+    delegatedContextSections,
     params.preparedConversationContext,
     fallbackBundle?.renderedText,
     providerLabel,
@@ -1261,7 +1270,7 @@ const executeExternalAgentCliTask = async (
       prompt = createExternalAgentPrompt(
         params.task,
         executionConfig,
-        params.contextSections,
+        delegatedContextSections,
         params.preparedConversationContext,
         undefined,
         providerLabel,
@@ -1313,7 +1322,7 @@ const executeExternalAgentCliTask = async (
     prompt = createExternalAgentPrompt(
       params.task,
       executionConfig,
-      params.contextSections,
+      delegatedContextSections,
       params.preparedConversationContext,
       fallbackBundle.renderedText,
       providerLabel,

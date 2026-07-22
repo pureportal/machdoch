@@ -139,6 +139,7 @@ pub(crate) fn emit_import_reload_events<R: Runtime>(
     const USER_SETTINGS_CHANGED_EVENT: &str = "machdoch://user-settings-changed";
     const DESKTOP_SETTINGS_CHANGED_EVENT: &str = "machdoch://desktop-settings-changed";
     const APPEARANCE_SETTINGS_CHANGED_EVENT: &str = "machdoch://appearance-settings-changed";
+    const SHELL_STATE_CHANGED_EVENT: &str = "machdoch://shell-state-changed";
     let now_millis = || chrono::Utc::now().timestamp_millis();
     let mut kinds = BTreeSet::new();
     if categories.contains(&SettingsCategoryId::ApiKeys) {
@@ -176,6 +177,14 @@ pub(crate) fn emit_import_reload_events<R: Runtime>(
             serde_json::json!({ "originWindowLabel": null, "updatedAt": now_millis() }),
         );
         let _ = crate::desktop_shell::sync_assistant_bubble_window(app);
+    }
+    if categories.contains(&SettingsCategoryId::GlobalContextPacks)
+        || categories.contains(&SettingsCategoryId::ChatVoicePreferences)
+    {
+        let _ = app.emit(
+            SHELL_STATE_CHANGED_EVENT,
+            serde_json::json!({ "originWindowLabel": null, "updatedAt": now_millis() }),
+        );
     }
 }
 

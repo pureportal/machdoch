@@ -9,10 +9,13 @@ export type SettingsCategoryId =
   | "credentials.api-keys"
   | "preferences.agent-provider"
   | "preferences.desktop-appearance"
+  | "preferences.chat-voice"
   | "memory.global"
   | "customizations.instructions-global"
   | "customizations.prompts-global"
+  | "context-packs.global"
   | "mcp.global"
+  | "ralph.preferences-global"
   | "ralph.flows-global";
 
 export type SettingsTransferMode = "send" | "receive";

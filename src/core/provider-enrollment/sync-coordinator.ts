@@ -378,6 +378,13 @@ const reconcileProviderScope = async (
 }> => {
   const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
   const warnings: string[] = [];
+  const previousInstruction = findPrevious(ownership, paths.instructionPath);
+  const previousMcp = findPrevious(ownership, paths.mcpPath);
+  const recordsByPath = new Map(
+    [previousInstruction, previousMcp]
+      .filter((record): record is ProviderOwnershipRecord => Boolean(record))
+      .map((record) => [record.path, record]),
+  );
   try {
     const bundle = compilePersistentInstructionBundle(
       prepareInstructions(provider, instructions),
@@ -388,40 +395,52 @@ const reconcileProviderScope = async (
       persistent: true,
       scope,
     });
-    const previousInstruction = findPrevious(ownership, paths.instructionPath);
-    const previousMcp = findPrevious(ownership, paths.mcpPath);
-    const instructionInstall = await installManagedTarget({
-      path: paths.instructionPath,
-      provider,
-      scope,
-      format: "markdown",
-      payload: [
-        `# Machdoch managed instructions (${scope})`,
-        `Canonical bundle digest: ${bundle.digest}`,
-        "",
-        bundle.renderedText || "No Machdoch-managed instructions are configured for this scope.",
-      ].join("\n"),
-      ...(previousInstruction ? { previous: previousInstruction } : {}),
-    });
-    const mcpInstall = await installManagedTarget({
-      path: paths.mcpPath,
-      provider,
-      scope,
-      format: paths.mcpFormat,
-      payload: getMcpPayload(paths.mcpFormat, projection.config),
-      ...(previousMcp ? { previous: previousMcp } : {}),
-    });
-    warnings.push(
-      ...instructionInstall.warnings,
-      ...mcpInstall.warnings,
-      ...bundle.warnings,
-      ...projection.warnings,
-    );
+    let instructionInstall: Awaited<ReturnType<typeof installManagedTarget>> | undefined;
+    let mcpInstall: Awaited<ReturnType<typeof installManagedTarget>> | undefined;
+    if (bundle.renderedText.trim().length > 0) {
+      instructionInstall = await installManagedTarget({
+        path: paths.instructionPath,
+        provider,
+        scope,
+        format: "markdown",
+        payload: [
+          `# Machdoch managed instructions (${scope})`,
+          `Canonical bundle digest: ${bundle.digest}`,
+          "",
+          bundle.renderedText,
+        ].join("\n"),
+        ...(previousInstruction ? { previous: previousInstruction } : {}),
+      });
+      recordsByPath.set(paths.instructionPath, instructionInstall.record);
+      warnings.push(...instructionInstall.warnings);
+    } else if (previousInstruction) {
+      const removal = await uninstallManagedTarget(previousInstruction, { force: true });
+      if (removal.warning) warnings.push(removal.warning);
+      if (removal.removed) recordsByPath.delete(paths.instructionPath);
+    }
+
+    if (projection.servers.length > 0) {
+      mcpInstall = await installManagedTarget({
+        path: paths.mcpPath,
+        provider,
+        scope,
+        format: paths.mcpFormat,
+        payload: getMcpPayload(paths.mcpFormat, projection.config),
+        ...(previousMcp ? { previous: previousMcp } : {}),
+      });
+      recordsByPath.set(paths.mcpPath, mcpInstall.record);
+      warnings.push(...mcpInstall.warnings);
+    } else if (previousMcp) {
+      const removal = await uninstallManagedTarget(previousMcp, { force: true });
+      if (removal.warning) warnings.push(removal.warning);
+      if (removal.removed) recordsByPath.delete(paths.mcpPath);
+    }
+    warnings.push(...bundle.warnings, ...projection.warnings);
     if (scope === "workspace") {
-      if (instructionInstall.record.createdFile) {
+      if (instructionInstall?.record.createdFile) {
         await addWorkspaceGitExclude(workspaceRoot, paths.instructionPath);
       }
-      if (mcpInstall.record.createdFile) {
+      if (mcpInstall?.record.createdFile) {
         await addWorkspaceGitExclude(workspaceRoot, paths.mcpPath);
       }
     }
@@ -437,7 +456,7 @@ const reconcileProviderScope = async (
         updatedAt: new Date().toISOString(),
         warnings,
       },
-      records: [instructionInstall.record, mcpInstall.record],
+      records: [...recordsByPath.values()],
       coverage,
     };
   } catch (error) {
@@ -451,10 +470,33 @@ const reconcileProviderScope = async (
         warnings,
         error: error instanceof Error ? error.message : String(error),
       },
-      records: [],
+      records: [...recordsByPath.values()],
       coverage: [],
     };
   }
+};
+
+const uninstallOwnedRecords = async (
+  records: readonly ProviderOwnershipRecord[],
+): Promise<{
+  retained: ProviderOwnershipRecord[];
+  warnings: string[];
+}> => {
+  const retained: ProviderOwnershipRecord[] = [];
+  const warnings: string[] = [];
+  for (const record of records) {
+    try {
+      const result = await uninstallManagedTarget(record, { force: true });
+      if (result.warning) warnings.push(result.warning);
+      if (!result.removed) retained.push(record);
+    } catch (error) {
+      retained.push(record);
+      warnings.push(
+        `Failed to remove ${record.path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return { retained, warnings };
 };
 
 const buildDaemonStatus = async (): Promise<ProviderSyncStatus["daemon"]> => {
@@ -474,6 +516,7 @@ const reconcileOnce = async (workspaceRoot: string): Promise<ReconcileOutput> =>
   const ownership = await loadOwnershipManifest(getProviderSyncOwnershipPath());
   const daemon = await buildDaemonStatus();
   if (!config.enabled || !config.persistentSync.enabled) {
+    const cleanup = await uninstallOwnedRecords(ownership.targets);
     return {
       status: {
         schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
@@ -482,7 +525,10 @@ const reconcileOnce = async (workspaceRoot: string): Promise<ReconcileOutput> =>
         workspaceRoot,
         targets: [],
       },
-      ownership,
+      ownership: {
+        schemaVersion: 1,
+        targets: cleanup.retained,
+      },
       coverage: [],
     };
   }
@@ -498,13 +544,23 @@ const reconcileOnce = async (workspaceRoot: string): Promise<ReconcileOutput> =>
   const statuses: ProviderSyncTargetStatus[] = [];
   const records: ProviderOwnershipRecord[] = [];
   const coverage: EnrollmentCoverageEntry[] = [];
+  const managedPaths = new Set<string>();
 
   for (const provider of getAgentCliProviders()) {
+    for (const scope of ["user", "workspace"] as const) {
+      const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
+      managedPaths.add(paths.instructionPath);
+      managedPaths.add(paths.mcpPath);
+    }
     if (!config.providers[provider].enabled) continue;
     const binary = resolveAgentCliProviderBinary(provider, env);
-    if (!binary.available) {
-      for (const scope of ["user", "workspace"] as const) {
-        const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
+    for (const scope of ["user", "workspace"] as const) {
+      const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
+      const hasPreviousTarget = Boolean(
+        findPrevious(ownership, paths.instructionPath) ||
+        findPrevious(ownership, paths.mcpPath),
+      );
+      if (!binary.available && !hasPreviousTarget) {
         statuses.push({
           provider,
           scope,
@@ -513,11 +569,9 @@ const reconcileOnce = async (workspaceRoot: string): Promise<ReconcileOutput> =>
           updatedAt: new Date().toISOString(),
           warnings: [binary.reason ?? `${provider} is not installed.`],
         });
+        continue;
       }
-      continue;
-    }
 
-    for (const scope of ["user", "workspace"] as const) {
       const result = await reconcileProviderScope(
         provider,
         scope,
@@ -525,18 +579,34 @@ const reconcileOnce = async (workspaceRoot: string): Promise<ReconcileOutput> =>
         customizations.instructions,
         ownership,
       );
+      if (!binary.available && result.status.state !== "degraded") {
+        result.status = {
+          ...result.status,
+          state: "not-installed",
+          warnings: [
+            binary.reason ?? `${provider} is not installed.`,
+            ...result.status.warnings,
+          ],
+        };
+      }
       statuses.push(result.status);
       records.push(...result.records);
       coverage.push(...result.coverage);
     }
   }
 
+  const currentPaths = new Set(records.map((record) => record.path));
+  const obsoleteRecords = ownership.targets.filter(
+    (record) => managedPaths.has(record.path) && !currentPaths.has(record.path),
+  );
+  const cleanup = await uninstallOwnedRecords(obsoleteRecords);
   const retainedRecords = ownership.targets.filter(
-    (record) => !records.some((next) => next.path === record.path),
+    (record) => !managedPaths.has(record.path),
   );
   const nextOwnership: ProviderOwnershipManifest = {
     schemaVersion: 1,
-    targets: [...retainedRecords, ...records].sort((left, right) => left.path.localeCompare(right.path)),
+    targets: [...retainedRecords, ...cleanup.retained, ...records]
+      .sort((left, right) => left.path.localeCompare(right.path)),
   };
   return {
     status: {
@@ -591,19 +661,21 @@ export const reconcileProviderSync = async (
 export const loadProviderSyncStatus = async (
   workspaceRoot: string,
 ): Promise<ProviderSyncStatus> => {
+  const config = await loadProviderEnrollmentConfig();
+  const enabled = config.enabled && config.persistentSync.enabled;
   try {
     const status = JSON.parse(
       await readFile(getProviderSyncStatusPath(workspaceRoot), "utf8"),
     ) as ProviderSyncStatus;
     return {
       ...status,
+      enabled,
       daemon: await buildDaemonStatus(),
     };
   } catch {
-    const config = await loadProviderEnrollmentConfig();
     return {
       schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
-      enabled: config.enabled && config.persistentSync.enabled,
+      enabled,
       daemon: await buildDaemonStatus(),
       workspaceRoot,
       targets: [],
@@ -616,7 +688,7 @@ export const uninstallProviderSyncTargets = async (): Promise<string[]> => {
   const warnings: string[] = [];
   const retained: ProviderOwnershipRecord[] = [];
   for (const record of manifest.targets) {
-    const result = await uninstallManagedTarget(record);
+    const result = await uninstallManagedTarget(record, { force: true });
     if (result.warning) warnings.push(result.warning);
     if (!result.removed) retained.push(record);
   }

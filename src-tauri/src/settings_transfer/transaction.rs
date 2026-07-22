@@ -25,9 +25,12 @@ use crate::{
 use super::{
     categories::{
         appearance_store_key, category_data_json, category_file_entries,
-        category_resource_lock_paths, has_file_ancestor_collision, marketplace_store_key,
+        category_resource_lock_paths, global_context_packs_from_shell_state,
+        has_file_ancestor_collision, marketplace_store_key,
         provider_enrollment_reconcile_lock_path, ralph_flow_id_from_path,
-        ralph_instruction_flow_id, relative_path_to_wire, snapshot_category, store_file,
+        ralph_instruction_flow_id, ralph_settings_store_key, relative_path_to_wire,
+        replace_global_context_packs, running_task_message_action_store_key, snapshot_category,
+        store_file, validate_chat_voice_preferences_value, validate_global_ralph_preferences_value,
         validate_wire_path, verify_unlinked_directory_chain, zeroize_json_value, zeroize_snapshot,
         zeroize_snapshot_availability, MAX_MCP_BYTES, MAX_RALPH_FLOW_BYTES, MAX_TEXT_FILE_BYTES,
         MAX_TOTAL_ITEMS, MAX_USER_CONFIG_BYTES,
@@ -53,6 +56,10 @@ const MAX_RECOVERY_RAW_BYTES: u64 = 64 * 1024 * 1024;
 // store write while a slow disk is still completing the journaled transaction.
 const STORE_LEASE_MILLIS: u64 = 15 * 60 * 1_000;
 const STORE_LEASE_RETRY_COUNT: usize = 250;
+const SHELL_STATE_STORAGE_KEY: &str = "machdoch.desktop.shell-state";
+const CHAT_VOICE_PREFERENCES_BACKUP_KEY: &str = "machdoch.settings-transfer.chat-voice-preferences";
+const RUNNING_TASK_MESSAGE_ACTION_REVISION_KEY: &str =
+    "machdoch.desktop.running-task-message-action-import-revision";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -696,6 +703,36 @@ fn capture_backup<R: Runtime>(
         })
         .transpose()?;
     let mut store_values = BTreeMap::new();
+    if categories.contains(&SettingsCategoryId::GlobalContextPacks) {
+        let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
+        let global_context_packs = global_context_packs_from_shell_state(&shell_state)?;
+        // Validate both the transferable projection and its coexistence with
+        // every preserved workspace pack before relying on it for rollback.
+        let _ = replace_global_context_packs(&shell_state, &global_context_packs)?;
+        let value = Some(Value::Array(global_context_packs));
+        consume_json_backup_budget(&value, &mut remaining_bytes)?;
+        store_values.insert(SHELL_STATE_STORAGE_KEY.to_string(), value);
+    }
+    if categories.contains(&SettingsCategoryId::ChatVoicePreferences) {
+        let value =
+            Some(crate::shell_state::capture_chat_voice_owned_fields_for_settings_transfer(app)?);
+        consume_json_backup_budget(&value, &mut remaining_bytes)?;
+        store_values.insert(CHAT_VOICE_PREFERENCES_BACKUP_KEY.to_string(), value);
+        let store = app
+            .store(store_file())
+            .map_err(|_| "Chat preference storage is unavailable.".to_string())?;
+        let value = store.get(running_task_message_action_store_key());
+        consume_json_backup_budget(&value, &mut remaining_bytes)?;
+        store_values.insert(running_task_message_action_store_key().to_string(), value);
+    }
+    if categories.contains(&SettingsCategoryId::GlobalRalphPreferences) {
+        let store = app
+            .store(store_file())
+            .map_err(|_| "Global RALPH preference storage is unavailable.".to_string())?;
+        let value = store.get(ralph_settings_store_key());
+        consume_json_backup_budget(&value, &mut remaining_bytes)?;
+        store_values.insert(ralph_settings_store_key().to_string(), value);
+    }
     if categories.contains(&SettingsCategoryId::DesktopAppearance)
         || categories.contains(&SettingsCategoryId::GlobalMcp)
     {
@@ -812,6 +849,40 @@ fn validate_resource_backup(backup: &ResourceBackup) -> Result<(), String> {
     }
     if backup.categories.contains(&SettingsCategoryId::GlobalMcp) {
         expected_store_keys.insert(marketplace_store_key());
+    }
+    if backup
+        .categories
+        .contains(&SettingsCategoryId::GlobalContextPacks)
+    {
+        expected_store_keys.insert(SHELL_STATE_STORAGE_KEY);
+        if !backup
+            .store_values
+            .get(SHELL_STATE_STORAGE_KEY)
+            .and_then(Option::as_ref)
+            .is_some_and(Value::is_array)
+        {
+            return Err("Settings rollback context-pack data is invalid.".to_string());
+        }
+    }
+    if backup
+        .categories
+        .contains(&SettingsCategoryId::ChatVoicePreferences)
+    {
+        expected_store_keys.insert(CHAT_VOICE_PREFERENCES_BACKUP_KEY);
+        expected_store_keys.insert(running_task_message_action_store_key());
+        let value = backup
+            .store_values
+            .get(CHAT_VOICE_PREFERENCES_BACKUP_KEY)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| "Settings rollback chat preferences are missing.".to_string())?;
+        crate::shell_state::validate_chat_voice_owned_fields_backup(value)
+            .map_err(|_| "Settings rollback chat preferences are invalid.".to_string())?;
+    }
+    if backup
+        .categories
+        .contains(&SettingsCategoryId::GlobalRalphPreferences)
+    {
+        expected_store_keys.insert(ralph_settings_store_key());
     }
     if backup
         .store_values
@@ -989,6 +1060,22 @@ fn acquire_store_write_leases<R: Runtime>(
     }
     if categories.contains(&SettingsCategoryId::GlobalMcp) {
         operation_ids.push(format!("machdoch:store-write:{}", marketplace_store_key()));
+    }
+    if categories.contains(&SettingsCategoryId::GlobalContextPacks) {
+        operation_ids.push(format!("machdoch:store-write:{SHELL_STATE_STORAGE_KEY}"));
+    }
+    if categories.contains(&SettingsCategoryId::ChatVoicePreferences) {
+        operation_ids.push(format!("machdoch:store-write:{SHELL_STATE_STORAGE_KEY}"));
+        operation_ids.push(format!(
+            "machdoch:store-write:{}",
+            running_task_message_action_store_key()
+        ));
+    }
+    if categories.contains(&SettingsCategoryId::GlobalRalphPreferences) {
+        operation_ids.push(format!(
+            "machdoch:store-write:{}",
+            ralph_settings_store_key()
+        ));
     }
     operation_ids.sort();
     operation_ids.dedup();
@@ -1188,7 +1275,6 @@ fn apply_agent_provider(
         .ok_or_else(|| "Imported provider sync preferences are invalid.".to_string())?;
     let local_sync = ensure_object_member(local, "persistentSync");
     for key in [
-        "enabled",
         "watch",
         "debounceMs",
         "filesystemConvergenceTargetMs",
@@ -1413,12 +1499,122 @@ fn apply_mcp(root: &Path, snapshot: &CategorySnapshot) -> Result<Value, String> 
     Ok(value["marketplace"].clone())
 }
 
+fn apply_global_context_packs<R: Runtime>(
+    app: &AppHandle<R>,
+    snapshot: &CategorySnapshot,
+) -> Result<(), String> {
+    let incoming = category_data_json(snapshot)?
+        .get("contextPacks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Imported global context packs are invalid.".to_string())?;
+    let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
+    let context_packs = replace_global_context_packs(&shell_state, incoming)?;
+    let _ = crate::shell_state::replace_context_packs_for_settings_transfer(app, context_packs)?;
+    Ok(())
+}
+
+fn apply_chat_voice_value<R: Runtime>(app: &AppHandle<R>, value: &Value) -> Result<Value, String> {
+    validate_chat_voice_preferences_value(value)?;
+    let _ = crate::shell_state::replace_chat_voice_preferences_for_settings_transfer(app, value)?;
+    value
+        .get("runningTaskMessageAction")
+        .cloned()
+        .ok_or_else(|| "Imported running-task message behavior is missing.".to_string())
+}
+
+fn apply_chat_voice_preferences<R: Runtime>(
+    app: &AppHandle<R>,
+    snapshot: &CategorySnapshot,
+) -> Result<Value, String> {
+    apply_chat_voice_value(app, &Value::Object(category_data_json(snapshot)?.clone()))
+}
+
+fn replace_nullable_store_member(
+    target: &mut Map<String, Value>,
+    source: &Map<String, Value>,
+    key: &str,
+) -> Result<(), String> {
+    match source.get(key) {
+        Some(Value::Null) => {
+            target.remove(key);
+        }
+        Some(value) => {
+            target.insert(key.to_string(), value.clone());
+        }
+        None => return Err("An imported preference is missing a required field.".to_string()),
+    }
+    Ok(())
+}
+
+fn merge_global_ralph_preferences(
+    mut local: Map<String, Value>,
+    value: &Value,
+) -> Result<Value, String> {
+    validate_global_ralph_preferences_value(value)?;
+    let incoming = value
+        .as_object()
+        .ok_or_else(|| "Imported global RALPH preferences are invalid.".to_string())?;
+    local.insert("version".to_string(), Value::from(1));
+    replace_member(&mut local, incoming, "flowLibraryMode")?;
+    replace_nullable_store_member(&mut local, incoming, "defaultMaxTransitions")?;
+    for (source_key, target_prefix) in [("generation", "generation"), ("run", "run")] {
+        let selection = incoming
+            .get(source_key)
+            .and_then(Value::as_object)
+            .ok_or_else(|| "An imported RALPH runtime preference is invalid.".to_string())?;
+        for (source_name, target_suffix) in [("provider", "Provider"), ("model", "Model")] {
+            let value = selection
+                .get(source_name)
+                .cloned()
+                .ok_or_else(|| "An imported RALPH runtime preference is missing.".to_string())?;
+            local.insert(format!("{target_prefix}{target_suffix}"), value);
+        }
+        match selection.get("reasoning") {
+            Some(Value::Null) => {
+                local.remove(&format!("{target_prefix}Reasoning"));
+            }
+            Some(reasoning) => {
+                local.insert(format!("{target_prefix}Reasoning"), reasoning.clone());
+            }
+            None => return Err("An imported RALPH reasoning preference is missing.".to_string()),
+        }
+    }
+    Ok(Value::Object(local))
+}
+
+fn apply_global_ralph_value<R: Runtime>(
+    app: &AppHandle<R>,
+    value: &Value,
+) -> Result<Value, String> {
+    let store = app
+        .store(store_file())
+        .map_err(|_| "Global RALPH preference storage is unavailable.".to_string())?;
+    let local = store
+        .get(ralph_settings_store_key())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    merge_global_ralph_preferences(local, value)
+}
+
+fn apply_global_ralph_preferences<R: Runtime>(
+    app: &AppHandle<R>,
+    snapshot: &CategorySnapshot,
+) -> Result<Value, String> {
+    apply_global_ralph_value(app, &Value::Object(category_data_json(snapshot)?.clone()))
+}
+
 fn apply_store_values<R: Runtime>(
     app: &AppHandle<R>,
     appearance: Option<Value>,
     marketplace: Option<Value>,
+    running_task_message_action: Option<Value>,
+    ralph_preferences: Option<Value>,
 ) -> Result<(), String> {
-    if appearance.is_none() && marketplace.is_none() {
+    if appearance.is_none()
+        && marketplace.is_none()
+        && running_task_message_action.is_none()
+        && ralph_preferences.is_none()
+    {
         return Ok(());
     }
     let store = app
@@ -1429,6 +1625,21 @@ fn apply_store_values<R: Runtime>(
     }
     if let Some(value) = marketplace {
         store.set(marketplace_store_key(), value);
+    }
+    if let Some(value) = running_task_message_action {
+        store.set(running_task_message_action_store_key(), value);
+        let revision = store
+            .get(RUNNING_TASK_MESSAGE_ACTION_REVISION_KEY)
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0)
+            .saturating_add(1);
+        store.set(
+            RUNNING_TASK_MESSAGE_ACTION_REVISION_KEY,
+            Value::from(revision),
+        );
+    }
+    if let Some(value) = ralph_preferences {
+        store.set(ralph_settings_store_key(), value);
     }
     store
         .save()
@@ -1454,16 +1665,31 @@ fn apply_envelope<R: Runtime>(
         None
     };
     let mut marketplace = None;
+    let mut running_task_message_action = None;
+    let mut ralph_preferences = None;
     for snapshot in &envelope.categories {
         match snapshot.id {
             SettingsCategoryId::GlobalInstructions
             | SettingsCategoryId::GlobalPrompts
             | SettingsCategoryId::GlobalRalphFlows => apply_file_category(root, snapshot)?,
+            SettingsCategoryId::GlobalContextPacks => apply_global_context_packs(app, snapshot)?,
+            SettingsCategoryId::ChatVoicePreferences => {
+                running_task_message_action = Some(apply_chat_voice_preferences(app, snapshot)?)
+            }
             SettingsCategoryId::GlobalMcp => marketplace = Some(apply_mcp(root, snapshot)?),
+            SettingsCategoryId::GlobalRalphPreferences => {
+                ralph_preferences = Some(apply_global_ralph_preferences(app, snapshot)?)
+            }
             _ => {}
         }
     }
-    apply_store_values(app, appearance, marketplace)
+    apply_store_values(
+        app,
+        appearance,
+        marketplace,
+        running_task_message_action,
+        ralph_preferences,
+    )
 }
 
 fn restore_optional_file(root: &Path, path: &Path, backup: &Option<String>) -> Result<(), String> {
@@ -1511,17 +1737,49 @@ fn restore_backup<R: Runtime>(
             write_settings_file(root, &path, &bytes)?;
         }
     }
-    if !backup.store_values.is_empty() {
+    if let Some(Some(Value::Array(global_context_packs))) =
+        backup.store_values.get(SHELL_STATE_STORAGE_KEY)
+    {
+        let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
+        let context_packs = replace_global_context_packs(&shell_state, global_context_packs)?;
+        let _ =
+            crate::shell_state::replace_context_packs_for_settings_transfer(app, context_packs)?;
+    }
+    if let Some(Some(value)) = backup.store_values.get(CHAT_VOICE_PREFERENCES_BACKUP_KEY) {
+        let _ =
+            crate::shell_state::restore_chat_voice_owned_fields_for_settings_transfer(app, value)?;
+    }
+    if backup.store_values.keys().any(|key| {
+        ![SHELL_STATE_STORAGE_KEY, CHAT_VOICE_PREFERENCES_BACKUP_KEY].contains(&key.as_str())
+    }) {
         let store = app
             .store(store_file())
             .map_err(|_| "Desktop settings storage is unavailable during rollback.".to_string())?;
         for (key, value) in &backup.store_values {
+            if [SHELL_STATE_STORAGE_KEY, CHAT_VOICE_PREFERENCES_BACKUP_KEY].contains(&key.as_str())
+            {
+                continue;
+            }
             match value {
                 Some(value) => store.set(key, value.clone()),
                 None => {
                     store.delete(key);
                 }
             }
+        }
+        if backup
+            .categories
+            .contains(&SettingsCategoryId::ChatVoicePreferences)
+        {
+            let revision = store
+                .get(RUNNING_TASK_MESSAGE_ACTION_REVISION_KEY)
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0)
+                .saturating_add(1);
+            store.set(
+                RUNNING_TASK_MESSAGE_ACTION_REVISION_KEY,
+                Value::from(revision),
+            );
         }
         store
             .save()
@@ -2068,5 +2326,57 @@ mod tests {
         assert_eq!(root["memory"]["entries"].as_array().map(Vec::len), Some(2));
         assert_eq!(root["memory"]["entries"][0]["id"], "session-only");
         assert_eq!(root["memory"]["entries"][1]["id"], "new-global");
+    }
+
+    #[test]
+    fn ralph_preference_replacement_preserves_workspace_and_history() {
+        let local = serde_json::json!({
+            "version": 1,
+            "workspaceRoot": "C:/local-workspace",
+            "flowLibraryMode": "workspace",
+            "generationProvider": "openai",
+            "generationModel": "old-generation",
+            "generationReasoning": "low",
+            "generationPromptHistory": ["keep this local"],
+            "runProvider": "openai",
+            "runModel": "old-run",
+            "defaultMaxTransitions": 10,
+            "futureLocalField": true
+        });
+        let incoming = serde_json::json!({
+            "flowLibraryMode": "all",
+            "generation": {
+                "provider": "anthropic",
+                "model": "new-generation",
+                "reasoning": "high"
+            },
+            "run": {
+                "provider": "codex-cli",
+                "model": "new-run",
+                "reasoning": null
+            },
+            "defaultMaxTransitions": null
+        });
+
+        let merged = merge_global_ralph_preferences(
+            local
+                .as_object()
+                .expect("local settings should be an object")
+                .clone(),
+            &incoming,
+        )
+        .expect("portable RALPH preferences should apply");
+
+        assert_eq!(merged["workspaceRoot"], "C:/local-workspace");
+        assert_eq!(merged["generationPromptHistory"][0], "keep this local");
+        assert_eq!(merged["futureLocalField"], true);
+        assert_eq!(merged["flowLibraryMode"], "all");
+        assert_eq!(merged["generationProvider"], "anthropic");
+        assert_eq!(merged["generationModel"], "new-generation");
+        assert_eq!(merged["generationReasoning"], "high");
+        assert_eq!(merged["runProvider"], "codex-cli");
+        assert_eq!(merged["runModel"], "new-run");
+        assert!(merged.get("runReasoning").is_none());
+        assert!(merged.get("defaultMaxTransitions").is_none());
     }
 }

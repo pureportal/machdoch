@@ -4,8 +4,8 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tauri::{path::BaseDirectory, AppHandle, Manager};
+use serde_json::{json, Map, Value};
+use tauri::{path::BaseDirectory, AppHandle, Manager, Runtime};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
@@ -19,6 +19,16 @@ const SHELL_STATE_STORAGE_KEY: &str = "machdoch.desktop.shell-state";
 const SHELL_STATE_REVISION_KEY: &str = "machdoch.desktop.shell-state-revision";
 const TOMBSTONES_KEY: &str = "__machdochTombstones";
 const MAX_TOMBSTONES_PER_KIND: usize = 50_000;
+const CHAT_VOICE_OWNED_SHELL_KEYS: [&str; 7] = [
+    "voice",
+    "lastSelectedProvider",
+    "lastSelectedModelByProvider",
+    "lastSelectedMode",
+    "lastSelectedReasoning",
+    "lastSelectedSessionMemoryEnabled",
+    "lastSelectedUseGlobalMemory",
+];
+const CHAT_VOICE_UI_CONTROL_KEY: &str = "lastSelectedUiControlEnabled";
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -96,6 +106,21 @@ async fn load_cached_snapshot(
         with_cooperative_file_lock(&path, || load_snapshot(&app_handle, fallback))
     })
     .await?;
+    *cache = Some(snapshot.clone());
+    Ok(snapshot)
+}
+
+fn load_cached_snapshot_blocking<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    cache: &mut Option<ShellStateSnapshot>,
+    fallback: Value,
+) -> Result<ShellStateSnapshot, String> {
+    if let Some(snapshot) = cache.as_ref() {
+        return Ok(snapshot.clone());
+    }
+
+    let path = snapshot_path(app_handle)?;
+    let snapshot = with_cooperative_file_lock(&path, || load_snapshot(app_handle, fallback))?;
     *cache = Some(snapshot.clone());
     Ok(snapshot)
 }
@@ -262,7 +287,193 @@ fn prepare_next_state(current: &Value, mut requested: Value, revision: u64) -> V
     requested
 }
 
-fn snapshot_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn prepare_context_pack_replacement(
+    current: &Value,
+    context_packs: Vec<Value>,
+    revision: u64,
+) -> Result<Value, String> {
+    let mut current = current.clone();
+    let current_object = current
+        .as_object_mut()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?;
+    let mut tombstones = current_object
+        .get(TOMBSTONES_KEY)
+        .cloned()
+        .and_then(|value| serde_json::from_value::<ShellStateTombstones>(value).ok())
+        .unwrap_or_default();
+    for id in context_packs
+        .iter()
+        .filter_map(|pack| pack.get("id").and_then(Value::as_str))
+    {
+        tombstones.context_packs.remove(id);
+    }
+    current_object.insert(
+        TOMBSTONES_KEY.to_string(),
+        serde_json::to_value(tombstones)
+            .map_err(|_| "The context-pack tombstones are invalid.".to_string())?,
+    );
+
+    let mut requested = current.clone();
+    requested
+        .as_object_mut()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?
+        .insert("contextPacks".to_string(), Value::Array(context_packs));
+    Ok(prepare_next_state(&current, requested, revision))
+}
+
+fn replace_optional_member(
+    target: &mut Map<String, Value>,
+    source: &Map<String, Value>,
+    source_key: &str,
+    target_key: &str,
+) -> Result<(), String> {
+    match source.get(source_key) {
+        Some(Value::Null) => {
+            target.remove(target_key);
+        }
+        Some(value) => {
+            target.insert(target_key.to_string(), value.clone());
+        }
+        None => return Err("A transferred shell preference is missing.".to_string()),
+    }
+    Ok(())
+}
+
+fn capture_member(root: &Map<String, Value>, key: &str) -> Value {
+    json!({
+        "present": root.contains_key(key),
+        "value": root.get(key).cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn restore_captured_member(
+    target: &mut Map<String, Value>,
+    backup: &Map<String, Value>,
+    key: &str,
+) -> Result<(), String> {
+    let entry = backup
+        .get(key)
+        .and_then(Value::as_object)
+        .ok_or_else(|| "A shell-state rollback field is invalid.".to_string())?;
+    if entry.len() != 2
+        || !entry.contains_key("present")
+        || !entry.contains_key("value")
+        || !entry.get("present").is_some_and(Value::is_boolean)
+    {
+        return Err("A shell-state rollback field is invalid.".to_string());
+    }
+    if entry.get("present").and_then(Value::as_bool) == Some(true) {
+        target.insert(
+            key.to_string(),
+            entry
+                .get("value")
+                .cloned()
+                .ok_or_else(|| "A shell-state rollback value is missing.".to_string())?,
+        );
+    } else {
+        target.remove(key);
+    }
+    Ok(())
+}
+
+fn capture_chat_voice_owned_fields(current: &Value) -> Result<Value, String> {
+    let current = current
+        .as_object()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?;
+    let mut backup = Map::new();
+    for key in CHAT_VOICE_OWNED_SHELL_KEYS
+        .into_iter()
+        .chain(std::iter::once(CHAT_VOICE_UI_CONTROL_KEY))
+    {
+        backup.insert(key.to_string(), capture_member(current, key));
+    }
+    Ok(Value::Object(backup))
+}
+
+fn prepare_chat_voice_owned_fields_restore(
+    current: &Value,
+    backup: &Value,
+    revision: u64,
+) -> Result<Value, String> {
+    let backup = backup
+        .as_object()
+        .ok_or_else(|| "The chat-preference rollback projection is invalid.".to_string())?;
+    if backup.len() != CHAT_VOICE_OWNED_SHELL_KEYS.len() + 1 {
+        return Err("The chat-preference rollback projection is invalid.".to_string());
+    }
+    let mut requested = current.clone();
+    let requested = requested
+        .as_object_mut()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?;
+    for key in CHAT_VOICE_OWNED_SHELL_KEYS
+        .into_iter()
+        .chain(std::iter::once(CHAT_VOICE_UI_CONTROL_KEY))
+    {
+        restore_captured_member(requested, backup, key)?;
+    }
+    Ok(prepare_next_state(
+        current,
+        Value::Object(requested.clone()),
+        revision,
+    ))
+}
+
+fn prepare_chat_voice_preference_replacement(
+    current: &Value,
+    preferences: &Value,
+    revision: u64,
+) -> Result<Value, String> {
+    let source = preferences
+        .as_object()
+        .ok_or_else(|| "Transferred chat and voice preferences are invalid.".to_string())?;
+    let incoming_voice = source
+        .get("voice")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "Transferred spoken-reply preferences are invalid.".to_string())?;
+    let new_chat = source
+        .get("newChat")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "Transferred new-chat defaults are invalid.".to_string())?;
+    let mut requested = current.clone();
+    let requested = requested
+        .as_object_mut()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?;
+
+    let mut voice = requested
+        .get("voice")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for key in ["autoSpeakResponses", "rate"] {
+        let value = incoming_voice
+            .get(key)
+            .ok_or_else(|| "A transferred spoken-reply preference is missing.".to_string())?;
+        voice.insert(key.to_string(), value.clone());
+    }
+    requested.insert("voice".to_string(), Value::Object(voice));
+
+    for (source_key, target_key) in [
+        ("provider", "lastSelectedProvider"),
+        ("models", "lastSelectedModelByProvider"),
+        ("sessionMemoryEnabled", "lastSelectedSessionMemoryEnabled"),
+        ("useGlobalMemory", "lastSelectedUseGlobalMemory"),
+        ("uiControlEnabled", "lastSelectedUiControlEnabled"),
+    ] {
+        let value = new_chat
+            .get(source_key)
+            .ok_or_else(|| "A transferred new-chat preference is missing.".to_string())?;
+        requested.insert(target_key.to_string(), value.clone());
+    }
+    replace_optional_member(requested, new_chat, "mode", "lastSelectedMode")?;
+    replace_optional_member(requested, new_chat, "reasoning", "lastSelectedReasoning")?;
+    Ok(prepare_next_state(
+        current,
+        Value::Object(requested.clone()),
+        revision,
+    ))
+}
+
+fn snapshot_path<R: Runtime>(app_handle: &AppHandle<R>) -> Result<std::path::PathBuf, String> {
     app_handle
         .path()
         .resolve(SNAPSHOT_FILE, BaseDirectory::AppData)
@@ -324,14 +535,19 @@ fn apply_shell_state_patch(current: &Value, patch: ShellStatePatchRequest) -> Va
     requested
 }
 
-fn snapshot_revision_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn snapshot_revision_path<R: Runtime>(
+    app_handle: &AppHandle<R>,
+) -> Result<std::path::PathBuf, String> {
     app_handle
         .path()
         .resolve(SNAPSHOT_REVISION_FILE, BaseDirectory::AppData)
         .map_err(|error| format!("Failed to resolve the shell-state revision path: {error}"))
 }
 
-fn persist_snapshot_revision(app_handle: &AppHandle, revision: u64) -> Result<(), String> {
+fn persist_snapshot_revision<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    revision: u64,
+) -> Result<(), String> {
     let revision_path = snapshot_revision_path(app_handle)?;
     write_file_atomic(
         &revision_path,
@@ -346,7 +562,7 @@ fn persist_snapshot_revision(app_handle: &AppHandle, revision: u64) -> Result<()
     })
 }
 
-fn load_snapshot_revision(app_handle: &AppHandle) -> Result<u64, String> {
+fn load_snapshot_revision<R: Runtime>(app_handle: &AppHandle<R>) -> Result<u64, String> {
     let revision_path = snapshot_revision_path(app_handle)?;
 
     if revision_path.exists() {
@@ -370,7 +586,10 @@ fn load_snapshot_revision(app_handle: &AppHandle) -> Result<u64, String> {
     Ok(snapshot.revision)
 }
 
-fn ensure_snapshot_revision(app_handle: &AppHandle, revision: u64) -> Result<(), String> {
+fn ensure_snapshot_revision<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    revision: u64,
+) -> Result<(), String> {
     if load_snapshot_revision(app_handle).ok() == Some(revision) {
         return Ok(());
     }
@@ -378,7 +597,10 @@ fn ensure_snapshot_revision(app_handle: &AppHandle, revision: u64) -> Result<(),
     persist_snapshot_revision(app_handle, revision)
 }
 
-fn load_snapshot(app_handle: &AppHandle, fallback: Value) -> Result<ShellStateSnapshot, String> {
+fn load_snapshot<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    fallback: Value,
+) -> Result<ShellStateSnapshot, String> {
     let snapshot_path = snapshot_path(app_handle)?;
 
     if snapshot_path.exists() {
@@ -410,7 +632,10 @@ fn load_snapshot(app_handle: &AppHandle, fallback: Value) -> Result<ShellStateSn
     })
 }
 
-fn persist_snapshot(app_handle: &AppHandle, snapshot: &ShellStateSnapshot) -> Result<(), String> {
+fn persist_snapshot<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    snapshot: &ShellStateSnapshot,
+) -> Result<(), String> {
     let snapshot_path = snapshot_path(app_handle)?;
 
     if let Some(parent) = snapshot_path.parent() {
@@ -443,7 +668,7 @@ fn persist_snapshot(app_handle: &AppHandle, snapshot: &ShellStateSnapshot) -> Re
     Ok(())
 }
 
-fn remove_migrated_legacy_shell_state(app_handle: &AppHandle) -> Result<(), String> {
+fn remove_migrated_legacy_shell_state<R: Runtime>(app_handle: &AppHandle<R>) -> Result<(), String> {
     let store = app_handle
         .store(STORE_FILE)
         .map_err(|error| format!("Failed to open the legacy shell-state store: {error}"))?;
@@ -457,6 +682,93 @@ fn remove_migrated_legacy_shell_state(app_handle: &AppHandle) -> Result<(), Stri
     store
         .save()
         .map_err(|error| format!("Failed to compact the legacy shell-state store: {error}"))
+}
+
+/// Reads the authoritative shell state from a settings-transfer worker thread.
+///
+/// Settings transfer runs its blocking snapshot and transaction work through
+/// `spawn_blocking`, so it can share the same cache mutex and revisioned file as
+/// the asynchronous UI commands without maintaining a second shell-state DTO.
+pub(crate) fn load_shell_state_for_settings_transfer<R: Runtime>(
+    app_handle: &AppHandle<R>,
+) -> Result<Value, String> {
+    let state = app_handle.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let snapshot =
+        load_cached_snapshot_blocking(app_handle, &mut cache, json!({ "contextPacks": [] }))?;
+    Ok(snapshot.state)
+}
+
+pub(crate) fn capture_chat_voice_owned_fields_for_settings_transfer<R: Runtime>(
+    app_handle: &AppHandle<R>,
+) -> Result<Value, String> {
+    let state = app_handle.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let current = load_cached_snapshot_blocking(app_handle, &mut cache, json!({}))?;
+    capture_chat_voice_owned_fields(&current.state)
+}
+
+pub(crate) fn validate_chat_voice_owned_fields_backup(backup: &Value) -> Result<(), String> {
+    let _ = prepare_chat_voice_owned_fields_restore(&json!({}), backup, 1)?;
+    Ok(())
+}
+
+/// Replaces the complete persisted context-pack list through the same CAS
+/// snapshot used by the desktop UI. Callers are responsible for preserving
+/// every pack outside the category they own.
+pub(crate) fn replace_context_packs_for_settings_transfer<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    context_packs: Vec<Value>,
+) -> Result<u64, String> {
+    let state = app_handle.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let current =
+        load_cached_snapshot_blocking(app_handle, &mut cache, json!({ "contextPacks": [] }))?;
+    let revision = current.revision.saturating_add(1);
+    let snapshot = ShellStateSnapshot {
+        state: prepare_context_pack_replacement(&current.state, context_packs, revision)?,
+        revision,
+    };
+    let path = snapshot_path(app_handle)?;
+    with_cooperative_file_lock(&path, || persist_snapshot(app_handle, &snapshot))?;
+    *cache = Some(snapshot);
+    Ok(revision)
+}
+
+pub(crate) fn replace_chat_voice_preferences_for_settings_transfer<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    preferences: &Value,
+) -> Result<u64, String> {
+    let state = app_handle.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let current = load_cached_snapshot_blocking(app_handle, &mut cache, json!({}))?;
+    let revision = current.revision.saturating_add(1);
+    let snapshot = ShellStateSnapshot {
+        state: prepare_chat_voice_preference_replacement(&current.state, preferences, revision)?,
+        revision,
+    };
+    let path = snapshot_path(app_handle)?;
+    with_cooperative_file_lock(&path, || persist_snapshot(app_handle, &snapshot))?;
+    *cache = Some(snapshot);
+    Ok(revision)
+}
+
+pub(crate) fn restore_chat_voice_owned_fields_for_settings_transfer<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    backup: &Value,
+) -> Result<u64, String> {
+    let state = app_handle.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let current = load_cached_snapshot_blocking(app_handle, &mut cache, json!({}))?;
+    let revision = current.revision.saturating_add(1);
+    let snapshot = ShellStateSnapshot {
+        state: prepare_chat_voice_owned_fields_restore(&current.state, backup, revision)?,
+        revision,
+    };
+    let path = snapshot_path(app_handle)?;
+    with_cooperative_file_lock(&path, || persist_snapshot(app_handle, &snapshot))?;
+    *cache = Some(snapshot);
+    Ok(revision)
 }
 
 #[tauri::command]
@@ -570,8 +882,10 @@ async fn commit_requested_state(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_shell_state_patch, prepare_next_state, read_revision, ShellStatePatchRequest,
-        TOMBSTONES_KEY,
+        apply_shell_state_patch, capture_chat_voice_owned_fields,
+        prepare_chat_voice_owned_fields_restore, prepare_chat_voice_preference_replacement,
+        prepare_context_pack_replacement, prepare_next_state, read_revision,
+        ShellStatePatchRequest, TOMBSTONES_KEY,
     };
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -722,5 +1036,125 @@ mod tests {
             .as_array()
             .is_some_and(Vec::is_empty));
         assert!(stale["contextPacks"].as_array().is_some_and(Vec::is_empty));
+    }
+
+    #[test]
+    fn authoritative_context_pack_replacement_clears_restored_id_tombstones() {
+        let current = json!({
+            "version": 2,
+            "sessions": [],
+            "queuedSessionMessages": [],
+            "contextPacks": [{ "id": "new-global", "workspace": null }],
+            "__machdochTombstones": {
+                "sessions": {},
+                "messages": {},
+                "queuedMessages": {},
+                "contextPacks": { "old-global": 2 }
+            }
+        });
+        let restored = prepare_context_pack_replacement(
+            &current,
+            vec![json!({ "id": "old-global", "workspace": null })],
+            3,
+        )
+        .expect("an authoritative rollback should restore the old pack id");
+
+        assert_eq!(restored["contextPacks"][0]["id"], json!("old-global"));
+        assert!(restored[TOMBSTONES_KEY]["contextPacks"]
+            .get("old-global")
+            .is_none());
+        assert_eq!(
+            restored[TOMBSTONES_KEY]["contextPacks"]["new-global"],
+            json!(3)
+        );
+    }
+
+    #[test]
+    fn chat_voice_replacement_preserves_machine_local_and_unrelated_state() {
+        let current = json!({
+            "sessions": [{ "id": "session-1" }],
+            "contextPacks": [{ "id": "pack-1" }],
+            "voice": {
+                "autoSpeakResponses": false,
+                "rate": 1.0,
+                "preferredVoiceURI": "local-voice"
+            },
+            "lastSelectedProvider": "openai",
+            "lastSelectedModelByProvider": { "openai": "old-model" },
+            "lastSelectedMode": "ask",
+            "lastSelectedReasoning": "low",
+            "lastSelectedSessionMemoryEnabled": true,
+            "lastSelectedUseGlobalMemory": true,
+            "lastSelectedUiControlEnabled": false
+        });
+        let preferences = json!({
+            "voice": { "autoSpeakResponses": true, "rate": 1.25 },
+            "newChat": {
+                "provider": "anthropic",
+                "models": { "anthropic": "claude-test" },
+                "mode": null,
+                "reasoning": "high",
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": false,
+                "uiControlEnabled": true
+            },
+            "runningTaskMessageAction": "steer"
+        });
+
+        let replaced = prepare_chat_voice_preference_replacement(&current, &preferences, 2)
+            .expect("portable chat and voice preferences should apply");
+
+        assert_eq!(replaced["sessions"], current["sessions"]);
+        assert_eq!(replaced["contextPacks"], current["contextPacks"]);
+        assert_eq!(replaced["voice"]["preferredVoiceURI"], json!("local-voice"));
+        assert_eq!(replaced["voice"]["autoSpeakResponses"], json!(true));
+        assert_eq!(replaced["voice"]["rate"], json!(1.25));
+        assert_eq!(replaced["lastSelectedProvider"], json!("anthropic"));
+        assert!(replaced.get("lastSelectedMode").is_none());
+        assert_eq!(replaced["lastSelectedReasoning"], json!("high"));
+        assert_eq!(replaced["lastSelectedUiControlEnabled"], json!(true));
+    }
+
+    #[test]
+    fn chat_voice_rollback_restores_exact_owned_field_presence() {
+        let original = json!({
+            "sessions": [{ "id": "session-1" }],
+            "voice": { "preferredVoiceURI": "local-voice" },
+            "lastSelectedProvider": "openai"
+        });
+        let backup = capture_chat_voice_owned_fields(&original)
+            .expect("the exact owned projection should be captured");
+        let changed = json!({
+            "sessions": [{ "id": "session-1" }],
+            "voice": {
+                "preferredVoiceURI": "local-voice",
+                "autoSpeakResponses": true,
+                "rate": 1.3
+            },
+            "lastSelectedProvider": "anthropic",
+            "lastSelectedModelByProvider": { "anthropic": "claude-test" },
+            "lastSelectedMode": "machdoch",
+            "lastSelectedReasoning": "high",
+            "lastSelectedSessionMemoryEnabled": false,
+            "lastSelectedUseGlobalMemory": false,
+            "lastSelectedUiControlEnabled": true
+        });
+
+        let restored = prepare_chat_voice_owned_fields_restore(&changed, &backup, 3)
+            .expect("the exact owned projection should restore");
+
+        assert_eq!(restored["sessions"], original["sessions"]);
+        assert_eq!(restored["voice"], original["voice"]);
+        assert_eq!(restored["lastSelectedProvider"], "openai");
+        for absent in [
+            "lastSelectedModelByProvider",
+            "lastSelectedMode",
+            "lastSelectedReasoning",
+            "lastSelectedSessionMemoryEnabled",
+            "lastSelectedUseGlobalMemory",
+            "lastSelectedUiControlEnabled",
+        ] {
+            assert!(restored.get(absent).is_none(), "{absent} should be absent");
+        }
     }
 }

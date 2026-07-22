@@ -137,6 +137,10 @@ struct WireRecord {
     message: WireMessage,
 }
 
+fn is_supported_protocol_version(major: u16, minor: u16) -> bool {
+    major == PROTOCOL_MAJOR && minor == PROTOCOL_MINOR
+}
+
 pub(crate) struct NoiseChannel {
     stream: TcpStream,
     transport: TransportState,
@@ -319,7 +323,7 @@ impl NoiseChannel {
         }
         let record = serde_json::from_slice::<WireRecord>(&plaintext)
             .map_err(|_| "INVALID_RECORD".to_string())?;
-        if record.protocol_major != PROTOCOL_MAJOR || record.protocol_minor > PROTOCOL_MINOR {
+        if !is_supported_protocol_version(record.protocol_major, record.protocol_minor) {
             return Err("PROTOCOL_MISMATCH".to_string());
         }
         if record.sequence != self.receive_sequence {
@@ -601,7 +605,7 @@ pub(crate) async fn accept_noise_responder(
         .map_err(|_| "NETWORK_SETUP_FAILED".to_string())?;
     let preface_bytes = read_frame(&mut stream, PREFACE_TIMEOUT).await?;
     let preface = ConnectionPreface::decode(&preface_bytes)?;
-    if preface.major != PROTOCOL_MAJOR || preface.minor > PROTOCOL_MINOR {
+    if !is_supported_protocol_version(preface.major, preface.minor) {
         return Err("PROTOCOL_MISMATCH".to_string());
     }
     if !constant_time_eq(&preface.sid, expected_sid) {
@@ -791,6 +795,22 @@ mod tests {
     }
 
     #[test]
+    fn catalog_changing_protocol_minors_fail_before_noise() {
+        assert!(is_supported_protocol_version(
+            PROTOCOL_MAJOR,
+            PROTOCOL_MINOR
+        ));
+        assert!(!is_supported_protocol_version(
+            PROTOCOL_MAJOR,
+            PROTOCOL_MINOR.saturating_sub(1)
+        ));
+        assert!(!is_supported_protocol_version(
+            PROTOCOL_MAJOR.saturating_add(1),
+            PROTOCOL_MINOR
+        ));
+    }
+
+    #[test]
     fn sas_is_six_digits_and_role_order_sensitive() {
         let context = [3_u8; 32];
         let initiator = [4_u8; 16];
@@ -911,5 +931,38 @@ mod tests {
             WireMessage::Approval
         );
         responder.await.expect("responder task should finish");
+    }
+
+    #[tokio::test]
+    async fn mismatched_minor_is_rejected_before_noise_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let address = listener.local_addr().expect("listener address");
+        let sid = [11_u8; 16];
+        let responder = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("peer should connect");
+            match accept_noise_responder(stream, &sid).await {
+                Ok(_) => panic!("a lower protocol minor must fail before Noise"),
+                Err(error) => error,
+            }
+        });
+        let mut stream = TcpStream::connect(address)
+            .await
+            .expect("connect should work");
+        let incompatible = ConnectionPreface {
+            major: PROTOCOL_MAJOR,
+            minor: PROTOCOL_MINOR.saturating_sub(1),
+            sid,
+            initiator_nonce: [12; 16],
+        };
+        write_frame(&mut stream, &incompatible.encode(), Duration::from_secs(1))
+            .await
+            .expect("the incompatible preface should be sent");
+
+        assert_eq!(
+            responder.await.expect("responder task should finish"),
+            "PROTOCOL_MISMATCH"
+        );
     }
 }

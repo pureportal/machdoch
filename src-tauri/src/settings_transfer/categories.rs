@@ -21,7 +21,8 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
-    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_REVIEW_MODEL_MODE,
+    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
+    DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_REVIEW_MODEL_MODE,
     MAX_CONFIGURED_AUTOPILOT_ITERATIONS, MAX_CONFIGURED_EXECUTOR_TURNS,
     MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
@@ -33,8 +34,9 @@ use crate::runtime_contract_generated::{
     MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    USER_API_PROVIDERS, USER_REVIEW_MODEL_MODES, USER_WEB_SEARCH_PROVIDERS,
-    VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
+    REASONING_MODES, RUN_MODES, USER_API_PROVIDERS, USER_REVIEW_MODEL_MODES,
+    USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
+    VALID_WEB_SEARCH_PROVIDERS,
 };
 use crate::{
     cooperative_file_lock::{acquire_cooperative_file_lock, CooperativeFileLock},
@@ -52,6 +54,15 @@ pub(crate) const MAX_TEXT_FILE_BYTES: u64 = 128 * 1024;
 pub(crate) const MAX_USER_CONFIG_BYTES: u64 = 8 * 1024 * 1024;
 pub(crate) const MAX_MCP_BYTES: u64 = 2 * 1024 * 1024;
 pub(crate) const MAX_RALPH_FLOW_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_CONTEXT_PACKS: usize = 160;
+const MAX_CONTEXT_PACK_NAME_CHARS: usize = 72;
+const MAX_CONTEXT_PACK_TEXT_CHARS: usize = 8_000;
+const MAX_CONTEXT_PACK_VARIABLES: usize = 12;
+const MAX_CONTEXT_PACK_VARIABLE_CHARS: usize = 40;
+const MAX_CONTEXT_PACK_TRIGGERS: usize = 16;
+const MAX_CONTEXT_PACK_TRIGGER_CHARS: usize = 96;
+const MAX_CONTEXT_PACK_ID_CHARS: usize = 256;
+const MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS: usize = 4_096;
 const MAX_RELATIVE_PATH_BYTES: usize = 512;
 const MAX_RELATIVE_PATH_DEPTH: usize = 12;
 const MAX_PATH_COMPONENT_BYTES: usize = 255;
@@ -59,6 +70,15 @@ const RALPH_CORE_VALIDATION_TIMEOUT: Duration = Duration::from_secs(60);
 const STORE_FILE: &str = "machdoch-shell-state.json";
 const APPEARANCE_STORAGE_KEY: &str = "machdoch.desktop.appearance-state";
 const MCP_MARKETPLACE_STORAGE_KEY: &str = "machdoch.desktop.mcp-marketplace-state";
+const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY: &str =
+    "machdoch.desktop.running-task-message-action";
+const RALPH_SETTINGS_STORAGE_KEY: &str = "machdoch.desktop.ralph-settings";
+const CHAT_VOICE_PREFERENCE_ITEM_COUNT: u32 = 10;
+const RALPH_PREFERENCE_ITEM_COUNT: u32 = 8;
+const MIN_VOICE_RATE: f64 = 0.8;
+const MAX_VOICE_RATE: f64 = 1.4;
+const MAX_MODEL_ID_CHARS: usize = 512;
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 fn path_entry_exists(path: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(path) {
@@ -151,6 +171,48 @@ fn f64_clamped(value: Option<&Value>, fallback: f64, minimum: f64, maximum: f64)
     serde_json::Number::from_f64(normalized)
         .map(Value::Number)
         .unwrap_or_else(|| json!(fallback))
+}
+
+fn default_model_for_provider(provider: &str) -> &'static str {
+    DEFAULT_MODEL_BY_PROVIDER
+        .iter()
+        .find_map(|(candidate, model)| (*candidate == provider).then_some(*model))
+        .unwrap_or("auto")
+}
+
+fn valid_model_id(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.trim() == value
+        && value.chars().count() <= MAX_MODEL_ID_CHARS
+        && !value.chars().any(char::is_control)
+}
+
+fn normalized_runtime_provider(value: Option<&Value>) -> &'static str {
+    value
+        .and_then(Value::as_str)
+        .and_then(|provider| {
+            VALID_MODEL_PROVIDERS
+                .iter()
+                .copied()
+                .find(|candidate| *candidate == provider)
+        })
+        .unwrap_or(DEFAULT_MODEL_PROVIDER)
+}
+
+fn normalized_model(value: Option<&Value>, provider: &str) -> String {
+    value
+        .and_then(Value::as_str)
+        .filter(|model| valid_model_id(model))
+        .unwrap_or_else(|| default_model_for_provider(provider))
+        .to_string()
+}
+
+fn nullable_enum(value: Option<&Value>, allowed: &[&str]) -> Value {
+    value
+        .and_then(Value::as_str)
+        .filter(|value| allowed.contains(value))
+        .map(|value| Value::String(value.to_string()))
+        .unwrap_or(Value::Null)
 }
 
 fn create_json_snapshot(
@@ -254,7 +316,7 @@ fn normalized_provider_enrollment(value: Option<&Value>) -> Value {
             "progressiveDiscoveryThresholdPercent": mcp.get("progressiveDiscoveryThresholdPercent").and_then(Value::as_u64).unwrap_or(3).clamp(1, 5),
         },
         "persistentSync": {
-            "enabled": sync.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+            "enabled": sync.get("enabled").and_then(Value::as_bool).unwrap_or(false),
             "watch": sync.get("watch").and_then(Value::as_bool).unwrap_or(true),
             "debounceMs": sync.get("debounceMs").and_then(Value::as_u64).unwrap_or(500).clamp(50, 60_000),
             "filesystemConvergenceTargetMs": sync.get("filesystemConvergenceTargetMs").and_then(Value::as_u64).unwrap_or(2_000).clamp(100, 60_000),
@@ -373,6 +435,250 @@ fn snapshot_global_memory() -> Result<CategorySnapshot, String> {
         value,
         u32::try_from(count).unwrap_or(u32::MAX),
         empty,
+    )
+}
+
+pub(crate) fn chat_voice_preferences_from_sources<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Value, String> {
+    let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)
+        .map_err(|_| "Chat and voice preferences are unavailable.".to_string())?;
+    let root = shell_state
+        .as_object()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?;
+    let voice = root.get("voice").and_then(Value::as_object);
+    let provider = normalized_runtime_provider(root.get("lastSelectedProvider"));
+    let stored_models = root
+        .get("lastSelectedModelByProvider")
+        .and_then(Value::as_object);
+    let mut models = Map::new();
+    if let Some(stored_models) = stored_models {
+        for (candidate, model) in stored_models {
+            if VALID_MODEL_PROVIDERS.contains(&candidate.as_str())
+                && model.as_str().is_some_and(valid_model_id)
+            {
+                models.insert(candidate.clone(), model.clone());
+            }
+        }
+    }
+    models
+        .entry(provider.to_string())
+        .or_insert_with(|| Value::String(default_model_for_provider(provider).to_string()));
+
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|_| "Chat preferences are unavailable.".to_string())?;
+    let running_task_message_action = store
+        .get(RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY)
+        .and_then(|value| value.as_str().map(str::to_string))
+        .filter(|value| ["steer", "stop-and-send", "queue"].contains(&value.as_str()))
+        .unwrap_or_else(|| "queue".to_string());
+    let value = json!({
+        "voice": {
+            "autoSpeakResponses": voice
+                .and_then(|voice| voice.get("autoSpeakResponses"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            "rate": f64_clamped(
+                voice.and_then(|voice| voice.get("rate")),
+                1.0,
+                MIN_VOICE_RATE,
+                MAX_VOICE_RATE,
+            ),
+        },
+        "newChat": {
+            "provider": provider,
+            "models": models,
+            "mode": nullable_enum(root.get("lastSelectedMode"), &RUN_MODES),
+            "reasoning": nullable_enum(root.get("lastSelectedReasoning"), &REASONING_MODES),
+            "sessionMemoryEnabled": root
+                .get("lastSelectedSessionMemoryEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            "useGlobalMemory": root
+                .get("lastSelectedUseGlobalMemory")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            "uiControlEnabled": root
+                .get("lastSelectedUiControlEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        },
+        "runningTaskMessageAction": running_task_message_action,
+    });
+    validate_chat_voice_preferences_value(&value)?;
+    Ok(value)
+}
+
+fn snapshot_chat_voice_preferences<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<CategorySnapshot, String> {
+    create_json_snapshot(
+        SettingsCategoryId::ChatVoicePreferences,
+        chat_voice_preferences_from_sources(app)?,
+        CHAT_VOICE_PREFERENCE_ITEM_COUNT,
+        false,
+    )
+}
+
+fn normalize_ralph_runtime_selection(root: &Map<String, Value>, prefix: &str) -> Value {
+    let provider_key = format!("{prefix}Provider");
+    let model_key = format!("{prefix}Model");
+    let reasoning_key = format!("{prefix}Reasoning");
+    let provider = normalized_runtime_provider(root.get(&provider_key));
+    json!({
+        "provider": provider,
+        "model": normalized_model(root.get(&model_key), provider),
+        "reasoning": nullable_enum(root.get(&reasoning_key), &REASONING_MODES),
+    })
+}
+
+pub(crate) fn global_ralph_preferences_from_store<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Value, String> {
+    let store = app
+        .store(STORE_FILE)
+        .map_err(|_| "Global RALPH preferences are unavailable.".to_string())?;
+    let root = store
+        .get(RALPH_SETTINGS_STORAGE_KEY)
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let flow_library_mode = root
+        .get("flowLibraryMode")
+        .and_then(Value::as_str)
+        .filter(|value| ["workspace", "user", "all"].contains(value))
+        .unwrap_or("workspace");
+    let default_max_transitions = root
+        .get("defaultMaxTransitions")
+        .and_then(Value::as_u64)
+        .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
+        .map(Value::from)
+        .unwrap_or(Value::Null);
+    let value = json!({
+        "flowLibraryMode": flow_library_mode,
+        "generation": normalize_ralph_runtime_selection(&root, "generation"),
+        "run": normalize_ralph_runtime_selection(&root, "run"),
+        "defaultMaxTransitions": default_max_transitions,
+    });
+    validate_global_ralph_preferences_value(&value)?;
+    Ok(value)
+}
+
+fn snapshot_global_ralph_preferences<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<CategorySnapshot, String> {
+    create_json_snapshot(
+        SettingsCategoryId::GlobalRalphPreferences,
+        global_ralph_preferences_from_store(app)?,
+        RALPH_PREFERENCE_ITEM_COUNT,
+        false,
+    )
+}
+
+fn context_pack_scope(value: &Value) -> Result<bool, String> {
+    let pack = value
+        .as_object()
+        .ok_or_else(|| "A context pack is invalid.".to_string())?;
+    match pack.get("workspace") {
+        Some(Value::Null) => Ok(true),
+        Some(Value::String(workspace))
+            if !workspace.trim().is_empty()
+                && workspace.chars().count() <= MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS
+                && !workspace.chars().any(char::is_control) =>
+        {
+            Ok(false)
+        }
+        _ => Err("A context pack has an invalid scope.".to_string()),
+    }
+}
+
+fn context_pack_id(value: &Value) -> Result<&str, String> {
+    let id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "A context pack is missing its id.".to_string())?;
+    if id.is_empty()
+        || id.trim() != id
+        || id.chars().count() > MAX_CONTEXT_PACK_ID_CHARS
+        || id.chars().any(char::is_control)
+    {
+        return Err("A context pack has an invalid id.".to_string());
+    }
+    Ok(id)
+}
+
+fn shell_context_packs(value: &Value) -> Result<Vec<Value>, String> {
+    let root = value
+        .as_object()
+        .ok_or_else(|| "The persisted shell state is invalid.".to_string())?;
+    match root.get("contextPacks") {
+        None => Ok(Vec::new()),
+        Some(Value::Array(packs)) => Ok(packs.clone()),
+        Some(_) => Err("The persisted context-pack collection is invalid.".to_string()),
+    }
+}
+
+pub(crate) fn global_context_packs_from_shell_state(
+    shell_state: &Value,
+) -> Result<Vec<Value>, String> {
+    let packs = shell_context_packs(shell_state)?;
+    let mut ids = HashSet::new();
+    let mut global = Vec::new();
+    for pack in packs {
+        let id = context_pack_id(&pack)?.to_string();
+        if !ids.insert(id) {
+            return Err("Context pack ids must be unique.".to_string());
+        }
+        if context_pack_scope(&pack)? {
+            global.push(pack);
+        }
+    }
+    Ok(global)
+}
+
+pub(crate) fn replace_global_context_packs(
+    shell_state: &Value,
+    incoming_global: &[Value],
+) -> Result<Vec<Value>, String> {
+    validate_global_context_packs_value(&json!({ "contextPacks": incoming_global }))?;
+    let incoming_ids = incoming_global
+        .iter()
+        .map(context_pack_id)
+        .collect::<Result<HashSet<_>, _>>()?;
+    let mut context_packs = incoming_global.to_vec();
+    let mut existing_ids = HashSet::new();
+    for pack in shell_context_packs(shell_state)? {
+        let id = context_pack_id(&pack)?;
+        if !existing_ids.insert(id.to_string()) {
+            return Err("The receiver context pack ids are not unique.".to_string());
+        }
+        if context_pack_scope(&pack)? {
+            continue;
+        }
+        if incoming_ids.contains(id) {
+            return Err(
+                "An imported global context pack conflicts with a workspace pack id.".to_string(),
+            );
+        }
+        context_packs.push(pack);
+    }
+    Ok(context_packs)
+}
+
+fn snapshot_global_context_packs<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<CategorySnapshot, String> {
+    let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)
+        .map_err(|_| "Global context packs are unavailable.".to_string())?;
+    let context_packs = global_context_packs_from_shell_state(&shell_state)?;
+    let value = json!({ "contextPacks": context_packs });
+    validate_global_context_packs_value(&value)?;
+    let count = value["contextPacks"].as_array().map_or(0, Vec::len);
+    create_json_snapshot(
+        SettingsCategoryId::GlobalContextPacks,
+        value,
+        u32::try_from(count).unwrap_or(u32::MAX),
+        count == 0,
     )
 }
 
@@ -939,10 +1245,13 @@ pub(crate) fn snapshot_category<R: Runtime>(
         SettingsCategoryId::ApiKeys => snapshot_api_keys(),
         SettingsCategoryId::AgentProviderPreferences => snapshot_agent_provider_preferences(),
         SettingsCategoryId::DesktopAppearance => snapshot_desktop_appearance(app),
+        SettingsCategoryId::ChatVoicePreferences => snapshot_chat_voice_preferences(app),
         SettingsCategoryId::GlobalMemory => snapshot_global_memory(),
         SettingsCategoryId::GlobalInstructions => snapshot_global_instructions(),
         SettingsCategoryId::GlobalPrompts => snapshot_global_prompts(),
+        SettingsCategoryId::GlobalContextPacks => snapshot_global_context_packs(app),
         SettingsCategoryId::GlobalMcp => snapshot_global_mcp(app),
+        SettingsCategoryId::GlobalRalphPreferences => snapshot_global_ralph_preferences(app),
         SettingsCategoryId::GlobalRalphFlows => snapshot_global_ralph(),
     };
 
@@ -979,6 +1288,11 @@ pub(crate) fn category_resource_lock_paths(
         paths.push(root.join(STORE_FILE));
     }
     if categories.contains(&SettingsCategoryId::DesktopAppearance) {
+        paths.push(root.join(STORE_FILE));
+    }
+    if categories.contains(&SettingsCategoryId::ChatVoicePreferences)
+        || categories.contains(&SettingsCategoryId::GlobalRalphPreferences)
+    {
         paths.push(root.join(STORE_FILE));
     }
     if categories.contains(&SettingsCategoryId::GlobalInstructions) {
@@ -1110,11 +1424,20 @@ pub(crate) fn validate_category_snapshot(snapshot: &CategorySnapshot) -> Result<
         (SettingsCategoryId::DesktopAppearance, CategorySnapshotData::Json(value)) => {
             validate_desktop_appearance_value(value)
         }
+        (SettingsCategoryId::ChatVoicePreferences, CategorySnapshotData::Json(value)) => {
+            validate_chat_voice_preferences_value(value)
+        }
         (SettingsCategoryId::GlobalMemory, CategorySnapshotData::Json(value)) => {
             validate_memory_value(value)
         }
+        (SettingsCategoryId::GlobalContextPacks, CategorySnapshotData::Json(value)) => {
+            validate_global_context_packs_value(value)
+        }
         (SettingsCategoryId::GlobalMcp, CategorySnapshotData::Json(value)) => {
             validate_mcp_value(value)
+        }
+        (SettingsCategoryId::GlobalRalphPreferences, CategorySnapshotData::Json(value)) => {
+            validate_global_ralph_preferences_value(value)
         }
         (SettingsCategoryId::GlobalInstructions, CategorySnapshotData::Files(entries)) => {
             validate_file_entries(snapshot.id, entries)
@@ -1148,10 +1471,20 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
         }
         (SettingsCategoryId::AgentProviderPreferences, CategorySnapshotData::Json(_)) => (6, false),
         (SettingsCategoryId::DesktopAppearance, CategorySnapshotData::Json(_)) => (9, false),
+        (SettingsCategoryId::ChatVoicePreferences, CategorySnapshotData::Json(_)) => {
+            (CHAT_VOICE_PREFERENCE_ITEM_COUNT as usize, false)
+        }
         (SettingsCategoryId::GlobalMemory, CategorySnapshotData::Json(Value::Object(value))) => {
             let count = value["entries"].as_array().map_or(0, Vec::len);
             let enabled = value["globalEnabled"].as_bool().unwrap_or(false);
             (count, count == 0 && !enabled)
+        }
+        (
+            SettingsCategoryId::GlobalContextPacks,
+            CategorySnapshotData::Json(Value::Object(value)),
+        ) => {
+            let count = value["contextPacks"].as_array().map_or(0, Vec::len);
+            (count, count == 0)
         }
         (SettingsCategoryId::GlobalMcp, CategorySnapshotData::Json(Value::Object(value))) => {
             let config = value["config"].as_object();
@@ -1168,6 +1501,9 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
                 servers.saturating_add(registries),
                 !exists && registries == 0,
             )
+        }
+        (SettingsCategoryId::GlobalRalphPreferences, CategorySnapshotData::Json(_)) => {
+            (RALPH_PREFERENCE_ITEM_COUNT as usize, false)
         }
         (
             SettingsCategoryId::GlobalInstructions
@@ -1619,6 +1955,425 @@ fn validate_memory_value(value: &Value) -> Result<(), String> {
             || !ids.insert(id)
         {
             return Err("A global memory entry is invalid or duplicated.".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_nullable_enum(value: Option<&Value>, allowed: &[&str]) -> bool {
+    value.is_some_and(|value| {
+        value.is_null() || value.as_str().is_some_and(|value| allowed.contains(&value))
+    })
+}
+
+fn validate_runtime_selection(value: &Value) -> Result<(), String> {
+    let selection = value
+        .as_object()
+        .ok_or_else(|| "A runtime preference is invalid.".to_string())?;
+    require_exact_keys(selection, &["provider", "model", "reasoning"])?;
+    if !selection
+        .get("provider")
+        .and_then(Value::as_str)
+        .is_some_and(|provider| VALID_MODEL_PROVIDERS.contains(&provider))
+        || !selection
+            .get("model")
+            .and_then(Value::as_str)
+            .is_some_and(valid_model_id)
+        || !validate_nullable_enum(selection.get("reasoning"), &REASONING_MODES)
+    {
+        return Err("A runtime provider, model, or reasoning preference is invalid.".to_string());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_chat_voice_preferences_value(value: &Value) -> Result<(), String> {
+    let root = value
+        .as_object()
+        .ok_or_else(|| "Chat and voice preferences are invalid.".to_string())?;
+    require_exact_keys(root, &["voice", "newChat", "runningTaskMessageAction"])?;
+    let voice = root
+        .get("voice")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "Spoken-reply preferences are invalid.".to_string())?;
+    require_exact_keys(voice, &["autoSpeakResponses", "rate"])?;
+    if !voice
+        .get("autoSpeakResponses")
+        .is_some_and(Value::is_boolean)
+        || !voice
+            .get("rate")
+            .and_then(Value::as_f64)
+            .is_some_and(|rate| {
+                rate.is_finite() && (MIN_VOICE_RATE..=MAX_VOICE_RATE).contains(&rate)
+            })
+    {
+        return Err("Spoken-reply preferences are outside their supported range.".to_string());
+    }
+
+    let new_chat = root
+        .get("newChat")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "New-chat defaults are invalid.".to_string())?;
+    require_exact_keys(
+        new_chat,
+        &[
+            "provider",
+            "models",
+            "mode",
+            "reasoning",
+            "sessionMemoryEnabled",
+            "useGlobalMemory",
+            "uiControlEnabled",
+        ],
+    )?;
+    let provider = new_chat
+        .get("provider")
+        .and_then(Value::as_str)
+        .filter(|provider| VALID_MODEL_PROVIDERS.contains(provider))
+        .ok_or_else(|| "The new-chat provider is invalid.".to_string())?;
+    let models = new_chat
+        .get("models")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "The new-chat model preferences are invalid.".to_string())?;
+    if models.is_empty()
+        || models.len() > VALID_MODEL_PROVIDERS.len()
+        || !models.contains_key(provider)
+        || models.iter().any(|(provider, model)| {
+            !VALID_MODEL_PROVIDERS.contains(&provider.as_str())
+                || !model.as_str().is_some_and(valid_model_id)
+        })
+        || !validate_nullable_enum(new_chat.get("mode"), &RUN_MODES)
+        || !validate_nullable_enum(new_chat.get("reasoning"), &REASONING_MODES)
+        || [
+            "sessionMemoryEnabled",
+            "useGlobalMemory",
+            "uiControlEnabled",
+        ]
+        .into_iter()
+        .any(|key| !new_chat.get(key).is_some_and(Value::is_boolean))
+        || !root
+            .get("runningTaskMessageAction")
+            .and_then(Value::as_str)
+            .is_some_and(|value| ["steer", "stop-and-send", "queue"].contains(&value))
+    {
+        return Err("Chat defaults contain an invalid preference.".to_string());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_global_ralph_preferences_value(value: &Value) -> Result<(), String> {
+    let root = value
+        .as_object()
+        .ok_or_else(|| "Global RALPH preferences are invalid.".to_string())?;
+    require_exact_keys(
+        root,
+        &[
+            "flowLibraryMode",
+            "generation",
+            "run",
+            "defaultMaxTransitions",
+        ],
+    )?;
+    if !root
+        .get("flowLibraryMode")
+        .and_then(Value::as_str)
+        .is_some_and(|value| ["workspace", "user", "all"].contains(&value))
+        || !root.get("defaultMaxTransitions").is_some_and(|value| {
+            value.is_null()
+                || value
+                    .as_u64()
+                    .is_some_and(|value| (1..=MAX_SAFE_INTEGER).contains(&value))
+        })
+    {
+        return Err("A global RALPH preference is outside its supported range.".to_string());
+    }
+    validate_runtime_selection(
+        root.get("generation")
+            .ok_or_else(|| "RALPH generation preferences are missing.".to_string())?,
+    )?;
+    validate_runtime_selection(
+        root.get("run")
+            .ok_or_else(|| "RALPH run preferences are missing.".to_string())?,
+    )
+}
+
+fn valid_context_pack_string(
+    value: Option<&Value>,
+    maximum_chars: usize,
+    allow_empty: bool,
+) -> bool {
+    value.and_then(Value::as_str).is_some_and(|value| {
+        (allow_empty || !value.is_empty())
+            && value.trim() == value
+            && value.chars().count() <= maximum_chars
+            && !value
+                .chars()
+                .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+    })
+}
+
+fn valid_context_pack_number(value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_f64)
+        .is_some_and(|value| value.is_finite() && value >= 0.0)
+}
+
+fn validate_context_pack_token_array(value: Option<&Value>) -> Result<(), String> {
+    let values = value
+        .and_then(Value::as_array)
+        .ok_or_else(|| "A context pack trigger list is invalid.".to_string())?;
+    if values.len() > MAX_CONTEXT_PACK_TRIGGERS {
+        return Err("A context pack contains too many triggers.".to_string());
+    }
+    let mut seen = HashSet::new();
+    for value in values {
+        if !valid_context_pack_string(Some(value), MAX_CONTEXT_PACK_TRIGGER_CHARS, false) {
+            return Err("A context pack trigger is invalid.".to_string());
+        }
+        let token = value.as_str().unwrap_or_default().to_lowercase();
+        if !seen.insert(token) {
+            return Err("A context pack contains duplicate triggers.".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_context_pack_variables(value: Option<&Value>) -> Result<(), String> {
+    let variables = value
+        .and_then(Value::as_array)
+        .ok_or_else(|| "A context pack variable list is invalid.".to_string())?;
+    if variables.len() > MAX_CONTEXT_PACK_VARIABLES {
+        return Err("A context pack contains too many variables.".to_string());
+    }
+    let mut seen = HashSet::new();
+    for variable in variables {
+        let variable = variable
+            .as_object()
+            .ok_or_else(|| "A context pack variable is invalid.".to_string())?;
+        require_only_keys(variable, &["name", "defaultValue"])?;
+        let name = variable
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| {
+                name.chars().count() <= MAX_CONTEXT_PACK_VARIABLE_CHARS
+                    && name
+                        .chars()
+                        .next()
+                        .is_some_and(|character| character.is_ascii_alphabetic())
+                    && name.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+                    })
+            })
+            .ok_or_else(|| "A context pack variable name is invalid.".to_string())?;
+        if !seen.insert(name.to_lowercase()) {
+            return Err("A context pack contains duplicate variables.".to_string());
+        }
+        if variable.contains_key("defaultValue")
+            && !valid_context_pack_string(
+                variable.get("defaultValue"),
+                MAX_CONTEXT_PACK_TRIGGER_CHARS,
+                false,
+            )
+        {
+            return Err("A context pack variable default is invalid.".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_context_pack_attachment(value: &Value) -> Result<(), String> {
+    let attachment = value
+        .as_object()
+        .ok_or_else(|| "A context pack attachment is invalid.".to_string())?;
+    match attachment.get("source").and_then(Value::as_str) {
+        None | Some("path") => {
+            require_only_keys(
+                attachment,
+                &["id", "source", "path", "kind", "name", "parent"],
+            )?;
+            if !valid_context_pack_string(attachment.get("id"), MAX_CONTEXT_PACK_ID_CHARS, false)
+                || !valid_context_pack_string(
+                    attachment.get("path"),
+                    MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS,
+                    false,
+                )
+                || !valid_context_pack_string(
+                    attachment.get("name"),
+                    MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS,
+                    false,
+                )
+                || !attachment
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| ["file", "directory", "image", "other"].contains(&kind))
+                || attachment.contains_key("parent")
+                    && !valid_context_pack_string(
+                        attachment.get("parent"),
+                        MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS,
+                        false,
+                    )
+            {
+                return Err("A context pack path attachment is invalid.".to_string());
+            }
+        }
+        Some("media-asset") => {
+            require_only_keys(
+                attachment,
+                &[
+                    "id",
+                    "source",
+                    "workspaceRoot",
+                    "assetId",
+                    "kind",
+                    "name",
+                    "displayName",
+                    "rendition",
+                ],
+            )?;
+            for key in ["id", "workspaceRoot", "assetId", "name"] {
+                if !valid_context_pack_string(
+                    attachment.get(key),
+                    MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS,
+                    false,
+                ) {
+                    return Err("A context pack media attachment is invalid.".to_string());
+                }
+            }
+            if !attachment
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    ["prompt", "image", "alpha-matte", "report", "collection"].contains(&kind)
+                })
+                || attachment.contains_key("displayName")
+                    && !valid_context_pack_string(
+                        attachment.get("displayName"),
+                        MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS,
+                        false,
+                    )
+                || attachment.contains_key("rendition")
+                    && !attachment
+                        .get("rendition")
+                        .and_then(Value::as_str)
+                        .is_some_and(|rendition| {
+                            ["thumbnail", "preview", "original"].contains(&rendition)
+                        })
+            {
+                return Err("A context pack media attachment is invalid.".to_string());
+            }
+        }
+        _ => return Err("A context pack attachment source is invalid.".to_string()),
+    }
+    Ok(())
+}
+
+fn validate_context_pack(value: &Value) -> Result<usize, String> {
+    let pack = value
+        .as_object()
+        .ok_or_else(|| "A global context pack is invalid.".to_string())?;
+    require_only_keys(
+        pack,
+        &[
+            "id",
+            "workspace",
+            "name",
+            "instructions",
+            "prompt",
+            "contextAttachments",
+            "variables",
+            "trigger",
+            "provider",
+            "model",
+            "mode",
+            "reasoning",
+            "createdAt",
+            "updatedAt",
+            "lastUsedAt",
+            "useCount",
+        ],
+    )?;
+    let _ = context_pack_id(value)?;
+    if !pack.get("workspace").is_some_and(Value::is_null)
+        || !valid_context_pack_string(pack.get("name"), MAX_CONTEXT_PACK_NAME_CHARS, false)
+        || !valid_context_pack_string(pack.get("instructions"), MAX_CONTEXT_PACK_TEXT_CHARS, true)
+        || !valid_context_pack_string(pack.get("prompt"), MAX_CONTEXT_PACK_TEXT_CHARS, true)
+        || !valid_context_pack_number(pack.get("createdAt"))
+        || !valid_context_pack_number(pack.get("updatedAt"))
+        || !valid_context_pack_number(pack.get("useCount"))
+        || pack.contains_key("lastUsedAt") && !valid_context_pack_number(pack.get("lastUsedAt"))
+    {
+        return Err("A global context pack has invalid core fields.".to_string());
+    }
+
+    let provider = pack.get("provider").and_then(Value::as_str);
+    if pack.contains_key("provider")
+        && !provider.is_some_and(|provider| VALID_MODEL_PROVIDERS.contains(&provider))
+        || pack.contains_key("model")
+            && (provider.is_none() || !valid_context_pack_string(pack.get("model"), 512, false))
+        || pack.contains_key("mode")
+            && !pack
+                .get("mode")
+                .and_then(Value::as_str)
+                .is_some_and(|mode| RUN_MODES.contains(&mode))
+        || pack.contains_key("reasoning")
+            && !pack
+                .get("reasoning")
+                .and_then(Value::as_str)
+                .is_some_and(|reasoning| REASONING_MODES.contains(&reasoning))
+    {
+        return Err("A global context pack has invalid model settings.".to_string());
+    }
+
+    validate_context_pack_variables(pack.get("variables"))?;
+    let trigger = pack
+        .get("trigger")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "A context pack trigger is invalid.".to_string())?;
+    require_exact_keys(trigger, &["phrases", "pathPatterns", "autoApply"])?;
+    validate_context_pack_token_array(trigger.get("phrases"))?;
+    validate_context_pack_token_array(trigger.get("pathPatterns"))?;
+    if !trigger.get("autoApply").is_some_and(Value::is_boolean) {
+        return Err("A context pack trigger is invalid.".to_string());
+    }
+
+    let attachments = pack
+        .get("contextAttachments")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "A context pack attachment list is invalid.".to_string())?;
+    if attachments.len() > MAX_TOTAL_ITEMS {
+        return Err("A context pack contains too many attachment references.".to_string());
+    }
+    for attachment in attachments {
+        validate_context_pack_attachment(attachment)?;
+    }
+    Ok(attachments.len())
+}
+
+fn validate_global_context_packs_value(value: &Value) -> Result<(), String> {
+    let root = value
+        .as_object()
+        .ok_or_else(|| "Global context packs are invalid.".to_string())?;
+    require_exact_keys(root, &["contextPacks"])?;
+    let packs = root
+        .get("contextPacks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "The global context-pack collection is invalid.".to_string())?;
+    if packs.len() > MAX_CONTEXT_PACKS {
+        return Err("There are too many global context packs.".to_string());
+    }
+    let mut ids = HashSet::new();
+    let mut attachment_count = 0_usize;
+    for pack in packs {
+        let id = context_pack_id(pack)?.to_string();
+        if !ids.insert(id) {
+            return Err("Global context pack ids must be unique.".to_string());
+        }
+        attachment_count = attachment_count
+            .checked_add(validate_context_pack(pack)?)
+            .ok_or_else(|| {
+                "Global context packs contain too many attachment references.".to_string()
+            })?;
+        if attachment_count > MAX_TOTAL_ITEMS {
+            return Err("Global context packs contain too many attachment references.".to_string());
         }
     }
     Ok(())
@@ -2323,6 +3078,14 @@ pub(crate) fn marketplace_store_key() -> &'static str {
     MCP_MARKETPLACE_STORAGE_KEY
 }
 
+pub(crate) fn running_task_message_action_store_key() -> &'static str {
+    RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY
+}
+
+pub(crate) fn ralph_settings_store_key() -> &'static str {
+    RALPH_SETTINGS_STORAGE_KEY
+}
+
 pub(crate) fn store_file() -> &'static str {
     STORE_FILE
 }
@@ -2545,6 +3308,90 @@ mod tests {
         assert!(validate_mcp_config(&json!({
             "defaults": { "securityProfile": 42 },
             "servers": []
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn portable_preference_schemas_reject_device_workspace_and_history_fields() {
+        let chat_voice = json!({
+            "voice": { "autoSpeakResponses": true, "rate": 1.25 },
+            "newChat": {
+                "provider": "anthropic",
+                "models": { "anthropic": "claude-test" },
+                "mode": "machdoch",
+                "reasoning": "high",
+                "sessionMemoryEnabled": true,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+            },
+            "runningTaskMessageAction": "queue"
+        });
+        assert!(validate_chat_voice_preferences_value(&chat_voice).is_ok());
+        let mut with_voice_uri = chat_voice;
+        with_voice_uri["voice"]["preferredVoiceURI"] = json!("machine-voice");
+        assert!(validate_chat_voice_preferences_value(&with_voice_uri).is_err());
+
+        let ralph = json!({
+            "flowLibraryMode": "all",
+            "generation": {
+                "provider": "openai",
+                "model": "gpt-test",
+                "reasoning": "medium"
+            },
+            "run": {
+                "provider": "codex-cli",
+                "model": "gpt-test",
+                "reasoning": null
+            },
+            "defaultMaxTransitions": 100
+        });
+        assert!(validate_global_ralph_preferences_value(&ralph).is_ok());
+        let mut with_workspace = ralph;
+        with_workspace["workspaceRoot"] = json!("C:/poison");
+        assert!(validate_global_ralph_preferences_value(&with_workspace).is_err());
+    }
+
+    #[test]
+    fn context_pack_transfer_replaces_only_global_scope() {
+        let pack = |id: &str, workspace: Value| {
+            json!({
+                "id": id,
+                "workspace": workspace,
+                "name": format!("Pack {id}"),
+                "instructions": "Use the selected context.",
+                "prompt": "Review the current task.",
+                "contextAttachments": [],
+                "variables": [],
+                "trigger": { "phrases": [], "pathPatterns": [], "autoApply": false },
+                "createdAt": 1,
+                "updatedAt": 1,
+                "useCount": 0
+            })
+        };
+        let shell_state = json!({
+            "contextPacks": [
+                pack("old-global", Value::Null),
+                pack("workspace-pack", json!("C:/workspace"))
+            ]
+        });
+        let incoming = vec![pack("new-global", Value::Null)];
+
+        assert_eq!(
+            global_context_packs_from_shell_state(&shell_state)
+                .expect("the global projection should be readable")[0]["id"],
+            json!("old-global")
+        );
+        let replaced = replace_global_context_packs(&shell_state, &incoming)
+            .expect("global replacement should preserve workspace packs");
+        assert_eq!(replaced.len(), 2);
+        assert_eq!(replaced[0]["id"], json!("new-global"));
+        assert_eq!(replaced[0]["workspace"], Value::Null);
+        assert_eq!(replaced[1]["id"], json!("workspace-pack"));
+        assert_eq!(replaced[1]["workspace"], json!("C:/workspace"));
+
+        assert!(validate_global_context_packs_value(&json!({
+            "contextPacks": [pack("poison", json!("C:/workspace"))]
         }))
         .is_err());
     }

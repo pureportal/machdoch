@@ -39,7 +39,10 @@ import type {
   ProviderSetupControls,
   VoiceSettingsControls,
 } from "./settings-dialog-panels/types";
-import { rebaseDirtySettingsDraft } from "./settings-dialog-panels/shared";
+import {
+  ProviderSyncControl,
+  rebaseDirtySettingsDraft,
+} from "./settings-dialog-panels/shared";
 
 type OnboardingStepId = "connect" | "workspace" | "permissions" | "voice";
 
@@ -332,6 +335,8 @@ export const OnboardingWizard = ({
         </div>
       </div>
 
+      <ProviderSyncControl workspaceRoot={activeSession.workspace} />
+
     </div>
   );
 
@@ -522,9 +527,9 @@ export const OnboardingWizard = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
-      className="absolute inset-0 z-[70] flex items-center justify-center bg-slate-950/92 px-4 py-6 backdrop-blur-xl"
+      className="absolute inset-0 z-70 flex items-center justify-center bg-slate-950/92 px-4 py-6 backdrop-blur-xl"
     >
-      <div className="grid h-full max-h-[760px] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl shadow-sky-950/40 md:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid h-full max-h-190 w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl shadow-sky-950/40 md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="border-b border-slate-800 bg-slate-950/90 p-5 md:border-b-0 md:border-r">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-500/20 bg-sky-500/10 text-sky-200">

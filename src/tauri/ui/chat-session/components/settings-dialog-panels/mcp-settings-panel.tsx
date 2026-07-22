@@ -10,7 +10,7 @@ import {
   Server,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
+import { useMemo, useState, type JSX, type ReactNode } from "react";
 import { Button } from "../../../components/ui/button";
 import {
   Dialog,
@@ -23,17 +23,10 @@ import {
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import { cn } from "../../../lib/utils";
-import {
-  doctorProviderSync,
-  getProviderSyncStatus,
-  MCP_CONFIG_SCOPE_OPTIONS,
-  planProviderSync,
-  refreshProviderSync,
-  setProviderSyncEnabled,
-  type ProviderSyncStatus,
-} from "../../../runtime";
+import { MCP_CONFIG_SCOPE_OPTIONS } from "../../../runtime";
 import {
   ChoiceButtons,
+  ProviderSyncControl,
   SettingsCard,
   SettingsStatus,
 } from "./shared";
@@ -643,10 +636,6 @@ export const McpSettingsPanel = ({
   const [selectedTab, setSelectedTab] = useState<ServerTab>("setup");
   const [oauthCallbackDraft, setOauthCallbackDraft] = useState("");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
-  const [providerSyncStatus, setProviderSyncStatus] =
-    useState<ProviderSyncStatus | null>(null);
-  const [providerSyncBusy, setProviderSyncBusy] = useState(false);
-  const [providerSyncMessage, setProviderSyncMessage] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomServerDraft>(() =>
     createEmptyCustomServerDraft([]),
   );
@@ -731,64 +720,6 @@ export const McpSettingsPanel = ({
       }),
     [setup.presets],
   );
-
-  useEffect(() => {
-    let active = true;
-    void refreshProviderSync(setup.workspaceRoot)
-      .then((status) => {
-        if (active) setProviderSyncStatus(status);
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setProviderSyncMessage(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [setup.workspaceRoot]);
-
-  const runProviderSyncAction = async (
-    action: "enable" | "disable" | "refresh" | "plan" | "doctor",
-  ): Promise<void> => {
-    setProviderSyncBusy(true);
-    setProviderSyncMessage(null);
-    try {
-      if (action === "plan") {
-        const plan = await planProviderSync(setup.workspaceRoot);
-        const providers = Array.isArray(plan.providers) ? plan.providers.length : 0;
-        setProviderSyncMessage(`Plan is current for ${providers} provider surface${providers === 1 ? "" : "s"}.`);
-      } else if (action === "doctor") {
-        const doctor = await doctorProviderSync(setup.workspaceRoot);
-        setProviderSyncMessage(
-          doctor.healthy === true
-            ? "Provider enrollment doctor reports complete coverage."
-            : "Provider enrollment doctor found degraded or pending coverage.",
-        );
-      } else {
-        const status =
-          action === "refresh"
-            ? await refreshProviderSync(setup.workspaceRoot)
-            : await setProviderSyncEnabled(
-                setup.workspaceRoot,
-                action === "enable",
-              );
-        setProviderSyncStatus(status);
-        setProviderSyncMessage(
-          action === "refresh"
-            ? "Provider projections reconciled."
-            : `Provider sync ${action === "enable" ? "enabled" : "disabled"}.`,
-        );
-      }
-      setProviderSyncStatus(await getProviderSyncStatus(setup.workspaceRoot));
-    } catch (error) {
-      setProviderSyncMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setProviderSyncBusy(false);
-    }
-  };
 
   const writeServers = (servers: ServerRecord[]): void => {
     setup.onDraftChange(stringifyDraft(parsed.config, servers));
@@ -2005,80 +1936,12 @@ export const McpSettingsPanel = ({
       <div className="grid gap-4 py-4">
         <PanelBlock
           title="Automatic provider enrollment"
-          description="Machdoch continuously projects managed instructions and MCP servers into every detected Codex, Claude, and Copilot CLI. Machdoch-launched runs still receive an exact per-task snapshot."
+          description="When enabled, Machdoch projects its managed instructions and MCP servers into detected provider CLIs. Machdoch-launched runs still receive an isolated per-task snapshot."
         >
-          <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="grid gap-1 text-sm text-slate-300">
-                <span>
-                  Sync: {providerSyncStatus?.enabled ? "enabled" : "disabled"}
-                  {providerSyncStatus?.daemon.running
-                    ? ` · daemon ${providerSyncStatus.daemon.pid ?? "running"}`
-                    : " · daemon stopped"}
-                </span>
-                <span className="text-xs text-slate-500">
-                  {providerSyncStatus?.lastReconciledAt
-                    ? `Last reconciled ${providerSyncStatus.lastReconciledAt}`
-                    : "Not reconciled yet"}
-                  {providerSyncStatus?.daemon.autostartInstalled
-                    ? " · login autostart installed"
-                    : " · login autostart pending"}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={providerSyncBusy}
-                  onClick={() => void runProviderSyncAction(
-                    providerSyncStatus?.enabled ? "disable" : "enable",
-                  )}
-                  className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
-                >
-                  {providerSyncStatus?.enabled ? "Disable" : "Enable all"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={providerSyncBusy}
-                  onClick={() => void runProviderSyncAction("refresh")}
-                  className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" /> Refresh
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={providerSyncBusy}
-                  onClick={() => void runProviderSyncAction("plan")}
-                  className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
-                >
-                  Plan
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={providerSyncBusy}
-                  onClick={() => void runProviderSyncAction("doctor")}
-                  className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs"
-                >
-                  Doctor
-                </Button>
-              </div>
-            </div>
-            {providerSyncStatus?.targets.length ? (
-              <div className="grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
-                {providerSyncStatus.targets.map((target) => (
-                  <span key={`${target.provider}-${target.scope}`}>
-                    {target.provider} · {target.scope}: {target.state}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {providerSyncMessage ? (
-              <p className="text-xs leading-5 text-slate-400">{providerSyncMessage}</p>
-            ) : null}
-          </div>
+          <ProviderSyncControl
+            workspaceRoot={setup.workspaceRoot}
+            showDiagnostics
+          />
         </PanelBlock>
 
         <div className="sticky top-0 z-10 -mx-2 grid gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-3 shadow-sm shadow-black/20">

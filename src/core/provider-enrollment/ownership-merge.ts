@@ -48,14 +48,40 @@ const findRegion = (
   };
 };
 
+const findRegions = (
+  content: string,
+  format: Exclude<ManagedTargetFormat, "json">,
+): Array<{ start: number; end: number; payload: string }> => {
+  const regions: Array<{ start: number; end: number; payload: string }> = [];
+  let offset = 0;
+  while (offset < content.length) {
+    const region = findRegion(content.slice(offset), format);
+    if (!region) break;
+    regions.push({
+      start: offset + region.start,
+      end: offset + region.end,
+      payload: region.payload,
+    });
+    offset += region.end;
+  }
+  return regions;
+};
+
+const removeTextRegions = (
+  content: string,
+  format: Exclude<ManagedTargetFormat, "json">,
+): string => {
+  let result = content;
+  for (const region of findRegions(content, format).reverse()) {
+    result = `${result.slice(0, region.start)}${result.slice(region.end)}`;
+  }
+  return result.trim();
+};
+
 export const stripManagedProviderRegions = (content: string): string => {
   let result = content;
   for (const format of ["markdown", "toml"] as const) {
-    let region = findRegion(result, format);
-    while (region) {
-      result = `${result.slice(0, region.start)}${result.slice(region.end)}`.trim();
-      region = findRegion(result, format);
-    }
+    result = removeTextRegions(result, format);
   }
   return result.trim();
 };
@@ -67,13 +93,10 @@ const mergeTextRegion = (
 ): string => {
   const [startMarker, endMarker] = getMarkers(format);
   const regionText = `${startMarker}\n${payload.trim()}\n${endMarker}`;
-  const current = findRegion(existing, format);
-  if (!current) {
-    return existing.trim().length > 0
-      ? `${existing.trimEnd()}\n\n${regionText}\n`
-      : `${regionText}\n`;
-  }
-  return `${existing.slice(0, current.start)}${regionText}${existing.slice(current.end)}`;
+  const unmanaged = removeTextRegions(existing, format);
+  return unmanaged.length > 0
+    ? `${unmanaged}\n\n${regionText}\n`
+    : `${regionText}\n`;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -154,11 +177,14 @@ export const installManagedTarget = async (
   } else {
     const payload = String(params.payload).trim();
     managedDigest = sha256(payload);
-    const currentRegion = findRegion(existing, params.format);
+    const currentRegions = findRegions(existing, params.format);
+    const currentRegion = currentRegions[0];
     if (
       params.previous &&
-      currentRegion &&
-      sha256(currentRegion.payload) !== params.previous.managedDigest
+      currentRegion && (
+        currentRegions.length !== 1 ||
+        sha256(currentRegion.payload) !== params.previous.managedDigest
+      )
     ) {
       const backupPath = await createBackup(params.path);
       warnings.push(`An externally changed managed region was backed up to ${backupPath} and reconciled.`);
@@ -184,12 +210,18 @@ export const installManagedTarget = async (
   return { record, changed, warnings };
 };
 
+export interface UninstallManagedTargetOptions {
+  force?: boolean;
+}
+
 export const uninstallManagedTarget = async (
   record: ProviderOwnershipRecord,
+  options: UninstallManagedTargetOptions = {},
 ): Promise<{ removed: boolean; warning?: string }> => {
   if (!(await pathExists(record.path))) return { removed: true };
   const existing = await readFile(record.path, "utf8");
   let next: string;
+  let warning: string | undefined;
 
   if (record.format === "json") {
     const current = parseJsonRecord(existing);
@@ -200,19 +232,36 @@ export const uninstallManagedTarget = async (
       ),
     );
     if (Object.keys(managed).length > 0 && digestJson(managed) !== record.managedDigest) {
-      return { removed: false, warning: `Skipped ${record.path}: managed MCP entries changed externally.` };
+      if (!options.force) {
+        return { removed: false, warning: `Skipped ${record.path}: managed MCP entries changed externally.` };
+      }
+      const backupPath = await createBackup(record.path);
+      warning = `Externally changed managed MCP entries were backed up to ${backupPath} and removed.`;
     }
     const nextServers = { ...servers };
     for (const key of record.managedKeys ?? []) delete nextServers[key];
     const nextObject = { ...current, mcpServers: nextServers };
     next = `${JSON.stringify(nextObject, null, 2)}\n`;
-  } else {
-    const region = findRegion(existing, record.format);
-    if (!region) return { removed: true };
-    if (sha256(region.payload) !== record.managedDigest) {
-      return { removed: false, warning: `Skipped ${record.path}: managed region changed externally.` };
+    if (
+      record.createdFile &&
+      Object.keys(nextServers).length === 0 &&
+      Object.keys(current).every((key) => key === "mcpServers")
+    ) {
+      next = "";
     }
-    next = `${existing.slice(0, region.start)}${existing.slice(region.end)}`.trim();
+  } else {
+    const regions = findRegions(existing, record.format);
+    if (regions.length === 0) return { removed: true };
+    const isCurrent = regions.length === 1 &&
+      sha256(regions[0]?.payload ?? "") === record.managedDigest;
+    if (!isCurrent) {
+      if (!options.force) {
+        return { removed: false, warning: `Skipped ${record.path}: managed region changed externally.` };
+      }
+      const backupPath = await createBackup(record.path);
+      warning = `An externally changed managed region was backed up to ${backupPath} and removed.`;
+    }
+    next = removeTextRegions(existing, record.format);
     if (next) next += "\n";
   }
 
@@ -221,7 +270,7 @@ export const uninstallManagedTarget = async (
   } else {
     await writeFileAtomically(record.path, next);
   }
-  return { removed: true };
+  return { removed: true, ...(warning ? { warning } : {}) };
 };
 
 export const inspectManagedTarget = async (

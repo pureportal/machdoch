@@ -294,7 +294,7 @@ export const runProviderSyncDaemon = async (
   let fullScan: ReturnType<typeof setInterval> | undefined;
 
   try {
-    const config = await loadProviderEnrollmentConfig();
+    let config = await loadProviderEnrollmentConfig();
 
     const refreshWatchers = (workspaceRoots: readonly string[]): void => {
       for (const watcher of watchers) watcher.close();
@@ -316,6 +316,7 @@ export const runProviderSyncDaemon = async (
       running = true;
       const runStartedAt = new Date().toISOString();
       try {
+        config = await loadProviderEnrollmentConfig();
         const workspaceRoots = await loadRegisteredProviderSyncWorkspaces(workspaceRoot);
         for (const registeredWorkspaceRoot of workspaceRoots) {
           await reconcileProviderSync(registeredWorkspaceRoot);

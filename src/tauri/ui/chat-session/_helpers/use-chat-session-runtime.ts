@@ -33,7 +33,6 @@ import {
   saveUserGlobalMemoryEnabled,
   saveMcpConfigDocument,
   refreshMcpDiscoveryCache,
-  refreshProviderSync,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
   saveWorkspaceDefaultMode,
@@ -851,14 +850,6 @@ export const useChatSessionRuntime = (
   }, []);
 
   useEffect(() => {
-    const workspaceRoot = options.activeSessionWorkspace?.trim();
-    if (!workspaceRoot || !isTauri()) return;
-    void refreshProviderSync(workspaceRoot).catch((error) => {
-      console.error("Failed to reconcile automatic provider enrollment", error);
-    });
-  }, [options.activeSessionWorkspace]);
-
-  useEffect(() => {
     let cancelled = false;
 
     void loadUserVoiceSettings()
@@ -1126,7 +1117,8 @@ export const useChatSessionRuntime = (
             kind === "provider-enrollment" &&
             options.activeSessionWorkspace?.trim()
           ) {
-            await refreshProviderSync(options.activeSessionWorkspace);
+            // Provider sync settings are loaded by the settings/onboarding
+            // controls. Avoid reconciling from unrelated helper windows.
           }
         } catch (error) {
           if (!disposed) {
