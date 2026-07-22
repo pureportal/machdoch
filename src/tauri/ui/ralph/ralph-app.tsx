@@ -9,7 +9,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { RalphFlowEditor } from "./ralph-flow-editor";
 import {
   createInitialShellState,
   normalizeShellState,
@@ -28,8 +27,8 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
 import {
-  DEFAULT_RALPH_SETTINGS,
   broadcastShellStateChanged,
+  DEFAULT_RALPH_SETTINGS,
   loadRalphSettings,
   loadShellState,
   saveRalphSettings,
@@ -48,17 +47,18 @@ import {
   type RuntimeProvider,
 } from "../model-catalog";
 import {
+  getReasoningModesForProvider,
+  normalizeReasoningModeForProvider,
+  REASONING_LABELS,
+} from "../reasoning-options";
+import {
   loadGlobalProviderAvailability,
   loadProviderModelCatalog,
   type ReasoningMode,
   type RuntimeProviderAvailability,
 } from "../runtime";
-import {
-  getReasoningModesForProvider,
-  normalizeReasoningModeForProvider,
-  REASONING_LABELS,
-} from "../reasoning-options";
 import { subscribeToSettingsImport } from "../settings-transfer";
+import { RalphFlowEditor } from "./ralph-flow-editor";
 
 interface RuntimeModelPickerProps {
   icon: LucideIcon;
@@ -71,9 +71,7 @@ interface RuntimeModelPickerProps {
   dense?: boolean;
 }
 
-const isRalphRunnableProvider = (
-  provider: RuntimeProvider,
-): boolean => {
+const isRalphRunnableProvider = (provider: RuntimeProvider): boolean => {
   return RUNNABLE_PROVIDER_ORDER.includes(provider);
 };
 
@@ -86,7 +84,7 @@ const getPreferredModelForProvider = (
 
   return models.some((model) => model.id === defaultModel)
     ? defaultModel
-    : models[0]?.id ?? defaultModel;
+    : (models[0]?.id ?? defaultModel);
 };
 
 const getModelLabel = (models: CatalogModel[], model: string): string => {
@@ -318,7 +316,10 @@ export const getConnectedRalphProviderChoices = (
     providerAvailability.map((entry) => [entry.provider, entry.configured]),
   );
   const catalogAvailable = new Map(
-    (catalog?.providers ?? []).map((entry) => [entry.provider, entry.available]),
+    (catalog?.providers ?? []).map((entry) => [
+      entry.provider,
+      entry.available,
+    ]),
   );
 
   return RUNNABLE_PROVIDER_ORDER.filter(
@@ -332,8 +333,10 @@ export const getRalphProviderChoices = (
   providerAvailability: readonly RuntimeProviderAvailability[],
   catalog: ProviderModelCatalogSnapshot | null = null,
 ): RuntimeProvider[] => {
-  const connectedProviders =
-    getConnectedRalphProviderChoices(providerAvailability, catalog);
+  const connectedProviders = getConnectedRalphProviderChoices(
+    providerAvailability,
+    catalog,
+  );
 
   return connectedProviders.length > 0
     ? connectedProviders
@@ -343,10 +346,9 @@ export const getRalphProviderChoices = (
 const getPendingRalphProviderChoices = (
   settings: RalphSettings,
 ): RuntimeProvider[] => {
-  const providers = [
-    settings.generationProvider,
-    settings.runProvider,
-  ].filter(isRalphRunnableProvider);
+  const providers = [settings.generationProvider, settings.runProvider].filter(
+    isRalphRunnableProvider,
+  );
 
   return providers.length > 0
     ? Array.from(new Set(providers))
@@ -384,7 +386,9 @@ export const normalizeRalphRuntimeSettings = (
       : { generationReasoning: undefined }),
     runProvider: run.provider,
     runModel: run.model,
-    ...(run.provider === settings.runProvider ? {} : { runReasoning: undefined }),
+    ...(run.provider === settings.runProvider
+      ? {}
+      : { runReasoning: undefined }),
   };
 };
 
@@ -522,13 +526,16 @@ export const RalphApp = ({
                   settingsRef.current,
                   dirtyFields,
                 );
-          const normalizedSettings = normalizeRalphRuntimeSettings(mergedSettings);
+          const normalizedSettings =
+            normalizeRalphRuntimeSettings(mergedSettings);
 
           settingsRef.current = normalizedSettings;
           setSettings(normalizedSettings);
           if (
-            normalizedSettings.generationProvider !== loadedSettings.generationProvider ||
-            normalizedSettings.generationModel !== loadedSettings.generationModel ||
+            normalizedSettings.generationProvider !==
+              loadedSettings.generationProvider ||
+            normalizedSettings.generationModel !==
+              loadedSettings.generationModel ||
             normalizedSettings.runProvider !== loadedSettings.runProvider ||
             normalizedSettings.runModel !== loadedSettings.runModel ||
             settingsEditRevisionRef.current !== editRevisionAtStart
@@ -587,7 +594,8 @@ export const RalphApp = ({
           if (disposed) {
             return;
           }
-          const normalizedSettings = normalizeRalphRuntimeSettings(loadedSettings);
+          const normalizedSettings =
+            normalizeRalphRuntimeSettings(loadedSettings);
           settingsEditRevisionRef.current += 1;
           dirtySettingsFieldsRef.current.clear();
           settingsRef.current = normalizedSettings;
@@ -608,7 +616,10 @@ export const RalphApp = ({
       })
       .catch((error: unknown) => {
         if (!disposed) {
-          console.error("Failed to subscribe to imported RALPH preferences", error);
+          console.error(
+            "Failed to subscribe to imported RALPH preferences",
+            error,
+          );
         }
       });
 
@@ -694,7 +705,10 @@ export const RalphApp = ({
   const applyWorkspaceSelection = (workspace: string): void => {
     const normalizedWorkspace = workspace.trim();
 
-    if (!normalizedWorkspace || normalizedWorkspace === settingsRef.current.workspaceRoot) {
+    if (
+      !normalizedWorkspace ||
+      normalizedWorkspace === settingsRef.current.workspaceRoot
+    ) {
       return;
     }
 

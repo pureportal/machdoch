@@ -1,5 +1,18 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  SETTINGS_TRANSFER_EVENT,
+  type CategoryEffect,
+  type SettingsCategoryId,
+  type SettingsTransferCategory,
+  type SettingsTransferStatus,
+} from "../../../settings-transfer";
 import {
   desktopEventListeners,
   disableInvokeMock,
@@ -8,13 +21,6 @@ import {
   openMock,
   saveMock,
 } from "../../../test/tauri-test-mocks";
-import {
-  SETTINGS_TRANSFER_EVENT,
-  type CategoryEffect,
-  type SettingsCategoryId,
-  type SettingsTransferCategory,
-  type SettingsTransferStatus,
-} from "../../../settings-transfer";
 import { SettingsTransferPanel } from "./settings-transfer-panel";
 
 const CATEGORY_FIXTURES: ReadonlyArray<
@@ -92,7 +98,8 @@ const catalogStatus = status();
 
 const emitStatus = (nextStatus: SettingsTransferStatus): void => {
   const listener = desktopEventListeners.get(SETTINGS_TRANSFER_EVENT);
-  if (!listener) throw new Error("Settings-transfer listener is not registered.");
+  if (!listener)
+    throw new Error("Settings-transfer listener is not registered.");
   listener({ payload: nextStatus });
 };
 
@@ -107,13 +114,14 @@ describe("SettingsTransferPanel", () => {
     saveMock.mockResolvedValue("C:\\Backups\\settings.machdoch-settings");
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "get_settings_transfer_catalog") return catalogStatus;
-      if (command === "stop_settings_transfer") return status({ phase: "cancelled" });
+      if (command === "stop_settings_transfer")
+        return status({ phase: "cancelled" });
       if (command === "cancel_encrypted_settings_file_import") return false;
       if (command === "export_encrypted_settings_file") {
         return {
-          categories: CATEGORY_FIXTURES.filter(([, , selected]) => selected).map(
-            ([id]) => id,
-          ),
+          categories: CATEGORY_FIXTURES.filter(
+            ([, , selected]) => selected,
+          ).map(([id]) => id),
           itemCount: 12,
           fileBytes: 4096,
         };
@@ -177,8 +185,11 @@ describe("SettingsTransferPanel", () => {
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Encrypted file destination") as HTMLInputElement)
-          .value,
+        (
+          screen.getByLabelText(
+            "Encrypted file destination",
+          ) as HTMLInputElement
+        ).value,
       ).toBe("C:\\Backups\\settings.machdoch-settings");
     });
     fireEvent.change(screen.getByLabelText("File passphrase"), {
@@ -187,20 +198,27 @@ describe("SettingsTransferPanel", () => {
     fireEvent.change(screen.getByLabelText("Confirm passphrase"), {
       target: { value: "correct horse battery staple" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export encrypted file" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Export encrypted file" }),
+    );
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("export_encrypted_settings_file", {
-        request: {
-          categories: CATEGORY_FIXTURES.filter(([, , selected]) => selected)
-            .map(([id]) => id)
-            .sort(),
-          destinationPath: "C:\\Backups\\settings.machdoch-settings",
-          passphrase: "correct horse battery staple",
+      expect(invokeMock).toHaveBeenCalledWith(
+        "export_encrypted_settings_file",
+        {
+          request: {
+            categories: CATEGORY_FIXTURES.filter(([, , selected]) => selected)
+              .map(([id]) => id)
+              .sort(),
+            destinationPath: "C:\\Backups\\settings.machdoch-settings",
+            passphrase: "correct horse battery staple",
+          },
         },
-      });
+      );
     });
-    expect(await screen.findByText("Encrypted settings exported")).toBeDefined();
+    expect(
+      await screen.findByText("Encrypted settings exported"),
+    ).toBeDefined();
   });
 
   it("prunes a category that becomes unavailable without dropping other export selections", async () => {
@@ -251,8 +269,11 @@ describe("SettingsTransferPanel", () => {
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Encrypted file destination") as HTMLInputElement)
-          .value,
+        (
+          screen.getByLabelText(
+            "Encrypted file destination",
+          ) as HTMLInputElement
+        ).value,
       ).toBe("C:\\Backups\\settings.machdoch-settings");
     });
     fireEvent.change(screen.getByLabelText("File passphrase"), {
@@ -261,27 +282,33 @@ describe("SettingsTransferPanel", () => {
     fireEvent.change(screen.getByLabelText("Confirm passphrase"), {
       target: { value: "correct horse battery staple" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export encrypted file" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Export encrypted file" }),
+    );
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("export_encrypted_settings_file", {
-        request: {
-          categories: CATEGORY_FIXTURES.filter(
-            ([id, , selected]) => selected && id !== "mcp.global",
-          )
-            .map(([id]) => id)
-            .sort(),
-          destinationPath: "C:\\Backups\\settings.machdoch-settings",
-          passphrase: "correct horse battery staple",
+      expect(invokeMock).toHaveBeenCalledWith(
+        "export_encrypted_settings_file",
+        {
+          request: {
+            categories: CATEGORY_FIXTURES.filter(
+              ([id, , selected]) => selected && id !== "mcp.global",
+            )
+              .map(([id]) => id)
+              .sort(),
+            destinationPath: "C:\\Backups\\settings.machdoch-settings",
+            passphrase: "correct horse battery staple",
+          },
         },
-      });
+      );
     });
   });
 
   it("authenticates an encrypted file and does not let cleanup failure trap the result", async () => {
     invokeMock.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "get_settings_transfer_catalog") return catalogStatus;
-      if (command === "stop_settings_transfer") return status({ phase: "cancelled" });
+      if (command === "stop_settings_transfer")
+        return status({ phase: "cancelled" });
       if (command === "cancel_encrypted_settings_file_import") {
         throw new Error("cleanup unavailable");
       }
@@ -336,19 +363,24 @@ describe("SettingsTransferPanel", () => {
     fireEvent.change(screen.getByLabelText("File passphrase"), {
       target: { value: "correct horse battery staple" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Review encrypted file" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review encrypted file" }),
+    );
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith("inspect_encrypted_settings_file", {
-        request: {
-          operationId: expect.any(String),
-          categories: CATEGORY_FIXTURES.filter(([, , selected]) => selected)
-            .map(([id]) => id)
-            .sort(),
-          sourcePath: "C:\\Backups\\settings.machdoch-settings",
-          passphrase: "correct horse battery staple",
+      expect(invokeMock).toHaveBeenCalledWith(
+        "inspect_encrypted_settings_file",
+        {
+          request: {
+            operationId: expect.any(String),
+            categories: CATEGORY_FIXTURES.filter(([, , selected]) => selected)
+              .map(([id]) => id)
+              .sort(),
+            sourcePath: "C:\\Backups\\settings.machdoch-settings",
+            passphrase: "correct horse battery staple",
+          },
         },
-      });
+      );
     });
     expect(await screen.findByText("Review encrypted file")).toBeDefined();
     expect(screen.getByText("Replace")).toBeDefined();
@@ -361,7 +393,9 @@ describe("SettingsTransferPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Replace selected settings" }),
     );
-    expect(await screen.findByText("Encrypted settings imported")).toBeDefined();
+    expect(
+      await screen.findByText("Encrypted settings imported"),
+    ).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(
@@ -377,7 +411,8 @@ describe("SettingsTransferPanel", () => {
   it("directs an unverified rollback failure to startup recovery instead of a blind retry", async () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "get_settings_transfer_catalog") return catalogStatus;
-      if (command === "stop_settings_transfer") return status({ phase: "cancelled" });
+      if (command === "stop_settings_transfer")
+        return status({ phase: "cancelled" });
       if (command === "cancel_encrypted_settings_file_import") return false;
       if (command === "inspect_encrypted_settings_file") {
         return {
@@ -412,7 +447,9 @@ describe("SettingsTransferPanel", () => {
     fireEvent.change(screen.getByLabelText("File passphrase"), {
       target: { value: "correct horse battery staple" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Review encrypted file" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review encrypted file" }),
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: "Replace selected settings" }),
     );
@@ -441,13 +478,19 @@ describe("SettingsTransferPanel", () => {
     fireEvent.click(choose);
 
     expect(saveMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Back" }).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Back" }).hasAttribute("disabled"),
+    ).toBe(true);
     await act(async () => {
       resolveSave?.(null);
       await Promise.resolve();
     });
-    expect(screen.getByRole("button", { name: "Choose destination" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Back" }).hasAttribute("disabled")).toBe(false);
+    expect(
+      screen.getByRole("button", { name: "Choose destination" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Back" }).hasAttribute("disabled"),
+    ).toBe(false);
   });
 
   it("enforces the backend passphrase byte limit before invoking export", async () => {
@@ -458,8 +501,11 @@ describe("SettingsTransferPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose destination" }));
     await waitFor(() => {
       expect(
-        (screen.getByLabelText("Encrypted file destination") as HTMLInputElement)
-          .value,
+        (
+          screen.getByLabelText(
+            "Encrypted file destination",
+          ) as HTMLInputElement
+        ).value,
       ).not.toBe("");
     });
 
@@ -487,7 +533,8 @@ describe("SettingsTransferPanel", () => {
     let inspection = 0;
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "get_settings_transfer_catalog") return catalogStatus;
-      if (command === "stop_settings_transfer") return status({ phase: "cancelled" });
+      if (command === "stop_settings_transfer")
+        return status({ phase: "cancelled" });
       if (command === "cancel_encrypted_settings_file_import") return false;
       if (command === "inspect_encrypted_settings_file") {
         inspection += 1;
@@ -510,7 +557,10 @@ describe("SettingsTransferPanel", () => {
               reviewExpiresAt: Date.now() + 100,
               effectiveCategories: ["preferences.agent-provider"],
               categories: CATEGORY_FIXTURES.map((fixture, index) =>
-                category(fixture, index === 1 ? "replace" : "preserveNotSelected"),
+                category(
+                  fixture,
+                  index === 1 ? "replace" : "preserveNotSelected",
+                ),
               ),
             };
       }
@@ -532,12 +582,16 @@ describe("SettingsTransferPanel", () => {
       fireEvent.change(screen.getByLabelText("File passphrase"), {
         target: { value: "correct horse battery staple" },
       });
-      fireEvent.click(screen.getByRole("button", { name: "Review encrypted file" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Review encrypted file" }),
+      );
       expect(await screen.findByText("Review encrypted file")).toBeDefined();
     };
 
     await selectAndInspect();
-    fireEvent.click(screen.getByRole("button", { name: "Choose another file" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose another file" }),
+    );
     expect(await screen.findByText("Import Encrypted File")).toBeDefined();
     expect(screen.getByRole("button", { name: "Choose file" })).toBeDefined();
 
@@ -593,7 +647,9 @@ describe("SettingsTransferPanel", () => {
     fireEvent.change(screen.getByLabelText("File passphrase"), {
       target: { value: "correct horse battery staple" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Review encrypted file" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review encrypted file" }),
+    );
     await waitFor(() => {
       expect(resolveInspection).toBeDefined();
     });
@@ -633,8 +689,8 @@ describe("SettingsTransferPanel", () => {
         invokeMock.mock.calls.filter(
           ([command, args]) =>
             command === "cancel_encrypted_settings_file_import" &&
-            (args as { request?: { operationId?: string } } | undefined)?.request
-              ?.operationId === operationId,
+            (args as { request?: { operationId?: string } } | undefined)
+              ?.request?.operationId === operationId,
         ).length,
       ).toBeGreaterThanOrEqual(2);
     });
@@ -666,8 +722,12 @@ describe("SettingsTransferPanel", () => {
     expect(await screen.findByText("123 456")).toBeDefined();
     expect(screen.getByText(/Sender PC/u)).toBeDefined();
     const pairingSummary = screen.getByLabelText("Settings in this transfer");
-    expect(pairingSummary.textContent).toContain("Settings in this transfer (2)");
-    expect(pairingSummary.textContent).toContain("Agent & Provider Preferences");
+    expect(pairingSummary.textContent).toContain(
+      "Settings in this transfer (2)",
+    );
+    expect(pairingSummary.textContent).toContain(
+      "Agent & Provider Preferences",
+    );
     expect(pairingSummary.textContent).toContain("Global Memory");
     fireEvent.click(screen.getByRole("button", { name: /Codes match/u }));
     await waitFor(() => {
@@ -692,7 +752,14 @@ describe("SettingsTransferPanel", () => {
           mode: "receive",
           phase: "review",
           categories: CATEGORY_FIXTURES.map((fixture, index) =>
-            category(fixture, index === 0 ? "clear" : index === 1 ? "replace" : "preserveNotSelected"),
+            category(
+              fixture,
+              index === 0
+                ? "clear"
+                : index === 1
+                  ? "replace"
+                  : "preserveNotSelected",
+            ),
           ),
         }),
       );
@@ -803,7 +870,9 @@ describe("SettingsTransferPanel", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("Machdoch Transfer LIVE")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Transfer Settings" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Transfer Settings" }),
+    ).toBeNull();
   });
 
   it("does not overwrite a live event with an older start response or submit duplicate starts", async () => {

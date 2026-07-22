@@ -163,7 +163,9 @@ describe("automatic provider sync", () => {
     } as ParsedCliArgs);
 
     expect(mocks.uninstallProviderSyncTargets).toHaveBeenCalledOnce();
-    expect(mocks.cleanupProviderNativeState).toHaveBeenCalledWith("C:\\workspace");
+    expect(mocks.cleanupProviderNativeState).toHaveBeenCalledWith(
+      "C:\\workspace",
+    );
     expect(mocks.setPersistentProviderSyncEnabled).toHaveBeenCalledWith(true);
     expect(mocks.reconcileProviderSync).toHaveBeenCalledWith("C:\\workspace");
     expect(

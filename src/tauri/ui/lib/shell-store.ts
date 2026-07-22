@@ -1,7 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  AppearanceSettings,
+  AppShellState,
+  McpMarketplaceState,
+  OnboardingState,
+  RalphSettings,
+  RunningTaskMessageAction,
+} from "./_helpers/shell-store-normalizers.helper";
 import {
-  DEFAULT_APPEARANCE_SETTINGS,
   DEFAULT_APP_SHELL_STATE,
+  DEFAULT_APPEARANCE_SETTINGS,
   DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
@@ -22,18 +30,10 @@ import {
   beginCrossWindowOperation,
   releaseCrossWindowOperation,
 } from "./cross-window-operation";
-import type {
-  AppearanceSettings,
-  AppShellState,
-  McpMarketplaceState,
-  OnboardingState,
-  RalphSettings,
-  RunningTaskMessageAction,
-} from "./_helpers/shell-store-normalizers.helper";
 
 export {
-  DEFAULT_APPEARANCE_SETTINGS,
   DEFAULT_APP_SHELL_STATE,
+  DEFAULT_APPEARANCE_SETTINGS,
   DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
@@ -85,8 +85,10 @@ export interface ShellStateSnapshot<T> {
   revision: number;
 }
 
-export interface ShellStateCompareAndSwapResult<T>
-  extends Pick<ShellStateSnapshot<T>, "revision"> {
+export interface ShellStateCompareAndSwapResult<T> extends Pick<
+  ShellStateSnapshot<T>,
+  "revision"
+> {
   committed: boolean;
   state?: T;
 }
@@ -116,7 +118,11 @@ const withStoredValueWriteLock = async <T>(
     typeof navigator !== "undefined" &&
     navigator.locks
   ) {
-    return navigator.locks.request(operationId, { mode: "exclusive" }, operation);
+    return navigator.locks.request(
+      operationId,
+      { mode: "exclusive" },
+      operation,
+    );
   }
 
   for (let attempt = 0; attempt < 250; attempt += 1) {
@@ -343,10 +349,7 @@ export const updateShellStateAtomically = async <T>(
     attempt += 1
   ) {
     const nextState = updater(snapshot.state);
-    const result = await compareAndSwapShellState(
-      snapshot.revision,
-      nextState,
-    );
+    const result = await compareAndSwapShellState(snapshot.revision, nextState);
 
     if (result.committed) {
       return {
@@ -356,7 +359,9 @@ export const updateShellStateAtomically = async <T>(
     }
 
     if (result.state === undefined) {
-      throw new Error("Shell-state conflict response omitted the latest state.");
+      throw new Error(
+        "Shell-state conflict response omitted the latest state.",
+      );
     }
 
     snapshot = {
@@ -503,10 +508,16 @@ export const saveRalphSettings = async (
       }
       const rebased = { ...latest } as RalphSettings;
       const mutableRebased = rebased as unknown as Record<string, unknown>;
-      const nextRecord = normalizedSettings as unknown as Record<string, unknown>;
+      const nextRecord = normalizedSettings as unknown as Record<
+        string,
+        unknown
+      >;
       const baseRecord = normalizedBase as unknown as Record<string, unknown>;
       for (const field of fields) {
-        if (JSON.stringify(nextRecord[field]) === JSON.stringify(baseRecord[field])) {
+        if (
+          JSON.stringify(nextRecord[field]) ===
+          JSON.stringify(baseRecord[field])
+        ) {
           continue;
         }
         if (nextRecord[field] === undefined) {
@@ -552,18 +563,16 @@ export const saveOnboardingState = async (
   });
 };
 
-export const loadAppearanceSettings =
-  async (): Promise<AppearanceSettings> => {
-    return loadStoredValue<AppearanceSettings>({
-      storageKey: APPEARANCE_STORAGE_KEY,
-      fallback: DEFAULT_APPEARANCE_SETTINGS,
-      normalize: normalizeAppearanceSettings,
-      tauriErrorMessage:
-        "Failed to load appearance settings from Tauri store",
-      localStorageErrorMessage:
-        "Failed to load appearance settings from localStorage",
-    });
-  };
+export const loadAppearanceSettings = async (): Promise<AppearanceSettings> => {
+  return loadStoredValue<AppearanceSettings>({
+    storageKey: APPEARANCE_STORAGE_KEY,
+    fallback: DEFAULT_APPEARANCE_SETTINGS,
+    normalize: normalizeAppearanceSettings,
+    tauriErrorMessage: "Failed to load appearance settings from Tauri store",
+    localStorageErrorMessage:
+      "Failed to load appearance settings from localStorage",
+  });
+};
 
 export const saveAppearanceSettings = async (
   settings: AppearanceSettings,
@@ -651,8 +660,7 @@ export const saveMcpMarketplaceState = async (
   await saveRequiredStoredValue({
     storageKey: MCP_MARKETPLACE_STORAGE_KEY,
     value: normalizedState,
-    tauriErrorMessage:
-      "Failed to persist MCP marketplace state to Tauri store",
+    tauriErrorMessage: "Failed to persist MCP marketplace state to Tauri store",
     localStorageErrorMessage:
       "Failed to persist MCP marketplace state to localStorage",
   });

@@ -1,3 +1,4 @@
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -13,7 +14,6 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   useCallback,
   useEffect,
@@ -50,17 +50,15 @@ import {
   type SettingsTransferMode,
   type SettingsTransferStatus,
 } from "../../../settings-transfer";
-import { SettingsCard } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
+import { SettingsCard } from "./shared";
 
 type EncryptedFileMode = "fileExport" | "fileImport";
 type ConfigurationMode = "landing" | SettingsTransferMode | EncryptedFileMode;
 const MAX_MANUAL_CODE_LENGTH = 2_200;
 const FILE_PASSPHRASE_MAX_BYTES = 1_024;
 
-const isSelectableCategory = (
-  category: SettingsTransferCategory,
-): boolean =>
+const isSelectableCategory = (category: SettingsTransferCategory): boolean =>
   category.availability !== "unavailable" &&
   category.availability !== "unsupported";
 
@@ -69,7 +67,13 @@ const utf8ByteLength = (value: string): number => {
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;
     bytes +=
-      codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+      codePoint <= 0x7f
+        ? 1
+        : codePoint <= 0x7ff
+          ? 2
+          : codePoint <= 0xffff
+            ? 3
+            : 4;
   }
   return bytes;
 };
@@ -77,7 +81,9 @@ const utf8ByteLength = (value: string): number => {
 const createFileInspectionId = (): string => {
   const bytes = new Uint8Array(16);
   globalThis.crypto.getRandomValues(bytes);
-  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  return [...bytes]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
 };
 
 const formatCount = (count: number): string =>
@@ -374,8 +380,7 @@ const EncryptedSettingsFilePanel = ({
       new Set(
         catalog.categories
           .filter(
-            (category) =>
-              category.selected && isSelectableCategory(category),
+            (category) => category.selected && isSelectableCategory(category),
           )
           .map((category) => category.id),
       ),
@@ -510,7 +515,8 @@ const EncryptedSettingsFilePanel = ({
                 },
               ],
             });
-      if (mounted.current && typeof selected === "string") setFilePath(selected);
+      if (mounted.current && typeof selected === "string")
+        setFilePath(selected);
     } catch (error) {
       if (mounted.current) setLocalError(toErrorMessage(error));
     } finally {
@@ -570,7 +576,9 @@ const EncryptedSettingsFilePanel = ({
       }
     } finally {
       if (!retainedReview && operationId) {
-        await cancelEncryptedSettingsFileImport(operationId).catch(() => undefined);
+        await cancelEncryptedSettingsFileImport(operationId).catch(
+          () => undefined,
+        );
         if (inspectionOperationId.current === operationId) {
           inspectionOperationId.current = null;
         }
@@ -642,7 +650,13 @@ const EncryptedSettingsFilePanel = ({
   if (result) {
     const imported = result.mode === "fileImport";
     return (
-      <SettingsCard title={imported ? "Encrypted settings imported" : "Encrypted settings exported"}>
+      <SettingsCard
+        title={
+          imported
+            ? "Encrypted settings imported"
+            : "Encrypted settings exported"
+        }
+      >
         <div className="grid justify-items-center gap-4 py-8 text-center">
           <span className="flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
             <CheckCircle2 className="size-7" />
@@ -665,11 +679,17 @@ const EncryptedSettingsFilePanel = ({
             onClick={() => void finish()}
             className="bg-slate-100 text-slate-950 hover:bg-white"
           >
-            {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
+            {busy ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Check className="size-4" />
+            )}
             {busy ? "Refreshing settings…" : "Done"}
           </Button>
           {localError ? (
-            <p role="alert" className="text-sm text-rose-300">{localError}</p>
+            <p role="alert" className="text-sm text-rose-300">
+              {localError}
+            </p>
           ) : null}
         </div>
       </SettingsCard>
@@ -685,13 +705,15 @@ const EncryptedSettingsFilePanel = ({
         <div className="grid gap-4 py-5">
           {review.reviewExpiresAt ? (
             <p className="text-xs text-slate-500">
-              Review expires at {new Date(review.reviewExpiresAt).toLocaleTimeString()}.
+              Review expires at{" "}
+              {new Date(review.reviewExpiresAt).toLocaleTimeString()}.
             </p>
           ) : null}
           <ReviewCategories categories={review.categories} />
           {review.token ? (
             <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-100/85">
-              Selected categories replace existing settings; they are not merged.
+              Selected categories replace existing settings; they are not
+              merged.
             </div>
           ) : (
             <p className="text-sm text-amber-300">
@@ -699,7 +721,9 @@ const EncryptedSettingsFilePanel = ({
             </p>
           )}
           {localError ? (
-            <p role="alert" className="text-sm text-rose-300">{localError}</p>
+            <p role="alert" className="text-sm text-rose-300">
+              {localError}
+            </p>
           ) : null}
           <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
             <Button
@@ -739,7 +763,8 @@ const EncryptedSettingsFilePanel = ({
 
   const exporting = mode === "fileExport";
   const passphraseIsLongEnough = [...passphrase].length >= 12;
-  const passphraseFits = utf8ByteLength(passphrase) <= FILE_PASSPHRASE_MAX_BYTES;
+  const passphraseFits =
+    utf8ByteLength(passphrase) <= FILE_PASSPHRASE_MAX_BYTES;
   return (
     <SettingsCard
       title={exporting ? "Export Encrypted File" : "Import Encrypted File"}
@@ -758,14 +783,24 @@ const EncryptedSettingsFilePanel = ({
         />
         <div className="grid gap-2">
           <span className="text-sm font-medium text-slate-300">
-            {exporting ? "Encrypted file destination" : "Encrypted settings file"}
+            {exporting
+              ? "Encrypted file destination"
+              : "Encrypted settings file"}
           </span>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               readOnly
               value={filePath}
-              aria-label={exporting ? "Encrypted file destination" : "Encrypted settings file"}
-              placeholder={exporting ? "Choose where to save the file" : "Choose a .machdoch-settings file"}
+              aria-label={
+                exporting
+                  ? "Encrypted file destination"
+                  : "Encrypted settings file"
+              }
+              placeholder={
+                exporting
+                  ? "Choose where to save the file"
+                  : "Choose a .machdoch-settings file"
+              }
               className="min-w-0 flex-1 border-slate-800 bg-slate-950 text-slate-300"
             />
             <Button
@@ -780,7 +815,10 @@ const EncryptedSettingsFilePanel = ({
           </div>
         </div>
         <div className="grid gap-2">
-          <label htmlFor="encrypted-settings-passphrase" className="text-sm font-medium text-slate-300">
+          <label
+            htmlFor="encrypted-settings-passphrase"
+            className="text-sm font-medium text-slate-300"
+          >
             File passphrase
           </label>
           <Input
@@ -796,7 +834,10 @@ const EncryptedSettingsFilePanel = ({
           />
           {exporting ? (
             <>
-              <label htmlFor="encrypted-settings-passphrase-confirmation" className="text-sm font-medium text-slate-300">
+              <label
+                htmlFor="encrypted-settings-passphrase-confirmation"
+                className="text-sm font-medium text-slate-300"
+              >
                 Confirm passphrase
               </label>
               <Input
@@ -807,17 +848,22 @@ const EncryptedSettingsFilePanel = ({
                 disabled={busy}
                 autoComplete="off"
                 spellCheck={false}
-                onChange={(event) => setPassphraseConfirmation(event.target.value)}
+                onChange={(event) =>
+                  setPassphraseConfirmation(event.target.value)
+                }
                 className="border-slate-800 bg-slate-950 text-slate-100"
               />
               <p className="text-xs leading-5 text-slate-500">
-                Use at least 12 characters and at most 1,024 UTF-8 bytes. A lost passphrase cannot be recovered.
+                Use at least 12 characters and at most 1,024 UTF-8 bytes. A lost
+                passphrase cannot be recovered.
               </p>
             </>
           ) : null}
         </div>
         {localError ? (
-          <p role="alert" className="text-sm text-rose-300">{localError}</p>
+          <p role="alert" className="text-sm text-rose-300">
+            {localError}
+          </p>
         ) : null}
         <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
           <Button
@@ -838,7 +884,8 @@ const EncryptedSettingsFilePanel = ({
               passphrase.length === 0 ||
               !passphraseFits ||
               (exporting &&
-                (!passphraseIsLongEnough || passphrase !== passphraseConfirmation))
+                (!passphraseIsLongEnough ||
+                  passphrase !== passphraseConfirmation))
             }
             onClick={() => void (exporting ? exportFile() : inspectFile())}
             className="bg-sky-500 text-slate-950 hover:bg-sky-400"
@@ -969,7 +1016,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
     [selectedInterfaces],
   );
   const active = status ? isActiveTransferPhase(status.phase) : false;
-  const activeMode = status?.mode ??
+  const activeMode =
+    status?.mode ??
     (configurationMode === "landing" ? null : configurationMode);
   const commitCritical =
     status?.phase === "committing" || status?.phase === "rollingBack";
@@ -1117,14 +1165,13 @@ export const SettingsTransferPanel = (): JSX.Element => {
 
   if (!status) {
     return (
-      <SettingsCard
-        title="Transfer"
-        description="Loading settings…"
-      >
+      <SettingsCard title="Transfer" description="Loading settings…">
         <div className="flex items-center gap-2 py-6 text-sm text-slate-400">
           <LoaderCircle className="size-4 animate-spin" /> Preparing settings
         </div>
-        {localError ? <p className="text-sm text-rose-300">{localError}</p> : null}
+        {localError ? (
+          <p className="text-sm text-rose-300">{localError}</p>
+        ) : null}
       </SettingsCard>
     );
   }
@@ -1190,7 +1237,9 @@ export const SettingsTransferPanel = (): JSX.Element => {
           </button>
         </div>
         {localError ? (
-          <p role="alert" className="text-sm text-rose-300">{localError}</p>
+          <p role="alert" className="text-sm text-rose-300">
+            {localError}
+          </p>
         ) : null}
       </SettingsCard>
     );
@@ -1234,7 +1283,11 @@ export const SettingsTransferPanel = (): JSX.Element => {
   ) {
     return (
       <SettingsCard
-        title={configurationMode === "send" ? "Transfer Settings" : "Receive Settings"}
+        title={
+          configurationMode === "send"
+            ? "Transfer Settings"
+            : "Receive Settings"
+        }
         description={
           configurationMode === "send"
             ? "Choose the settings this PC can send. Empty categories clear matching settings after both PCs approve."
@@ -1243,7 +1296,10 @@ export const SettingsTransferPanel = (): JSX.Element => {
       >
         <div className="grid gap-5 py-5">
           <div className="grid gap-2">
-            <label htmlFor="settings-transfer-device-name" className="text-sm font-medium text-slate-300">
+            <label
+              htmlFor="settings-transfer-device-name"
+              className="text-sm font-medium text-slate-300"
+            >
               Device name
             </label>
             <Input
@@ -1267,7 +1323,9 @@ export const SettingsTransferPanel = (): JSX.Element => {
             onToggle={toggleInterface}
           />
           {localError ? (
-            <p role="alert" className="text-sm text-rose-300">{localError}</p>
+            <p role="alert" className="text-sm text-rose-300">
+              {localError}
+            </p>
           ) : null}
           <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
             <Button
@@ -1363,7 +1421,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
               </p>
               {remainingSeconds !== null ? (
                 <p className="font-mono text-sm text-slate-400">
-                  {Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, "0")} remaining
+                  {Math.floor(remainingSeconds / 60)}:
+                  {String(remainingSeconds % 60).padStart(2, "0")} remaining
                 </p>
               ) : null}
             </div>
@@ -1394,7 +1453,11 @@ export const SettingsTransferPanel = (): JSX.Element => {
                     onClick={() => void copyManualCode()}
                     className="w-fit border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
                   >
-                    {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                    {copied ? (
+                      <Check className="size-4" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
                     {copied ? "Copied" : "Copy code"}
                   </Button>
                 </div>
@@ -1405,14 +1468,19 @@ export const SettingsTransferPanel = (): JSX.Element => {
 
         {status.phase === "discovering" ? (
           <div className="grid gap-4">
-            <div className="grid gap-2" aria-label="Available transfer sessions">
+            <div
+              className="grid gap-2"
+              aria-label="Available transfer sessions"
+            >
               {status.discoveredSessions.map((session) => (
                 <button
                   type="button"
                   key={session.id}
                   disabled={busy}
                   onClick={() =>
-                    void run(() => connectDiscoveredSettingsTransfer(session.id))
+                    void run(() =>
+                      connectDiscoveredSettingsTransfer(session.id),
+                    )
                   }
                   className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-left transition hover:border-emerald-500/35 hover:bg-emerald-500/5 disabled:opacity-50"
                 >
@@ -1422,12 +1490,15 @@ export const SettingsTransferPanel = (): JSX.Element => {
                       {session.label}
                     </span>
                   </span>
-                  <span className="text-xs font-medium text-emerald-300">Connect</span>
+                  <span className="text-xs font-medium text-emerald-300">
+                    Connect
+                  </span>
                 </button>
               ))}
               {status.discoveredSessions.length === 0 ? (
                 <div className="flex items-center gap-3 rounded-xl border border-dashed border-slate-800 px-4 py-5 text-sm text-slate-500">
-                  <LoaderCircle className="size-4 animate-spin" /> Waiting for a sender on the selected interfaces
+                  <LoaderCircle className="size-4 animate-spin" /> Waiting for a
+                  sender on the selected interfaces
                 </div>
               ) : null}
             </div>
@@ -1438,7 +1509,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
               </summary>
               <div className="grid gap-3 border-t border-slate-800 p-4">
                 <p className="text-xs leading-5 text-slate-400">
-                  Make sure both PCs are awake on the same network and Machdoch is allowed through the firewall.
+                  Make sure both PCs are awake on the same network and Machdoch
+                  is allowed through the firewall.
                 </p>
                 <Textarea
                   value={manualCode}
@@ -1453,7 +1525,9 @@ export const SettingsTransferPanel = (): JSX.Element => {
                   variant="outline"
                   disabled={busy || manualCode.trim().length === 0}
                   onClick={() =>
-                    void run(() => connectManualSettingsTransfer(manualCode.trim()))
+                    void run(() =>
+                      connectManualSettingsTransfer(manualCode.trim()),
+                    )
                   }
                   className="w-fit border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
                 >
@@ -1477,7 +1551,8 @@ export const SettingsTransferPanel = (): JSX.Element => {
             </div>
             <PairingCategorySummary status={status} />
             <p className="max-w-lg text-sm leading-6 text-slate-400">
-              Compare this code with {status.peerName ?? "the other PC"}. Continue only if all six digits match.
+              Compare this code with {status.peerName ?? "the other PC"}.
+              Continue only if all six digits match.
             </p>
             <Button
               type="button"
@@ -1502,11 +1577,13 @@ export const SettingsTransferPanel = (): JSX.Element => {
         {status.phase === "review" ? (
           <div className="grid gap-4">
             <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-100/85">
-              Selected categories replace existing settings; they are not merged.
+              Selected categories replace existing settings; they are not
+              merged.
             </div>
             <ReviewCategories categories={status.categories} />
             {status.categories.some(
-              (category) => category.effect === "replace" || category.effect === "clear",
+              (category) =>
+                category.effect === "replace" || category.effect === "clear",
             ) ? (
               <Button
                 type="button"
@@ -1531,12 +1608,21 @@ export const SettingsTransferPanel = (): JSX.Element => {
           </div>
         ) : null}
 
-        {["inspecting", "connecting", "transferring", "validating", "committing", "rollingBack"].includes(
-          status.phase,
-        ) ? (
+        {[
+          "inspecting",
+          "connecting",
+          "transferring",
+          "validating",
+          "committing",
+          "rollingBack",
+        ].includes(status.phase) ? (
           <div className="grid justify-items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-8 text-center">
             <LoaderCircle className="size-7 animate-spin text-sky-300" />
-            <p role="status" aria-live="polite" className="text-sm leading-6 text-slate-300">
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-sm leading-6 text-slate-300"
+            >
               {getTransferPhaseLabel(status.phase)}
             </p>
             {status.phase === "transferring" && status.totalBytes > 0 ? (
@@ -1570,7 +1656,9 @@ export const SettingsTransferPanel = (): JSX.Element => {
         ) : null}
 
         {localError ? (
-          <p role="alert" className="text-sm text-rose-300">{localError}</p>
+          <p role="alert" className="text-sm text-rose-300">
+            {localError}
+          </p>
         ) : null}
 
         {!commitCritical ? (

@@ -85,7 +85,8 @@ export const normalizeProviderEnrollmentConfig = (
     approvals: "never",
     progressiveDiscoveryThresholdPercent: clampInteger(
       value?.mcp?.progressiveDiscoveryThresholdPercent,
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.mcp.progressiveDiscoveryThresholdPercent,
+      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.mcp
+        .progressiveDiscoveryThresholdPercent,
       1,
       5,
     ),
@@ -108,7 +109,8 @@ export const normalizeProviderEnrollmentConfig = (
     ),
     filesystemConvergenceTargetMs: clampInteger(
       value?.persistentSync?.filesystemConvergenceTargetMs,
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.filesystemConvergenceTargetMs,
+      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync
+        .filesystemConvergenceTargetMs,
       100,
       60_000,
     ),
@@ -143,7 +145,9 @@ export const normalizeProviderEnrollmentConfig = (
 
 const loadUserConfig = async (): Promise<UserConfigFile> => {
   try {
-    return JSON.parse(await readFile(getUserConfigPath(), "utf8")) as UserConfigFile;
+    return JSON.parse(
+      await readFile(getUserConfigPath(), "utf8"),
+    ) as UserConfigFile;
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -157,10 +161,11 @@ const loadUserConfig = async (): Promise<UserConfigFile> => {
   }
 };
 
-export const loadProviderEnrollmentConfig = async (): Promise<ProviderEnrollmentConfig> => {
-  const userConfig = await loadUserConfig();
-  return normalizeProviderEnrollmentConfig(userConfig.providerEnrollment);
-};
+export const loadProviderEnrollmentConfig =
+  async (): Promise<ProviderEnrollmentConfig> => {
+    const userConfig = await loadUserConfig();
+    return normalizeProviderEnrollmentConfig(userConfig.providerEnrollment);
+  };
 
 export const saveProviderEnrollmentConfig = async (
   config: ProviderEnrollmentConfig,

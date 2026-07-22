@@ -348,7 +348,9 @@ describe("SettingsDialog", () => {
         name: "Saving workspace defaults",
       }),
     ).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Discard changes" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Discard changes" }),
+    ).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -491,7 +493,9 @@ describe("SettingsDialog", () => {
   });
 
   it("surfaces an appearance persistence failure", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     const onSave = vi.fn().mockRejectedValue(new Error("store unavailable"));
     renderSettingsDialog(
       createSettingsDialogProps({
@@ -828,9 +832,10 @@ describe("SettingsDialog", () => {
     });
     expect(onDraftChange).toHaveBeenCalled();
     expect(
-      JSON.parse(
-        onDraftChange.mock.calls.at(-1)?.[0] as string,
-      ) as Record<string, unknown>,
+      JSON.parse(onDraftChange.mock.calls.at(-1)?.[0] as string) as Record<
+        string,
+        unknown
+      >,
     ).toMatchObject({
       servers: [
         expect.objectContaining({
@@ -852,9 +857,7 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Auth" }));
     expect(
-      screen.getByText(
-        /Manual fallback: paste a callback URL or code/u,
-      ),
+      screen.getByText(/Manual fallback: paste a callback URL or code/u),
     ).toBeDefined();
     fireEvent.change(screen.getByLabelText("MCP OAuth callback URL or code"), {
       target: { value: "http://127.0.0.1:43110/oauth/callback?code=def" },
@@ -895,9 +898,10 @@ describe("SettingsDialog", () => {
 
     expect(onDraftChange).toHaveBeenCalled();
     expect(
-      JSON.parse(
-        onDraftChange.mock.calls.at(-1)?.[0] as string,
-      ) as Record<string, unknown>,
+      JSON.parse(onDraftChange.mock.calls.at(-1)?.[0] as string) as Record<
+        string,
+        unknown
+      >,
     ).toMatchObject({
       servers: [
         {
@@ -979,12 +983,12 @@ describe("SettingsDialog", () => {
   });
 
   it("warns before enabling provider sync", async () => {
-    renderSettingsDialog(
-      createSettingsDialogProps({ settingsSection: "mcp" }),
-    );
+    renderSettingsDialog(createSettingsDialogProps({ settingsSection: "mcp" }));
 
     expect(
-      await screen.findByText(/Enabling removes existing provider-native instruction, MCP, and customization files or entries/u),
+      await screen.findByText(
+        /Enabling removes existing provider-native instruction, MCP, and customization files or entries/u,
+      ),
     ).toBeDefined();
     const syncSwitch = await screen.findByRole("switch", {
       name: "Sync Machdoch to provider CLIs",

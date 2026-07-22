@@ -108,22 +108,23 @@ const MCP_PRESET_CATEGORIES: readonly McpPresetCategory[] = [
   { id: "more", label: "More" },
 ];
 
-const MCP_PRESET_CATEGORY_BY_ID: Partial<Record<string, McpPresetCategoryId>> = {
-  "serper-search": "web-search",
-  "firecrawl-web": "web-search",
-  "context7-docs": "docs-knowledge",
-  "notion-remote": "docs-knowledge",
-  "linear-remote": "planning-design",
-  "figma-remote": "planning-design",
-  "github-remote": "code-ci",
-  "github-local-docker": "code-ci",
-  "gitlab-remote": "code-ci",
-  "sentry-remote": "data-observability",
-  "supabase-remote": "data-observability",
-  "chrome-devtools": "browser-apps",
-  "playwright-browser": "browser-apps",
-  "tauri-mcp-server": "browser-apps",
-};
+const MCP_PRESET_CATEGORY_BY_ID: Partial<Record<string, McpPresetCategoryId>> =
+  {
+    "serper-search": "web-search",
+    "firecrawl-web": "web-search",
+    "context7-docs": "docs-knowledge",
+    "notion-remote": "docs-knowledge",
+    "linear-remote": "planning-design",
+    "figma-remote": "planning-design",
+    "github-remote": "code-ci",
+    "github-local-docker": "code-ci",
+    "gitlab-remote": "code-ci",
+    "sentry-remote": "data-observability",
+    "supabase-remote": "data-observability",
+    "chrome-devtools": "browser-apps",
+    "playwright-browser": "browser-apps",
+    "tauri-mcp-server": "browser-apps",
+  };
 
 const getMcpPresetCategoryId = (presetId: string): McpPresetCategoryId => {
   return MCP_PRESET_CATEGORY_BY_ID[presetId] ?? "more";
@@ -233,7 +234,10 @@ const parseDraft = (raw: string): ParsedMcpDraft => {
   }
 };
 
-const stringifyDraft = (config: ServerRecord, servers: ServerRecord[]): string => {
+const stringifyDraft = (
+  config: ServerRecord,
+  servers: ServerRecord[],
+): string => {
   return `${JSON.stringify(
     {
       ...config,
@@ -282,20 +286,18 @@ const formatStringList = (value: unknown): string => {
 const parseStringRecord = (
   value: string,
 ): Record<string, string> | undefined => {
-  const entries = value
-    .split(/\r?\n/u)
-    .flatMap((line) => {
-      const separatorIndex = line.indexOf("=");
+  const entries = value.split(/\r?\n/u).flatMap((line) => {
+    const separatorIndex = line.indexOf("=");
 
-      if (separatorIndex <= 0) {
-        return [];
-      }
+    if (separatorIndex <= 0) {
+      return [];
+    }
 
-      const key = line.slice(0, separatorIndex).trim();
-      const entryValue = line.slice(separatorIndex + 1).trim();
+    const key = line.slice(0, separatorIndex).trim();
+    const entryValue = line.slice(separatorIndex + 1).trim();
 
-      return key ? [[key, entryValue] as const] : [];
-    });
+    return key ? [[key, entryValue] as const] : [];
+  });
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 };
@@ -320,7 +322,9 @@ const formatStringRecord = (value: unknown): string => {
   }
 
   return Object.entries(value)
-    .flatMap(([key, entry]) => (typeof entry === "string" ? [`${key}=${entry}`] : []))
+    .flatMap(([key, entry]) =>
+      typeof entry === "string" ? [`${key}=${entry}`] : [],
+    )
     .join("\n");
 };
 
@@ -381,10 +385,15 @@ const createAuth = (
   return { ...current, type };
 };
 
-const getUniqueServerId = (servers: ServerRecord[], preferredId: string): string => {
+const getUniqueServerId = (
+  servers: ServerRecord[],
+  preferredId: string,
+): string => {
   const normalized = normalizeServerId(preferredId) || "mcp-server";
   const used = new Set(
-    servers.map((server, index) => normalizeServerId(getServerId(server, index))),
+    servers.map((server, index) =>
+      normalizeServerId(getServerId(server, index)),
+    ),
   );
 
   if (!used.has(normalized)) {
@@ -470,7 +479,10 @@ const validateServers = (servers: ServerRecord[]): ValidationIssue[] => {
     if (getAuthType(server) === "bearer") {
       const auth = getRecord(server, "auth");
 
-      if (!getString(auth, "token").trim() && !getString(auth, "tokenEnv").trim()) {
+      if (
+        !getString(auth, "token").trim() &&
+        !getString(auth, "tokenEnv").trim()
+      ) {
         issues.push({
           serverKey,
           tone: "warning",
@@ -491,7 +503,9 @@ const parseDiscoverySummary = (raw: string | null): DiscoverySummary | null => {
   try {
     const parsed = JSON.parse(raw) as unknown;
     const result = isRecord(parsed) ? parsed : undefined;
-    const discovery = isRecord(result?.discovery) ? result.discovery : undefined;
+    const discovery = isRecord(result?.discovery)
+      ? result.discovery
+      : undefined;
 
     if (!result && !discovery) {
       return null;
@@ -504,11 +518,15 @@ const parseDiscoverySummary = (raw: string | null): DiscoverySummary | null => {
       cachePath: getString(result, "cachePath") || null,
       discoveredAt: getString(discovery, "discoveredAt") || null,
       tools: Array.isArray(discovery?.tools) ? discovery.tools.length : null,
-      resources: Array.isArray(discovery?.resources) ? discovery.resources.length : null,
+      resources: Array.isArray(discovery?.resources)
+        ? discovery.resources.length
+        : null,
       resourceTemplates: Array.isArray(discovery?.resourceTemplates)
         ? discovery.resourceTemplates.length
         : null,
-      prompts: Array.isArray(discovery?.prompts) ? discovery.prompts.length : null,
+      prompts: Array.isArray(discovery?.prompts)
+        ? discovery.prompts.length
+        : null,
     };
   } catch {
     return null;
@@ -624,7 +642,9 @@ const SummaryMetric = ({
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-100">{value ?? "Unknown"}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-100">
+        {value ?? "Unknown"}
+      </p>
     </div>
   );
 };
@@ -644,7 +664,9 @@ export const McpSettingsPanel = ({
     () => (parsed.error ? [] : validateServers(parsed.servers)),
     [parsed.error, parsed.servers],
   );
-  const validationErrors = validationIssues.filter((issue) => issue.tone === "error");
+  const validationErrors = validationIssues.filter(
+    (issue) => issue.tone === "error",
+  );
   const dirty = setup.draft !== setup.document.raw;
   const disabled = setup.loading || setup.saving || Boolean(parsed.error);
   const saveDisabled = disabled || !dirty || validationErrors.length > 0;
@@ -665,7 +687,9 @@ export const McpSettingsPanel = ({
   const effectiveSelectedIndex =
     selectedIndex >= 0 ? selectedIndex : parsed.servers.length > 0 ? 0 : -1;
   const selectedServer =
-    effectiveSelectedIndex >= 0 ? parsed.servers[effectiveSelectedIndex] : undefined;
+    effectiveSelectedIndex >= 0
+      ? parsed.servers[effectiveSelectedIndex]
+      : undefined;
   const effectiveSelectedServerId = selectedServer
     ? getServerId(selectedServer, effectiveSelectedIndex)
     : "";
@@ -675,7 +699,9 @@ export const McpSettingsPanel = ({
   const selectedIssues = validationIssues.filter(
     (issue) => issue.serverKey === selectedServerKey,
   );
-  const selectedHasErrors = selectedIssues.some((issue) => issue.tone === "error");
+  const selectedHasErrors = selectedIssues.some(
+    (issue) => issue.tone === "error",
+  );
   const transport = getRecord(selectedServer, "transport");
   const transportType = getTransportType(selectedServer);
   const auth = getRecord(selectedServer, "auth");
@@ -708,7 +734,9 @@ export const McpSettingsPanel = ({
       ? customDraft.command.trim().length > 0
       : isValidHttpUrl(customDraft.url.trim());
   const customDraftReady =
-    normalizedCustomId.length > 0 && !customIdAlreadyExists && customTransportReady;
+    normalizedCustomId.length > 0 &&
+    !customIdAlreadyExists &&
+    customTransportReady;
   const presetGroups = useMemo(
     () =>
       MCP_PRESET_CATEGORIES.flatMap((category) => {
@@ -808,7 +836,8 @@ export const McpSettingsPanel = ({
     const nextServers = parsed.servers.filter(
       (_server, index) => index !== effectiveSelectedIndex,
     );
-    const nextSelected = nextServers[effectiveSelectedIndex] ?? nextServers.at(-1);
+    const nextSelected =
+      nextServers[effectiveSelectedIndex] ?? nextServers.at(-1);
 
     writeServers(nextServers);
     setSelectedServerId(
@@ -1039,7 +1068,9 @@ export const McpSettingsPanel = ({
           const serverIssues = validationIssues.filter(
             (issue) => issue.serverKey === serverKey,
           );
-          const hasErrors = serverIssues.some((issue) => issue.tone === "error");
+          const hasErrors = serverIssues.some(
+            (issue) => issue.tone === "error",
+          );
           const metadata = [
             getTransportType(server),
             getAuthType(server) === "none" ? "no auth" : getAuthType(server),
@@ -1067,7 +1098,9 @@ export const McpSettingsPanel = ({
                   <span className="truncate font-mono text-xs text-slate-500">
                     {serverId}
                   </span>
-                  <span className="truncate text-xs text-slate-500">{metadata}</span>
+                  <span className="truncate text-xs text-slate-500">
+                    {metadata}
+                  </span>
                 </span>
                 {hasErrors ? (
                   <span className="shrink-0 text-xs font-medium text-rose-200">
@@ -1095,7 +1128,8 @@ export const McpSettingsPanel = ({
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
               <h4 className="truncate text-base font-semibold text-slate-100">
-                {getString(selectedServer, "title") || effectiveSelectedServerId}
+                {getString(selectedServer, "title") ||
+                  effectiveSelectedServerId}
               </h4>
             </div>
             <p className="mt-1 break-all font-mono text-xs text-slate-500">
@@ -1150,7 +1184,10 @@ export const McpSettingsPanel = ({
         <IssueList issues={selectedIssues} />
         <PanelBlock title="Identity">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="ID" detail="Lowercase letters, numbers, underscores, and dashes.">
+            <Field
+              label="ID"
+              detail="Lowercase letters, numbers, underscores, and dashes."
+            >
               <Input
                 value={getString(selectedServer, "id")}
                 disabled={disabled}
@@ -1202,7 +1239,10 @@ export const McpSettingsPanel = ({
                 onChange={(event) =>
                   updateSelectedField(
                     "transport",
-                    createTransport(event.target.value as TransportType, transport),
+                    createTransport(
+                      event.target.value as TransportType,
+                      transport,
+                    ),
                   )
                 }
                 className={SELECT_CLASS}
@@ -1245,7 +1285,10 @@ export const McpSettingsPanel = ({
 
           {transportType === "stdio" ? (
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Args" detail="One argument per line or comma separated.">
+              <Field
+                label="Args"
+                detail="One argument per line or comma separated."
+              >
                 <Textarea
                   value={formatStringList(transport?.args)}
                   disabled={disabled}
@@ -1262,7 +1305,10 @@ export const McpSettingsPanel = ({
                   className={TEXTAREA_CLASS}
                 />
               </Field>
-              <Field label="Env" detail="KEY=value, one per line. Prefer env references for secrets.">
+              <Field
+                label="Env"
+                detail="KEY=value, one per line. Prefer env references for secrets."
+              >
                 <Textarea
                   value={formatStringRecord(transport?.env)}
                   disabled={disabled}
@@ -1479,7 +1525,11 @@ export const McpSettingsPanel = ({
                     disabled={disabled}
                     onChange={(event) =>
                       updateSelectedRecord("auth", (record) =>
-                        setRecordValue(record, "clientSecretEnv", event.target.value),
+                        setRecordValue(
+                          record,
+                          "clientSecretEnv",
+                          event.target.value,
+                        ),
                       )
                     }
                     className={INPUT_CLASS}
@@ -1491,7 +1541,11 @@ export const McpSettingsPanel = ({
                     disabled={disabled}
                     onChange={(event) =>
                       updateSelectedRecord("auth", (record) =>
-                        setRecordValue(record, "redirectUrl", event.target.value),
+                        setRecordValue(
+                          record,
+                          "redirectUrl",
+                          event.target.value,
+                        ),
                       )
                     }
                     className={INPUT_CLASS}
@@ -1581,7 +1635,10 @@ export const McpSettingsPanel = ({
                     variant="outline"
                     disabled={actionDisabled || !effectiveSelectedServerId}
                     onClick={() => {
-                      void setup.onFinishOAuth(effectiveSelectedServerId, oauthCallback);
+                      void setup.onFinishOAuth(
+                        effectiveSelectedServerId,
+                        oauthCallback,
+                      );
                     }}
                     className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:border-sky-500/30 hover:bg-slate-900"
                   >
@@ -1696,7 +1753,11 @@ export const McpSettingsPanel = ({
             <Button
               type="button"
               variant="outline"
-              disabled={actionDisabled || selectedHasErrors || !effectiveSelectedServerId}
+              disabled={
+                actionDisabled ||
+                selectedHasErrors ||
+                !effectiveSelectedServerId
+              }
               onClick={() => {
                 void setup.onDiscoverServer(effectiveSelectedServerId);
               }}
@@ -1708,7 +1769,11 @@ export const McpSettingsPanel = ({
             <Button
               type="button"
               variant="outline"
-              disabled={actionDisabled || selectedHasErrors || !effectiveSelectedServerId}
+              disabled={
+                actionDisabled ||
+                selectedHasErrors ||
+                !effectiveSelectedServerId
+              }
               onClick={() => {
                 void setup.onRefreshDiscoveryCache(effectiveSelectedServerId);
               }}
@@ -1735,12 +1800,18 @@ export const McpSettingsPanel = ({
             <div className="grid gap-3">
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 <SummaryMetric label="Tools" value={discoverySummary.tools} />
-                <SummaryMetric label="Resources" value={discoverySummary.resources} />
+                <SummaryMetric
+                  label="Resources"
+                  value={discoverySummary.resources}
+                />
                 <SummaryMetric
                   label="Templates"
                   value={discoverySummary.resourceTemplates}
                 />
-                <SummaryMetric label="Prompts" value={discoverySummary.prompts} />
+                <SummaryMetric
+                  label="Prompts"
+                  value={discoverySummary.prompts}
+                />
               </div>
               <div className="grid gap-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-400">
                 {discoverySummary.serverId ? (
@@ -1758,7 +1829,9 @@ export const McpSettingsPanel = ({
                   <p>Protocol: {discoverySummary.protocolVersion}</p>
                 ) : null}
                 {discoverySummary.cachePath ? (
-                  <p className="break-all">Cache: {discoverySummary.cachePath}</p>
+                  <p className="break-all">
+                    Cache: {discoverySummary.cachePath}
+                  </p>
                 ) : null}
                 {discoverySummary.discoveredAt ? (
                   <p>Discovered: {discoverySummary.discoveredAt}</p>
@@ -1805,7 +1878,10 @@ export const McpSettingsPanel = ({
                 disabled={disabled}
                 placeholder="workspace"
                 onChange={(event) =>
-                  updateSelectedField("roots", parseRootsInput(event.target.value))
+                  updateSelectedField(
+                    "roots",
+                    parseRootsInput(event.target.value),
+                  )
                 }
                 className={INPUT_CLASS}
               />
@@ -1827,7 +1903,9 @@ export const McpSettingsPanel = ({
               <select
                 value={getString(selectedServer, "tasks") || "optional"}
                 disabled={disabled}
-                onChange={(event) => updateSelectedField("tasks", event.target.value)}
+                onChange={(event) =>
+                  updateSelectedField("tasks", event.target.value)
+                }
                 className={SELECT_CLASS}
               >
                 <option value="disabled">disabled</option>
@@ -1856,7 +1934,11 @@ export const McpSettingsPanel = ({
           <div className="grid gap-3 md:grid-cols-3">
             <CheckboxField
               label="Cache enabled"
-              checked={getBoolean(getRecord(selectedServer, "cache"), "enabled", true)}
+              checked={getBoolean(
+                getRecord(selectedServer, "cache"),
+                "enabled",
+                true,
+              )}
               disabled={disabled}
               onChange={(checked) =>
                 updateSelectedRecord("cache", (record) =>
@@ -1868,7 +1950,9 @@ export const McpSettingsPanel = ({
               <Input
                 type="number"
                 min={0}
-                value={formatOptionalNumber(getRecord(selectedServer, "cache")?.ttlMs)}
+                value={formatOptionalNumber(
+                  getRecord(selectedServer, "cache")?.ttlMs,
+                )}
                 disabled={disabled}
                 onChange={(event) =>
                   updateSelectedRecord("cache", (record) =>
@@ -1884,7 +1968,11 @@ export const McpSettingsPanel = ({
             </Field>
             <CheckboxField
               label="Force refresh"
-              checked={getBoolean(getRecord(selectedServer, "cache"), "forceRefresh", false)}
+              checked={getBoolean(
+                getRecord(selectedServer, "cache"),
+                "forceRefresh",
+                false,
+              )}
               disabled={disabled}
               onChange={(checked) =>
                 updateSelectedRecord("cache", (record) =>
@@ -1900,7 +1988,9 @@ export const McpSettingsPanel = ({
             <Textarea
               value={getString(selectedServer, "notes")}
               disabled={disabled}
-              onChange={(event) => updateSelectedField("notes", event.target.value)}
+              onChange={(event) =>
+                updateSelectedField("notes", event.target.value)
+              }
               className={TEXTAREA_CLASS}
             />
           </Field>

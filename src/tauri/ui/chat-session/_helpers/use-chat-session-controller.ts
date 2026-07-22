@@ -1,12 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MediaAssetReference } from "../../../../core/media/contracts.js";
 import {
   createImageInputUnsupportedModelMessage,
   getImageInputMediaTypeForPath,
@@ -14,6 +9,11 @@ import {
   modelSupportsImageInput,
   providerSupportsImageInputMediaType,
 } from "../../../../core/model-capabilities.js";
+import type { RalphInputValue } from "../../../../core/ralph.js";
+import type {
+  ReasoningMode,
+  RunMode,
+} from "../../../../core/runtime-contract.generated.js";
 import type {
   AgentModelImageMediaType,
   CustomizationDiagnostic,
@@ -21,20 +21,12 @@ import type {
   TaskExecutionProgress,
   TaskExecutionResult,
 } from "../../../../core/types.js";
-import type { MediaAssetReference } from "../../../../core/media/contracts.js";
-import type {
-  RalphInputValue,
-} from "../../../../core/ralph.js";
-import type {
-  ReasoningMode,
-  RunMode,
-} from "../../../../core/runtime-contract.generated.js";
 import {
+  applySessionRetentionPolicy,
   canDeleteSession,
   canDuplicateSession,
   canPinSession,
   canRenameSession,
-  applySessionRetentionPolicy,
   createSession,
   createVisibleConversationMessages,
   getLatestRunningTaskId,
@@ -42,37 +34,51 @@ import {
   getSessionTitle,
   isMediaAssetContextAttachment,
   isPathContextAttachment,
-  isSessionWorkspaceLocked,
   isQuickVoiceSession,
+  isSessionWorkspaceLocked,
   MAX_SMART_CONTEXT_PACKS,
   normalizeSessionTags,
   QUICK_VOICE_SESSION_KIND,
   recoverInactiveRunningTasks,
   rememberRecentWorkspace,
   removeRecentWorkspace,
+  trimSessionTaskGroupsToVisibleMessageLimit,
   type ChatSessionContextAttachment,
-  type ChatSessionPathContextAttachment,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
+  type ChatSessionPathContextAttachment,
   type ChatSessionQueuedMessage,
   type ChatSessionRecord,
   type ShellPersistedState,
   type SmartContextPack,
-  trimSessionTaskGroupsToVisibleMessageLimit,
 } from "../../chat-session.model";
 import {
-  type RuntimeProvider,
-} from "../../model-catalog";
+  beginCrossWindowOperation,
+  completeCrossWindowOperation,
+  releaseCrossWindowOperation,
+} from "../../lib/cross-window-operation";
+import {
+  DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
+  loadRunningTaskMessageAction,
+  saveRunningTaskMessageAction,
+  type RunningTaskMessageAction,
+} from "../../lib/shell-store";
+import { readMediaAssetReferencePreview } from "../../media/media-runtime";
+import { type RuntimeProvider } from "../../model-catalog";
+import {
+  createDefaultRalphInputValues,
+  validateRalphInputFieldValues,
+} from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
 import { normalizeReasoningModeForProvider } from "../../reasoning-options";
 import {
   acknowledgeRecentDesktopTaskResults,
   cancelDesktopTask,
   createInstruction,
   generateInstruction,
+  listInstructions,
   loadActiveDesktopTaskIds,
   loadActiveDesktopTasks,
   loadRecentDesktopTaskResults,
-  listInstructions,
   openAttachedPath,
   openExternalUrl,
   openWorkspacePath,
@@ -84,35 +90,51 @@ import {
   resolveWorkspaceFilePreviewSource,
   runDesktopTask,
   runTaskInterview,
-  saveInstruction,
   saveClipboardImageAttachment,
+  saveInstruction,
   syncChatCompletionIndicator,
   type InstructionMutationInput,
-  type RecentDesktopTaskResult,
   type InstructionRegistryResult,
+  type RecentDesktopTaskResult,
   type TaskInterviewResult,
 } from "../../runtime";
-import {
-  DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
-  loadRunningTaskMessageAction,
-  saveRunningTaskMessageAction,
-  type RunningTaskMessageAction,
-} from "../../lib/shell-store";
-import {
-  beginCrossWindowOperation,
-  completeCrossWindowOperation,
-  releaseCrossWindowOperation,
-} from "../../lib/cross-window-operation";
 import { subscribeToSettingsImport } from "../../settings-transfer";
 import {
   appendThinkingProgress,
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
+import type { FilePreviewMode } from "../components/file-preview-dialog";
+import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 import { clampAiContextMessageLimit } from "./ai-context-window";
+import { isChatCompletionIndicatorActive } from "./chat-completion-indicator";
+import {
+  extractChatInputNeededPlaceholders,
+  replaceChatInputNeededPlaceholders,
+  type ChatInputNeededPlaceholder,
+} from "./chat-input-needed-placeholders";
+import {
+  createLocalTaskInterviewPrompt,
+  createTaskInterviewContextNotes,
+  getTrimmedTaskInterviewAnswerComments,
+  type ChatInterviewDialogState,
+  type ChatInterviewStartContext,
+} from "./chat-interview";
+import {
+  getFilePreviewFileName,
+  getFilePreviewRenderKind,
+  resolveFilePreviewSyntax,
+} from "./file-preview-language";
+import {
+  createPromptEnhancementTask,
+  extractEnhancedPrompt,
+  PROMPT_ENHANCEMENT_LABELS,
+  type ActivePromptEnhancementMode,
+  type PromptEnhancementMode,
+} from "./prompt-enhancement";
 import {
   appendContextAttachmentsToTask,
-  appendTranscriptToDraft,
   appendDraftBlock,
+  appendTranscriptToDraft,
   areContextAttachmentRecordsEqual,
   clampQuickVoiceMessageLimit,
   createContextAttachment,
@@ -127,7 +149,23 @@ import {
   type DialogSelection,
   type FileDropTarget,
 } from "./session-context-attachments";
-import { readMediaAssetReferencePreview } from "../../media/media-runtime";
+import { normalizeSessionReasoningOverride } from "./session-reasoning";
+import {
+  createConversationContextFromSession,
+  getEffectiveSessionMode,
+  removeSessionModeOverride,
+  RUN_MODE_META,
+} from "./session-shell";
+import {
+  createMemorySummaryState,
+  createProviderChooserState,
+} from "./session-shell-view-model";
+import {
+  createExecutionFromTerminalProgress,
+  createExecutionMessageContent,
+  formatTaskExecutionError,
+  isRecoveredTaskCrashMessage,
+} from "./session-task-continuation";
 import {
   applySmartContextPackToComposer,
   cloneContextAttachmentsForPack,
@@ -143,50 +181,9 @@ import {
   type SmartContextPackScope,
   type SmartContextPackScopeFilter,
 } from "./smart-context-packs";
-import {
-  createConversationContextFromSession,
-  getEffectiveSessionMode,
-  removeSessionModeOverride,
-  RUN_MODE_META,
-} from "./session-shell";
-import {
-  createPromptEnhancementTask,
-  extractEnhancedPrompt,
-  PROMPT_ENHANCEMENT_LABELS,
-  type ActivePromptEnhancementMode,
-  type PromptEnhancementMode,
-} from "./prompt-enhancement";
-import { normalizeSessionReasoningOverride } from "./session-reasoning";
-import {
-  createDefaultRalphInputValues,
-  validateRalphInputFieldValues,
-} from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
-import {
-  createLocalTaskInterviewPrompt,
-  createTaskInterviewContextNotes,
-  getTrimmedTaskInterviewAnswerComments,
-  type ChatInterviewDialogState,
-  type ChatInterviewStartContext,
-} from "./chat-interview";
-import {
-  extractChatInputNeededPlaceholders,
-  replaceChatInputNeededPlaceholders,
-  type ChatInputNeededPlaceholder,
-} from "./chat-input-needed-placeholders";
-import {
-  createExecutionFromTerminalProgress,
-  createExecutionMessageContent,
-  formatTaskExecutionError,
-  isRecoveredTaskCrashMessage,
-} from "./session-task-continuation";
-import {
-  createMemorySummaryState,
-  createProviderChooserState,
-} from "./session-shell-view-model";
-import { isChatCompletionIndicatorActive } from "./chat-completion-indicator";
 import { useChatSessionRuntime } from "./use-chat-session-runtime";
-import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
+import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionVoice } from "./use-chat-session-voice";
 import {
   useDesktopTaskProgress,
@@ -204,13 +201,6 @@ import {
 } from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
-import {
-  getFilePreviewFileName,
-  getFilePreviewRenderKind,
-  resolveFilePreviewSyntax,
-} from "./file-preview-language";
-import type { FilePreviewMode } from "../components/file-preview-dialog";
-import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 
 type ChatInputNeededSubmission =
   | {
@@ -424,11 +414,11 @@ const isPromptEnhancementWebSearchAvailable = (
 
   return Boolean(
     webSearch &&
-      webSearch.activeProvider !== "none" &&
-      webSearch.providerAvailability.some(
-        (entry) =>
-          entry.provider === webSearch.activeProvider && entry.configured,
-      ),
+    webSearch.activeProvider !== "none" &&
+    webSearch.providerAvailability.some(
+      (entry) =>
+        entry.provider === webSearch.activeProvider && entry.configured,
+    ),
   );
 };
 
@@ -437,7 +427,8 @@ const hasUserMessageForTask = (
   taskId: string,
 ): boolean => {
   return session.messages.some(
-    (message) => message.role === "user" && getMessageTaskId(message) === taskId,
+    (message) =>
+      message.role === "user" && getMessageTaskId(message) === taskId,
   );
 };
 
@@ -574,7 +565,10 @@ const TERMINAL_PROGRESS_STATE_BY_STATUS = {
   blocked: "blocked",
   cancelled: "cancelled",
   unsupported: "unsupported",
-} satisfies Record<TaskExecutionResult["status"], TaskExecutionProgress["state"]>;
+} satisfies Record<
+  TaskExecutionResult["status"],
+  TaskExecutionProgress["state"]
+>;
 
 const createTerminalThinkingProgressFromExecution = (
   execution: TaskExecutionResult,
@@ -688,13 +682,16 @@ export const useChatSessionController = (
     return () => window.clearTimeout(timeoutId);
   }, [promptEnhancementStatus]);
 
-  useEffect(() => () => {
-    attachmentImagePreviewRequestRef.current += 1;
-    if (attachmentImagePreviewObjectUrlRef.current) {
-      URL.revokeObjectURL(attachmentImagePreviewObjectUrlRef.current);
-      attachmentImagePreviewObjectUrlRef.current = null;
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      attachmentImagePreviewRequestRef.current += 1;
+      if (attachmentImagePreviewObjectUrlRef.current) {
+        URL.revokeObjectURL(attachmentImagePreviewObjectUrlRef.current);
+        attachmentImagePreviewObjectUrlRef.current = null;
+      }
+    },
+    [],
+  );
   const [chatInputNeeded, setChatInputNeeded] =
     useState<ChatInputNeededState | null>(null);
   const queuedSessionMessages = state.shellState.queuedSessionMessages;
@@ -1030,37 +1027,33 @@ export const useChatSessionController = (
     [refreshInstructionRegistry, state.activeSession.workspace],
   );
   const autoAppliedContextPackIdsRef = useRef<Set<string>>(new Set());
-  const matchedContextPackIds = useMemo(
-    () => {
+  const matchedContextPackIds = useMemo(() => {
+    if (
+      !activeComposerSession.draft.trim() &&
+      activeComposerSession.draftContextAttachments.length === 0
+    ) {
+      return [];
+    }
+
+    const matchedIds: string[] = [];
+
+    for (const pack of workspaceContextPacks) {
       if (
-        !activeComposerSession.draft.trim() &&
-        activeComposerSession.draftContextAttachments.length === 0
+        doesSmartContextPackMatchComposer(pack, {
+          draft: activeComposerSession.draft,
+          contextAttachments: activeComposerSession.draftContextAttachments,
+        })
       ) {
-        return [];
+        matchedIds.push(pack.id);
       }
+    }
 
-      const matchedIds: string[] = [];
-
-      for (const pack of workspaceContextPacks) {
-        if (
-          doesSmartContextPackMatchComposer(pack, {
-            draft: activeComposerSession.draft,
-            contextAttachments:
-              activeComposerSession.draftContextAttachments,
-          })
-        ) {
-          matchedIds.push(pack.id);
-        }
-      }
-
-      return matchedIds;
-    },
-    [
-      activeComposerSession.draft,
-      activeComposerSession.draftContextAttachments,
-      workspaceContextPacks,
-    ],
-  );
+    return matchedIds;
+  }, [
+    activeComposerSession.draft,
+    activeComposerSession.draftContextAttachments,
+    workspaceContextPacks,
+  ]);
   const activeSessionImageInputSupported = modelSupportsImageInput(
     state.activeSession.provider,
     state.activeSession.model,
@@ -1118,10 +1111,9 @@ export const useChatSessionController = (
     ) ?? null;
   const activeSessionPromptEnhancementBusy =
     activePromptEnhancementPending !== null;
-  const activeSessionSendDisabledReason =
-    activeSessionPromptEnhancementBusy
-      ? "Prompt enhancement is still running."
-      : (promptEnhancementUnavailableReason ?? activeSessionImageInputError);
+  const activeSessionSendDisabledReason = activeSessionPromptEnhancementBusy
+    ? "Prompt enhancement is still running."
+    : (promptEnhancementUnavailableReason ?? activeSessionImageInputError);
   const canComposeMessage =
     !speechInput.recording &&
     !speechInput.transcribing &&
@@ -1164,7 +1156,10 @@ export const useChatSessionController = (
   );
   const quickTaskImageInputError =
     quickTaskImageAttachmentPaths.length > 0 && !quickTaskImageInputSupported
-      ? createImageInputUnsupportedModelMessage(quickTaskProvider, quickTaskModel)
+      ? createImageInputUnsupportedModelMessage(
+          quickTaskProvider,
+          quickTaskModel,
+        )
       : null;
   const quickTaskCanSend =
     !quickTaskImageInputError &&
@@ -1188,9 +1183,12 @@ export const useChatSessionController = (
     activeSessionIdRef.current = state.activeSessionId;
   }, [state.activeSessionId, state.shellState]);
 
-  const shouldActivateSubmittedSession = useCallback((sessionId: string): boolean => {
-    return activeSessionIdRef.current === sessionId;
-  }, []);
+  const shouldActivateSubmittedSession = useCallback(
+    (sessionId: string): boolean => {
+      return activeSessionIdRef.current === sessionId;
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1249,7 +1247,10 @@ export const useChatSessionController = (
       })
       .catch((error: unknown) => {
         if (!disposed) {
-          console.error("Failed to subscribe to imported chat preferences", error);
+          console.error(
+            "Failed to subscribe to imported chat preferences",
+            error,
+          );
         }
       });
 
@@ -1264,7 +1265,11 @@ export const useChatSessionController = (
       return;
     }
 
-    if (!speechInput.enabled && !speechInput.recording && !speechInput.transcribing) {
+    if (
+      !speechInput.enabled &&
+      !speechInput.recording &&
+      !speechInput.transcribing
+    ) {
       settingsActions.openSettings("voice");
       return;
     }
@@ -1528,10 +1533,7 @@ export const useChatSessionController = (
 
       return didApplyResult;
     },
-    [
-      applySessionMessageLimit,
-      state.applyShellState,
-    ],
+    [applySessionMessageLimit, state.applyShellState],
   );
 
   useEffect(() => {
@@ -1671,7 +1673,10 @@ export const useChatSessionController = (
         const confirmedInactiveTaskIds: string[] = [];
 
         for (const taskId of currentInactiveRunningTaskIds) {
-          if (activeTaskIdSet.has(taskId) || completedResultTaskIds.has(taskId)) {
+          if (
+            activeTaskIdSet.has(taskId) ||
+            completedResultTaskIds.has(taskId)
+          ) {
             continue;
           }
 
@@ -1686,15 +1691,16 @@ export const useChatSessionController = (
 
           const previousObservation =
             inactiveDesktopTaskObservationsRef.current.get(taskId);
-          const observation: InactiveDesktopTaskObservation = previousObservation
-            ? {
-                firstMissingAt: previousObservation.firstMissingAt,
-                missCount: previousObservation.missCount + 1,
-              }
-            : {
-                firstMissingAt: now,
-                missCount: 1,
-              };
+          const observation: InactiveDesktopTaskObservation =
+            previousObservation
+              ? {
+                  firstMissingAt: previousObservation.firstMissingAt,
+                  missCount: previousObservation.missCount + 1,
+                }
+              : {
+                  firstMissingAt: now,
+                  missCount: 1,
+                };
 
           inactiveDesktopTaskObservationsRef.current.set(taskId, observation);
 
@@ -1977,7 +1983,10 @@ export const useChatSessionController = (
         return {
           ...prev,
           recentWorkspaces: normalizedWorkspace
-            ? rememberRecentWorkspace(prev.recentWorkspaces, normalizedWorkspace)
+            ? rememberRecentWorkspace(
+                prev.recentWorkspaces,
+                normalizedWorkspace,
+              )
             : prev.recentWorkspaces,
           sessions: prev.sessions.map((session) =>
             session.id === state.activeSessionId
@@ -1998,7 +2007,10 @@ export const useChatSessionController = (
     (workspace: string): void => {
       state.applyShellState((prev) => ({
         ...prev,
-        recentWorkspaces: removeRecentWorkspace(prev.recentWorkspaces, workspace),
+        recentWorkspaces: removeRecentWorkspace(
+          prev.recentWorkspaces,
+          workspace,
+        ),
       }));
     },
     [state.applyShellState],
@@ -2180,9 +2192,13 @@ export const useChatSessionController = (
     });
   };
 
-  const createFilePreviewState = (target: FilePreviewTarget): FilePreviewState => {
+  const createFilePreviewState = (
+    target: FilePreviewTarget,
+  ): FilePreviewState => {
     const path =
-      target.kind === "attachment" ? target.attachment.path : target.relativePath;
+      target.kind === "attachment"
+        ? target.attachment.path
+        : target.relativePath;
     const title =
       target.kind === "attachment"
         ? target.attachment.name
@@ -2299,7 +2315,9 @@ export const useChatSessionController = (
       })
       .catch((error) => {
         const message =
-          error instanceof Error ? error.message : "Failed to read file preview.";
+          error instanceof Error
+            ? error.message
+            : "Failed to read file preview.";
 
         console.error("Failed to read file preview", error);
         setFilePreview((current) =>
@@ -2326,7 +2344,8 @@ export const useChatSessionController = (
   const handleOpenQuickTaskWorkspaceFile = (relativePath: string): void => {
     showFilePreview({
       kind: "workspace",
-      workspaceRoot: quickTaskSession?.workspace ?? state.activeSession.workspace,
+      workspaceRoot:
+        quickTaskSession?.workspace ?? state.activeSession.workspace,
       relativePath,
     });
   };
@@ -2392,10 +2411,7 @@ export const useChatSessionController = (
         error: null,
       });
 
-      void resolveAttachedImagePreviewSource(
-        attachment.path,
-        workspaceRoot,
-      )
+      void resolveAttachedImagePreviewSource(attachment.path, workspaceRoot)
         .then((source) => {
           setAttachmentImagePreview((current) => {
             if (
@@ -2496,20 +2512,23 @@ export const useChatSessionController = (
     );
   };
 
-  const getActiveDesktopTaskIdForSession = useCallback((sessionId: string): string | null => {
-    let targetTaskId: string | null = null;
+  const getActiveDesktopTaskIdForSession = useCallback(
+    (sessionId: string): string | null => {
+      let targetTaskId: string | null = null;
 
-    for (const [
-      taskId,
-      activeSessionId,
-    ] of activeDesktopTasksRef.current.entries()) {
-      if (activeSessionId === sessionId) {
-        targetTaskId = taskId;
+      for (const [
+        taskId,
+        activeSessionId,
+      ] of activeDesktopTasksRef.current.entries()) {
+        if (activeSessionId === sessionId) {
+          targetTaskId = taskId;
+        }
       }
-    }
 
-    return targetTaskId;
-  }, []);
+      return targetTaskId;
+    },
+    [],
+  );
 
   const requestTaskCancellation = useCallback(
     (session: ChatSessionRecord): void => {
@@ -2524,8 +2543,7 @@ export const useChatSessionController = (
       const pendingPromptEnhancement =
         promptEnhancementPendingTasks.find(
           (pending) =>
-            pending.sessionId === session.id &&
-            pending.taskId === targetTaskId,
+            pending.sessionId === session.id && pending.taskId === targetTaskId,
         ) ?? null;
 
       if (pendingPromptEnhancement) {
@@ -2535,46 +2553,49 @@ export const useChatSessionController = (
         setPromptEnhancementPendingTasks((current) =>
           current.filter((pending) => pending.taskId !== targetTaskId),
         );
-        state.updateSessionById(pendingPromptEnhancement.sessionId, (current) => {
-          const nextMessages = current.messages.filter(
-            (message) =>
-              getMessageTaskId(message) !== pendingPromptEnhancement.taskId,
-          );
-          const shouldRestoreComposer = Boolean(
-            pendingPromptEnhancement.composerClearGuard &&
+        state.updateSessionById(
+          pendingPromptEnhancement.sessionId,
+          (current) => {
+            const nextMessages = current.messages.filter(
+              (message) =>
+                getMessageTaskId(message) !== pendingPromptEnhancement.taskId,
+            );
+            const shouldRestoreComposer = Boolean(
+              pendingPromptEnhancement.composerClearGuard &&
               isComposerClearGuardCurrent(
                 current,
                 pendingPromptEnhancement.composerClearGuard,
               ),
-          );
+            );
 
-          if (
-            nextMessages.length === current.messages.length &&
-            !shouldRestoreComposer
-          ) {
-            return current;
-          }
+            if (
+              nextMessages.length === current.messages.length &&
+              !shouldRestoreComposer
+            ) {
+              return current;
+            }
 
-          const updatedAt = Date.now();
+            const updatedAt = Date.now();
 
-          return applySessionMessageLimit({
-            ...current,
-            messages: nextMessages,
-            ...(shouldRestoreComposer
-              ? {
-                  draft: pendingPromptEnhancement.prompt,
-                  draftContextAttachments:
-                    pendingPromptEnhancement.contextAttachments.map(
-                      (attachment) => ({ ...attachment }),
-                    ),
-                }
-              : {}),
-            ...(shouldRestoreComposer
-              ? { composerUpdatedAt: updatedAt }
-              : {}),
-            updatedAt,
-          });
-        });
+            return applySessionMessageLimit({
+              ...current,
+              messages: nextMessages,
+              ...(shouldRestoreComposer
+                ? {
+                    draft: pendingPromptEnhancement.prompt,
+                    draftContextAttachments:
+                      pendingPromptEnhancement.contextAttachments.map(
+                        (attachment) => ({ ...attachment }),
+                      ),
+                  }
+                : {}),
+              ...(shouldRestoreComposer
+                ? { composerUpdatedAt: updatedAt }
+                : {}),
+              updatedAt,
+            });
+          },
+        );
       } else {
         updateThinkingTrace(session.id, targetTaskId, (trace) => {
           return appendThinkingProgress(trace, {
@@ -2618,7 +2639,9 @@ export const useChatSessionController = (
           workspace: state.activeSession.workspace,
           provider: state.activeSession.provider,
           model: state.activeSession.model,
-          ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
+          ...(state.activeSession.mode
+            ? { mode: state.activeSession.mode }
+            : {}),
           ...(activeSessionReasoningOverride
             ? { reasoning: activeSessionReasoningOverride }
             : {}),
@@ -2841,7 +2864,7 @@ export const useChatSessionController = (
 
       const targetSessionId =
         target === "active-session"
-          ? options.targetSessionId ?? activeSessionIdRef.current
+          ? (options.targetSessionId ?? activeSessionIdRef.current)
           : null;
       const attachmentMutationKey =
         target === "quick-task"
@@ -2857,8 +2880,8 @@ export const useChatSessionController = (
 
       if (
         attachments.length === 0 ||
-        (attachmentMutationVersionsRef.current.get(attachmentMutationKey) ?? 0) !==
-          attachmentMutationVersion
+        (attachmentMutationVersionsRef.current.get(attachmentMutationKey) ??
+          0) !== attachmentMutationVersion
       ) {
         return;
       }
@@ -2985,7 +3008,11 @@ export const useChatSessionController = (
       });
       return true;
     },
-    [composerState.commitHistoryPreview, state.activeSession.workspace, state.updateActiveSession],
+    [
+      composerState.commitHistoryPreview,
+      state.activeSession.workspace,
+      state.updateActiveSession,
+    ],
   );
 
   const handleAppendDroppedText = useCallback(
@@ -3077,9 +3104,8 @@ export const useChatSessionController = (
                 filters: [
                   {
                     name: "Images",
-                    extensions: getSupportedImageInputExtensions(
-                      targetProvider,
-                    ),
+                    extensions:
+                      getSupportedImageInputExtensions(targetProvider),
                   },
                 ],
               }
@@ -3259,10 +3285,7 @@ export const useChatSessionController = (
         };
       });
     },
-    [
-      state.activeSession.workspace,
-      state.applyShellState,
-    ],
+    [state.activeSession.workspace, state.applyShellState],
   );
 
   const handleApplyContextPack = useCallback(
@@ -3322,7 +3345,7 @@ export const useChatSessionController = (
           : null;
       let didApplyPack = false;
 
-        state.applyShellState((prev) => {
+      state.applyShellState((prev) => {
         const currentPack = prev.contextPacks.find(
           (contextPack) => contextPack.id === pack.id,
         );
@@ -3476,8 +3499,7 @@ export const useChatSessionController = (
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       const date = new Date().toISOString().slice(0, 10);
-      const scopeSuffix =
-        scopeFilter === "all" ? "" : `-${scopeFilter}`;
+      const scopeSuffix = scopeFilter === "all" ? "" : `-${scopeFilter}`;
 
       anchor.href = url;
       anchor.download = `machdoch-context-packs${scopeSuffix}-${date}.json`;
@@ -3527,13 +3549,12 @@ export const useChatSessionController = (
         return;
       }
 
-      const contextAttachments =
-        message.contextAttachments?.length
-          ? message.contextAttachments
-          : createContextAttachmentsFromTaskBlock(
-              message.content,
-              `message-pack-context-${message.id}`,
-            );
+      const contextAttachments = message.contextAttachments?.length
+        ? message.contextAttachments
+        : createContextAttachmentsFromTaskBlock(
+            message.content,
+            `message-pack-context-${message.id}`,
+          );
       const name =
         prompt.replace(/\s+/gu, " ").slice(0, 48).trim() || "Context pack";
 
@@ -3545,7 +3566,8 @@ export const useChatSessionController = (
           name,
           instructions: "",
           prompt,
-          contextAttachments: cloneContextAttachmentsForPack(contextAttachments),
+          contextAttachments:
+            cloneContextAttachmentsForPack(contextAttachments),
           variables: createSmartContextPackVariables(
             extractSmartContextPackVariables(prompt),
           ),
@@ -3585,7 +3607,10 @@ export const useChatSessionController = (
   }, [state.activeSession.id, state.activeSession.workspace]);
 
   useEffect(() => {
-    if (!activeComposerSession.draft.trim() && matchedContextPackIds.length === 0) {
+    if (
+      !activeComposerSession.draft.trim() &&
+      matchedContextPackIds.length === 0
+    ) {
       return;
     }
 
@@ -3649,10 +3674,7 @@ export const useChatSessionController = (
         };
       });
     },
-    [
-      composerState.commitHistoryPreview,
-      state.updateSessionById,
-    ],
+    [composerState.commitHistoryPreview, state.updateSessionById],
   );
 
   const handleClearContextAttachments = useCallback(
@@ -3689,10 +3711,7 @@ export const useChatSessionController = (
         };
       });
     },
-    [
-      composerState.commitHistoryPreview,
-      state.updateSessionById,
-    ],
+    [composerState.commitHistoryPreview, state.updateSessionById],
   );
 
   const fileDrop = useSessionFileDrops({
@@ -3807,7 +3826,7 @@ export const useChatSessionController = (
         );
         const shouldRestoreComposer = Boolean(
           pending.composerClearGuard &&
-            isComposerClearGuardCurrent(session, pending.composerClearGuard),
+          isComposerClearGuardCurrent(session, pending.composerClearGuard),
         );
 
         if (
@@ -3830,18 +3849,12 @@ export const useChatSessionController = (
                 ),
               }
             : {}),
-          ...(shouldRestoreComposer
-            ? { composerUpdatedAt: updatedAt }
-            : {}),
+          ...(shouldRestoreComposer ? { composerUpdatedAt: updatedAt } : {}),
           updatedAt,
         });
       });
-
     },
-    [
-      applySessionMessageLimit,
-      state.updateSessionById,
-    ],
+    [applySessionMessageLimit, state.updateSessionById],
   );
 
   const showPromptEnhancementSessionPlaceholder = useCallback(
@@ -3908,7 +3921,10 @@ export const useChatSessionController = (
 
   const enhancePromptForSubmission = useCallback(
     async (
-      submission: Extract<ChatInputNeededSubmission, { kind: "active-session" }>,
+      submission: Extract<
+        ChatInputNeededSubmission,
+        { kind: "active-session" }
+      >,
       prompt: string,
       placement: PromptEnhancementPendingPlacement,
     ): Promise<string> => {
@@ -4008,11 +4024,15 @@ export const useChatSessionController = (
         const enhancedPrompt = extractEnhancedPrompt(responseText);
 
         if (!enhancedPrompt) {
-          throw new Error("Prompt enhancement did not return an enhanced prompt.");
+          throw new Error(
+            "Prompt enhancement did not return an enhanced prompt.",
+          );
         }
 
         if (taskRun.execution.status === "blocked") {
-          throw new Error(taskRun.execution.reason ?? taskRun.execution.summary);
+          throw new Error(
+            taskRun.execution.reason ?? taskRun.execution.summary,
+          );
         }
 
         setPromptEnhancementStatus(null);
@@ -4104,8 +4124,8 @@ export const useChatSessionController = (
       ).map((attachment) => ({ ...attachment }));
       const hasUnsupportedImage = Boolean(
         targetSession &&
-          getImageAttachmentPaths(contextAttachments).length > 0 &&
-          !modelSupportsImageInput(targetSession.provider, targetSession.model),
+        getImageAttachmentPaths(contextAttachments).length > 0 &&
+        !modelSupportsImageInput(targetSession.provider, targetSession.model),
       );
 
       if (!task || !targetSession || hasUnsupportedImage) {
@@ -4130,7 +4150,9 @@ export const useChatSessionController = (
         ...(input?.promptHistoryContent?.trim()
           ? { promptHistoryContent: input.promptHistoryContent.trim() }
           : {}),
-        ...(input?.promptEnhancement ? { promptEnhancement: input.promptEnhancement } : {}),
+        ...(input?.promptEnhancement
+          ? { promptEnhancement: input.promptEnhancement }
+          : {}),
         ...(input?.blockedByTaskId
           ? { blockedByTaskId: input.blockedByTaskId }
           : {}),
@@ -4222,10 +4244,7 @@ export const useChatSessionController = (
           }
 
           if (activeTaskIds.has(taskId)) {
-            activeDesktopTasksRef.current.set(
-              taskId,
-              blockedMessage.sessionId,
-            );
+            activeDesktopTasksRef.current.set(taskId, blockedMessage.sessionId);
             continue;
           }
 
@@ -4283,7 +4302,8 @@ export const useChatSessionController = (
       contextAttachments: ChatSessionContextAttachment[];
       composerClearGuard?: ComposerClearGuard;
     }): boolean => {
-      const submittedSessionSnapshot = input?.sessionSnapshot ?? state.activeSession;
+      const submittedSessionSnapshot =
+        input?.sessionSnapshot ?? state.activeSession;
       const sessionSnapshot =
         shellStateRef.current.sessions.find(
           (session) => session.id === submittedSessionSnapshot.id,
@@ -4344,10 +4364,7 @@ export const useChatSessionController = (
       };
 
       updateQueuedSessionMessages((current) => [queuedMessage, ...current]);
-      clearSessionComposerInput(
-        sessionSnapshot.id,
-        input?.composerClearGuard,
-      );
+      clearSessionComposerInput(sessionSnapshot.id, input?.composerClearGuard);
 
       updateThinkingTrace(sessionSnapshot.id, targetTaskId, (trace) => {
         const progress: TaskExecutionProgress = {
@@ -4398,9 +4415,7 @@ export const useChatSessionController = (
       }
 
       dispatchingQueuedMessageIds.add(nextQueuedMessage.id);
-      void beginCrossWindowOperation(
-        `queued-message:${nextQueuedMessage.id}`,
-      )
+      void beginCrossWindowOperation(`queued-message:${nextQueuedMessage.id}`)
         .then(async (lease) => {
           if (!lease) {
             return;
@@ -4531,7 +4546,9 @@ export const useChatSessionController = (
   const handleQueuedMessageMove = useCallback(
     (messageId: string, direction: -1 | 1): void => {
       updateQueuedSessionMessages((current) => {
-        const movingMessage = current.find((message) => message.id === messageId);
+        const movingMessage = current.find(
+          (message) => message.id === messageId,
+        );
 
         if (!movingMessage) {
           return current;
@@ -4560,16 +4577,19 @@ export const useChatSessionController = (
     [updateQueuedSessionMessages],
   );
 
-  const handleQueuedMessageRemove = useCallback((messageId: string): void => {
-    const mutationKey = `queued:${messageId}`;
-    attachmentMutationVersionsRef.current.set(
-      mutationKey,
-      (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
-    );
-    updateQueuedSessionMessages((current) =>
-      current.filter((message) => message.id !== messageId),
-    );
-  }, [updateQueuedSessionMessages]);
+  const handleQueuedMessageRemove = useCallback(
+    (messageId: string): void => {
+      const mutationKey = `queued:${messageId}`;
+      attachmentMutationVersionsRef.current.set(
+        mutationKey,
+        (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+      );
+      updateQueuedSessionMessages((current) =>
+        current.filter((message) => message.id !== messageId),
+      );
+    },
+    [updateQueuedSessionMessages],
+  );
 
   const handleAttachQueuedMessagePaths = useCallback(
     async (
@@ -4599,14 +4619,14 @@ export const useChatSessionController = (
             ? (() => {
                 const updatedAt = Date.now();
                 return {
-                ...message,
-                contextAttachments: mergeContextAttachments(
-                  message.contextAttachments,
-                  attachments,
-                ),
-                attachmentsUpdatedAt: updatedAt,
-                updatedAt,
-              };
+                  ...message,
+                  contextAttachments: mergeContextAttachments(
+                    message.contextAttachments,
+                    attachments,
+                  ),
+                  attachmentsUpdatedAt: updatedAt,
+                  updatedAt,
+                };
               })()
             : message,
         ),
@@ -4721,17 +4741,17 @@ export const useChatSessionController = (
             ? (() => {
                 const updatedAt = Date.now();
                 return {
-                ...message,
-                contextAttachments: message.contextAttachments.filter(
-                  (attachment) => attachment.id !== attachmentId,
-                ),
-                attachmentTombstones: {
-                  ...message.attachmentTombstones,
-                  [attachmentId]: updatedAt,
-                },
-                attachmentsUpdatedAt: updatedAt,
-                updatedAt,
-              };
+                  ...message,
+                  contextAttachments: message.contextAttachments.filter(
+                    (attachment) => attachment.id !== attachmentId,
+                  ),
+                  attachmentTombstones: {
+                    ...message.attachmentTombstones,
+                    [attachmentId]: updatedAt,
+                  },
+                  attachmentsUpdatedAt: updatedAt,
+                  updatedAt,
+                };
               })()
             : message,
         ),
@@ -4749,25 +4769,24 @@ export const useChatSessionController = (
       );
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
-          message.id === messageId &&
-          message.contextAttachments.length > 0
+          message.id === messageId && message.contextAttachments.length > 0
             ? (() => {
                 const updatedAt = Date.now();
                 return {
-                ...message,
-                contextAttachments: [],
-                attachmentTombstones: {
-                  ...message.attachmentTombstones,
-                  ...Object.fromEntries(
-                    message.contextAttachments.map((attachment) => [
-                      attachment.id,
-                      updatedAt,
-                    ]),
-                  ),
-                },
-                attachmentsUpdatedAt: updatedAt,
-                updatedAt,
-              };
+                  ...message,
+                  contextAttachments: [],
+                  attachmentTombstones: {
+                    ...message.attachmentTombstones,
+                    ...Object.fromEntries(
+                      message.contextAttachments.map((attachment) => [
+                        attachment.id,
+                        updatedAt,
+                      ]),
+                    ),
+                  },
+                  attachmentsUpdatedAt: updatedAt,
+                  updatedAt,
+                };
               })()
             : message,
         ),
@@ -4829,7 +4848,10 @@ export const useChatSessionController = (
     (sessionId: string): void => {
       const taskIds = new Set<string>();
 
-      for (const [taskId, activeSessionId] of activeDesktopTasksRef.current.entries()) {
+      for (const [
+        taskId,
+        activeSessionId,
+      ] of activeDesktopTasksRef.current.entries()) {
         if (activeSessionId !== sessionId) {
           continue;
         }
@@ -4996,35 +5018,35 @@ export const useChatSessionController = (
         let sessionFound = false;
         let sessionChanged = false;
         const sessions = prev.sessions.map((session) => {
-            if (session.id !== sessionId) {
-              return session;
-            }
+          if (session.id !== sessionId) {
+            return session;
+          }
 
-            sessionFound = true;
-            normalizedReasoning = normalizeSessionReasoningOverride(
-              reasoning,
-              session.provider,
-              session.model,
-            );
+          sessionFound = true;
+          normalizedReasoning = normalizeSessionReasoningOverride(
+            reasoning,
+            session.provider,
+            session.model,
+          );
 
-            if (session.reasoning === normalizedReasoning) {
-              return session;
-            }
+          if (session.reasoning === normalizedReasoning) {
+            return session;
+          }
 
-            sessionChanged = true;
-            const nextSession: ChatSessionRecord = {
-              ...session,
-              updatedAt: Date.now(),
-            };
+          sessionChanged = true;
+          const nextSession: ChatSessionRecord = {
+            ...session,
+            updatedAt: Date.now(),
+          };
 
-            if (normalizedReasoning) {
-              nextSession.reasoning = normalizedReasoning;
-            } else {
-              delete nextSession.reasoning;
-            }
+          if (normalizedReasoning) {
+            nextSession.reasoning = normalizedReasoning;
+          } else {
+            delete nextSession.reasoning;
+          }
 
-            return nextSession;
-          });
+          return nextSession;
+        });
 
         if (!sessionFound) {
           return prev;
@@ -5259,10 +5281,7 @@ export const useChatSessionController = (
 
       return applied;
     },
-    [
-      providerChooserState.chooserProviders,
-      state.applyShellState,
-    ],
+    [providerChooserState.chooserProviders, state.applyShellState],
   );
 
   const handleQueueRemoteSessionFollowUp = useCallback(
@@ -5305,7 +5324,8 @@ export const useChatSessionController = (
     quickTaskModel,
     quickTaskAutopilotEnabled: quickTaskEffectiveRunMode === "machdoch",
     quickTaskGlobalMemoryEnabled,
-    quickTaskUiControlEnabled: isUiControlAvailable && quickTaskUiControlEnabled,
+    quickTaskUiControlEnabled:
+      isUiControlAvailable && quickTaskUiControlEnabled,
     quickTaskAttachmentCount: quickTaskContextAttachments.length,
     quickTaskStatus: quickTaskSession
       ? getSessionOverviewStatus(quickTaskSession)
@@ -5393,40 +5413,45 @@ export const useChatSessionController = (
     [buildQuickVoiceSessionSnapshot, taskSubmission],
   );
 
-  const handleQuickTaskDraftSend = useCallback((draft = quickTaskDraft): void => {
-    const normalizedDraft = draft.trim();
+  const handleQuickTaskDraftSend = useCallback(
+    (draft = quickTaskDraft): void => {
+      const normalizedDraft = draft.trim();
 
-    if (!normalizedDraft || quickTaskImageInputError) {
-      return;
-    }
+      if (!normalizedDraft || quickTaskImageInputError) {
+        return;
+      }
 
-    const contextAttachments = quickTaskContextAttachments.map((attachment) => ({
-      ...attachment,
-    }));
+      const contextAttachments = quickTaskContextAttachments.map(
+        (attachment) => ({
+          ...attachment,
+        }),
+      );
 
-    if (
-      requestChatInputNeededValues({
-        kind: "quick-task",
-        task: normalizedDraft,
-        contextAttachments,
-      })
-    ) {
-      return;
-    }
+      if (
+        requestChatInputNeededValues({
+          kind: "quick-task",
+          task: normalizedDraft,
+          contextAttachments,
+        })
+      ) {
+        return;
+      }
 
-    if (submitQuickVoiceCommand(normalizedDraft, contextAttachments)) {
-      invalidateAttachmentMutation("quick-task");
-      setQuickTaskDraft("");
-      setQuickTaskContextAttachments([]);
-    }
-  }, [
-    quickTaskContextAttachments,
-    quickTaskDraft,
-    quickTaskImageInputError,
-    invalidateAttachmentMutation,
-    requestChatInputNeededValues,
-    submitQuickVoiceCommand,
-  ]);
+      if (submitQuickVoiceCommand(normalizedDraft, contextAttachments)) {
+        invalidateAttachmentMutation("quick-task");
+        setQuickTaskDraft("");
+        setQuickTaskContextAttachments([]);
+      }
+    },
+    [
+      quickTaskContextAttachments,
+      quickTaskDraft,
+      quickTaskImageInputError,
+      invalidateAttachmentMutation,
+      requestChatInputNeededValues,
+      submitQuickVoiceCommand,
+    ],
+  );
 
   const handleQuickTaskCancel = useCallback((): void => {
     if (!quickTaskSession) {
@@ -5542,7 +5567,9 @@ export const useChatSessionController = (
       contextAttachments: context.contextAttachments,
       clearDraft: true,
       ...(composerClearGuard ? { composerClearGuard } : {}),
-      activateSession: shouldActivateSubmittedSession(context.sessionSnapshot.id),
+      activateSession: shouldActivateSubmittedSession(
+        context.sessionSnapshot.id,
+      ),
       visibleMessageContent: visibleTask,
       promptHistoryContent: context.originalTask ?? visibleTask,
       ...(promptEnhancement ? { promptEnhancement } : {}),
@@ -5559,8 +5586,10 @@ export const useChatSessionController = (
         ? {
             ...current,
             status: "blocked",
-            summary: "The task could not start because the session is already running.",
-            error: "The task could not start because the session is already running.",
+            summary:
+              "The task could not start because the session is already running.",
+            error:
+              "The task could not start because the session is already running.",
           }
         : current,
     );
@@ -5636,7 +5665,7 @@ export const useChatSessionController = (
 
     const finalPrompt =
       result.finalPrompt ??
-        createLocalTaskInterviewPrompt(context, result.session, [], {});
+      createLocalTaskInterviewPrompt(context, result.session, [], {});
 
     if (chatInterviewRequestRevisionRef.current !== requestRevision) {
       return;
@@ -5675,25 +5704,31 @@ export const useChatSessionController = (
   ): Promise<void> => {
     const requestRevision = ++chatInterviewRequestRevisionRef.current;
     const taskId = `task-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const initialThinking = createInitialThinkingTrace(context.mode, Date.now());
+    const initialThinking = createInitialThinkingTrace(
+      context.mode,
+      Date.now(),
+    );
 
     activeDesktopTasksRef.current.set(taskId, context.sessionSnapshot.id);
-    desktopTaskProgressHandlersRef.current.set(taskId, (progress, timestamp) => {
-      setChatInterview((current) => {
-        if (current?.taskId !== taskId) {
-          return current;
-        }
+    desktopTaskProgressHandlersRef.current.set(
+      taskId,
+      (progress, timestamp) => {
+        setChatInterview((current) => {
+          if (current?.taskId !== taskId) {
+            return current;
+          }
 
-        return {
-          ...current,
-          thinking: appendThinkingProgress(
-            current.thinking ?? initialThinking,
-            progress,
-            timestamp,
-          ),
-        };
-      });
-    });
+          return {
+            ...current,
+            thinking: appendThinkingProgress(
+              current.thinking ?? initialThinking,
+              progress,
+              timestamp,
+            ),
+          };
+        });
+      },
+    );
 
     setChatInterview((current) => ({
       context,
@@ -5733,18 +5768,14 @@ export const useChatSessionController = (
           : {}),
       });
 
-      await applyChatInterviewResult(
-        context,
-        taskId,
-        result,
-        requestRevision,
-      );
+      await applyChatInterviewResult(context, taskId, result, requestRevision);
     } catch (error) {
       if (chatInterviewRequestRevisionRef.current !== requestRevision) {
         return;
       }
 
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
       setChatInterview((current) =>
         current?.taskId === taskId
@@ -5821,7 +5852,9 @@ export const useChatSessionController = (
               ...current.values,
               [fieldId]: value,
             },
-            skippedFieldIds: current.skippedFieldIds.filter((id) => id !== fieldId),
+            skippedFieldIds: current.skippedFieldIds.filter(
+              (id) => id !== fieldId,
+            ),
             validationErrors: {
               ...current.validationErrors,
               [fieldId]: "",
@@ -5853,7 +5886,9 @@ export const useChatSessionController = (
       current
         ? {
             ...current,
-            expandedCommentFieldIds: current.expandedCommentFieldIds.includes(fieldId)
+            expandedCommentFieldIds: current.expandedCommentFieldIds.includes(
+              fieldId,
+            )
               ? current.expandedCommentFieldIds.filter((id) => id !== fieldId)
               : [...current.expandedCommentFieldIds, fieldId],
           }
@@ -5972,12 +6007,11 @@ export const useChatSessionController = (
   }, [chatInterview]);
 
   const submitResolvedChatInputNeededSubmission = useCallback(
-    (
-      submission: ChatInputNeededSubmission,
-      resolvedTask: string,
-    ): void => {
+    (submission: ChatInputNeededSubmission, resolvedTask: string): void => {
       if (submission.kind === "quick-task") {
-        if (submitQuickVoiceCommand(resolvedTask, submission.contextAttachments)) {
+        if (
+          submitQuickVoiceCommand(resolvedTask, submission.contextAttachments)
+        ) {
           invalidateAttachmentMutation("quick-task");
           setQuickTaskDraft("");
           setQuickTaskContextAttachments([]);
@@ -5993,8 +6027,7 @@ export const useChatSessionController = (
           task,
           originalTask,
         );
-        const promptHistoryContent =
-          promptEnhancement?.originalContent ?? task;
+        const promptHistoryContent = promptEnhancement?.originalContent ?? task;
 
         const restoreFailedTaskHandoff = (message: string): void => {
           restoreSessionComposerInput({
@@ -6295,14 +6328,15 @@ export const useChatSessionController = (
     quickTask: {
       session: quickTaskSession,
       visibleMessages: quickTaskVisibleMessages,
-      workspaceRoot: quickTaskSession?.workspace ?? state.activeSession.workspace,
+      workspaceRoot:
+        quickTaskSession?.workspace ?? state.activeSession.workspace,
       onOpenWorkspaceFile: handleOpenQuickTaskWorkspaceFile,
       canClearHistory: Boolean(
         quickTaskSession &&
-          (quickTaskSession.messages.length > 0 ||
-            quickTaskSession.promptHistory.length > 0 ||
-            quickTaskSession.promptContextHistory.length > 0 ||
-            quickTaskSession.sessionMemory.length > 0),
+        (quickTaskSession.messages.length > 0 ||
+          quickTaskSession.promptHistory.length > 0 ||
+          quickTaskSession.promptContextHistory.length > 0 ||
+          quickTaskSession.sessionMemory.length > 0),
       ),
       status: quickTaskSession
         ? getSessionOverviewStatus(quickTaskSession)
@@ -6388,7 +6422,8 @@ export const useChatSessionController = (
         state.setIsRenamingSession(true);
       },
       onClearSessionHistory: clearQuickTaskHistory,
-      onDeleteSession: () => lifecycleActions.deleteSession(state.activeSession.id),
+      onDeleteSession: () =>
+        lifecycleActions.deleteSession(state.activeSession.id),
     },
     conversation: {
       visibleMessages: state.visibleMessages,
@@ -6546,7 +6581,8 @@ export const useChatSessionController = (
       onExportContextPacks: handleExportContextPacks,
       onImportContextPacks: handleImportContextPacks,
       onDraftChange: composerState.handleDraftChange,
-      onComposerHistoryNavigation: composerState.handleComposerHistoryNavigation,
+      onComposerHistoryNavigation:
+        composerState.handleComposerHistoryNavigation,
       onRunningTaskMessageActionChange: setRunningTaskMessageAction,
       onQueuedMessageChange: handleQueuedMessageChange,
       onQueuedMessageMove: handleQueuedMessageMove,

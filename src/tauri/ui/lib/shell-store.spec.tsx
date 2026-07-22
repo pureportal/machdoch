@@ -7,7 +7,9 @@ describe("browser shell-state CAS", () => {
 
   it("persists the revision with state and rejects a stale writer after reload", async () => {
     const firstModule = await import("./shell-store");
-    const initial = await firstModule.loadShellStateSnapshot({ value: "initial" });
+    const initial = await firstModule.loadShellStateSnapshot({
+      value: "initial",
+    });
     const committed = await firstModule.compareAndSwapShellState(
       initial.revision,
       { value: "first" },

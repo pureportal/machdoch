@@ -1,18 +1,18 @@
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { spawn } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.ts";
-import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
-import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
+import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 import type {
   InstructionTargetAudience,
   TaskExecutionSection,
 } from "../types.ts";
-import type { RuntimeConfig } from "../runtime-contract.generated.ts";
+import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
+import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
+import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.ts";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -34,27 +34,29 @@ const spawnCalls: SpawnCall[] = [];
 
 vi.mock("node:child_process", () => ({
   spawnSync: vi.fn(() => ({ status: 0, stdout: "", stderr: "" })),
-  spawn: vi.fn((executable: string, args: string[], options: Record<string, unknown>) => {
-    const child = new EventEmitter() as MockChildProcess;
+  spawn: vi.fn(
+    (executable: string, args: string[], options: Record<string, unknown>) => {
+      const child = new EventEmitter() as MockChildProcess;
 
-    child.pid = 10_000 + spawnCalls.length;
-    child.stdin = new PassThrough();
-    child.stdout = new PassThrough();
-    child.stderr = new PassThrough();
-    child.stdinText = "";
-    child.kill = vi.fn();
-    child.stdin.on("data", (chunk: Buffer | string) => {
-      child.stdinText += chunk.toString();
-    });
-    spawnCalls.push({
-      executable,
-      args,
-      options,
-      child,
-    });
+      child.pid = 10_000 + spawnCalls.length;
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.stdinText = "";
+      child.kill = vi.fn();
+      child.stdin.on("data", (chunk: Buffer | string) => {
+        child.stdinText += chunk.toString();
+      });
+      spawnCalls.push({
+        executable,
+        args,
+        options,
+        child,
+      });
 
-    return child;
-  }),
+      return child;
+    },
+  ),
 }));
 
 const originalEnvironment = new Map<string, string | undefined>();
@@ -115,10 +117,12 @@ const createWorkspace = async (): Promise<string> => {
 
 const createConfig = (
   workspaceRoot: string,
-  overrides: Partial<Pick<
-    RuntimeConfig,
-    "mode" | "provider" | "model" | "reasoning" | "agentLimits"
-  >> = {},
+  overrides: Partial<
+    Pick<
+      RuntimeConfig,
+      "mode" | "provider" | "model" | "reasoning" | "agentLimits"
+    >
+  > = {},
 ): RuntimeConfig => ({
   workspaceRoot,
   mode: overrides.mode ?? "machdoch",
@@ -528,7 +532,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
-    controller.abort("Execution stopped after exceeding the safety timeout of 25ms.");
+    controller.abort(
+      "Execution stopped after exceeding the safety timeout of 25ms.",
+    );
 
     if (process.platform === "win32") {
       expect(spawnCalls[1]).toMatchObject({
@@ -722,22 +728,24 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
-    expect(call?.args).toEqual(expect.arrayContaining([
-      "-p",
-      "Follow the Machdoch delegated task prompt supplied on stdin.",
-      "--output-format",
-      "text",
-      "--model",
-      "claude-sonnet-4-6",
-      "--dangerously-skip-permissions",
-      "--no-session-persistence",
-      "--append-system-prompt-file",
-      "--mcp-config",
-      "--effort",
-      "high",
-      "--max-turns",
-      "7",
-    ]));
+    expect(call?.args).toEqual(
+      expect.arrayContaining([
+        "-p",
+        "Follow the Machdoch delegated task prompt supplied on stdin.",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-4-6",
+        "--dangerously-skip-permissions",
+        "--no-session-persistence",
+        "--append-system-prompt-file",
+        "--mcp-config",
+        "--effort",
+        "high",
+        "--max-turns",
+        "7",
+      ]),
+    );
     expect(call?.args).not.toContain("--strict-mcp-config");
     expect(call?.child.stdinText).toContain(
       "You are running as a delegated Claude CLI agent for Machdoch.",
@@ -757,67 +765,83 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
     ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],
     ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
-  ] as const)("enrolls managed instructions exactly once for %s", async (provider, binaryKey) => {
-    const workspaceRoot = await createWorkspace();
-    process.env[binaryKey] = process.execPath;
-    const canary = `exact-once-${provider}`;
-    const params = createParams(workspaceRoot, { provider });
-    params.taskContext.applicableInstructions = [{
-      kind: "always-on",
-      name: "Exact once policy",
-      path: ".machdoch/instructions.md",
-      priority: 1,
-      body: canary,
-      reason: "always",
-    }];
-    params.contextSections = [
-      ...contextSections,
-      {
-        title: "Instruction context",
-        audience: "internal",
-        lines: [`body: ${canary}`],
-      },
-    ];
+  ] as const)(
+    "enrolls managed instructions exactly once for %s",
+    async (provider, binaryKey) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryKey] = process.execPath;
+      const canary = `exact-once-${provider}`;
+      const params = createParams(workspaceRoot, { provider });
+      params.taskContext.applicableInstructions = [
+        {
+          kind: "always-on",
+          name: "Exact once policy",
+          path: ".machdoch/instructions.md",
+          priority: 1,
+          body: canary,
+          reason: "always",
+        },
+      ];
+      params.contextSections = [
+        ...contextSections,
+        {
+          title: "Instruction context",
+          audience: "internal",
+          lines: [`body: ${canary}`],
+        },
+      ];
 
-    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
-    const call = spawnCalls[0]!;
-    const childEnv = call.options.env as NodeJS.ProcessEnv;
-    let nativeInstructionText: string;
-    if (provider === "codex-cli") {
-      nativeInstructionText = await readFile(
-        join(childEnv.CODEX_HOME!, "config.toml"),
-        "utf8",
-      );
-    } else if (provider === "claude-cli") {
-      const instructionFlagIndex = call.args.indexOf("--append-system-prompt-file");
-      nativeInstructionText = await readFile(call.args[instructionFlagIndex + 1]!, "utf8");
-    } else {
-      nativeInstructionText = await readFile(
-        join(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS!, "AGENTS.md"),
-        "utf8",
-      );
-    }
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+      await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      const childEnv = call.options.env as NodeJS.ProcessEnv;
+      let nativeInstructionText: string;
+      if (provider === "codex-cli") {
+        nativeInstructionText = await readFile(
+          join(childEnv.CODEX_HOME!, "config.toml"),
+          "utf8",
+        );
+      } else if (provider === "claude-cli") {
+        const instructionFlagIndex = call.args.indexOf(
+          "--append-system-prompt-file",
+        );
+        nativeInstructionText = await readFile(
+          call.args[instructionFlagIndex + 1]!,
+          "utf8",
+        );
+      } else {
+        nativeInstructionText = await readFile(
+          join(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS!, "AGENTS.md"),
+          "utf8",
+        );
+      }
 
-    expect(call.child.stdinText).not.toContain(canary);
-    expect(nativeInstructionText.match(new RegExp(canary, "gu"))).toHaveLength(1);
-    call.child.stdout.write("Delegated answer.");
-    call.child.emit("close", 0, null);
-    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
-  });
+      expect(call.child.stdinText).not.toContain(canary);
+      expect(
+        nativeInstructionText.match(new RegExp(canary, "gu")),
+      ).toHaveLength(1);
+      call.child.stdout.write("Delegated answer.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+    },
+  );
 
   it("retries with prompt enrollment when an installed CLI rejects its native enrollment flags", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
     const params = createParams(workspaceRoot, { provider: "claude-cli" });
-    params.taskContext.applicableInstructions = [{
-      kind: "always-on",
-      name: "Fallback policy",
-      path: ".machdoch/instructions.md",
-      priority: 1,
-      body: "Apply the native fallback canary.",
-      reason: "always",
-    }];
+    params.taskContext.applicableInstructions = [
+      {
+        kind: "always-on",
+        name: "Fallback policy",
+        path: ".machdoch/instructions.md",
+        priority: 1,
+        body: "Apply the native fallback canary.",
+        reason: "always",
+      },
+    ];
     params.contextSections = [
       ...contextSections,
       {
@@ -829,14 +853,18 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(params);
     await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
-    spawnCalls[0]?.child.stderr.write("error: unknown option --append-system-prompt-file");
+    spawnCalls[0]?.child.stderr.write(
+      "error: unknown option --append-system-prompt-file",
+    );
     spawnCalls[0]?.child.emit("close", 1, null);
 
     await vi.waitFor(() => expect(spawnCalls).toHaveLength(2));
     const retry = spawnCalls[1];
     expect(retry?.args).not.toContain("--append-system-prompt-file");
     expect(retry?.args).not.toContain("--mcp-config");
-    expect(retry?.child.stdinText).toContain("Apply the native fallback canary.");
+    expect(retry?.child.stdinText).toContain(
+      "Apply the native fallback canary.",
+    );
     expect(
       retry?.child.stdinText.match(/Apply the native fallback canary\./gu),
     ).toHaveLength(1);
@@ -900,7 +928,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.ANTHROPIC_API_KEY).toBe("anthropic-process-key");
-    expect(childEnv?.CLAUDE_CONFIG_DIR).toBe(join(workspaceRoot, ".claude-config"));
+    expect(childEnv?.CLAUDE_CONFIG_DIR).toBe(
+      join(workspaceRoot, ".claude-config"),
+    );
     expect(childEnv?.ANTHROPIC_MODEL).toBeUndefined();
     expect(childEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
     expect(childEnv?.PERPLEXITY_API_KEY).toBeUndefined();

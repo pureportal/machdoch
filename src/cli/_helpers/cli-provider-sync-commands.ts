@@ -34,7 +34,9 @@ const printJson = (value: unknown): void => {
   writeStdoutLine(JSON.stringify(value, null, 2));
 };
 
-const startDaemon = async (workspaceRoot: string): Promise<number | undefined> => {
+const startDaemon = async (
+  workspaceRoot: string,
+): Promise<number | undefined> => {
   const existing = await getProviderSyncDaemonPid();
   if (existing) return existing;
   const script = process.argv[1];
@@ -87,7 +89,8 @@ const printStatusLines = (
     writeStdoutLine(
       `- ${target.provider} ${target.scope}: ${target.state}${target.bundleDigest ? ` bundle=${target.bundleDigest}` : ""}`,
     );
-    for (const warning of target.warnings) writeStdoutLine(`  warning: ${warning}`);
+    for (const warning of target.warnings)
+      writeStdoutLine(`  warning: ${warning}`);
     if (target.error) writeStdoutLine(`  error: ${target.error}`);
   }
 };
@@ -103,7 +106,7 @@ export const ensureAutomaticProviderSync = async (
   ) {
     await installProviderSyncAutostart(workspaceRoot);
   }
-  if (config.persistentSync.watch && await getProviderSyncDaemonPid()) {
+  if (config.persistentSync.watch && (await getProviderSyncDaemonPid())) {
     // The daemon owns reconciliation while it is available. Asking it to
     // refresh avoids making every foreground Machdoch command contend for the
     // same global provider-enrollment lock.
@@ -142,8 +145,8 @@ export const printProviderSyncSummary = async (
     }
     case "enable": {
       const existingConfig = await loadProviderEnrollmentConfig();
-      const wasEnabled = existingConfig.enabled &&
-        existingConfig.persistentSync.enabled;
+      const wasEnabled =
+        existingConfig.enabled && existingConfig.persistentSync.enabled;
       const uninstallWarnings = wasEnabled
         ? []
         : await uninstallProviderSyncTargets();
@@ -166,7 +169,9 @@ export const printProviderSyncSummary = async (
         if (!wasEnabled) {
           await setPersistentProviderSyncEnabled(false).catch(() => undefined);
           await removeProviderSyncAutostart().catch(() => undefined);
-          await reconcileProviderSync(args.workspaceRoot).catch(() => undefined);
+          await reconcileProviderSync(args.workspaceRoot).catch(
+            () => undefined,
+          );
         }
         throw error;
       }
@@ -178,14 +183,15 @@ export const printProviderSyncSummary = async (
         ...(uninstallWarnings.length > 0 ? { uninstallWarnings } : {}),
       };
       if (args.json) printJson(result);
-      else printStatusLines({
-        ...status,
-        daemon: {
-          ...status.daemon,
-          running: daemonPid !== undefined || status.daemon.running,
-          ...(daemonPid ? { pid: daemonPid } : {}),
-        },
-      });
+      else
+        printStatusLines({
+          ...status,
+          daemon: {
+            ...status.daemon,
+            running: daemonPid !== undefined || status.daemon.running,
+            ...(daemonPid ? { pid: daemonPid } : {}),
+          },
+        });
       return;
     }
     case "disable": {
@@ -211,7 +217,11 @@ export const printProviderSyncSummary = async (
         await requestProviderSyncRefresh();
       }
       const status = await reconcileProviderSync(args.workspaceRoot);
-      if (config.enabled && config.persistentSync.enabled && config.persistentSync.watch) {
+      if (
+        config.enabled &&
+        config.persistentSync.enabled &&
+        config.persistentSync.watch
+      ) {
         await startDaemon(args.workspaceRoot);
       }
       if (args.json) printJson(status);
@@ -222,7 +232,9 @@ export const printProviderSyncSummary = async (
       const doctor = await doctorProviderSync(args.workspaceRoot);
       if (args.json) printJson(doctor);
       else {
-        writeStdoutLine(`provider sync doctor: ${doctor.healthy ? "healthy" : "degraded"}`);
+        writeStdoutLine(
+          `provider sync doctor: ${doctor.healthy ? "healthy" : "degraded"}`,
+        );
         writeStdoutLine(JSON.stringify(doctor, null, 2));
       }
       return;

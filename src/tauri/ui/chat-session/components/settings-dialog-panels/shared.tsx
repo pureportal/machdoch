@@ -1,4 +1,10 @@
-import { AlertTriangle, ArrowUpRight, Eye, EyeOff, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  RefreshCw,
+} from "lucide-react";
 import {
   useEffect,
   useId,
@@ -98,10 +104,7 @@ export const useDebouncedAutoSave = ({
       lastAttemptedSignatureRef.current = null;
     }
 
-    if (
-      saveFinished &&
-      lastAttemptedSignatureRef.current === signature
-    ) {
+    if (saveFinished && lastAttemptedSignatureRef.current === signature) {
       // A completed save that left the same draft dirty failed or was
       // superseded. Allow it to be retried instead of suppressing that
       // signature forever.
@@ -116,18 +119,21 @@ export const useDebouncedAutoSave = ({
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      lastAttemptedSignatureRef.current = signature;
-      attemptCountRef.current += 1;
-      void Promise.resolve(onSaveRef.current()).catch((error: unknown) => {
-        console.error("Failed to auto-save settings", error);
+    const timeoutId = window.setTimeout(
+      () => {
+        lastAttemptedSignatureRef.current = signature;
+        attemptCountRef.current += 1;
+        void Promise.resolve(onSaveRef.current()).catch((error: unknown) => {
+          console.error("Failed to auto-save settings", error);
 
-        if (lastAttemptedSignatureRef.current === signature) {
-          lastAttemptedSignatureRef.current = null;
-          setRetrySequence((current) => current + 1);
-        }
-      });
-    }, delayMs * 2 ** attemptCountRef.current);
+          if (lastAttemptedSignatureRef.current === signature) {
+            lastAttemptedSignatureRef.current = null;
+            setRetrySequence((current) => current + 1);
+          }
+        });
+      },
+      delayMs * 2 ** attemptCountRef.current,
+    );
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -213,9 +219,7 @@ export const SettingPanel = ({
       )}
     >
       <div className="grid gap-1">
-        <p className="text-sm font-medium text-slate-300">
-          {label}
-        </p>
+        <p className="text-sm font-medium text-slate-300">{label}</p>
         {detail ? (
           <p className="text-sm leading-5 text-slate-400">{detail}</p>
         ) : null}
@@ -416,10 +420,15 @@ export const ProviderSyncControl = ({
       if (action === "refresh") {
         const nextStatus = await refreshProviderSync(workspaceRoot);
         setStatus(nextStatus);
-        setMessage({ tone: "success", text: "Provider projections reconciled." });
+        setMessage({
+          tone: "success",
+          text: "Provider projections reconciled.",
+        });
       } else if (action === "plan") {
         const plan = await planProviderSync(workspaceRoot);
-        const providers = Array.isArray(plan.providers) ? plan.providers.length : 0;
+        const providers = Array.isArray(plan.providers)
+          ? plan.providers.length
+          : 0;
         setMessage({
           tone: "success",
           text: `Plan is current for ${providers} provider surface${providers === 1 ? "" : "s"}.`,
@@ -428,9 +437,10 @@ export const ProviderSyncControl = ({
         const doctor = await doctorProviderSync(workspaceRoot);
         setMessage({
           tone: doctor.healthy === true ? "success" : "error",
-          text: doctor.healthy === true
-            ? "Provider enrollment doctor reports complete coverage."
-            : "Provider enrollment doctor found degraded or pending coverage.",
+          text:
+            doctor.healthy === true
+              ? "Provider enrollment doctor reports complete coverage."
+              : "Provider enrollment doctor found degraded or pending coverage.",
         });
       }
       setStatus(await getProviderSyncStatus(workspaceRoot));
@@ -448,14 +458,20 @@ export const ProviderSyncControl = ({
   const unavailable = !workspaceRoot?.trim();
 
   return (
-    <div className={cn("grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3", className)}>
+    <div
+      className={cn(
+        "grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3",
+        className,
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="grid min-w-0 gap-1">
           <p className="text-sm font-semibold text-slate-100">
             Sync Machdoch to provider CLIs
           </p>
           <p className="text-xs leading-5 text-slate-400">
-            Keep Machdoch instructions and MCP servers available to Codex, Claude, and Copilot CLI.
+            Keep Machdoch instructions and MCP servers available to Codex,
+            Claude, and Copilot CLI.
           </p>
         </div>
         <Button
@@ -484,9 +500,13 @@ export const ProviderSyncControl = ({
       </div>
 
       {!enabled ? (
-        <p id={warningId} className="flex items-start gap-2 text-xs leading-5 text-amber-200/80">
+        <p
+          id={warningId}
+          className="flex items-start gap-2 text-xs leading-5 text-amber-200/80"
+        >
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Enabling removes existing provider-native instruction, MCP, and customization files or entries before syncing Machdoch settings.
+          Enabling removes existing provider-native instruction, MCP, and
+          customization files or entries before syncing Machdoch settings.
         </p>
       ) : null}
 
@@ -550,7 +570,9 @@ export const ProviderSyncControl = ({
           <DialogHeader>
             <DialogTitle>Replace provider-native configuration?</DialogTitle>
             <DialogDescription id={`${warningId}-dialog-description`}>
-              Machdoch will back up and remove existing Codex, Claude, and Copilot instruction, MCP, and customization files or entries, then sync its own settings.
+              Machdoch will back up and remove existing Codex, Claude, and
+              Copilot instruction, MCP, and customization files or entries, then
+              sync its own settings.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -613,7 +635,11 @@ export const SettingsAutoSaveStatus = ({
 }: SettingsAutoSaveStatusProps): JSX.Element => {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-4">
-      <p role="status" aria-live="polite" className="text-sm leading-6 text-slate-400">
+      <p
+        role="status"
+        aria-live="polite"
+        className="text-sm leading-6 text-slate-400"
+      >
         {saving ? savingText : dirty ? dirtyText : cleanText}
       </p>
       {dirty && onSaveNow ? (
@@ -726,7 +752,8 @@ export const SettingsCredentialForm = ({
     }
 
     setDraftKey((currentDraft) => {
-      const nextDraft = currentDraft.trim() === savedKey ? keyValue : currentDraft;
+      const nextDraft =
+        currentDraft.trim() === savedKey ? keyValue : currentDraft;
       draftKeyRef.current = nextDraft;
       return nextDraft;
     });

@@ -1,6 +1,9 @@
 import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import { writeFileAtomically, writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
+import {
+  writeFileAtomically,
+  writeJsonAtomically,
+} from "../_helpers/write-file-atomically.helper.js";
 import { digestJson, sha256 } from "./digests.js";
 
 const MARKDOWN_START = "<!-- machdoch-managed:provider-enrollment:start -->";
@@ -27,8 +30,12 @@ export interface ProviderOwnershipManifest {
   targets: ProviderOwnershipRecord[];
 }
 
-const getMarkers = (format: Exclude<ManagedTargetFormat, "json">): readonly [string, string] => {
-  return format === "markdown" ? [MARKDOWN_START, MARKDOWN_END] : [TOML_START, TOML_END];
+const getMarkers = (
+  format: Exclude<ManagedTargetFormat, "json">,
+): readonly [string, string] => {
+  return format === "markdown"
+    ? [MARKDOWN_START, MARKDOWN_END]
+    : [TOML_START, TOML_END];
 };
 
 const findRegion = (
@@ -44,7 +51,9 @@ const findRegion = (
   return {
     start,
     end: endMarkerIndex + endMarker.length,
-    payload: content.slice(payloadStart, endMarkerIndex).replace(/^\r?\n|\r?\n$/gu, ""),
+    payload: content
+      .slice(payloadStart, endMarkerIndex)
+      .replace(/^\r?\n|\r?\n$/gu, ""),
   };
 };
 
@@ -106,11 +115,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 const parseJsonRecord = (content: string): Record<string, unknown> => {
   if (!content.trim()) return {};
   const parsed = JSON.parse(content) as unknown;
-  if (!isRecord(parsed)) throw new Error("Managed provider JSON target must contain an object.");
+  if (!isRecord(parsed))
+    throw new Error("Managed provider JSON target must contain an object.");
   return parsed;
 };
 
-const getManagedMcpServers = (value: Record<string, unknown>): Record<string, unknown> => {
+const getManagedMcpServers = (
+  value: Record<string, unknown>,
+): Record<string, unknown> => {
   const raw = value.mcpServers;
   return isRecord(raw) ? raw : {};
 };
@@ -122,7 +134,10 @@ const createBackup = async (path: string): Promise<string> => {
 };
 
 const pathExists = async (path: string): Promise<boolean> => {
-  return await stat(path).then(() => true, () => false);
+  return await stat(path).then(
+    () => true,
+    () => false,
+  );
 };
 
 export interface InstallManagedTargetParams {
@@ -168,10 +183,13 @@ export const installManagedTarget = async (
       digestJson(previousManaged) !== params.previous.managedDigest
     ) {
       const backupPath = await createBackup(params.path);
-      warnings.push(`Externally changed managed MCP entries were backed up to ${backupPath} and reconciled.`);
+      warnings.push(
+        `Externally changed managed MCP entries were backed up to ${backupPath} and reconciled.`,
+      );
     }
     const nextServers = { ...currentServers };
-    for (const key of params.previous?.managedKeys ?? []) delete nextServers[key];
+    for (const key of params.previous?.managedKeys ?? [])
+      delete nextServers[key];
     Object.assign(nextServers, generatedServers);
     content = `${JSON.stringify({ ...current, mcpServers: nextServers }, null, 2)}\n`;
   } else {
@@ -181,13 +199,14 @@ export const installManagedTarget = async (
     const currentRegion = currentRegions[0];
     if (
       params.previous &&
-      currentRegion && (
-        currentRegions.length !== 1 ||
-        sha256(currentRegion.payload) !== params.previous.managedDigest
-      )
+      currentRegion &&
+      (currentRegions.length !== 1 ||
+        sha256(currentRegion.payload) !== params.previous.managedDigest)
     ) {
       const backupPath = await createBackup(params.path);
-      warnings.push(`An externally changed managed region was backed up to ${backupPath} and reconciled.`);
+      warnings.push(
+        `An externally changed managed region was backed up to ${backupPath} and reconciled.`,
+      );
     }
     content = mergeTextRegion(existing, payload, params.format);
   }
@@ -231,9 +250,15 @@ export const uninstallManagedTarget = async (
         key in servers ? [[key, servers[key]] as const] : [],
       ),
     );
-    if (Object.keys(managed).length > 0 && digestJson(managed) !== record.managedDigest) {
+    if (
+      Object.keys(managed).length > 0 &&
+      digestJson(managed) !== record.managedDigest
+    ) {
       if (!options.force) {
-        return { removed: false, warning: `Skipped ${record.path}: managed MCP entries changed externally.` };
+        return {
+          removed: false,
+          warning: `Skipped ${record.path}: managed MCP entries changed externally.`,
+        };
       }
       const backupPath = await createBackup(record.path);
       warning = `Externally changed managed MCP entries were backed up to ${backupPath} and removed.`;
@@ -252,11 +277,15 @@ export const uninstallManagedTarget = async (
   } else {
     const regions = findRegions(existing, record.format);
     if (regions.length === 0) return { removed: true };
-    const isCurrent = regions.length === 1 &&
+    const isCurrent =
+      regions.length === 1 &&
       sha256(regions[0]?.payload ?? "") === record.managedDigest;
     if (!isCurrent) {
       if (!options.force) {
-        return { removed: false, warning: `Skipped ${record.path}: managed region changed externally.` };
+        return {
+          removed: false,
+          warning: `Skipped ${record.path}: managed region changed externally.`,
+        };
       }
       const backupPath = await createBackup(record.path);
       warning = `An externally changed managed region was backed up to ${backupPath} and removed.`;
@@ -304,7 +333,9 @@ export const inspectManagedTarget = async (
     return {
       exists: true,
       syntaxValid: Boolean(region),
-      managedCurrent: Boolean(region) && sha256(region?.payload ?? "") === record.managedDigest,
+      managedCurrent:
+        Boolean(region) &&
+        sha256(region?.payload ?? "") === record.managedDigest,
     };
   } catch (error) {
     return {
@@ -320,12 +351,19 @@ export const loadOwnershipManifest = async (
   path: string,
 ): Promise<ProviderOwnershipManifest> => {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as ProviderOwnershipManifest;
+    const parsed = JSON.parse(
+      await readFile(path, "utf8"),
+    ) as ProviderOwnershipManifest;
     return parsed.schemaVersion === 1 && Array.isArray(parsed.targets)
       ? parsed
       : { schemaVersion: 1, targets: [] };
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
       return { schemaVersion: 1, targets: [] };
     }
     throw error;

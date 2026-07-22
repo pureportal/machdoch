@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  installManagedTarget,
   inspectManagedTarget,
+  installManagedTarget,
   uninstallManagedTarget,
 } from "./ownership-merge.js";
 
@@ -16,7 +16,9 @@ const createRoot = async (): Promise<string> => {
 };
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  );
 });
 
 describe("provider ownership merge", () => {
@@ -49,7 +51,11 @@ describe("provider ownership merge", () => {
       managedCurrent: true,
     });
 
-    await writeFile(path, installed.replace("Managed v2", "Externally changed"), "utf8");
+    await writeFile(
+      path,
+      installed.replace("Managed v2", "Externally changed"),
+      "utf8",
+    );
     await expect(inspectManagedTarget(second.record)).resolves.toMatchObject({
       exists: true,
       syntaxValid: true,
@@ -64,15 +70,24 @@ describe("provider ownership merge", () => {
   it("merges named MCP entries without replacing unrelated JSON", async () => {
     const root = await createRoot();
     const path = join(root, "mcp.json");
-    await writeFile(path, JSON.stringify({ note: "keep", mcpServers: { custom: { url: "x" } } }), "utf8");
+    await writeFile(
+      path,
+      JSON.stringify({ note: "keep", mcpServers: { custom: { url: "x" } } }),
+      "utf8",
+    );
     const installed = await installManagedTarget({
       path,
       provider: "copilot-cli",
       scope: "user",
       format: "json",
-      payload: { mcpServers: { "machdoch-test": { type: "local", command: "machdoch" } } },
+      payload: {
+        mcpServers: { "machdoch-test": { type: "local", command: "machdoch" } },
+      },
     });
-    const parsed = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    const parsed = JSON.parse(await readFile(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
     expect(parsed.note).toBe("keep");
     expect(parsed.mcpServers).toMatchObject({
       custom: { url: "x" },
@@ -80,7 +95,10 @@ describe("provider ownership merge", () => {
     });
 
     await uninstallManagedTarget(installed.record);
-    const uninstalled = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    const uninstalled = JSON.parse(await readFile(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
     expect(uninstalled.mcpServers).toEqual({ custom: { url: "x" } });
   });
 
@@ -96,11 +114,16 @@ describe("provider ownership merge", () => {
     });
     await writeFile(
       path,
-      (await readFile(path, "utf8")).replace("Managed policy", "Changed managed policy"),
+      (await readFile(path, "utf8")).replace(
+        "Managed policy",
+        "Changed managed policy",
+      ),
       "utf8",
     );
 
-    const result = await uninstallManagedTarget(installed.record, { force: true });
+    const result = await uninstallManagedTarget(installed.record, {
+      force: true,
+    });
 
     expect(result).toMatchObject({ removed: true });
     expect(result.warning).toContain("backed up");
@@ -149,8 +172,12 @@ describe("provider ownership merge", () => {
     });
     const content = await readFile(path, "utf8");
 
-    expect(content.match(/machdoch-managed:provider-enrollment:start/gu)).toHaveLength(1);
+    expect(
+      content.match(/machdoch-managed:provider-enrollment:start/gu),
+    ).toHaveLength(1);
     expect(content).toContain("Managed v2");
-    expect(reconciled.warnings).toContainEqual(expect.stringContaining("backed up"));
+    expect(reconciled.warnings).toContainEqual(
+      expect.stringContaining("backed up"),
+    );
   });
 });

@@ -109,7 +109,9 @@ const getPrimaryModelChoices = (
   return getCatalogModelsForProvider(provider, catalog).slice(0, 4);
 };
 
-const normalizeShortcutDraft = (draft: UserDesktopSettings): UserDesktopSettings => {
+const normalizeShortcutDraft = (
+  draft: UserDesktopSettings,
+): UserDesktopSettings => {
   const quickVoiceShortcut = draft.quickVoiceShortcut.trim();
 
   return {
@@ -138,8 +140,9 @@ export const OnboardingWizard = ({
   const [activeStep, setActiveStep] = useState<OnboardingStepId>("connect");
   const [providerModelCatalog, setProviderModelCatalog] =
     useState<ProviderModelCatalogSnapshot | null>(null);
-  const [desktopDraft, setDesktopDraft] =
-    useState<UserDesktopSettings>(desktopSetup.settings);
+  const [desktopDraft, setDesktopDraft] = useState<UserDesktopSettings>(
+    desktopSetup.settings,
+  );
   const lastExternalDesktopSettingsRef = useRef(desktopSetup.settings);
   const [savingShortcut, setSavingShortcut] = useState(false);
 
@@ -182,9 +185,10 @@ export const OnboardingWizard = ({
     void voiceSetup.onRefreshSpeechInputDevices();
   }, [activeStep, voiceSetup]);
 
-  const providerChoices = chooserProviders.length > 0
-    ? chooserProviders
-    : (["openai", "anthropic", "google"] satisfies RuntimeProvider[]);
+  const providerChoices =
+    chooserProviders.length > 0
+      ? chooserProviders
+      : (["openai", "anthropic", "google"] satisfies RuntimeProvider[]);
   const activeProvider = activeSession.provider;
   const modelChoices = useMemo(
     () => getPrimaryModelChoices(activeProvider, providerModelCatalog),
@@ -235,7 +239,9 @@ export const OnboardingWizard = ({
                   : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700 hover:text-slate-100",
               )}
             >
-              {activeProvider === provider ? <Check className="h-3.5 w-3.5" /> : null}
+              {activeProvider === provider ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : null}
               {getProviderLabel(provider)}
             </button>
           ))}
@@ -336,7 +342,6 @@ export const OnboardingWizard = ({
       </div>
 
       <ProviderSyncControl workspaceRoot={activeSession.workspace} />
-
     </div>
   );
 
@@ -378,7 +383,9 @@ export const OnboardingWizard = ({
           type="button"
           disabled={!isUiControlAvailable}
           aria-pressed={activeSession.uiControlEnabled}
-          onClick={() => onUiControlEnabledChange(!activeSession.uiControlEnabled)}
+          onClick={() =>
+            onUiControlEnabledChange(!activeSession.uiControlEnabled)
+          }
           className={cn(
             "rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
             activeSession.uiControlEnabled
@@ -388,7 +395,9 @@ export const OnboardingWizard = ({
         >
           <span className="flex items-center gap-2 text-sm font-semibold">
             <Monitor className="h-4 w-4" />
-            {activeSession.uiControlEnabled ? "Allowed" : "Ask before desktop actions"}
+            {activeSession.uiControlEnabled
+              ? "Allowed"
+              : "Ask before desktop actions"}
           </span>
           <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500">
             {uiControlDescription}
@@ -402,7 +411,8 @@ export const OnboardingWizard = ({
           Browser profile: fresh per task
         </span>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Browser sessions start isolated. Ask for a visible session when login or inspection matters.
+          Browser sessions start isolated. Ask for a visible session when login
+          or inspection matters.
         </p>
       </div>
     </div>
@@ -536,7 +546,10 @@ export const OnboardingWizard = ({
               <Sparkles className="h-5 w-5" />
             </span>
             <div>
-              <h2 id="onboarding-title" className="text-base font-semibold text-white">
+              <h2
+                id="onboarding-title"
+                className="text-base font-semibold text-white"
+              >
                 Start clean
               </h2>
               <p className="text-xs text-slate-500">Defaults are ready.</p>
@@ -617,7 +630,9 @@ export const OnboardingWizard = ({
               variant="ghost"
               disabled={!canGoBack}
               onClick={() => {
-                setActiveStep(ONBOARDING_STEPS[activeStepIndex - 1]?.id ?? "connect");
+                setActiveStep(
+                  ONBOARDING_STEPS[activeStepIndex - 1]?.id ?? "connect",
+                );
               }}
               className="rounded-full text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >

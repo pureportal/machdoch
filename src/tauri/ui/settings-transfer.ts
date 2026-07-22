@@ -148,13 +148,12 @@ export interface EncryptedSettingsFileImportResult {
   recoveryCleanupPending: boolean;
 }
 
-export const isActiveTransferPhase = (
-  phase: SettingsTransferPhase,
-): boolean =>
+export const isActiveTransferPhase = (phase: SettingsTransferPhase): boolean =>
   !["idle", "completed", "cancelled", "failed"].includes(phase);
 
-export const getSettingsTransferCatalog = async (): Promise<SettingsTransferStatus> =>
-  invoke<SettingsTransferStatus>("get_settings_transfer_catalog");
+export const getSettingsTransferCatalog =
+  async (): Promise<SettingsTransferStatus> =>
+    invoke<SettingsTransferStatus>("get_settings_transfer_catalog");
 
 export const startSettingsTransfer = async (
   request: StartSettingsTransferRequest,

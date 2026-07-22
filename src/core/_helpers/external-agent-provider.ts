@@ -1,6 +1,25 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { extname } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
+import { compileInstructionBundle } from "../provider-enrollment/instruction-compiler.js";
+import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
+import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
+import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
+import type {
+  AgentCliProvider,
+  ReasoningMode,
+  RuntimeConfig,
+} from "../runtime-contract.generated.js";
+import type {
+  TaskActionOutputHandler,
+  TaskExecutionResult,
+  TaskExecutionSection,
+} from "../types.js";
+import {
+  getAgentCliProviderLabel,
+  isAgentCliProvider,
+  resolveAgentCliProviderBinary,
+} from "./agent-cli-providers.js";
 import {
   createExecutionResult,
   emitAgentProgress,
@@ -10,28 +29,9 @@ import type {
   AgentLoopState,
   ModelDrivenExecutionParams,
 } from "./agent-runtime-types.js";
-import {
-  getAgentCliProviderLabel,
-  isAgentCliProvider,
-  resolveAgentCliProviderBinary,
-} from "./agent-cli-providers.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
-import { createTextSection, limitText } from "./runtime-text.js";
-import type {
-  TaskActionOutputHandler,
-  TaskExecutionResult,
-  TaskExecutionSection,
-} from "../types.js";
-import type {
-  AgentCliProvider,
-  ReasoningMode,
-  RuntimeConfig,
-} from "../runtime-contract.generated.js";
-import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
 import { normalizeLocalCommandCwd } from "./process-execution.js";
-import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
-import { compileInstructionBundle } from "../provider-enrollment/instruction-compiler.js";
-import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
+import { createTextSection, limitText } from "./runtime-text.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
@@ -74,19 +74,9 @@ type CodexCliReasoningEffort =
   | "max"
   | "ultra";
 
-type ClaudeCliReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max";
+type ClaudeCliReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
-type CopilotCliReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max";
+type CopilotCliReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 const mapReasoningToCodexCliEffort = (
   model: string,
@@ -193,7 +183,9 @@ const createExternalAgentFailureReason = (
   const quotaLine = combined
     .split(/\r?\n/u)
     .map((line) => line.trim())
-    .find((line) => /quota exceeded|billing details|insufficient_quota/iu.test(line));
+    .find((line) =>
+      /quota exceeded|billing details|insufficient_quota/iu.test(line),
+    );
 
   if (quotaLine) {
     return `${providerLabel} quota exceeded: ${quotaLine.replace(/^ERROR:\s*/iu, "")}`;
@@ -232,10 +224,9 @@ const createExternalAgentLoopState = (
 
 const formatSectionForPrompt = (section: TaskExecutionSection): string => {
   return limitText(
-    [
-      `### ${section.title}`,
-      ...section.lines.map((line) => `- ${line}`),
-    ].join("\n"),
+    [`### ${section.title}`, ...section.lines.map((line) => `- ${line}`)].join(
+      "\n",
+    ),
     MAX_EXTERNAL_AGENT_CONTEXT_SECTION_CHARS,
   );
 };
@@ -324,16 +315,15 @@ const createExternalAgentPrompt = (
           MAX_EXTERNAL_AGENT_ATTACHMENT_CHARS,
         )
       : undefined;
-  const instructionBlock =
-    promptFallbackInstructions
-      ? limitText(
-          [
-            "Machdoch native instruction enrollment failed; apply this exact managed instruction bundle from the prompt fallback:",
-            promptFallbackInstructions,
-          ].join("\n\n"),
-          MAX_EXTERNAL_AGENT_FALLBACK_INSTRUCTION_CHARS,
-        )
-      : undefined;
+  const instructionBlock = promptFallbackInstructions
+    ? limitText(
+        [
+          "Machdoch native instruction enrollment failed; apply this exact managed instruction bundle from the prompt fallback:",
+          promptFallbackInstructions,
+        ].join("\n\n"),
+        MAX_EXTERNAL_AGENT_FALLBACK_INSTRUCTION_CHARS,
+      )
+    : undefined;
   const resolvedContext = limitText(
     [...contextSections, ...conversationContext.sections]
       .map(formatSectionForPrompt)
@@ -363,7 +353,10 @@ const createExternalAgentPrompt = (
       (line) => `- ${line}`,
     ),
   ]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .filter(
+      (part): part is string =>
+        typeof part === "string" && part.trim().length > 0,
+    )
     .join("\n\n");
 
   return limitText(prompt, MAX_EXTERNAL_AGENT_PROMPT_CHARS);
@@ -719,131 +712,131 @@ const runExternalAgentCommand = async (
   }
 
   return await new Promise<SpawnedAgentResult>((resolve, reject) => {
-      const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
-      const childEnv = createChildEnv(provider, enrollmentEnv);
+    const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
+    const childEnv = createChildEnv(provider, enrollmentEnv);
 
-      const child = spawn(executable, args, {
-        cwd,
-        env: childEnv,
-        detached: process.platform !== "win32",
-        shell: shouldUseShellForExecutable(executable),
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      });
-      const stdout: BoundedOutputBuffer = { text: "", truncated: false };
-      const stderr: BoundedOutputBuffer = { text: "", truncated: false };
-      const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
-      let settled = false;
-      let abortError: Error | undefined;
-      let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
-
-      const cleanup = (): void => {
-        signal?.removeEventListener("abort", handleAbort);
-        child.stdin?.removeListener("error", handleStdinError);
-        actionOutputBatcher.dispose();
-        if (abortSettlementHandle) {
-          clearTimeout(abortSettlementHandle);
-          abortSettlementHandle = undefined;
-        }
-      };
-
-      const rejectOnce = (error: Error): void => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        cleanup();
-        reject(error);
-      };
-
-      const resolveOnce = (
-        exitCode: number | null,
-        exitSignal: NodeJS.Signals | null,
-      ): void => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        cleanup();
-        resolve({
-          exitCode,
-          signal: exitSignal,
-          stdout: finalizeBoundedOutput(stdout),
-          stderr: finalizeBoundedOutput(stderr),
-        });
-      };
-
-      function handleAbort(): void {
-        if (settled || abortError) {
-          return;
-        }
-
-        abortError = signal
-          ? createAbortError(signal)
-          : new Error("Execution cancelled.");
-        void terminateExternalAgentProcessTree(child).catch(() => {
-          child.kill();
-        });
-
-        abortSettlementHandle = setTimeout(() => {
-          child.kill();
-          rejectOnce(abortError ?? new Error("Execution cancelled."));
-        }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
-        unrefTimer(abortSettlementHandle);
-      }
-
-      function handleStdinError(error: Error): void {
-        if (settled || abortError) {
-          return;
-        }
-
-        void terminateExternalAgentProcessTree(child).finally(() => {
-          rejectOnce(error);
-        });
-      }
-
-      child.stdout?.setEncoding("utf8");
-      child.stderr?.setEncoding("utf8");
-      child.stdout?.on("data", (chunk: string) => {
-        appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
-        actionOutputBatcher.enqueue("stdout", chunk);
-      });
-      child.stderr?.on("data", (chunk: string) => {
-        appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
-        actionOutputBatcher.enqueue("stderr", chunk);
-      });
-      child.on("error", (error) => {
-        rejectOnce(abortError ?? error);
-      });
-      child.on("close", (exitCode, exitSignal) => {
-        if (abortError) {
-          rejectOnce(abortError);
-          return;
-        }
-
-        resolveOnce(exitCode, exitSignal);
-      });
-
-      signal?.addEventListener("abort", handleAbort, { once: true });
-      child.stdin?.once("error", handleStdinError);
-
-      if (signal?.aborted) {
-        handleAbort();
-      }
-
-      if (input !== undefined && !abortError) {
-        const inputAccepted = child.stdin?.write(input) ?? true;
-
-        if (!inputAccepted) {
-          child.stdin?.once("drain", () => child.stdin?.end());
-          return;
-        }
-      }
-
-      child.stdin?.end();
+    const child = spawn(executable, args, {
+      cwd,
+      env: childEnv,
+      detached: process.platform !== "win32",
+      shell: shouldUseShellForExecutable(executable),
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
     });
+    const stdout: BoundedOutputBuffer = { text: "", truncated: false };
+    const stderr: BoundedOutputBuffer = { text: "", truncated: false };
+    const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
+    let settled = false;
+    let abortError: Error | undefined;
+    let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = (): void => {
+      signal?.removeEventListener("abort", handleAbort);
+      child.stdin?.removeListener("error", handleStdinError);
+      actionOutputBatcher.dispose();
+      if (abortSettlementHandle) {
+        clearTimeout(abortSettlementHandle);
+        abortSettlementHandle = undefined;
+      }
+    };
+
+    const rejectOnce = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const resolveOnce = (
+      exitCode: number | null,
+      exitSignal: NodeJS.Signals | null,
+    ): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve({
+        exitCode,
+        signal: exitSignal,
+        stdout: finalizeBoundedOutput(stdout),
+        stderr: finalizeBoundedOutput(stderr),
+      });
+    };
+
+    function handleAbort(): void {
+      if (settled || abortError) {
+        return;
+      }
+
+      abortError = signal
+        ? createAbortError(signal)
+        : new Error("Execution cancelled.");
+      void terminateExternalAgentProcessTree(child).catch(() => {
+        child.kill();
+      });
+
+      abortSettlementHandle = setTimeout(() => {
+        child.kill();
+        rejectOnce(abortError ?? new Error("Execution cancelled."));
+      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
+      unrefTimer(abortSettlementHandle);
+    }
+
+    function handleStdinError(error: Error): void {
+      if (settled || abortError) {
+        return;
+      }
+
+      void terminateExternalAgentProcessTree(child).finally(() => {
+        rejectOnce(error);
+      });
+    }
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
+      actionOutputBatcher.enqueue("stdout", chunk);
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
+      actionOutputBatcher.enqueue("stderr", chunk);
+    });
+    child.on("error", (error) => {
+      rejectOnce(abortError ?? error);
+    });
+    child.on("close", (exitCode, exitSignal) => {
+      if (abortError) {
+        rejectOnce(abortError);
+        return;
+      }
+
+      resolveOnce(exitCode, exitSignal);
+    });
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+    child.stdin?.once("error", handleStdinError);
+
+    if (signal?.aborted) {
+      handleAbort();
+    }
+
+    if (input !== undefined && !abortError) {
+      const inputAccepted = child.stdin?.write(input) ?? true;
+
+      if (!inputAccepted) {
+        child.stdin?.once("drain", () => child.stdin?.end());
+        return;
+      }
+    }
+
+    child.stdin?.end();
+  });
 };
 
 interface ExternalAgentCommand {
@@ -888,17 +881,12 @@ const createCodexArgs = (
   const reasoningEffort = normalizeCodexCliReasoningEffort(
     mapReasoningToCodexCliEffort(config.model, config.reasoning),
   );
-  const args = [
-    "exec",
-  ];
+  const args = ["exec"];
 
   if (delegationMode === "read-only-artifact") {
     args.push("--sandbox", "read-only", "--ephemeral");
   } else {
-    args.push(
-      "--dangerously-bypass-approvals-and-sandbox",
-      "--ephemeral",
-    );
+    args.push("--dangerously-bypass-approvals-and-sandbox", "--ephemeral");
   }
 
   args.push(
@@ -1035,10 +1023,7 @@ const createCopilotCommand = ({
   prompt,
   enrollmentArgs,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
-  const effort = mapReasoningToCopilotCliEffort(
-    config.model,
-    config.reasoning,
-  );
+  const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);
   const maxTurns = getExecutorTurnLimit(config);
   const args = [
     "-s",
@@ -1073,7 +1058,9 @@ const createCopilotCommand = ({
       "secret env redaction: GH_TOKEN",
       `model argument: ${config.model}`,
       ...(effort ? [`effort: ${effort}`] : []),
-      ...(maxTurns !== undefined ? [`max autopilot continues: ${maxTurns}`] : []),
+      ...(maxTurns !== undefined
+        ? [`max autopilot continues: ${maxTurns}`]
+        : []),
     ],
     metadata: {
       access: "allow-all",
@@ -1123,8 +1110,7 @@ const executeExternalAgentCliTask = async (
         task: params.task,
         mode: params.config.mode,
         status: "blocked",
-        summary:
-          `${providerLabel} execution could not start because the CLI binary was not found.`,
+        summary: `${providerLabel} execution could not start because the CLI binary was not found.`,
         executedTools: [],
         outputSections: [
           ...params.contextSections,
@@ -1142,7 +1128,9 @@ const executeExternalAgentCliTask = async (
     );
   }
 
-  const imagePaths = (params.imageInputs ?? []).map((imageInput) => imageInput.path);
+  const imagePaths = (params.imageInputs ?? []).map(
+    (imageInput) => imageInput.path,
+  );
   const delegationMode = getExternalAgentDelegationMode(params);
   let enrollment: MaterializedCliEnrollment | undefined;
   let enrollmentFailure: string | undefined;
@@ -1166,10 +1154,13 @@ const executeExternalAgentCliTask = async (
         params.taskContext,
         params.systemPromptSections ?? [],
       );
-  const activeInstructionBundle = enrollment?.instructionBundle ?? fallbackBundle;
+  const activeInstructionBundle =
+    enrollment?.instructionBundle ?? fallbackBundle;
   const enrollmentInstructionCount = activeInstructionBundle
-    ? [...activeInstructionBundle.sources, ...activeInstructionBundle.omittedSources]
-        .reduce((count, source) => count + source.sourceIds.length, 0)
+    ? [
+        ...activeInstructionBundle.sources,
+        ...activeInstructionBundle.omittedSources,
+      ].reduce((count, source) => count + source.sourceIds.length, 0)
     : 0;
   let prompt = createExternalAgentPrompt(
     params.task,
@@ -1181,16 +1172,13 @@ const executeExternalAgentCliTask = async (
     imagePaths,
     delegationMode,
   );
-  let command = createExternalAgentCommand(
-    provider,
-    {
-      config: executionConfig,
-      prompt,
-      imageInputs: params.imageInputs,
-      delegationMode,
-      enrollmentArgs: enrollment?.args ?? [],
-    },
-  );
+  let command = createExternalAgentCommand(provider, {
+    config: executionConfig,
+    prompt,
+    imageInputs: params.imageInputs,
+    delegationMode,
+    enrollmentArgs: enrollment?.args ?? [],
+  });
 
   await emitAgentProgress(
     params.task,
@@ -1212,14 +1200,13 @@ const executeExternalAgentCliTask = async (
         metadata: {
           binarySource: binary.source ?? "unknown",
           enrollmentBundleDigest:
-            enrollment?.instructionBundle.digest ?? fallbackBundle?.digest ?? "none",
-          enrollmentInstructionCount:
-            enrollmentInstructionCount,
+            enrollment?.instructionBundle.digest ??
+            fallbackBundle?.digest ??
+            "none",
+          enrollmentInstructionCount: enrollmentInstructionCount,
           enrollmentCoverageComplete:
             enrollment?.manifest.coverageSummary.complete ?? false,
-          enrollmentRoute: enrollment
-            ? "native"
-            : "prompt-fallback",
+          enrollmentRoute: enrollment ? "native" : "prompt-fallback",
           ...command.metadata,
         },
       },
@@ -1252,7 +1239,9 @@ const executeExternalAgentCliTask = async (
     enrollmentFailure = [
       enrollmentFailure,
       "The installed Codex CLI rejected developer_instructions; Machdoch retried with an isolated AGENTS file.",
-    ].filter(Boolean).join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
     try {
       enrollment = await materializeCliEnrollment({
         provider,
@@ -1305,7 +1294,9 @@ const executeExternalAgentCliTask = async (
       enrollmentFailure = [
         enrollmentFailure,
         error instanceof Error ? error.message : String(error),
-      ].filter(Boolean).join(" ");
+      ]
+        .filter(Boolean)
+        .join(" ");
       enrollment = undefined;
       shouldRetryWithPrompt = true;
     }
@@ -1314,7 +1305,9 @@ const executeExternalAgentCliTask = async (
     enrollmentFailure = [
       enrollmentFailure,
       "The installed provider rejected its native enrollment surface; Machdoch retried automatically with prompt enrollment.",
-    ].filter(Boolean).join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
     fallbackBundle = compileInstructionBundle(
       params.taskContext,
       params.systemPromptSections ?? [],
@@ -1364,8 +1357,8 @@ const executeExternalAgentCliTask = async (
       ...(enrollmentFailure
         ? [`enrollment fallback: ${limitText(enrollmentFailure, 500)}`]
         : []),
-      ...nativeEnrollmentWarnings.map((warning) =>
-        `enrollment warning: ${limitText(warning, 500)}`,
+      ...nativeEnrollmentWarnings.map(
+        (warning) => `enrollment warning: ${limitText(warning, 500)}`,
       ),
       ...command.commandLines,
       `exit code: ${result.exitCode ?? "unknown"}`,
@@ -1466,7 +1459,13 @@ const executeExternalAgentCliTask = async (
       commandSection,
       createTextSection(`${providerLabel} answer`, answer, 120),
       ...(stderr
-        ? [createTextSection(`${providerLabel} diagnostics`, limitText(stderr, MAX_DIAGNOSTIC_CHARS), 80)]
+        ? [
+            createTextSection(
+              `${providerLabel} diagnostics`,
+              limitText(stderr, MAX_DIAGNOSTIC_CHARS),
+              80,
+            ),
+          ]
         : []),
     ],
     response: {

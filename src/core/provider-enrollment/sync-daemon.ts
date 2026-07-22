@@ -34,20 +34,14 @@ export interface ProviderSyncDaemonDiagnostic {
   error?: string;
 }
 
-const getDaemonPath = (): string => join(
-  getProviderEnrollmentStateDirectory(),
-  DAEMON_PID_FILE_NAME,
-);
+const getDaemonPath = (): string =>
+  join(getProviderEnrollmentStateDirectory(), DAEMON_PID_FILE_NAME);
 
-export const getProviderSyncRefreshRequestPath = (): string => join(
-  getProviderEnrollmentStateDirectory(),
-  REFRESH_REQUEST_FILE_NAME,
-);
+export const getProviderSyncRefreshRequestPath = (): string =>
+  join(getProviderEnrollmentStateDirectory(), REFRESH_REQUEST_FILE_NAME);
 
-export const getProviderSyncDaemonDiagnosticPath = (): string => join(
-  getProviderEnrollmentStateDirectory(),
-  DAEMON_DIAGNOSTIC_FILE_NAME,
-);
+export const getProviderSyncDaemonDiagnosticPath = (): string =>
+  join(getProviderEnrollmentStateDirectory(), DAEMON_DIAGNOSTIC_FILE_NAME);
 
 const isProcessAlive = (pid: number): boolean => {
   try {
@@ -65,7 +59,9 @@ const isProcessAlive = (pid: number): boolean => {
 
 const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
   try {
-    const parsed = JSON.parse(await readFile(getDaemonPath(), "utf8")) as Partial<DaemonRecord>;
+    const parsed = JSON.parse(
+      await readFile(getDaemonPath(), "utf8"),
+    ) as Partial<DaemonRecord>;
     if (
       typeof parsed.pid === "number" &&
       parsed.pid > 0 &&
@@ -85,8 +81,9 @@ const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
   return undefined;
 };
 
-export const loadProviderSyncDaemonDiagnostic = async (
-): Promise<ProviderSyncDaemonDiagnostic | undefined> => {
+export const loadProviderSyncDaemonDiagnostic = async (): Promise<
+  ProviderSyncDaemonDiagnostic | undefined
+> => {
   try {
     const parsed = JSON.parse(
       await readFile(getProviderSyncDaemonDiagnosticPath(), "utf8"),
@@ -115,7 +112,9 @@ export const loadProviderSyncDaemonDiagnostic = async (
   return undefined;
 };
 
-export const getProviderSyncDaemonPid = async (): Promise<number | undefined> => {
+export const getProviderSyncDaemonPid = async (): Promise<
+  number | undefined
+> => {
   const record = await loadDaemonRecord();
   if (!record) return undefined;
   if (isProcessAlive(record.pid)) return record.pid;
@@ -125,35 +124,47 @@ export const getProviderSyncDaemonPid = async (): Promise<number | undefined> =>
   return undefined;
 };
 
-const acquireDaemon = async (workspaceRoot: string): Promise<() => Promise<void>> => {
+const acquireDaemon = async (
+  workspaceRoot: string,
+): Promise<() => Promise<void>> => {
   const path = getDaemonPath();
   const token = randomUUID();
   await mkdir(dirname(path), { recursive: true });
-  await withCooperativeFileLock(path, async () => {
-    const existing = await loadDaemonRecord();
-    if (existing && isProcessAlive(existing.pid)) {
-      throw new Error(`Provider sync daemon is already running with PID ${existing.pid}.`);
-    }
-    await rm(path, { force: true });
-    const handle = await open(path, "wx", 0o600);
-    let recorded = false;
-    try {
-      await handle.writeFile(
-        `${JSON.stringify({
-          pid: process.pid,
-          workspaceRoot,
-          startedAt: new Date().toISOString(),
-          token,
-        } satisfies DaemonRecord, null, 2)}\n`,
-      );
-      recorded = true;
-    } finally {
-      await handle.close();
-      if (!recorded) await rm(path, { force: true }).catch(() => undefined);
-    }
-  }, {
-    ownerDescription: "provider-sync daemon single-instance election",
-  });
+  await withCooperativeFileLock(
+    path,
+    async () => {
+      const existing = await loadDaemonRecord();
+      if (existing && isProcessAlive(existing.pid)) {
+        throw new Error(
+          `Provider sync daemon is already running with PID ${existing.pid}.`,
+        );
+      }
+      await rm(path, { force: true });
+      const handle = await open(path, "wx", 0o600);
+      let recorded = false;
+      try {
+        await handle.writeFile(
+          `${JSON.stringify(
+            {
+              pid: process.pid,
+              workspaceRoot,
+              startedAt: new Date().toISOString(),
+              token,
+            } satisfies DaemonRecord,
+            null,
+            2,
+          )}\n`,
+        );
+        recorded = true;
+      } finally {
+        await handle.close();
+        if (!recorded) await rm(path, { force: true }).catch(() => undefined);
+      }
+    },
+    {
+      ownerDescription: "provider-sync daemon single-instance election",
+    },
+  );
   return async (): Promise<void> => {
     const current = await loadDaemonRecord();
     if (current?.pid === process.pid && current.token === token) {
@@ -163,10 +174,7 @@ const acquireDaemon = async (workspaceRoot: string): Promise<() => Promise<void>
 };
 
 const normalizeWatchedPath = (path: string): string => {
-  return path
-    .replaceAll("\\", "/")
-    .replace(/^\.\//u, "")
-    .toLocaleLowerCase();
+  return path.replaceAll("\\", "/").replace(/^\.\//u, "").toLocaleLowerCase();
 };
 
 const isPathOrChild = (path: string, root: string): boolean => {
@@ -175,7 +183,8 @@ const isPathOrChild = (path: string, root: string): boolean => {
 
 export const isProviderSyncWorkspaceWatchPath = (path: string): boolean => {
   const normalized = normalizeWatchedPath(path);
-  return normalized === ".env" ||
+  return (
+    normalized === ".env" ||
     normalized === "agents.md" ||
     normalized === ".machdoch" ||
     normalized === ".machdoch/instructions.md" ||
@@ -183,32 +192,38 @@ export const isProviderSyncWorkspaceWatchPath = (path: string): boolean => {
     isPathOrChild(normalized, ".machdoch/mcp") ||
     normalized === ".github" ||
     normalized === ".github/copilot-instructions.md" ||
-    isPathOrChild(normalized, ".github/instructions");
+    isPathOrChild(normalized, ".github/instructions")
+  );
 };
 
 export const isProviderSyncUserWatchPath = (path: string): boolean => {
   const normalized = normalizeWatchedPath(path);
-  return normalized === "user-config.json" ||
+  return (
+    normalized === "user-config.json" ||
     normalized === "instructions.md" ||
     normalized === "mcp.json" ||
     normalized === "mcp-discovery-cache.json" ||
-    isPathOrChild(normalized, "instructions");
+    isPathOrChild(normalized, "instructions")
+  );
 };
 
 const createWorkspaceWatchers = (
   workspaceRoot: string,
   onChange: () => void,
 ): FSWatcher[] => {
-  const roots = process.platform === "linux"
-    ? [...new Set([
-        workspaceRoot,
-        join(workspaceRoot, ".machdoch"),
-        join(workspaceRoot, ".machdoch", "instructions"),
-        join(workspaceRoot, ".machdoch", "mcp"),
-        join(workspaceRoot, ".github"),
-        join(workspaceRoot, ".github", "instructions"),
-      ])]
-    : [workspaceRoot];
+  const roots =
+    process.platform === "linux"
+      ? [
+          ...new Set([
+            workspaceRoot,
+            join(workspaceRoot, ".machdoch"),
+            join(workspaceRoot, ".machdoch", "instructions"),
+            join(workspaceRoot, ".machdoch", "mcp"),
+            join(workspaceRoot, ".github"),
+            join(workspaceRoot, ".github", "instructions"),
+          ]),
+        ]
+      : [workspaceRoot];
 
   const watchers: FSWatcher[] = [];
   for (const root of roots) {
@@ -236,40 +251,45 @@ const createWorkspaceWatchers = (
 const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
   const userConfigRoot = dirname(getUserConfigPath());
   const stateRoot = getProviderEnrollmentStateDirectory();
-  const userRoots = process.platform === "linux"
-    ? [userConfigRoot, join(userConfigRoot, "instructions")]
-    : [userConfigRoot];
+  const userRoots =
+    process.platform === "linux"
+      ? [userConfigRoot, join(userConfigRoot, "instructions")]
+      : [userConfigRoot];
   const watchers: FSWatcher[] = [];
 
   for (const root of userRoots) {
     try {
-      watchers.push(watch(
-        root,
-        { recursive: process.platform !== "linux" },
-        (_eventType, filename) => {
-          if (!filename) return onChange();
-          const changedPath = relative(
-            userConfigRoot,
-            join(root, filename.toString()),
-          );
-          if (isProviderSyncUserWatchPath(changedPath)) onChange();
-        },
-      ));
+      watchers.push(
+        watch(
+          root,
+          { recursive: process.platform !== "linux" },
+          (_eventType, filename) => {
+            if (!filename) return onChange();
+            const changedPath = relative(
+              userConfigRoot,
+              join(root, filename.toString()),
+            );
+            if (isProviderSyncUserWatchPath(changedPath)) onChange();
+          },
+        ),
+      );
     } catch {
       // Periodic full scans cover missing or unsupported watcher roots.
     }
   }
 
   try {
-    watchers.push(watch(stateRoot, { recursive: false }, (_eventType, filename) => {
-      const name = filename?.toString();
-      if (
-        name === REFRESH_REQUEST_FILE_NAME ||
-        name === basename(getProviderSyncWorkspaceRegistryPath())
-      ) {
-        onChange();
-      }
-    }));
+    watchers.push(
+      watch(stateRoot, { recursive: false }, (_eventType, filename) => {
+        const name = filename?.toString();
+        if (
+          name === REFRESH_REQUEST_FILE_NAME ||
+          name === basename(getProviderSyncWorkspaceRegistryPath())
+        ) {
+          onChange();
+        }
+      }),
+    );
   } catch {
     // The periodic full scan remains the recovery path.
   }
@@ -301,7 +321,7 @@ export const runProviderSyncDaemon = async (
       watchers = config.persistentSync.watch
         ? [
             ...workspaceRoots.flatMap((root) =>
-              createWorkspaceWatchers(root, schedule)
+              createWorkspaceWatchers(root, schedule),
             ),
             ...createSharedWatchers(schedule),
           ]
@@ -317,7 +337,8 @@ export const runProviderSyncDaemon = async (
       const runStartedAt = new Date().toISOString();
       try {
         config = await loadProviderEnrollmentConfig();
-        const workspaceRoots = await loadRegisteredProviderSyncWorkspaces(workspaceRoot);
+        const workspaceRoots =
+          await loadRegisteredProviderSyncWorkspaces(workspaceRoot);
         for (const registeredWorkspaceRoot of workspaceRoots) {
           await reconcileProviderSync(registeredWorkspaceRoot);
         }
@@ -343,15 +364,17 @@ export const runProviderSyncDaemon = async (
           runCompletedAt: new Date().toISOString(),
           outcome: "error",
           error: message.slice(0, 4_000),
-        } satisfies ProviderSyncDaemonDiagnostic).catch((diagnosticError: unknown) => {
-          console.error(
-            `machdoch provider-sync: Failed to persist daemon diagnostics: ${
-              diagnosticError instanceof Error
-                ? diagnosticError.message
-                : String(diagnosticError)
-            }`,
-          );
-        });
+        } satisfies ProviderSyncDaemonDiagnostic).catch(
+          (diagnosticError: unknown) => {
+            console.error(
+              `machdoch provider-sync: Failed to persist daemon diagnostics: ${
+                diagnosticError instanceof Error
+                  ? diagnosticError.message
+                  : String(diagnosticError)
+              }`,
+            );
+          },
+        );
         console.error(`machdoch provider-sync: ${message}`);
       } finally {
         running = false;
@@ -372,7 +395,10 @@ export const runProviderSyncDaemon = async (
         return;
       }
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void reconcile(), config.persistentSync.debounceMs);
+      timer = setTimeout(
+        () => void reconcile(),
+        config.persistentSync.debounceMs,
+      );
       timer.unref?.();
     }
 

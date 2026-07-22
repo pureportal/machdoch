@@ -1,7 +1,10 @@
 import { copyFile, readFile, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { writeFileAtomically, writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
+import {
+  writeFileAtomically,
+  writeJsonAtomically,
+} from "../_helpers/write-file-atomically.helper.js";
 
 export interface ProviderNativeCleanupResult {
   removedInstructionFiles: string[];
@@ -24,7 +27,10 @@ const SKIPPED_DIRECTORY_NAMES = new Set([
 ]);
 
 const pathExists = async (path: string): Promise<boolean> => {
-  return await stat(path).then(() => true, () => false);
+  return await stat(path).then(
+    () => true,
+    () => false,
+  );
 };
 
 const createBackup = async (path: string): Promise<string> => {
@@ -50,7 +56,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const normalizePathIdentity = (path: string): string => {
   const normalized = resolve(path).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalized.toLocaleLowerCase() : normalized;
+  return process.platform === "win32"
+    ? normalized.toLocaleLowerCase()
+    : normalized;
 };
 
 const removeMcpServersFromJson = async (
@@ -99,9 +107,12 @@ const removeMcpServersFromCodexToml = (content: string): string => {
   let inMcpSection = false;
 
   for (const line of lines) {
-    const table = /^\s*\[(?<name>[^\]]+)\]\s*(?:#.*)?$/u.exec(line)?.groups?.name?.trim();
+    const table = /^\s*\[(?<name>[^\]]+)\]\s*(?:#.*)?$/u
+      .exec(line)
+      ?.groups?.name?.trim();
     if (table) {
-      inMcpSection = table === "mcp_servers" || table.startsWith("mcp_servers.");
+      inMcpSection =
+        table === "mcp_servers" || table.startsWith("mcp_servers.");
       if (inMcpSection) continue;
     }
     if (inMcpSection || /^\s*mcp_servers\s*=/u.test(line)) continue;
@@ -134,13 +145,16 @@ const readCodexFallbackInstructionNames = async (
 ): Promise<Set<string>> => {
   const names = new Set<string>();
   const content = await readFile(configPath, "utf8").catch(() => "");
-  const value = /^\s*project_doc_fallback_filenames\s*=\s*\[(?<value>[^\]]*)\]/gmu
-    .exec(content)?.groups?.value;
+  const value =
+    /^\s*project_doc_fallback_filenames\s*=\s*\[(?<value>[^\]]*)\]/gmu.exec(
+      content,
+    )?.groups?.value;
   if (!value) return names;
 
   for (const match of value.matchAll(/["'](?<name>[^"']+)["']/gu)) {
     const name = match.groups?.name?.trim();
-    if (name && !name.includes("/") && !name.includes("\\")) names.add(name.toLocaleLowerCase());
+    if (name && !name.includes("/") && !name.includes("\\"))
+      names.add(name.toLocaleLowerCase());
   }
   return names;
 };
@@ -152,7 +166,9 @@ const collectWorkspaceInstructionFiles = async (
   const matches: string[] = [];
   const workspaceIdentity = normalizePathIdentity(workspaceRoot);
   const visit = async (directory: string): Promise<void> => {
-    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    const entries = await readdir(directory, { withFileTypes: true }).catch(
+      () => [],
+    );
     for (const entry of entries) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) {
@@ -175,7 +191,8 @@ const collectWorkspaceInstructionFiles = async (
         (normalizePathIdentity(directory) === workspaceIdentity &&
           codexFallbackNames.has(name)) ||
         (normalized.includes("/.claude/rules/") && name.endsWith(".md")) ||
-        (normalized.includes("/.github/instructions/") && name.endsWith(".instructions.md"));
+        (normalized.includes("/.github/instructions/") &&
+          name.endsWith(".instructions.md"));
       if (isInstructionFile) matches.push(path);
     }
   };
@@ -187,12 +204,17 @@ const collectWorkspaceInstructionFiles = async (
 const collectMarkdownFiles = async (directory: string): Promise<string[]> => {
   const matches: string[] = [];
   const visit = async (path: string): Promise<void> => {
-    const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+    const entries = await readdir(path, { withFileTypes: true }).catch(
+      () => [],
+    );
     for (const entry of entries) {
       const entryPath = join(path, entry.name);
       if (entry.isDirectory()) {
         await visit(entryPath);
-      } else if (entry.isFile() && entry.name.toLocaleLowerCase().endsWith(".md")) {
+      } else if (
+        entry.isFile() &&
+        entry.name.toLocaleLowerCase().endsWith(".md")
+      ) {
         matches.push(entryPath);
       }
     }
@@ -206,8 +228,10 @@ export const cleanupProviderNativeState = async (
 ): Promise<ProviderNativeCleanupResult> => {
   workspaceRoot = resolve(workspaceRoot);
   const codexHome = process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
-  const claudeHome = process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
-  const copilotHome = process.env.COPILOT_HOME?.trim() || join(homedir(), ".copilot");
+  const claudeHome =
+    process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
+  const copilotHome =
+    process.env.COPILOT_HOME?.trim() || join(homedir(), ".copilot");
   const result: ProviderNativeCleanupResult = {
     removedInstructionFiles: [],
     cleanedMcpFiles: [],
@@ -215,7 +239,8 @@ export const cleanupProviderNativeState = async (
   };
 
   const codexConfigPath = join(codexHome, "config.toml");
-  const fallbackNames = await readCodexFallbackInstructionNames(codexConfigPath);
+  const fallbackNames =
+    await readCodexFallbackInstructionNames(codexConfigPath);
   const instructionPaths = new Set<string>([
     join(codexHome, "AGENTS.md"),
     join(codexHome, "AGENTS.override.md"),
@@ -231,12 +256,21 @@ export const cleanupProviderNativeState = async (
 
   await cleanCodexMcpFile(codexConfigPath, result);
   await cleanCodexMcpFile(join(workspaceRoot, ".codex", "config.toml"), result);
-  await removeMcpServersFromJson(join(homedir(), ".claude.json"), result, workspaceRoot);
+  await removeMcpServersFromJson(
+    join(homedir(), ".claude.json"),
+    result,
+    workspaceRoot,
+  );
   await removeMcpServersFromJson(join(workspaceRoot, ".mcp.json"), result);
   await removeMcpServersFromJson(join(copilotHome, "mcp-config.json"), result);
-  await removeMcpServersFromJson(join(workspaceRoot, ".github", "mcp.json"), result);
+  await removeMcpServersFromJson(
+    join(workspaceRoot, ".github", "mcp.json"),
+    result,
+  );
 
-  result.removedInstructionFiles.sort((left, right) => left.localeCompare(right));
+  result.removedInstructionFiles.sort((left, right) =>
+    left.localeCompare(right),
+  );
   result.cleanedMcpFiles.sort((left, right) => left.localeCompare(right));
   result.backupFiles.sort((left, right) => left.localeCompare(right));
   return result;
