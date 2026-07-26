@@ -13,11 +13,6 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PROVIDER_ENROLLMENT_CONFIG } from "./config.js";
 import {
-  installManagedTarget,
-  saveOwnershipManifest,
-} from "./ownership-merge.js";
-import {
-  getProviderSyncOwnershipPath,
   getProviderSyncStatusPath,
   getProviderSyncWorkspaceRegistryPath,
   loadRegisteredProviderSyncWorkspaces,
@@ -198,62 +193,6 @@ describe("provider sync coordinator", () => {
     await reconcileProviderSync(workspaceRoot);
 
     await expect(stat(projectedPath)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("removes legacy persistent instruction targets during reconciliation", async () => {
-    const root = await createRoot();
-    const workspaceRoot = join(root, "workspace");
-    const userConfigRoot = join(root, "user-config");
-    await Promise.all([
-      mkdir(workspaceRoot, { recursive: true }),
-      mkdir(userConfigRoot, { recursive: true }),
-    ]);
-    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
-    await writeFile(
-      join(userConfigRoot, "user-config.json"),
-      `${JSON.stringify(
-        {
-          providerEnrollment: {
-            enabled: true,
-            persistentSync: {
-              enabled: true,
-              watch: false,
-              daemonAtLogin: false,
-            },
-            providers: {
-              "codex-cli": { enabled: false },
-              "claude-cli": { enabled: false },
-              "copilot-cli": { enabled: false },
-            },
-          },
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
-    const instructionPath = join(workspaceRoot, "AGENTS.md");
-    const installed = await installManagedTarget({
-      path: instructionPath,
-      provider: "codex-cli",
-      scope: "workspace",
-      format: "markdown",
-      payload: "Legacy persistent instructions.",
-    });
-    await saveOwnershipManifest(getProviderSyncOwnershipPath(), {
-      schemaVersion: 1,
-      targets: [installed.record],
-    });
-
-    await reconcileProviderSync(workspaceRoot);
-
-    await expect(stat(instructionPath)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(
-      readFile(getProviderSyncOwnershipPath(), "utf8").then(
-        (value) =>
-          (JSON.parse(value) as { targets: unknown[] }).targets,
-      ),
-    ).resolves.toEqual([]);
   });
 
   it("writes exclusions to Git's actual linked-worktree exclude path", async () => {

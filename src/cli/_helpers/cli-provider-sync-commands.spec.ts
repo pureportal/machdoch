@@ -109,7 +109,7 @@ describe("automatic provider sync", () => {
     expect(mocks.requestProviderSyncRefresh).not.toHaveBeenCalled();
   });
 
-  it("stops and cleans up a stale daemon while persistent sync is disabled", async () => {
+  it("stops a stale daemon while persistent sync is disabled", async () => {
     const config = createConfig(true);
     mocks.loadProviderEnrollmentConfig.mockResolvedValue({
       ...config,
@@ -123,7 +123,7 @@ describe("automatic provider sync", () => {
 
     expect(mocks.stopProviderSyncDaemon).toHaveBeenCalledOnce();
     expect(mocks.removeProviderSyncAutostart).toHaveBeenCalledOnce();
-    expect(mocks.reconcileProviderSync).toHaveBeenCalledWith("C:\\workspace");
+    expect(mocks.reconcileProviderSync).not.toHaveBeenCalled();
   });
 
   it("delegates refresh to a running daemon instead of reconciling concurrently", async () => {

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import {
   isProviderSyncUserWatchPath,
   isProviderSyncWorkspaceWatchPath,
   runProviderSyncDaemon,
+  stopProviderSyncDaemon,
   type ProviderSyncDaemonDiagnostic,
 } from "./sync-daemon.ts";
 
@@ -153,5 +155,60 @@ describe("provider sync daemon", () => {
 
     const daemonPath = join(userConfigRoot, "provider-enrollment", "daemon.json");
     await expect(stat(daemonPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("stops a daemon launched by a different runtime", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-daemon-runtime-"));
+    roots.push(root);
+    const userConfigRoot = join(root, "user-config");
+    const daemonPath = join(
+      userConfigRoot,
+      "provider-enrollment",
+      "daemon.json",
+    );
+    await mkdir(join(userConfigRoot, "provider-enrollment"), {
+      recursive: true,
+    });
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    const child = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => undefined, 1000)"],
+      {
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
+    const childPid = child.pid;
+    if (!childPid) {
+      child.kill();
+      throw new Error("Expected the daemon test process to expose a PID.");
+    }
+    await writeFile(
+      daemonPath,
+      `${JSON.stringify(
+        {
+          pid: childPid,
+          workspaceRoot: root,
+          startedAt: new Date().toISOString(),
+          token: "different-runtime-test",
+          runtimeId: "different-runtime",
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    try {
+      await expect(
+        stopProviderSyncDaemon({
+          onlyIfRuntimeMismatch: true,
+          timeoutMs: 5_000,
+        }),
+      ).resolves.toBe(true);
+      await expect(stat(daemonPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      child.kill();
+    }
   });
 });

@@ -99,7 +99,6 @@ export const ensureAutomaticProviderSync = async (
     if (!daemonPid && !autostartInstalled) return;
     if (daemonPid) await stopProviderSyncDaemon();
     if (autostartInstalled) await removeProviderSyncAutostart();
-    await reconcileProviderSync(workspaceRoot);
     return;
   }
   if (

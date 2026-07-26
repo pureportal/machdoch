@@ -435,10 +435,6 @@ const findPrevious = (
 ): ProviderOwnershipRecord | undefined =>
   manifest.targets.find((target) => target.path === path);
 
-const isLegacyInstructionTarget = (
-  record: ProviderOwnershipRecord,
-): boolean => record.format === "markdown";
-
 const reconcileProviderScope = async (
   provider: AgentCliProvider,
   scope: "user" | "workspace",
@@ -674,13 +670,11 @@ const reconcileOnce = async (
   const currentPaths = new Set(records.map((record) => record.path));
   const obsoleteRecords = ownership.targets.filter(
     (record) =>
-      isLegacyInstructionTarget(record) ||
-      (managedPaths.has(record.path) && !currentPaths.has(record.path)),
+      managedPaths.has(record.path) && !currentPaths.has(record.path),
   );
   const cleanup = await uninstallOwnedRecords(obsoleteRecords);
   const retainedRecords = ownership.targets.filter(
-    (record) =>
-      !isLegacyInstructionTarget(record) && !managedPaths.has(record.path),
+    (record) => !managedPaths.has(record.path),
   );
   const nextOwnership: ProviderOwnershipManifest = {
     schemaVersion: 1,
