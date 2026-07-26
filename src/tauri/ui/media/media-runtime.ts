@@ -2,6 +2,15 @@ import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { hash as sha256 } from "fast-sha256";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
 import {
+  collectMediaAssetPages,
+  type MediaAssetLibrarySnapshot,
+} from "../../../core/media/asset-library.js";
+import {
+  collectMediaRunPages,
+  mergeMediaRunUpdates,
+  type MediaRunLibrarySnapshot,
+} from "../../../core/media/run-library.js";
+import {
   canonicalizeMediaValue,
   createMediaFlowDocumentDigest,
   createMediaFlowFingerprint,
@@ -22,6 +31,7 @@ import type {
   EnqueueFixtureRunRequest,
   EnqueueMockRemoteRunRequest,
   GenerateMediaImagesRequest,
+  GenerateMediaVideoRequest,
   GenerateMediaSvgRequest,
   ExportMediaFlowRevisionRequest,
   ImportMediaFlowRequest,
@@ -36,6 +46,7 @@ import type {
   MediaAssetDeletionImpact,
   MediaAssetDeletionRequest,
   MediaAssetDeletionResult,
+  MediaAssetPage,
   MediaAssetRecord,
   MediaAssetTag,
   MediaAssetTagUpdate,
@@ -57,6 +68,7 @@ import type {
   MediaLocalModelImportInspection,
   MediaLocalModelImportResult,
   MediaLocalModelRuntimeProbeResult,
+  MediaLocalDiffusersRuntimeStatus,
   MediaModelAddonImportInspection,
   MediaModelAddonImportResult,
   MediaModelAddonRemovalPlan,
@@ -75,9 +87,11 @@ import type {
   MediaProviderReviewAction,
   MediaRunDetail,
   MediaRunEvent,
+  MediaRunPage,
   MediaRunPlanSnapshot,
   MediaRuntimeRunRecord,
   MediaRuntimeStatus,
+  MediaWorkspaceModelDiscovery,
   RemoveMediaModelRequest,
   SaveMediaFlowRevisionRequest,
   SaveMediaFlowRevisionResult,
@@ -361,6 +375,10 @@ let browserLocalFluxInstalled = false;
 let browserLocalBiRefNetInstalled = false;
 let nextBrowserModelInstallId = 1;
 let nextBrowserEventId = 1;
+let nativeAssetSnapshot: MediaAssetLibrarySnapshot | null = null;
+let nativeAssetSnapshotRequest: Promise<MediaAssetLibrarySnapshot> | null = null;
+let nativeRunSnapshot: MediaRunLibrarySnapshot | null = null;
+let nativeRunSnapshotRequest: Promise<MediaRunLibrarySnapshot> | null = null;
 
 const createBrowserDigest = (value: unknown): string => {
   const bytes = sha256(
@@ -1335,6 +1353,16 @@ export const initializeMediaRuntime = async (): Promise<MediaRuntimeStatus> => {
   };
 };
 
+export const refreshMediaLocalDiffusersRuntime =
+  async (): Promise<MediaLocalDiffusersRuntimeStatus> => {
+    if (canInvokeNativeRuntime()) {
+      return invoke<MediaLocalDiffusersRuntimeStatus>(
+        "media_refresh_local_diffusers_runtime",
+      );
+    }
+    return (await initializeMediaRuntime()).localDiffusers;
+  };
+
 export const getMediaModelCatalog = async (
   configuredProviderIds: readonly string[],
 ): Promise<MediaModelCatalogSnapshot> => {
@@ -1363,6 +1391,28 @@ export const getMediaModelCatalog = async (
       isLocalBiRefNetInstalled: browserLocalBiRefNetInstalled,
     }),
   );
+};
+
+export const discoverMediaWorkspaceModels = async (
+  workspaceRoot: string,
+): Promise<MediaWorkspaceModelDiscovery> => {
+  if (!workspaceRoot.trim()) {
+    throw new Error("A workspace root is required for model discovery.");
+  }
+  if (canInvokeNativeRuntime()) {
+    return invoke<MediaWorkspaceModelDiscovery>(
+      "media_discover_workspace_models",
+      { workspaceRoot },
+    );
+  }
+  return {
+    schemaVersion: 1,
+    rootPath: `${workspaceRoot}/models`,
+    scannedAt: new Date().toISOString(),
+    entries: [],
+    truncated: false,
+    warnings: ["Workspace model discovery requires the native desktop runtime."],
+  };
 };
 
 const advanceBrowserModelInstall = (
@@ -1989,6 +2039,15 @@ export const generateMediaSvg = async (
   throw new Error("Native SVG generation is available in the desktop runtime only.");
 };
 
+export const generateMediaVideo = async (
+  request: GenerateMediaVideoRequest,
+): Promise<MediaRunDetail> => {
+  if (!canInvokeNativeRuntime()) {
+    throw new Error("Native WAN video generation is available in the desktop runtime only.");
+  }
+  return invoke<MediaRunDetail>("media_generate_video", { request });
+};
+
 export const enqueueMediaMockRemoteRun = async (
   request: EnqueueMockRemoteRunRequest,
 ): Promise<MediaRunDetail> => {
@@ -2001,7 +2060,36 @@ export const enqueueMediaMockRemoteRun = async (
 
 export const listMediaRuns = async (): Promise<MediaRuntimeRunRecord[]> => {
   if (canInvokeNativeRuntime()) {
-    return invoke<MediaRuntimeRunRecord[]>("media_list_runs", { limit: 100 });
+    if (!nativeRunSnapshotRequest) {
+      const request = collectMediaRunPages({
+        cached: nativeRunSnapshot,
+        loadPage: ({ offset, limit, knownRevision }) =>
+          invoke<MediaRunPage>("media_list_run_page", {
+            offset,
+            limit,
+            knownRevision,
+          }),
+      }).then((snapshot) => {
+        nativeRunSnapshot = snapshot;
+        return snapshot;
+      });
+      nativeRunSnapshotRequest = request;
+      const clearRequest = (): void => {
+        if (nativeRunSnapshotRequest === request) {
+          nativeRunSnapshotRequest = null;
+        }
+      };
+      void request.then(clearRequest, clearRequest);
+    }
+    const [snapshot, updates] = await Promise.all([
+      nativeRunSnapshotRequest,
+      invoke<MediaRuntimeRunRecord[]>("media_list_runs", { limit: 100 }),
+    ]);
+    const items = mergeMediaRunUpdates(snapshot.items, updates);
+    if (nativeRunSnapshot?.revision === snapshot.revision) {
+      nativeRunSnapshot = { revision: snapshot.revision, items };
+    }
+    return items;
   }
   return [...browserRuns.values()]
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -2405,7 +2493,28 @@ export const retryMediaFixtureRun = async (
 
 export const listMediaAssets = async (): Promise<MediaAssetRecord[]> => {
   if (canInvokeNativeRuntime()) {
-    return invoke<MediaAssetRecord[]>("media_list_assets", { limit: 200 });
+    if (!nativeAssetSnapshotRequest) {
+      const request = collectMediaAssetPages({
+        cached: nativeAssetSnapshot,
+        loadPage: ({ offset, limit, knownRevision }) =>
+          invoke<MediaAssetPage>("media_list_asset_page", {
+            offset,
+            limit,
+            knownRevision,
+          }),
+      }).then((snapshot) => {
+        nativeAssetSnapshot = snapshot;
+        return snapshot;
+      });
+      nativeAssetSnapshotRequest = request;
+      const clearRequest = (): void => {
+        if (nativeAssetSnapshotRequest === request) {
+          nativeAssetSnapshotRequest = null;
+        }
+      };
+      void request.then(clearRequest, clearRequest);
+    }
+    return (await nativeAssetSnapshotRequest).items;
   }
   return [...browserRuns.values()]
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -2489,7 +2598,11 @@ export const readMediaAssetPreview = async (
   asset: MediaAssetRecord,
   maxEdge = 512,
 ): Promise<Blob> => {
-  if (asset.kind !== "image" && asset.kind !== "vector") {
+  if (
+    asset.kind !== "image" &&
+    asset.kind !== "vector" &&
+    asset.kind !== "video"
+  ) {
     throw new Error(`Media asset ${asset.id} does not have a visual preview.`);
   }
   if (canInvokeNativeRuntime()) {
@@ -2497,7 +2610,12 @@ export const readMediaAssetPreview = async (
       assetId: asset.id,
       maxEdge,
     });
-    return new Blob([bytes], { type: "image/webp" });
+    return new Blob([bytes], {
+      type: asset.kind === "video" ? asset.mimeType : "image/webp",
+    });
+  }
+  if (asset.kind === "video") {
+    throw new Error("Video playback is available in the native desktop app only.");
   }
 
   const primary = `#${asset.digest.slice(0, 6)}`;
@@ -2510,6 +2628,7 @@ export const readMediaAssetPreview = async (
 export const readMediaAssetReferencePreview = async (
   assetId: string,
   maxEdge = 512,
+  mimeType: MediaAssetRecord["mimeType"] = "image/webp",
 ): Promise<Blob> => {
   const normalizedAssetId = assetId.trim();
   if (!normalizedAssetId) {
@@ -2520,7 +2639,7 @@ export const readMediaAssetReferencePreview = async (
       assetId: normalizedAssetId,
       maxEdge,
     });
-    return new Blob([bytes], { type: "image/webp" });
+    return new Blob([bytes], { type: mimeType });
   }
   return readMediaAssetPreview(findBrowserAsset(normalizedAssetId).asset, maxEdge);
 };

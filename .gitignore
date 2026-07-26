@@ -60,3 +60,12 @@ temp/
 
 # Machdoch config
 .machdoch
+
+# Model folder
+models/
+
+# Developer-only accelerator runtimes are assembled locally and are never
+# shipped from the source tree.
+src-tauri/python/runtime/
+__pycache__/
+*.py[cod]

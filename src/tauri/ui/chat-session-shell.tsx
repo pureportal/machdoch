@@ -20,7 +20,6 @@ import { ChatInputNeededDialog } from "./chat-session/components/chat-input-need
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
 import { MissionControlPanel } from "./chat-session/components/mission-control-panel";
-import { OnboardingWizard } from "./chat-session/components/onboarding-wizard";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
 import { SchedulerPanel } from "./chat-session/components/scheduler-panel";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
@@ -58,6 +57,16 @@ const SettingsDialog = lazy(async () => {
 
   return {
     default: module.SettingsDialog,
+  };
+});
+
+const OnboardingWizard = lazy(async () => {
+  const module = await import(
+    "./chat-session/components/onboarding-wizard"
+  );
+
+  return {
+    default: module.OnboardingWizard,
   };
 });
 
@@ -135,8 +144,10 @@ const toActivityState = (
 };
 
 export const ChatSession = (): JSX.Element => {
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const controller = useChatSessionController({
     fileDropTarget: "active-session",
+    settingsSurfaceOpen: onboardingOpen,
   });
   const appearance = useAppearanceSettings();
   const [appShellState, setAppShellState] = useState<AppShellState>(
@@ -146,7 +157,6 @@ export const ChatSession = (): JSX.Element => {
   const [appShellLoadError, setAppShellLoadError] = useState<string | null>(null);
   const [appShellLoadAttempt, setAppShellLoadAttempt] = useState(0);
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
-  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(null);
   const [pendingMediaSection, setPendingMediaSection] = useState<
@@ -370,6 +380,7 @@ export const ChatSession = (): JSX.Element => {
     const timestamp = Date.now();
 
     try {
+      await controller.flushPersistence();
       await retryAppShellStorageOperation(() =>
         saveOnboardingState({
           version: 1,
@@ -380,6 +391,7 @@ export const ChatSession = (): JSX.Element => {
       setOnboardingOpen(false);
     } catch (error) {
       console.error("Failed to persist onboarding completion", error);
+      throw error;
     }
   };
 
@@ -421,32 +433,63 @@ export const ChatSession = (): JSX.Element => {
           />
 
           {onboardingOpen && !controller.catalogOpen ? (
-            <OnboardingWizard
-              activeSession={controller.composer.activeSession}
-              chooserProviders={controller.composer.chooserProviders}
-              hasAnyProvider={controller.hasAnyProvider}
-              isUiControlAvailable={controller.composer.isUiControlAvailable}
-              uiControlDescription={controller.composer.uiControlDescription}
-              providerSetup={controller.settingsDialog.providerSetup}
-              desktopSetup={controller.settingsDialog.desktopSetup}
-              voiceSetup={controller.settingsDialog.voiceSetup}
-              onSelectFolder={controller.composer.onSelectFolder}
-              onSessionModelSelection={
-                controller.composer.onSessionModelSelection
+            <Suspense
+              fallback={
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
+                >
+                  Preparing settings…
+                </div>
               }
-              onSessionModeSelection={
-                controller.composer.onSessionModeSelection
-              }
-              onUiControlEnabledChange={
-                controller.composer.onUiControlEnabledChange
-              }
-              onFinish={() => {
-                void closeOnboarding(false);
-              }}
-              onSkip={() => {
-                void closeOnboarding(true);
-              }}
-            />
+            >
+              <OnboardingWizard
+                activeSession={controller.composer.activeSession}
+                chooserProviders={controller.composer.chooserProviders}
+                hasAnyProvider={controller.hasAnyProvider}
+                isUiControlAvailable={
+                  controller.composer.isUiControlAvailable
+                }
+                uiControlDescription={
+                  controller.composer.uiControlDescription
+                }
+                settingsSection={controller.settingsDialog.settingsSection}
+                onSettingsSectionChange={
+                  controller.settingsDialog.onSettingsSectionChange
+                }
+                providerSetup={controller.settingsDialog.providerSetup}
+                workspaceSetup={controller.settingsDialog.workspaceSetup}
+                instructionsSetup={
+                  controller.settingsDialog.instructionsSetup
+                }
+                webSearchSetup={controller.settingsDialog.webSearchSetup}
+                mcpSetup={controller.settingsDialog.mcpSetup}
+                agentLimitsSetup={
+                  controller.settingsDialog.agentLimitsSetup
+                }
+                appearanceSetup={appearance}
+                memorySetup={controller.settingsDialog.memorySetup}
+                desktopSetup={controller.settingsDialog.desktopSetup}
+                voiceSetup={controller.settingsDialog.voiceSetup}
+                onSelectFolder={controller.composer.onSelectFolder}
+                onSessionModelSelection={
+                  controller.composer.onSessionModelSelection
+                }
+                onSessionModeSelection={
+                  controller.composer.onSessionModeSelection
+                }
+                onUiControlEnabledChange={
+                  controller.composer.onUiControlEnabledChange
+                }
+                onFinish={() => {
+                  return closeOnboarding(false);
+                }}
+                onSkip={() => {
+                  return closeOnboarding(true);
+                }}
+              />
+            </Suspense>
           ) : null}
 
           {controller.voiceInputOverlay.visible ? (

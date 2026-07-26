@@ -14,13 +14,6 @@ import {
 export const DEFAULT_PROVIDER_ENROLLMENT_CONFIG: ProviderEnrollmentConfig = {
   schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
   enabled: true,
-  instructions: {
-    mode: "native-when-available",
-    unmanagedNative: "adopt",
-    strictConflicts: false,
-    fallback: "automatic",
-    failOnTruncation: false,
-  },
   mcp: {
     mode: "direct-native",
     fallback: "per-server-stdio-proxy",
@@ -60,19 +53,6 @@ export const normalizeProviderEnrollmentConfig = (
 ): ProviderEnrollmentConfig => ({
   schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
   enabled: value?.enabled ?? DEFAULT_PROVIDER_ENROLLMENT_CONFIG.enabled,
-  instructions: {
-    mode: "native-when-available",
-    unmanagedNative:
-      value?.instructions?.unmanagedNative ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.instructions.unmanagedNative,
-    strictConflicts:
-      value?.instructions?.strictConflicts ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.instructions.strictConflicts,
-    fallback: "automatic",
-    failOnTruncation:
-      value?.instructions?.failOnTruncation ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.instructions.failOnTruncation,
-  },
   mcp: {
     mode: "direct-native",
     fallback: "per-server-stdio-proxy",
@@ -184,15 +164,28 @@ export const saveProviderEnrollmentConfig = async (
 export const setPersistentProviderSyncEnabled = async (
   enabled: boolean,
 ): Promise<ProviderEnrollmentConfig> => {
-  const config = await loadProviderEnrollmentConfig();
-  const updated: ProviderEnrollmentConfig = {
-    ...config,
-    enabled: enabled ? true : config.enabled,
-    persistentSync: {
-      ...config.persistentSync,
-      enabled,
-    },
-  };
-  await saveProviderEnrollmentConfig(updated);
+  const path = getUserConfigPath();
+  let updated: ProviderEnrollmentConfig | undefined;
+  await withCooperativeFileLock(path, async () => {
+    const userConfig = await loadUserConfig();
+    const config = normalizeProviderEnrollmentConfig(
+      userConfig.providerEnrollment,
+    );
+    updated = {
+      ...config,
+      enabled: enabled ? true : config.enabled,
+      persistentSync: {
+        ...config.persistentSync,
+        enabled,
+      },
+    };
+    await writeJsonAtomically(path, {
+      ...userConfig,
+      providerEnrollment: updated,
+    } satisfies UserConfigFile);
+  });
+  if (!updated) {
+    throw new Error("Provider sync configuration update did not complete.");
+  }
   return updated;
 };

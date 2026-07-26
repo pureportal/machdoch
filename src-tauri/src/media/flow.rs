@@ -496,7 +496,7 @@ pub(crate) fn list(paths: &MediaRuntimePaths) -> MediaResult<Vec<MediaFlowHead>>
         .prepare(
             "SELECT id, name, description, head_revision_id, head_revision_number, created_at,
                     updated_at, document_digest, execution_digest, layout_digest
-             FROM flows ORDER BY updated_at DESC, id ASC LIMIT 100",
+             FROM flows ORDER BY updated_at DESC, id ASC",
         )
         .map_err(|error| format!("failed to prepare flow catalog query: {error}"))?;
     let heads = statement
@@ -2647,8 +2647,10 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
             node_type,
             "source.prompt"
                 | "source.image"
+                | "source.animated-background"
                 | "task.generate-image"
                 | "task.edit-image"
+                | "task.generate-video"
                 | "operation.crop"
                 | "operation.resize"
                 | "operation.format-convert"
@@ -2658,10 +2660,12 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "operation.subject-cutout"
                 | "operation.alpha-matte"
                 | "operation.composite"
+                | "operation.video-composite"
                 | "operation.quality-analyze"
                 | "control.quality-gate"
                 | "control.human-review"
                 | "output.asset"
+                | "output.video"
         )
 }
 
@@ -3010,8 +3014,8 @@ impl MediaFlowDocument {
                 .ok_or_else(|| format!("flow edge {} uses an unsupported target port", edge.id))?;
             if output_type != input_type {
                 return Err(format!(
-                    "flow edge {} connects incompatible port types",
-                    edge.id
+                    "flow edge {} connects incompatible port types ({output_type} to {input_type})",
+                    edge.id,
                 ));
             }
             if !connections.insert((
@@ -3046,6 +3050,17 @@ impl MediaFlowDocument {
                 .entry(edge.from_node_id.as_str())
                 .or_default()
                 .push(edge.to_node_id.as_str());
+        }
+        for node in &self.nodes {
+            if node.r#type == "task.generate-video"
+                && incoming_ports.contains_key(&(node.id.as_str(), "last-frame"))
+                && !incoming_ports.contains_key(&(node.id.as_str(), "first-frame"))
+            {
+                return Err(format!(
+                    "flow node {} requires first-frame whenever last-frame is connected",
+                    node.id
+                ));
+            }
         }
         for node in &self.nodes {
             let is_svg_vectorization = svg_vectorization_nodes.contains(node.id.as_str());
@@ -3365,8 +3380,8 @@ impl MediaFlowNode {
             ));
         }
         let expected_layer = match self.r#type.as_str() {
-            "source.prompt" | "source.image" => "source",
-            "task.generate-image" | "task.edit-image" => "task",
+            "source.prompt" | "source.image" | "source.animated-background" => "source",
+            "task.generate-image" | "task.edit-image" | "task.generate-video" => "task",
             "operation.crop"
             | "operation.resize"
             | "operation.format-convert"
@@ -3376,9 +3391,10 @@ impl MediaFlowNode {
             | "operation.subject-cutout"
             | "operation.alpha-matte"
             | "operation.composite"
+            | "operation.video-composite"
             | "operation.quality-analyze" => "operation",
             "control.quality-gate" | "control.human-review" => "control",
-            "output.asset" => "output",
+            "output.asset" | "output.video" => "output",
             _ => return Err(format!("flow node {} has an unsupported type", self.id)),
         };
         if self.layer != expected_layer {
@@ -3703,7 +3719,12 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "outputCount",
                         "outputFormat",
                         "editStrength",
+                        "referenceBoost",
+                        "requireChromaBackground",
+                        "referenceFit",
+                        "groundingPixels",
                         "modelAddons",
+                        "memoryProfile",
                     ]
                 } else {
                     &[
@@ -3722,6 +3743,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "svgCandidateCount",
                         "svgCriticEnabled",
                         "modelAddons",
+                        "memoryProfile",
                     ]
                 },
             )?;
@@ -3833,6 +3855,203 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         node.id
                     ));
                 }
+                if let Some(reference_boost) = node.config.get("referenceBoost") {
+                    let reference_boost = reference_boost.as_f64().ok_or_else(|| {
+                        format!("flow node {} referenceBoost must be numeric", node.id)
+                    })?;
+                    if !reference_boost.is_finite() || !(0.25..=8.0).contains(&reference_boost) {
+                        return Err(format!(
+                            "flow node {} referenceBoost must be between 0.25 and 8",
+                            node.id
+                        ));
+                    }
+                }
+                if node.config.contains_key("requireChromaBackground") {
+                    config_bool(node, "requireChromaBackground")?;
+                }
+                if node.config.contains_key("referenceFit") {
+                    config_enum(node, "referenceFit", &["fit", "crop"])?;
+                }
+                if let Some(grounding_pixels) = node.config.get("groundingPixels") {
+                    let grounding_pixels = grounding_pixels.as_u64().ok_or_else(|| {
+                        format!("flow node {} groundingPixels must be an integer", node.id)
+                    })?;
+                    if !(384..=1_024).contains(&grounding_pixels) {
+                        return Err(format!(
+                            "flow node {} groundingPixels must be between 384 and 1024",
+                            node.id
+                        ));
+                    }
+                }
+            }
+            if node.config.contains_key("memoryProfile") {
+                config_enum(
+                    node,
+                    "memoryProfile",
+                    &["auto", "memory-saver", "balanced", "maximum-speed"],
+                )?;
+            }
+            Ok(())
+        }
+        "source.animated-background" => {
+            validate_config_keys(
+                node,
+                &["style", "direction", "colorStart", "colorEnd", "cycles"],
+            )?;
+            config_enum(node, "style", &["gradient-wave", "enchanted-beach"])?;
+            config_enum(node, "direction", &["horizontal", "vertical", "diagonal"])?;
+            for key in ["colorStart", "colorEnd"] {
+                let color = config_string(node, key, 7, false)?;
+                if color.len() != 7
+                    || !color.starts_with('#')
+                    || !color[1..]
+                        .chars()
+                        .all(|character| character.is_ascii_hexdigit())
+                {
+                    return Err(format!(
+                        "flow node {} {key} must be a six-digit hex color",
+                        node.id
+                    ));
+                }
+            }
+            let cycles = node
+                .config
+                .get("cycles")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("flow node {} requires integer cycles", node.id))?;
+            if !(1..=4).contains(&cycles) {
+                return Err(format!(
+                    "flow node {} cycles must be between 1 and 4",
+                    node.id
+                ));
+            }
+            Ok(())
+        }
+        "task.generate-video" => {
+            validate_config_keys(
+                node,
+                &[
+                    "providerPolicy",
+                    "modelPolicy",
+                    "modelId",
+                    "aspectRatio",
+                    "durationSeconds",
+                    "resolution",
+                    "generateAudio",
+                    "transparentBackground",
+                    "loopMode",
+                    "fps",
+                    "numFrames",
+                    "numInferenceSteps",
+                    "guidanceScale",
+                    "negativePrompt",
+                    "matteQuality",
+                    "encodingQuality",
+                    "memoryProfile",
+                    "experimentalLowMemory",
+                ],
+            )?;
+            config_enum(node, "providerPolicy", &["local"])?;
+            config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
+            if config_string(node, "modelId", 256, false)? != "local:wan2.2-ti2v-5b" {
+                return Err(format!(
+                    "flow node {} must pin local:wan2.2-ti2v-5b",
+                    node.id
+                ));
+            }
+            config_enum(node, "aspectRatio", &["1:1", "16:9", "9:16", "21:9"])?;
+            let duration_seconds = node
+                .config
+                .get("durationSeconds")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| {
+                    format!("flow node {} requires an integer durationSeconds", node.id)
+                })?;
+            if !(1..=30).contains(&duration_seconds) {
+                return Err(format!(
+                    "flow node {} durationSeconds must be between 1 and 30",
+                    node.id
+                ));
+            }
+            config_enum(
+                node,
+                "resolution",
+                &["preview-512", "quality-640", "quality-768"],
+            )?;
+            for key in [
+                "generateAudio",
+                "transparentBackground",
+                "experimentalLowMemory",
+            ] {
+                config_bool(node, key)?;
+            }
+            if node.config.get("generateAudio").and_then(Value::as_bool) != Some(false)
+                || node
+                    .config
+                    .get("experimentalLowMemory")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+            {
+                return Err(format!(
+                    "flow node {} requires audio=false and explicit experimental low-memory acknowledgement",
+                    node.id
+                ));
+            }
+            config_enum(node, "loopMode", &["none", "ping-pong", "seamless"])?;
+            for (key, minimum, maximum) in [("fps", 1_u64, 60_u64), ("numInferenceSteps", 4, 50)] {
+                let value = node
+                    .config
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| format!("flow node {} requires integer {key}", node.id))?;
+                if !(minimum..=maximum).contains(&value) {
+                    return Err(format!(
+                        "flow node {} {key} must be between {minimum} and {maximum}",
+                        node.id
+                    ));
+                }
+            }
+            let num_frames = node
+                .config
+                .get("numFrames")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("flow node {} requires integer numFrames", node.id))?;
+            if !(17..=33).contains(&num_frames) || (num_frames - 1) % 4 != 0 {
+                return Err(format!(
+                    "flow node {} numFrames must be between 17 and 33 in 4k+1 form",
+                    node.id
+                ));
+            }
+            if let Some(guidance_scale) = node.config.get("guidanceScale") {
+                let guidance_scale = guidance_scale.as_f64().ok_or_else(|| {
+                    format!("flow node {} guidanceScale must be numeric", node.id)
+                })?;
+                if !guidance_scale.is_finite() || !(1.0..=10.0).contains(&guidance_scale) {
+                    return Err(format!(
+                        "flow node {} guidanceScale must be between 1 and 10",
+                        node.id
+                    ));
+                }
+            }
+            if node.config.contains_key("negativePrompt") {
+                config_multiline_string(node, "negativePrompt", 8_000, true)?;
+            }
+            if node.config.contains_key("matteQuality") {
+                config_enum(node, "matteQuality", &["fast", "balanced", "production"])?;
+            }
+            if node.config.contains_key("encodingQuality") {
+                config_enum(
+                    node,
+                    "encodingQuality",
+                    &["draft", "balanced", "production", "lossless"],
+                )?;
+            }
+            if node.config.contains_key("memoryProfile") {
+                config_enum(
+                    node,
+                    "memoryProfile",
+                    &["auto", "memory-saver", "balanced", "maximum-speed"],
+                )?;
             }
             Ok(())
         }
@@ -4047,6 +4266,18 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             }
             Ok(())
         }
+        "operation.video-composite" => {
+            validate_config_keys(node, &["alphaMode"])?;
+            config_enum(node, "alphaMode", &["straight"])
+        }
+        "output.video" => {
+            validate_config_keys(node, &["format", "role"])?;
+            config_enum(node, "format", &["webm"])?;
+            if node.config.contains_key("role") {
+                config_enum(node, "role", &["transparent", "opaque", "composited"])?;
+            }
+            Ok(())
+        }
         _ => unreachable!("node type was validated before config"),
     }
 }
@@ -4117,11 +4348,15 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
     match (node_type, output, port_id) {
         ("source.prompt", true, "prompt") => Some("prompt"),
         ("source.image", true, "image") => Some("image"),
+        ("source.animated-background", true, "video") => Some("video"),
         ("task.generate-image", false, "prompt") => Some("prompt"),
         ("task.generate-image", false, "image") => Some("image"),
         ("task.generate-image", true, "image") => Some("image"),
         ("task.edit-image", false, "prompt") => Some("prompt"),
         ("task.edit-image", false | true, "image") => Some("image"),
+        ("task.generate-video", false, "prompt") => Some("prompt"),
+        ("task.generate-video", false, "first-frame" | "last-frame") => Some("image"),
+        ("task.generate-video", true, "video") => Some("video"),
         ("operation.crop", false | true, "image") => Some("image"),
         ("operation.resize", false | true, "image") => Some("image"),
         ("operation.format-convert", false | true, "image") => Some("image"),
@@ -4132,13 +4367,18 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
         ("operation.alpha-matte", false | true, "image") => Some("image"),
         ("operation.composite", false, "foreground" | "background") => Some("image"),
         ("operation.composite", true, "image") => Some("image"),
+        ("operation.video-composite", false, "foreground-video" | "background-video") => {
+            Some("video")
+        }
+        ("operation.video-composite", true, "video") => Some("video"),
         ("operation.quality-analyze", false, "image") => Some("image"),
-        ("operation.quality-analyze", true, "report") => Some("report"),
+        ("operation.quality-analyze", true, "report") => Some("quality-report"),
         ("control.quality-gate", false, "image") => Some("image"),
-        ("control.quality-gate", false, "report") => Some("report"),
+        ("control.quality-gate", false, "report") => Some("quality-report"),
         ("control.quality-gate", true, "image") => Some("image"),
         ("control.human-review", false | true, "image") => Some("image"),
         ("output.asset", false, "image") => Some("image"),
+        ("output.video", false, "video") => Some("video"),
         _ => None,
     }
 }
@@ -4169,8 +4409,8 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         return &["image"];
     }
     match node_type {
-        "source.prompt" | "source.image" => &[],
-        "task.generate-image" => &["prompt"],
+        "source.prompt" | "source.image" | "source.animated-background" => &[],
+        "task.generate-image" | "task.generate-video" => &["prompt"],
         "task.edit-image" => &["prompt", "image"],
         "operation.crop"
         | "operation.resize"
@@ -4183,8 +4423,10 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         | "operation.quality-analyze"
         | "control.human-review"
         | "output.asset" => &["image"],
+        "output.video" => &["video"],
         "control.quality-gate" => &["image", "report"],
         "operation.composite" => &["foreground", "background"],
+        "operation.video-composite" => &["foreground-video", "background-video"],
         _ => &[],
     }
 }
@@ -4193,6 +4435,7 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
     match node_type {
         "source.prompt" => &["prompt"],
         "source.image" => &["image"],
+        "source.animated-background" => &["video"],
         "task.generate-image"
         | "task.edit-image"
         | "operation.crop"
@@ -4206,8 +4449,10 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         | "operation.composite"
         | "control.quality-gate"
         | "control.human-review" => &["image"],
+        "task.generate-video" => &["video"],
+        "operation.video-composite" => &["video"],
         "operation.quality-analyze" => &["report"],
-        "output.asset" => &[],
+        "output.asset" | "output.video" => &[],
         _ => &[],
     }
 }
@@ -4839,101 +5084,6 @@ mod tests {
     }
 
     #[test]
-    fn validates_visual_group_membership_and_layout_identity() {
-        let mut grouped = request("visual-group", None, "Grouped flow");
-        let original_digest = digest_value(&layout_projection(&grouped.layout)).unwrap();
-        grouped.layout.groups.push(MediaFlowLayoutGroup {
-            id: "group-1".to_string(),
-            label: "Generation chain".to_string(),
-            color: "violet".to_string(),
-            collapsed: true,
-            node_ids: vec!["prompt".to_string(), "generate".to_string()],
-        });
-        assert!(grouped.validate().is_ok());
-        assert_ne!(
-            digest_value(&layout_projection(&grouped.layout)).unwrap(),
-            original_digest
-        );
-
-        grouped.layout.groups.push(MediaFlowLayoutGroup {
-            id: "group-2".to_string(),
-            label: "Overlapping group".to_string(),
-            color: "cyan".to_string(),
-            collapsed: false,
-            node_ids: vec!["generate".to_string(), "output".to_string()],
-        });
-        assert!(grouped
-            .validate()
-            .unwrap_err()
-            .contains("unknown, duplicate, or overlapping node"));
-    }
-
-    #[test]
-    fn validates_canvas_comments_and_layout_identity() {
-        let mut commented = request("canvas-comment", None, "Commented flow");
-        let original_digest = digest_value(&layout_projection(&commented.layout)).unwrap();
-        commented.layout.comments.push(MediaFlowLayoutComment {
-            id: "comment-1".to_string(),
-            body: "Review glass edges before export".to_string(),
-            color: "amber".to_string(),
-            x: 120.0,
-            y: 180.0,
-            width: 240.0,
-            height: 120.0,
-        });
-        assert!(commented.validate().is_ok());
-        assert_ne!(
-            digest_value(&layout_projection(&commented.layout)).unwrap(),
-            original_digest
-        );
-
-        commented.layout.comments[0].width = 100.0;
-        assert!(commented
-            .validate()
-            .unwrap_err()
-            .contains("geometry is outside safe bounds"));
-    }
-
-    #[test]
-    fn raw_and_typed_layout_projections_match_for_annotations() {
-        let raw = json!({
-            "schemaVersion": 1,
-            "flowId": "flow:test",
-            "nodes": [
-                {"nodeId":"output","x":500.0,"y":0.0},
-                {"nodeId":"prompt","x":0.0,"y":0.0},
-                {"nodeId":"generate","x":250.0,"y":0.0}
-            ],
-            "groups": [
-                {
-                    "id":"group-2","label":"Later","color":"cyan","collapsed":false,
-                    "nodeIds":["output","generate"]
-                },
-                {
-                    "id":"group-1","label":"Earlier","color":"violet","collapsed":true,
-                    "nodeIds":["prompt","generate"]
-                }
-            ],
-            "comments": [
-                {
-                    "id":"comment-2","body":"Second","color":"slate",
-                    "x":40.0,"y":400.0,"width":240.0,"height":120.0
-                },
-                {
-                    "id":"comment-1","body":"First","color":"amber",
-                    "x":20.0,"y":300.0,"width":320.0,"height":180.0
-                }
-            ]
-        });
-        let typed = serde_json::from_value::<MediaFlowLayoutDocument>(raw.clone()).unwrap();
-
-        assert_eq!(
-            digest_value(&raw_layout_projection(&raw).unwrap()).unwrap(),
-            digest_value(&layout_projection(&typed)).unwrap()
-        );
-    }
-
-    #[test]
     fn validates_typed_variables_presets_and_execution_identity() {
         let mut parameterized = request("typed-variable", None, "Parameterized flow");
         let baseline_execution = digest_value(&execution_projection(&parameterized.flow)).unwrap();
@@ -5184,7 +5334,7 @@ mod tests {
                 {"id":"prompt","type":"source.prompt","version":1,"label":"Instructions","layer":"source","config":{"prompt":"Preserve the subject and apply the style reference"}},
                 {"id":"base","type":"source.image","version":1,"label":"Base","layer":"source","config":{"assetId":"asset:base","referenceRole":"base","influence":1.0}},
                 {"id":"style","type":"source.image","version":1,"label":"Style","layer":"source","config":{"assetId":"asset:style","referenceRole":"style","influence":0.45}},
-                {"id":"edit","type":"task.edit-image","version":1,"label":"Edit","layer":"task","config":{"providerPolicy":"auto","modelPolicy":"balanced","modelId":null,"aspectRatio":"1:1","outputCount":1,"outputFormat":"png","editStrength":0.65}},
+                {"id":"edit","type":"task.edit-image","version":1,"label":"Edit","layer":"task","config":{"providerPolicy":"auto","modelPolicy":"balanced","modelId":null,"aspectRatio":"1:1","outputCount":1,"outputFormat":"png","editStrength":0.65,"referenceBoost":2.0,"requireChromaBackground":false,"referenceFit":"fit","groundingPixels":768,"memoryProfile":"auto"}},
                 {"id":"output","type":"output.asset","version":1,"label":"Output","layer":"output","config":{"format":"png","outputCount":1}}
             ],
             "edges": [
@@ -5212,6 +5362,66 @@ mod tests {
                 "ingest-asset",
             ]
         );
+    }
+
+    #[test]
+    fn validates_explicit_image_to_video_ports_and_frame_pairing() {
+        let flow = serde_json::from_value::<MediaFlowDocument>(json!({
+            "schemaVersion": 1,
+            "id": "flow:image-to-video",
+            "name": "Animate image",
+            "description": "",
+            "createdAt": "2026-07-14T00:00:00.000Z",
+            "updatedAt": "2026-07-14T00:00:00.000Z",
+            "nodes": [
+                {"id":"prompt","type":"source.prompt","version":1,"label":"Motion brief","layer":"source","config":{"prompt":"A slow camera orbit"}},
+                {"id":"first","type":"source.image","version":1,"label":"First frame","layer":"source","config":{"assetId":"asset:first","referenceRole":"base","influence":1.0}},
+                {"id":"last","type":"source.image","version":1,"label":"Last frame","layer":"source","config":{"assetId":"asset:last","referenceRole":"composition","influence":1.0}},
+                {"id":"generate","type":"task.generate-video","version":1,"label":"Animate","layer":"task","config":{"providerPolicy":"local","modelPolicy":"quality","modelId":"local:wan2.2-ti2v-5b","aspectRatio":"21:9","durationSeconds":2,"resolution":"quality-768","generateAudio":false,"transparentBackground":false,"loopMode":"none","fps":24,"numFrames":33,"numInferenceSteps":24,"guidanceScale":5.5,"negativePrompt":"identity drift, texture crawl","matteQuality":"production","encodingQuality":"lossless","memoryProfile":"memory-saver","experimentalLowMemory":true}},
+                {"id":"output","type":"output.video","version":1,"label":"Save video","layer":"output","config":{"format":"webm","role":"opaque"}}
+            ],
+            "edges": [
+                {"id":"prompt-generate","fromNodeId":"prompt","fromPortId":"prompt","toNodeId":"generate","toPortId":"prompt"},
+                {"id":"first-generate","fromNodeId":"first","fromPortId":"image","toNodeId":"generate","toPortId":"first-frame"},
+                {"id":"last-generate","fromNodeId":"last","fromPortId":"image","toNodeId":"generate","toPortId":"last-frame"},
+                {"id":"generate-output","fromNodeId":"generate","fromPortId":"video","toNodeId":"output","toPortId":"video"}
+            ]
+        }))
+        .unwrap();
+
+        assert!(flow.validate().is_ok());
+
+        let mut invalid_frame_count = flow.clone();
+        invalid_frame_count
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "generate")
+            .unwrap()
+            .config
+            .insert("numFrames".to_string(), json!(32));
+        assert!(invalid_frame_count.validate().unwrap_err().contains("4k+1"));
+
+        let mut missing_first_frame = flow.clone();
+        missing_first_frame
+            .edges
+            .retain(|edge| edge.to_port_id != "first-frame");
+        assert!(missing_first_frame
+            .validate()
+            .unwrap_err()
+            .contains("requires first-frame whenever last-frame is connected"));
+
+        let mut ambiguous_media_connection = flow;
+        let output_edge = ambiguous_media_connection
+            .edges
+            .iter_mut()
+            .find(|edge| edge.id == "generate-output")
+            .unwrap();
+        output_edge.from_node_id = "first".to_string();
+        output_edge.from_port_id = "image".to_string();
+        assert!(ambiguous_media_connection
+            .validate()
+            .unwrap_err()
+            .contains("incompatible port types"));
     }
 
     #[test]

@@ -56,8 +56,6 @@ describe("parseRalphFlowRecord", () => {
           id: "start",
           type: "START",
           title: "Start",
-          position: { x: 1, y: 2 },
-          size: { width: 320, height: 180 },
           settings: {
             workspace: { mode: "custom", path: "." },
             provider: "default",
@@ -96,33 +94,6 @@ describe("parseRalphFlowRecord", () => {
           arguments: { owner: "local", count: 1 },
         },
         {
-          id: "note",
-          type: "NOTE",
-          title: "Note",
-          text: " ",
-          content: "Use this note body.",
-          tone: "rose",
-          tags: ["risk", 1],
-          collapsed: true,
-          pinnedBlockIds: ["start", 2],
-        },
-        {
-          id: "group",
-          type: "GROUP",
-          title: "Group",
-          description: "Section",
-          childBlockIds: ["decide", 3],
-          collapsed: false,
-          locked: true,
-          moveChildren: false,
-          maxDepth: 2.8,
-          layoutMode: "stack",
-          executionBoundary: {
-            mode: "selectedChild",
-            blockId: "decide",
-          },
-        },
-        {
           id: "end",
           type: "END",
           title: "End",
@@ -132,9 +103,6 @@ describe("parseRalphFlowRecord", () => {
       edges: [
         { id: "start-to-decide", from: "start", fromOutput: "SUCCESS", to: "decide" },
         "ignored",
-      ],
-      annotationLinks: [
-        { id: "link-1", from: "note", to: "group", kind: "evidence" },
       ],
     });
 
@@ -179,17 +147,12 @@ describe("parseRalphFlowRecord", () => {
       edges: [
         { id: "start-to-decide", from: "start", fromOutput: "SUCCESS", to: "decide" },
       ],
-      annotationLinks: [
-        { id: "link-1", from: "note", to: "group", kind: "evidence" },
-      ],
     });
-    expect(flow.blocks).toHaveLength(7);
+    expect(flow.blocks).toHaveLength(5);
     expect(flow.blocks[0]).toMatchObject({
       id: "start",
       type: "START",
       title: "Start",
-      position: { x: 1, y: 2 },
-      size: { width: 320, height: 180 },
       settings: {
         workspace: { mode: "custom", path: "." },
         provider: "default",
@@ -222,23 +185,6 @@ describe("parseRalphFlowRecord", () => {
       arguments: { owner: "local", count: 1 },
     });
     expect(flow.blocks[4]).toMatchObject({
-      id: "note",
-      type: "NOTE",
-      text: "Use this note body.",
-      tone: "rose",
-      tags: ["risk"],
-      collapsed: true,
-      pinnedBlockIds: ["start"],
-    });
-    expect(flow.blocks[5]).toMatchObject({
-      id: "group",
-      type: "GROUP",
-      childBlockIds: ["decide"],
-      maxDepth: 2,
-      layoutMode: "stack",
-      executionBoundary: { mode: "selectedChild", blockId: "decide" },
-    });
-    expect(flow.blocks[6]).toMatchObject({
       id: "end",
       type: "END",
       status: "review",
@@ -266,15 +212,6 @@ describe("parseRalphFlowRecord", () => {
           prompt: 7,
         },
         {
-          id: "group",
-          type: "GROUP",
-          title: "Group",
-          childBlockIds: [1],
-          maxDepth: 3.9,
-          layoutMode: "grid",
-          executionBoundary: { mode: "unsupported", blockId: "child" },
-        },
-        {
           id: "end",
           type: "END",
           title: "End",
@@ -282,7 +219,6 @@ describe("parseRalphFlowRecord", () => {
         },
       ],
       edges: [null, { id: 1, from: 2, fromOutput: 3, to: 4 }],
-      annotationLinks: [null, { id: 1, from: 2, to: 3, kind: "unsupported" }],
     });
 
     expect(flow).toEqual({
@@ -292,19 +228,9 @@ describe("parseRalphFlowRecord", () => {
       variables: [{ name: "", type: "path", required: true }],
       blocks: [
         { id: "", title: "", type: "PROMPT", prompt: "" },
-        {
-          id: "group",
-          title: "Group",
-          type: "GROUP",
-          childBlockIds: [],
-          maxDepth: 3,
-          layoutMode: "freeform",
-          executionBoundary: { mode: "none", blockId: "child" },
-        },
         { id: "end", title: "End", type: "END", status: "success" },
       ],
       edges: [{ id: "", from: "", fromOutput: "", to: "" }],
-      annotationLinks: [{ id: "", from: "", to: "", kind: "explains" }],
     });
   });
 });

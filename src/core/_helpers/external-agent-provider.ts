@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { extname } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
-import { compileInstructionBundle } from "../provider-enrollment/instruction-compiler.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
 import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
 import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
@@ -32,6 +31,12 @@ import type {
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 import { normalizeLocalCommandCwd } from "./process-execution.js";
 import { createTextSection, limitText } from "./runtime-text.js";
+import {
+  assertInstructionInvocationBudget,
+  assertInstructionDeliveryReceiptCertain,
+  createInstructionDeliveryReceipt,
+} from "../instruction-system/delivery.js";
+import { canonicalDigest } from "../instruction-system/normalization.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
@@ -52,7 +57,6 @@ const MAX_ACTION_OUTPUT_BATCH_CHARS = 32_000;
 const ACTION_OUTPUT_BATCH_INTERVAL_MS = 150;
 const MAX_EXTERNAL_AGENT_PROMPT_CHARS = 256_000;
 const MAX_EXTERNAL_AGENT_TASK_CHARS = 64_000;
-const MAX_EXTERNAL_AGENT_FALLBACK_INSTRUCTION_CHARS = 128_000;
 const MAX_EXTERNAL_AGENT_CONVERSATION_CHARS = 32_000;
 const MAX_EXTERNAL_AGENT_CONTEXT_CHARS = 64_000;
 const MAX_EXTERNAL_AGENT_ATTACHMENT_CHARS = 16_000;
@@ -237,22 +241,13 @@ const removeManagedInstructionContext = (
   return sections.filter((section) => section.title !== "Instruction context");
 };
 
-const isEnrollmentCompatibilityFailure = (
-  stdout: string,
-  stderr: string,
-): boolean => {
-  return /unknown (?:argument|option|flag)|unrecognized (?:argument|option)|unexpected argument|invalid (?:config|configuration)|failed to (?:load|parse).*(?:config|mcp)|developer_instructions|append-system-prompt-file|additional-mcp-config|custom.instructions/iu.test(
-    `${stderr}\n${stdout}`,
-  );
-};
-
 const getExternalAgentDelegationMode = (
   params: ExternalAgentExecutionParams,
 ): ExternalAgentDelegationMode => {
-  const audience = params.taskContext.instructionAudience;
+  const executionRole = params.taskContext.executionRole;
 
   return params.config.mode === "ask" &&
-    (audience === "generator" || audience === "validator")
+    (executionRole === "generator" || executionRole === "validator")
     ? "read-only-artifact"
     : "full-access";
 };
@@ -301,6 +296,7 @@ const createExternalAgentPrompt = (
   contextSections: TaskExecutionSection[],
   conversationContext: PreparedConversationPromptContext,
   promptFallbackInstructions: string | undefined,
+  runtimeSystemPromptSections: readonly string[],
   providerLabel: string,
   attachmentPaths: readonly string[],
   delegationMode: ExternalAgentDelegationMode,
@@ -316,14 +312,18 @@ const createExternalAgentPrompt = (
         )
       : undefined;
   const instructionBlock = promptFallbackInstructions
-    ? limitText(
-        [
-          "Machdoch native instruction enrollment failed; apply this exact managed instruction bundle from the prompt fallback:",
-          promptFallbackInstructions,
-        ].join("\n\n"),
-        MAX_EXTERNAL_AGENT_FALLBACK_INSTRUCTION_CHARS,
-      )
+    ? [
+        "Apply this complete canonical Machdoch instruction envelope exactly as supplied:",
+        promptFallbackInstructions,
+      ].join("\n\n")
     : undefined;
+  const runtimeSectionsBlock =
+    runtimeSystemPromptSections.length > 0
+      ? [
+          "Machdoch run-specific role and artifact guidance (separate from the canonical instruction envelope):",
+          ...runtimeSystemPromptSections,
+        ].join("\n\n")
+      : undefined;
   const resolvedContext = limitText(
     [...contextSections, ...conversationContext.sections]
       .map(formatSectionForPrompt)
@@ -338,6 +338,7 @@ const createExternalAgentPrompt = (
     ...createExternalAgentOperatingInstructions(delegationMode),
     attachmentBlock,
     instructionBlock,
+    runtimeSectionsBlock,
     "User task:",
     limitText(task, MAX_EXTERNAL_AGENT_TASK_CHARS),
     conversationContext.promptBlock
@@ -359,7 +360,12 @@ const createExternalAgentPrompt = (
     )
     .join("\n\n");
 
-  return limitText(prompt, MAX_EXTERNAL_AGENT_PROMPT_CHARS);
+  if (prompt.length > MAX_EXTERNAL_AGENT_PROMPT_CHARS) {
+    throw new Error(
+      `The delegated provider prompt is ${prompt.length} characters; the safe limit is ${MAX_EXTERNAL_AGENT_PROMPT_CHARS}. Machdoch will not truncate the canonical instruction envelope.`,
+    );
+  }
+  return prompt;
 };
 
 const shouldUseShellForExecutable = (executable: string): boolean => {
@@ -370,6 +376,22 @@ const shouldUseShellForExecutable = (executable: string): boolean => {
   const extension = extname(executable).toLowerCase();
 
   return extension === ".cmd" || extension === ".bat";
+};
+
+const WINDOWS_COMMAND_SHELL_METACHARACTERS = /[\r\n&|<>^%!]/u;
+
+const assertSafeWindowsCommandShellInvocation = (
+  executable: string,
+  args: readonly string[],
+): void => {
+  if (!shouldUseShellForExecutable(executable)) return;
+  const unsafeArgument = [executable, ...args].find((value) =>
+    WINDOWS_COMMAND_SHELL_METACHARACTERS.test(value)
+  );
+  if (unsafeArgument === undefined) return;
+  throw new Error(
+    "The delegated provider uses a Windows command wrapper, but its invocation contains shell metacharacters. Machdoch blocked the launch instead of passing user- or workspace-controlled text through cmd.exe.",
+  );
 };
 
 const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
@@ -714,6 +736,7 @@ const runExternalAgentCommand = async (
   return await new Promise<SpawnedAgentResult>((resolve, reject) => {
     const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
     const childEnv = createChildEnv(provider, enrollmentEnv);
+    assertSafeWindowsCommandShellInvocation(executable, args);
 
     const child = spawn(executable, args, {
       cwd,
@@ -1132,53 +1155,122 @@ const executeExternalAgentCliTask = async (
     (imageInput) => imageInput.path,
   );
   const delegationMode = getExternalAgentDelegationMode(params);
-  let enrollment: MaterializedCliEnrollment | undefined;
-  let enrollmentFailure: string | undefined;
-
+  const resolution = params.taskContext.instructionResolution;
+  const instructionPlan = params.instructionDeliveryPlan;
+  if (
+    !resolution ||
+    !instructionPlan ||
+    instructionPlan.resolutionId !== resolution.resolutionId
+  ) {
+    return createExecutionResult(
+      {
+        task: params.task,
+        mode: params.config.mode,
+        status: "blocked",
+        summary:
+          "External agent execution stopped before launch because its frozen instruction plan was missing.",
+        executedTools: [],
+        outputSections: params.contextSections,
+      },
+      "A matching instruction resolution and delivery plan are required before a CLI provider can start.",
+    );
+  }
+  let enrollment: MaterializedCliEnrollment;
   try {
     enrollment = await materializeCliEnrollment({
       provider,
       executable: binary.executable,
       runId: params.runId ?? `external-${Date.now()}-${process.pid}`,
       workspaceRoot: executionConfig.workspaceRoot,
-      taskContext: params.taskContext,
-      additionalSystemPromptSections: params.systemPromptSections ?? [],
+      resolution,
+      deliveryPlan: instructionPlan,
     });
   } catch (error) {
-    enrollmentFailure = error instanceof Error ? error.message : String(error);
+    const reason = error instanceof Error ? error.message : String(error);
+    return createExecutionResult(
+      {
+        task: params.task,
+        mode: params.config.mode,
+        status: "blocked",
+        summary: `${providerLabel} execution stopped before launch because run-scoped instruction adaptation failed.`,
+        executedTools: [],
+        metadata: {
+          instructionResolutionId: resolution.resolutionId,
+          instructionCanonicalDigest: resolution.canonicalDigest,
+          instructionDeliveryPlanId: instructionPlan.planId,
+          instructionDeliveryGrade: instructionPlan.grade,
+        },
+        outputSections: [
+          ...params.contextSections,
+          createTextSection(`${providerLabel} instruction adaptation`, reason, 80),
+        ],
+      },
+      reason,
+    );
   }
 
-  let fallbackBundle = enrollment
-    ? undefined
-    : compileInstructionBundle(
-        params.taskContext,
-        params.systemPromptSections ?? [],
-      );
-  const activeInstructionBundle =
-    enrollment?.instructionBundle ?? fallbackBundle;
-  const enrollmentInstructionCount = activeInstructionBundle
-    ? [
-        ...activeInstructionBundle.sources,
-        ...activeInstructionBundle.omittedSources,
-      ].reduce((count, source) => count + source.sourceIds.length, 0)
-    : 0;
-  let prompt = createExternalAgentPrompt(
-    params.task,
-    executionConfig,
-    delegatedContextSections,
-    params.preparedConversationContext,
-    fallbackBundle?.renderedText,
-    providerLabel,
-    imagePaths,
-    delegationMode,
-  );
-  let command = createExternalAgentCommand(provider, {
-    config: executionConfig,
-    prompt,
-    imageInputs: params.imageInputs,
-    delegationMode,
-    enrollmentArgs: enrollment?.args ?? [],
-  });
+  let command: ReturnType<typeof createExternalAgentCommand>;
+  let externalAssembledRequestDigest: string;
+  try {
+    const prompt = createExternalAgentPrompt(
+      params.task,
+      executionConfig,
+      delegatedContextSections,
+      params.preparedConversationContext,
+      enrollment.promptFallback,
+      params.systemPromptSections ?? [],
+      providerLabel,
+      imagePaths,
+      delegationMode,
+    );
+    command = createExternalAgentCommand(provider, {
+      config: executionConfig,
+      prompt,
+      imageInputs: params.imageInputs,
+      delegationMode,
+      enrollmentArgs: enrollment.args,
+    });
+    externalAssembledRequestDigest = canonicalDigest({
+      provider,
+      executable: binary.executable,
+      args: command.args,
+      input: command.input,
+      environmentKeys: Object.keys(enrollment.env).sort(),
+      canonicalDigest: resolution.canonicalDigest,
+    });
+    assertInstructionInvocationBudget(resolution, {
+      phase: "initial",
+      assembledRequestBytes:
+        Buffer.byteLength(command.input ?? "", "utf8") +
+        Buffer.byteLength(JSON.stringify(command.args), "utf8") +
+        (enrollment.instructionDelivery.instructionPayloadIncludedInRequest
+          ? 0
+          : enrollment.instructionDelivery.instructionPayloadBytes),
+    });
+  } catch (error) {
+    await enrollment.dispose();
+    const reason = error instanceof Error ? error.message : String(error);
+    return createExecutionResult(
+      {
+        task: params.task,
+        mode: params.config.mode,
+        status: "blocked",
+        summary: `${providerLabel} execution stopped before launch because the complete request could not be prepared safely.`,
+        executedTools: [],
+        metadata: {
+          instructionResolutionId: resolution.resolutionId,
+          instructionCanonicalDigest: resolution.canonicalDigest,
+          instructionDeliveryPlanId: instructionPlan.planId,
+          instructionDeliveryGrade: "unsupported",
+        },
+        outputSections: [
+          ...params.contextSections,
+          createTextSection(`${providerLabel} request preflight`, reason, 80),
+        ],
+      },
+      reason,
+    );
+  }
 
   await emitAgentProgress(
     params.task,
@@ -1199,14 +1291,11 @@ const executeExternalAgentCliTask = async (
         model: params.config.model,
         metadata: {
           binarySource: binary.source ?? "unknown",
-          enrollmentBundleDigest:
-            enrollment?.instructionBundle.digest ??
-            fallbackBundle?.digest ??
-            "none",
-          enrollmentInstructionCount: enrollmentInstructionCount,
-          enrollmentCoverageComplete:
-            enrollment?.manifest.coverageSummary.complete ?? false,
-          enrollmentRoute: enrollment ? "native" : "prompt-fallback",
+          instructionCanonicalDigest: resolution.canonicalDigest,
+          instructionCount: resolution.selectedSources.length,
+          instructionDeliveryPlanId: instructionPlan.planId,
+          instructionDeliveryGrade: instructionPlan.grade,
+          instructionDeliveryRoute: enrollment.instructionRoute,
           ...command.metadata,
         },
       },
@@ -1214,6 +1303,41 @@ const executeExternalAgentCliTask = async (
   );
 
   const startedAt = Date.now();
+  const instructionReceipts = params.instructionDeliveryReceipts ?? [];
+  const receiptEvidence = [
+    ...enrollment.manifest.renderedFiles
+      .filter((file) =>
+        file.purpose.toLocaleLowerCase("en-US").includes("instruction")
+      )
+      .map((file) => ({
+        kind: "temporary-file" as const,
+        detail: file.purpose,
+        digest: file.digest,
+      })),
+    ...(enrollment.promptFallback === undefined
+      ? []
+      : [
+          {
+            kind: "argument" as const,
+            detail:
+              "Canonical envelope included in the delegated prompt while native discovery was disabled.",
+            digest: resolution.canonicalDigest,
+          },
+        ]),
+    {
+      kind: "request-field" as const,
+      detail:
+        "The run-scoped enrollment manifest binds the complete rendered envelope to the canonical digest.",
+      digest: resolution.canonicalDigest,
+    },
+    {
+      kind: "environment" as const,
+      detail: `Provider probe: ${
+        enrollment.manifest.providerVersion ?? "version unavailable"
+      }; features=${enrollment.manifest.providerFeatures.join(",") || "none"}.`,
+      digest: enrollment.manifest.providerProbeDigest,
+    },
+  ];
   let result: SpawnedAgentResult;
   try {
     result = await runExternalAgentCommand(
@@ -1222,125 +1346,166 @@ const executeExternalAgentCliTask = async (
       command.input,
       executionConfig,
       provider,
-      enrollment?.env ?? {},
+      enrollment.env,
       params.signal,
       params.onActionOutput,
     );
-  } finally {
-    await enrollment?.dispose();
-  }
-  let nativeEnrollmentWarnings = enrollment?.manifest.warnings ?? [];
-  let shouldRetryWithPrompt = Boolean(
-    enrollment &&
-    result.exitCode !== 0 &&
-    isEnrollmentCompatibilityFailure(result.stdout, result.stderr),
-  );
-  if (shouldRetryWithPrompt && provider === "codex-cli") {
-    enrollmentFailure = [
-      enrollmentFailure,
-      "The installed Codex CLI rejected developer_instructions; Machdoch retried with an isolated AGENTS file.",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    try {
-      enrollment = await materializeCliEnrollment({
-        provider,
-        executable: binary.executable,
-        runId: `${params.runId ?? `external-${Date.now()}-${process.pid}`}-agents-fallback`,
-        workspaceRoot: executionConfig.workspaceRoot,
-        taskContext: params.taskContext,
-        additionalSystemPromptSections: params.systemPromptSections ?? [],
-        codexInstructionFallback: true,
-      });
-      nativeEnrollmentWarnings = [
-        ...nativeEnrollmentWarnings,
-        ...enrollment.manifest.warnings,
-      ];
-      prompt = createExternalAgentPrompt(
-        params.task,
-        executionConfig,
-        delegatedContextSections,
-        params.preparedConversationContext,
-        undefined,
-        providerLabel,
-        imagePaths,
-        delegationMode,
-      );
-      command = createExternalAgentCommand(provider, {
-        config: executionConfig,
-        prompt,
-        imageInputs: params.imageInputs,
-        delegationMode,
-        enrollmentArgs: enrollment.args,
-      });
-      try {
-        result = await runExternalAgentCommand(
-          binary.executable,
-          command.args,
-          command.input,
-          executionConfig,
-          provider,
-          enrollment.env,
-          params.signal,
-          params.onActionOutput,
-        );
-      } finally {
-        await enrollment.dispose();
-      }
-      shouldRetryWithPrompt =
-        result.exitCode !== 0 &&
-        isEnrollmentCompatibilityFailure(result.stdout, result.stderr);
-    } catch (error) {
-      enrollmentFailure = [
-        enrollmentFailure,
-        error instanceof Error ? error.message : String(error),
-      ]
-        .filter(Boolean)
-        .join(" ");
-      enrollment = undefined;
-      shouldRetryWithPrompt = true;
-    }
-  }
-  if (shouldRetryWithPrompt) {
-    enrollmentFailure = [
-      enrollmentFailure,
-      "The installed provider rejected its native enrollment surface; Machdoch retried automatically with prompt enrollment.",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    fallbackBundle = compileInstructionBundle(
-      params.taskContext,
-      params.systemPromptSections ?? [],
-    );
-    prompt = createExternalAgentPrompt(
-      params.task,
-      executionConfig,
-      delegatedContextSections,
-      params.preparedConversationContext,
-      fallbackBundle.renderedText,
-      providerLabel,
-      imagePaths,
-      delegationMode,
-    );
-    command = createExternalAgentCommand(provider, {
-      config: executionConfig,
-      prompt,
-      imageInputs: params.imageInputs,
-      delegationMode,
-      enrollmentArgs: [],
+  } catch (error) {
+    const failureReceipt = createInstructionDeliveryReceipt({
+      plan: instructionPlan,
+      phase: "initial",
+      observedCanonicalDigest:
+        enrollment.manifest.instructionDelivery.canonicalDigest,
+      assembledRequestDigest: externalAssembledRequestDigest,
+      deliveredBytes:
+        enrollment.instructionDelivery.instructionPayloadBytes,
+      indeterminateReason:
+        "The delegated CLI process failed after launch, so Machdoch cannot prove whether it accepted or acted on the request. Automatic replay is prohibited.",
+      evidence: receiptEvidence,
     });
-    enrollment = undefined;
-    result = await runExternalAgentCommand(
-      binary.executable,
-      command.args,
-      command.input,
-      executionConfig,
-      provider,
-      {},
-      params.signal,
-      params.onActionOutput,
-    );
+    instructionReceipts.push(failureReceipt);
+    assertInstructionDeliveryReceiptCertain(failureReceipt, error);
+    throw error;
+  } finally {
+    await enrollment.dispose();
   }
+  const deliveryReceipt = createInstructionDeliveryReceipt({
+    plan: instructionPlan,
+    phase: "initial",
+    observedCanonicalDigest:
+      enrollment.manifest.instructionDelivery.canonicalDigest,
+    assembledRequestDigest: externalAssembledRequestDigest,
+    deliveredBytes: enrollment.instructionDelivery.instructionPayloadBytes,
+    ...((
+      resolution.budget.estimatedTotalInstructionTokens ??
+      resolution.budget.estimatedTokens
+    ) === undefined
+      ? {}
+      : {
+          estimatedTokens:
+            resolution.budget.estimatedTotalInstructionTokens ??
+            resolution.budget.estimatedTokens,
+        }),
+    evidence: receiptEvidence,
+  });
+  instructionReceipts.push(deliveryReceipt);
+  assertInstructionDeliveryReceiptCertain(deliveryReceipt);
+  const instructionMetadata = {
+    instructionResolutionId: resolution.resolutionId,
+    instructionCanonicalDigest: resolution.canonicalDigest,
+    instructionEnvironmentDigest: resolution.environmentDigest,
+    instructionDeliveryPlanId: instructionPlan.planId,
+    instructionDeliveryGrade: instructionPlan.grade,
+    instructionAdapterEvidence: {
+      providerVersion: enrollment.manifest.providerVersion ?? null,
+      providerFeatures: [...enrollment.manifest.providerFeatures],
+      providerProbeDigest: enrollment.manifest.providerProbeDigest,
+    },
+    instructionSources: resolution.selectedSources.map((source) => ({
+      id: source.id,
+      name: source.name,
+      kind: source.kind,
+      scopePath: source.scopePath,
+      precedence: source.precedence,
+      digest: source.digest,
+      byteLength: source.byteLength,
+      lineCount: source.lineCount,
+      trusted: source.trusted,
+      ...(source.profileId === undefined
+        ? {}
+        : { profileId: source.profileId }),
+      ...(source.workspaceId === undefined
+        ? {}
+        : { workspaceId: source.workspaceId }),
+      ...(source.relativePath === undefined
+        ? {}
+        : { relativePath: source.relativePath }),
+      ...(source.assignmentPath === undefined
+        ? {}
+        : { assignmentPath: source.assignmentPath }),
+      ...(source.inheritedFrom === undefined
+        ? {}
+        : { inheritedFrom: source.inheritedFrom }),
+      ...(source.reason === undefined ? {} : { reason: source.reason }),
+      ...(source.otherAssignments === undefined
+        ? {}
+        : {
+            otherAssignments: source.otherAssignments.map((assignment) => ({
+              ...assignment,
+            })),
+          }),
+    })),
+    instructionNativeInventory: resolution.nativeInventory.map((record) => ({
+      ...record,
+      ...(record.recognizingConventions === undefined
+        ? {}
+        : {
+            recognizingConventions: [...record.recognizingConventions],
+          }),
+    })),
+    instructionMcpInitializationInstructions:
+      resolution.mcpInitializationInstructions.map(
+        ({ serverIds, digest, byteLength }) => ({
+          serverIds: [...serverIds],
+          digest,
+          byteLength,
+        }),
+      ),
+    instructionDiagnostics: resolution.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.details === undefined
+        ? {}
+        : { details: structuredClone(diagnostic.details) }),
+    })),
+    instructionDeliveryPlans: [
+      {
+        planId: instructionPlan.planId,
+        resolutionId: instructionPlan.resolutionId,
+        canonicalDigest: instructionPlan.canonicalDigest,
+        environmentDigest: instructionPlan.environmentDigest,
+        providerId: instructionPlan.providerId,
+        surface: instructionPlan.surface,
+        grade: instructionPlan.grade,
+        route: instructionPlan.route,
+        requiresAcknowledgement: instructionPlan.requiresAcknowledgement,
+        blockingReasons: [...instructionPlan.blockingReasons],
+        dimensions: instructionPlan.dimensions.map((dimension) => ({
+          ...dimension,
+        })),
+        capability: {
+          ...instructionPlan.capability,
+          lifecycle: { ...instructionPlan.capability.lifecycle },
+          evidence: [...instructionPlan.capability.evidence],
+        },
+        createdAt: instructionPlan.createdAt,
+      },
+    ],
+    instructionDeliveryReceipts: instructionReceipts.map((receipt) => ({
+      receiptId: receipt.receiptId,
+      planId: receipt.planId,
+      resolutionId: receipt.resolutionId,
+      canonicalDigest: receipt.canonicalDigest,
+      providerId: receipt.providerId,
+      surface: receipt.surface,
+      phase: receipt.phase,
+      route: receipt.route,
+      deliveredAt: receipt.deliveredAt,
+      status: receipt.status,
+      observedCanonicalDigest: receipt.observedCanonicalDigest,
+      assembledRequestDigest: receipt.assembledRequestDigest,
+      deliveredBytes: receipt.deliveredBytes,
+      ...(receipt.estimatedTokens === undefined
+        ? {}
+        : { estimatedTokens: receipt.estimatedTokens }),
+      ...(receipt.requestId === undefined
+        ? {}
+        : { requestId: receipt.requestId }),
+      ...(receipt.error === undefined ? {} : { error: receipt.error }),
+      truncation: receipt.truncation,
+      evidence: receipt.evidence.map((entry) => ({ ...entry })),
+      bodyStored: false,
+    })),
+  };
   const stdout = cleanCliText(result.stdout);
   const stderr = cleanCliText(result.stderr);
   const durationMs = Date.now() - startedAt;
@@ -1351,13 +1516,12 @@ const executeExternalAgentCliTask = async (
       `binary source: ${binary.source ?? "unknown"}`,
       `model: ${params.config.model}`,
       `reasoning: ${params.config.reasoning}`,
-      `instruction bundle: ${enrollment?.instructionBundle.digest ?? fallbackBundle?.digest ?? "none"}`,
-      `instruction enrollment: ${enrollment?.instructionRoute ?? "prompt fallback"}`,
-      `MCP servers enrolled: ${enrollment?.mcpProjection.servers.length ?? 0}`,
-      ...(enrollmentFailure
-        ? [`enrollment fallback: ${limitText(enrollmentFailure, 500)}`]
-        : []),
-      ...nativeEnrollmentWarnings.map(
+      `instruction digest: ${resolution.canonicalDigest}`,
+      `instruction delivery: ${instructionPlan.grade} via ${enrollment.instructionRoute}`,
+      `provider probe: ${enrollment.manifest.providerVersion ?? "version unavailable"} (${enrollment.manifest.providerProbeDigest})`,
+      `provider instruction features: ${enrollment.manifest.providerFeatures.join(", ") || "none"}`,
+      `MCP servers enrolled: ${enrollment.mcpProjection.servers.length}`,
+      ...enrollment.manifest.warnings.map(
         (warning) => `enrollment warning: ${limitText(warning, 500)}`,
       ),
       ...command.commandLines,
@@ -1405,6 +1569,7 @@ const executeExternalAgentCliTask = async (
         status: "blocked",
         summary: `${providerLabel} execution failed before completing the task.`,
         executedTools: ["shell"],
+        metadata: instructionMetadata,
         outputSections: [
           ...params.contextSections,
           commandSection,
@@ -1454,6 +1619,7 @@ const executeExternalAgentCliTask = async (
     status: "executed",
     summary: normalizeFinalSummary(answer),
     executedTools: ["shell"],
+    metadata: instructionMetadata,
     outputSections: [
       ...params.contextSections,
       commandSection,

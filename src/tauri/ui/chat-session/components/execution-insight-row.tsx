@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import { normalizeTaskExecutionFileChanges } from "../../chat-session.model";
 import { getRelatedFileButtonLabel } from "../_helpers/execution-message.tsx";
 import { ExecutionFileChanges } from "./execution-file-changes";
+import { InstructionDeliveryInsight } from "./instruction-delivery-insight";
 
 const insightMetadataBadgeClassName =
   "app-execution-metadata h-6 cursor-default select-none rounded-md border-transparent bg-transparent px-1.5 py-0 text-[11px] font-medium text-slate-400 shadow-none";
@@ -37,6 +38,10 @@ export const ExecutionInsightRow = ({
   );
   const verification = execution.response?.verification ?? [];
   const continuationCount = execution.autopilot?.continuationCount ?? 0;
+  const hasInstructionDelivery = Boolean(
+    execution.metadata &&
+      typeof execution.metadata.instructionResolutionId === "string",
+  );
   const canRetryTask = Boolean(onRetryTask);
   const canContinueTask =
     !!onContinueTask &&
@@ -50,7 +55,8 @@ export const ExecutionInsightRow = ({
     !fileChanges &&
     relatedFiles.length === 0 &&
     verification.length === 0 &&
-    continuationCount === 0
+    continuationCount === 0 &&
+    !hasInstructionDelivery
   ) {
     return null;
   }
@@ -70,6 +76,8 @@ export const ExecutionInsightRow = ({
           {`Auto review \u00d7${continuationCount}`}
         </StatusBadge>
       ) : null}
+
+      <InstructionDeliveryInsight metadata={execution.metadata} />
 
       {verification.length > 0 ? (
         <StatusBadge

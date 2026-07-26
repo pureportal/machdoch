@@ -3,12 +3,10 @@ import {
   USER_API_PROVIDERS,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
-import type { InstructionAudience, InstructionMode } from "../../core/types.js";
 import type { ModelProvider, ReasoningMode, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
 import type {
   CommandName,
   InstructionCliAction,
-  InstructionCliScope,
   McpCliAction,
   ProviderSyncCliAction,
   RalphCliAction,
@@ -124,33 +122,34 @@ export const PROVIDER_SYNC_ACTIONS: ReadonlySet<ProviderSyncCliAction> = new Set
   "daemon",
 ]);
 export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
-  "list",
-  "show",
   "validate",
-  "create",
-  "save",
-  "generate",
-]);
-export const INSTRUCTION_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<InstructionCliAction> =
-  new Set(["show"]);
-export const INSTRUCTION_SCOPES: ReadonlySet<InstructionCliScope> = new Set([
-  "user",
-  "workspace",
-  "compatibility",
-  "ralph-flow",
-]);
-export const INSTRUCTION_MODES: ReadonlySet<InstructionMode> = new Set([
-  "always",
-  "auto",
-  "agent-requested",
-  "manual",
-  "disabled",
-]);
-export const INSTRUCTION_AUDIENCES: ReadonlySet<InstructionAudience> = new Set([
-  "executor",
-  "validator",
-  "generator",
-  "all",
+  "resolve",
+  "profile-list",
+  "profile-show",
+  "profile-create",
+  "profile-edit",
+  "profile-duplicate",
+  "profile-delete",
+  "assignment-list",
+  "assignment-set-defaults",
+  "assignment-set",
+  "assignment-relink",
+  "assignment-remove",
+  "local-list",
+  "local-show",
+  "local-create",
+  "local-edit",
+  "local-delete",
+  "workspace-list",
+  "workspace-register",
+  "workspace-relink",
+  "workspace-unregister",
+  "transfer-export",
+  "transfer-import",
+  "recovery-status",
+  "recovery-restore",
+  "recovery-export",
+  "recovery-reset",
 ]);
 export const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
   "list",

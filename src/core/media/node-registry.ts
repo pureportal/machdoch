@@ -170,6 +170,49 @@ const backgroundInput: MediaNodePortDefinition = {
   description: "Image defining the final canvas dimensions and base pixels.",
 };
 
+const firstFrameInput: MediaNodePortDefinition = {
+  ...imageInput,
+  id: "first-frame",
+  label: "First frame",
+  required: false,
+  description:
+    "Optional immutable image that anchors the opening frame of the generated clip.",
+};
+
+const lastFrameInput: MediaNodePortDefinition = {
+  ...imageInput,
+  id: "last-frame",
+  label: "Last frame",
+  required: false,
+  description:
+    "Optional immutable image that anchors the final frame; it never substitutes for a first frame.",
+};
+
+const videoOutput: MediaNodePortDefinition = {
+  id: "video",
+  label: "Video",
+  dataType: "video",
+  required: true,
+  cardinality: "single",
+  description: "One encoded video asset with explicit source-frame lineage.",
+};
+
+const foregroundVideoInput: MediaNodePortDefinition = {
+  ...videoOutput,
+  id: "foreground-video",
+  label: "Transparent foreground",
+  description:
+    "One alpha-preserving video whose RGB and alpha planes are composited frame by frame.",
+};
+
+const backgroundVideoInput: MediaNodePortDefinition = {
+  ...videoOutput,
+  id: "background-video",
+  label: "Animated background",
+  description:
+    "One loop-compatible background video or procedural animated-video source.",
+};
+
 export const MEDIA_NODE_DEFINITIONS = [
   {
     type: "source.prompt",
@@ -456,7 +499,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         group: "Creative",
         kind: "select",
         required: true,
-        defaultValue: "balanced",
+        defaultValue: "quality",
         examples: ["balanced", "quality"],
         options: [
           option("balanced", "Balanced", "Balance quality and responsiveness."),
@@ -484,6 +527,23 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: [],
         examples: [[]],
         readOnly: true,
+      },
+      {
+        id: "memoryProfile",
+        label: "Memory profile",
+        description:
+          "Auto selects disk-backed group offload on constrained hosts and faster residency only when memory permits.",
+        group: "Expert",
+        kind: "select",
+        required: true,
+        defaultValue: "auto",
+        examples: ["auto", "memory-saver"],
+        options: [
+          option("auto", "Automatic", "Choose the safest quality-preserving profile for this host."),
+          option("memory-saver", "Memory saver", "Use disk-backed group offload and accept longer generation."),
+          option("balanced", "Balanced", "Use host offload when available."),
+          option("maximum-speed", "Maximum speed", "Keep more weights resident; requires substantially more memory."),
+        ],
       },
     ],
     privacyEffects: [
@@ -579,13 +639,68 @@ export const MEDIA_NODE_DEFINITIONS = [
         step: 0.05,
       },
       {
+        id: "referenceBoost",
+        label: "Identity/reference strength",
+        description:
+          "KREA Edit source-token emphasis. Higher values preserve identity and costume more strongly but reduce pose freedom.",
+        group: "Creative",
+        kind: "number",
+        required: true,
+        defaultValue: 2,
+        examples: [1, 2, 4],
+        min: 0.25,
+        max: 8,
+        step: 0.25,
+      },
+      {
+        id: "requireChromaBackground",
+        label: "Require chroma staging",
+        description:
+          "Reject the edit unless its border remains a usable chroma-green plate. Enable only when the next step will extract transparency.",
+        group: "Expert",
+        kind: "boolean",
+        required: false,
+        defaultValue: false,
+        examples: [true],
+      },
+      {
+        id: "referenceFit",
+        label: "Reference framing",
+        description:
+          "Fit preserves the complete reference with padding; Crop fills the target composition from its center.",
+        group: "Creative",
+        kind: "select",
+        required: true,
+        defaultValue: "fit",
+        examples: ["fit", "crop"],
+        options: [
+          option("fit", "Fit", "Preserve the full reference and pad to the target ratio."),
+          option("crop", "Crop", "Fill the target ratio with a centered crop."),
+        ],
+      },
+      {
+        id: "groundingPixels",
+        label: "Grounding detail",
+        description:
+          "Longest-edge resolution used by KREA's Qwen3-VL image-grounded instruction encoder.",
+        group: "Expert",
+        kind: "number",
+        required: true,
+        defaultValue: 768,
+        examples: [384, 768, 1024],
+        min: 384,
+        max: 1024,
+        step: 64,
+        integer: true,
+      },
+      {
         id: "modelPolicy",
         label: "Optimization goal",
         description: "Balances edit quality and latency without exposing runtime plumbing.",
         group: "Creative",
         kind: "select",
         required: true,
-        defaultValue: "balanced",
+        defaultValue: "quality",
         examples: ["balanced", "quality"],
         options: [
           option("balanced", "Balanced", "Balance quality and responsiveness."),
@@ -614,12 +729,427 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: [[]],
         readOnly: true,
       },
+      {
+        id: "memoryProfile",
+        label: "Memory profile",
+        description:
+          "Auto uses quality-preserving disk group offload for KREA 2 on constrained Windows hosts.",
+        group: "Expert",
+        kind: "select",
+        required: true,
+        defaultValue: "auto",
+        examples: ["auto", "memory-saver"],
+        options: [
+          option("auto", "Automatic", "Choose the safest profile for the detected host."),
+          option("memory-saver", "Memory saver", "Minimize peak commit with disk-backed groups."),
+          option("balanced", "Balanced", "Trade host memory for lower latency."),
+          option("maximum-speed", "Maximum speed", "Keep more weights resident when memory permits."),
+        ],
+      },
     ],
     privacyEffects: [
       "Remote execution uploads prompt text and only the explicitly connected reference assets.",
       "Local-only execution performs no provider request.",
     ],
     costEffects: ["Remote editing can create one billable request per output variant."],
+    migrationSources: [],
+  },
+  {
+    type: "task.generate-video",
+    version: 1,
+    displayName: "Generate video",
+    summary:
+      "Animates immutable endpoints with a quality-oriented Wan2.2 TI2V pipeline, temporal matting, and explicit loop or shot assembly.",
+    layer: "task",
+    category: "Generation",
+    paletteVisibility: "default",
+    maxInstances: 1,
+    inputs: [promptPort, firstFrameInput, lastFrameInput],
+    outputs: [videoOutput],
+    fields: [
+      {
+        id: "providerPolicy",
+        label: "Execution boundary",
+        description:
+          "Automatic resolves a compatible adapter; Local and Remote keep the execution boundary explicit.",
+        group: "Basic",
+        kind: "select",
+        required: true,
+        defaultValue: "local",
+        examples: ["local"],
+        readOnly: true,
+        options: [
+          option("auto", "Automatic", "Choose a ready compatible video runtime."),
+          option("local", "Local only", "Keep prompts and source frames on this device."),
+          option("remote", "Remote only", "Use a configured cloud video provider."),
+        ],
+      },
+      {
+        id: "aspectRatio",
+        label: "Aspect ratio",
+        description: "The requested orientation for the generated clip.",
+        group: "Basic",
+        kind: "select",
+        required: true,
+        defaultValue: "1:1",
+        examples: ["1:1", "16:9", "9:16", "21:9"],
+        options: [
+          option("1:1", "1:1 Square", "Preserves a square FLUX source without cropping."),
+          option("16:9", "16:9 Landscape", "Wide cinematic and presentation framing."),
+          option("9:16", "9:16 Vertical", "Full-height mobile framing."),
+          option("21:9", "21:9 Ultra-wide", "Cinematic panorama with a native ultra-wide latent canvas."),
+        ],
+      },
+      {
+        id: "durationSeconds",
+        label: "Duration",
+        description:
+          "Informational draft duration; encoded duration is derived exactly from source frames, loop assembly, and fps.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 2,
+        examples: [2, 4],
+        readOnly: true,
+        min: 1,
+        max: 30,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "modelPolicy",
+        label: "Optimization goal",
+        description: "Balances motion quality and latency without hiding the resolved model.",
+        group: "Creative",
+        kind: "select",
+        required: true,
+        defaultValue: "quality",
+        examples: ["quality", "balanced"],
+        options: [
+          option("balanced", "Balanced", "Balance quality and responsiveness."),
+          option("fast", "Faster", "Prefer lower latency where compatible."),
+          option("quality", "Higher quality", "Prefer motion and temporal quality."),
+        ],
+      },
+      {
+        id: "resolution",
+        label: "Resolution",
+        description:
+          "Native WAN latent resolution. Higher profiles improve faces and costume detail but increase denoising time and memory.",
+        group: "Creative",
+        kind: "select",
+        required: true,
+        defaultValue: "quality-640",
+        examples: ["quality-640", "preview-512"],
+        options: [
+          option("preview-512", "512 px preview", "Fast validation and lower-memory iteration."),
+          option("quality-640", "640 px quality", "Recommended consumer-GPU quality profile."),
+          option("quality-768", "768 px high quality", "More spatial detail with substantially higher latency."),
+        ],
+      },
+      {
+        id: "generateAudio",
+        label: "Generate audio",
+        description:
+          "Wan2.2 TI2V does not generate synchronized audio in this adapter.",
+        group: "Creative",
+        kind: "boolean",
+        required: true,
+        defaultValue: false,
+        examples: [false],
+        readOnly: true,
+      },
+      {
+        id: "modelId",
+        label: "Exact model pin",
+        description:
+          "Pinned to the discovered official Wan2.2 TI2V 5B Diffusers package.",
+        group: "Expert",
+        kind: "model",
+        required: true,
+        defaultValue: "local:wan2.2-ti2v-5b",
+        examples: ["local:wan2.2-ti2v-5b"],
+        readOnly: true,
+      },
+      {
+        id: "transparentBackground",
+        label: "Transparent background",
+        description:
+          "Enable only for a verified cutout or uniform chroma plate. Extract, temporally stabilize, decontaminate, encode, and decode-verify the alpha plane.",
+        group: "Creative",
+        kind: "boolean",
+        required: true,
+        defaultValue: false,
+        examples: [false, true],
+      },
+      {
+        id: "loopMode",
+        label: "Loop assembly",
+        description:
+          "None preserves a meaningful one-way action; Ping-pong reverses it; Seamless closes same-endpoint motion without reversal.",
+        group: "Creative",
+        kind: "select",
+        required: true,
+        defaultValue: "none",
+        examples: ["none", "ping-pong", "seamless"],
+        options: [
+          option("none", "One-way shot", "Keep intentional non-looping motion without artificial repetition."),
+          option("ping-pong", "Ping-pong", "Append reversed frames and verify a zero-error endpoint."),
+          option("seamless", "Seamless", "Use identical endpoints and stabilize the repeat seam without reversal."),
+        ],
+      },
+      {
+        id: "fps",
+        label: "Playback rate",
+        description: "Studio preview and encoded WebM playback rate.",
+        group: "Expert",
+        kind: "number",
+        required: true,
+        defaultValue: 16,
+        examples: [8, 16, 24],
+        min: 1,
+        max: 60,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "numFrames",
+        label: "WAN source frames",
+        description:
+          "Wan requires a 4k+1 frame count. Thirty-three source frames reduce pose distance between adjacent frames while staying within the verified consumer-GPU bound.",
+        group: "Expert",
+        kind: "number",
+        required: true,
+        defaultValue: 33,
+        examples: [17, 33],
+        min: 17,
+        max: 33,
+        step: 4,
+        integer: true,
+      },
+      {
+        id: "numInferenceSteps",
+        label: "Inference steps",
+        description:
+          "Denoising steps. Thirty matches the maintained WAN workflow quality default; low values are useful only for drafts.",
+        group: "Expert",
+        kind: "number",
+        required: true,
+        defaultValue: 30,
+        examples: [8, 20, 30],
+        min: 4,
+        max: 50,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "guidanceScale",
+        label: "Motion guidance",
+        description:
+          "Prompt guidance for subject motion. Excessive values can increase warping and temporal texture changes.",
+        group: "Creative",
+        kind: "number",
+        required: true,
+        defaultValue: 5,
+        examples: [4, 5, 6],
+        min: 1,
+        max: 10,
+        step: 0.25,
+      },
+      {
+        id: "seed",
+        label: "Generation seed",
+        description:
+          "Explicit deterministic noise seed. Keep this fixed when comparing sampling, conditioning, or quality changes.",
+        group: "Expert",
+        kind: "number",
+        required: true,
+        defaultValue: 0,
+        examples: [0, 72526017],
+        min: 0,
+        max: 9_007_199_254_740_991,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "negativePrompt",
+        label: "Temporal exclusions",
+        description:
+          "Optional explicit defects to suppress; the worker supplies a strong anatomy and temporal-stability default when empty.",
+        group: "Expert",
+        kind: "text",
+        required: false,
+        defaultValue: "",
+        examples: ["camera shake, identity drift, deformed hands, texture crawl"],
+        allowEmpty: true,
+        maxLength: 8_000,
+      },
+      {
+        id: "matteQuality",
+        label: "Transparency quality",
+        description:
+          "Production adds shot-wide key calibration, spatial refinement, temporal alpha stabilization, component cleanup, and edge decontamination.",
+        group: "Creative",
+        kind: "select",
+        required: true,
+        defaultValue: "production",
+        examples: ["production", "balanced"],
+        options: [
+          option("fast", "Fast", "Frame-local matte for quick drafts."),
+          option("balanced", "Balanced", "Temporal stabilization and moderate edge cleanup."),
+          option("production", "Production", "Maximum matte stability and fine-detail cleanup."),
+        ],
+        visibleWhen: { fieldId: "transparentBackground", equals: true },
+      },
+      {
+        id: "encodingQuality",
+        label: "Video encoding",
+        description:
+          "VP9 delivery quality. Production uses low-CRF two-pass-style quality settings without masking generation defects.",
+        group: "Expert",
+        kind: "select",
+        required: true,
+        defaultValue: "lossless",
+        examples: ["lossless", "production"],
+        options: [
+          option("draft", "Draft", "Small and fast for iteration."),
+          option("balanced", "Balanced", "Good preview size and quality."),
+          option("production", "Production", "High-fidelity VP9 delivery."),
+          option("lossless", "Lossless intermediate", "Lossless VP9 coding after WebM's required YUVA/YUV pixel conversion."),
+        ],
+      },
+      {
+        id: "memoryProfile",
+        label: "Memory profile",
+        description:
+          "Auto selects quality-preserving disk group offload on constrained hosts and records the resolved strategy.",
+        group: "Expert",
+        kind: "select",
+        required: true,
+        defaultValue: "auto",
+        examples: ["auto", "memory-saver"],
+        options: [
+          option("auto", "Automatic", "Choose from physical memory and adapter capacity."),
+          option("memory-saver", "Memory saver", "Disk-offload transformer groups; slowest but safest."),
+          option("balanced", "Balanced", "Use host offload for lower latency."),
+          option("maximum-speed", "Maximum speed", "Keep more weights resident; requires ample memory."),
+        ],
+      },
+      {
+        id: "experimentalLowMemory",
+        label: "Experimental low-memory profile",
+        description:
+          "Acknowledges that the current GPU is below WAN's official 24 GiB native profile.",
+        group: "Expert",
+        kind: "boolean",
+        required: true,
+        defaultValue: true,
+        examples: [true],
+        readOnly: true,
+      },
+    ],
+    privacyEffects: [
+      "Prompt text and the explicitly connected first frame remain on this device.",
+      "The local adapter rejects a last-frame condition instead of silently ignoring it.",
+    ],
+    costEffects: [
+      "No provider charge; CPU offload can use substantial RAM and local generation may be slow.",
+    ],
+    migrationSources: [],
+  },
+  {
+    type: "source.animated-background",
+    version: 1,
+    displayName: "Animated background",
+    summary:
+      "Creates a deterministic seamless animated scene for local alpha compositing.",
+    layer: "source",
+    category: "Input",
+    paletteVisibility: "default",
+    maxInstances: 4,
+    inputs: [],
+    outputs: [videoOutput],
+    fields: [
+      {
+        id: "style",
+        label: "Animation style",
+        description:
+          "Versioned procedural renderer used to produce every background frame.",
+        group: "Basic",
+        kind: "select",
+        required: true,
+        defaultValue: "gradient-wave",
+        examples: ["gradient-wave", "enchanted-beach"],
+        options: [
+          option(
+            "gradient-wave",
+            "Gradient wave",
+            "A smooth color wave whose integer cycle count closes exactly at the loop seam.",
+          ),
+          option(
+            "enchanted-beach",
+            "Enchanted beach",
+            "A layered sunset beach with moving clouds, aurora, waves, foam, spell runes, motes, and sea spray.",
+          ),
+        ],
+      },
+      {
+        id: "direction",
+        label: "Motion direction",
+        description: "Spatial direction of the animated color wave.",
+        group: "Creative",
+        kind: "select",
+        required: true,
+        defaultValue: "diagonal",
+        examples: ["horizontal", "diagonal"],
+        options: [
+          option("horizontal", "Horizontal", "Move the wave across the canvas."),
+          option("vertical", "Vertical", "Move the wave from top to bottom."),
+          option("diagonal", "Diagonal", "Move the wave across both axes."),
+        ],
+      },
+      {
+        id: "colorStart",
+        label: "First color",
+        description: "Six-digit sRGB color for one end of the animated range.",
+        group: "Creative",
+        kind: "text",
+        required: true,
+        defaultValue: "#172554",
+        examples: ["#172554", "#312e81"],
+        maxLength: 7,
+      },
+      {
+        id: "colorEnd",
+        label: "Second color",
+        description: "Six-digit sRGB color for the other end of the animated range.",
+        group: "Creative",
+        kind: "text",
+        required: true,
+        defaultValue: "#7c3aed",
+        examples: ["#7c3aed", "#0ea5e9"],
+        maxLength: 7,
+      },
+      {
+        id: "cycles",
+        label: "Loop cycles",
+        description:
+          "Whole animation cycles across the clip; integer values preserve an exact endpoint.",
+        group: "Expert",
+        kind: "number",
+        required: true,
+        defaultValue: 1,
+        examples: [1, 2],
+        min: 1,
+        max: 4,
+        step: 1,
+        integer: true,
+      },
+    ],
+    privacyEffects: [
+      "Background frames are rendered locally from explicit color and motion parameters.",
+    ],
+    costEffects: [],
     migrationSources: [],
   },
   {
@@ -1114,7 +1644,7 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "report",
         label: "Quality report",
-        dataType: "report",
+        dataType: "quality-report",
         required: true,
         cardinality: "single",
         description: "Versioned observations, thresholds, and evidence for downstream gates.",
@@ -1150,7 +1680,7 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "report",
         label: "Quality report",
-        dataType: "report",
+        dataType: "quality-report",
         required: true,
         cardinality: "single",
         description: "Observations evaluated by the pinned quality profile.",
@@ -1298,6 +1828,114 @@ export const MEDIA_NODE_DEFINITIONS = [
       },
     ],
     privacyEffects: ["Asset publication writes to the managed local content-addressed store."],
+    costEffects: [],
+    migrationSources: [],
+  },
+  {
+    type: "operation.video-composite",
+    version: 1,
+    displayName: "Composite video",
+    summary:
+      "Alpha-composites every foreground frame over a loop-compatible animated background.",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "default",
+    inputs: [foregroundVideoInput, backgroundVideoInput],
+    outputs: [videoOutput],
+    fields: [
+      {
+        id: "alphaMode",
+        label: "Alpha interpretation",
+        description:
+          "The WAN output stores straight alpha; this explicit contract prevents accidental double premultiplication.",
+        group: "Expert",
+        kind: "select",
+        required: true,
+        defaultValue: "straight",
+        examples: ["straight"],
+        readOnly: true,
+        options: [
+          option(
+            "straight",
+            "Straight alpha",
+            "Multiply RGB by the decoded alpha plane exactly once during source-over composition.",
+          ),
+        ],
+      },
+    ],
+    privacyEffects: [
+      "Decoded video frames, alpha values, and background pixels remain local.",
+    ],
+    costEffects: [
+      "Frame-by-frame VP9 composition uses local CPU, disk staging, and encoding time.",
+    ],
+    migrationSources: [],
+  },
+  {
+    type: "output.video",
+    version: 1,
+    displayName: "Save video",
+    summary:
+      "Publishes one decode-verified transparent, opaque, or composited video with synchronized provenance.",
+    layer: "output",
+    category: "Output",
+    paletteVisibility: "output",
+    maxInstances: 4,
+    inputs: [videoOutput],
+    outputs: [],
+    fields: [
+      {
+        id: "format",
+        label: "Container",
+        description:
+          "Publishes VP9 in WebM and verifies the expected RGB or RGBA decode contract.",
+        group: "Basic",
+        kind: "select",
+        required: true,
+        defaultValue: "webm",
+        examples: ["webm"],
+        readOnly: true,
+        options: [
+          option(
+            "webm",
+            "WebM VP9",
+            "Browser-playable VP9 with verified alpha metadata when transparency is enabled.",
+          ),
+        ],
+      },
+      {
+        id: "role",
+        label: "Published version",
+        description:
+          "Synchronized from the connected video stage so publication and provenance cannot disagree.",
+        group: "Basic",
+        kind: "select",
+        required: false,
+        defaultValue: "transparent",
+        examples: ["transparent", "composited"],
+        readOnly: true,
+        options: [
+          option(
+            "transparent",
+            "Transparent master",
+            "VP9 WebM with a verified non-opaque alpha plane.",
+          ),
+          option(
+            "opaque",
+            "Opaque master",
+            "VP9 WebM without alpha when transparency extraction is disabled.",
+          ),
+          option(
+            "composited",
+            "Composited preview",
+            "Opaque VP9 WebM rendered over the connected animated background.",
+          ),
+        ],
+      },
+    ],
+    privacyEffects: [
+      "Video publication will write verified bytes to the managed content-addressed store.",
+    ],
     costEffects: [],
     migrationSources: [],
   },
@@ -1537,6 +2175,20 @@ export const validateMediaFlowNode = (
       message: "Contact sheet background must be a six-digit hex color.",
     });
   }
+  if (node.type === "source.animated-background") {
+    for (const fieldId of ["colorStart", "colorEnd"] as const) {
+      const value = node.config[fieldId];
+      if (typeof value === "string" && !/^#[\da-f]{6}$/iu.test(value)) {
+        issues.push({
+          code: "INVALID_CONFIG_VALUE",
+          severity: "error",
+          nodeId: node.id,
+          fieldId,
+          message: "Animated background colors must be six-digit hex values.",
+        });
+      }
+    }
+  }
   return issues;
 };
 
@@ -1698,6 +2350,19 @@ export const validateMediaFlowGraph = (
           message: `${definition?.displayName ?? node.label} requires its ${port.label} output to be connected.`,
         });
       }
+    }
+    if (
+      node.type === "task.generate-video" &&
+      incomingByPort.has(`${node.id}\u001flast-frame`) &&
+      !incomingByPort.has(`${node.id}\u001ffirst-frame`)
+    ) {
+      issues.push({
+        code: "REQUIRED_INPUT_MISSING",
+        severity: "error",
+        nodeId: node.id,
+        fieldId: null,
+        message: "Generate video requires a First frame whenever a Last frame is connected.",
+      });
     }
   }
 
@@ -2163,6 +2828,19 @@ export const inspectMediaFlowConnection = (
       reason: `${sourcePort.label} produces ${sourcePort.dataType}, but ${targetPort.label} accepts ${targetPort.dataType}.`,
     };
   }
+  if (
+    targetNode.type === "task.generate-video" &&
+    targetPort.id === "last-frame" &&
+    !flow.edges.some(
+      (edge) =>
+        edge.toNodeId === targetNode.id && edge.toPortId === "first-frame",
+    )
+  ) {
+    return {
+      valid: false,
+      reason: "Connect a first frame before adding a last frame.",
+    };
+  }
 
   const exactConnectionExists = flow.edges.some(
     (edge) =>
@@ -2233,6 +2911,7 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
   const nodesById = new Map(flow.nodes.map((node) => [node.id, node]));
   const outputCounts = new Map<string, unknown>();
   const outputFormats = new Map<string, unknown>();
+  const videoRoles = new Map<string, "transparent" | "opaque" | "composited">();
 
   for (const output of flow.nodes.filter((node) => node.type === "output.asset")) {
     let currentNodeId = output.id;
@@ -2287,23 +2966,68 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
     }
   }
 
-  if (outputCounts.size === 0 && outputFormats.size === 0) return flow;
+  for (const output of flow.nodes.filter((node) => node.type === "output.video")) {
+    const inputEdge = flow.edges.find(
+      (edge) => edge.toNodeId === output.id && edge.toPortId === "video",
+    );
+    if (!inputEdge) continue;
+    const sourceNode = nodesById.get(inputEdge.fromNodeId);
+    const effectiveSourceNode = effectiveNodes.get(inputEdge.fromNodeId);
+    if (sourceNode?.type === "operation.video-composite") {
+      videoRoles.set(output.id, "composited");
+    } else if (
+      sourceNode?.type === "task.generate-video" &&
+      effectiveSourceNode?.type === "task.generate-video"
+    ) {
+      videoRoles.set(
+        output.id,
+        effectiveSourceNode.config.transparentBackground === true
+          ? "transparent"
+          : "opaque",
+      );
+    }
+  }
+
+  if (
+    outputCounts.size === 0 &&
+    outputFormats.size === 0 &&
+    videoRoles.size === 0
+  ) {
+    return flow;
+  }
+  let changed = false;
+  const nodes = flow.nodes.map((node) => {
+    const outputCount = outputCounts.get(node.id);
+    const format = outputFormats.get(node.id);
+    const role = videoRoles.get(node.id);
+    if (
+      outputCount === undefined &&
+      format === undefined &&
+      role === undefined
+    ) {
+      return node;
+    }
+    const nextConfig = {
+      ...node.config,
+      ...(outputCount !== undefined ? { outputCount } : {}),
+      ...(format !== undefined ? { format } : {}),
+      ...(role !== undefined ? { role } : {}),
+    };
+    if (
+      Object.keys(nextConfig).length === Object.keys(node.config).length &&
+      Object.entries(nextConfig).every(
+        ([fieldId, value]) => node.config[fieldId] === value,
+      )
+    ) {
+      return node;
+    }
+    changed = true;
+    return { ...node, config: nextConfig };
+  });
+  if (!changed) return flow;
   return {
     ...flow,
-    nodes: flow.nodes.map((node) => {
-      const outputCount = outputCounts.get(node.id);
-      const format = outputFormats.get(node.id);
-      return outputCount === undefined && format === undefined
-        ? node
-        : {
-            ...node,
-            config: {
-              ...node.config,
-              ...(outputCount !== undefined ? { outputCount } : {}),
-              ...(format !== undefined ? { format } : {}),
-            },
-          };
-    }),
+    nodes,
   };
 };
 
@@ -2368,8 +3092,16 @@ export const disconnectMediaFlowInput = ({
   portId: string;
   updatedAt: string;
 }): MediaFlow => {
+  const removesVideoFramePair =
+    portId === "first-frame" &&
+    flow.nodes.some(
+      (node) => node.id === nodeId && node.type === "task.generate-video",
+    );
   const edges = flow.edges.filter(
-    (edge) => edge.toNodeId !== nodeId || edge.toPortId !== portId,
+    (edge) =>
+      edge.toNodeId !== nodeId ||
+      (edge.toPortId !== portId &&
+        (!removesVideoFramePair || edge.toPortId !== "last-frame")),
   );
   return edges.length === flow.edges.length
     ? flow
@@ -2385,12 +3117,20 @@ export const disconnectMediaFlowConnection = ({
   request: MediaFlowConnectionRequest;
   updatedAt: string;
 }): MediaFlow => {
+  const removesVideoFramePair =
+    request.toPortId === "first-frame" &&
+    flow.nodes.some(
+      (node) =>
+        node.id === request.toNodeId && node.type === "task.generate-video",
+    );
   const edges = flow.edges.filter(
     (edge) =>
-      edge.fromNodeId !== request.fromNodeId ||
-      edge.fromPortId !== request.fromPortId ||
       edge.toNodeId !== request.toNodeId ||
-      edge.toPortId !== request.toPortId,
+      (removesVideoFramePair
+        ? edge.toPortId !== "first-frame" && edge.toPortId !== "last-frame"
+        : edge.fromNodeId !== request.fromNodeId ||
+          edge.fromPortId !== request.fromPortId ||
+          edge.toPortId !== request.toPortId),
   );
   return edges.length === flow.edges.length
     ? flow
@@ -2484,3 +3224,87 @@ export const updateMediaFlowNodeConfig = ({
 
   return synchronizeMediaFlowAssetCounts({ ...flow, updatedAt, nodes });
 };
+
+const QUALITY_DEFAULTS_BY_NODE_TYPE: Partial<
+  Record<MediaNodeType, Readonly<Record<string, unknown>>>
+> = {
+  "task.generate-image": {
+    memoryProfile: "auto",
+  },
+  "task.edit-image": {
+    referenceBoost: 2,
+    requireChromaBackground: false,
+    referenceFit: "fit",
+    groundingPixels: 768,
+    memoryProfile: "auto",
+  },
+  "task.generate-video": {
+    guidanceScale: 5,
+    seed: 0,
+    negativePrompt: "",
+    matteQuality: "production",
+    encodingQuality: "lossless",
+    memoryProfile: "auto",
+  },
+};
+
+export const upgradeMediaFlowQualityDefaults = ({
+  flow,
+  updatedAt,
+}: {
+  flow: MediaFlow;
+  updatedAt?: string;
+}): MediaFlow => {
+  let changed = false;
+  const nodes = flow.nodes.map((node) => {
+    const defaults = QUALITY_DEFAULTS_BY_NODE_TYPE[node.type];
+    if (!defaults) return node;
+    const missingDefaults = Object.fromEntries(
+      Object.entries(defaults).filter(
+        ([fieldId]) => node.config[fieldId] === undefined,
+      ),
+    );
+    if (Object.keys(missingDefaults).length === 0) return node;
+    changed = true;
+    return {
+      ...node,
+      config: {
+        ...node.config,
+        ...missingDefaults,
+      },
+    };
+  });
+  const withDefaults = changed
+    ? {
+        ...flow,
+        ...(updatedAt ? { updatedAt } : {}),
+        nodes,
+      }
+    : flow;
+  const synchronized = synchronizeMediaFlowAssetCounts(withDefaults);
+  if (synchronized === flow || !updatedAt) return synchronized;
+  return { ...synchronized, updatedAt };
+};
+
+export const updateMediaFlowNodeConfigs = ({
+  flow,
+  nodeId,
+  values,
+  updatedAt,
+}: {
+  flow: MediaFlow;
+  nodeId: string;
+  values: Readonly<Record<string, unknown>>;
+  updatedAt: string;
+}): MediaFlow =>
+  Object.entries(values).reduce(
+    (current, [fieldId, value]) =>
+      updateMediaFlowNodeConfig({
+        flow: current,
+        nodeId,
+        fieldId,
+        value,
+        updatedAt,
+      }),
+    flow,
+  );

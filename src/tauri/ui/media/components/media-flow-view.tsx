@@ -110,6 +110,11 @@ import {
   readSubjectCutoutModelPriority,
   subjectCutoutModelLabel,
 } from "../../../../core/media/subject-cutout-policy.js";
+import {
+  identifyMediaVideoQualityPreset,
+  MEDIA_VIDEO_QUALITY_PRESETS,
+  summarizeMediaVideoDelivery,
+} from "../../../../core/media/video-quality.js";
 import { MediaFlowVariablesPanel } from "./media-flow-variables-panel";
 import { MediaFlowTemplatesPanel } from "./media-flow-templates-panel";
 import {
@@ -145,6 +150,10 @@ interface MediaFlowViewProps {
     nodeId: string,
     fieldId: string,
     value: unknown,
+  ) => void;
+  onNodeConfigPatch?: (
+    nodeId: string,
+    values: Readonly<Record<string, unknown>>,
   ) => void;
   onNodeAdd: (nodeType: MediaNodeType) => string | null;
   onNodeRemove: (nodeId: string) => void;
@@ -246,8 +255,17 @@ const LAYER_STYLES: Record<MediaNodeLayer, string> = {
 const PORT_STYLES: Record<MediaPortDataType, string> = {
   prompt: "!bg-sky-300",
   image: "!bg-fuchsia-300",
-  report: "!bg-amber-300",
-  "asset-ref": "!bg-emerald-300",
+  video: "!bg-emerald-300",
+  audio: "!bg-orange-300",
+  "quality-report": "!bg-amber-300",
+};
+
+const PORT_LABELS: Record<MediaPortDataType, string> = {
+  prompt: "Text",
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+  "quality-report": "Quality",
 };
 
 const GROUP_STYLES: Record<MediaFlowGroupColor, string> = {
@@ -312,6 +330,14 @@ const readNodeDetail = (config: Record<string, unknown>): string => {
   }
   if (typeof config.outputCount === "number") {
     return `${config.outputCount} output${config.outputCount === 1 ? "" : "s"}`;
+  }
+  if (
+    typeof config.durationSeconds === "number" &&
+    typeof config.aspectRatio === "string"
+  ) {
+    return `${config.durationSeconds}s · ${config.aspectRatio}${
+      typeof config.resolution === "string" ? ` · ${config.resolution}` : ""
+    }`;
   }
   return "Configured by the recipe compiler";
 };
@@ -444,6 +470,49 @@ const MediaFlowNodeCard = ({
       <div className="mt-1 line-clamp-2 text-[11px] leading-4 opacity-65">
         {data.detail}
       </div>
+      {data.inputs.length > 0 || data.outputs.length > 0 ? (
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-2 text-[9px]">
+          <div className="min-w-0 space-y-1">
+            {data.inputs.map((port) => (
+              <div
+                key={`input-${port.id}`}
+                className="flex min-w-0 items-center gap-1.5"
+                title={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    PORT_STYLES[port.dataType],
+                  )}
+                />
+                <span className="truncate opacity-70">
+                  {port.label}
+                  {port.required ? " *" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="min-w-0 space-y-1 text-right">
+            {data.outputs.map((port) => (
+              <div
+                key={`output-${port.id}`}
+                className="flex min-w-0 items-center justify-end gap-1.5"
+                title={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
+              >
+                <span className="truncate opacity-70">{port.label}</span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    PORT_STYLES[port.dataType],
+                  )}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {data.runOverlay ? (
         <div
           title={data.runOverlay.detail}
@@ -468,9 +537,6 @@ const MediaFlowNodeCard = ({
           </span>
         </div>
       ) : null}
-      <div className="mt-3 truncate rounded-md border border-white/10 bg-black/15 px-2 py-1 font-mono text-[9px] opacity-60">
-        {data.nodeType}
-      </div>
       {data.outputs.map((port, index) => (
         <Handle
           key={port.id}
@@ -645,7 +711,7 @@ const MediaAssetPicker = ({
         </span>
         <span className="min-w-0 flex-1">
           <span className={cn(
-            "block truncate text-xs font-medium",
+            "block break-words text-xs leading-5 font-medium",
             currentAsset ? "text-slate-100" : "text-slate-400",
           )}>
             {currentAssetLabel ?? (currentAssetId ? "Unavailable asset" : "Choose an asset…")}
@@ -797,12 +863,18 @@ const NodeFieldEditor = ({
   const selectedOption = field.options?.find(
     (candidate) => candidate.value === value,
   );
-  const requiredGenerationCapability =
-    node.type === "task.generate-image" && node.config.outputFormat === "svg"
-      ? "text-to-svg"
-      : "text-to-image";
-  const imageModels = models.filter((model) =>
-    model.capabilities.includes(requiredGenerationCapability),
+  const compatibleGenerationCapabilities =
+    node.type === "task.generate-video"
+      ? new Set(["text-to-video", "image-to-video", "start-end-to-video"])
+      : new Set([
+          node.type === "task.generate-image" && node.config.outputFormat === "svg"
+            ? "text-to-svg"
+            : "text-to-image",
+        ]);
+  const compatibleModels = models.filter((model) =>
+    model.capabilities.some((capability) =>
+      compatibleGenerationCapabilities.has(capability),
+    ),
   );
   const subjectCutoutModels = models.filter(
     (model) =>
@@ -816,7 +888,7 @@ const NodeFieldEditor = ({
   const currentModelId = typeof value === "string" ? value : null;
   const currentModelIsMissing =
     currentModelId !== null &&
-    !imageModels.some((model) => model.id === currentModelId);
+    !compatibleModels.some((model) => model.id === currentModelId);
   const imageAssets = assets.filter((asset) => asset.kind === "image");
   const currentAssetId = typeof value === "string" ? value : "";
   const currentAsset = imageAssets.find((asset) => asset.id === currentAssetId) ?? null;
@@ -1100,7 +1172,7 @@ const NodeFieldEditor = ({
               Unavailable catalog entry · {currentModelId}
             </option>
           ) : null}
-          {imageModels.map((model) => (
+          {compatibleModels.map((model) => (
             <option key={model.id} value={model.id}>
               {model.displayName} · {model.target === "local" ? "Local" : "Remote"}
               {model.lifecycle === "removed" ? " · Removed" : ""}
@@ -1230,11 +1302,8 @@ const NodePalettePanel = ({
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
             <Plus className="h-4 w-4 text-cyan-300" />
-            Add semantic node
+            Add node
           </div>
-          <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Runtime loaders and provider plumbing are expanded only in the plan.
-          </p>
         </div>
         <Button
           type="button"
@@ -1305,20 +1374,17 @@ const NodePalettePanel = ({
                         className="w-full rounded-xl border border-slate-800 bg-slate-900/35 p-3 text-left transition-colors hover:border-cyan-400/25 hover:bg-cyan-400/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/30 disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         <span className="flex items-start justify-between gap-3">
-                          <span>
-                            <span className="block text-xs font-medium text-slate-200">
-                              {definition.displayName}
-                            </span>
-                            <span className="mt-1 block font-mono text-[9px] text-slate-600">
-                              {definition.type}@{definition.version}
-                            </span>
+                          <span className="block text-xs font-medium text-slate-200">
+                            {definition.displayName}
                           </span>
-                          <Badge
-                            variant="outline"
-                            className="border-slate-700 text-[8px] text-slate-500"
-                          >
-                            {atLimit ? "Added" : definition.paletteVisibility}
-                          </Badge>
+                          {atLimit ? (
+                            <Badge
+                              variant="outline"
+                              className="border-slate-700 text-[8px] text-slate-500"
+                            >
+                              Added
+                            </Badge>
+                          ) : null}
                         </span>
                         <span className="mt-2 block text-[10px] leading-4 text-slate-500">
                           {definition.summary}
@@ -1330,9 +1396,17 @@ const NodePalettePanel = ({
                           ].map(({ direction, port }) => (
                             <span
                               key={`${direction}-${port.id}-${port.dataType}`}
-                              className="rounded border border-slate-800 bg-slate-950/60 px-1.5 py-0.5 text-[8px] text-slate-600"
+                              className="flex items-center gap-1 rounded border border-slate-800 bg-slate-950/60 px-1.5 py-0.5 text-[8px] text-slate-500"
                             >
-                              {port.dataType}
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  "h-1.5 w-1.5 rounded-full",
+                                  PORT_STYLES[port.dataType],
+                                )}
+                              />
+                              {direction === "input" ? "In" : "Out"} ·{" "}
+                              {PORT_LABELS[port.dataType]}
                             </span>
                           ))}
                         </span>
@@ -1751,7 +1825,7 @@ const NodeSelectionPanel = ({
                 className="mt-0.5 h-3.5 w-3.5 accent-violet-400"
               />
               <span className="min-w-0">
-                <span className="block truncate text-[11px] font-medium text-slate-200">
+                <span className="block break-words text-[11px] leading-4 font-medium text-slate-200">
                   {node.label}
                 </span>
                 <span className="mt-0.5 block truncate text-[9px] text-slate-600">
@@ -1766,6 +1840,71 @@ const NodeSelectionPanel = ({
   );
 };
 
+const VideoQualityPresetPanel = ({
+  config,
+  onApply,
+}: {
+  config: Record<string, unknown>;
+  onApply: (values: Readonly<Record<string, unknown>>) => void;
+}): JSX.Element => {
+  const activePreset = identifyMediaVideoQualityPreset(config);
+  const activeDescription =
+    MEDIA_VIDEO_QUALITY_PRESETS.find((preset) => preset.id === activePreset)
+      ?.description ??
+    "Custom settings preserve deliberate overrides. Choose a preset to replace temporal density, sampling, matte, encoding, and memory controls together.";
+  const delivery = summarizeMediaVideoDelivery(config);
+  return (
+    <section
+      aria-labelledby="video-quality-preset-heading"
+      className="mt-4 rounded-xl border border-violet-400/20 bg-violet-400/5 p-3"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3
+          id="video-quality-preset-heading"
+          className="flex items-center gap-1.5 text-[10px] font-semibold text-violet-100"
+        >
+          <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
+          Quality preset
+        </h3>
+        <span className="text-[9px] font-medium text-violet-300/70">
+          {activePreset ?? "custom"}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1">
+        {MEDIA_VIDEO_QUALITY_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            aria-pressed={activePreset === preset.id}
+            title={preset.description}
+            onClick={() => onApply(preset.settings)}
+            className={cn(
+              "rounded-lg border px-2 py-1.5 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
+              activePreset === preset.id
+                ? "border-violet-300/40 bg-violet-300/15 text-violet-100"
+                : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
+            )}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[9px] leading-4 text-slate-500">
+        {activeDescription}
+      </p>
+      {delivery ? (
+        <p className="mt-2 rounded-lg border border-slate-800/80 bg-slate-950/55 px-2.5 py-2 text-[9px] leading-4 text-slate-400">
+          {delivery.width} x {delivery.height} / {delivery.outputFrameCount}{" "}
+          delivered frame{delivery.outputFrameCount === 1 ? "" : "s"} /{" "}
+          {delivery.durationSeconds.toFixed(2)}s at {delivery.fps} fps /{" "}
+          {delivery.transparent ? "verified alpha" : "opaque"} /{" "}
+          {delivery.encodingQuality}
+        </p>
+      ) : null}
+    </section>
+  );
+};
+
 const NodeInspector = ({
   node,
   flow,
@@ -1773,6 +1912,7 @@ const NodeInspector = ({
   models,
   assets,
   onNodeConfigChange,
+  onNodeConfigPatch,
   onConnectPorts,
   onDisconnectInput,
   onDisconnectConnection,
@@ -1789,6 +1929,10 @@ const NodeInspector = ({
     nodeId: string,
     fieldId: string,
     value: unknown,
+  ) => void;
+  onNodeConfigPatch?: (
+    nodeId: string,
+    values: Readonly<Record<string, unknown>>,
   ) => void;
   onConnectPorts: (request: MediaFlowConnectionRequest) => void;
   onDisconnectInput: (nodeId: string, portId: string) => void;
@@ -1908,12 +2052,21 @@ const NodeInspector = ({
       <section className="mt-5" aria-label="Node settings">
         {definition ? (
           <>
+            {node.type === "task.generate-video" && onNodeConfigPatch ? (
+              <VideoQualityPresetPanel
+                config={node.config}
+                onApply={(values) => onNodeConfigPatch(node.id, values)}
+              />
+            ) : null}
             {groups.length > 1 ? (
               <div
                 role="tablist"
                 aria-label="Node setting complexity"
                 className={cn(
                   "grid gap-1 rounded-lg border border-slate-800 bg-slate-900/45 p-1",
+                  node.type === "task.generate-video" &&
+                    onNodeConfigPatch &&
+                    "mt-4",
                   groups.length === 2 ? "grid-cols-2" : "grid-cols-3",
                 )}
               >
@@ -2025,6 +2178,9 @@ const NodeInspector = ({
                   >
                     {inputPort.label}
                     {inputPort.required ? " *" : ""}
+                    <span className="ml-1.5 font-normal text-slate-600">
+                      {PORT_LABELS[inputPort.dataType]}
+                    </span>
                   </label>
                   {inputPort.cardinality === "collection" ? (
                     <div
@@ -2614,6 +2770,7 @@ export const MediaFlowView = ({
   onFlowVariablesChange = () => undefined,
   onTemplateApply = () => undefined,
   onNodeConfigChange,
+  onNodeConfigPatch,
   onNodeAdd,
   onNodeRemove,
   onConnectPorts,
@@ -3486,7 +3643,7 @@ export const MediaFlowView = ({
             type="button"
             variant="ghost"
             size="sm"
-            aria-label="Browse flow templates · 3 built-in"
+            aria-label="Browse built-in flow templates"
             aria-expanded={templatesPanelOpen}
             onClick={() => {
               if (templatesPanelOpen) {
@@ -3720,10 +3877,10 @@ export const MediaFlowView = ({
                 >
                   {runOverlay.status.replaceAll("-", " ")}
                 </Badge>
-                <p className="truncate text-[11px] font-semibold text-slate-200">
+                <p className="min-w-0 break-words text-[11px] leading-4 font-semibold text-slate-200">
                   Run overlay · {runOverlay.flowName}
                 </p>
-                <span className="font-mono text-[9px] text-slate-600">
+                <span className="break-all font-mono text-[9px] text-slate-600">
                   {runOverlay.id}
                 </span>
               </div>
@@ -3904,6 +4061,7 @@ export const MediaFlowView = ({
             models={models}
             assets={assets}
             onNodeConfigChange={onNodeConfigChange}
+            onNodeConfigPatch={onNodeConfigPatch}
             onConnectPorts={onConnectPorts}
             onDisconnectInput={onDisconnectInput}
             onDisconnectConnection={disconnectConnection}
@@ -4099,7 +4257,7 @@ export const MediaFlowView = ({
         </aside> : null}
       </div>
       <Dialog open={remoteConfirmationOpen} onOpenChange={setRemoteConfirmationOpen}>
-        <DialogContent className="max-h-[min(760px,calc(100vh-28px))] w-[min(680px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden border-amber-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+        <DialogContent className="max-h-[min(760px,calc(100vh-28px))] w-[min(680px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-amber-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-lg text-white">
               <ShieldCheck className="h-5 w-5 text-amber-300" />

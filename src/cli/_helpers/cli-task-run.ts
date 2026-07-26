@@ -376,6 +376,15 @@ export const printTaskPreview = async (
         : {}),
       ...(conversationContext ? { conversationContext } : {}),
       ...(imageInputs.length > 0 ? { imageInputs } : {}),
+      ...(args.acknowledgeCompatibleInstructionDelivery === true
+        ? { acknowledgeCompatibleInstructionDelivery: true }
+        : {}),
+      ...(args.acknowledgedInstructionDeliveryPlanId === undefined
+        ? {}
+        : {
+            acknowledgedInstructionDeliveryPlanId:
+              args.acknowledgedInstructionDeliveryPlanId,
+          }),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {

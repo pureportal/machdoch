@@ -18,7 +18,6 @@ import {
   createFilePreviewSection,
   createFileTargetSection,
   createInitialFileContent,
-  createInstructionFilesSection,
   createPromptFilesSection,
   createProviderAvailabilitySection,
   createRuntimeConfigSection,
@@ -300,13 +299,9 @@ export const executeInspectionTarget = async (
         mode: config.mode,
         status: "executed",
         summary:
-          "Executed a safe, read-only inspection of the discovered instruction files.",
+          "Executed a safe, read-only inspection of the resolved instruction sources.",
         executedTools: ["filesystem"],
-        outputSections: [
-          ...contextSections,
-          createCustomizationSummarySection(customizations),
-          createInstructionFilesSection(customizations),
-        ],
+        outputSections: contextSections,
       });
     }
 
@@ -353,7 +348,6 @@ export const executeInspectionTarget = async (
         outputSections: [
           ...contextSections,
           createCustomizationSummarySection(customizations),
-          createInstructionFilesSection(customizations),
           createPromptFilesSection(customizations),
           createSkillFilesSection(customizations),
         ],

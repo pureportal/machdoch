@@ -26,6 +26,7 @@ export interface QueuedMessagePanelMessage {
   id: string;
   content: string;
   attachments: ChatSessionContextAttachment[];
+  promptEnhancementMode?: "simple" | "web-search";
   createdAt: number;
 }
 
@@ -173,6 +174,16 @@ export const QueuedMessagesPanel = ({
                   }
                   className="max-h-20 min-h-9 resize-none border-slate-800 bg-slate-950/70 px-3 py-2 text-sm leading-5 text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
                 />
+
+                {message.promptEnhancementMode ? (
+                  <div className="flex">
+                    <span className="rounded-full border border-violet-400/25 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-100">
+                      {message.promptEnhancementMode === "web-search"
+                        ? "Enhance with web search before execution"
+                        : "Enhance before execution"}
+                    </span>
+                  </div>
+                ) : null}
 
                 <div className="flex min-w-0 items-start gap-2 rounded-lg border border-slate-800/60 bg-slate-950/35 p-1.5">
                   <ContextAttachmentMenuButton

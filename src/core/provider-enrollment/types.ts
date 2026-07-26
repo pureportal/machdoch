@@ -2,7 +2,12 @@ import type {
   AgentCliProvider,
   ConfiguredModelProvider,
 } from "../runtime-contract.generated.js";
-import type { InstructionTargetAudience } from "../types.js";
+import type {
+  InstructionDeliveryDimension,
+  InstructionDeliveryGrade,
+  NativeInstructionRecord,
+  ResolvedInstructionSource,
+} from "../instruction-system/types.js";
 
 export const PROVIDER_ENROLLMENT_SCHEMA_VERSION = 1;
 export const PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION = 1;
@@ -16,49 +21,18 @@ export type EnrollmentRefreshState =
   | "provider-current"
   | "degraded";
 export type EnrollmentDeliveryRoute =
-  | "api-request"
   | "application-mcp"
-  | "cli-native-instruction"
-  | "cli-prompt-fallback"
   | "cli-native-mcp"
   | "cli-stdio-proxy"
   | "cli-aggregate-broker"
-  | "provider-native-adopted"
   | "uncovered";
 export type EnrollmentEntityKind =
-  | "instruction"
   | "mcp-server"
   | "mcp-tools"
   | "mcp-resources"
   | "mcp-prompts"
   | "mcp-tasks"
   | "mcp-initialization-instructions";
-
-export interface CompiledInstructionSource {
-  id: string;
-  name: string;
-  sourcePath?: string;
-  bodyHash: string;
-  sourceIds: string[];
-  priority: number;
-  body: string;
-}
-
-export interface CompiledInstructionBundle {
-  schemaVersion: typeof PROVIDER_ENROLLMENT_SCHEMA_VERSION;
-  audience: InstructionTargetAudience;
-  sources: CompiledInstructionSource[];
-  omittedSources: Array<Pick<
-    CompiledInstructionSource,
-    "id" | "name" | "sourcePath" | "bodyHash" | "sourceIds"
-  >>;
-  degradedSourceIds: string[];
-  renderedText: string;
-  digest: string;
-  estimatedTokens: number;
-  truncated: boolean;
-  warnings: string[];
-}
 
 export interface EnrollmentEvidence {
   kind:
@@ -136,33 +110,47 @@ export interface ProviderProbeResult {
   warnings: string[];
 }
 
+export interface MaterializedInstructionDelivery {
+  resolutionId: string;
+  planId: string;
+  canonicalDigest: string;
+  environmentDigest: string;
+  grade: InstructionDeliveryGrade;
+  planRoute: string;
+  transportRoute:
+    | "cli-native-instruction"
+    | "cli-prompt-fallback";
+  envelopeBytes: number;
+  instructionPayloadBytes: number;
+  instructionPayloadIncludedInRequest: boolean;
+  estimatedTokens?: number;
+  truncation: "none";
+  sources: Array<
+    Pick<
+      ResolvedInstructionSource,
+      | "id"
+      | "name"
+      | "kind"
+      | "scopePath"
+      | "precedence"
+      | "digest"
+      | "byteLength"
+      | "lineCount"
+    >
+  >;
+  dimensions: InstructionDeliveryDimension[];
+}
+
 export interface EnrollmentManifest {
   schemaVersion: typeof PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION;
   runId: string;
   provider: ProviderSurface;
   providerVersion?: string;
+  providerFeatures: string[];
+  providerProbeDigest: string;
   workspaceId: string;
-  audience: InstructionTargetAudience;
   createdAt: string;
-  instructionBundle: {
-    digest: string;
-    estimatedTokens: number;
-    truncated: boolean;
-    sources: Array<{
-      id: string;
-      name: string;
-      sourcePath?: string;
-      bodyHash: string;
-      sourceIds: string[];
-    }>;
-    omittedSources: Array<{
-      id: string;
-      name: string;
-      sourcePath?: string;
-      bodyHash: string;
-      sourceIds: string[];
-    }>;
-  };
+  instructionDelivery: MaterializedInstructionDelivery;
   mcp?: {
     effectiveConfigDigest: string;
     catalogDigest: string;
@@ -177,8 +165,10 @@ export interface EnrollmentManifest {
   renderedFiles: Array<{ path: string; digest: string; purpose: string }>;
   nativeSources: Array<{
     path: string;
-    digest: string;
-    policy: "adopted" | "allowed";
+    location: NativeInstructionRecord["location"];
+    convention: NativeInstructionRecord["convention"];
+    status: NativeInstructionRecord["status"];
+    digest?: string;
   }>;
   arguments: string[];
   environmentKeys: string[];
@@ -190,7 +180,7 @@ export interface EnrollmentManifest {
 export interface MaterializedCliEnrollment {
   provider: AgentCliProvider;
   rootPath: string;
-  instructionBundle: CompiledInstructionBundle;
+  instructionDelivery: MaterializedInstructionDelivery;
   instructionRoute:
     | "cli-native-instruction"
     | "cli-prompt-fallback";
@@ -201,14 +191,6 @@ export interface MaterializedCliEnrollment {
   manifest: EnrollmentManifest;
   manifestPath: string;
   dispose(): Promise<void>;
-}
-
-export interface ProviderEnrollmentInstructionsConfig {
-  mode: "native-when-available";
-  unmanagedNative: "adopt" | "allow" | "fail";
-  strictConflicts: boolean;
-  fallback: "automatic";
-  failOnTruncation: boolean;
 }
 
 export interface ProviderEnrollmentMcpConfig {
@@ -233,7 +215,6 @@ export interface ProviderEnrollmentPersistentSyncConfig {
 export interface ProviderEnrollmentConfig {
   schemaVersion: typeof PROVIDER_ENROLLMENT_SCHEMA_VERSION;
   enabled: boolean;
-  instructions: ProviderEnrollmentInstructionsConfig;
   mcp: ProviderEnrollmentMcpConfig;
   persistentSync: ProviderEnrollmentPersistentSyncConfig;
   providers: Record<AgentCliProvider, { enabled: boolean }>;

@@ -10,6 +10,7 @@ mod hardware;
 mod ingest;
 mod local_flow;
 mod model_addon;
+mod model_discovery;
 mod model_import;
 mod model_install;
 mod provider_local_diffusers;
@@ -68,7 +69,7 @@ pub(crate) struct MediaRuntimeState {
     local_diffusers_status: Mutex<Option<provider_local_diffusers::LocalDiffusersRuntimeStatus>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RalphMediaResolvedInputBinding {
     pub(crate) source: String,
@@ -116,6 +117,17 @@ impl MediaRuntimeState {
                 return status.clone();
             }
         }
+        let probed = provider_local_diffusers::probe(app);
+        if let Ok(mut status) = self.local_diffusers_status.lock() {
+            *status = Some(probed.clone());
+        }
+        probed
+    }
+
+    fn refresh_local_diffusers_status(
+        &self,
+        app: &AppHandle,
+    ) -> provider_local_diffusers::LocalDiffusersRuntimeStatus {
         let probed = provider_local_diffusers::probe(app);
         if let Ok(mut status) = self.local_diffusers_status.lock() {
             *status = Some(probed.clone());
@@ -173,8 +185,11 @@ fn direct_generation_model_ids(
     Ok(model_ids)
 }
 
-fn direct_reference_image_model_ids() -> Vec<String> {
-    vec![
+fn direct_reference_image_model_ids(
+    paths: &MediaRuntimePaths,
+    local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    let mut model_ids = vec![
         "openai:gpt-image-2".to_string(),
         "quiver:arrow-1.1-max".to_string(),
         "quiver:arrow-1.1".to_string(),
@@ -183,7 +198,12 @@ fn direct_reference_image_model_ids() -> Vec<String> {
         "local-svg:IntroSVG-Qwen2.5-VL-7B".to_string(),
         "local-svg:InternSVG-8B".to_string(),
         "local-svg:VFIG-4B".to_string(),
-    ]
+    ];
+    model_ids.extend(provider_local_diffusers::runnable_reference_model_ids(
+        paths,
+        local_diffusers,
+    )?);
+    Ok(model_ids)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -214,6 +234,13 @@ pub(crate) struct MediaProviderCatalogEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct MediaModelManagement {
+    acquisition: String,
+    verification: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct MediaModelDescriptor {
     id: String,
     provider_id: String,
@@ -234,6 +261,7 @@ pub(crate) struct MediaModelDescriptor {
     package_type: String,
     architecture: Option<String>,
     addon_capabilities: Vec<MediaModelAddonCapability>,
+    management: MediaModelManagement,
     runtime_readiness: String,
     runtime_readiness_diagnostic: Option<String>,
     runtime_readiness_checked_at: Option<String>,
@@ -588,6 +616,17 @@ pub(crate) struct MediaRunRecord {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct MediaRunPage {
+    schema_version: u32,
+    revision: String,
+    offset: u32,
+    total_items: Option<u32>,
+    unchanged: bool,
+    items: Vec<MediaRunRecord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct MediaRunEvent {
     id: i64,
     run_id: String,
@@ -637,6 +676,17 @@ pub(crate) struct MediaAssetRecord {
     operation: Option<serde_json::Value>,
     source_asset_ids: Vec<String>,
     tags: Vec<MediaAssetTag>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaAssetPage {
+    schema_version: u32,
+    revision: String,
+    offset: u32,
+    total_items: Option<u32>,
+    unchanged: bool,
+    items: Vec<MediaAssetRecord>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1047,11 +1097,120 @@ pub(crate) struct GenerateMediaImagesRequest {
     transparent_background: bool,
     #[serde(default)]
     subject_cutout_model_priority: Vec<String>,
+    #[serde(default)]
+    negative_prompt: String,
+    #[serde(default)]
+    reference_image_asset_id: Option<String>,
+    #[serde(default)]
+    edit_strength: Option<f64>,
+    #[serde(default)]
+    reference_boost: Option<f64>,
+    #[serde(default)]
+    require_chroma_background: bool,
+    #[serde(default)]
+    grounding_pixels: Option<u32>,
+    #[serde(default)]
+    reference_fit: Option<String>,
+    #[serde(default)]
+    memory_profile: Option<String>,
     plan_snapshot: MediaRunPlanSnapshot,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct MediaAnimatedBackgroundConfig {
+    pub(crate) style: String,
+    pub(crate) direction: String,
+    pub(crate) color_start: String,
+    pub(crate) color_end: String,
+    pub(crate) cycles: u32,
+}
+
+impl MediaAnimatedBackgroundConfig {
+    fn validate(&mut self) -> MediaResult<()> {
+        self.style = required_text("animatedBackground.style", &self.style, 64)?;
+        if !matches!(self.style.as_str(), "gradient-wave" | "enchanted-beach") {
+            return Err(
+                "animatedBackground.style must be gradient-wave or enchanted-beach".to_string(),
+            );
+        }
+        self.direction = required_text("animatedBackground.direction", &self.direction, 64)?;
+        if !matches!(
+            self.direction.as_str(),
+            "horizontal" | "vertical" | "diagonal"
+        ) {
+            return Err(
+                "animatedBackground.direction must be horizontal, vertical, or diagonal"
+                    .to_string(),
+            );
+        }
+        for (name, color) in [
+            ("colorStart", &mut self.color_start),
+            ("colorEnd", &mut self.color_end),
+        ] {
+            *color = required_text(&format!("animatedBackground.{name}"), color, 7)?;
+            if color.len() != 7
+                || !color.starts_with('#')
+                || !color[1..]
+                    .chars()
+                    .all(|character| character.is_ascii_hexdigit())
+            {
+                return Err(format!(
+                    "animatedBackground.{name} must be a six-digit hex color"
+                ));
+            }
+            color.make_ascii_lowercase();
+        }
+        if !(1..=4).contains(&self.cycles) {
+            return Err("animatedBackground.cycles must be between 1 and 4".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct GenerateMediaVideoRequest {
+    schema_version: u32,
+    run_id: String,
+    flow_id: String,
+    flow_revision_id: String,
+    flow_name: String,
+    plan_id: String,
+    prompt: String,
+    model_id: String,
+    model_label: String,
+    diagnostic_count: u32,
+    workspace_root: String,
+    first_frame_asset_id: String,
+    last_frame_asset_id: String,
+    aspect_ratio: String,
+    resolution: String,
+    output_format: String,
+    transparent_background: bool,
+    loop_mode: String,
+    fps: u32,
+    num_frames: u32,
+    num_inference_steps: u32,
+    guidance_scale: f64,
+    seed: u64,
+    negative_prompt: String,
+    matte_quality: String,
+    encoding_quality: String,
+    memory_profile: String,
+    experimental_low_memory: bool,
+    #[serde(default)]
+    animated_background: Option<MediaAnimatedBackgroundConfig>,
+    plan_snapshot: MediaRunPlanSnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub(crate) enum MediaModelAddonSelection {
     #[serde(rename = "lora")]
     Lora {
@@ -1453,6 +1612,162 @@ impl GenerateMediaImagesRequest {
         if !matches!(self.model_policy.as_str(), "balanced" | "fast" | "quality") {
             return Err("modelPolicy must be balanced, fast, or quality".to_string());
         }
+        self.negative_prompt = self.negative_prompt.trim().to_string();
+        if self.negative_prompt.chars().count() > 8_000 {
+            return Err("negativePrompt exceeds 8000 characters".to_string());
+        }
+        let memory_profile = self
+            .memory_profile
+            .get_or_insert_with(|| "auto".to_string());
+        *memory_profile = required_text("memoryProfile", memory_profile, 32)?;
+        if !matches!(
+            memory_profile.as_str(),
+            "auto" | "memory-saver" | "balanced" | "maximum-speed"
+        ) {
+            return Err(
+                "memoryProfile must be auto, memory-saver, balanced, or maximum-speed".to_string(),
+            );
+        }
+        if let Some(asset_id) = &mut self.reference_image_asset_id {
+            *asset_id = required_text("referenceImageAssetId", asset_id, 256)?;
+            let edit_strength = self.edit_strength.get_or_insert(0.5);
+            if !edit_strength.is_finite() || !(0.0..=1.0).contains(edit_strength) {
+                return Err("editStrength must be between 0 and 1".to_string());
+            }
+            let reference_boost = self.reference_boost.get_or_insert(2.0);
+            if !reference_boost.is_finite() || !(0.25..=8.0).contains(reference_boost) {
+                return Err("referenceBoost must be between 0.25 and 8".to_string());
+            }
+            let grounding_pixels = self.grounding_pixels.get_or_insert(768);
+            if !(384..=1_024).contains(grounding_pixels) {
+                return Err("groundingPixels must be between 384 and 1024".to_string());
+            }
+            let reference_fit = self.reference_fit.get_or_insert_with(|| "fit".to_string());
+            *reference_fit = required_text("referenceFit", reference_fit, 16)?;
+            if !matches!(reference_fit.as_str(), "fit" | "crop") {
+                return Err("referenceFit must be fit or crop".to_string());
+            }
+        } else if self.edit_strength.is_some()
+            || self.reference_boost.is_some()
+            || self.require_chroma_background
+            || self.grounding_pixels.is_some()
+            || self.reference_fit.is_some()
+        {
+            return Err(
+                "edit controls require referenceImageAssetId to identify an immutable source"
+                    .to_string(),
+            );
+        }
+        self.plan_snapshot.validate(&self.plan_id, &self.flow_id)
+    }
+}
+
+impl GenerateMediaVideoRequest {
+    fn validate(&mut self) -> MediaResult<()> {
+        if self.schema_version != 1 {
+            return Err("direct video generation requires schemaVersion 1".to_string());
+        }
+        self.run_id = required_text("runId", &self.run_id, 128)?;
+        self.flow_id = required_text("flowId", &self.flow_id, 128)?;
+        self.flow_revision_id = required_text("flowRevisionId", &self.flow_revision_id, 128)?;
+        self.flow_name = required_text("flowName", &self.flow_name, 256)?;
+        self.plan_id = required_text("planId", &self.plan_id, 128)?;
+        self.prompt = required_text("prompt", &self.prompt, 8_000)?;
+        self.model_id = required_text("modelId", &self.model_id, 128)?;
+        self.model_label = required_text("modelLabel", &self.model_label, 256)?;
+        self.workspace_root = required_text("workspaceRoot", &self.workspace_root, 4_096)?;
+        self.first_frame_asset_id =
+            required_text("firstFrameAssetId", &self.first_frame_asset_id, 256)?;
+        self.last_frame_asset_id =
+            required_text("lastFrameAssetId", &self.last_frame_asset_id, 256)?;
+        if self.model_id != "local:wan2.2-ti2v-5b" {
+            return Err(
+                "selected model is not the executable Wan2.2 TI2V video adapter".to_string(),
+            );
+        }
+        if !matches!(self.aspect_ratio.as_str(), "1:1" | "16:9" | "9:16" | "21:9") {
+            return Err("Wan aspectRatio must be 1:1, 16:9, 9:16, or 21:9".to_string());
+        }
+        if !matches!(
+            self.resolution.as_str(),
+            "preview-512" | "quality-640" | "quality-768"
+        ) {
+            return Err("resolution must be preview-512, quality-640, or quality-768".to_string());
+        }
+        if self.output_format != "webm" {
+            return Err("WAN output requires the verified WebM container".to_string());
+        }
+        if !matches!(self.loop_mode.as_str(), "none" | "ping-pong" | "seamless") {
+            return Err("loopMode must be none, ping-pong, or seamless".to_string());
+        }
+        if self.loop_mode == "seamless" && self.first_frame_asset_id != self.last_frame_asset_id {
+            return Err(
+                "seamless loopMode requires the same immutable first and last frame asset"
+                    .to_string(),
+            );
+        }
+        if self.fps == 0 || self.fps > 60 {
+            return Err("fps must be between 1 and 60".to_string());
+        }
+        if !(17..=121).contains(&self.num_frames) || (self.num_frames - 1) % 4 != 0 {
+            return Err(
+                "WAN numFrames must be from 17 through 121 in the required 4k+1 form".to_string(),
+            );
+        }
+        if !(4..=50).contains(&self.num_inference_steps) {
+            return Err("numInferenceSteps must be between 4 and 50".to_string());
+        }
+        if !self.guidance_scale.is_finite() || !(1.0..=10.0).contains(&self.guidance_scale) {
+            return Err("guidanceScale must be between 1 and 10".to_string());
+        }
+        if self.seed > 9_007_199_254_740_991 {
+            return Err("seed must be a JavaScript-safe non-negative integer".to_string());
+        }
+        self.negative_prompt = self.negative_prompt.trim().to_string();
+        if self.negative_prompt.chars().count() > 8_000 {
+            return Err("negativePrompt exceeds 8000 characters".to_string());
+        }
+        if !matches!(
+            self.matte_quality.as_str(),
+            "fast" | "balanced" | "production"
+        ) {
+            return Err("matteQuality must be fast, balanced, or production".to_string());
+        }
+        if !matches!(
+            self.encoding_quality.as_str(),
+            "draft" | "balanced" | "production" | "lossless"
+        ) {
+            return Err(
+                "encodingQuality must be draft, balanced, production, or lossless".to_string(),
+            );
+        }
+        if !matches!(
+            self.memory_profile.as_str(),
+            "auto" | "memory-saver" | "balanced" | "maximum-speed"
+        ) {
+            return Err(
+                "memoryProfile must be auto, memory-saver, balanced, or maximum-speed".to_string(),
+            );
+        }
+        if !self.experimental_low_memory {
+            return Err(
+                "experimentalLowMemory must be acknowledged on GPUs below the official 24 GiB profile"
+                    .to_string(),
+            );
+        }
+        if let Some(background) = &mut self.animated_background {
+            if !self.transparent_background {
+                return Err(
+                    "animatedBackground requires transparentBackground for compositing".to_string(),
+                );
+            }
+            background.validate()?;
+        }
+        if self.diagnostic_count > 128 {
+            return Err("diagnosticCount cannot exceed 128".to_string());
+        }
+        let workspace = crate::runtime_snapshot::resolve_workspace_root_path(&self.workspace_root)?;
+        self.workspace_root = workspace.display().to_string();
         self.plan_snapshot.validate(&self.plan_id, &self.flow_id)
     }
 }
@@ -1640,8 +1955,10 @@ impl MediaRunPlanSnapshot {
                 node.r#type.as_str(),
                 "source.prompt"
                     | "source.image"
+                    | "source.animated-background"
                     | "task.generate-image"
                     | "task.edit-image"
+                    | "task.generate-video"
                     | "operation.crop"
                     | "operation.resize"
                     | "operation.format-convert"
@@ -1650,10 +1967,13 @@ impl MediaRunPlanSnapshot {
                     | "operation.contact-sheet"
                     | "operation.subject-cutout"
                     | "operation.alpha-matte"
+                    | "operation.composite"
+                    | "operation.video-composite"
                     | "operation.quality-analyze"
                     | "control.quality-gate"
                     | "control.human-review"
                     | "output.asset"
+                    | "output.video"
             ) || !matches!(
                 node.layer.as_str(),
                 "source" | "task" | "operation" | "control" | "output" | "runtime"
@@ -1673,40 +1993,62 @@ impl MediaRunPlanSnapshot {
             step.kind = required_text("planSnapshot.step.kind", &step.kind, 64)?;
             step.label = required_text("planSnapshot.step.label", &step.label, 256)?;
             step.target = required_text("planSnapshot.step.target", &step.target, 32)?;
-            if !node_ids.contains(&step.source_node_id)
-                || !matches!(
-                    step.kind.as_str(),
-                    "normalize-prompt"
-                        | "resolve-asset"
-                        | "resolve-model"
-                        | "generate-image"
-                        | "generate-svg"
-                        | "vectorize-svg"
-                        | "validate-svg"
-                        | "render-svg"
-                        | "score-svg"
-                        | "repair-svg"
-                        | "edit-image"
-                        | "crop-image"
-                        | "resize-image"
-                        | "convert-image"
-                        | "strip-metadata"
-                        | "auto-tag"
-                        | "create-contact-sheet"
-                        | "cutout-subject"
-                        | "extract-alpha-matte"
-                        | "analyze-quality"
-                        | "evaluate-gate"
-                        | "wait-for-review"
-                        | "ingest-asset"
-                )
-                || !matches!(step.target.as_str(), "orchestrator" | "local" | "remote")
-                || !matches!(
-                    step.side_effect.as_deref(),
-                    None | Some("paid-request" | "model-download" | "asset-write")
-                )
-            {
-                return Err("planSnapshot contains an invalid expanded step".to_string());
+            if !node_ids.contains(&step.source_node_id) {
+                return Err(format!(
+                    "planSnapshot step {} references unknown semantic node {}",
+                    step.id, step.source_node_id
+                ));
+            }
+            if !matches!(
+                step.kind.as_str(),
+                "normalize-prompt"
+                    | "resolve-asset"
+                    | "resolve-animated-background"
+                    | "resolve-model"
+                    | "resolve-model-addons"
+                    | "generate-image"
+                    | "generate-video"
+                    | "generate-svg"
+                    | "vectorize-svg"
+                    | "validate-svg"
+                    | "render-svg"
+                    | "score-svg"
+                    | "repair-svg"
+                    | "edit-image"
+                    | "crop-image"
+                    | "resize-image"
+                    | "convert-image"
+                    | "strip-metadata"
+                    | "auto-tag"
+                    | "create-contact-sheet"
+                    | "cutout-subject"
+                    | "extract-alpha-matte"
+                    | "composite-image"
+                    | "composite-video"
+                    | "analyze-quality"
+                    | "evaluate-gate"
+                    | "wait-for-review"
+                    | "ingest-asset"
+            ) {
+                return Err(format!(
+                    "planSnapshot step {} uses unsupported kind {}",
+                    step.id, step.kind
+                ));
+            }
+            if !matches!(step.target.as_str(), "orchestrator" | "local" | "remote") {
+                return Err(format!(
+                    "planSnapshot step {} uses unsupported target {}",
+                    step.id, step.target
+                ));
+            }
+            if !matches!(
+                step.side_effect.as_deref(),
+                None | Some("paid-request" | "model-download" | "asset-write")
+            ) {
+                return Err(format!(
+                    "planSnapshot step {} uses an unsupported side effect",
+                    step.id
+                ));
             }
             match (&step.kind[..], &mut step.review) {
                 ("wait-for-review", Some(review)) => {
@@ -1889,8 +2231,98 @@ mod run_plan_contract_tests {
     fn rejects_plan_step_that_references_unknown_semantic_node() {
         assert_eq!(
             request(snapshot("node:missing")).validate().unwrap_err(),
-            "planSnapshot contains an invalid expanded step"
+            "planSnapshot step step:normalize references unknown semantic node node:missing"
         );
+    }
+
+    #[test]
+    fn accepts_model_addon_resolution_step() {
+        let mut plan = snapshot("node:prompt");
+        plan.steps.push(MediaRunPlanStepSnapshot {
+            id: "step:resolve-addons".to_string(),
+            source_node_id: "node:prompt".to_string(),
+            kind: "resolve-model-addons".to_string(),
+            label: "Resolve local LoRA weights".to_string(),
+            target: "orchestrator".to_string(),
+            cacheable: true,
+            side_effect: None,
+            review: None,
+        });
+
+        assert!(request(plan).validate().is_ok());
+    }
+
+    #[test]
+    fn accepts_video_generation_nodes_and_steps() {
+        let mut plan = snapshot("prompt");
+        plan.nodes = vec![
+            semantic_node("prompt", "source.prompt", "Motion prompt", "source"),
+            semantic_node("first-frame", "source.image", "First frame", "source"),
+            semantic_node("video", "task.generate-video", "Generate video", "task"),
+            semantic_node("output", "output.video", "Save video", "output"),
+        ];
+        plan.steps = vec![
+            local_step("normalize", "prompt", "normalize-prompt"),
+            local_step("resolve-frame", "first-frame", "resolve-asset"),
+            local_step("resolve-model", "video", "resolve-model"),
+            local_step("generate", "video", "generate-video"),
+            local_step("publish", "output", "ingest-asset"),
+        ];
+
+        assert!(request(plan).validate().is_ok());
+    }
+
+    #[test]
+    fn addon_selections_use_the_camel_case_ipc_contract() {
+        let lora: MediaModelAddonSelection = serde_json::from_value(serde_json::json!({
+            "kind": "lora",
+            "addonId": "addon:pixel-art",
+            "enabled": true,
+            "modelStrength": 1.0,
+            "textEncoderStrength": null,
+            "denoisingSchedule": {
+                "start": 0.1,
+                "end": 0.9
+            }
+        }))
+        .expect("camel-case LoRA selection should deserialize");
+        assert!(matches!(
+            lora,
+            MediaModelAddonSelection::Lora {
+                addon_id,
+                enabled: true,
+                model_strength,
+                text_encoder_strength: None,
+                denoising_schedule: Some(MediaLoraDenoisingSchedule {
+                    start,
+                    end
+                })
+            } if addon_id == "addon:pixel-art"
+                && model_strength == 1.0
+                && start == 0.1
+                && end == 0.9
+        ));
+
+        let textual_inversion: MediaModelAddonSelection =
+            serde_json::from_value(serde_json::json!({
+                "kind": "textual-inversion",
+                "addonId": "addon:token",
+                "enabled": true,
+                "token": "<subject>",
+                "placement": "positive"
+            }))
+            .expect("camel-case textual-inversion selection should deserialize");
+        assert!(matches!(
+            textual_inversion,
+            MediaModelAddonSelection::TextualInversion {
+                addon_id,
+                enabled: true,
+                token,
+                placement
+            } if addon_id == "addon:token"
+                && token == "<subject>"
+                && placement == "positive"
+        ));
     }
 }
 
@@ -1903,6 +2335,25 @@ fn required_text(field: &str, value: &str, max_chars: usize) -> MediaResult<Stri
         return Err(format!("{field} exceeds {max_chars} characters"));
     }
     Ok(value.to_string())
+}
+
+const MEDIA_CATALOG_REVISION_MAX_CHARS: usize = 80;
+
+fn required_catalog_revision(value: &str) -> MediaResult<String> {
+    required_text("knownRevision", value, MEDIA_CATALOG_REVISION_MAX_CHARS)
+}
+
+#[cfg(test)]
+mod ipc_contract_tests {
+    use super::required_catalog_revision;
+
+    #[test]
+    fn accepts_opaque_catalog_revision_with_database_instance_identity() {
+        let revision = "0559257df311e93b837d4c6c4926c586:18446744073709551615";
+
+        assert_eq!(required_catalog_revision(revision).as_deref(), Ok(revision));
+        assert!(required_catalog_revision(&"x".repeat(81)).is_err());
+    }
 }
 
 pub(crate) fn resolve_published_image_asset_path(
@@ -2029,7 +2480,10 @@ pub(crate) fn initialize_runtime(app: &AppHandle) -> MediaResult<MediaRuntimeSta
         storage_ready: true,
         mode: "native",
         direct_generation_model_ids,
-        direct_reference_image_model_ids: direct_reference_image_model_ids(),
+        direct_reference_image_model_ids: direct_reference_image_model_ids(
+            &paths,
+            &local_diffusers,
+        )?,
         local_diffusers,
     })
 }
@@ -2154,11 +2608,55 @@ pub(crate) fn media_initialize_runtime(app: AppHandle) -> MediaCommandResult<Med
                 storage_ready: true,
                 mode: "native",
                 direct_generation_model_ids,
-                direct_reference_image_model_ids: direct_reference_image_model_ids(),
+                direct_reference_image_model_ids: direct_reference_image_model_ids(
+                    &paths,
+                    &local_diffusers,
+                )?,
                 local_diffusers,
             })
         })(),
     )
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaDiscoveredModelArtifact {
+    path: String,
+    relative_path: String,
+    display_name: String,
+    kind: String,
+    status: String,
+    architecture: Option<String>,
+    byte_size: u64,
+    file_count: u32,
+    capabilities: Vec<String>,
+    diagnostic: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MediaWorkspaceModelDiscovery {
+    schema_version: u32,
+    root_path: String,
+    scanned_at: String,
+    entries: Vec<MediaDiscoveredModelArtifact>,
+    truncated: bool,
+    warnings: Vec<String>,
+}
+
+#[tauri::command]
+pub(crate) async fn media_refresh_local_diffusers_runtime(
+    app: AppHandle,
+) -> MediaCommandResult<provider_local_diffusers::LocalDiffusersRuntimeStatus> {
+    let worker_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        worker_app
+            .state::<MediaRuntimeState>()
+            .refresh_local_diffusers_status(&worker_app)
+    })
+    .await
+    .map_err(|error| format!("local Diffusers runtime probe worker failed: {error}"));
+    command_result("media_refresh_local_diffusers_runtime", result)
 }
 
 #[tauri::command]
@@ -2806,6 +3304,151 @@ async fn generate_local_diffusers(
 }
 
 #[tauri::command]
+pub(crate) async fn media_generate_video(
+    app: AppHandle,
+    mut request: GenerateMediaVideoRequest,
+) -> MediaCommandResult<MediaRunDetail> {
+    let result = async {
+        request.validate()?;
+        let paths = MediaRuntimePaths::resolve(&app)?;
+        database::ensure_initialized(&paths)?;
+        let begin_paths = paths.clone();
+        let begin_request = request.clone();
+        let claimed = tauri::async_runtime::spawn_blocking(move || {
+            database::begin_local_wan_generation(&begin_paths, &begin_request)
+        })
+        .await
+        .map_err(|error| format!("local WAN generation worker could not be joined: {error}"))??;
+        if !claimed {
+            return database::get_run_detail(&paths, &request.run_id);
+        }
+        database::transition_nodes_by_type(
+            &paths,
+            &request.run_id,
+            &["task.generate-image", "operation.subject-cutout"],
+            "cached",
+            Some("connected-stage.endpoint-cache"),
+            Some("Reused the exact immutable endpoint published by the connected image stage"),
+            Some(0.06),
+        )?;
+        database::transition_nodes_by_type(
+            &paths,
+            &request.run_id,
+            &["source.prompt", "source.image"],
+            "completed",
+            Some("local-wan.resolve-inputs"),
+            Some("Immutable prompt, first frame, last frame, and workspace model inputs resolved"),
+            Some(0.08),
+        )?;
+        database::transition_nodes_by_type(
+            &paths,
+            &request.run_id,
+            &["task.generate-video"],
+            "running",
+            Some("local-wan.generate"),
+            Some("Generating bounded first/last-conditioned WAN frames with AMD CPU offload"),
+            Some(0.1),
+        )?;
+        let generation_app = app.clone();
+        let generation_paths = paths.clone();
+        let generation_request = request.clone();
+        let video = tauri::async_runtime::spawn_blocking(move || {
+            provider_local_diffusers::generate_video(
+                &generation_app,
+                &generation_paths,
+                &generation_request,
+            )
+        })
+        .await
+        .map_err(|error| format!("local WAN worker could not be joined: {error}"))?;
+        let video = match video {
+            Ok(video) => video,
+            Err(diagnostic) => {
+                if database::is_cancellation_requested(&paths, &request.run_id)? {
+                    database::cancel_run(&paths, &request.run_id)?;
+                    return database::get_run_detail(&paths, &request.run_id);
+                }
+                database::fail_run(&paths, &request.run_id, &diagnostic)?;
+                return database::get_run_detail(&paths, &request.run_id);
+            }
+        };
+        let ending_label = match request.loop_mode.as_str() {
+            "seamless" => "seamless-loop",
+            "ping-pong" => "ping-pong-loop",
+            _ => "one-way-shot",
+        };
+        let delivery_label = if request.transparent_background {
+            "alpha"
+        } else {
+            "opaque"
+        };
+        let generation_complete_message = format!(
+            "WAN generation and verified {delivery_label} {ending_label} encoding completed"
+        );
+        database::transition_nodes_by_type(
+            &paths,
+            &request.run_id,
+            &["task.generate-video"],
+            "completed",
+            Some("local-wan.generate"),
+            Some(&generation_complete_message),
+            Some(0.92),
+        )?;
+        if request.animated_background.is_some() {
+            database::transition_nodes_by_type(
+                &paths,
+                &request.run_id,
+                &["source.animated-background"],
+                "completed",
+                Some("video.background"),
+                Some("Rendered the requested procedural background sequence"),
+                Some(0.93),
+            )?;
+            database::transition_nodes_by_type(
+                &paths,
+                &request.run_id,
+                &["operation.video-composite"],
+                "completed",
+                Some("video.composite"),
+                Some("Composited straight-alpha frames over the animated background"),
+                Some(0.94),
+            )?;
+        }
+        database::transition_nodes_by_type(
+            &paths,
+            &request.run_id,
+            &["output.video"],
+            "running",
+            Some("asset.publish"),
+            Some(if request.animated_background.is_some() {
+                "Publishing verified alpha and animated-background WebM outputs"
+            } else if request.transparent_background {
+                "Publishing the verified alpha WebM output"
+            } else {
+                "Publishing the verified opaque WebM output"
+            }),
+            Some(0.95),
+        )?;
+        let complete_paths = paths.clone();
+        let complete_request = request.clone();
+        match tauri::async_runtime::spawn_blocking(move || {
+            database::complete_local_wan_generation(&complete_paths, &complete_request, &video)
+        })
+        .await
+        .map_err(|error| format!("local WAN publisher could not be joined: {error}"))?
+        {
+            Ok(detail) => Ok(detail),
+            Err(diagnostic) => {
+                database::fail_run(&paths, &request.run_id, &diagnostic)?;
+                database::get_run_detail(&paths, &request.run_id)
+            }
+        }
+    }
+    .await;
+    command_result("media_generate_video", result)
+}
+
+#[tauri::command]
 pub(crate) async fn media_generate_svg(
     app: AppHandle,
     mut request: GenerateMediaSvgRequest,
@@ -3239,6 +3882,31 @@ pub(crate) fn media_list_runs(
 }
 
 #[tauri::command]
+pub(crate) fn media_list_run_page(
+    app: AppHandle,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    known_revision: Option<String>,
+) -> MediaCommandResult<MediaRunPage> {
+    command_result(
+        "media_list_run_page",
+        (|| {
+            let paths = MediaRuntimePaths::resolve(&app)?;
+            database::ensure_initialized(&paths)?;
+            let known_revision = known_revision
+                .map(|revision| required_catalog_revision(&revision))
+                .transpose()?;
+            database::list_run_page(
+                &paths,
+                offset.unwrap_or(0),
+                limit.unwrap_or(250).clamp(1, 250),
+                known_revision.as_deref(),
+            )
+        })(),
+    )
+}
+
+#[tauri::command]
 pub(crate) fn media_get_run_detail(
     app: AppHandle,
     run_id: String,
@@ -3308,6 +3976,31 @@ pub(crate) fn media_list_assets(
 }
 
 #[tauri::command]
+pub(crate) fn media_list_asset_page(
+    app: AppHandle,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    known_revision: Option<String>,
+) -> MediaCommandResult<MediaAssetPage> {
+    command_result(
+        "media_list_asset_page",
+        (|| {
+            let paths = MediaRuntimePaths::resolve(&app)?;
+            database::ensure_initialized(&paths)?;
+            let known_revision = known_revision
+                .map(|revision| required_catalog_revision(&revision))
+                .transpose()?;
+            database::list_asset_page(
+                &paths,
+                offset.unwrap_or(0),
+                limit.unwrap_or(250).clamp(1, 250),
+                known_revision.as_deref(),
+            )
+        })(),
+    )
+}
+
+#[tauri::command]
 pub(crate) fn media_get_model_catalog(
     app: AppHandle,
     configured_provider_ids: Vec<String>,
@@ -3349,6 +4042,20 @@ pub(crate) fn media_get_model_catalog(
             Ok(snapshot)
         })(),
     )
+}
+
+#[tauri::command]
+pub(crate) async fn media_discover_workspace_models(
+    workspace_root: String,
+) -> MediaCommandResult<MediaWorkspaceModelDiscovery> {
+    let result =
+        tauri::async_runtime::spawn_blocking(move || model_discovery::discover(&workspace_root))
+            .await
+            .map_err(|error| {
+                format!("workspace model discovery worker could not be joined: {error}")
+            })
+            .and_then(|result| result);
+    command_result("media_discover_workspace_models", result)
 }
 
 fn normalize_asset_tags(tags: Vec<String>) -> MediaResult<Vec<(String, String)>> {

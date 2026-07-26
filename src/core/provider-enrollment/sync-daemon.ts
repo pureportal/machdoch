@@ -174,7 +174,10 @@ const acquireDaemon = async (
 };
 
 const normalizeWatchedPath = (path: string): string => {
-  return path.replaceAll("\\", "/").replace(/^\.\//u, "").toLocaleLowerCase();
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\//u, "");
+  return process.platform === "win32"
+    ? normalized.toLocaleLowerCase("en-US")
+    : normalized;
 };
 
 const isPathOrChild = (path: string, root: string): boolean => {
@@ -185,14 +188,8 @@ export const isProviderSyncWorkspaceWatchPath = (path: string): boolean => {
   const normalized = normalizeWatchedPath(path);
   return (
     normalized === ".env" ||
-    normalized === "agents.md" ||
     normalized === ".machdoch" ||
-    normalized === ".machdoch/instructions.md" ||
-    isPathOrChild(normalized, ".machdoch/instructions") ||
-    isPathOrChild(normalized, ".machdoch/mcp") ||
-    normalized === ".github" ||
-    normalized === ".github/copilot-instructions.md" ||
-    isPathOrChild(normalized, ".github/instructions")
+    isPathOrChild(normalized, ".machdoch/mcp")
   );
 };
 
@@ -200,10 +197,8 @@ export const isProviderSyncUserWatchPath = (path: string): boolean => {
   const normalized = normalizeWatchedPath(path);
   return (
     normalized === "user-config.json" ||
-    normalized === "instructions.md" ||
     normalized === "mcp.json" ||
-    normalized === "mcp-discovery-cache.json" ||
-    isPathOrChild(normalized, "instructions")
+    normalized === "mcp-discovery-cache.json"
   );
 };
 
@@ -217,10 +212,7 @@ const createWorkspaceWatchers = (
           ...new Set([
             workspaceRoot,
             join(workspaceRoot, ".machdoch"),
-            join(workspaceRoot, ".machdoch", "instructions"),
             join(workspaceRoot, ".machdoch", "mcp"),
-            join(workspaceRoot, ".github"),
-            join(workspaceRoot, ".github", "instructions"),
           ]),
         ]
       : [workspaceRoot];
@@ -251,10 +243,7 @@ const createWorkspaceWatchers = (
 const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
   const userConfigRoot = dirname(getUserConfigPath());
   const stateRoot = getProviderEnrollmentStateDirectory();
-  const userRoots =
-    process.platform === "linux"
-      ? [userConfigRoot, join(userConfigRoot, "instructions")]
-      : [userConfigRoot];
+  const userRoots = [userConfigRoot];
   const watchers: FSWatcher[] = [];
 
   for (const root of userRoots) {

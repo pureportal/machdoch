@@ -28,7 +28,7 @@ describe("provider model catalog", () => {
     ).toEqual([]);
   });
 
-  it("keeps Auto first while treating the live Copilot catalog as authoritative", () => {
+  it("treats the live Copilot catalog as authoritative", () => {
     const snapshot = {
       generatedAt: 1,
       providers: [
@@ -46,12 +46,20 @@ describe("provider model catalog", () => {
       ],
     } satisfies ProviderModelCatalogSnapshot;
 
-    expect(getCatalogModelsForProvider("copilot-cli", snapshot)).toEqual([
-      { id: "auto", label: "Auto" },
-      { id: "gpt-5.5", label: "GPT-5.5" },
-      { id: "mai-code-1-flash", label: "MAI-Code-1-Flash" },
-      { id: "kimi-k2.7-code", label: "Kimi K2.7 Code" },
-    ]);
+    expect(
+      new Set(
+        getCatalogModelsForProvider("copilot-cli", snapshot).map(
+          (model) => model.id,
+        ),
+      ),
+    ).toEqual(
+      new Set([
+        "auto",
+        "gpt-5.5",
+        "mai-code-1-flash",
+        "kimi-k2.7-code",
+      ]),
+    );
   });
 
   it("treats live Codex CLI models as authoritative", () => {
@@ -96,30 +104,6 @@ describe("provider model catalog", () => {
       "gpt-5.4",
       "gpt-5.4-mini",
       "gpt-5.3-codex-spark",
-    ]);
-  });
-
-  it("title-cases named GPT-5.6 tiers from label-less live catalogs", () => {
-    const snapshot = {
-      generatedAt: 1,
-      providers: [
-        {
-          provider: "codex-cli",
-          source: "provider-probe",
-          available: true,
-          models: [
-            { id: "gpt-5.6-sol" },
-            { id: "gpt-5.6-terra" },
-            { id: "gpt-5.6-luna" },
-          ],
-        },
-      ],
-    } satisfies ProviderModelCatalogSnapshot;
-
-    expect(getCatalogModelsForProvider("codex-cli", snapshot)).toEqual([
-      { id: "gpt-5.6-sol", label: "GPT 5.6 Sol" },
-      { id: "gpt-5.6-terra", label: "GPT 5.6 Terra" },
-      { id: "gpt-5.6-luna", label: "GPT 5.6 Luna" },
     ]);
   });
 

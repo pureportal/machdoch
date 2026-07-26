@@ -591,17 +591,6 @@
         }
       }
     },
-    "ProviderEnrollmentInstructionsConfig": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "mode": { "type": "string", "enum": ["native-when-available"] },
-        "unmanagedNative": { "type": "string", "enum": ["adopt", "allow", "fail"] },
-        "strictConflicts": { "type": "boolean" },
-        "fallback": { "type": "string", "enum": ["automatic"] },
-        "failOnTruncation": { "type": "boolean" }
-      }
-    },
     "ProviderEnrollmentMcpConfig": {
       "type": "object",
       "additionalProperties": false,
@@ -649,7 +638,6 @@
       "properties": {
         "schemaVersion": { "type": "integer", "const": 1 },
         "enabled": { "type": "boolean" },
-        "instructions": { "$ref": "#/$defs/ProviderEnrollmentInstructionsConfig" },
         "mcp": { "$ref": "#/$defs/ProviderEnrollmentMcpConfig" },
         "persistentSync": { "$ref": "#/$defs/ProviderEnrollmentPersistentSyncConfig" },
         "providers": { "$ref": "#/$defs/ProviderEnrollmentProvidersConfig" }

@@ -63,37 +63,6 @@ describe("validateGeneratedRalphFlowStructure", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("warns when small flows include visual-only blocks", () => {
-    const result = validateGeneratedRalphFlowStructure(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          { id: "note", type: "NOTE", title: "Context", text: "FYI" },
-          { id: "task", type: "PROMPT", title: "Task", prompt: "Do it." },
-        ],
-      }),
-    );
-
-    expect(result.warnings).toContain(
-      "Small generated flows should usually omit NOTE and GROUP blocks unless visual organization materially improves readability.",
-    );
-  });
-
-  it("does not warn about visual blocks once the generated flow is larger than seven blocks", () => {
-    const blocks: RalphFlow["blocks"] = [
-      { id: "start", type: "START", title: "Start" },
-      { id: "note", type: "NOTE", title: "Context", text: "FYI" },
-      { id: "one", type: "PROMPT", title: "One", prompt: "1" },
-      { id: "two", type: "PROMPT", title: "Two", prompt: "2" },
-      { id: "three", type: "PROMPT", title: "Three", prompt: "3" },
-      { id: "four", type: "PROMPT", title: "Four", prompt: "4" },
-      { id: "five", type: "PROMPT", title: "Five", prompt: "5" },
-      { id: "end", type: "END", title: "Done" },
-    ];
-
-    expect(validateGeneratedRalphFlowStructure(createFlow({ blocks })).warnings).toEqual([]);
-  });
-
   it("warns when generated flows reuse schema-example block ids", () => {
     const result = validateGeneratedRalphFlowStructure(
       createFlow({

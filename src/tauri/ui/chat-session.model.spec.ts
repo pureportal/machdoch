@@ -1,31 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   applySessionRetentionPolicy,
-  canArchiveSession,
   canDeleteSession,
   canDuplicateSession,
-  canPinSession,
   createInitialShellState,
   createSession,
-  createVisibleConversationMessages,
-  getLatestCompletedSessionResponseAt,
-  getLatestSessionUserRequestAt,
   getLatestRunningTaskId,
-  getSessionOverviewStatus,
-  hasUnreadCompletedSessionResponse,
-  isSessionEmpty,
   isSessionWorkspaceLocked,
-  markSessionRead,
-  mergeRecentWorkspacesForPersistence,
   normalizeTaskExecutionFileChange,
-  normalizeRecentWorkspaces,
   normalizeShellState,
-  rememberRecentWorkspace,
-  removeRecentWorkspace,
   recoverInactiveRunningTasks,
   recoverInterruptedTasksForLaunch,
   QUICK_VOICE_SESSION_KIND,
-  sortSessionsByUpdatedAt,
 } from "./chat-session.model";
 import {
   createMockExecutionFixture,
@@ -49,148 +35,6 @@ describe("normalizeTaskExecutionFileChange", () => {
 });
 
 describe("normalizeShellState", () => {
-  it("moves superseded thinking history onto the terminal output", () => {
-    const normalized = normalizeShellState({
-      activeSessionId: "terminal-session",
-      sessions: [
-        {
-          id: "terminal-session",
-          provider: "openai",
-          workspace: null,
-          createdAt: 1,
-          updatedAt: 3,
-          messages: [
-            {
-              id: "thinking",
-              taskId: "task-1",
-              role: "agent",
-              content: "working",
-              source: {
-                kind: "thinking",
-                thinking: {
-                  ...createInitialThinkingTrace("ask", 1),
-                  timelineEvents: [
-                    {
-                      id: "context-loaded",
-                      kind: "state",
-                      phase: "completed",
-                      label: "Context loaded",
-                      detail: "Loaded the prior conversation.",
-                      tone: "success",
-                      timestamp: 2,
-                      elapsedMs: 1,
-                    },
-                  ],
-                },
-              },
-            },
-            {
-              id: "execution",
-              taskId: "task-1",
-              role: "agent",
-              content: "done",
-              source: {
-                kind: "execution",
-                execution: createMockExecutionFixture("task"),
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    expect(normalized.sessions[0]?.messages.map((message) => message.id)).toEqual([
-      "execution",
-    ]);
-    const executionSource = normalized.sessions[0]?.messages[0]?.source;
-
-    expect(executionSource?.kind).toBe("execution");
-    if (executionSource?.kind !== "execution") {
-      throw new Error("Expected a normalized execution source.");
-    }
-
-    expect(executionSource.thinking).toMatchObject({
-      status: "complete",
-      startedAt: 1,
-      task: "task",
-    });
-    expect(
-      executionSource.thinking?.timelineEvents?.map((event) => event.label),
-    ).toEqual(["Context loaded", "Preview only"]);
-  });
-
-  it("compacts completed thinking details while preserving running traces", () => {
-    const createTrace = (status: "running" | "complete") => ({
-      ...createInitialThinkingTrace("ask", 1),
-      status,
-      entries: Array.from({ length: 20 }, (_, index) => ({
-        id: `entry-${index}`,
-        label: "Progress",
-        detail: `Entry ${index}`,
-        tone: "info" as const,
-        timestamp: index,
-      })),
-      actionOutputLines: Array.from({ length: 30 }, (_, index) => ({
-        id: `line-${index}`,
-        toolName: "shell",
-        stream: "stdout" as const,
-        text: `Line ${index}`,
-        timestamp: index,
-      })),
-      timelineEvents: Array.from({ length: 50 }, (_, index) => ({
-        id: `event-${index}`,
-        kind: "state" as const,
-        phase: "started" as const,
-        label: "Progress",
-        detail: `Event ${index}`,
-        tone: "info" as const,
-        timestamp: index,
-        elapsedMs: index,
-      })),
-    });
-    const normalized = normalizeShellState({
-      activeSessionId: "trace-session",
-      sessions: [
-        {
-          id: "trace-session",
-          provider: "openai",
-          workspace: null,
-          createdAt: 1,
-          updatedAt: 2,
-          messages: [
-            {
-              id: "complete-trace",
-              role: "agent",
-              content: "complete",
-              source: { kind: "thinking", thinking: createTrace("complete") },
-            },
-            {
-              id: "running-trace",
-              role: "agent",
-              content: "running",
-              source: { kind: "thinking", thinking: createTrace("running") },
-            },
-          ],
-        },
-      ],
-    });
-    const completeTrace = normalized.sessions[0]?.messages[0]?.source;
-    const runningTrace = normalized.sessions[0]?.messages[1]?.source;
-
-    expect(completeTrace?.kind).toBe("thinking");
-    expect(runningTrace?.kind).toBe("thinking");
-    if (completeTrace?.kind !== "thinking" || runningTrace?.kind !== "thinking") {
-      throw new Error("Expected normalized thinking traces.");
-    }
-
-    expect(completeTrace.thinking.entries).toHaveLength(8);
-    expect(completeTrace.thinking.actionOutputLines).toHaveLength(20);
-    expect(completeTrace.thinking.timelineEvents).toHaveLength(40);
-    expect(runningTrace.thinking.entries).toHaveLength(20);
-    expect(runningTrace.thinking.actionOutputLines).toHaveLength(30);
-    expect(runningTrace.thinking.timelineEvents).toHaveLength(50);
-  });
-
   it("preserves the active timeout state across session restoration", () => {
     const normalized = normalizeShellState({
       activeSessionId: "timeout-session",
@@ -364,47 +208,6 @@ describe("normalizeShellState", () => {
     });
   });
 
-  it("normalizes recent workspaces as a unique latest-first list", () => {
-    expect(
-      normalizeRecentWorkspaces([
-        " C:\\Docs ",
-        "c:/docs",
-        "",
-        "/tmp/one",
-        "/tmp/two",
-        "/tmp/three",
-        "/tmp/four",
-        "/tmp/five",
-        "/tmp/six",
-        "/tmp/seven",
-        "/tmp/eight",
-        "/tmp/nine",
-        "/tmp/ten",
-      ]),
-    ).toEqual([
-      "C:\\Docs",
-      "/tmp/one",
-      "/tmp/two",
-      "/tmp/three",
-      "/tmp/four",
-      "/tmp/five",
-      "/tmp/six",
-      "/tmp/seven",
-      "/tmp/eight",
-      "/tmp/nine",
-    ]);
-
-    expect(
-      rememberRecentWorkspace(["C:\\Docs", "/tmp/one"], "/tmp/two"),
-    ).toEqual(["/tmp/two", "C:\\Docs", "/tmp/one"]);
-    expect(
-      rememberRecentWorkspace(["C:\\Docs", "/tmp/one"], "c:/docs"),
-    ).toEqual(["c:/docs", "/tmp/one"]);
-    expect(
-      removeRecentWorkspace(["C:\\Docs", "/tmp/one"], "c:/docs"),
-    ).toEqual(["/tmp/one"]);
-  });
-
   it("locks normal session workspaces after the first user message", () => {
     expect(isSessionWorkspaceLocked(createSession())).toBe(false);
     expect(
@@ -449,43 +252,7 @@ describe("normalizeShellState", () => {
     ).toBe(false);
   });
 
-  it("preserves local recent workspace removals during persistence merges", () => {
-    expect(
-      mergeRecentWorkspacesForPersistence(
-        ["C:\\Docs"],
-        ["C:\\Docs", "C:\\Old"],
-        ["C:\\New", "C:\\Docs", "C:\\Old"],
-      ),
-    ).toEqual(["C:\\Docs", "C:\\New"]);
-  });
-
-  it("derives recent workspaces from legacy sessions", () => {
-    const normalized = normalizeShellState({
-      activeSessionId: "newer-session",
-      sessions: [
-        {
-          id: "older-session",
-          provider: "openai",
-          model: "gpt-custom",
-          workspace: "C:\\Older",
-          createdAt: 1,
-          updatedAt: 10,
-        },
-        {
-          id: "newer-session",
-          provider: "openai",
-          model: "gpt-custom",
-          workspace: "C:\\Newer",
-          createdAt: 2,
-          updatedAt: 20,
-        },
-      ],
-    });
-
-    expect(normalized.recentWorkspaces).toEqual(["C:\\Newer", "C:\\Older"]);
-  });
-
-  it("repairs legacy persisted task message sources", () => {
+  it("repairs persisted execution contract data", () => {
     const normalized = normalizeShellState({
       activeSessionId: "legacy-session",
       sessions: [
@@ -498,28 +265,6 @@ describe("normalizeShellState", () => {
           updatedAt: 2,
           messages: [
             {
-              id: "legacy-preview",
-              role: "agent",
-              content: "legacy preview",
-              source: {
-                kind: "preview",
-                preview: {
-                  task: "legacy task",
-                  mode: "auto",
-                  suggestedTools: ["filesystem", "unknown-tool"],
-                  invokedPrompt: {
-                    name: "fix",
-                    tools: ["shell", "unknown-tool"],
-                  },
-                  applicableInstructions: [
-                    {
-                      name: "AGENTS.md",
-                    },
-                  ],
-                },
-              },
-            },
-            {
               id: "legacy-execution",
               role: "agent",
               content: "legacy result",
@@ -529,11 +274,17 @@ describe("normalizeShellState", () => {
                   task: "legacy execution",
                   mode: "safe",
                   status: "executed",
-                  outputSections: [
-                    {
-                      title: "Output",
-                    },
-                  ],
+                  metadata: {
+                    instructionResolutionId: "resolution-1",
+                    instructionCanonicalDigest: "canonical-digest",
+                    instructionDeliveryReceipts: [
+                      {
+                        receiptId: "receipt-1",
+                        status: "delivered",
+                        bodyStored: false,
+                      },
+                    ],
+                  },
                   response: {
                     markdown: "done",
                     relatedFiles: [
@@ -603,68 +354,29 @@ describe("normalizeShellState", () => {
                 },
               },
             },
-            {
-              id: "legacy-thinking",
-              role: "agent",
-              content: "legacy thinking",
-              source: {
-                kind: "thinking",
-                thinking: {
-                  status: "loading",
-                  mode: "auto",
-                  entries: [
-                    {
-                      label: "Running",
-                      tone: "unknown",
-                    },
-                  ],
-                  actionOutputLines: [
-                    {
-                      stream: "stderr",
-                      text: "failed",
-                    },
-                  ],
-                },
-              },
-            },
           ],
         },
       ],
     });
     const messages = normalized.sessions[0]?.messages ?? [];
-    const previewSource = messages[0]?.source;
-    const executionSource = messages[1]?.source;
-    const thinkingSource = messages[2]?.source;
+    const executionSource = messages[0]?.source;
 
-    expect(previewSource).toMatchObject({
-      kind: "preview",
-      preview: {
-        mode: "machdoch",
-        summary: "Task preview restored from persisted session.",
-        suggestedTools: ["filesystem"],
-        warnings: [],
-        notes: [],
-        steps: [],
-        customizationCounts: {
-          instructions: 1,
-          prompts: 0,
-          skills: 0,
-        },
-      },
-    });
     expect(executionSource).toMatchObject({
       kind: "execution",
       execution: {
         mode: "ask",
         status: "executed",
-        summary: "Task result restored from persisted session.",
-        executedTools: [],
-        outputSections: [
-          {
-            title: "Output",
-            lines: [],
-          },
-        ],
+        metadata: {
+          instructionResolutionId: "resolution-1",
+          instructionCanonicalDigest: "canonical-digest",
+          instructionDeliveryReceipts: [
+            {
+              receiptId: "receipt-1",
+              status: "delivered",
+              bodyStored: false,
+            },
+          ],
+        },
         response: {
           markdown: "done",
           relatedFiles: [
@@ -727,26 +439,6 @@ describe("normalizeShellState", () => {
         },
       },
     });
-    expect(thinkingSource).toMatchObject({
-      kind: "thinking",
-      thinking: {
-        status: "complete",
-        mode: "machdoch",
-        entries: [
-          {
-            label: "Running",
-            detail: "",
-            tone: "info",
-          },
-        ],
-        actionOutputLines: [
-          {
-            stream: "stderr",
-            text: "failed",
-          },
-        ],
-      },
-    });
   });
 
   it("preserves valid sent-message context attachments", () => {
@@ -801,6 +493,54 @@ describe("normalizeShellState", () => {
     expect(
       normalized.sessions[0]?.messages[0]?.contextAttachments?.[0],
     ).toMatchObject({ source: "path" });
+  });
+
+  it("preserves the composer settings used by a sent message", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "message-settings-session",
+      sessions: [
+        {
+          id: "message-settings-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: "C:\\Docs",
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "user-with-settings",
+              role: "user",
+              content: "Review the plan",
+              settings: {
+                workspace: "C:\\Docs",
+                provider: "openai",
+                model: "gpt-5.5",
+                mode: "ask",
+                reasoning: "high",
+                sessionMemoryEnabled: false,
+                useGlobalMemory: true,
+                uiControlEnabled: true,
+                promptEnhancementMode: "web-search",
+                interviewEnabled: true,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(normalized.sessions[0]?.messages[0]?.settings).toEqual({
+      workspace: "C:\\Docs",
+      provider: "openai",
+      model: "gpt-5.5",
+      mode: "ask",
+      reasoning: "high",
+      sessionMemoryEnabled: false,
+      useGlobalMemory: true,
+      uiControlEnabled: true,
+      promptEnhancementMode: "web-search",
+      interviewEnabled: true,
+    });
   });
 
   it("migrates durable Media Studio attachments without inventing paths", () => {
@@ -1124,334 +864,6 @@ describe("applySessionRetentionPolicy", () => {
   });
 });
 
-describe("getSessionOverviewStatus", () => {
-  it("treats the latest task as running when only preview updates exist", () => {
-    const session = createSession({
-      messages: [
-        {
-          id: "user-task-1",
-          taskId: "task-1",
-          role: "user",
-          content: "finish the old task",
-          createdAt: 1,
-        },
-        {
-          id: "agent-task-1",
-          taskId: "task-1",
-          role: "agent",
-          content: "done",
-          createdAt: 2,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("scan this workspace"),
-          },
-        },
-        {
-          id: "user-task-2",
-          taskId: "task-2",
-          role: "user",
-          content: "start the latest task",
-          createdAt: 3,
-        },
-        {
-          id: "preview-task-2",
-          taskId: "task-2",
-          role: "agent",
-          content: "preview only",
-          createdAt: 4,
-          source: {
-            kind: "preview",
-            preview: createPreviewFixture("start the latest task"),
-          },
-        },
-      ],
-    });
-
-    expect(getSessionOverviewStatus(session)).toBe("running");
-  });
-
-  it("marks blocked execution updates as failed", () => {
-    const session = createSession({
-      messages: [
-        {
-          id: "user-task-1",
-          taskId: "task-1",
-          role: "user",
-          content: "needs machdoch mode",
-          createdAt: 1,
-        },
-        {
-          id: "agent-task-1",
-          taskId: "task-1",
-          role: "agent",
-          content: "blocked",
-          createdAt: 2,
-          source: {
-            kind: "execution",
-            execution: {
-              ...createMockExecutionFixture("scan this workspace"),
-              status: "blocked",
-            },
-          },
-        },
-      ],
-    });
-
-    expect(getSessionOverviewStatus(session)).toBe("failed");
-  });
-
-  it("tracks unread completed responses until the session is read", () => {
-    const session = createSession({
-      updatedAt: 20,
-      lastReadAt: 10,
-      messages: [
-        {
-          id: "user-task",
-          taskId: "task-1",
-          role: "user",
-          content: "finish this task",
-          createdAt: 10,
-        },
-        {
-          id: "agent-task",
-          taskId: "task-1",
-          role: "agent",
-          content: "done",
-          createdAt: 20,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("finish this task"),
-          },
-        },
-      ],
-    });
-
-    expect(getLatestCompletedSessionResponseAt(session)).toBe(20);
-    expect(hasUnreadCompletedSessionResponse(session)).toBe(true);
-
-    const readSession = markSessionRead(session, 15);
-
-    expect(readSession.lastReadAt).toBe(20);
-    expect(hasUnreadCompletedSessionResponse(readSession)).toBe(false);
-  });
-
-  it("keeps session ordering based on the latest user request instead of progress", () => {
-    const unreadSession = createSession({
-      id: "unread-session",
-      updatedAt: 900,
-      lastReadAt: 200,
-      messages: [
-        {
-          id: "unread-user",
-          taskId: "unread-task",
-          role: "user",
-          content: "finish in the background",
-          createdAt: 300,
-        },
-        {
-          id: "unread-agent",
-          taskId: "unread-task",
-          role: "agent",
-          content: "done",
-          createdAt: 900,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("finish in the background"),
-          },
-        },
-      ],
-    });
-    const runningSession = createSession({
-      id: "running-session",
-      updatedAt: 800,
-      messages: [
-        {
-          id: "running-user",
-          taskId: "running-task",
-          role: "user",
-          content: "keep working",
-          createdAt: 800,
-        },
-      ],
-    });
-    const recentRequestedSession = createSession({
-      id: "recent-requested-session",
-      updatedAt: 1_200,
-      messages: [
-        {
-          id: "recent-user",
-          taskId: "recent-task",
-          role: "user",
-          content: "recent request",
-          createdAt: 700,
-        },
-        {
-          id: "recent-agent",
-          taskId: "recent-task",
-          role: "agent",
-          content: "done",
-          createdAt: 1_200,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("recent request"),
-          },
-        },
-      ],
-    });
-    const olderRequestedSession = createSession({
-      id: "older-requested-session",
-      updatedAt: 1_300,
-      messages: [
-        {
-          id: "older-user",
-          taskId: "older-task",
-          role: "user",
-          content: "older request",
-          createdAt: 600,
-        },
-        {
-          id: "older-agent",
-          taskId: "older-task",
-          role: "agent",
-          content: "done later",
-          createdAt: 1_300,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("older request"),
-          },
-        },
-      ],
-    });
-
-    expect(getLatestSessionUserRequestAt(olderRequestedSession)).toBe(600);
-    expect(
-      sortSessionsByUpdatedAt([
-        olderRequestedSession,
-        recentRequestedSession,
-        runningSession,
-        unreadSession,
-      ]).map((session) => session.id),
-    ).toEqual([
-      "running-session",
-      "recent-requested-session",
-      "older-requested-session",
-      "unread-session",
-    ]);
-  });
-
-  it("does not reorder empty sessions when their drafts update", () => {
-    const older = createSession({
-      id: "older-empty",
-      createdAt: 100,
-      updatedAt: 10_000,
-      draft: "new typing",
-    });
-    const newer = createSession({
-      id: "newer-empty",
-      createdAt: 200,
-      updatedAt: 200,
-    });
-
-    expect(getLatestSessionUserRequestAt(older)).toBe(100);
-    expect(
-      sortSessionsByUpdatedAt([older, newer]).map((session) => session.id),
-    ).toEqual(["newer-empty", "older-empty"]);
-  });
-
-  it("keeps unpinned empty sessions directly after pinned sessions", () => {
-    const now = Date.now();
-    const pinnedDoneSession = createSession({
-      id: "pinned-done-session",
-      pinnedAt: now - 1_000,
-      updatedAt: now - 5_000,
-      messages: [
-        {
-          id: "pinned-user",
-          taskId: "pinned-task",
-          role: "user",
-          content: "Finish pinned task",
-          createdAt: now - 5_100,
-        },
-        {
-          id: "pinned-agent",
-          taskId: "pinned-task",
-          role: "agent",
-          content: "Pinned task finished.",
-          createdAt: now - 5_000,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("Finish pinned task"),
-          },
-        },
-      ],
-    });
-    const emptySession = createSession({
-      id: "empty-session",
-      updatedAt: now,
-    });
-    const runningSession = createSession({
-      id: "running-session",
-      updatedAt: now - 100,
-      messages: [
-        {
-          id: "running-user",
-          taskId: "running-task",
-          role: "user",
-          content: "Keep running",
-          createdAt: now - 100,
-        },
-      ],
-    });
-    const doneSession = createSession({
-      id: "done-session",
-      updatedAt: now - 50,
-      messages: [
-        {
-          id: "done-user",
-          taskId: "done-task",
-          role: "user",
-          content: "Finish normal task",
-          createdAt: now - 60,
-        },
-        {
-          id: "done-agent",
-          taskId: "done-task",
-          role: "agent",
-          content: "Normal task finished.",
-          createdAt: now - 50,
-          source: {
-            kind: "execution",
-            execution: createMockExecutionFixture("Finish normal task"),
-          },
-        },
-      ],
-    });
-
-    expect(
-      sortSessionsByUpdatedAt([
-        doneSession,
-        runningSession,
-        emptySession,
-        pinnedDoneSession,
-      ]).map((session) => session.id),
-    ).toEqual([
-      "pinned-done-session",
-      "empty-session",
-      "done-session",
-      "running-session",
-    ]);
-  });
-
-  it("does not allow archive, duplicate, or pin actions for empty sessions", () => {
-    const emptySession = createSession({ id: "empty-action-session" });
-
-    expect(isSessionEmpty(emptySession)).toBe(true);
-    expect(canArchiveSession(emptySession)).toBe(false);
-    expect(canDuplicateSession(emptySession)).toBe(false);
-    expect(canPinSession(emptySession)).toBe(false);
-  });
-});
-
 describe("getLatestRunningTaskId", () => {
   it("prevents deleting or cloning a running session", () => {
     const taskId = "guarded-running-task";
@@ -1542,7 +954,6 @@ describe("getLatestRunningTaskId", () => {
     });
 
     expect(getLatestRunningTaskId(session)).toBeNull();
-    expect(getSessionOverviewStatus(session)).toBe("done");
   });
 });
 
@@ -1625,7 +1036,6 @@ describe("recoverInterruptedTasksForLaunch", () => {
 
     expect(recovered.lastRecoveredLaunchId).toBe("launch-1");
     expect(recoveredSession).toBeDefined();
-    expect(getSessionOverviewStatus(recoveredSession!)).toBe("failed");
 
     const crashMessages = recoveredSession!.messages.filter((message) =>
       message.content.startsWith("**Task crashed.**"),
@@ -1696,7 +1106,6 @@ describe("recoverInterruptedTasksForLaunch", () => {
     const recoveredSession = recovered.sessions[0];
 
     expect(recoveredSession).toBeDefined();
-    expect(getSessionOverviewStatus(recoveredSession!)).toBe("running");
     expect(recoveredSession!.messages.map((message) => message.id)).toEqual([
       "task-1-user",
       "task-1-thinking",
@@ -1743,7 +1152,6 @@ describe("recoverInterruptedTasksForLaunch", () => {
 
     expect(recovered.lastRecoveredLaunchId).toBe("launch-current");
     expect(recoveredSession).toBeDefined();
-    expect(getSessionOverviewStatus(recoveredSession!)).toBe("crashed");
     expect(
       recoveredSession!.messages.some(
         (message) => message.id === "task-1-thinking",
@@ -1794,7 +1202,6 @@ describe("recoverInterruptedTasksForLaunch", () => {
     const recoveredSession = recovered.sessions[0];
 
     expect(recoveredSession).toBeDefined();
-    expect(getSessionOverviewStatus(recoveredSession!)).toBe("crashed");
     expect(
       recoveredSession!.messages.some(
         (message) => message.id === "task-1-thinking",
@@ -1807,265 +1214,4 @@ describe("recoverInterruptedTasksForLaunch", () => {
     ).toHaveLength(1);
   });
 
-  it("removes orphaned running thinking panels when the task already has a crash marker", () => {
-    const baseState = createInitialShellState();
-    const session = createSession({
-      id: "session-with-orphan-thinking",
-      messages: [
-        {
-          id: "task-1-user",
-          taskId: "task-1",
-          role: "user",
-          content: "answer the stale task",
-          createdAt: 1,
-        },
-        {
-          id: "task-1-crash",
-          taskId: "task-1",
-          role: "agent",
-          content:
-            "**Task crashed.** machdoch restarted before this AI task finished, so it was marked as crashed.",
-          createdAt: 2,
-        },
-        {
-          id: "orphan-thinking",
-          role: "agent",
-          content: "",
-          createdAt: 3,
-          source: {
-            kind: "thinking",
-            thinking: createInitialThinkingTrace("ask", 3),
-          },
-        },
-      ],
-    });
-
-    const recovered = recoverInterruptedTasksForLaunch(
-      {
-        ...baseState,
-        activeSessionId: session.id,
-        sessions: [session],
-      },
-      "launch-orphan",
-      100,
-    );
-    const recoveredSession = recovered.sessions[0];
-
-    expect(recoveredSession).toBeDefined();
-    expect(getSessionOverviewStatus(recoveredSession!)).toBe("crashed");
-    expect(
-      recoveredSession!.messages.some(
-        (message) => message.id === "orphan-thinking",
-      ),
-    ).toBe(false);
-    expect(
-      recoveredSession!.messages.filter((message) =>
-        message.content.startsWith("**Task crashed.**"),
-      ),
-    ).toHaveLength(1);
-    expect(
-      createVisibleConversationMessages(recoveredSession!.messages).map(
-        (message) => message.id,
-      ),
-    ).toEqual(["task-1-user", "task-1-crash"]);
-  });
-});
-
-describe("createVisibleConversationMessages", () => {
-  it("keeps non-preview messages in order and replaces thinking with terminal output", () => {
-    const visibleMessages = createVisibleConversationMessages([
-      {
-        id: "user-task-1",
-        taskId: "task-1",
-        role: "user",
-        content: "first request",
-      },
-      {
-        id: "preview-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "preview",
-        source: {
-          kind: "preview",
-          preview: createPreviewFixture("first request"),
-        },
-      },
-      {
-        id: "thinking-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "thinking",
-        source: {
-          kind: "thinking",
-          thinking: {
-            ...createInitialThinkingTrace("ask", 1),
-            timelineEvents: [
-              {
-                id: "context-loaded",
-                kind: "state",
-                phase: "completed",
-                label: "Context loaded",
-                detail: "Loaded the prior conversation.",
-                tone: "success",
-                timestamp: 2,
-                elapsedMs: 1,
-              },
-            ],
-          },
-        },
-      },
-      {
-        id: "execution-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "done",
-        source: {
-          kind: "execution",
-          execution: createMockExecutionFixture("scan this workspace"),
-        },
-      },
-      {
-        id: "user-task-2",
-        taskId: "task-2",
-        role: "user",
-        content: "second request",
-      },
-    ]);
-
-    expect(visibleMessages.map((message) => message.id)).toEqual([
-      "user-task-1",
-      "execution-task-1",
-      "user-task-2",
-    ]);
-    const executionSource = visibleMessages[1]?.source;
-
-    expect(executionSource?.kind).toBe("execution");
-    if (executionSource?.kind !== "execution") {
-      throw new Error("Expected visible terminal execution output.");
-    }
-
-    expect(executionSource.thinking).toMatchObject({
-      status: "complete",
-      startedAt: 1,
-    });
-    expect(
-      executionSource.thinking?.timelineEvents?.map((event) => event.label),
-    ).toEqual(["Context loaded", "Completed"]);
-  });
-
-  it("keeps the terminal response visible when stale thinking arrives later", () => {
-    const visibleMessages = createVisibleConversationMessages([
-      {
-        id: "user-task-1",
-        taskId: "task-1",
-        role: "user",
-        content: "first request",
-      },
-      {
-        id: "execution-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "final answer",
-        source: {
-          kind: "execution",
-          execution: createMockExecutionFixture("scan this workspace"),
-        },
-      },
-      {
-        id: "late-thinking-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "late progress update",
-        source: {
-          kind: "thinking",
-          thinking: createInitialThinkingTrace("ask", 2),
-        },
-      },
-    ]);
-
-    expect(visibleMessages.map((message) => message.id)).toEqual([
-      "user-task-1",
-      "execution-task-1",
-    ]);
-    const executionSource = visibleMessages[1]?.source;
-
-    expect(executionSource?.kind).toBe("execution");
-    if (executionSource?.kind !== "execution") {
-      throw new Error("Expected visible terminal execution output.");
-    }
-    expect(executionSource.thinking).toBeUndefined();
-  });
-
-  it("keeps the latest thinking update visible until a terminal response exists", () => {
-    const visibleMessages = createVisibleConversationMessages([
-      {
-        id: "user-task-1",
-        taskId: "task-1",
-        role: "user",
-        content: "first request",
-      },
-      {
-        id: "thinking-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "thinking",
-        source: {
-          kind: "thinking",
-          thinking: createInitialThinkingTrace("ask", 1),
-        },
-      },
-      {
-        id: "latest-thinking-task-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "still thinking",
-        source: {
-          kind: "thinking",
-          thinking: createInitialThinkingTrace("ask", 2),
-        },
-      },
-    ]);
-
-    expect(visibleMessages.map((message) => message.id)).toEqual([
-      "user-task-1",
-      "latest-thinking-task-1",
-    ]);
-  });
-
-  it("keeps multiple intentional terminal messages for the same task", () => {
-    const visibleMessages = createVisibleConversationMessages([
-      {
-        id: "user-task-1",
-        taskId: "task-1",
-        role: "user",
-        content: "first request",
-      },
-      {
-        id: "execution-task-1-part-1",
-        taskId: "task-1",
-        role: "agent",
-        content: "first result",
-        source: {
-          kind: "execution",
-          execution: createMockExecutionFixture("first request"),
-        },
-      },
-      {
-        id: "execution-task-1-part-2",
-        taskId: "task-1",
-        role: "agent",
-        content: "follow-up result",
-        source: {
-          kind: "execution",
-          execution: createMockExecutionFixture("first request"),
-        },
-      },
-    ]);
-
-    expect(visibleMessages.map((message) => message.id)).toEqual([
-      "user-task-1",
-      "execution-task-1-part-1",
-      "execution-task-1-part-2",
-    ]);
-  });
 });

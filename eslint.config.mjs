@@ -19,7 +19,7 @@ const configJavaScriptFiles = ["eslint.config.mjs"];
 const sourceTypeScriptFiles = ["src/**/*.{ts,tsx}", "*.ts"];
 const testTypeScriptFiles = [
   "src/**/*.spec.ts",
-  "src/**/*.test.{ts,tsx}",
+  "src/**/*.test.ts",
   "vitest*.ts",
 ];
 

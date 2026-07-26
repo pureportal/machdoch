@@ -274,6 +274,7 @@ export const parseRalphFlowRecord = (value: unknown): RalphFlow => {
     ...(typeof value.description === "string"
       ? { description: value.description }
       : {}),
+    ...(typeof value.guidance === "string" ? { guidance: value.guidance } : {}),
     ...(typeof value.createdAt === "string" ? { createdAt: value.createdAt } : {}),
     ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
     ...(source ? { source } : {}),

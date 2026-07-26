@@ -18,6 +18,7 @@ import {
   type JSX,
 } from "react";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
+import { extendMediaCatalogWithWorkspaceDiscovery } from "../../../core/media/discovered-model-profiles.js";
 import {
   createMediaFlowDocumentDigest,
   createMediaFlowFingerprint,
@@ -25,12 +26,14 @@ import {
 } from "../../../core/media/canonicalize.js";
 import {
   compileMediaFlow,
+  createGeneratedLoopVideoFlow,
   createAlphaMatteFlow,
   createSubjectCutoutFlow,
   createImageCompositeFlow,
   createImageContactSheetFlow,
   createImageEditFlow,
   createImageRecipeFlow,
+  createImageToVideoFlow,
   createImageTransformFlow,
   createMediaFlowLayout,
   readImageRecipeSettings,
@@ -47,15 +50,24 @@ import {
   pasteMediaFlowNode,
   removeMediaFlowNode,
   updateMediaFlowNodeConfig,
+  updateMediaFlowNodeConfigs,
+  upgradeMediaFlowQualityDefaults,
   type MediaFlowConnectionRequest,
   type MediaFlowNodeClipboardPayload,
 } from "../../../core/media/node-registry.js";
 import { resolveMediaFlowVariables } from "../../../core/media/variables.js";
 import { readFlowSubjectCutoutModelPriority } from "../../../core/media/subject-cutout-policy.js";
+import {
+  inferMediaVideoAspectRatio,
+  isMediaAssetKnownTransparent,
+  type MediaVideoAspectRatio,
+  type MediaVideoLoopMode,
+} from "../../../core/media/video-quality.js";
 import type {
   ExecuteLocalImageFlowRequest,
   ExecuteRemoteImageEditFlowRequest,
   GenerateMediaImagesRequest,
+  GenerateMediaVideoRequest,
   GenerateMediaSvgRequest,
   ImageRecipeSettings,
   ImportMediaLocalModelRequest,
@@ -94,12 +106,14 @@ import type {
   MediaNodeType,
   MediaProviderReviewAction,
   MediaQualityReport,
+  MediaDiscoveredModelArtifact,
   MediaRunDetail,
   MediaRunPlanSnapshot,
   MediaRuntimeRunRecord,
   MediaRuntimeStatus,
   MediaStudioSection,
   MediaStudioState,
+  MediaWorkspaceModelDiscovery,
   StartMediaModelInstallRequest,
   RemoveMediaModelRequest,
   RemoveMediaModelAddonRequest,
@@ -133,6 +147,7 @@ import {
   cancelMediaRun,
   cancelMediaModelInstall,
   deleteMediaAsset,
+  discoverMediaWorkspaceModels,
   executeMediaLocalImageFlow,
   executeMediaRemoteImageEditFlow,
   exportMediaFlowRevision,
@@ -142,6 +157,7 @@ import {
   getMediaModelCatalog,
   getMediaModelInstallJob,
   generateMediaImages,
+  generateMediaVideo,
   generateMediaSvg,
   initializeMediaRuntime,
   inspectMediaHardware,
@@ -154,6 +170,7 @@ import {
   importMediaLocalModel,
   importMediaModelAddon,
   probeMediaLocalModel,
+  refreshMediaLocalDiffusersRuntime,
   inspectMediaFlowImport,
   listMediaAssets,
   listMediaRuns,
@@ -210,10 +227,10 @@ interface NavigationItem {
 }
 
 const NAVIGATION_ITEMS: readonly NavigationItem[] = [
-  { id: "generate", label: "Generate", icon: ImagePlus },
-  { id: "flow", label: "Flow", icon: FolderGit2 },
+  { id: "generate", label: "Create", icon: ImagePlus },
+  { id: "flow", label: "Workflows", icon: FolderGit2 },
   { id: "library", label: "Library", icon: Boxes },
-  { id: "runs", label: "Runs", icon: FileClock },
+  { id: "runs", label: "Activity", icon: FileClock },
   { id: "models", label: "Models", icon: Gauge },
 ] as const;
 
@@ -401,6 +418,13 @@ export const MediaStudio = ({
     useState<MediaModelCatalogSnapshot | null>(null);
   const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
   const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
+  const [workspaceModelDiscovery, setWorkspaceModelDiscovery] =
+    useState<MediaWorkspaceModelDiscovery | null>(null);
+  const [workspaceModelDiscoveryLoading, setWorkspaceModelDiscoveryLoading] =
+    useState(false);
+  const [workspaceModelDiscoveryError, setWorkspaceModelDiscoveryError] =
+    useState<string | null>(null);
+  const [localRuntimeLoading, setLocalRuntimeLoading] = useState(false);
   const [modelImportInspection, setModelImportInspection] =
     useState<MediaLocalModelImportInspection | null>(null);
   const [modelImportResult, setModelImportResult] =
@@ -461,8 +485,19 @@ export const MediaStudio = ({
   const semanticRedoStack = useRef<MediaFlow[]>([]);
   const [, setSemanticHistoryRevision] = useState(0);
   const latestSaveSequence = useRef(0);
+  const runtimeRefreshSequence = useRef(0);
+  const selectedRunDetailSequence = useRef(0);
+  const selectedRunIdRef = useRef<string | null>(selectedRunId);
+  const modelCatalogRequestSequence = useRef(0);
+  const workspaceDiscoveryRequestSequence = useRef(0);
+  const hardwareRequestSequence = useRef(0);
+  const localRuntimeRefreshInFlight = useRef(false);
   const announcedFailureKey = useRef<string | null>(null);
   const claimedImportPath = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedRunIdRef.current = selectedRunId;
+  }, [selectedRunId]);
 
   const presentRunFailure = useCallback((failure: MediaErrorDetail): void => {
     const key = [
@@ -478,36 +513,60 @@ export const MediaStudio = ({
   }, []);
 
   const refreshRuntime = useCallback(async (): Promise<void> => {
+    const refreshSequence = ++runtimeRefreshSequence.current;
+    const detailSequence = ++selectedRunDetailSequence.current;
+    const requestedRunId = selectedRunIdRef.current;
     try {
       const [runs, assets, detail] = await Promise.all([
         listMediaRuns(),
         listMediaAssets(),
-        selectedRunId ? getMediaRunDetail(selectedRunId) : null,
+        requestedRunId ? getMediaRunDetail(requestedRunId) : null,
       ]);
+      if (refreshSequence !== runtimeRefreshSequence.current) {
+        return;
+      }
       setRuntimeRuns(runs);
       setRuntimeAssets(assets);
-      setSelectedRun(detail);
-      if (detail?.failure) {
-        presentRunFailure(detail.failure);
+      if (
+        detailSequence === selectedRunDetailSequence.current &&
+        selectedRunIdRef.current === requestedRunId
+      ) {
+        setSelectedRun(detail);
+        if (detail?.failure) {
+          presentRunFailure(detail.failure);
+        }
       }
     } catch (error: unknown) {
-      setRuntimeError(normalizeMediaError(error, "refresh_media_runtime"));
+      if (refreshSequence === runtimeRefreshSequence.current) {
+        setRuntimeError(normalizeMediaError(error, "refresh_media_runtime"));
+      }
     }
-  }, [presentRunFailure, selectedRunId]);
+  }, [presentRunFailure]);
 
   const refreshHardware = useCallback((): void => {
+    const requestSequence = ++hardwareRequestSequence.current;
     setHardwareLoading(true);
     setHardwareError(null);
     void inspectMediaHardware()
-      .then((inspection) => setHardware(inspection))
-      .catch((error: unknown) => {
-        setHardwareError(
-          error instanceof Error
-            ? error.message
-            : "Local media runtime probes could not be completed.",
-        );
+      .then((inspection) => {
+        if (requestSequence === hardwareRequestSequence.current) {
+          setHardware(inspection);
+        }
       })
-      .finally(() => setHardwareLoading(false));
+      .catch((error: unknown) => {
+        if (requestSequence === hardwareRequestSequence.current) {
+          setHardwareError(
+            error instanceof Error
+              ? error.message
+              : "Local media runtime probes could not be completed.",
+          );
+        }
+      })
+      .finally(() => {
+        if (requestSequence === hardwareRequestSequence.current) {
+          setHardwareLoading(false);
+        }
+      });
   }, []);
 
   const configuredProviderIds = useMemo(
@@ -525,21 +584,94 @@ export const MediaStudio = ({
     [configuredProviderIds],
   );
   const refreshModelCatalog = useCallback((): void => {
+    const requestSequence = ++modelCatalogRequestSequence.current;
     setModelCatalogLoading(true);
     setModelCatalogError(null);
     void getMediaModelCatalog(configuredProviderIds)
-      .then((snapshot) => setModelCatalog(snapshot))
-      .catch((error: unknown) => {
-        setModelCatalogError(
-          error instanceof Error
-            ? error.message
-            : "The media model catalog could not be loaded.",
-        );
+      .then((snapshot) => {
+        if (requestSequence === modelCatalogRequestSequence.current) {
+          setModelCatalog(snapshot);
+        }
       })
-      .finally(() => setModelCatalogLoading(false));
+      .catch((error: unknown) => {
+        if (requestSequence === modelCatalogRequestSequence.current) {
+          setModelCatalogError(
+            error instanceof Error
+              ? error.message
+              : "The media model catalog could not be loaded.",
+          );
+        }
+      })
+      .finally(() => {
+        if (requestSequence === modelCatalogRequestSequence.current) {
+          setModelCatalogLoading(false);
+        }
+      });
   }, [configuredProviderIds]);
 
+  const refreshWorkspaceModels = useCallback((): void => {
+    const normalizedWorkspaceRoot = workspaceRoot?.trim();
+    const requestSequence = ++workspaceDiscoveryRequestSequence.current;
+    if (!normalizedWorkspaceRoot) {
+      setWorkspaceModelDiscovery(null);
+      setWorkspaceModelDiscoveryError(null);
+      setWorkspaceModelDiscoveryLoading(false);
+      return;
+    }
+    setWorkspaceModelDiscoveryLoading(true);
+    setWorkspaceModelDiscoveryError(null);
+    void discoverMediaWorkspaceModels(normalizedWorkspaceRoot)
+      .then((discovery) => {
+        if (requestSequence === workspaceDiscoveryRequestSequence.current) {
+          setWorkspaceModelDiscovery(discovery);
+        }
+      })
+      .catch((error: unknown) => {
+        if (requestSequence === workspaceDiscoveryRequestSequence.current) {
+          setWorkspaceModelDiscoveryError(
+            error instanceof Error
+              ? error.message
+              : "The workspace models directory could not be scanned.",
+          );
+        }
+      })
+      .finally(() => {
+        if (requestSequence === workspaceDiscoveryRequestSequence.current) {
+          setWorkspaceModelDiscoveryLoading(false);
+        }
+      });
+  }, [workspaceRoot]);
+
+  const refreshLocalRuntime = useCallback((): void => {
+    if (localRuntimeRefreshInFlight.current) return;
+    localRuntimeRefreshInFlight.current = true;
+    setLocalRuntimeLoading(true);
+    setModelProbeError(null);
+    void refreshMediaLocalDiffusersRuntime()
+      .then(async () => {
+        // Recompute the complete capability snapshot after changing runtimes.
+        // Patching only `localDiffusers` leaves directGenerationModelIds from
+        // the previous probe and can make a now-ready local model impossible
+        // to select until the entire desktop app is restarted.
+        const status = await initializeMediaRuntime();
+        setRuntimeStatus(status);
+        refreshModelCatalog();
+      })
+      .catch((error: unknown) => {
+        setModelProbeError(
+          error instanceof Error
+            ? error.message
+            : "The local Diffusers runtime probe failed.",
+        );
+      })
+      .finally(() => {
+        localRuntimeRefreshInFlight.current = false;
+        setLocalRuntimeLoading(false);
+      });
+  }, [refreshModelCatalog]);
+
   const chooseModelImport = useCallback((): void => {
+    if (modelImportLoading || addonImportLoading) return;
     if (!supportsNativeMediaModelImport()) {
       setModelImportError(
         "Local model import is available in the native desktop app only.",
@@ -550,7 +682,7 @@ export const MediaStudio = ({
     setModelImportError(null);
     setModelImportResult(null);
     void openDialog({
-      title: "Import SD or FLUX checkpoint",
+      title: "Import image checkpoint",
       multiple: false,
       directory: false,
       filters: [
@@ -573,7 +705,7 @@ export const MediaStudio = ({
         );
       })
       .finally(() => setModelImportLoading(false));
-  }, []);
+  }, [addonImportLoading, modelImportLoading]);
 
   const importLocalModel = useCallback(
     (request: ImportMediaLocalModelRequest): void => {
@@ -632,6 +764,7 @@ export const MediaStudio = ({
   );
 
   const chooseAddonImport = useCallback((): void => {
+    if (modelImportLoading || addonImportLoading) return;
     if (!supportsNativeMediaModelAddonImport()) {
       setAddonImportError(
         "LoRA and embedding import is available in the native desktop app only.",
@@ -660,7 +793,70 @@ export const MediaStudio = ({
         );
       })
       .finally(() => setAddonImportLoading(false));
-  }, []);
+  }, [addonImportLoading, modelImportLoading]);
+
+  const inspectWorkspaceArtifact = useCallback(
+    (artifact: MediaDiscoveredModelArtifact): void => {
+      if (modelImportLoading || addonImportLoading) return;
+      if (artifact.status !== "importable") {
+        setWorkspaceModelDiscoveryError(
+          `${artifact.displayName} is not importable: ${artifact.diagnostic}`,
+        );
+        return;
+      }
+      if (artifact.kind === "model-addon") {
+        if (!supportsNativeMediaModelAddonImport()) {
+          setAddonImportError(
+            "LoRA and embedding import is available in the native desktop app only.",
+          );
+          return;
+        }
+        setAddonImportLoading(true);
+        setAddonImportInspection(null);
+        setAddonImportResult(null);
+        setAddonImportCivitaiSource(null);
+        setAddonImportError(null);
+        void inspectMediaModelAddon(artifact.path)
+          .then(setAddonImportInspection)
+          .catch((error: unknown) => {
+            setAddonImportError(
+              error instanceof Error
+                ? error.message
+                : "The discovered model add-on could not be inspected.",
+            );
+          })
+          .finally(() => setAddonImportLoading(false));
+        return;
+      }
+      if (artifact.kind === "checkpoint") {
+        if (!supportsNativeMediaModelImport()) {
+          setModelImportError(
+            "Local model import is available in the native desktop app only.",
+          );
+          return;
+        }
+        setModelImportLoading(true);
+        setModelImportInspection(null);
+        setModelImportResult(null);
+        setModelImportError(null);
+        void inspectMediaLocalModel(artifact.path)
+          .then(setModelImportInspection)
+          .catch((error: unknown) => {
+            setModelImportError(
+              error instanceof Error
+                ? error.message
+                : "The discovered checkpoint could not be inspected.",
+            );
+          })
+          .finally(() => setModelImportLoading(false));
+        return;
+      }
+      setWorkspaceModelDiscoveryError(
+        `${artifact.displayName} is managed as ${artifact.kind.replaceAll("-", " ")} and cannot use the single-file import flow.`,
+      );
+    },
+    [addonImportLoading, modelImportLoading],
+  );
 
   const inspectCivitaiAddon = useCallback((source: string): void => {
     if (!supportsNativeMediaModelAddonImport()) {
@@ -935,6 +1131,10 @@ export const MediaStudio = ({
   }, [refreshModelCatalog]);
 
   useEffect(() => {
+    refreshWorkspaceModels();
+  }, [refreshWorkspaceModels]);
+
+  useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
 
@@ -1003,8 +1203,10 @@ export const MediaStudio = ({
         const detail = await getMediaRunDetail(flowRunOverlayId);
         if (cancelled) return;
         misses = 0;
-        setSelectedRunId(detail.id);
-        setSelectedRun(detail);
+        if (selectedRunIdRef.current === detail.id) {
+          ++selectedRunDetailSequence.current;
+          setSelectedRun(detail);
+        }
         if (detail.failure) presentRunFailure(detail.failure);
         if (["queued", "running", "canceling"].includes(detail.status)) {
           timeout = window.setTimeout(() => void pollOverlayRun(), 140);
@@ -1078,7 +1280,20 @@ export const MediaStudio = ({
     return () => window.clearTimeout(timeout);
   }, [loaded, state]);
 
-  const activeModelCatalog = modelCatalog ?? fallbackModelCatalog;
+  const activeModelCatalog = useMemo<MediaModelCatalogSnapshot>(
+    () =>
+      extendMediaCatalogWithWorkspaceDiscovery({
+        catalog: modelCatalog ?? fallbackModelCatalog,
+        discovery: workspaceModelDiscovery,
+        runtime: runtimeStatus?.localDiffusers ?? null,
+      }),
+    [
+    fallbackModelCatalog,
+    modelCatalog,
+    runtimeStatus?.localDiffusers,
+    workspaceModelDiscovery,
+    ],
+  );
   const models = activeModelCatalog.models;
   const recipeFlow = useMemo(() => {
     const [baseReference, ...additionalReferences] = state.recipe.referenceImages;
@@ -1303,6 +1518,217 @@ export const MediaStudio = ({
     };
   }, [flow, plan.status, runtimeAssets, runtimeStatus?.mode]);
 
+  const videoFlowExecution = useMemo(() => {
+    const unavailable = (reason: string) => ({
+      supported: false as const,
+      reason,
+      firstFrameAssetId: null,
+      lastFrameAssetId: null,
+      videoNode: null,
+      videoModel: null,
+      generatedFrame: false,
+      imageModel: null,
+      imageSettings: null,
+      animatedBackground: null,
+    });
+    const resolvedFlow = resolveMediaFlowVariables(flow).flow;
+    const videoNodes = resolvedFlow.nodes.filter(
+      (node) => node.type === "task.generate-video",
+    );
+    if (videoNodes.length !== 1) {
+      return unavailable("This flow does not contain exactly one video generation node.");
+    }
+    const videoBinding = plan.runtimeBindings.find(
+      (binding) =>
+        binding.nodeId === videoNodes[0]?.id &&
+        binding.model.id === "local:wan2.2-ti2v-5b",
+    );
+    if (plan.status !== "ready" || !videoBinding) {
+      return unavailable("Resolve the WAN model, runtime, and node contract diagnostics first.");
+    }
+    const videoNode = videoNodes[0];
+    if (!videoNode) {
+      return unavailable("The WAN video node is unavailable.");
+    }
+    const firstFrameEdge = resolvedFlow.edges.find(
+      (edge) =>
+        edge.toNodeId === videoNode.id && edge.toPortId === "first-frame",
+    );
+    const firstFrameNode = firstFrameEdge
+      ? resolvedFlow.nodes.find(
+          (node) => node.id === firstFrameEdge.fromNodeId,
+        )
+      : null;
+    const firstFrameAssetId =
+      typeof firstFrameNode?.config.assetId === "string"
+        ? firstFrameNode.config.assetId.trim()
+        : "";
+    const lastFrameEdge = resolvedFlow.edges.find(
+      (edge) =>
+        edge.toNodeId === videoNode.id && edge.toPortId === "last-frame",
+    );
+    const lastFrameNode = lastFrameEdge
+      ? resolvedFlow.nodes.find(
+          (node) => node.id === lastFrameEdge.fromNodeId,
+        )
+      : null;
+    const lastFrameAssetId =
+      typeof lastFrameNode?.config.assetId === "string"
+        ? lastFrameNode.config.assetId.trim()
+        : "";
+    const generatedFrame =
+      firstFrameNode?.type !== "source.image" ||
+      lastFrameNode?.type !== "source.image";
+    let imageModel:
+      | (typeof plan.runtimeBindings)[number]["model"]
+      | null = null;
+    let imageSettings: ImageRecipeSettings | null = null;
+    if (generatedFrame) {
+      if (
+        !firstFrameNode ||
+        !lastFrameNode ||
+        firstFrameNode.id !== lastFrameNode.id
+      ) {
+        return unavailable(
+          "Connected generation currently requires the same generated image output on both WAN endpoint ports.",
+        );
+      }
+      const imageNode = resolvedFlow.nodes.find(
+        (node) => node.type === "task.generate-image",
+      );
+      const imageBinding = plan.runtimeBindings.find(
+        (binding) =>
+          binding.nodeId === imageNode?.id && binding.modality === "image",
+      );
+      const reachesFrame = imageNode
+        ? (() => {
+            const visited = new Set<string>([imageNode.id]);
+            const queue = [imageNode.id];
+            while (queue.length > 0) {
+              const current = queue.shift();
+              if (current === firstFrameNode.id) return true;
+              for (const edge of resolvedFlow.edges.filter(
+                (candidate) => candidate.fromNodeId === current,
+              )) {
+                if (!visited.has(edge.toNodeId)) {
+                  visited.add(edge.toNodeId);
+                  queue.push(edge.toNodeId);
+                }
+              }
+            }
+            return false;
+          })()
+        : false;
+      imageSettings = readImageRecipeSettings(resolvedFlow);
+      if (
+        !imageNode ||
+        !imageBinding ||
+        !reachesFrame ||
+        !imageSettings ||
+        imageSettings.outputCount !== 1 ||
+        imageSettings.outputFormat === "svg" ||
+        !(runtimeStatus?.directGenerationModelIds ?? []).includes(
+          imageBinding.model.id,
+        )
+      ) {
+        return unavailable(
+          "Resolve a ready local image model and one PNG/WebP output upstream of both WAN endpoints.",
+        );
+      }
+      imageModel = imageBinding.model;
+    } else {
+      if (
+        !firstFrameAssetId ||
+        !runtimeAssets.some(
+          (asset) => asset.id === firstFrameAssetId && asset.kind === "image",
+        )
+      ) {
+        return unavailable("Choose an available Library image for the WAN first frame.");
+      }
+      if (
+        !lastFrameAssetId ||
+        !runtimeAssets.some(
+          (asset) => asset.id === lastFrameAssetId && asset.kind === "image",
+        )
+      ) {
+        return unavailable(
+          "Connect an available Library image to the WAN last-frame port. Reuse the first frame for a closed loop.",
+        );
+      }
+    }
+    const compositeNode = resolvedFlow.nodes.find(
+      (node) => node.type === "operation.video-composite",
+    );
+    const backgroundEdge = compositeNode
+      ? resolvedFlow.edges.find(
+          (edge) =>
+            edge.toNodeId === compositeNode.id &&
+            edge.toPortId === "background-video",
+        )
+      : null;
+    const backgroundNode = backgroundEdge
+      ? resolvedFlow.nodes.find(
+          (node) =>
+            node.id === backgroundEdge.fromNodeId &&
+            node.type === "source.animated-background",
+        )
+      : null;
+    const animatedBackground = backgroundNode
+      ? {
+          style:
+            backgroundNode.config.style === "enchanted-beach"
+              ? ("enchanted-beach" as const)
+              : ("gradient-wave" as const),
+          direction:
+            backgroundNode.config.direction === "horizontal" ||
+            backgroundNode.config.direction === "vertical"
+              ? (backgroundNode.config.direction as "horizontal" | "vertical")
+              : ("diagonal" as const),
+          colorStart: String(backgroundNode.config.colorStart),
+          colorEnd: String(backgroundNode.config.colorEnd),
+          cycles: Number(backgroundNode.config.cycles),
+        }
+      : null;
+    if (compositeNode && !animatedBackground) {
+      return unavailable(
+        "Connect an Animated background source to the video composite node.",
+      );
+    }
+    if (
+      animatedBackground &&
+      videoNode.config.transparentBackground !== true
+    ) {
+      return unavailable(
+        "Animated background compositing requires Transparent background on the WAN node.",
+      );
+    }
+    if (!workspaceRoot?.trim()) {
+      return unavailable("The active workspace root is required to resolve models safely.");
+    }
+    return {
+      supported: true as const,
+      reason:
+        animatedBackground
+          ? "Runs the selected WAN quality profile, verifies temporally stabilized VP9 alpha, and publishes an animated-background companion."
+          : "Runs the selected WAN quality, shot/loop, transparency, memory, and encoding profiles locally with decoded-output verification.",
+      firstFrameAssetId,
+      lastFrameAssetId,
+      videoNode,
+      videoModel: videoBinding.model,
+      generatedFrame,
+      imageModel,
+      imageSettings,
+      animatedBackground,
+    };
+  }, [
+    flow,
+    plan.runtimeBindings,
+    plan.status,
+    runtimeAssets,
+    runtimeStatus?.directGenerationModelIds,
+    workspaceRoot,
+  ]);
+
   const remoteEditExecution = useMemo(
     () => assessRemoteEditExecution({
       plan,
@@ -1376,6 +1802,147 @@ export const MediaStudio = ({
     },
     [applySemanticFlow, changeFlowLayout],
   );
+  const useAssetAsCreateReference = useCallback(
+    (asset: MediaAssetRecord): void => {
+      if (asset.kind !== "image") return;
+      clearSemanticHistory();
+      setFlowHistory(null);
+      setFlowRunOverlayId(null);
+      ++selectedRunDetailSequence.current;
+      selectedRunIdRef.current = null;
+      setSelectedRunId(null);
+      setSelectedRun(null);
+      setFlowRevisionNotice(null);
+      setState((current) => ({
+        ...current,
+        activeSection: "generate",
+        flow: null,
+        flowLayout: null,
+        recipe: {
+          ...current.recipe,
+          prompt: "",
+          modelId: null,
+          modelAddons: [],
+          outputFormat:
+            current.recipe.outputFormat === "svg"
+              ? "png"
+              : current.recipe.outputFormat,
+          referenceImages: [
+            {
+              assetId: asset.id,
+              role: "base",
+              influence: 1,
+            },
+          ],
+        },
+      }));
+    },
+    [clearSemanticHistory],
+  );
+  const openVideoFlowDraft = useCallback(
+    ({
+      sourceAssetId,
+      prompt,
+      aspectRatio = "1:1",
+      loopMode = "none",
+      transparentBackground = false,
+    }: {
+      sourceAssetId?: string;
+      prompt?: string;
+      aspectRatio?: MediaVideoAspectRatio;
+      loopMode?: MediaVideoLoopMode;
+      transparentBackground?: boolean;
+    }): void => {
+      const createdAt = new Date().toISOString();
+      const videoFlow = createImageToVideoFlow({
+        id: `media-video-${createFlowSaveId()}`,
+        createdAt,
+        ...(sourceAssetId ? { sourceAssetId } : {}),
+        ...(prompt ? { prompt } : {}),
+        aspectRatio,
+        loopMode,
+        transparentBackground,
+      });
+      applySemanticFlow(videoFlow);
+      changeFlowLayout(createMediaFlowLayout(videoFlow));
+      setFlowHistory(null);
+      setFlowRunOverlayId(null);
+      setFlowRevisionNotice(
+        sourceAssetId
+          ? `Connected this image to both WAN endpoints as a ${aspectRatio} ${loopMode === "seamless" ? "closed seamless loop" : "one-way delivery that returns to the source pose; connect a distinct Last frame for progressive action"}. ${transparentBackground ? "Production alpha extraction is enabled because the source has verified cutout provenance." : "Opaque delivery is selected because the source does not have verified transparent-cutout provenance."}`
+          : "Created a typed video draft. Connect reviewed first and last frames, then review motion, framing, and delivery settings before running.",
+      );
+      setState((current) => ({ ...current, activeSection: "flow" }));
+    },
+    [applySemanticFlow, changeFlowLayout],
+  );
+  const openVideoCreationFlow = useCallback(
+    (): void => {
+      const sourceAssetId = state.recipe.referenceImages[0]?.assetId;
+      if (!sourceAssetId) {
+        const createdAt = new Date().toISOString();
+        const generatedLoop = createGeneratedLoopVideoFlow({
+          id: `media-generated-loop-${createFlowSaveId()}`,
+          createdAt,
+          ...(state.recipe.prompt.trim()
+            ? { prompt: state.recipe.prompt.trim() }
+            : {}),
+          imageModelId: state.recipe.modelId,
+          imageModelAddons: state.recipe.modelAddons,
+        });
+        applySemanticFlow(generatedLoop);
+        changeFlowLayout(createMediaFlowLayout(generatedLoop));
+        setFlowHistory(null);
+        setFlowRunOverlayId(null);
+        setFlowRevisionNotice(
+          "Created a connected local character loop: image generation → subject cutout → the same first/last WAN frame → transparent master and animated-background companion.",
+        );
+        setState((current) => ({ ...current, activeSection: "flow" }));
+        return;
+      }
+      const sourceAsset =
+        runtimeAssets.find((asset) => asset.id === sourceAssetId) ?? null;
+      openVideoFlowDraft({
+        prompt: state.recipe.prompt.trim(),
+        sourceAssetId,
+        aspectRatio: sourceAsset
+          ? inferMediaVideoAspectRatio(sourceAsset.width, sourceAsset.height)
+          : "1:1",
+        transparentBackground:
+          sourceAsset !== null && isMediaAssetKnownTransparent(sourceAsset),
+      });
+    },
+    [
+      applySemanticFlow,
+      changeFlowLayout,
+      openVideoFlowDraft,
+      state.recipe.modelAddons,
+      state.recipe.modelId,
+      state.recipe.prompt,
+      state.recipe.referenceImages,
+      runtimeAssets,
+    ],
+  );
+  const openAssetAsVideoFlow = useCallback(
+    (asset: MediaAssetRecord): void => {
+      if (asset.kind !== "image") return;
+      const transparentBackground = isMediaAssetKnownTransparent(asset);
+      openVideoFlowDraft({
+        sourceAssetId: asset.id,
+        aspectRatio: inferMediaVideoAspectRatio(asset.width, asset.height),
+        loopMode: "seamless",
+        transparentBackground,
+        prompt: transparentBackground
+          ? "A seamless looping subject animation on a perfectly uniform chroma-green background; locked camera; subtle natural motion; keep the subject centered, fully visible, and unchanged; no shadows or background movement."
+          : "A seamless looping animation of the exact supplied image; locked camera; subtle intentional subject motion; preserve identity, composition, lighting, and the existing background; no cuts, zooms, camera shake, or background-only motion.",
+      });
+    },
+    [openVideoFlowDraft],
+  );
+  const openAssetInLibrary = useCallback((asset: MediaAssetRecord): void => {
+    setImportedAssetId(asset.id);
+    setState((current) => ({ ...current, activeSection: "library" }));
+  }, []);
   const openAssetAsEditFlow = useCallback(
     (asset: MediaAssetRecord): void => {
       if (asset.kind !== "image") return;
@@ -1542,6 +2109,22 @@ export const MediaStudio = ({
           nodeId,
           fieldId,
           value,
+          updatedAt: new Date().toISOString(),
+        });
+        applySemanticFlow(nextFlow);
+      } catch (error: unknown) {
+        setRuntimeError(normalizeMediaError(error, "edit_media_flow_node"));
+      }
+    },
+    [applySemanticFlow, flow],
+  );
+  const changeFlowNodeConfigs = useCallback(
+    (nodeId: string, values: Readonly<Record<string, unknown>>): void => {
+      try {
+        const nextFlow = updateMediaFlowNodeConfigs({
+          flow,
+          nodeId,
+          values,
           updatedAt: new Date().toISOString(),
         });
         applySemanticFlow(nextFlow);
@@ -1757,18 +2340,13 @@ export const MediaStudio = ({
 
   const restoreFlowRevision = useCallback(
     (revision: MediaFlowRevision): void => {
-      const recipe = readImageRecipeSettings(revision.flow);
-      if (!recipe) {
-        setRuntimeError(
-          normalizeMediaError(
-            "The selected revision is not a supported image recipe.",
-            "restore_media_flow_revision",
-          ),
-        );
-        return;
-      }
+      const restoredFlow = upgradeMediaFlowQualityDefaults({
+        flow: revision.flow,
+        updatedAt: new Date().toISOString(),
+      });
+      const recipe = readImageRecipeSettings(restoredFlow);
       void persistFlowRevision(
-        revision.flow,
+        restoredFlow,
         revision.layout,
         `Restored revision ${revision.revisionNumber}`,
       ).then((result) => {
@@ -1779,8 +2357,8 @@ export const MediaStudio = ({
         setState((current) => ({
           ...current,
           activeSection: "flow",
-          recipe,
-          flow: revision.flow,
+          recipe: recipe ?? current.recipe,
+          flow: restoredFlow,
           flowLayout: revision.layout,
         }));
       });
@@ -1842,9 +2420,13 @@ export const MediaStudio = ({
     })
       .then(async (result) => {
         const history = await getMediaFlow(result.targetFlowId);
-        const importedFlow = result.revision.flow;
+        const importedFlow = upgradeMediaFlowQualityDefaults({
+          flow: result.revision.flow,
+          updatedAt: new Date().toISOString(),
+        });
         const importedLayout = result.revision.layout;
         const recipe = readImageRecipeSettings(importedFlow);
+        const upgraded = importedFlow !== result.revision.flow;
         clearSemanticHistory();
         setFlowHistory(history);
         setFlowRunOverlayId(null);
@@ -1858,9 +2440,15 @@ export const MediaStudio = ({
           flowLayout: importedLayout,
         }));
         setFlowRevisionNotice(
-          result.created
-            ? `Imported immutable revision 1 as isolated flow ${result.targetFlowId}.`
-            : `This reviewed bundle already exists as ${result.targetFlowId}.`,
+          `${
+            result.created
+              ? `Imported immutable revision 1 as isolated flow ${result.targetFlowId}.`
+              : `This reviewed bundle already exists as ${result.targetFlowId}.`
+          }${
+            upgraded
+              ? " New quality defaults were applied to the local draft; save once to pin the upgraded revision."
+              : ""
+          }`,
         );
       })
       .catch((error: unknown) => {
@@ -1956,6 +2544,8 @@ export const MediaStudio = ({
           planId: plan.id,
           planSnapshot: flowPlanSnapshot,
         };
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = request.runId;
         setSelectedRunId(request.runId);
         setSelectedRun(null);
         setFlowRunOverlayId(request.runId);
@@ -1965,6 +2555,8 @@ export const MediaStudio = ({
         if (!detail) {
           return undefined;
         }
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = detail.id;
         setSelectedRunId(detail.id);
         setSelectedRun(detail);
         setFlowRunOverlayId(detail.id);
@@ -1989,6 +2581,247 @@ export const MediaStudio = ({
     plan.id,
     refreshRuntime,
     runtimeStatus?.mode,
+  ]);
+  const runVideoFlow = useCallback((): void => {
+    if (!videoFlowExecution.supported || localFlowPending) {
+      return;
+    }
+    const normalizedWorkspaceRoot = workspaceRoot?.trim();
+    if (!normalizedWorkspaceRoot) return;
+    setLocalFlowPending(true);
+    setRuntimeError(null);
+    setFlowRevisionNotice(null);
+    void persistFlowRevision(
+      flow,
+      layout,
+      "Pinned automatically for local WAN video execution",
+    )
+      .then(async (revisionResult) => {
+        if (
+          !revisionResult ||
+          !videoFlowExecution.videoNode ||
+          !videoFlowExecution.videoModel
+        ) {
+          return null;
+        }
+        const resolvedFlow = resolveMediaFlowVariables(flow).flow;
+        const promptNode = resolvedFlow.nodes.find(
+          (node) => node.type === "source.prompt",
+        );
+        const prompt =
+          typeof promptNode?.config.prompt === "string"
+            ? promptNode.config.prompt.trim()
+            : "";
+        const configuredAspect =
+          videoFlowExecution.videoNode.config.aspectRatio;
+        const aspectRatio =
+          configuredAspect === "16:9" ||
+          configuredAspect === "9:16" ||
+          configuredAspect === "21:9"
+            ? configuredAspect
+            : "1:1";
+        const videoConfig = videoFlowExecution.videoNode.config;
+        const resolution =
+          videoConfig.resolution === "preview-512" ||
+          videoConfig.resolution === "quality-768"
+            ? videoConfig.resolution
+            : "quality-640";
+        const loopMode =
+          videoConfig.loopMode === "ping-pong" ||
+          videoConfig.loopMode === "seamless"
+            ? videoConfig.loopMode
+            : "none";
+        const matteQuality =
+          videoConfig.matteQuality === "fast" ||
+          videoConfig.matteQuality === "balanced"
+            ? videoConfig.matteQuality
+            : "production";
+        const encodingQuality =
+          videoConfig.encodingQuality === "draft" ||
+          videoConfig.encodingQuality === "balanced" ||
+          videoConfig.encodingQuality === "production" ||
+          videoConfig.encodingQuality === "lossless"
+            ? videoConfig.encodingQuality
+            : "lossless";
+        const memoryProfile =
+          videoConfig.memoryProfile === "memory-saver" ||
+          videoConfig.memoryProfile === "balanced" ||
+          videoConfig.memoryProfile === "maximum-speed"
+            ? videoConfig.memoryProfile
+            : "auto";
+        const runWan = (
+          firstFrameAssetId: string,
+          lastFrameAssetId: string,
+        ) => {
+          const request = {
+            schemaVersion: 1,
+            runId: createRunId(),
+            flowId: flow.id,
+            flowRevisionId: revisionResult.revision.revisionId,
+            flowName: flow.name,
+            planId: plan.id,
+            prompt,
+            modelId: "local:wan2.2-ti2v-5b",
+            modelLabel: videoFlowExecution.videoModel.displayName,
+            diagnosticCount: plan.diagnostics.length,
+            workspaceRoot: normalizedWorkspaceRoot,
+            firstFrameAssetId,
+            lastFrameAssetId,
+            aspectRatio,
+            resolution,
+            outputFormat: "webm",
+            transparentBackground:
+              videoConfig.transparentBackground === true,
+            loopMode,
+            fps:
+              typeof videoConfig.fps === "number"
+                ? videoConfig.fps
+                : 8,
+            numFrames:
+              typeof videoConfig.numFrames === "number"
+                ? videoConfig.numFrames
+                : 17,
+            numInferenceSteps:
+              typeof videoConfig.numInferenceSteps === "number"
+                ? videoConfig.numInferenceSteps
+                : 20,
+            guidanceScale:
+              typeof videoConfig.guidanceScale === "number"
+                ? videoConfig.guidanceScale
+                : 5,
+            seed:
+              typeof videoConfig.seed === "number"
+                ? videoConfig.seed
+                : 0,
+            negativePrompt:
+              typeof videoConfig.negativePrompt === "string"
+                ? videoConfig.negativePrompt
+                : "",
+            matteQuality,
+            encodingQuality,
+            memoryProfile,
+            experimentalLowMemory: true,
+            animatedBackground: videoFlowExecution.animatedBackground,
+            planSnapshot: flowPlanSnapshot,
+          } satisfies GenerateMediaVideoRequest;
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = request.runId;
+          setSelectedRunId(request.runId);
+          setSelectedRun(null);
+          setFlowRunOverlayId(request.runId);
+          return generateMediaVideo(request);
+        };
+        if (
+          videoFlowExecution.generatedFrame &&
+          videoFlowExecution.imageModel &&
+          videoFlowExecution.imageSettings
+        ) {
+          const settings = videoFlowExecution.imageSettings;
+          const imageRequest = {
+            schemaVersion: 1,
+            runId: createRunId(),
+            flowId: flow.id,
+            flowRevisionId: revisionResult.revision.revisionId,
+            flowName: `${flow.name} · endpoint frame`,
+            planId: plan.id,
+            prompt: settings.prompt,
+            modelId: videoFlowExecution.imageModel.id,
+            modelLabel: videoFlowExecution.imageModel.displayName,
+            outputCount: 1,
+            diagnosticCount: plan.diagnostics.length,
+            aspectRatio: settings.aspectRatio,
+            outputFormat:
+              settings.outputFormat === "jpeg" ||
+              settings.outputFormat === "webp"
+                ? settings.outputFormat
+                : "png",
+            modelPolicy: settings.modelPolicy,
+            modelAddons: settings.modelAddons,
+            transparentBackground: true,
+            subjectCutoutModelPriority:
+              readFlowSubjectCutoutModelPriority(resolvedFlow),
+            memoryProfile: settings.memoryProfile ?? "auto",
+            planSnapshot: flowPlanSnapshot,
+          } satisfies GenerateMediaImagesRequest;
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = imageRequest.runId;
+          setSelectedRunId(imageRequest.runId);
+          setSelectedRun(null);
+          setFlowRunOverlayId(imageRequest.runId);
+          setFlowRevisionNotice(
+            `Generating the shared WAN endpoint with ${videoFlowExecution.imageModel.displayName}…`,
+          );
+          const imageDetail = await generateMediaImages(imageRequest);
+          const endpoint = imageDetail.assets.find(
+            (asset) => asset.kind === "image",
+          );
+          if (!endpoint) {
+            throw new Error(
+              imageDetail.error ??
+                "The connected image stage completed without a published endpoint frame.",
+            );
+          }
+          setFlowRevisionNotice(
+            "Endpoint frame published with alpha. Reusing its exact immutable asset id for both WAN conditions…",
+          );
+          return runWan(endpoint.id, endpoint.id);
+        }
+        if (
+          !videoFlowExecution.firstFrameAssetId ||
+          !videoFlowExecution.lastFrameAssetId
+        ) {
+          throw new Error("The WAN endpoint assets are no longer available.");
+        }
+        return runWan(
+          videoFlowExecution.firstFrameAssetId,
+          videoFlowExecution.lastFrameAssetId,
+        );
+      })
+      .then((detail) => {
+        if (!detail) return undefined;
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = detail.id;
+        setSelectedRunId(detail.id);
+        setSelectedRun(detail);
+        setFlowRunOverlayId(detail.id);
+        const outputs = detail.assets.filter((asset) => asset.kind === "video");
+        const videoConfig = videoFlowExecution.videoNode?.config;
+        const transparent = videoConfig?.transparentBackground === true;
+        const loopMode =
+          videoConfig?.loopMode === "ping-pong" ||
+          videoConfig?.loopMode === "seamless"
+            ? videoConfig.loopMode
+            : "none";
+        const ending =
+          loopMode === "seamless"
+            ? "with an exact seamless endpoint"
+            : loopMode === "ping-pong"
+              ? "with an exact ping-pong endpoint"
+              : "as an intentional one-way shot";
+        setFlowRevisionNotice(
+          outputs.length > 0
+            ? outputs.length > 1
+              ? `Published the verified VP9 alpha master and animated-background companion ${ending}, with immutable endpoint lineage.`
+              : `Published a verified ${transparent ? "transparent" : "opaque"} VP9 WebM ${ending}, with immutable first/last-frame lineage.`
+            : "WAN execution completed without a published video; inspect the run evidence.",
+        );
+        return refreshRuntime();
+      })
+      .catch((error: unknown) => {
+        setRuntimeError(normalizeMediaError(error, "generate_wan_video"));
+      })
+      .finally(() => setLocalFlowPending(false));
+  }, [
+    flow,
+    flowPlanSnapshot,
+    layout,
+    localFlowPending,
+    persistFlowRevision,
+    plan.diagnostics.length,
+    plan.id,
+    refreshRuntime,
+    videoFlowExecution,
+    workspaceRoot,
   ]);
   const runRemoteEditFlow = useCallback((): void => {
     if (!remoteEditExecution.supported || remoteEditPending) {
@@ -2015,6 +2848,8 @@ export const MediaStudio = ({
           planSnapshot: flowPlanSnapshot,
           allowRemoteUpload: true,
         };
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = request.runId;
         setSelectedRunId(request.runId);
         setSelectedRun(null);
         setFlowRunOverlayId(request.runId);
@@ -2024,6 +2859,8 @@ export const MediaStudio = ({
         if (!detail) {
           return undefined;
         }
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = detail.id;
         setSelectedRunId(detail.id);
         setSelectedRun(detail);
         setFlowRunOverlayId(detail.id);
@@ -2062,6 +2899,17 @@ export const MediaStudio = ({
     const isSvg = state.recipe.outputFormat === "svg";
     const isSvgVectorization = isSvg && state.recipe.svgMode === "vectorize";
     const hasReferences = state.recipe.referenceImages.length > 0;
+    const localReferenceEdit =
+      !isSvg &&
+      hasReferences &&
+      state.recipe.referenceImages.length === 1 &&
+      model?.target === "local" &&
+      (runtimeStatus?.directReferenceImageModelIds ?? []).includes(model.id);
+    const imageTaskConfig = activeFlow.nodes.find(
+      (node) =>
+        node.type === "task.generate-image" ||
+        node.type === "task.edit-image",
+    )?.config;
     if (
       activePlan.status !== "ready" ||
       !model ||
@@ -2071,7 +2919,7 @@ export const MediaStudio = ({
           (hasReferences &&
             !(runtimeStatus?.directReferenceImageModelIds ?? []).includes(model.id))
         : hasReferences
-          ? !recipeRemoteEditExecution.supported
+          ? !localReferenceEdit && !recipeRemoteEditExecution.supported
           : !(runtimeStatus?.directGenerationModelIds ?? []).includes(model.id)) ||
       state.recipe.qualityGateEnabled ||
       generationPending
@@ -2132,7 +2980,7 @@ export const MediaStudio = ({
             planSnapshot: activePlanSnapshot,
           } satisfies GenerateMediaSvgRequest);
         }
-        if (hasReferences) {
+        if (hasReferences && !localReferenceEdit) {
           const request: ExecuteRemoteImageEditFlowRequest = {
             schemaVersion: 1,
             runId: createRunId(),
@@ -2165,6 +3013,41 @@ export const MediaStudio = ({
           modelAddons: state.recipe.modelAddons,
           transparentBackground: state.recipe.transparentBackground,
           subjectCutoutModelPriority: readFlowSubjectCutoutModelPriority(activeFlow),
+          negativePrompt: "",
+          referenceImageAssetId:
+            localReferenceEdit
+              ? state.recipe.referenceImages[0]?.assetId ?? null
+              : null,
+          editStrength:
+            localReferenceEdit &&
+            typeof imageTaskConfig?.editStrength === "number"
+              ? imageTaskConfig.editStrength
+              : undefined,
+          referenceBoost:
+            localReferenceEdit &&
+            typeof imageTaskConfig?.referenceBoost === "number"
+              ? imageTaskConfig.referenceBoost
+              : undefined,
+          requireChromaBackground:
+            localReferenceEdit &&
+            imageTaskConfig?.requireChromaBackground === true,
+          groundingPixels:
+            localReferenceEdit &&
+            typeof imageTaskConfig?.groundingPixels === "number"
+              ? imageTaskConfig.groundingPixels
+              : undefined,
+          referenceFit:
+            localReferenceEdit && imageTaskConfig?.referenceFit === "crop"
+              ? "crop"
+              : localReferenceEdit
+                ? "fit"
+                : undefined,
+          memoryProfile:
+            imageTaskConfig?.memoryProfile === "memory-saver" ||
+            imageTaskConfig?.memoryProfile === "balanced" ||
+            imageTaskConfig?.memoryProfile === "maximum-speed"
+              ? imageTaskConfig.memoryProfile
+              : "auto",
           planSnapshot: activePlanSnapshot,
         } satisfies GenerateMediaImagesRequest);
       })
@@ -2172,6 +3055,8 @@ export const MediaStudio = ({
         if (!detail) {
           return undefined;
         }
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = detail.id;
         setSelectedRunId(detail.id);
         setSelectedRun(detail);
         return refreshRuntime();
@@ -2201,6 +3086,7 @@ export const MediaStudio = ({
     runtimeStatus?.directGenerationModelIds,
     runtimeStatus?.directReferenceImageModelIds,
     state.recipe.aspectRatio,
+    state.recipe.modelAddons,
     state.recipe.modelPolicy,
     state.recipe.outputCount,
     state.recipe.outputFormat,
@@ -2225,9 +3111,18 @@ export const MediaStudio = ({
     [runRecipeGeneration],
   );
   const selectRun = useCallback((runId: string) => {
+    const requestSequence = ++selectedRunDetailSequence.current;
+    selectedRunIdRef.current = runId;
     setSelectedRunId(runId);
+    setSelectedRun(null);
     void getMediaRunDetail(runId)
       .then((detail) => {
+        if (
+          requestSequence !== selectedRunDetailSequence.current ||
+          selectedRunIdRef.current !== runId
+        ) {
+          return;
+        }
         setSelectedRun(detail);
         if (detail.failure) {
           presentRunFailure(detail.failure);
@@ -2237,7 +3132,12 @@ export const MediaStudio = ({
         }
       })
       .catch((error: unknown) => {
-        setRuntimeError(normalizeMediaError(error, "inspect_run"));
+        if (
+          requestSequence === selectedRunDetailSequence.current &&
+          selectedRunIdRef.current === runId
+        ) {
+          setRuntimeError(normalizeMediaError(error, "inspect_run"));
+        }
       });
   }, [presentRunFailure]);
   useEffect(() => {
@@ -2295,6 +3195,8 @@ export const MediaStudio = ({
     setExportNotice(null);
     void importMediaImage(importPath)
       .then(({ asset, detail }) => {
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = detail.id;
         setSelectedRunId(detail.id);
         setSelectedRun(detail);
         setImportedAssetId(asset.id);
@@ -2314,6 +3216,8 @@ export const MediaStudio = ({
     refreshRuntime,
   ]);
   const inspectRunInFlow = useCallback((run: MediaRunDetail): void => {
+    ++selectedRunDetailSequence.current;
+    selectedRunIdRef.current = run.id;
     setSelectedRunId(run.id);
     setSelectedRun(run);
     setFlowRunOverlayId(run.id);
@@ -2323,6 +3227,8 @@ export const MediaStudio = ({
     (runId: string) => {
       void cancelMediaRun(runId)
         .then((detail) => {
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
           setSelectedRunId(detail.id);
           setSelectedRun(detail);
           return refreshRuntime();
@@ -2337,6 +3243,8 @@ export const MediaStudio = ({
     (runId: string) => {
       void retryMediaFixtureRun(runId)
         .then((detail) => {
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
           setSelectedRunId(detail.id);
           setSelectedRun(detail);
           return refreshRuntime();
@@ -2354,6 +3262,8 @@ export const MediaStudio = ({
       setRuntimeError(null);
       void resolveMediaProviderReview(providerJobId, action)
         .then((detail) => {
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
           setSelectedRunId(detail.id);
           setSelectedRun(detail);
           return refreshRuntime();
@@ -2372,6 +3282,8 @@ export const MediaStudio = ({
       setRuntimeError(null);
       void resolveMediaHumanReview(request)
         .then((detail) => {
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
           setSelectedRunId(detail.id);
           setSelectedRun(detail);
           return refreshRuntime();
@@ -2420,6 +3332,8 @@ export const MediaStudio = ({
         lastDetail = (await importMediaImage(path)).detail;
       }
       if (lastDetail) {
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = lastDetail.id;
         setSelectedRunId(lastDetail.id);
         setSelectedRun(lastDetail);
       }
@@ -2512,6 +3426,8 @@ export const MediaStudio = ({
       setExportNotice(null);
       void transformMediaImage(request)
         .then((detail) => {
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
           setSelectedRunId(detail.id);
           setSelectedRun(detail);
           return refreshRuntime();
@@ -2543,6 +3459,8 @@ export const MediaStudio = ({
             ...current,
             [reportAsset.id]: report,
           }));
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
           setSelectedRunId(detail.id);
           setSelectedRun(detail);
           return refreshRuntime();
@@ -2613,7 +3531,9 @@ export const MediaStudio = ({
         return;
       }
       const effectiveMode: MediaAssetExportMode =
-        asset.mimeType === "image/svg+xml" ? "verified-original" : mode;
+        asset.mimeType === "image/svg+xml" || asset.mimeType === "video/webm"
+          ? "verified-original"
+          : mode;
       const extension =
         asset.mimeType === "image/jpeg"
           ? "jpg"
@@ -2621,7 +3541,9 @@ export const MediaStudio = ({
             ? "webp"
             : asset.mimeType === "image/svg+xml"
               ? "svg"
-            : "png";
+              : asset.mimeType === "video/webm"
+                ? "webm"
+                : "png";
       const formatLabel =
         asset.mimeType === "image/jpeg"
           ? "JPEG image"
@@ -2629,7 +3551,9 @@ export const MediaStudio = ({
             ? "WebP image"
             : asset.mimeType === "image/svg+xml"
               ? "Secure Static SVG"
-            : "PNG image";
+              : asset.mimeType === "video/webm"
+                ? "WebM video"
+                : "PNG image";
       setExportLoading(true);
       setRuntimeError(null);
       setExportNotice(null);
@@ -2765,10 +3689,10 @@ export const MediaStudio = ({
 
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-1 bg-slate-950 text-slate-100">
-      <aside className="flex w-20 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950">
+      <aside className="flex w-20 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950 sm:w-24 lg:w-28">
         <nav
           aria-label="Media Studio"
-          className="flex flex-col items-center gap-2 p-3"
+          className="flex flex-col items-stretch gap-1.5 p-2.5"
         >
           {NAVIGATION_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -2782,7 +3706,7 @@ export const MediaStudio = ({
                     aria-current={active ? "page" : undefined}
                     onClick={() => selectSection(item.id)}
                     className={cn(
-                      "flex h-12 w-12 items-center justify-center rounded-2xl border border-transparent text-slate-400 outline-none transition-colors hover:bg-slate-900 hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-sky-400/60",
+                      "flex h-14 w-full flex-col items-center justify-center gap-1 rounded-xl border border-transparent px-1 text-slate-400 outline-none transition-colors hover:bg-slate-900 hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-sky-400/60",
                       active &&
                         "border-sky-500/20 bg-slate-900 text-slate-100 shadow-[0_0_18px_rgba(14,165,233,0.08)]",
                     )}
@@ -2793,6 +3717,9 @@ export const MediaStudio = ({
                         active ? "text-sky-300" : "text-slate-400",
                       )}
                     />
+                    <span className="max-w-full truncate text-[9px] font-medium">
+                      {item.label}
+                    </span>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">
@@ -2837,12 +3764,16 @@ export const MediaStudio = ({
             promptHistory={recipePromptHistory}
             onChange={changeRecipe}
             onOpenFlow={openRecipeAsFlow}
+            onOpenVideoFlow={openVideoCreationFlow}
             onOpenModels={() => selectSection("models")}
             onOpenProviderSettings={onOpenProviderSettings}
             onGenerate={runGeneration}
             onGenerateWithReview={runGenerationWithReview}
             onOpenRunReview={() => selectSection("runs")}
             onAddReferenceImages={importReferenceImages}
+            onEditResult={useAssetAsCreateReference}
+            onAnimateResult={openAssetAsVideoFlow}
+            onOpenResult={openAssetInLibrary}
             generationPending={generationPending}
             runtimeMode={runtimeStatus?.mode ?? null}
           />
@@ -2858,6 +3789,7 @@ export const MediaStudio = ({
             onFlowVariablesChange={applySemanticFlow}
             onTemplateApply={applyFlowTemplate}
             onNodeConfigChange={changeFlowNodeConfig}
+            onNodeConfigPatch={changeFlowNodeConfigs}
             onNodeAdd={addFlowNode}
             onNodeRemove={removeFlowNode}
             onConnectPorts={connectFlowPorts}
@@ -2887,10 +3819,18 @@ export const MediaStudio = ({
             onImportReviewed={importReviewedFlow}
             onDismissImport={dismissFlowImport}
             onExportRevision={exportCurrentFlowRevision}
-            onRunLocalFlow={runLocalFlow}
+            onRunLocalFlow={
+              videoFlowExecution.supported ? runVideoFlow : runLocalFlow
+            }
             localRunPending={localFlowPending}
-            localRunSupported={localFlowExecution.supported}
-            localRunDescription={localFlowExecution.reason}
+            localRunSupported={
+              localFlowExecution.supported || videoFlowExecution.supported
+            }
+            localRunDescription={
+              videoFlowExecution.videoNode
+                ? videoFlowExecution.reason
+                : localFlowExecution.reason
+            }
             onRunRemoteEdit={runRemoteEditFlow}
             remoteRunPending={remoteEditPending}
             remoteRunSupported={remoteEditExecution.supported}
@@ -2931,6 +3871,8 @@ export const MediaStudio = ({
             onLoadQualityReport={loadQualityReport}
             onUpdateTags={updateAssetTags}
             onAutoTag={autoTagAsset}
+            onUseAsReference={useAssetAsCreateReference}
+            onOpenVideoAsFlow={openAssetAsVideoFlow}
             onOpenAsFlow={openAssetAsEditFlow}
             onOpenBackgroundRemovalAsFlow={openBackgroundRemovalAsFlow}
             onOpenAlphaMatteAsFlow={openAlphaMatteAsFlow}
@@ -3009,6 +3951,12 @@ export const MediaStudio = ({
             addonRemovalLoading={addonRemovalLoading}
             addonRemovalError={addonRemovalError}
             localDiffusers={runtimeStatus?.localDiffusers ?? null}
+            workspaceModels={workspaceModelDiscovery}
+            workspaceModelsLoading={workspaceModelDiscoveryLoading}
+            workspaceModelsError={workspaceModelDiscoveryError}
+            localRuntimeLoading={localRuntimeLoading}
+            onRefreshWorkspaceModels={refreshWorkspaceModels}
+            onRefreshLocalRuntime={refreshLocalRuntime}
             onRefreshHardware={refreshHardware}
             onRefreshCatalog={refreshModelCatalog}
             onReviewInstall={reviewModelInstall}
@@ -3026,6 +3974,7 @@ export const MediaStudio = ({
               setModelRemovalError(null);
             }}
             onChooseModelImport={chooseModelImport}
+            onInspectWorkspaceArtifact={inspectWorkspaceArtifact}
             onImportModel={importLocalModel}
             onDismissModelImport={dismissModelImport}
             onProbeModel={probeLocalModel}

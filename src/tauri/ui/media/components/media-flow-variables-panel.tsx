@@ -447,7 +447,7 @@ export const MediaFlowVariablesPanel = ({
               <article key={preset.id} className={cn("rounded-lg border p-3", active ? "border-violet-400/30 bg-violet-400/5" : "border-slate-800 bg-slate-900/35")}>
                 <div className="flex items-center gap-2">
                   {active ? <BookmarkCheck className="h-3.5 w-3.5 text-violet-300" /> : <Braces className="h-3.5 w-3.5 text-slate-600" />}
-                  <div className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-200">{preset.name}</div>
+                  <div className="min-w-0 flex-1 break-words text-[11px] leading-4 font-medium text-slate-200">{preset.name}</div>
                   {active ? <span className="text-[8px] font-semibold tracking-wide text-violet-300 uppercase">active</span> : null}
                 </div>
                 <div className="mt-2 flex items-center gap-1">

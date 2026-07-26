@@ -5,6 +5,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../../components/ui/tooltip";
+import { IS_DEVELOPMENT_BUILD } from "../../build-info";
 import { cn } from "../../lib/utils";
 import {
   getProviderLabel,
@@ -50,6 +51,14 @@ export const ShellTitlebar = ({
         >
           Machdoch
         </span>
+        {IS_DEVELOPMENT_BUILD ? (
+          <span
+            className="rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]"
+            data-tauri-drag-region
+          >
+            Developer
+          </span>
+        ) : null}
       </div>
       <div className="min-w-0 flex-1" data-tauri-drag-region />
       <div className="relative z-10 flex items-center gap-1" data-tauri-no-drag>

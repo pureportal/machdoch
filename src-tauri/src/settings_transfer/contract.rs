@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) const PROTOCOL_MAJOR: u16 = 1;
-pub(crate) const PROTOCOL_MINOR: u16 = 2;
+pub(crate) const PROTOCOL_MINOR: u16 = 3;
 pub(crate) const CATEGORY_SCHEMA_VERSION: u16 = 1;
 pub(crate) const SETTINGS_TRANSFER_EVENT: &str = "machdoch://settings-transfer-state";
 
@@ -20,8 +20,8 @@ pub enum SettingsCategoryId {
     ChatVoicePreferences,
     #[serde(rename = "memory.global")]
     GlobalMemory,
-    #[serde(rename = "customizations.instructions-global")]
-    GlobalInstructions,
+    #[serde(rename = "instruction-profiles.global")]
+    InstructionProfiles,
     #[serde(rename = "customizations.prompts-global")]
     GlobalPrompts,
     #[serde(rename = "context-packs.global")]
@@ -41,7 +41,7 @@ impl SettingsCategoryId {
         Self::DesktopAppearance,
         Self::ChatVoicePreferences,
         Self::GlobalMemory,
-        Self::GlobalInstructions,
+        Self::InstructionProfiles,
         Self::GlobalPrompts,
         Self::GlobalContextPacks,
         Self::GlobalMcp,
@@ -86,10 +86,10 @@ impl SettingsCategoryId {
                 default_selected: false,
                 sensitive: true,
             },
-            Self::GlobalInstructions => CategoryMetadata {
-                label: "Instruction Files",
-                description: "Global instructions.md and conditional instruction documents.",
-                warning: Some("Instruction text may contain private operational details."),
+            Self::InstructionProfiles => CategoryMetadata {
+                label: "Instruction Profiles",
+                description: "Reusable instruction profiles and all-workspaces defaults. Workspace bindings and repository files stay local.",
+                warning: Some("Profile text may contain private operational details. Receiver conflicts require explicit resolution."),
                 default_selected: true,
                 sensitive: true,
             },
@@ -123,7 +123,7 @@ impl SettingsCategoryId {
             },
             Self::GlobalRalphFlows => CategoryMetadata {
                 label: "Global RALPH Flows",
-                description: "Current global flow definitions and their instruction files.",
+                description: "Current global flow definitions and inline guidance.",
                 warning: Some("Flows can contain commands, literal secrets, and machine-specific paths."),
                 default_selected: true,
                 sensitive: true,

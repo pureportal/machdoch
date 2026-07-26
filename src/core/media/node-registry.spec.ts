@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createImageRecipeFlow } from "./compiler.js";
+import {
+  createImageRecipeFlow,
+  createImageToVideoFlow,
+} from "./compiler.js";
 import type { ImageRecipeSettings, MediaFlow } from "./contracts.js";
+import { stepMediaGalleryAssetId } from "./gallery.js";
 import {
   addMediaFlowNode,
   connectMediaFlowPorts,
@@ -17,6 +21,8 @@ import {
   pasteMediaFlowNodes,
   removeMediaFlowNode,
   updateMediaFlowNodeConfig,
+  updateMediaFlowNodeConfigs,
+  upgradeMediaFlowQualityDefaults,
   validateMediaFlowGraph,
   validateMediaFlowNode,
   validateMediaFlowNodes,
@@ -60,7 +66,7 @@ describe("media node registry", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(17);
+    expect(listMediaNodeDefinitions()).toHaveLength(21);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
       expect(definition.fields.every((field) => "defaultValue" in field)).toBe(true);
@@ -89,6 +95,105 @@ describe("media node registry", () => {
       ],
       outputs: [expect.objectContaining({ id: "image", dataType: "image" })],
     });
+  });
+
+  it("types animated backgrounds and alpha video compositing as extension nodes", () => {
+    const background = getMediaNodeDefinition("source.animated-background");
+    expect(background).toMatchObject({
+      layer: "source",
+      outputs: [
+        expect.objectContaining({
+          id: "video",
+          dataType: "video",
+        }),
+      ],
+    });
+    if (!background) {
+      throw new Error("Animated-background node definition is unavailable.");
+    }
+    expect(
+      background.fields
+        .find((field) => field.id === "style")
+        ?.options?.map((option) => option.value),
+    ).toEqual(["gradient-wave", "enchanted-beach"]);
+    expect(getMediaNodeDefinition("operation.video-composite")).toMatchObject({
+      layer: "operation",
+      inputs: [
+        expect.objectContaining({
+          id: "foreground-video",
+          dataType: "video",
+        }),
+        expect.objectContaining({
+          id: "background-video",
+          dataType: "video",
+        }),
+      ],
+      outputs: [
+        expect.objectContaining({
+          id: "video",
+          dataType: "video",
+        }),
+      ],
+    });
+  });
+
+  it("protects video ports and requires first-frame semantics before a last frame", () => {
+    const videoFlow = createImageToVideoFlow({
+      id: "flow:typed-video",
+      createdAt: "2026-07-24T10:00:00.000Z",
+      sourceAssetId: "asset:first-frame",
+      lastFrameAssetId: "asset:last-frame",
+      prompt: "Slow dolly in while the fabric moves in a light breeze",
+    });
+
+    expect(validateMediaFlowGraph(videoFlow)).toEqual([]);
+    expect(getMediaNodeDefinition("task.generate-video")).toMatchObject({
+      inputs: [
+        expect.objectContaining({ id: "prompt", dataType: "prompt" }),
+        expect.objectContaining({ id: "first-frame", dataType: "image" }),
+        expect.objectContaining({ id: "last-frame", dataType: "image" }),
+      ],
+      outputs: [expect.objectContaining({ id: "video", dataType: "video" })],
+    });
+    expect(getMediaNodeDefinition("output.video")).toMatchObject({
+      inputs: [expect.objectContaining({ id: "video", dataType: "video" })],
+    });
+
+    expect(
+      inspectMediaFlowConnection(videoFlow, {
+        fromNodeId: "first-frame",
+        fromPortId: "image",
+        toNodeId: "video-output",
+        toPortId: "video",
+      }),
+    ).toMatchObject({
+      valid: false,
+      reason: expect.stringContaining("produces image"),
+    });
+
+    const withoutFirstFrame = disconnectMediaFlowInput({
+      flow: videoFlow,
+      nodeId: "generate-video",
+      portId: "first-frame",
+      updatedAt: "2026-07-24T10:01:00.000Z",
+    });
+    expect(
+      withoutFirstFrame.edges.some(
+        (edge) =>
+          edge.toNodeId === "generate-video" &&
+          edge.toPortId === "last-frame",
+      ),
+    ).toBe(false);
+  });
+
+  it("steps through every gallery entry and wraps in both directions", () => {
+    const ids = ["first", "second", "third"];
+
+    expect(stepMediaGalleryAssetId(ids, "third", 1)).toBe("first");
+    expect(stepMediaGalleryAssetId(ids, "first", -1)).toBe("third");
+    expect(stepMediaGalleryAssetId(ids, "deleted", 1)).toBe("first");
+    expect(stepMediaGalleryAssetId(ids, "deleted", -1)).toBe("third");
+    expect(stepMediaGalleryAssetId([], null, 1)).toBeNull();
   });
 
   it("keeps multiple labeled image references connected to an edit collection", () => {
@@ -288,6 +393,98 @@ describe("media node registry", () => {
     });
   });
 
+  it("synchronizes opaque video publication and applies quality presets atomically", () => {
+    const flow = createImageToVideoFlow({
+      id: "flow:opaque-video",
+      createdAt: "2026-07-26T00:00:00.000Z",
+      sourceAssetId: "asset:source",
+    });
+    const opaque = updateMediaFlowNodeConfig({
+      flow,
+      nodeId: "generate-video",
+      fieldId: "transparentBackground",
+      value: false,
+      updatedAt: "2026-07-26T00:01:00.000Z",
+    });
+    expect(
+      opaque.nodes.find((node) => node.id === "video-output")?.config.role,
+    ).toBe("opaque");
+
+    const maximum = updateMediaFlowNodeConfigs({
+      flow: opaque,
+      nodeId: "generate-video",
+      values: {
+        resolution: "quality-768",
+        numFrames: 33,
+        fps: 16,
+        numInferenceSteps: 30,
+        guidanceScale: 5,
+        matteQuality: "production",
+        encodingQuality: "lossless",
+        memoryProfile: "auto",
+      },
+      updatedAt: "2026-07-26T00:02:00.000Z",
+    });
+    expect(
+      maximum.nodes.find((node) => node.id === "generate-video")?.config,
+    ).toMatchObject({
+      resolution: "quality-768",
+      numFrames: 33,
+      fps: 16,
+      numInferenceSteps: 30,
+      transparentBackground: false,
+    });
+    expect(
+      maximum.nodes.find((node) => node.id === "video-output")?.config.role,
+    ).toBe("opaque");
+    expect(validateMediaFlowNodes(maximum)).toEqual([]);
+  });
+
+  it("upgrades legacy quality nodes without changing their motion or framing choices", () => {
+    const flow = createImageToVideoFlow({
+      id: "flow:legacy-video",
+      createdAt: "2026-07-14T00:00:00.000Z",
+      sourceAssetId: "asset:source",
+    });
+    const legacy: MediaFlow = {
+      ...flow,
+      nodes: flow.nodes.map((node) => {
+        if (node.type !== "task.generate-video") return node;
+        const config = { ...node.config };
+        delete config.guidanceScale;
+        delete config.seed;
+        delete config.negativePrompt;
+        delete config.matteQuality;
+        delete config.encodingQuality;
+        delete config.memoryProfile;
+        return { ...node, config };
+      }),
+    };
+    expect(validateMediaFlowNodes(legacy)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "MISSING_CONFIG_FIELD",
+          nodeId: "generate-video",
+        }),
+      ]),
+    );
+
+    const upgraded = upgradeMediaFlowQualityDefaults({ flow: legacy });
+    expect(validateMediaFlowNodes(upgraded)).toEqual([]);
+    expect(
+      upgraded.nodes.find((node) => node.id === "generate-video")?.config,
+    ).toMatchObject({
+      aspectRatio: "1:1",
+      loopMode: "none",
+      guidanceScale: 5,
+      seed: 0,
+      negativePrompt: "",
+      matteQuality: "production",
+      encodingQuality: "lossless",
+      memoryProfile: "auto",
+    });
+  });
+
   it("validates required inputs, typed ports, single cardinality, and acyclic topology", () => {
     const flow = createFlow();
     expect(validateMediaFlowGraph(flow)).toEqual([]);
@@ -363,6 +560,7 @@ describe("media node registry", () => {
     expect(listVisibleMediaNodeFields(definition!, config, "Expert").map((field) => field.id)).toEqual([
       "modelId",
       "modelAddons",
+      "memoryProfile",
     ]);
   });
 

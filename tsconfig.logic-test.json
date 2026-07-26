@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.ui.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"],
+    "tsBuildInfoFile": "./.cache/tsconfig.logic-test.tsbuildinfo"
+  },
+  "include": [
+    "src/tauri/ui/**/*.spec.ts"
+  ],
+  "exclude": []
+}

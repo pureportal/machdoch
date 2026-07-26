@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -7,21 +8,20 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PROVIDER_ENROLLMENT_CONFIG } from "./config.js";
-import { cleanupProviderNativeState } from "./provider-native-cleanup.js";
 import {
-  getProviderCoverageLedgerPath,
   getProviderSyncStatusPath,
   getProviderSyncWorkspaceRegistryPath,
   loadRegisteredProviderSyncWorkspaces,
   reconcileProviderSync,
   registerProviderSyncWorkspace,
-  uninstallProviderSyncTargets,
 } from "./sync-coordinator.js";
 
 const roots: string[] = [];
+const execFileAsync = promisify(execFile);
 
 const createRoot = async (): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), "machdoch-provider-sync-"));
@@ -85,211 +85,43 @@ describe("provider sync coordinator", () => {
     },
   );
 
-  it("reconciles user and workspace instruction targets and uninstalls only owned output", async () => {
+  it("retains temporarily unavailable registered workspace roots", async () => {
     const root = await createRoot();
-    const workspaceRoot = join(root, "workspace");
     const userConfigRoot = join(root, "user-config");
-    const codexHome = join(root, "codex-home");
+    const existingWorkspace = join(root, "existing-workspace");
+    const unavailableWorkspace = join(root, "offline-workspace");
     await Promise.all([
-      mkdir(join(workspaceRoot, ".machdoch"), { recursive: true }),
       mkdir(userConfigRoot, { recursive: true }),
-      mkdir(codexHome, { recursive: true }),
+      mkdir(existingWorkspace, { recursive: true }),
     ]);
     vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
-    vi.stubEnv("CODEX_HOME", codexHome);
-
-    await Promise.all([
-      writeFile(
-        join(userConfigRoot, "user-config.json"),
-        `${JSON.stringify(
-          {
-            agentCliPaths: { "codex-cli": process.execPath },
-            providerEnrollment: {
-              enabled: true,
-              persistentSync: {
-                enabled: true,
-                watch: false,
-                daemonAtLogin: false,
-              },
-              providers: {
-                "codex-cli": { enabled: true },
-                "claude-cli": { enabled: false },
-                "copilot-cli": { enabled: false },
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      ),
-      writeFile(
-        join(userConfigRoot, "instructions.md"),
-        "Keep user policy.\n",
-        "utf8",
-      ),
-      writeFile(
-        join(workspaceRoot, ".machdoch", "instructions.md"),
-        "Keep workspace policy.\n",
-        "utf8",
-      ),
-    ]);
-
-    const status = await reconcileProviderSync(workspaceRoot);
-    expect(status.targets).toHaveLength(2);
-    expect(
-      status.targets.every(
-        (target) => target.state === "awaiting-provider-refresh",
-      ),
-    ).toBe(true);
-
-    const [userInstructions, workspaceInstructions, coverageText] =
-      await Promise.all([
-        readFile(join(codexHome, "AGENTS.md"), "utf8"),
-        readFile(join(workspaceRoot, "AGENTS.md"), "utf8"),
-        readFile(getProviderCoverageLedgerPath(workspaceRoot), "utf8"),
-      ]);
-    expect(userInstructions).toContain("Keep user policy.");
-    expect(userInstructions).not.toContain("Keep workspace policy.");
-    expect(workspaceInstructions).toContain("Keep workspace policy.");
-    expect(workspaceInstructions).not.toContain("Keep user policy.");
-    expect(JSON.parse(coverageText)).toMatchObject({
-      entries: [
-        { entityKind: "instruction", provider: "codex-cli", covered: true },
-        { entityKind: "instruction", provider: "codex-cli", covered: true },
-      ],
+    await mkdir(join(userConfigRoot, "provider-enrollment"), {
+      recursive: true,
     });
-
-    expect(await uninstallProviderSyncTargets()).toEqual([]);
-    await expect(stat(join(codexHome, "AGENTS.md"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-    await expect(stat(join(workspaceRoot, "AGENTS.md"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("removes provider instruction projections when canonical instructions are deleted", async () => {
-    const root = await createRoot();
-    const workspaceRoot = join(root, "workspace");
-    const userConfigRoot = join(root, "user-config");
-    const codexHome = join(root, "codex-home");
-    await Promise.all([
-      mkdir(join(workspaceRoot, ".machdoch"), { recursive: true }),
-      mkdir(userConfigRoot, { recursive: true }),
-      mkdir(codexHome, { recursive: true }),
-    ]);
-    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
-    vi.stubEnv("CODEX_HOME", codexHome);
-    await Promise.all([
-      writeFile(
-        join(userConfigRoot, "user-config.json"),
-        `${JSON.stringify(
-          {
-            agentCliPaths: { "codex-cli": process.execPath },
-            providerEnrollment: {
-              enabled: true,
-              persistentSync: {
-                enabled: true,
-                watch: false,
-                daemonAtLogin: false,
-              },
-              providers: {
-                "codex-cli": { enabled: true },
-                "claude-cli": { enabled: false },
-                "copilot-cli": { enabled: false },
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      ),
-      writeFile(
-        join(userConfigRoot, "instructions.md"),
-        "User policy.\n",
-        "utf8",
-      ),
-      writeFile(
-        join(workspaceRoot, ".machdoch", "instructions.md"),
-        "Workspace policy.\n",
-        "utf8",
-      ),
-    ]);
-    await reconcileProviderSync(workspaceRoot);
-
-    await Promise.all([
-      rm(join(userConfigRoot, "instructions.md")),
-      rm(join(workspaceRoot, ".machdoch", "instructions.md")),
-    ]);
-    await reconcileProviderSync(workspaceRoot);
-
-    await expect(stat(join(codexHome, "AGENTS.md"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-    await expect(stat(join(workspaceRoot, "AGENTS.md"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("removes stale projections when a provider is disabled in configuration", async () => {
-    const root = await createRoot();
-    const workspaceRoot = join(root, "workspace");
-    const userConfigRoot = join(root, "user-config");
-    const codexHome = join(root, "codex-home");
-    await Promise.all([
-      mkdir(workspaceRoot, { recursive: true }),
-      mkdir(userConfigRoot, { recursive: true }),
-      mkdir(codexHome, { recursive: true }),
-    ]);
-    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
-    vi.stubEnv("CODEX_HOME", codexHome);
-    const createConfig = (enabled: boolean): string =>
+    await writeFile(
+      getProviderSyncWorkspaceRegistryPath(),
       `${JSON.stringify(
         {
-          agentCliPaths: { "codex-cli": process.execPath },
-          providerEnrollment: {
-            enabled: true,
-            persistentSync: {
-              enabled: true,
-              watch: false,
-              daemonAtLogin: false,
-            },
-            providers: {
-              "codex-cli": { enabled },
-              "claude-cli": { enabled: false },
-              "copilot-cli": { enabled: false },
-            },
-          },
+          schemaVersion: 1,
+          workspaceRoots: [unavailableWorkspace],
         },
         null,
         2,
-      )}\n`;
-    await Promise.all([
-      writeFile(
-        join(userConfigRoot, "user-config.json"),
-        createConfig(true),
-        "utf8",
-      ),
-      writeFile(
-        join(userConfigRoot, "instructions.md"),
-        "User policy.\n",
-        "utf8",
-      ),
-    ]);
-    await reconcileProviderSync(workspaceRoot);
-    await writeFile(
-      join(userConfigRoot, "user-config.json"),
-      createConfig(false),
+      )}\n`,
       "utf8",
     );
 
-    await reconcileProviderSync(workspaceRoot);
+    await registerProviderSyncWorkspace(existingWorkspace);
 
-    await expect(stat(join(codexHome, "AGENTS.md"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    const stored = JSON.parse(
+      await readFile(getProviderSyncWorkspaceRegistryPath(), "utf8"),
+    ) as { workspaceRoots: string[] };
+    expect(stored.workspaceRoots.sort()).toEqual(
+      [existingWorkspace, unavailableWorkspace].sort(),
+    );
+    await expect(loadRegisteredProviderSyncWorkspaces()).resolves.toEqual([
+      existingWorkspace,
+    ]);
   });
 
   it("removes an empty managed MCP config after the last canonical server is deleted", async () => {
@@ -363,116 +195,118 @@ describe("provider sync coordinator", () => {
     await expect(stat(projectedPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("backs up and removes provider-native instructions and MCP entries before enablement", async () => {
+  it("writes exclusions to Git's actual linked-worktree exclude path", async () => {
+    try {
+      await execFileAsync("git", ["--version"], { windowsHide: true });
+    } catch {
+      return;
+    }
     const root = await createRoot();
-    const workspaceRoot = join(root, "workspace");
+    const primaryRoot = join(root, "primary");
+    const workspaceRoot = join(root, "linked");
+    const userConfigRoot = join(root, "user-config");
     const codexHome = join(root, "codex-home");
-    const claudeHome = join(root, "claude-home");
-    const copilotHome = join(root, "copilot-home");
-    const userHome = join(root, "home");
     await Promise.all([
-      mkdir(join(workspaceRoot, ".machdoch"), { recursive: true }),
-      mkdir(join(workspaceRoot, ".claude", "rules"), { recursive: true }),
-      mkdir(join(workspaceRoot, ".github", "instructions"), {
-        recursive: true,
-      }),
-      mkdir(join(workspaceRoot, ".codex"), { recursive: true }),
-      mkdir(join(workspaceRoot, "docs"), { recursive: true }),
+      mkdir(primaryRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
       mkdir(codexHome, { recursive: true }),
-      mkdir(join(claudeHome, "rules"), { recursive: true }),
-      mkdir(join(copilotHome, "instructions"), { recursive: true }),
-      mkdir(userHome, { recursive: true }),
     ]);
-    vi.stubEnv("HOME", userHome);
-    vi.stubEnv("USERPROFILE", userHome);
+    await execFileAsync("git", ["init"], {
+      cwd: primaryRoot,
+      windowsHide: true,
+    });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=Machdoch Tests",
+        "-c",
+        "user.email=tests@machdoch.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "initial",
+      ],
+      { cwd: primaryRoot, windowsHide: true },
+    );
+    await execFileAsync(
+      "git",
+      ["worktree", "add", "-b", "linked-test", workspaceRoot],
+      { cwd: primaryRoot, windowsHide: true },
+    );
+    await mkdir(join(workspaceRoot, ".machdoch", "mcp"), {
+      recursive: true,
+    });
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
     vi.stubEnv("CODEX_HOME", codexHome);
-    vi.stubEnv("CLAUDE_CONFIG_DIR", claudeHome);
-    vi.stubEnv("COPILOT_HOME", copilotHome);
-    const files = [
-      join(codexHome, "AGENTS.md"),
-      join(claudeHome, "CLAUDE.md"),
-      join(claudeHome, "rules", "testing.md"),
-      join(copilotHome, "copilot-instructions.md"),
-      join(copilotHome, "instructions", "testing.instructions.md"),
-      join(workspaceRoot, "AGENTS.md"),
-      join(workspaceRoot, "CLAUDE.md"),
-      join(workspaceRoot, "GEMINI.md"),
-      join(workspaceRoot, "README.md"),
-      join(workspaceRoot, ".claude", "rules", "testing.md"),
-      join(workspaceRoot, ".github", "instructions", "testing.instructions.md"),
-    ];
-    await Promise.all(
-      files.map((path) => writeFile(path, "Provider policy.\n", "utf8")),
-    );
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "instructions.md"),
-      "Canonical Machdoch policy.\n",
-      "utf8",
-    );
     await Promise.all([
       writeFile(
-        join(codexHome, "config.toml"),
-        'model = "gpt-5.5"\nproject_doc_fallback_filenames = ["README.md"]\n\n[mcp_servers.native]\ncommand = "native"\n',
+        join(userConfigRoot, "user-config.json"),
+        `${JSON.stringify(
+          {
+            agentCliPaths: { "codex-cli": process.execPath },
+            providerEnrollment: {
+              enabled: true,
+              persistentSync: {
+                enabled: true,
+                watch: false,
+                daemonAtLogin: false,
+              },
+              providers: {
+                "codex-cli": { enabled: true },
+                "claude-cli": { enabled: false },
+                "copilot-cli": { enabled: false },
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
         "utf8",
       ),
       writeFile(
-        join(workspaceRoot, "docs", "README.md"),
-        "Keep documentation.\n",
-        "utf8",
-      ),
-      writeFile(
-        join(workspaceRoot, ".codex", "config.toml"),
-        'model_verbosity = "low"\n\n[mcp_servers.workspace]\ncommand = "native"\n',
-        "utf8",
-      ),
-      writeFile(
-        join(userHome, ".claude.json"),
-        `${JSON.stringify({ theme: "dark", mcpServers: { native: { command: "native" } } })}\n`,
-        "utf8",
-      ),
-      writeFile(
-        join(copilotHome, "mcp-config.json"),
-        `${JSON.stringify({ note: "keep", mcpServers: { native: { command: "native" } } })}\n`,
-        "utf8",
-      ),
-      writeFile(
-        join(workspaceRoot, ".mcp.json"),
-        `${JSON.stringify({ mcpServers: { native: { command: "native" } } })}\n`,
+        join(workspaceRoot, ".machdoch", "mcp", "mcp.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            servers: [
+              {
+                id: "workspace-server",
+                enabled: true,
+                transport: {
+                  type: "stdio",
+                  command: process.execPath,
+                  args: ["server.js"],
+                },
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
         "utf8",
       ),
     ]);
 
-    const result = await cleanupProviderNativeState(workspaceRoot);
-
-    expect(result.removedInstructionFiles).toHaveLength(files.length);
-    expect(result.backupFiles.length).toBeGreaterThanOrEqual(files.length + 5);
-    await Promise.all(
-      files.map((path) =>
-        expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" }),
-      ),
+    const status = await reconcileProviderSync(workspaceRoot);
+    expect(status.targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "codex-cli",
+          scope: "workspace",
+          state: "awaiting-provider-refresh",
+        }),
+      ]),
     );
-    await expect(
-      readFile(join(workspaceRoot, ".machdoch", "instructions.md"), "utf8"),
-    ).resolves.toContain("Canonical Machdoch policy");
-    await expect(
-      readFile(join(workspaceRoot, "docs", "README.md"), "utf8"),
-    ).resolves.toContain("Keep documentation");
-    await expect(
-      readFile(join(codexHome, "config.toml"), "utf8"),
-    ).resolves.toBe(
-      'model = "gpt-5.5"\nproject_doc_fallback_filenames = ["README.md"]\n',
+    const { stdout } = await execFileAsync(
+      "git",
+      ["--no-optional-locks", "rev-parse", "--git-path", "info/exclude"],
+      { cwd: workspaceRoot, encoding: "utf8", windowsHide: true },
     );
-    await expect(
-      readFile(join(workspaceRoot, ".codex", "config.toml"), "utf8"),
-    ).resolves.toBe('model_verbosity = "low"\n');
-    await expect(
-      readFile(join(userHome, ".claude.json"), "utf8"),
-    ).resolves.toContain('"theme": "dark"');
-    await expect(
-      readFile(join(copilotHome, "mcp-config.json"), "utf8"),
-    ).resolves.toContain('"note": "keep"');
-    await expect(stat(join(workspaceRoot, ".mcp.json"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    const excludePath = resolve(workspaceRoot, stdout.trim());
+    await expect(readFile(excludePath, "utf8")).resolves.toContain(
+      "/.codex/config.toml",
+    );
   });
+
 });

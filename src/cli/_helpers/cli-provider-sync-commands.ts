@@ -22,7 +22,6 @@ import {
   isProviderSyncAutostartInstalled,
   removeProviderSyncAutostart,
 } from "../../core/provider-enrollment/platform-autostart.js";
-import { cleanupProviderNativeState } from "../../core/provider-enrollment/provider-native-cleanup.js";
 import type { ParsedCliArgs, ProviderSyncCliOptions } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 
@@ -150,9 +149,6 @@ export const printProviderSyncSummary = async (
       const uninstallWarnings = wasEnabled
         ? []
         : await uninstallProviderSyncTargets();
-      const nativeCleanup = wasEnabled
-        ? undefined
-        : await cleanupProviderNativeState(args.workspaceRoot);
       const config = await setPersistentProviderSyncEnabled(true);
       let status: Awaited<ReturnType<typeof reconcileProviderSync>>;
       let autostartPath: string | undefined;
@@ -179,7 +175,6 @@ export const printProviderSyncSummary = async (
         ...status,
         daemonStartPid: daemonPid ?? null,
         autostartPath: autostartPath ?? null,
-        ...(nativeCleanup ? { nativeCleanup } : {}),
         ...(uninstallWarnings.length > 0 ? { uninstallWarnings } : {}),
       };
       if (args.json) printJson(result);

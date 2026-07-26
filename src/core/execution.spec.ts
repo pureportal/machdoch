@@ -107,7 +107,6 @@ const emptyCustomizations = (
 ): CustomizationDiscoveryResult => {
   return {
     workspaceRoot,
-    instructions: [],
     prompts: [],
     skills: [],
   };
@@ -321,47 +320,6 @@ describe("executeTask", () => {
     );
   });
 
-  it("executes instruction-file inspection with detailed instruction metadata", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    const customizations: CustomizationDiscoveryResult = {
-      ...emptyCustomizations(workspaceRoot),
-      instructions: [
-        {
-          kind: "conditional",
-          path: ".machdoch/instructions/testing.instructions.md",
-          name: "Testing conventions",
-          description: "Prefer behavior-focused tests.",
-          applyTo: "src/**/*.ts",
-          keywords: ["test", "coverage"],
-          priority: 70,
-          body: "Prefer behavior-focused tests with clear assertions.",
-        },
-      ],
-    };
-
-    const result = await executeTask(
-      "inspect instructions",
-      createConfig(workspaceRoot, "ask"),
-      customizations,
-    );
-
-    expect(result.status).toBe("executed");
-    expect(result.summary).toContain("instruction files");
-    expect(result.outputSections.map((section) => section.title)).toEqual([
-      "Task context",
-      "Customization summary",
-      "Instruction files",
-    ]);
-    expect(result.outputSections[2]?.lines).toContain(
-      "[conditional] Testing conventions (.machdoch/instructions/testing.instructions.md)",
-    );
-    expect(result.outputSections[2]?.lines).toContain("  applyTo: src/**/*.ts");
-    expect(result.outputSections[2]?.lines).toContain(
-      "  body: Prefer behavior-focused tests with clear assertions.",
-    );
-  });
-
   it("executes skill inspection with discovered skill metadata", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -369,10 +327,10 @@ describe("executeTask", () => {
       ...emptyCustomizations(workspaceRoot),
       skills: [
         {
-          path: ".machdoch/skills/browser-automation/SKILL.md",
-          name: "browser-automation",
-          description: "Automates browser tasks.",
-          argumentHint: "Target site and desired outcome",
+          path: ".machdoch/skills/release-automation/SKILL.md",
+          name: "release-automation",
+          description: "Automates release tasks.",
+          argumentHint: "Release and desired outcome",
           userInvocable: true,
           disableModelInvocation: false,
         },
@@ -393,7 +351,7 @@ describe("executeTask", () => {
       "Skill files",
     ]);
     expect(result.outputSections[2]?.lines).toContain(
-      "browser-automation (.machdoch/skills/browser-automation/SKILL.md)",
+      "release-automation (.machdoch/skills/release-automation/SKILL.md)",
     );
     expect(result.outputSections[2]?.lines).toContain("  user invocable: true");
   });
@@ -412,17 +370,13 @@ describe("executeTask", () => {
     expect(result.outputSections.map((section) => section.title)).toEqual([
       "Task context",
       "Customization summary",
-      "Instruction files",
       "Prompt files",
       "Skill files",
     ]);
     expect(result.outputSections[2]?.lines).toEqual([
-      "No instruction files were discovered.",
-    ]);
-    expect(result.outputSections[3]?.lines).toEqual([
       "No prompt files were discovered.",
     ]);
-    expect(result.outputSections[4]?.lines).toEqual([
+    expect(result.outputSections[3]?.lines).toEqual([
       "No skill folders were discovered.",
     ]);
   });
@@ -451,6 +405,24 @@ describe("executeTask", () => {
 
     expect(result.status).toBe("executed");
     expect(result.executedTools).toEqual(["filesystem"]);
+  });
+
+  it("does not require provider-delivery acknowledgement for deterministic offline work", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const result = await executeTask(
+      "summarize this project setup",
+      createConfig(workspaceRoot, "ask", {
+        provider: "copilot-cli",
+        model: "gpt-5.4",
+        offline: true,
+      }),
+      emptyCustomizations(workspaceRoot),
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.executedTools).toEqual(["filesystem"]);
+    expect(result.metadata?.instructionDeliveryGrade).toBe("compatible");
   });
 
   it("blocks deterministic file writes in ask mode", async () => {
@@ -617,69 +589,6 @@ describe("executeTask", () => {
       "Task context",
     ]);
     expect(result.outputSections[0]?.lines).toContain("missing inputs: file");
-  });
-
-  it("surfaces applicable instruction context during prompt-driven execution", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await mkdir(join(workspaceRoot, "src", "core"), { recursive: true });
-    await writeFile(
-      join(workspaceRoot, "src", "core", "config.ts"),
-      "export const config = {}\n",
-    );
-
-    const customizations: CustomizationDiscoveryResult = {
-      ...emptyCustomizations(workspaceRoot),
-      instructions: [
-        {
-          kind: "always-on",
-          path: ".machdoch/instructions.md",
-          name: "Workspace defaults",
-          body: "Always follow the shared workspace defaults.",
-          keywords: [],
-        },
-        {
-          kind: "conditional",
-          path: ".machdoch/instructions/typescript.instructions.md",
-          name: "TypeScript rules",
-          body: "Prefer strict TypeScript conventions in source files.",
-          applyTo: "src/**/*.ts",
-          keywords: [],
-          priority: 80,
-        },
-      ],
-      prompts: [
-        {
-          path: ".machdoch/prompts/show-file.prompt.md",
-          name: "show-file",
-          description: "Preview a workspace file.",
-          inputs: ["file"],
-          tools: ["filesystem"],
-          body: "show ${input:file}",
-        },
-      ],
-    };
-
-    const result = await executeTask(
-      "/show-file file=src/core/config.ts",
-      createConfig(workspaceRoot, "ask"),
-      customizations,
-    );
-
-    expect(result.status).toBe("executed");
-    expect(result.outputSections.map((section) => section.title)).toEqual([
-      "Prompt context",
-      "Task context",
-      "Instruction context",
-      "File target",
-      "File preview",
-    ]);
-    expect(result.outputSections[2]?.lines).toContain(
-      "TypeScript rules (.machdoch/instructions/typescript.instructions.md) [priority 80]",
-    );
-    expect(result.outputSections[2]?.lines).toContain(
-      "  body: Prefer strict TypeScript conventions in source files.",
-    );
   });
 
   it("executes a safe directory listing for an explicit workspace folder", async () => {
@@ -1060,8 +969,8 @@ describe("executeTask", () => {
     const executorAdapter = createFinalOnlyAdapter("Completed with base model.");
     const monitorAdapter: AgentModelAdapter = {
       startTurn: async (params) => {
-        expect(params.model).toBe("gpt-5.5-mini");
-        expect(params.systemPrompt).toContain("Selected model: gpt-5.5-mini");
+        expect(params.model).toBe("gpt-5.4-mini");
+        expect(params.systemPrompt).toContain("Selected model: gpt-5.4-mini");
 
         return {
           text: "",
@@ -1093,7 +1002,7 @@ describe("executeTask", () => {
         reviewModel: {
           mode: "dedicated",
           provider: "openai",
-          model: "gpt-5.5-mini",
+          model: "gpt-5.4-mini",
         },
       }),
       emptyCustomizations(workspaceRoot),
@@ -2077,6 +1986,7 @@ describe("executeTask", () => {
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: failingAdapter,
+        acknowledgeCompatibleInstructionDelivery: true,
         onStateChange: (nextProgress) => {
           progress.push(nextProgress);
         },
@@ -2099,7 +2009,17 @@ describe("executeTask", () => {
       "Status: 400",
       "Code: bad_request",
       "Request ID: req_langdock_123",
+      "Delivery: DELIVERY_INDETERMINATE (automatic replay prohibited)",
       "Error: The langdock provider returned 400 No body. Check LANGDOCK_BASE_URL.",
+    ]);
+    expect(result.metadata?.instructionDeliveryReceipts).toEqual([
+      expect.objectContaining({
+        status: "indeterminate",
+        requestId: "req_langdock_123",
+        truncation: "none",
+        bodyStored: false,
+        assembledRequestDigest: expect.any(String),
+      }),
     ]);
   });
 

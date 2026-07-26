@@ -19,7 +19,9 @@ use crate::runtime_snapshot::{get_user_config_directory, resolve_workspace_root_
 use super::{
     diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
     payload::cleanup_temporary_files,
-    payload_files::rewrite_task_interview_payload_arguments,
+    payload_files::{
+        rewrite_instruction_payload_arguments, rewrite_task_interview_payload_arguments,
+    },
     process::{
         create_desktop_task_activity, hide_child_process_window, read_bounded_stream_text,
         read_stderr, terminate_child_process_tree,
@@ -424,11 +426,11 @@ pub(super) fn execute_provider_sync_command(
 pub(super) fn execute_instruction_command(
     request: InstructionCommandRequest,
 ) -> Result<Value, String> {
-    run_auxiliary_json_command(
-        &request.workspace_root,
-        request.arguments,
-        &INSTRUCTION_CLI_SPEC,
-    )
+    let (arguments, payload_paths) = rewrite_instruction_payload_arguments(request.arguments)?;
+    let result =
+        run_auxiliary_json_command(&request.workspace_root, arguments, &INSTRUCTION_CLI_SPEC);
+    cleanup_temporary_files(&payload_paths);
+    result
 }
 
 pub(super) fn execute_task_interview_command(

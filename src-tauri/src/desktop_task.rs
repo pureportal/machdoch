@@ -90,6 +90,7 @@ pub struct DesktopTaskRunRequest {
     provider: Option<String>,
     model: Option<String>,
     reasoning: Option<String>,
+    acknowledged_instruction_delivery_plan_id: Option<String>,
     conversation_context: Option<Value>,
     image_paths: Option<Vec<String>>,
     media_asset_references: Option<Vec<DesktopMediaAssetReference>>,

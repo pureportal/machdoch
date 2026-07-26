@@ -22,6 +22,7 @@ use super::{
 };
 
 const MAX_ENCODED_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_WEBM_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 20_000;
 const MAX_DECODED_PIXELS: u64 = 100_000_000;
 const MAX_DECODE_ALLOC: u64 = 512 * 1024 * 1024;
@@ -38,6 +39,11 @@ pub(crate) fn read_asset_preview(
     max_edge: u32,
 ) -> MediaResult<Vec<u8>> {
     let source = database::get_asset_blob_source(paths, asset_id)?;
+    if source.mime_type == "video/webm" {
+        // The browser needs the original container for native playback. The
+        // immutable CAS read still verifies the recorded size and SHA-256.
+        return read_verified_blob(paths, &source);
+    }
     let is_svg = source.mime_type == "image/svg+xml";
     let profile = if is_svg {
         format!("svg-library-webp-{max_edge}-secure-static-v2")
@@ -342,12 +348,25 @@ pub(crate) fn resolve_verified_blob_path(
     if Path::new(&source.relative_path) != expected_relative_path {
         return Err("Asset blob path does not match its content digest".to_string());
     }
-    if source.byte_size == 0 || source.byte_size > MAX_ENCODED_BYTES {
-        return Err("Asset blob byte size is outside supported image limits".to_string());
+    let max_byte_size = max_asset_blob_bytes(&source.mime_type);
+    if source.byte_size == 0 || source.byte_size > max_byte_size {
+        return Err(format!(
+            "Asset blob byte size is outside the supported {} MB limit for {}",
+            max_byte_size / 1024 / 1024,
+            source.mime_type
+        ));
     }
     let blob_path = paths.blobs.join(&expected_relative_path);
-    let metadata = fs::symlink_metadata(&blob_path)
-        .map_err(|error| format!("failed to inspect asset blob: {error}"))?;
+    let metadata = fs::symlink_metadata(&blob_path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "Asset blob {} is missing from managed content-addressed storage; republish or regenerate the source asset",
+                source.digest
+            )
+        } else {
+            format!("failed to inspect asset blob: {error}")
+        }
+    })?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err("Asset blob must be a regular file".to_string());
     }
@@ -361,6 +380,14 @@ pub(crate) fn resolve_verified_blob_path(
         return Err("Asset blob failed SHA-256 integrity verification".to_string());
     }
     Ok(blob_path)
+}
+
+pub(crate) fn max_asset_blob_bytes(mime_type: &str) -> u64 {
+    if mime_type == "video/webm" {
+        MAX_WEBM_BYTES
+    } else {
+        MAX_ENCODED_BYTES
+    }
 }
 
 pub(super) fn encode_image_with_icc(
@@ -471,12 +498,25 @@ pub(crate) fn publish_cas_bytes(
     digest: &str,
     bytes: &[u8],
 ) -> MediaResult<()> {
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("CAS publication digest is invalid".to_string());
+    }
+    let expected_relative_path = cas_relative_path(digest);
+    if relative_path != expected_relative_path {
+        return Err("CAS publication path does not match its content digest".to_string());
+    }
+    if format!("{:x}", Sha256::digest(bytes)) != digest {
+        return Err("CAS publication bytes do not match their content digest".to_string());
+    }
     let destination = paths.blobs.join(relative_path);
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create transformed CAS shard: {error}"))?;
+            .map_err(|error| format!("failed to create CAS shard: {error}"))?;
     }
-    if destination.exists() {
+    if let Ok(metadata) = fs::symlink_metadata(&destination) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("Existing CAS destination must be a regular file".to_string());
+        }
         let existing = fs::read(&destination)
             .map_err(|error| format!("failed to verify deduplicated CAS blob: {error}"))?;
         if format!("{:x}", Sha256::digest(&existing)) == digest {
@@ -488,7 +528,13 @@ pub(crate) fn publish_cas_bytes(
         bytes,
         crate::atomic_file::AtomicWriteOptions::default(),
     )
-    .map_err(|error| format!("failed to atomically publish transformed image: {error}"))
+    .map_err(|error| format!("failed to atomically publish CAS blob: {error}"))?;
+    let published = fs::read(&destination)
+        .map_err(|error| format!("failed to verify published CAS blob: {error}"))?;
+    if published.len() != bytes.len() || format!("{:x}", Sha256::digest(&published)) != digest {
+        return Err("Published CAS blob failed size or SHA-256 verification".to_string());
+    }
+    Ok(())
 }
 
 fn operation_label(operation: &MediaImageTransformOperation) -> &'static str {

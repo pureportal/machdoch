@@ -320,14 +320,6 @@ export interface UserReviewModelConfigFile {
   model?: string;
 }
 
-export interface ProviderEnrollmentInstructionsConfigFile {
-  mode?: "native-when-available";
-  unmanagedNative?: "adopt" | "allow" | "fail";
-  strictConflicts?: boolean;
-  fallback?: "automatic";
-  failOnTruncation?: boolean;
-}
-
 export interface ProviderEnrollmentMcpConfigFile {
   mode?: "direct-native";
   fallback?: "per-server-stdio-proxy";
@@ -350,7 +342,6 @@ export interface ProviderEnrollmentPersistentSyncConfigFile {
 export interface ProviderEnrollmentConfigFile {
   schemaVersion?: 1;
   enabled?: boolean;
-  instructions?: ProviderEnrollmentInstructionsConfigFile;
   mcp?: ProviderEnrollmentMcpConfigFile;
   persistentSync?: ProviderEnrollmentPersistentSyncConfigFile;
   providers?: Partial<Record<AgentCliProvider, { enabled?: boolean }>>;

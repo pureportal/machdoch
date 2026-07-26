@@ -243,6 +243,7 @@ describe("OpenAI Responses conformance", () => {
     expect(calls[0]?.options).not.toHaveProperty("timeout");
     expect(calls[1]?.body).toMatchObject({
       previous_response_id: "resp_1",
+      instructions: "System prompt.",
       input: [
         {
           type: "function_call_output",

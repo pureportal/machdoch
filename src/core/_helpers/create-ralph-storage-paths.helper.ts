@@ -15,7 +15,6 @@ const RALPH_FLOW_SUBDIRECTORY = "flows";
 const RALPH_RUN_SUBDIRECTORY = "runs";
 const RALPH_REVISION_SUBDIRECTORY = "revisions";
 const RALPH_ARTIFACT_SUBDIRECTORY = "artifacts";
-const RALPH_INSTRUCTION_SUBDIRECTORY = "instructions";
 
 export type RalphFlowScope = "workspace" | "user";
 
@@ -50,40 +49,6 @@ export const getRalphFlowStorageDirectory = (
   scope: RalphFlowScope = "workspace",
 ): string => {
   return join(getRalphStorageDirectory(workspaceRoot, scope), RALPH_FLOW_SUBDIRECTORY);
-};
-
-export const getRalphFlowInstructionDirectory = (
-  workspaceRoot: string,
-  flowId: string,
-  scope: RalphFlowScope = "workspace",
-): string => {
-  return join(
-    getRalphStorageDirectory(workspaceRoot, scope),
-    RALPH_INSTRUCTION_SUBDIRECTORY,
-    normalizeFlowId(flowId),
-  );
-};
-
-export const getRalphFlowAlwaysOnInstructionPath = (
-  workspaceRoot: string,
-  flowId: string,
-  scope: RalphFlowScope = "workspace",
-): string => {
-  return join(
-    getRalphFlowInstructionDirectory(workspaceRoot, flowId, scope),
-    "instructions.md",
-  );
-};
-
-export const getRalphFlowConditionalInstructionDirectory = (
-  workspaceRoot: string,
-  flowId: string,
-  scope: RalphFlowScope = "workspace",
-): string => {
-  return join(
-    getRalphFlowInstructionDirectory(workspaceRoot, flowId, scope),
-    RALPH_INSTRUCTION_SUBDIRECTORY,
-  );
 };
 
 export const getRalphRunDirectory = (

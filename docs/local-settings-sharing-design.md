@@ -18,6 +18,11 @@ Passphrase-encrypted file export/import reuses this catalog, validation, and jou
 its container and Settings UX are specified in
 [`encrypted-settings-file-transfer.md`](./encrypted-settings-file-transfer.md).
 
+The Instruction Profiles category follows
+[`instruction-profiles.md`](./instruction-profiles.md): profiles and ordered
+defaults come from `instruction-library.json`; workspace mappings are not part
+of this settings category.
+
 ## 1. Recommended approach
 
 Build settings sharing as a temporary, one-receiver session owned by the Tauri/Rust backend:
@@ -242,7 +247,7 @@ Suggested initial bounds, all centralized and testable:
 
 - 32 MiB total plaintext;
 - 2,000 file/items total;
-- 128 KiB per instruction or prompt file, matching the repository's current instruction discovery bound;
+- 128 KiB per instruction profile or prompt file;
 - 2 MiB for global MCP configuration;
 - 4 MiB per RALPH flow;
 - 15 seconds for TCP/Noise handshake;
@@ -305,16 +310,20 @@ Recommended V1 categories:
 | `preferences.desktop-appearance` / **Desktop & Appearance**     | Appearance theme/density/accent/bubble style plus portable desktop fields: assistant bubble behavior, context limit, archive/retention values, quick-voice silence and message limits                                     | Autostart registration/preferences, always-run-as-admin, quick-voice enabled/shortcut, preferred OS voice URI, session/shell state                                                                                                    | On                                    |
 | `preferences.chat-voice` / **Chat & Voice Preferences**         | Spoken-reply enabled/rate, new-chat provider/model/mode/reasoning and memory/UI-control defaults, and running-task message behavior                                                                                       | Preferred OS voice URI, speech input device, sessions, drafts, queued messages, histories, recent workspaces, and recovery state                                                                                                      | On                                    |
 | `memory.global` / **Global Memory**                             | `memory.globalEnabled` and all entries whose scope is exactly `global`                                                                                                                                                    | Per-session memory and conversation history                                                                                                                                                                                           | Off; personal-data warning            |
-| `customizations.instructions-global` / **Instruction Files**    | User config root `instructions.md` and `instructions/**/*.instructions.md`                                                                                                                                                | Workspace `.machdoch`, `.github`, `AGENTS.md`, prompts, skills, and RALPH-flow instructions                                                                                                                                           | On                                    |
+| `instruction-profiles.global` / **Instruction Profiles**       | Portable `instruction-library.json` projection containing reusable profiles and ordered all-workspaces defaults                                                                                                           | Workspace roots and assignments, repository `AGENTS.md`, prompts, skills, flow guidance, delivery receipts, and provider-native files                                                                                                   | On, with provider-bound-content warning |
 | `customizations.prompts-global` / **Global Prompts**            | User config root `prompts/**/*.prompt.md`                                                                                                                                                                                 | Workspace/GitHub prompts and any non-prompt file                                                                                                                                                                                      | On                                    |
 | `context-packs.global` / **Global Context Packs**               | Complete logical snapshots of context packs whose `workspace` is `null`, including instructions, prompts, variables, triggers, provider/model choices, and attachment references                                          | Workspace-scoped packs and the contents of referenced files, directories, or Media Studio assets                                                                                                                                      | On, with path/private-content warning |
 | `mcp.global` / **MCP Servers & Registries**                     | User config root `mcp.json` and the extracted `machdoch.desktop.mcp-marketplace-state` registry-source value                                                                                                              | Workspace MCP config, discovery caches, lifecycle/usage state, generated provider files                                                                                                                                               | On, with credential/path warning      |
 | `ralph.preferences-global` / **Global RALPH Preferences**       | Flow-library mode, generation/run provider/model/reasoning choices, and the default maximum transition count                                                                                                              | RALPH workspace root, generation prompt history, inspector layout, runs, revisions, watches, artifacts, and scheduler bindings                                                                                                        | On                                    |
-| `ralph.flows-global` / **Global RALPH Flows**                   | User-scoped `ralph/flows/*.json` plus matching `ralph/instructions/<flow-id>/instructions.md` and `ralph/instructions/<flow-id>/instructions/**/*.instructions.md`, provided no flow declares a custom workspace override | Every workspace flow; user flow definitions with `settings.workspace.mode: "custom"`; all other files under the instruction tree; global/workspace runs, revisions, watches, artifacts, scheduler bindings, Media Studio flows/assets | On, with path/secret warning          |
+| `ralph.flows-global` / **Global RALPH Flows**                   | User-scoped `ralph/flows/*.json`, including each flow's inline `guidance`, provided no flow declares a custom workspace override                                                                                           | Every workspace flow; user flow definitions with `settings.workspace.mode: "custom"`; global/workspace runs, revisions, watches, artifacts, scheduler bindings, and Media Studio flows/assets                                          | On, with path/secret warning          |
 
 “Portable allowlisted portion” is the category's complete domain. For example, selecting Desktop & Appearance replaces every portable field listed above but intentionally preserves `quickVoiceShortcut`; that field is not merged, it is outside the transferable category because it is machine-bound.
 
-For `providerEnrollment`, the proposed portable domain is `schemaVersion`, `enabled`, normalized `instructions`, normalized `mcp`, `providers.*.enabled`, and `persistentSync.{enabled,watch,debounceMs,filesystemConvergenceTargetMs,fullRescanIntervalMs,autoReloadOwnedSessions}`. Preserve `persistentSync.daemonAtLogin` locally. The final list remains an explicit product decision because importing the policy can regenerate native provider configuration after commit.
+For `providerEnrollment`, the portable domain is `schemaVersion`, `enabled`,
+normalized `mcp`, `providers.*.enabled`, and
+`persistentSync.{enabled,watch,debounceMs,filesystemConvergenceTargetMs,fullRescanIntervalMs,autoReloadOwnedSessions}`.
+Preserve `persistentSync.daemonAtLogin` locally. Persistent sync projects MCP
+only; it must never write instruction profiles or provider instruction files.
 
 The shell snapshot also carries mixed portable and local state. Transfer only `autoSpeakResponses`, `rate`, the closed new-chat default projection, and running-task message behavior through **Chat & Voice Preferences**. Preserve the preferred voice URI, onboarding state, app navigation state, sessions, histories, recent workspaces, and every other shell-state field. Likewise, **Global RALPH Preferences** transfers only its closed portable projection and preserves the RALPH workspace root and generation prompt history.
 
@@ -418,7 +427,8 @@ Validation is independent on the receiver, even though the sender already valida
 - memory entry count/shape and `scope === "global"` for every entry;
 - MCP JSON object and actual MCP server/default schema, not only the current Rust “is an object” check;
 - RALPH flows with the existing `parseRalphFlowJson`/`validateRalphFlow` logic through a new side-effect-free `validate-json` boundary usable by the backend;
-- instruction/prompt suffix, existing frontmatter parser, regular-file status, and 128 KiB bound;
+- instruction-library schema and profile byte limits; prompt suffix,
+  frontmatter parser, regular-file status, and 128 KiB bound;
 - registry URLs and appearance/desktop enum/range normalizers.
 
 Validation must have no live writes, provider sync, network calls, credential tests, MCP launches, flow execution, autostart changes, or other side effects. Do not “verify” an imported API key by sending it to a provider.
@@ -454,12 +464,12 @@ The existing Rust [`atomic_file.rs`](../src-tauri/src/atomic_file.rs), [`coopera
 | Desktop & Appearance         | Replace all defined portable desktop fields and the appearance store key. Preserve sessions, workspace paths, shortcut/voice-device/autostart/admin fields, and every other store key.                                           |
 | Chat & Voice Preferences     | Replace spoken-reply enabled/rate, new-chat defaults, and running-task message behavior. Preserve the system voice URI, microphone selection, sessions, Packs, histories, and every unrelated shell/store field.                 |
 | Global Memory                | Replace `globalEnabled` and the complete global-entry list. Do not retain receiver entries by ID.                                                                                                                                |
-| Instruction Files            | Receiver's `instructions.md` and every matching `instructions/**/*.instructions.md` become exactly the sender set. Preserve nonmatching files and all workspace files.                                                           |
+| Instruction Profiles         | Validate and merge the sender's reusable profiles and ordered defaults into `instruction-library.json`. Same-ID/different-body and same-name/different-ID conflicts fail explicitly. Preserve every receiver workspace binding and never auto-bind a sender path. |
 | Global Prompts               | Receiver's matching `prompts/**/*.prompt.md` become exactly the sender set. Preserve nonmatching files and all workspace/GitHub prompts.                                                                                         |
 | Global Context Packs         | Replace every global pack while preserving every workspace-scoped pack. Transfer attachment references only; never read or copy the referenced files, directories, or Media Studio assets.                                       |
 | MCP Servers & Registries     | Replace the whole global canonical `mcp.json` value/presence and the registry-source store key. Stop/reload affected MCP servers only after commit. Preserve workspace MCP and caches.                                           |
 | Global RALPH Preferences     | Replace flow-library and generation/run defaults. Preserve the local RALPH workspace root, generation prompt history, inspector layout, and every execution/history field.                                                       |
-| Global RALPH Flows           | Replace current user-scope flow definitions and their user-scope flow-instruction trees. Preserve global run/revision history, watches, and all workspace RALPH data because those are not settings in this category.            |
+| Global RALPH Flows           | Replace current user-scope flow JSON definitions, including inline flow guidance. Preserve global run/revision history, watches, and all workspace RALPH data because those are not settings in this category. |
 
 For global RALPH, preserved revisions/runs can become detached from a replaced definition. Keep them for data safety, do not transmit them, and have the UI label or hide detached history rather than pretending it belongs to the imported generation. Whether product requirements instead want that local history purged is an open decision, not something import should infer.
 
@@ -483,8 +493,8 @@ The following are always excluded, even if a peer invents a category or path:
 | ------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | Workspace runtime settings      | `<workspace>/.machdoch/config.json`                                                                 | Explicit workspace scope                                                  |
 | Workspace and process secrets   | `<workspace>/.env`, process environment                                                             | Workspace/ephemeral scope; not persisted global settings                  |
-| Workspace customizations        | `<workspace>/.machdoch/{instructions,prompts,skills}`, `.github/**`, `AGENTS.md`                    | Repository-owned files                                                    |
-| Workspace RALPH                 | `<workspace>/.machdoch/ralph/**`                                                                    | Flows, instructions, runs, revisions, and artifacts are workspace scope   |
+| Workspace customizations        | `<workspace>/.machdoch/{prompts,skills}`, `.github/**`, root/nested `AGENTS.md`                    | Repository-owned files                                                    |
+| Workspace RALPH                 | `<workspace>/.machdoch/ralph/**`                                                                    | Flows, inline guidance, runs, revisions, and artifacts are workspace scope |
 | Workspace MCP                   | `<workspace>/.machdoch/mcp/**`                                                                      | Workspace configuration and derived discovery cache                       |
 | Scheduler                       | workspace/user `scheduler.json`, `scheduler-workspaces.json`, jobs, runs, events, locks             | Carries workspace roots and automation state, not portable settings       |
 | Sessions and conversation state | `machdoch-shell-state.json`, snapshot/revision files, attachments, per-session memory               | Contains workspace roots, messages, tasks, and user content               |
@@ -629,14 +639,14 @@ The repository already has a clear semantic split, but global settings span more
 | Area                               | Global storage                                                                                                                                                                                                  | Workspace storage                                                                                    | Transfer conclusion                                                                                                                                                 |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Runtime/user settings and API keys | OS user config root `user-config.json`: Windows `%APPDATA%/machdoch`, macOS `~/Library/Application Support/machdoch`, Linux `${XDG_CONFIG_HOME:-~/.config}/machdoch`; overridable by `MACHDOCH_USER_CONFIG_DIR` | `<workspace>/.machdoch/config.json`; `<workspace>/.env` and process env also override runtime values | Export only allowlisted global JSON subtrees. Never export env or workspace config.                                                                                 |
-| Instructions                       | User config root `instructions.md` and `instructions/**/*.instructions.md`                                                                                                                                      | `.machdoch/instructions.md`, `.machdoch/instructions/**`, optional `.github/**` and `AGENTS.md`      | Fixed global text-file adapter. Normal user writes are atomic and share the transfer category boundary; bulk replacement also enforces strict link and path checks. |
+| Instructions                       | User config root `instruction-library.json`: reusable profiles, defaults, and registered assignment metadata                                                                                                    | Repository `AGENTS.md` remains project-owned and is not transferred                                 | Use the closed portable instruction export. Roots are omitted; optional workspace UUID/scope mappings import as unbound records and require explicit relink. Same-ID/different-body conflicts require a reviewed choice.           |
 | Prompts                            | User config root `prompts/**/*.prompt.md`                                                                                                                                                                       | `.machdoch/prompts/**`, optional `.github/prompts/**`                                                | Safe as a separate fixed global text category.                                                                                                                      |
 | Skills                             | User config root `skills/**/SKILL.md` plus possible referenced resources                                                                                                                                        | `.machdoch/skills/**`, optional `.github/skills/**`                                                  | Defer until a bounded package definition exists.                                                                                                                    |
 | MCP                                | User config root `mcp.json`; marketplace registry sources are one Tauri-store key                                                                                                                               | `<workspace>/.machdoch/mcp/mcp.json`                                                                 | Transfer global canonical config and extracted registry key only. Exclude both global/workspace caches and lifecycle state.                                         |
-| RALPH                              | User config root `ralph/flows/*.json`, per-flow `instructions.md`, and per-flow `instructions/**/*.instructions.md`; global runs/revisions/watches also live below `ralph/`                                     | `<workspace>/.machdoch/ralph/**`                                                                     | Transfer eligible user-scope current definitions and recognized instruction files only. Never copy either directory wholesale.                                      |
+| RALPH                              | User config root `ralph/flows/*.json`; flow-wide persistent instructions are the flow definition's `guidance` field; runs/revisions/watches also live below `ralph/`                                           | `<workspace>/.machdoch/ralph/**`                                                                     | Transfer eligible user-scope current definitions only, with their inline guidance.                                                                                    |
 | Appearance and UI preferences      | Tauri store `machdoch-shell-state.json` plus the revisioned shell-state snapshot, under keys including appearance, RALPH settings, marketplace state, running-task behavior, and shell state                    | Many values inside shell/session state carry workspace roots or histories                            | Extract only closed category projections. Never serialize either mixed store or shell snapshot wholesale.                                                           |
 | Shell/session snapshots            | Tauri app data `machdoch-shell-state.snapshot.json` plus revision, with sessions/messages/workspaces                                                                                                            | Semantically mixed with current workspace state                                                      | Always exclude.                                                                                                                                                     |
-| Provider enrollment                | Policy is top-level `providerEnrollment` in `user-config.json`; generated status/ownership/coverage/workspace roots live in provider-enrollment state/native provider files                                     | State tracks workspace roots and projects into workspace/provider files                              | Transfer a narrowly portable policy subset only; regenerate derived state after commit.                                                                             |
+| Provider enrollment                | MCP sync policy is top-level `providerEnrollment` in `user-config.json`; generated MCP status/ownership/coverage/workspace roots live in provider-enrollment state/native provider files                         | Persistent sync projects MCP configuration only                                                       | Transfer a narrowly portable MCP policy subset only; regenerate derived state after commit. Instruction delivery plans and receipts are run-scoped and not transferred. |
 | Mission Control                    | User config root `remote-control.json`, in-memory/persisted pairing state                                                                                                                                       | Commands/snapshots can reference workspace state                                                     | Always exclude. Its server lifecycle is precedent, not a transport to reuse.                                                                                        |
 | Scheduler                          | User config root `scheduler.json` and `scheduler-workspaces.json`, plus workspace scheduler files                                                                                                               | Jobs/runs/events contain workspace roots                                                             | Always exclude.                                                                                                                                                     |
 | Media Studio                       | Tauri app data `media-studio/`, `media.sqlite3`, content-addressed assets/models/flows                                                                                                                          | Runs can bridge to a workspace/RALPH                                                                 | Always exclude. Existing media flow export is unrelated to settings transfer.                                                                                       |
@@ -644,7 +654,8 @@ The repository already has a clear semantic split, but global settings span more
 The canonical repository documentation for the first rows is also summarized in [`README.md`](../README.md). Relevant implementation sources include:
 
 - [`runtime_snapshot/settings_types.rs`](../src-tauri/src/runtime_snapshot/settings_types.rs), [`user_config.rs`](../src-tauri/src/runtime_snapshot/user_config.rs), and [`workspace.rs`](../src-tauri/src/runtime_snapshot/workspace.rs);
-- [`customizations.ts`](../src/core/customizations.ts) and [`instructions.ts`](../src/core/instructions.ts);
+- [`instruction-system/`](../src/core/instruction-system), including its
+  strict store, portable export, resolver, delivery, and recovery boundaries;
 - [`mcp/config.ts`](../src/core/mcp/config.ts) and [`runtime_snapshot/mcp_config.rs`](../src-tauri/src/runtime_snapshot/mcp_config.rs);
 - [`create-ralph-storage-paths.helper.ts`](../src/core/_helpers/create-ralph-storage-paths.helper.ts) and [`ralph.ts`](../src/core/ralph.ts);
 - [`shell-store.ts`](../src/tauri/ui/lib/shell-store.ts), its normalizers, and [`shell_state.rs`](../src-tauri/src/shell_state.rs);
@@ -691,7 +702,10 @@ The paths below are proposals based on the inspected layout, not claims that the
 #### C. Category adapters and coordinated consumers
 
 - User config adapter: raw JSON field extraction/replacement, schema normalization, Unix modes and Windows ACLs, application-wide transaction lock.
-- File-tree adapters: instructions, prompts, and global RALPH instructions with strict relative paths, metadata/link checks, and deterministic enumeration.
+- Instruction-profile adapter: strict portable library projection, conflict
+  decisions, and root-free optional workspace mappings.
+- File-tree adapter: prompts with strict relative paths, metadata/link checks,
+  and deterministic enumeration.
 - MCP adapter: global `mcp.json`, stronger schema validation, existing CAS/permissions, lifecycle pause/reload, extracted marketplace registry key.
 - RALPH adapter: direct user root, current flow definitions only, parser/validator reuse, directory mutation lock, no revision creation, UI refresh.
 - Store adapter: appearance and registry keys only, CAS fingerprints, no session snapshot access.
@@ -735,17 +749,21 @@ This order puts the destructive and scope-sensitive parts under test before addi
 - Seed every selected category with receiver-only entries and confirm they are removed after replacement, not merged.
 - Hash every unselected category and unrelated JSON/store field before and after import; hashes must remain identical.
 - Verify API Keys replaces both provider and web-search maps, including an empty sender map.
-- Verify global RALPH definitions/instructions replace exactly while runs/revisions/watches and every workspace RALPH file remain unchanged.
+- Verify global RALPH definitions and inline guidance replace exactly while
+  runs, revisions, watches, and every workspace RALPH file remain unchanged.
 - Verify one user-scoped RALPH flow with `settings.workspace.mode: "custom"` makes the category unavailable and that neither its path nor any other flow is serialized as a partial snapshot.
 - Verify MCP global config/registries replace while workspace config, caches, and lifecycle state remain unchanged.
-- Verify instruction/prompt replacement deletes extra matching receiver files but preserves nonmatching files in the same directories.
+- Verify profile import merges only the portable library projection and prompt
+  replacement deletes extra matching receiver files while preserving
+  nonmatching files in the same directories.
 - Property/fuzz test category JSON, Unicode paths, case folding, Windows reserved names/ADS, `..`, absolute/UNC/drive paths, long/deep trees, duplicate entries, symlinks, junctions, reparse points, and hard links.
 
 Create a “poison workspace” fixture containing unique sentinel secrets in:
 
 - `.env` and `.machdoch/config.json`;
-- every workspace instruction/prompt/skill compatibility location;
-- workspace RALPH flows/instructions/runs/revisions/artifacts;
+- every workspace `AGENTS.md`, prompt, skill, and provider-native instruction
+  location;
+- workspace RALPH flows, inline guidance, runs, revisions, and artifacts;
 - workspace MCP config/cache;
 - scheduler, shell sessions, attachments, remote-control snapshot, Media Studio, and provider-enrollment workspace registries;
 - symlink/hard-link escape attempts from a nominal global folder.

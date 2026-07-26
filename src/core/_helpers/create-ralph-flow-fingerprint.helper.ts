@@ -27,6 +27,7 @@ export const createRalphFlowFingerprint = (flow: RalphFlow): string => {
     alias: flow.alias,
     name: flow.name,
     description: flow.description,
+    guidance: flow.guidance,
     settings: flow.settings,
     variables: flow.variables,
     blocks: flow.blocks,

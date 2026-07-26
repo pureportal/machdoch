@@ -5,9 +5,7 @@ import {
 } from "../../chat-session.model";
 import {
   applySmartContextPackToComposer,
-  createContextPackSummary,
   createSmartContextPackExportPayload,
-  createSmartContextPackPreview,
   doesSmartContextPackMatchComposer,
   extractSmartContextPackVariables,
   filterSmartContextPacksByScope,
@@ -160,26 +158,6 @@ describe("smart context packs", () => {
 
     expect(result.draft).toContain("### Prompt files\n- /debug-build");
     expect(result.draft).toContain("### Skill files\n- browser");
-    expect(
-      createContextPackSummary(
-        createPack({
-          contextAttachments: [
-            {
-              id: "prompt-file",
-              path: "C:\\Project\\.machdoch\\prompts\\debug-build.prompt.md",
-              kind: "file",
-              name: "debug-build.prompt.md",
-            },
-            {
-              id: "skill-file",
-              path: "C:\\Project\\.machdoch\\skills\\browser\\SKILL.md",
-              kind: "file",
-              name: "SKILL.md",
-            },
-          ],
-        }),
-      ),
-    ).toContain("1 prompt file");
   });
 
   it("preserves input-needed placeholders when applying a pack", () => {
@@ -293,60 +271,6 @@ describe("smart context packs", () => {
         contextAttachments: [],
       }),
     ).toBe(false);
-  });
-
-  it("previews budget and path health warnings", () => {
-    const preview = createSmartContextPackPreview(
-      createPack({
-        contextAttachments: [
-          {
-            id: "secret",
-            path: "C:\\Project\\.env",
-            kind: "file",
-            name: ".env",
-          },
-          {
-            id: "screens",
-            path: "C:\\Project\\screens",
-            kind: "directory",
-            name: "screens",
-          },
-          {
-            id: "image",
-            path: "C:\\Project\\layout.png",
-            kind: "image",
-            name: "layout.png",
-          },
-        ],
-        variables: [{ name: "target_file" }],
-        trigger: {
-          phrases: ["frontend qa"],
-          pathPatterns: [],
-          autoApply: true,
-        },
-      }),
-      { imageInputSupported: false },
-    );
-
-    expect(preview.attachmentCount).toBe(3);
-    expect(preview.estimatedTokens).toBeGreaterThan(1);
-    expect(preview.warnings).toEqual([
-      "1 variable",
-      "image model required",
-      "sensitive paths",
-      "folder size unknown",
-      "auto-apply",
-    ]);
-  });
-
-  it("summarizes attachments in a single pass with correct plurals", () => {
-    expect(createContextPackSummary(createPack())).toEqual([
-      "prompt",
-      "instructions",
-      "1 file",
-      "Machdoch",
-      "OpenAI / gpt-5.5",
-    ]);
   });
 
   it("exports and imports packs into the target workspace", () => {

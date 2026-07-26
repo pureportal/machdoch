@@ -8,7 +8,7 @@ const entry = (
   route: EnrollmentCoverageEntry["route"],
 ): EnrollmentCoverageEntry => ({
   entityId: id,
-  entityKind: "instruction",
+  entityKind: "mcp-server",
   provider: "openai",
   digest: id,
   route,
@@ -18,10 +18,10 @@ const entry = (
   evidence: [],
 });
 
-describe("enrollment coverage ledger", () => {
+describe("MCP enrollment coverage ledger", () => {
   it("derives completeness from entity rows instead of provider flags", () => {
     const summary = summarizeEnrollmentCoverage([
-      entry("a", true, "api-request"),
+      entry("a", true, "application-mcp"),
       entry("b", false, "uncovered"),
     ]);
     expect(summary).toMatchObject({
@@ -30,7 +30,7 @@ describe("enrollment coverage ledger", () => {
       uncovered: 1,
       complete: false,
       uncoveredEntityIds: ["b"],
-      routes: { "api-request": 1, uncovered: 1 },
+      routes: { "application-mcp": 1, uncovered: 1 },
     });
   });
 });

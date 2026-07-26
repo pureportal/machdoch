@@ -98,6 +98,28 @@ export interface ChatSessionMessagePromptEnhancement {
   originalContent: string;
 }
 
+export type ChatSessionMessagePromptEnhancementMode =
+  | "off"
+  | "simple"
+  | "web-search";
+
+export interface ChatSessionQueuedPromptEnhancementRequest {
+  mode: Exclude<ChatSessionMessagePromptEnhancementMode, "off">;
+}
+
+export interface ChatSessionMessageSettings {
+  workspace: string | null;
+  provider: RuntimeProvider;
+  model: string;
+  mode?: RunMode;
+  reasoning?: ReasoningMode;
+  sessionMemoryEnabled: boolean;
+  useGlobalMemory: boolean;
+  uiControlEnabled: boolean;
+  promptEnhancementMode: ChatSessionMessagePromptEnhancementMode;
+  interviewEnabled: boolean;
+}
+
 export interface ChatSessionMessage {
   id: string;
   taskId?: string;
@@ -107,6 +129,7 @@ export interface ChatSessionMessage {
   intent?: "retry-task" | "continue-task";
   contextAttachments?: ChatSessionContextAttachment[];
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
+  settings?: ChatSessionMessageSettings;
   source?: ChatSessionMessageSource;
 }
 
@@ -187,6 +210,7 @@ export interface ChatSessionQueuedMessage {
   visibleMessageContent?: string;
   promptHistoryContent?: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
+  promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
   blockedByTaskId?: string;
   contentUpdatedAt: number;
   attachmentsUpdatedAt: number;
@@ -314,6 +338,8 @@ const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
   "image",
   "other",
 ];
+const MESSAGE_PROMPT_ENHANCEMENT_MODES: ChatSessionMessagePromptEnhancementMode[] =
+  ["off", "simple", "web-search"];
 
 export const QUICK_VOICE_SESSION_KIND: ChatSessionSpecialKind = "quick-voice";
 export const MAX_SMART_CONTEXT_PACKS = 160;
@@ -1215,25 +1241,6 @@ const truncatePersistedText = (value: string): string => {
   )}${PERSISTED_TEXT_TRUNCATION_MARKER}`;
 };
 
-const normalizeTaskCustomizationMatches = (
-  value: unknown,
-): TaskRunPreview["applicableInstructions"] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter(isRecord)
-    .map((entry, index) => ({
-      kind: entry.kind === "always-on" ? "always-on" : "conditional",
-      name: normalizeString(entry.name, `Instruction ${index + 1}`),
-      path: normalizeString(entry.path),
-      priority: normalizeFiniteNumber(entry.priority),
-      body: normalizeString(entry.body),
-      reason: normalizeString(entry.reason, "Matched persisted instruction."),
-    }));
-};
-
 const normalizeTaskSuggestions = (
   value: unknown,
 ): TaskRunPreview["suggestedPrompts"] => {
@@ -1247,7 +1254,7 @@ const normalizeTaskSuggestions = (
       const scope =
         entry.scope === "user" ||
         entry.scope === "workspace" ||
-        entry.scope === "compatibility"
+        entry.scope === "github"
           ? entry.scope
           : undefined;
 
@@ -1319,22 +1326,17 @@ const normalizeCustomizationCounts = (
   value: unknown,
   preview: Pick<
     TaskRunPreview,
-    "applicableInstructions" | "suggestedPrompts" | "suggestedSkills"
+    "suggestedPrompts" | "suggestedSkills"
   >,
 ): TaskRunPreview["customizationCounts"] => {
   if (!isRecord(value)) {
     return {
-      instructions: preview.applicableInstructions.length,
       prompts: preview.suggestedPrompts.length,
       skills: preview.suggestedSkills.length,
     };
   }
 
   return {
-    instructions: normalizeFiniteNumber(
-      value.instructions,
-      preview.applicableInstructions.length,
-    ),
     prompts: normalizeFiniteNumber(value.prompts, preview.suggestedPrompts.length),
     skills: normalizeFiniteNumber(value.skills, preview.suggestedSkills.length),
   };
@@ -1348,13 +1350,9 @@ const normalizeTaskRunPreview = (
     return undefined;
   }
 
-  const applicableInstructions = normalizeTaskCustomizationMatches(
-    value.applicableInstructions,
-  );
   const suggestedPrompts = normalizeTaskSuggestions(value.suggestedPrompts);
   const suggestedSkills = normalizeTaskSuggestions(value.suggestedSkills);
   const previewBase = {
-    applicableInstructions,
     suggestedPrompts,
     suggestedSkills,
   };
@@ -1370,7 +1368,6 @@ const normalizeTaskRunPreview = (
     ...(normalizeResolvedPromptInvocation(value.invokedPrompt)
       ? { invokedPrompt: normalizeResolvedPromptInvocation(value.invokedPrompt) }
       : {}),
-    applicableInstructions,
     suggestedPrompts,
     suggestedSkills,
     warnings: normalizeStringArray(value.warnings),
@@ -1818,6 +1815,9 @@ const normalizeTaskExecutionResult = (
     ...(normalizeChatSessionOptionalString(value.reason)
       ? { reason: normalizeChatSessionOptionalString(value.reason) }
       : {}),
+    ...(isRecord(value.metadata)
+      ? { metadata: { ...value.metadata } }
+      : {}),
     outputSections: normalizeTaskExecutionSections(value.outputSections),
     ...(response ? { response } : {}),
     ...(fileChanges ? { fileChanges } : {}),
@@ -2146,6 +2146,60 @@ const normalizeMessagePromptEnhancement = (
   return { originalContent };
 };
 
+const normalizeQueuedPromptEnhancementRequest = (
+  value: unknown,
+): ChatSessionQueuedPromptEnhancementRequest | undefined => {
+  if (
+    !isRecord(value) ||
+    (value.mode !== "simple" && value.mode !== "web-search")
+  ) {
+    return undefined;
+  }
+
+  return { mode: value.mode };
+};
+
+const normalizeMessageSettings = (
+  value: unknown,
+): ChatSessionMessageSettings | undefined => {
+  if (!isRecord(value) || !isRuntimeProvider(value.provider)) {
+    return undefined;
+  }
+
+  const model = normalizeString(value.model).trim();
+
+  if (!model) {
+    return undefined;
+  }
+
+  const mode = normalizeOptionalStoredRunMode(value.mode);
+  const reasoning = normalizeOptionalStoredReasoningMode(value.reasoning);
+  const promptEnhancementMode =
+    typeof value.promptEnhancementMode === "string" &&
+    MESSAGE_PROMPT_ENHANCEMENT_MODES.includes(
+      value.promptEnhancementMode as ChatSessionMessagePromptEnhancementMode,
+    )
+      ? (value.promptEnhancementMode as ChatSessionMessagePromptEnhancementMode)
+      : "off";
+  const workspace =
+    typeof value.workspace === "string" && value.workspace.trim()
+      ? value.workspace.trim()
+      : null;
+
+  return {
+    workspace,
+    provider: value.provider,
+    model,
+    ...(mode ? { mode } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    sessionMemoryEnabled: value.sessionMemoryEnabled === true,
+    useGlobalMemory: value.useGlobalMemory === true,
+    uiControlEnabled: value.uiControlEnabled === true,
+    promptEnhancementMode,
+    interviewEnabled: value.interviewEnabled === true,
+  };
+};
+
 const getExecutionTraceCompletionTimestamp = (
   message: ChatSessionMessage,
   thinking: TaskThinkingTrace,
@@ -2267,6 +2321,10 @@ const normalizeSessionMessages = (
       entry.role === "user"
         ? normalizeMessagePromptEnhancement(entry.promptEnhancement, content)
         : undefined;
+    const settings =
+      entry.role === "user"
+        ? normalizeMessageSettings(entry.settings)
+        : undefined;
     const preferredMessageId = normalizeString(
       entry.id,
       `${sessionId}-message-${index}`,
@@ -2289,6 +2347,7 @@ const normalizeSessionMessages = (
       ...(intent ? { intent } : {}),
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
+      ...(settings ? { settings } : {}),
       ...(source ? { source } : {}),
     };
 
@@ -2465,6 +2524,10 @@ const normalizeQueuedSessionMessages = (
       entry.promptEnhancement,
       visibleMessageContent || task,
     );
+    const promptEnhancementRequest =
+      normalizeQueuedPromptEnhancementRequest(
+        entry.promptEnhancementRequest,
+      );
     const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
@@ -2507,6 +2570,7 @@ const normalizeQueuedSessionMessages = (
       ...(visibleMessageContent ? { visibleMessageContent } : {}),
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
+      ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),
       ...(blockedByTaskId ? { blockedByTaskId } : {}),
       contentUpdatedAt,
       attachmentsUpdatedAt,

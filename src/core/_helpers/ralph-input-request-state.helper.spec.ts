@@ -25,7 +25,6 @@ const createInputBlock = (): RalphAskUserBlock => ({
   id: "input",
   type: "ASK_USER",
   title: "Collect Input",
-  position: { x: 0, y: 0 },
   fields: [],
 });
 

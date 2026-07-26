@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 export const SETTINGS_TRANSFER_EVENT =
@@ -11,7 +11,7 @@ export type SettingsCategoryId =
   | "preferences.desktop-appearance"
   | "preferences.chat-voice"
   | "memory.global"
-  | "customizations.instructions-global"
+  | "instruction-profiles.global"
   | "customizations.prompts-global"
   | "context-packs.global"
   | "mcp.global"
@@ -219,14 +219,28 @@ export const cancelEncryptedSettingsFileImport = async (
 
 export const subscribeToSettingsTransfer = async (
   onChange: (status: SettingsTransferStatus) => void,
-): Promise<() => void> =>
-  listen<SettingsTransferStatus>(SETTINGS_TRANSFER_EVENT, (event) => {
+): Promise<() => void> => {
+  if (!canSubscribeToTauriEvents()) return () => undefined;
+  return listen<SettingsTransferStatus>(SETTINGS_TRANSFER_EVENT, (event) => {
     onChange(event.payload);
   });
+};
 
 export const subscribeToSettingsImport = async (
   onImport: (event: SettingsImportEvent) => void,
-): Promise<() => void> =>
-  listen<SettingsImportEvent>(SETTINGS_IMPORTED_EVENT, (event) => {
+): Promise<() => void> => {
+  if (!canSubscribeToTauriEvents()) return () => undefined;
+  return listen<SettingsImportEvent>(SETTINGS_IMPORTED_EVENT, (event) => {
     onImport(event.payload);
   });
+};
+
+const canSubscribeToTauriEvents = (): boolean => {
+  if (typeof window === "undefined" || !isTauri()) return false;
+  const internals = (
+    window as Window & {
+      __TAURI_INTERNALS__?: { transformCallback?: unknown };
+    }
+  ).__TAURI_INTERNALS__;
+  return typeof internals?.transformCallback === "function";
+};

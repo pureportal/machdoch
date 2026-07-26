@@ -19,10 +19,6 @@ import {
   runtimeConfig,
 } from "./ralph-test-helpers.js";
 
-const playwrightMock = vi.hoisted(() => ({
-  launch: vi.fn(),
-}));
-
 vi.mock("../execution.js", () => ({
   executeTask: vi.fn(),
 }));
@@ -35,12 +31,6 @@ vi.mock("../mcp/client.js", () => ({
   },
 }));
 
-vi.mock("playwright-core", () => ({
-  chromium: {
-    launch: playwrightMock.launch,
-  },
-}));
-
 const GIT_SCOPE_GUARD_TEST_TIMEOUT_MS = 90_000;
 
 describe("runRalphFlow", () => {
@@ -49,11 +39,55 @@ describe("runRalphFlow", () => {
     vi.mocked(mcpClientManager.callTool).mockReset();
     vi.mocked(mcpClientManager.readResource).mockReset();
     vi.mocked(mcpClientManager.getPrompt).mockReset();
-    playwrightMock.launch.mockReset();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("does not resolve or deliver provider instructions for a utility-only flow", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-utility-instructions-"));
+    try {
+      await writeFile(join(workspace, "AGENTS.md"), Buffer.from([0xff]));
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "check",
+            type: "UTILITY",
+            title: "Check",
+            utility: { type: "FILE_EXISTS", path: "AGENTS.md" },
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          {
+            id: "start-check",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "check",
+          },
+          {
+            id: "check-success",
+            from: "check",
+            fromOutput: "EXISTS",
+            to: "success",
+          },
+        ],
+      });
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.checkpoint?.instructionCanonicalDigest).toBeUndefined();
+      expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   it("runs prompt blocks, validators, and routes to END", async () => {
@@ -83,12 +117,16 @@ describe("runRalphFlow", () => {
         }),
       );
 
-    await expect(
-      runRalphFlow(createFlow(), runtimeConfig, customizations, {
+    const result = await runRalphFlow(
+      createFlow(),
+      runtimeConfig,
+      customizations,
+      {
         maxTransitions: 10,
         runId: "ralph-run-1",
-      }),
-    ).resolves.toMatchObject({
+      },
+    );
+    expect(result).toMatchObject({
       flow: "refactor-flow",
       status: "completed",
       blockResults: [
@@ -103,6 +141,15 @@ describe("runRalphFlow", () => {
     expect(defaultExecutionOptions).toEqual(
       expect.objectContaining({
         runId: "ralph-run-1",
+        resolvedInstructions: expect.objectContaining({
+          providerId: runtimeConfig.provider,
+          model: runtimeConfig.model,
+          canonicalDigest: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        }),
+        instructionDeliveryPlan: expect.objectContaining({
+          providerId: runtimeConfig.provider,
+          environmentDigest: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        }),
       }),
     );
     expect(defaultExecutionOptions).not.toHaveProperty("maxDurationMs");
@@ -3597,519 +3644,6 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("collects manual screenshot evidence with UI_ANALYZE image adapter", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-ui-image-"));
-    const screenshotPath = join(workspace, "screen.png");
-
-    try {
-      await writeFile(screenshotPath, Buffer.from("fake screenshot"));
-
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "analyze-ui",
-              type: "UTILITY",
-              title: "Analyze UI",
-              utility: {
-                type: "UI_ANALYZE",
-                adapter: "image",
-                screenshotPath,
-              },
-            },
-            { id: "success", type: "END", title: "Success" },
-          ],
-          edges: [
-            {
-              id: "start-to-analyze",
-              from: "start",
-              fromOutput: "SUCCESS",
-              to: "analyze-ui",
-            },
-            {
-              id: "analyze-to-success",
-              from: "analyze-ui",
-              fromOutput: "SUCCESS",
-              to: "success",
-            },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 5 },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
-        .toMatchObject({
-          output: "SUCCESS",
-          data: expect.objectContaining({
-            adapter: "image",
-            screenshotPath,
-            artifacts: {
-              screenshots: [screenshotPath],
-            },
-          }),
-        });
-      expect(executeTask).not.toHaveBeenCalled();
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("routes missing UI_ANALYZE image evidence through UNAVAILABLE", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-ui-missing-image-"));
-
-    try {
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "analyze-ui",
-              type: "UTILITY",
-              title: "Analyze UI",
-              utility: {
-                type: "UI_ANALYZE",
-                adapter: "image",
-                screenshotPath: "missing.png",
-              },
-            },
-            { id: "unavailable", type: "END", title: "Unavailable" },
-          ],
-          edges: [
-            {
-              id: "start-to-analyze",
-              from: "start",
-              fromOutput: "SUCCESS",
-              to: "analyze-ui",
-            },
-            {
-              id: "analyze-unavailable",
-              from: "analyze-ui",
-              fromOutput: "UNAVAILABLE",
-              to: "unavailable",
-            },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 5 },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
-        .toMatchObject({
-          output: "UNAVAILABLE",
-          status: "error",
-          data: expect.objectContaining({
-            adapter: "image",
-            server: expect.objectContaining({
-              ready: false,
-            }),
-            artifacts: {
-              screenshots: [],
-            },
-          }),
-        });
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("returns UNAVAILABLE for UI_ANALYZE browser targets that fail health checks", async () => {
-    const result = await runRalphFlow(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "analyze-ui",
-            type: "UTILITY",
-            title: "Analyze UI",
-            utility: {
-              type: "UI_ANALYZE",
-              adapter: "browser",
-              targetUrl: "http://127.0.0.1:9",
-              timeoutSeconds: 1,
-              server: {
-                mode: "existing",
-                healthUrl: "http://127.0.0.1:9",
-              },
-            },
-          },
-          { id: "unavailable", type: "END", title: "Unavailable" },
-        ],
-        edges: [
-          {
-            id: "start-to-analyze",
-            from: "start",
-            fromOutput: "SUCCESS",
-            to: "analyze-ui",
-          },
-          {
-            id: "analyze-unavailable",
-            from: "analyze-ui",
-            fromOutput: "UNAVAILABLE",
-            to: "unavailable",
-          },
-        ],
-      }),
-      runtimeConfig,
-      customizations,
-      { maxTransitions: 5 },
-    );
-
-    expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
-      .toMatchObject({
-        output: "UNAVAILABLE",
-        data: expect.objectContaining({
-          adapter: "browser",
-          server: expect.objectContaining({
-            mode: "existing",
-            ready: false,
-          }),
-        }),
-      });
-  });
-
-  it("returns UNAVAILABLE when managed UI_ANALYZE has no server command", async () => {
-    const result = await runRalphFlow(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "analyze-ui",
-            type: "UTILITY",
-            title: "Analyze UI",
-            utility: {
-              type: "UI_ANALYZE",
-              adapter: "browser",
-              targetUrl: "http://127.0.0.1:5173",
-              server: {
-                mode: "managed",
-                reuseExisting: false,
-              },
-            },
-          },
-          { id: "unavailable", type: "END", title: "Unavailable" },
-        ],
-        edges: [
-          {
-            id: "start-to-analyze",
-            from: "start",
-            fromOutput: "SUCCESS",
-            to: "analyze-ui",
-          },
-          {
-            id: "analyze-unavailable",
-            from: "analyze-ui",
-            fromOutput: "UNAVAILABLE",
-            to: "unavailable",
-          },
-        ],
-      }),
-      runtimeConfig,
-      customizations,
-      { maxTransitions: 5 },
-    );
-
-    expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
-      .toMatchObject({
-        output: "UNAVAILABLE",
-        data: expect.objectContaining({
-          adapter: "browser",
-          server: expect.objectContaining({
-            mode: "managed",
-            ready: false,
-            started: false,
-            reused: false,
-            error: expect.stringContaining("requires server.command"),
-          }),
-        }),
-      });
-  });
-
-  it("collects enriched browser evidence with default UI_ANALYZE viewports", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-ui-browser-"));
-    const evaluateResult = {
-      issues: [
-        {
-          severity: "warning",
-          category: "interaction",
-          message: "Interactive target may be smaller than 44 by 44 CSS pixels.",
-          selector: "button#tiny",
-          evidence: { width: 32, height: 32 },
-        },
-        {
-          severity: "warning",
-          category: "contrast",
-          message: "Text may not meet computed contrast requirements.",
-          selector: "p.status",
-          evidence: { contrastRatio: 2.4, requiredRatio: 4.5 },
-        },
-      ],
-      analysis: {
-        viewport: {
-          width: 390,
-          height: 844,
-          scrollWidth: 420,
-          scrollHeight: 1200,
-          horizontalOverflowPixels: 30,
-        },
-        viewportMeta: {
-          present: true,
-          content: "width=device-width, initial-scale=1",
-          hasDeviceWidth: true,
-          hasInitialScale: true,
-          warnings: [],
-        },
-        structure: {
-          headings: [{ level: 1, text: "Dashboard" }],
-          h1Count: 1,
-          landmarkCounts: {
-            header: 1,
-            nav: 1,
-            main: 1,
-            aside: 0,
-            footer: 0,
-            search: 0,
-          },
-          navigationCount: 1,
-          mainCount: 1,
-          formCount: 0,
-          interactiveCount: 1,
-          imageCount: 0,
-          missingAltImageCount: 0,
-        },
-        textDensity: {
-          characterCount: 14,
-          wordCount: 2,
-          blockCount: 1,
-          denseBlockCount: 0,
-          maxBlockCharacters: 14,
-          denseBlocks: [],
-        },
-        layout: {
-          hasHorizontalOverflow: true,
-          clippedElementCount: 0,
-          clippedElements: [],
-          overflowElementCount: 1,
-          overflowElements: [{ selector: "main", width: 420, height: 900 }],
-          overlapCandidateCount: 0,
-          overlapCandidates: [],
-        },
-        interaction: {
-          smallTargetCount: 1,
-          smallTargets: [{ selector: "button#tiny", width: 32, height: 32 }],
-        },
-        contrast: {
-          checkedTextElementCount: 1,
-          lowContrastCount: 1,
-          lowContrastElements: [
-            {
-              selector: "p.status",
-              contrastRatio: 2.4,
-              requiredRatio: 4.5,
-            },
-          ],
-        },
-      },
-    };
-    const locator = {
-      innerText: vi.fn().mockResolvedValue("Dashboard Ready"),
-      ariaSnapshot: vi.fn().mockResolvedValue("- main: Dashboard"),
-    };
-    const page = {
-      on: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-      goto: vi.fn().mockResolvedValue(undefined),
-      screenshot: vi.fn().mockResolvedValue(undefined),
-      title: vi.fn().mockResolvedValue("Dashboard"),
-      locator: vi.fn().mockReturnValue(locator),
-      evaluate: vi.fn().mockResolvedValue(evaluateResult),
-      url: vi.fn().mockReturnValue("http://127.0.0.1:4173/dashboard"),
-    };
-    const context = {
-      newPage: vi.fn().mockResolvedValue(page),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
-    const browser = {
-      newContext: vi.fn().mockResolvedValue(context),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
-    playwrightMock.launch.mockResolvedValue(browser);
-
-    try {
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "analyze-ui",
-              type: "UTILITY",
-              title: "Analyze UI",
-              utility: {
-                type: "UI_ANALYZE",
-                adapter: "browser",
-                targetUrl: "http://127.0.0.1:4173/dashboard",
-                server: {
-                  mode: "none",
-                },
-              },
-            },
-            { id: "success", type: "END", title: "Success" },
-          ],
-          edges: [
-            {
-              id: "start-to-analyze",
-              from: "start",
-              fromOutput: "SUCCESS",
-              to: "analyze-ui",
-            },
-            {
-              id: "analyze-to-success",
-              from: "analyze-ui",
-              fromOutput: "SUCCESS",
-              to: "success",
-            },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 5, runId: "ui-browser-defaults" },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(browser.newContext).toHaveBeenCalledTimes(4);
-      expect(browser.newContext).toHaveBeenNthCalledWith(4, {
-        viewport: {
-          width: 320,
-          height: 568,
-        },
-      });
-      expect(page.evaluate).toHaveBeenCalledTimes(4);
-      expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
-        .toMatchObject({
-          output: "SUCCESS",
-          data: expect.objectContaining({
-            adapter: "browser",
-            viewports: expect.arrayContaining([
-              expect.objectContaining({
-                name: "small-mobile",
-                width: 320,
-                height: 568,
-                analysis: expect.objectContaining({
-                  interaction: expect.objectContaining({
-                    smallTargetCount: 1,
-                  }),
-                  layout: expect.objectContaining({
-                    hasHorizontalOverflow: true,
-                  }),
-                }),
-              }),
-            ]),
-            issues: expect.arrayContaining([
-              expect.objectContaining({
-                category: "interaction",
-                selector: "button#tiny",
-                viewport: "small-mobile",
-                evidence: expect.objectContaining({
-                  width: 32,
-                  height: 32,
-                }),
-              }),
-              expect.objectContaining({
-                category: "contrast",
-                selector: "p.status",
-                viewport: "small-mobile",
-              }),
-            ]),
-          }),
-        });
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("can collect UI evidence through a configured Tauri MCP tool", async () => {
-    vi.mocked(mcpClientManager.callTool).mockResolvedValue({
-      content: [
-        {
-          type: "text",
-          text: "screenshot captured",
-        },
-      ],
-      isError: false,
-    } as never);
-
-    const result = await runRalphFlow(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "analyze-ui",
-            type: "UTILITY",
-            title: "Analyze UI",
-            utility: {
-              type: "UI_ANALYZE",
-              adapter: "tauri-mcp",
-              mcpServerId: "tauri",
-              mcpToolName: "capture_screenshot",
-              mcpArguments: {
-                window: "{{window:string=main}}",
-              },
-            },
-          },
-          { id: "success", type: "END", title: "Success" },
-        ],
-        edges: [
-          {
-            id: "start-to-analyze",
-            from: "start",
-            fromOutput: "SUCCESS",
-            to: "analyze-ui",
-          },
-          {
-            id: "analyze-to-success",
-            from: "analyze-ui",
-            fromOutput: "SUCCESS",
-            to: "success",
-          },
-        ],
-      }),
-      runtimeConfig,
-      customizations,
-      {
-        maxTransitions: 5,
-        variableValues: {
-          window: "main",
-        },
-      },
-    );
-
-    expect(result.status).toBe("completed");
-    expect(mcpClientManager.callTool).toHaveBeenCalledWith(
-      "C:/workspace",
-      "tauri",
-      "capture_screenshot",
-      { window: "main" },
-      expect.objectContaining({}),
-    );
-    expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
-      .toMatchObject({
-        output: "SUCCESS",
-        data: expect.objectContaining({
-          adapter: "tauri-mcp",
-          mcpResult: expect.objectContaining({
-            isError: false,
-          }),
-        }),
-      });
-  });
-
   it("appends block file attachments to executed prompt tasks", async () => {
     vi.mocked(executeTask).mockResolvedValue(
       createExecutionResult({
@@ -4730,7 +4264,7 @@ describe("runRalphFlow", () => {
 
     expect(result.status).toBe("completed");
     expect(mcpClientManager.callTool).toHaveBeenCalledWith(
-      "C:/workspace",
+      runtimeConfig.workspaceRoot,
       "serper",
       "search",
       {
@@ -4911,7 +4445,7 @@ describe("runRalphFlow", () => {
 
     expect(result.status).toBe("completed");
     expect(mcpClientManager.getPrompt).toHaveBeenCalledWith(
-      "C:/workspace",
+      runtimeConfig.workspaceRoot,
       "templates",
       "review",
       {
@@ -5087,7 +4621,7 @@ describe("runRalphFlow", () => {
 
     expect(result.status).toBe("completed");
     expect(mcpClientManager.readResource).toHaveBeenCalledWith(
-      "C:/workspace",
+      runtimeConfig.workspaceRoot,
       "github",
       "repo://machdoch/readme",
       expect.objectContaining({
@@ -5183,6 +4717,7 @@ describe("runRalphFlow", () => {
     const result = await runRalphFlow(flow, runtimeConfig, customizations, {
       checkpoint,
       runId: "resume-operation",
+      instructionBoundaryPolicy: "new-boundary",
     });
 
     expect(result.status).toBe("completed");

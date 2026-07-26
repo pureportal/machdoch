@@ -8,6 +8,7 @@ import type {
   ProviderCapabilityProfile,
   ProviderProbeResult,
 } from "./types.js";
+import { compareCanonicalStrings, sha256 } from "./digests.js";
 
 export const PROVIDER_CAPABILITY_REGISTRY = {
   openai: {
@@ -66,8 +67,9 @@ export const PROVIDER_CAPABILITY_REGISTRY = {
   },
   "copilot-cli": {
     provider: "copilot-cli",
-    instructionAuthority: "native-file",
-    instructionMechanism: "COPILOT_CUSTOM_INSTRUCTIONS_DIRS",
+    instructionAuthority: "prompt",
+    instructionMechanism:
+      "complete prompt envelope with --no-custom-instructions",
     mcpMechanism: "native-config",
     supportedMcpTransports: ["stdio", "streamable-http", "sse"],
     supportsPerServerProxy: true,
@@ -75,7 +77,11 @@ export const PROVIDER_CAPABILITY_REGISTRY = {
   },
 } as const satisfies Record<ConfiguredModelProvider, ProviderCapabilityProfile>;
 
-const probeCache = new Map<string, Promise<ProviderProbeResult>>();
+const PROVIDER_PROBE_CACHE_TTL_MS = 5 * 60 * 1_000;
+const probeCache = new Map<
+  string,
+  { expiresAt: number; result: Promise<ProviderProbeResult> }
+>();
 
 const shouldUseShell = (executable: string): boolean => {
   return process.platform === "win32" && [".cmd", ".bat"].includes(extname(executable).toLowerCase());
@@ -108,25 +114,41 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
     provider === "codex-cli"
       ? ["--config", "developer_instructions", "mcp_servers"]
       : provider === "claude-cli"
-        ? ["--append-system-prompt-file", "--mcp-config", "--strict-mcp-config"]
+        ? [
+            "--append-system-prompt-file",
+            "--mcp-config",
+            "--strict-mcp-config",
+            "--bare",
+            "--append-subagent-system-prompt",
+          ]
         : [
-            "COPILOT_CUSTOM_INSTRUCTIONS_DIRS",
+            "--no-auto-update",
+            "--no-custom-instructions",
             "--additional-mcp-config",
-            "--allow-all-mcp-server-instructions",
+            "--disable-builtin-mcps",
+            "--disable-mcp-server",
           ];
 
-  return candidates.filter((feature) => help.includes(feature));
+  return candidates.filter((feature) => {
+    const escaped = feature.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return new RegExp(
+      `(?:^|[^A-Za-z0-9_-])${escaped}(?=$|[^A-Za-z0-9_-])`,
+      "mu",
+    ).test(help);
+  });
 };
 
 export const probeProviderCli = async (
   provider: AgentCliProvider,
   executable: string,
+  options: { force?: boolean } = {},
 ): Promise<ProviderProbeResult> => {
   const key = `${provider}:${executable}`;
   const cached = probeCache.get(key);
-  if (cached) {
-    return await cached;
+  if (options.force !== true && cached && cached.expiresAt > Date.now()) {
+    return await cached.result;
   }
+  probeCache.delete(key);
 
   const pending = (async (): Promise<ProviderProbeResult> => {
     const [versionResult, helpResult] = [
@@ -135,7 +157,9 @@ export const probeProviderCli = async (
     ];
     const warnings: string[] = [];
     if (helpResult.exitCode !== 0 && helpResult.exitCode !== null) {
-      warnings.push("Provider help probe returned a non-zero exit code; documented renderer defaults remain active.");
+      warnings.push(
+        "Provider help probe returned a non-zero exit code; required run-scoped instruction flags must still be observed before launch.",
+      );
     }
 
     return {
@@ -148,6 +172,27 @@ export const probeProviderCli = async (
     };
   })();
 
-  probeCache.set(key, pending);
+  probeCache.set(key, {
+    expiresAt: Date.now() + PROVIDER_PROBE_CACHE_TTL_MS,
+    result: pending,
+  });
+  pending.catch(() => {
+    if (probeCache.get(key)?.result === pending) {
+      probeCache.delete(key);
+    }
+  });
   return await pending;
 };
+
+export const createProviderProbeEvidence = (
+  probe: ProviderProbeResult,
+): string =>
+  `cli-probe:${sha256(
+    JSON.stringify({
+      provider: probe.provider,
+      executable: probe.executable,
+      available: probe.available,
+      version: probe.version ?? null,
+      features: [...probe.features].sort(compareCanonicalStrings),
+    }),
+  )}`;

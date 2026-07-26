@@ -1154,13 +1154,7 @@ const executeScheduledRalphFlow = async (
   );
   const customizations = await discoverCustomizations(
     request.workspaceRoot,
-    {
-      ...createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
-      ralphFlow: {
-        id: flow.id,
-        scope: flowScope,
-      },
-    },
+    createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
   );
   const runId =
     recovery?.record.id ?? createScheduledRalphRunId(request.run.id, flow.id);
@@ -1225,6 +1219,7 @@ export const createSchedulerExecutor = (): ScheduledTaskExecutor => ({
     );
 
     return executeTask(task, config, customizations, {
+      unattendedInstructionDelivery: true,
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.maxDurationMs ? { maxDurationMs: options.maxDurationMs } : {}),
       ...(imageInputs.length > 0 ? { imageInputs } : {}),

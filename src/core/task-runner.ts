@@ -137,7 +137,7 @@ const createPlanSteps = (
     {
       title: "Load workspace context",
       description:
-        "Read `.machdoch` configuration, discover custom instructions/prompts/skills, and establish the active runtime mode.",
+        "Resolve instruction profiles and local AGENTS.md files, discover prompts and skills, and establish the active runtime mode.",
     },
     invokedPrompt
       ? {
@@ -247,10 +247,6 @@ export const previewTaskRun = (
     );
   }
 
-  if (customizations.instructions.length === 0) {
-    notes.push("No instruction files were discovered.");
-  }
-
   if (taskContext.invokedPrompt) {
     notes.push(
       `Resolved the \`/${taskContext.invokedPrompt.name}\` prompt from ${taskContext.invokedPrompt.path}.`,
@@ -261,12 +257,6 @@ export const previewTaskRun = (
         `The prompt prefers model \`${taskContext.invokedPrompt.model}\`.`,
       );
     }
-  }
-
-  if (taskContext.applicableInstructions.length > 0) {
-    notes.push(
-      `${taskContext.applicableInstructions.length} instruction(s) appear relevant to this task.`,
-    );
   }
 
   if (customizations.prompts.length > 0) {
@@ -291,14 +281,12 @@ export const previewTaskRun = (
     ...(taskContext.invokedPrompt
       ? { invokedPrompt: taskContext.invokedPrompt }
       : {}),
-    applicableInstructions: taskContext.applicableInstructions,
     suggestedPrompts,
     suggestedSkills,
     warnings,
     notes,
     steps: createPlanSteps(task, config, taskContext.invokedPrompt),
     customizationCounts: {
-      instructions: customizations.instructions.length,
       prompts: customizations.prompts.length,
       skills: customizations.skills.length,
     },

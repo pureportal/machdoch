@@ -1,9 +1,4 @@
 import type {
-  InstructionAudience,
-  InstructionMode,
-  InstructionScope,
-} from "../../core/types.js";
-import type {
   ModelProvider,
   AgentCliProvider,
   ReasoningMode,
@@ -98,15 +93,42 @@ export type ProviderSyncCliAction =
   | "doctor"
   | "daemon";
 
+export type InstructionCliGroup =
+  | "profiles"
+  | "assignments"
+  | "local"
+  | "workspaces"
+  | "transfer"
+  | "recovery";
 export type InstructionCliAction =
-  | "list"
-  | "show"
   | "validate"
-  | "create"
-  | "save"
-  | "generate";
-
-export type InstructionCliScope = InstructionScope;
+  | "resolve"
+  | "profile-list"
+  | "profile-show"
+  | "profile-create"
+  | "profile-edit"
+  | "profile-duplicate"
+  | "profile-delete"
+  | "assignment-list"
+  | "assignment-set-defaults"
+  | "assignment-set"
+  | "assignment-relink"
+  | "assignment-remove"
+  | "local-list"
+  | "local-show"
+  | "local-create"
+  | "local-edit"
+  | "local-delete"
+  | "workspace-list"
+  | "workspace-register"
+  | "workspace-relink"
+  | "workspace-unregister"
+  | "transfer-export"
+  | "transfer-import"
+  | "recovery-status"
+  | "recovery-restore"
+  | "recovery-export"
+  | "recovery-reset";
 
 export interface SchedulerCliOptions {
   action: SchedulerCliAction;
@@ -197,6 +219,10 @@ export interface RalphCliOptions {
   retryCurrent?: boolean;
   maxRounds?: number;
   maxTransitions?: number;
+  instructionBoundaryPolicy?:
+    | "require-match"
+    | "original-boundary"
+    | "new-boundary";
   trace?: boolean;
   watchAction?: RalphWatchCliAction;
   watchJson?: string;
@@ -231,21 +257,25 @@ export interface ProviderSyncCliOptions {
 
 export interface InstructionCliOptions {
   action: InstructionCliAction;
+  group?: InstructionCliGroup;
   subject?: string;
+  secondarySubject?: string;
   name?: string;
-  scope?: InstructionCliScope;
+  description?: string;
+  profileIds?: string[];
+  expectedRevision?: number;
+  expectedDigest?: string;
+  surface?: "api" | "cli";
+  includeContent?: boolean;
+  includeWorkspaces?: boolean;
+  decisionsFile?: string;
+  confirmAssignmentRemoval?: boolean;
+  acknowledgeCompatible?: boolean;
   ralphFlow?: string;
   ralphFlowScope?: RalphCliScope;
   prompt?: string;
   promptFile?: string;
   path?: string;
-  applyTo?: string[];
-  exclude?: string[];
-  keywords?: string[];
-  mode?: InstructionMode;
-  audience?: InstructionAudience;
-  priority?: number;
-  maxRounds?: number;
 }
 
 export interface ParsedCliArgs {
@@ -273,6 +303,8 @@ export interface ParsedCliArgs {
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
+  acknowledgeCompatibleInstructionDelivery?: boolean;
+  acknowledgedInstructionDeliveryPlanId?: string;
   json: boolean;
   verbose: boolean;
   workspaceRoot: string;

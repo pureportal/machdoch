@@ -4,7 +4,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+use crate::{
+    atomic_file::{write_file_atomic, AtomicWriteOptions},
+    runtime_snapshot::get_user_config_directory,
+};
 
 use super::{payload::cleanup_temporary_files, progress::create_progress_timestamp};
 
@@ -46,6 +49,93 @@ fn write_workspace_payload_file(
     })?;
 
     Ok(file_path)
+}
+
+fn write_instruction_payload_file(contents: &str) -> Result<PathBuf, String> {
+    let unique_id = WORKSPACE_PAYLOAD_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let directory = get_user_config_directory()?.join(".instruction-command-payloads");
+    match fs::symlink_metadata(&directory) {
+        Ok(metadata) if !metadata.is_dir() || metadata.file_type().is_symlink() => {
+            return Err(
+                "The instruction payload directory is linked or is not a directory.".to_string(),
+            )
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(&directory).map_err(|error| {
+                format!(
+                    "Failed to prepare the instruction payload directory {}: {error}",
+                    directory.display()
+                )
+            })?;
+        }
+        Err(error) => {
+            return Err(format!(
+                "Failed to inspect the instruction payload directory {}: {error}",
+                directory.display()
+            ))
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).map_err(|error| {
+            format!(
+                "Failed to secure the instruction payload directory {}: {error}",
+                directory.display()
+            )
+        })?;
+    }
+    let file_path = directory.join(format!(
+        ".machdoch-instruction-payload-{}-{}-{}.tmp",
+        std::process::id(),
+        create_progress_timestamp(),
+        unique_id
+    ));
+    write_file_atomic(
+        &file_path,
+        contents.as_bytes(),
+        AtomicWriteOptions::with_unix_mode(0o600),
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write the instruction payload file {}: {error}",
+            file_path.display()
+        )
+    })?;
+    Ok(file_path)
+}
+
+pub(super) fn rewrite_instruction_payload_arguments(
+    arguments: Vec<String>,
+) -> Result<(Vec<String>, Vec<PathBuf>), String> {
+    let mut rewritten = Vec::new();
+    let mut payload_paths = Vec::new();
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        if argument == "--prompt" {
+            let Some(value) = arguments.get(index + 1) else {
+                cleanup_temporary_files(&payload_paths);
+                return Err("Expected --prompt to include a value.".to_string());
+            };
+            let path = match write_instruction_payload_file(value) {
+                Ok(path) => path,
+                Err(error) => {
+                    cleanup_temporary_files(&payload_paths);
+                    return Err(error);
+                }
+            };
+            rewritten.push("--prompt-file".to_string());
+            rewritten.push(path.display().to_string());
+            payload_paths.push(path);
+            index += 2;
+            continue;
+        }
+        rewritten.push(argument.clone());
+        index += 1;
+    }
+    Ok((rewritten, payload_paths))
 }
 
 pub(super) fn rewrite_ralph_payload_arguments(
@@ -167,7 +257,10 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
-    use super::{rewrite_ralph_payload_arguments, rewrite_task_interview_payload_arguments};
+    use super::{
+        rewrite_instruction_payload_arguments, rewrite_ralph_payload_arguments,
+        rewrite_task_interview_payload_arguments,
+    };
     use crate::desktop_task::payload::cleanup_temporary_files;
 
     #[cfg(unix)]
@@ -262,5 +355,27 @@ mod tests {
 
         cleanup_temporary_files(&payload_paths);
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn instruction_payload_rewrite_moves_markdown_out_of_process_arguments() {
+        let (arguments, payload_paths) = rewrite_instruction_payload_arguments(vec![
+            "profiles".to_string(),
+            "create".to_string(),
+            "--prompt".to_string(),
+            "# Private profile\n".to_string(),
+        ])
+        .expect("instruction payload arguments should rewrite");
+
+        assert!(arguments.contains(&"--prompt-file".to_string()));
+        assert!(!arguments.contains(&"# Private profile\n".to_string()));
+        assert_eq!(payload_paths.len(), 1);
+        assert_eq!(
+            fs::read_to_string(&payload_paths[0]).expect("instruction payload should be readable"),
+            "# Private profile\n"
+        );
+        #[cfg(unix)]
+        assert_private_file_mode(&payload_paths[0]);
+        cleanup_temporary_files(&payload_paths);
     }
 }

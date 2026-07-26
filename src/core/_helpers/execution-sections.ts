@@ -352,39 +352,9 @@ export const createCustomizationSummarySection = (
     title: "Customization summary",
     lines: [
       `workspace: ${customizations.workspaceRoot}`,
-      `instructions: ${customizations.instructions.length}`,
       `prompts: ${customizations.prompts.length}`,
       `skills: ${customizations.skills.length}`,
     ],
-  };
-};
-
-export const createInstructionFilesSection = (
-  customizations: CustomizationDiscoveryResult,
-): TaskExecutionSection => {
-  if (customizations.instructions.length === 0) {
-    return {
-      title: "Instruction files",
-      lines: ["No instruction files were discovered."],
-    };
-  }
-
-  return {
-    title: "Instruction files",
-    lines: customizations.instructions.flatMap((instruction) => [
-      `[${instruction.kind}] ${instruction.name} (${instruction.path})`,
-      ...(instruction.description
-        ? [`  description: ${instruction.description}`]
-        : []),
-      ...(instruction.applyTo ? [`  applyTo: ${instruction.applyTo}`] : []),
-      ...(instruction.keywords.length > 0
-        ? [`  keywords: ${instruction.keywords.join(", ")}`]
-        : []),
-      ...(instruction.priority !== undefined
-        ? [`  priority: ${instruction.priority}`]
-        : []),
-      `  body: ${instruction.body}`,
-    ]),
   };
 };
 
@@ -492,8 +462,12 @@ const createInstructionContextSection = (
     title: "Instruction context",
     audience: "internal",
     lines: taskContext.applicableInstructions.flatMap((instruction) => [
-      `${instruction.name} (${instruction.path})${instruction.priority > 0 ? ` [priority ${instruction.priority}]` : ""}`,
-      `  reason: ${instruction.reason}`,
+      `${instruction.precedence}. ${instruction.name} [${instruction.kind}]`,
+      `  scope: ${instruction.scopePath}`,
+      ...(instruction.relativePath
+        ? [`  path: ${instruction.relativePath}`]
+        : []),
+      `  digest: ${instruction.digest}`,
       `  body: ${instruction.body}`,
     ]),
   };
@@ -558,7 +532,6 @@ export const createWorkspaceInspectionSections = async (
     {
       title: "Customization summary",
       lines: [
-        `instructions: ${customizations.instructions.length}`,
         `prompts: ${customizations.prompts.length}`,
         `skills: ${customizations.skills.length}`,
       ],

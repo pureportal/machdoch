@@ -6,6 +6,7 @@ import type {
   SpeechToTextProviderAvailability,
   RuntimeProviderAvailability,
   InstructionMutationInput,
+  InstructionRegistryResult,
   UserAgentLimitsSettings,
   UserApiKeyProvider,
   UserDesktopSettings,
@@ -18,10 +19,6 @@ import type {
   VoiceProviderAvailability,
   WebSearchProvider,
 } from "../../../runtime";
-import type {
-  CustomizationDiagnostic,
-  DiscoveredInstruction,
-} from "../../../../../core/types.js";
 import type { RunMode } from "../../../../../core/runtime-contract.generated.js";
 import type { AppearanceSettings } from "../../../lib/shell-store";
 import type { RuntimeProvider } from "../../../model-catalog";
@@ -116,16 +113,12 @@ export interface McpSettingsControls {
 
 export interface InstructionSettingsControls {
   workspaceRoot: string | null;
-  instructions: DiscoveredInstruction[];
-  diagnostics: CustomizationDiagnostic[];
+  registry: InstructionRegistryResult | null;
   loading: boolean;
   saving: boolean;
   message: SettingsStatusMessage | null;
   onRefresh: () => Promise<void> | void;
   onManualSave: (
-    input: InstructionMutationInput,
-  ) => Promise<boolean | void> | boolean | void;
-  onGenerate: (
     input: InstructionMutationInput,
   ) => Promise<boolean | void> | boolean | void;
 }

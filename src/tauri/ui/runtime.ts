@@ -3,13 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
-  CustomizationDiagnostic,
-  DiscoveredInstruction,
   AgentModelImageMediaType,
   ConversationMemoryEntry,
-  InstructionAudience,
-  InstructionMode,
-  InstructionScope,
   TaskConversationContext,
   TaskActionOutput,
   TaskExecutionProgress,
@@ -236,53 +231,218 @@ export interface McpPresetSummary {
   serverTitle: string;
 }
 
-export type WritableInstructionScope = Extract<
-  InstructionScope,
-  "user" | "workspace"
->;
+export interface InstructionProfileView {
+  id: string;
+  name: string;
+  description?: string;
+  body?: string;
+  createdAt: string;
+  updatedAt: string;
+  byteLength: number;
+  lineCount: number;
+  digest: string;
+  assignmentCount: number;
+}
+
+export interface InstructionWorkspaceView {
+  id: string;
+  root: string;
+  displayName?: string;
+  scopes: Array<{ path: string; profiles: string[] }>;
+}
+
+export interface ProjectLocalInstructionView {
+  id: string;
+  relativePath: string;
+  scopePath: string;
+  digest: string;
+  byteLength: number;
+  lineCount: number;
+  body?: string;
+}
+
+export interface InstructionResolutionView {
+  explanation: {
+    schemaVersion: number;
+    resolutionId: string;
+    canonicalDigest: string;
+    environmentDigest: string;
+    providerId: string;
+    surface: "api" | "cli";
+    model?: string;
+    libraryRevision: number;
+    workspaceRegistered: boolean;
+    workspaceId?: string;
+    sources: Array<Record<string, unknown>>;
+    bodyGroups: Array<Record<string, unknown>>;
+    nativeInventory: Array<Record<string, unknown>>;
+    mcpInitializationInstructions: Array<Record<string, unknown>>;
+    diagnostics: Array<Record<string, unknown>>;
+    budget: Record<string, unknown>;
+    pathPreview?: {
+      path: string;
+      applicableSourceIds: string[];
+      effectiveOrder: string[];
+    };
+  };
+  deliveryPlan: {
+    planId: string;
+    resolutionId: string;
+    canonicalDigest: string;
+    environmentDigest: string;
+    providerId: string;
+    surface: "api" | "cli";
+    grade: "full" | "compatible" | "unsupported";
+    route: string;
+    requiresAcknowledgement: boolean;
+    blockingReasons: string[];
+    dimensions: Array<Record<string, unknown>>;
+    capability: Record<string, unknown>;
+  };
+}
+
+const pendingInstructionPlanAcknowledgements = new Map<string, string>();
+
+const instructionAcknowledgementKey = (
+  workspaceRoot: string | null | undefined,
+): string => normalizeWorkspaceRoot(workspaceRoot) ?? "";
+
+export const acknowledgeCompatibleInstructionPlanForNextRun = (
+  workspaceRoot: string | null | undefined,
+  planId: string,
+): void => {
+  const key = instructionAcknowledgementKey(workspaceRoot);
+  if (!key || !/^instruction-plan:[0-9a-f]{64}$/u.test(planId)) {
+    throw new Error(
+      "A compatible instruction plan can be acknowledged only for a selected workspace and valid plan ID.",
+    );
+  }
+  pendingInstructionPlanAcknowledgements.set(key, planId);
+};
+
+export const consumeCompatibleInstructionPlanAcknowledgement = (
+  workspaceRoot: string | null | undefined,
+): string | undefined => {
+  const key = instructionAcknowledgementKey(workspaceRoot);
+  const planId = pendingInstructionPlanAcknowledgements.get(key);
+  if (planId !== undefined) pendingInstructionPlanAcknowledgements.delete(key);
+  return planId;
+};
+
+export interface InstructionLibraryRecoveryView {
+  libraryPath: string;
+  backupPath: string;
+  primaryValid: boolean;
+  primaryDigest?: string;
+  backupValid: boolean;
+  backupDigest?: string;
+  backupRevision?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
 
 export interface InstructionRegistryResult {
-  workspaceRoot: string;
-  instructions: DiscoveredInstruction[];
-  diagnostics: CustomizationDiagnostic[];
+  schemaVersion: number;
+  revision: number;
+  profiles: InstructionProfileView[];
+  defaults: { profiles: string[] };
+  workspaces: InstructionWorkspaceView[];
+  localFiles: ProjectLocalInstructionView[];
+  localDiagnostics: Array<Record<string, unknown>>;
+  recovery?: InstructionLibraryRecoveryView;
+  libraryError?: string;
+  resolution?: InstructionResolutionView;
+  resolutionError?: string;
 }
 
-export interface InstructionValidationResult {
-  valid: boolean;
-  diagnostics: CustomizationDiagnostic[];
-}
-
-export interface InstructionWriteResult {
-  path: string;
-  scope: WritableInstructionScope;
-  name: string;
-  created?: boolean;
-}
-
-export interface InstructionGenerationResult {
-  status: "created" | "updated" | "blocked";
-  path: string;
-  scope: WritableInstructionScope;
-  name: string;
-  rounds: number;
-  validation: InstructionValidationResult;
-  generatorResults: TaskExecutionResult[];
-  summary: string;
-}
-
-export interface InstructionMutationInput {
-  name: string;
-  prompt: string;
-  path?: string;
-  scope?: WritableInstructionScope;
-  mode?: InstructionMode;
-  audience?: InstructionAudience;
-  applyTo?: string[];
-  exclude?: string[];
-  keywords?: string[];
-  priority?: number;
-  maxRounds?: number;
-}
+export type InstructionMutationInput =
+  | {
+      operation: "profile-create";
+      name: string;
+      description?: string;
+      body: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "profile-edit";
+      profileId: string;
+      name?: string;
+      description?: string;
+      body?: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "profile-duplicate";
+      profileId: string;
+      name?: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "profile-delete";
+      profileId: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "defaults-set";
+      profileIds: string[];
+      expectedRevision: number;
+    }
+  | {
+      operation: "scope-set";
+      workspaceId: string;
+      scopePath: string;
+      profileIds: string[];
+      expectedRevision: number;
+    }
+  | {
+      operation: "scope-relink";
+      workspaceId: string;
+      currentScopePath: string;
+      nextScopePath: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "local-create";
+      scopePath: string;
+      body: string;
+    }
+  | {
+      operation: "local-edit";
+      scopePath: string;
+      body: string;
+      expectedDigest: string;
+    }
+  | {
+      operation: "local-delete";
+      scopePath: string;
+      expectedDigest: string;
+    }
+  | {
+      operation: "workspace-register";
+      root: string;
+      displayName?: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "workspace-relink";
+      workspaceId: string;
+      root: string;
+      expectedRevision: number;
+    }
+  | {
+      operation: "workspace-unregister";
+      workspaceId: string;
+      confirmAssignedRemoval: boolean;
+      expectedRevision: number;
+    }
+  | {
+      operation: "recovery-restore";
+      expectedDigest: string;
+    }
+  | {
+      operation: "recovery-reset";
+      expectedDigest: string;
+    };
 
 export interface MonitorBoundsInput {
   x: number;
@@ -3876,26 +4036,6 @@ const normalizeInstructionCommandWorkspace = (
   return normalizeWorkspaceRoot(workspaceRoot) ?? "";
 };
 
-const normalizeInstructionCliString = (
-  value: string | null | undefined,
-): string | undefined => {
-  const normalizedValue = value?.trim();
-
-  return normalizedValue ? normalizedValue : undefined;
-};
-
-const normalizeInstructionCliStringList = (
-  values: string[] | undefined,
-): string[] => {
-  return Array.from(
-    new Set(
-      (values ?? [])
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
-    ),
-  );
-};
-
 const appendInstructionOption = (
   argumentsList: string[],
   flag: string,
@@ -3907,49 +4047,6 @@ const appendInstructionOption = (
 
   argumentsList.push(flag);
   argumentsList.push(String(value));
-};
-
-const appendInstructionRepeatedOption = (
-  argumentsList: string[],
-  flag: string,
-  values: string[] | undefined,
-): void => {
-  for (const value of normalizeInstructionCliStringList(values)) {
-    argumentsList.push(flag);
-    argumentsList.push(value);
-  }
-};
-
-const createInstructionMutationArguments = (
-  action: "create" | "save" | "generate",
-  input: InstructionMutationInput,
-): string[] => {
-  const name = normalizeInstructionCliString(input.name);
-  const prompt = normalizeInstructionCliString(input.prompt);
-
-  if (!name) {
-    throw new Error("Expected an instruction name.");
-  }
-
-  if (!prompt) {
-    throw new Error("Expected instruction text or generation prompt.");
-  }
-
-  const argumentsList = [action, name];
-  appendInstructionOption(argumentsList, "--prompt", prompt);
-  appendInstructionOption(argumentsList, "--path", input.path);
-  appendInstructionOption(argumentsList, "--scope", input.scope);
-  appendInstructionOption(argumentsList, "--instruction-mode", input.mode);
-  appendInstructionOption(argumentsList, "--audience", input.audience);
-  appendInstructionOption(argumentsList, "--priority", input.priority);
-  if (action === "generate") {
-    appendInstructionOption(argumentsList, "--max-rounds", input.maxRounds);
-  }
-  appendInstructionRepeatedOption(argumentsList, "--apply-to", input.applyTo);
-  appendInstructionRepeatedOption(argumentsList, "--exclude", input.exclude);
-  appendInstructionRepeatedOption(argumentsList, "--keyword", input.keywords);
-
-  return argumentsList;
 };
 
 const runInstructionCommand = async <Result>(
@@ -3976,76 +4073,204 @@ const runInstructionCommand = async <Result>(
 export const listInstructions = async (
   workspaceRoot: string | null | undefined,
 ): Promise<InstructionRegistryResult> => {
-  return runInstructionCommand(
-    workspaceRoot,
-    ["list"],
-    () => ({
-      workspaceRoot: normalizeInstructionCommandWorkspace(workspaceRoot),
-      instructions: [],
-      diagnostics: [],
-    }),
-  );
-};
-
-export const showInstruction = async (
-  workspaceRoot: string | null | undefined,
-  subject: string,
-): Promise<DiscoveredInstruction> => {
-  const normalizedSubject = normalizeInstructionCliString(subject);
-
-  if (!normalizedSubject) {
-    throw new Error("Expected an instruction name or path.");
+  if (!canInvokeTauriCommands()) {
+    return {
+      schemaVersion: 1,
+      revision: 0,
+      profiles: [],
+      defaults: { profiles: [] },
+      workspaces: [],
+      localFiles: [],
+      localDiagnostics: [],
+    };
   }
-
-  return runInstructionCommand(
-    workspaceRoot,
-    ["show", normalizedSubject],
-    assertInstructionDesktopAvailable,
-  );
+  let recovery: InstructionLibraryRecoveryView | undefined;
+  try {
+    recovery = await runInstructionCommand<InstructionLibraryRecoveryView>(
+      workspaceRoot,
+      ["recovery", "status"],
+      () => ({
+        libraryPath: "",
+        backupPath: "",
+        primaryValid: true,
+        backupValid: false,
+      }),
+    );
+  } catch (error) {
+    recovery = {
+      libraryPath: "",
+      backupPath: "",
+      primaryValid: false,
+      backupValid: false,
+      errorCode: "INSTRUCTION_LIBRARY_RECOVERY_STATUS_UNAVAILABLE",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
+  }
+  let library: Pick<
+    InstructionRegistryResult,
+    "schemaVersion" | "revision" | "profiles" | "defaults" | "workspaces"
+  > = {
+    schemaVersion: 1,
+    revision: 0,
+    profiles: [],
+    defaults: { profiles: [] },
+    workspaces: [],
+  };
+  let libraryError: string | undefined;
+  try {
+    library = await runInstructionCommand<typeof library>(
+      workspaceRoot,
+      ["profiles", "list", "--include-content"],
+      assertInstructionDesktopAvailable,
+    );
+  } catch (error) {
+    libraryError = error instanceof Error ? error.message : String(error);
+  }
+  let locals: {
+    files: ProjectLocalInstructionView[];
+    diagnostics: Array<Record<string, unknown>>;
+  } = { files: [], diagnostics: [] };
+  try {
+    locals = await runInstructionCommand(
+      workspaceRoot,
+      ["local", "list", "--include-content"],
+      () => ({ files: [], diagnostics: [] }),
+    );
+  } catch (error) {
+    locals.diagnostics.push({
+      code: "PROJECT_LOCAL_INVENTORY_UNAVAILABLE",
+      severity: "error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  let resolution: InstructionResolutionView | undefined;
+  let resolutionError: string | undefined;
+  try {
+    resolution = await runInstructionCommand<InstructionResolutionView>(
+      workspaceRoot,
+      ["resolve"],
+      assertInstructionDesktopAvailable,
+    );
+  } catch (error) {
+    resolutionError = error instanceof Error ? error.message : String(error);
+  }
+  return {
+    ...library,
+    localFiles: locals.files,
+    localDiagnostics: locals.diagnostics,
+    ...(recovery === undefined ? {} : { recovery }),
+    ...(libraryError === undefined ? {} : { libraryError }),
+    ...(resolution === undefined ? {} : { resolution }),
+    ...(resolutionError === undefined ? {} : { resolutionError }),
+  };
 };
 
-export const validateInstructions = async (
-  workspaceRoot: string | null | undefined,
-): Promise<InstructionValidationResult> => {
-  return runInstructionCommand(
-    workspaceRoot,
-    ["validate"],
-    () => ({ valid: true, diagnostics: [] }),
-  );
+const createInstructionMutationArguments = (
+  input: InstructionMutationInput,
+): string[] => {
+  const args: string[] = [];
+  switch (input.operation) {
+    case "profile-create":
+      args.push("profiles", "create");
+      appendInstructionOption(args, "--name", input.name);
+      appendInstructionOption(args, "--description", input.description);
+      appendInstructionOption(args, "--prompt", input.body);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "profile-edit":
+      args.push("profiles", "edit", input.profileId);
+      appendInstructionOption(args, "--name", input.name);
+      if (input.description !== undefined) {
+        args.push("--description", input.description);
+      }
+      appendInstructionOption(args, "--prompt", input.body);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "profile-duplicate":
+      args.push("profiles", "duplicate", input.profileId);
+      appendInstructionOption(args, "--name", input.name);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "profile-delete":
+      args.push("profiles", "delete", input.profileId);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "defaults-set":
+      args.push("assignments", "set-defaults");
+      for (const profileId of input.profileIds) {
+        appendInstructionOption(args, "--profile", profileId);
+      }
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "scope-set":
+      args.push("assignments", "set", input.workspaceId);
+      appendInstructionOption(args, "--path", input.scopePath);
+      for (const profileId of input.profileIds) {
+        appendInstructionOption(args, "--profile", profileId);
+      }
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "scope-relink":
+      args.push(
+        "assignments",
+        "relink",
+        input.workspaceId,
+        input.currentScopePath,
+      );
+      appendInstructionOption(args, "--path", input.nextScopePath);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "local-create":
+      args.push("local", "create", input.scopePath);
+      appendInstructionOption(args, "--prompt", input.body);
+      break;
+    case "local-edit":
+      args.push("local", "edit", input.scopePath);
+      appendInstructionOption(args, "--prompt", input.body);
+      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
+      break;
+    case "local-delete":
+      args.push("local", "delete", input.scopePath);
+      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
+      break;
+    case "workspace-register":
+      args.push("workspaces", "register", input.root);
+      appendInstructionOption(args, "--name", input.displayName);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "workspace-relink":
+      args.push("workspaces", "relink", input.workspaceId);
+      appendInstructionOption(args, "--path", input.root);
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "workspace-unregister":
+      args.push("workspaces", "unregister", input.workspaceId);
+      if (input.confirmAssignedRemoval) {
+        args.push("--confirm-assignment-removal");
+      }
+      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      break;
+    case "recovery-restore":
+      args.push("recovery", "restore");
+      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
+      break;
+    case "recovery-reset":
+      args.push("recovery", "reset");
+      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
+      break;
+  }
+  return args;
 };
 
-export const createInstruction = async (
+export const mutateInstructions = async (
   workspaceRoot: string | null | undefined,
   input: InstructionMutationInput,
-): Promise<InstructionWriteResult> => {
-  return runInstructionCommand(
+): Promise<unknown> =>
+  runInstructionCommand(
     workspaceRoot,
-    createInstructionMutationArguments("create", input),
+    createInstructionMutationArguments(input),
     assertInstructionDesktopAvailable,
   );
-};
-
-export const saveInstruction = async (
-  workspaceRoot: string | null | undefined,
-  input: InstructionMutationInput,
-): Promise<InstructionWriteResult> => {
-  return runInstructionCommand(
-    workspaceRoot,
-    createInstructionMutationArguments("save", input),
-    assertInstructionDesktopAvailable,
-  );
-};
-
-export const generateInstruction = async (
-  workspaceRoot: string | null | undefined,
-  input: InstructionMutationInput,
-): Promise<InstructionGenerationResult> => {
-  return runInstructionCommand(
-    workspaceRoot,
-    createInstructionMutationArguments("generate", input),
-    assertInstructionDesktopAvailable,
-  );
-};
 
 const runMcpCommand = async <Result>(
   workspaceRoot: string | null | undefined,
@@ -5560,6 +5785,7 @@ export const runDesktopTask = async (
     model?: string;
     provider?: RuntimeProvider;
     reasoning?: RuntimeSnapshot["reasoning"];
+    acknowledgedInstructionDeliveryPlanId?: string;
     sessionId?: string;
     taskId?: string;
   } = {},
@@ -5581,6 +5807,8 @@ export const runDesktopTask = async (
   const normalizedReasoning = context.reasoning;
   const normalizedTaskId = context.taskId?.trim();
   const normalizedSessionId = context.sessionId?.trim();
+  const acknowledgedInstructionDeliveryPlanId =
+    context.acknowledgedInstructionDeliveryPlanId?.trim();
 
   if (!canInvokeTauriCommands()) {
     return {
@@ -5604,6 +5832,9 @@ export const runDesktopTask = async (
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
         ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),
+        ...(acknowledgedInstructionDeliveryPlanId
+          ? { acknowledgedInstructionDeliveryPlanId }
+          : {}),
         ...(normalizedImagePaths.length > 0
           ? { imagePaths: normalizedImagePaths }
           : {}),

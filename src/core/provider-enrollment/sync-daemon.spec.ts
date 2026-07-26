@@ -47,17 +47,23 @@ afterEach(async () => {
 
 describe("provider sync daemon", () => {
   it("filters workspace and user watch events to synchronization inputs", () => {
-    expect(isProviderSyncWorkspaceWatchPath("AGENTS.md")).toBe(true);
+    expect(isProviderSyncWorkspaceWatchPath("AGENTS.md")).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath(".env")).toBe(true);
-    expect(isProviderSyncWorkspaceWatchPath(".machdoch/instructions/team.instructions.md")).toBe(true);
+    expect(isProviderSyncWorkspaceWatchPath(".ENV")).toBe(
+      process.platform === "win32",
+    );
     expect(isProviderSyncWorkspaceWatchPath(".machdoch/mcp/mcp.json")).toBe(true);
-    expect(isProviderSyncWorkspaceWatchPath(".github/instructions/review.instructions.md")).toBe(true);
+    expect(
+      isProviderSyncWorkspaceWatchPath(
+        ".github/instructions/review.instructions.md",
+      ),
+    ).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath("src/index.ts")).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath(".git/index")).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath("node_modules/package/index.js")).toBe(false);
 
     expect(isProviderSyncUserWatchPath("user-config.json")).toBe(true);
-    expect(isProviderSyncUserWatchPath("instructions/team.instructions.md")).toBe(true);
+    expect(isProviderSyncUserWatchPath("mcp.json")).toBe(true);
     expect(isProviderSyncUserWatchPath("provider-enrollment/sync-status.json")).toBe(false);
     expect(isProviderSyncUserWatchPath("scheduler.json")).toBe(false);
   });
@@ -113,9 +119,12 @@ describe("provider sync daemon", () => {
         runCompletedAt: initial.runCompletedAt,
       });
 
+      await mkdir(join(workspaceRoot, ".machdoch", "mcp"), {
+        recursive: true,
+      });
       await writeFile(
-        join(workspaceRoot, ".machdoch", "instructions.md"),
-        "Updated provider input.\n",
+        join(workspaceRoot, ".machdoch", "mcp", "mcp.json"),
+        "{}\n",
         "utf8",
       );
       await waitForDiagnostic(

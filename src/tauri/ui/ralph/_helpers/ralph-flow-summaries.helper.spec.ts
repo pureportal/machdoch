@@ -2,27 +2,17 @@ import type {
   RalphFlow,
   RalphFlowSummary,
 } from "../../../../core/ralph.js";
-import { createBlankFlow, getFlowAlias } from "./create-blank-ralph-flow.helper";
+import { createBlankFlow } from "./create-blank-ralph-flow.helper";
 import {
   DEFAULT_RALPH_FLOW_SCOPE,
-  RALPH_FLOW_LIBRARY_LABELS,
-  RALPH_FLOW_LIBRARY_MODES,
-  RALPH_FLOW_SCOPE_LABELS,
   RALPH_FLOW_SCOPES,
-  getDefaultCreationScope,
-  isFlowScopeVisibleInLibraryMode,
   normalizeRalphFlowScope,
 } from "./normalize-ralph-flow-scope.helper";
 import {
-  compareFlowSummaries,
   createUniqueFlowAlias,
   flowToSummary,
-  getFlowSelectionKey,
   getFlowSummaryScope,
-  getFlowSummarySelectionKey,
-  hasFlowSelection,
   isFlowAliasUsed,
-  upsertFlowSummary,
   withFlowSummaryScope,
 } from "./upsert-flow-summary.helper";
 
@@ -76,18 +66,8 @@ const createFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
 });
 
 describe("Ralph flow scope helpers", () => {
-  it("exposes the expected scopes, modes, labels, and default scope", () => {
+  it("exposes the supported scopes and default scope", () => {
     expect(RALPH_FLOW_SCOPES).toEqual(["workspace", "user"]);
-    expect(RALPH_FLOW_LIBRARY_MODES).toEqual(["workspace", "user", "all"]);
-    expect(RALPH_FLOW_SCOPE_LABELS).toEqual({
-      workspace: "Workspace",
-      user: "Global",
-    });
-    expect(RALPH_FLOW_LIBRARY_LABELS).toEqual({
-      workspace: "Workspace",
-      user: "Global",
-      all: "All",
-    });
     expect(DEFAULT_RALPH_FLOW_SCOPE).toBe("workspace");
   });
 
@@ -102,33 +82,15 @@ describe("Ralph flow scope helpers", () => {
     expect(normalizeRalphFlowScope(value)).toBe(expected);
   });
 
-  it("derives creation scope and library visibility", () => {
-    expect(getDefaultCreationScope("user")).toBe("user");
-    expect(getDefaultCreationScope("workspace")).toBe("workspace");
-    expect(getDefaultCreationScope("all")).toBe("workspace");
-
-    expect(isFlowScopeVisibleInLibraryMode("workspace", "workspace")).toBe(true);
-    expect(isFlowScopeVisibleInLibraryMode("user", "workspace")).toBe(false);
-    expect(isFlowScopeVisibleInLibraryMode("workspace", "all")).toBe(true);
-    expect(isFlowScopeVisibleInLibraryMode("user", "all")).toBe(true);
-  });
 });
 
 describe("Ralph flow summary helpers", () => {
-  it("defaults missing summary scopes and derives stable selection keys", () => {
+  it("defaults missing summary scopes", () => {
     const workspaceSummary = createSummary();
     const userSummary = createSummary({ id: "global-flow", scope: "user" });
 
     expect(getFlowSummaryScope(workspaceSummary)).toBe("workspace");
     expect(getFlowSummaryScope(userSummary)).toBe("user");
-    expect(getFlowSelectionKey("daily-review", "workspace")).toBe(
-      "workspace:daily-review",
-    );
-    expect(getFlowSummarySelectionKey(userSummary)).toBe("user:global-flow");
-    expect(hasFlowSelection(userSummary, "global-flow", "user")).toBe(true);
-    expect(hasFlowSelection(userSummary, "global-flow", "workspace")).toBe(
-      false,
-    );
   });
 
   it("adds fallback scopes without overwriting existing summary scope", () => {
@@ -138,20 +100,6 @@ describe("Ralph flow summary helpers", () => {
     expect(withFlowSummaryScope(createSummary({ scope: "workspace" }), "user")).toMatchObject({
       scope: "workspace",
     });
-  });
-
-  it("sorts summaries by scope first and then alias, name, or id", () => {
-    const summaries = [
-      createSummary({ id: "z-user", alias: "z-user", scope: "user" }),
-      createSummary({ id: "b-workspace", name: "Bravo" }),
-      createSummary({ id: "a-workspace", alias: "alpha" }),
-    ];
-
-    expect([...summaries].sort(compareFlowSummaries).map((flow) => flow.id)).toEqual([
-      "a-workspace",
-      "b-workspace",
-      "z-user",
-    ]);
   });
 
   it("converts flows to summaries with counts, path, and explicit scope", () => {
@@ -188,28 +136,6 @@ describe("Ralph flow summary helpers", () => {
       edgeCount: 0,
       variableCount: 0,
     });
-  });
-
-  it("upserts matching id and scope while preserving same-id flows in other scopes", () => {
-    const existingWorkspace = createSummary({
-      id: "shared",
-      alias: "old-workspace",
-      scope: "workspace",
-    });
-    const existingUser = createSummary({
-      id: "shared",
-      alias: "old-user",
-      scope: "user",
-    });
-    const nextWorkspace = createSummary({
-      id: "shared",
-      alias: "new-workspace",
-      scope: "workspace",
-    });
-
-    expect(
-      upsertFlowSummary([existingUser, existingWorkspace], nextWorkspace),
-    ).toEqual([nextWorkspace, existingUser]);
   });
 
   it("checks alias use within scope, normalized aliases, ids, and current-flow exclusions", () => {
@@ -271,8 +197,6 @@ describe("blank Ralph flow helper", () => {
     expect(flow.id).toBeTruthy();
     expect(Date.parse(flow.createdAt ?? "")).not.toBeNaN();
     expect(flow.updatedAt).toBe(flow.createdAt);
-    expect(flow.blocks[0]?.position).toEqual({ x: 80, y: 120 });
-    expect(flow.blocks[1]?.position).toEqual({ x: 500, y: 120 });
   });
 
   it("falls back to a Ralph Flow title when alias input is empty", () => {
@@ -282,11 +206,4 @@ describe("blank Ralph flow helper", () => {
     expect(flow.name).toBe("Ralph Flow");
   });
 
-  it("prefers a trimmed alias and falls back to id for flow labels", () => {
-    expect(getFlowAlias({ id: "flow-id", alias: "  friendly-alias  " })).toBe(
-      "friendly-alias",
-    );
-    expect(getFlowAlias({ id: "flow-id", alias: "   " })).toBe("flow-id");
-    expect(getFlowAlias({ id: "flow-id" })).toBe("flow-id");
-  });
 });

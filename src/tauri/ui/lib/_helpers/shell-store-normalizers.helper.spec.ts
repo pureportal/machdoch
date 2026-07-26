@@ -1,60 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_APPEARANCE_SETTINGS,
-  DEFAULT_APP_SHELL_STATE,
   DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
-  DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
-  normalizeAppearanceSettings,
-  normalizeAppShellState,
   normalizeMcpMarketplaceState,
   normalizeRalphSettings,
-  normalizeRunningTaskMessageAction,
 } from "./shell-store-normalizers.helper";
 
-describe("shell-store normalizers", () => {
+describe("Ralph and marketplace store normalizers", () => {
   it("returns shared defaults for invalid persisted records", () => {
-    expect(normalizeAppShellState(null)).toBe(DEFAULT_APP_SHELL_STATE);
     expect(normalizeMcpMarketplaceState(undefined)).toBe(
       DEFAULT_MCP_MARKETPLACE_STATE,
     );
     expect(normalizeRalphSettings("invalid")).toBe(DEFAULT_RALPH_SETTINGS);
-    expect(normalizeAppearanceSettings(7)).toBe(
-      DEFAULT_APPEARANCE_SETTINGS,
-    );
-    expect(normalizeRunningTaskMessageAction("invalid")).toBe(
-      DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
-    );
-  });
-
-  it("normalizes app shell state with union fallbacks and numeric timestamps", () => {
-    expect(
-      normalizeAppShellState({
-        activeApp: "marketplace",
-        lastViewedAt: {
-          chat: 10,
-          ralph: "not-a-number",
-          media: 20,
-          marketplace: 30,
-        },
-      }),
-    ).toEqual({
-      version: 1,
-      activeApp: "marketplace",
-      lastViewedAt: {
-        chat: 10,
-        ralph: DEFAULT_APP_SHELL_STATE.lastViewedAt.ralph,
-        media: 20,
-        marketplace: 30,
-      },
-    });
-
-    expect(normalizeAppShellState({ activeApp: "settings" }).activeApp).toBe(
-      "chat",
-    );
-    expect(normalizeAppShellState({ activeApp: "media" }).activeApp).toBe(
-      "media",
-    );
   });
 
   it("trims valid Ralph string fields and preserves allowed modes", () => {
@@ -169,29 +126,4 @@ describe("shell-store normalizers", () => {
     });
   });
 
-  it("normalizes appearance settings with allowed union fallbacks", () => {
-    expect(
-      normalizeAppearanceSettings({
-        theme: "light",
-        density: "compact",
-        accent: "violet",
-        quickChatBubbleStyle: "orbit",
-      }),
-    ).toEqual({
-      version: 1,
-      theme: "light",
-      density: "compact",
-      accent: "violet",
-      quickChatBubbleStyle: "orbit",
-    });
-
-    expect(
-      normalizeAppearanceSettings({
-        theme: "system",
-        density: "cozy",
-        accent: "red",
-        quickChatBubbleStyle: "unknown",
-      }),
-    ).toEqual(DEFAULT_APPEARANCE_SETTINGS);
-  });
 });

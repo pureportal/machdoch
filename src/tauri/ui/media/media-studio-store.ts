@@ -9,7 +9,10 @@ import type {
   MediaStudioSection,
   MediaStudioState,
 } from "../../../core/media/contracts.js";
-import { getMediaNodeDefinition } from "../../../core/media/node-registry.js";
+import {
+  getMediaNodeDefinition,
+  upgradeMediaFlowQualityDefaults,
+} from "../../../core/media/node-registry.js";
 import { validateMediaFlowVariableDocument } from "../../../core/media/variables.js";
 import {
   loadStoredValue,
@@ -30,6 +33,12 @@ export const DEFAULT_IMAGE_RECIPE_SETTINGS = {
   transparentBackground: false,
   qualityGateEnabled: true,
   referenceImages: [],
+  editStrength: 0.65,
+  referenceBoost: 2,
+  requireChromaBackground: false,
+  referenceFit: "fit",
+  groundingPixels: 768,
+  memoryProfile: "auto",
   modelAddons: [],
   svgMode: "generate",
   svgAutoCrop: true,
@@ -69,6 +78,19 @@ const normalizeOutputCount = (value: unknown): number => {
   }
 
   return Math.min(8, Math.max(1, Math.round(value)));
+};
+
+const normalizeBoundedNumber = (
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(maximum, Math.max(minimum, value));
 };
 
 const normalizeReferenceImages = (
@@ -214,6 +236,36 @@ export const normalizeImageRecipeSettings = (
     transparentBackground: value.transparentBackground === true,
     qualityGateEnabled: value.qualityGateEnabled !== false,
     referenceImages: normalizeReferenceImages(value.referenceImages),
+    editStrength: normalizeBoundedNumber(
+      value.editStrength,
+      DEFAULT_IMAGE_RECIPE_SETTINGS.editStrength,
+      0,
+      1,
+    ),
+    referenceBoost: normalizeBoundedNumber(
+      value.referenceBoost,
+      DEFAULT_IMAGE_RECIPE_SETTINGS.referenceBoost,
+      0.25,
+      8,
+    ),
+    requireChromaBackground: value.requireChromaBackground === true,
+    referenceFit: normalizeOneOf<NonNullable<ImageRecipeSettings["referenceFit"]>>(
+      value.referenceFit,
+      ["fit", "crop"] as const,
+      DEFAULT_IMAGE_RECIPE_SETTINGS.referenceFit,
+    ),
+    groundingPixels:
+      typeof value.groundingPixels === "number" &&
+      Number.isFinite(value.groundingPixels)
+        ? Math.min(1_024, Math.max(384, Math.round(value.groundingPixels)))
+        : DEFAULT_IMAGE_RECIPE_SETTINGS.groundingPixels,
+    memoryProfile: normalizeOneOf<
+      NonNullable<ImageRecipeSettings["memoryProfile"]>
+    >(
+      value.memoryProfile,
+      ["auto", "memory-saver", "balanced", "maximum-speed"] as const,
+      DEFAULT_IMAGE_RECIPE_SETTINGS.memoryProfile,
+    ),
     modelAddons: normalizeModelAddons(value.modelAddons),
     svgMode: normalizeOneOf<NonNullable<ImageRecipeSettings["svgMode"]>>(
       value.svgMode,
@@ -400,7 +452,7 @@ const normalizeStoredFlow = (value: unknown): MediaFlow | null => {
     }
 
     return validateMediaFlowVariableDocument(candidate).length === 0
-      ? candidate
+      ? upgradeMediaFlowQualityDefaults({ flow: candidate })
       : null;
   } catch {
     return null;

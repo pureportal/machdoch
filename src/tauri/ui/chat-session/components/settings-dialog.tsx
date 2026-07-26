@@ -89,18 +89,28 @@ const SETTINGS_SECTION_GROUP_ORDER = [
   "Data",
 ] as const satisfies readonly SettingsSectionGroup[];
 
+const INTRO_SECTION_ID = "__intro";
+
+type SettingsDialogSectionId = SettingsSection | typeof INTRO_SECTION_ID;
+
+interface SettingsDialogSectionDefinition {
+  id: SettingsDialogSectionId;
+  label: string;
+  group: SettingsSectionGroup;
+  description: string;
+  keywords: readonly string[];
+}
+
 type PendingNavigation =
   | { target: "close"; guard: SettingsNavigationGuardState }
+  | { target: "primary"; guard: SettingsNavigationGuardState }
   | {
       target: "section";
-      section: SettingsSection;
+      section: SettingsDialogSectionId;
       guard: SettingsNavigationGuardState;
     };
 
-export interface SettingsDialogProps {
-  settingsSection: SettingsSection;
-  onSettingsSectionChange: (section: SettingsSection) => void;
-  onClose: () => void;
+export interface SettingsControlsProps {
   providerSetup: ProviderSetupControls;
   workspaceSetup: WorkspaceSettingsControls;
   instructionsSetup: InstructionSettingsControls;
@@ -111,6 +121,35 @@ export interface SettingsDialogProps {
   memorySetup: MemorySettingsControls;
   desktopSetup: DesktopSettingsControls;
   voiceSetup: VoiceSettingsControls;
+}
+
+export interface SettingsDialogIntroSection {
+  label: string;
+  description: string;
+  keywords: readonly string[];
+  icon: LucideIcon;
+  content: JSX.Element;
+}
+
+export interface SettingsDialogPrimaryAction {
+  label: string;
+  pendingLabel?: string;
+  discardLabel?: string;
+  disabled?: boolean;
+  onAction: () => Promise<void> | void;
+}
+
+export interface SettingsDialogProps extends SettingsControlsProps {
+  settingsSection: SettingsSection;
+  onSettingsSectionChange: (section: SettingsSection) => void;
+  onClose: () => Promise<void> | void;
+  title?: string;
+  description?: string;
+  closeLabel?: string;
+  closeText?: string;
+  closeDiscardLabel?: string;
+  introSection?: SettingsDialogIntroSection;
+  primaryAction?: SettingsDialogPrimaryAction;
 }
 
 const renderSettingsPanel = ({
@@ -163,16 +202,31 @@ const renderSettingsPanel = ({
 };
 
 export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
-  const { settingsSection, onSettingsSectionChange, onClose } = props;
+  const {
+    settingsSection,
+    onSettingsSectionChange,
+    onClose,
+    title = "Settings",
+    description = "Configure how Machdoch looks, connects, and works.",
+    closeLabel = "Close settings",
+    closeText,
+    closeDiscardLabel,
+    introSection,
+    primaryAction,
+  } = props;
   const [searchQuery, setSearchQuery] = useState("");
+  const [introActive, setIntroActive] = useState(Boolean(introSection));
   const [navigationGuard, setNavigationGuard] =
     useState<SettingsNavigationGuardState | null>(null);
   const [pendingNavigation, setPendingNavigation] =
     useState<PendingNavigation | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [primaryActionRunning, setPrimaryActionRunning] = useState(false);
+  const [closeActionRunning, setCloseActionRunning] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const navigationButtonRefs = useRef(
-    new Map<SettingsSection, HTMLButtonElement>(),
+    new Map<SettingsDialogSectionId, HTMLButtonElement>(),
   );
   const pendingTriggerRef = useRef<HTMLElement | null>(null);
   const mobileSectionRef = useRef<HTMLSelectElement>(null);
@@ -182,23 +236,47 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   const pendingGuard = pendingNavigation
     ? (navigationGuard ?? pendingNavigation.guard)
     : null;
+  const dialogSections = useMemo<readonly SettingsDialogSectionDefinition[]>(
+    () => {
+      const introSections: readonly SettingsDialogSectionDefinition[] =
+        introSection
+          ? [
+              {
+                id: INTRO_SECTION_ID,
+                label: introSection.label,
+                group: "Setup",
+                description: introSection.description,
+                keywords: introSection.keywords,
+              },
+            ]
+          : [];
+
+      return [...introSections, ...SETTINGS_SECTIONS];
+    },
+    [introSection],
+  );
+  const activeSectionId =
+    introSection && introActive ? INTRO_SECTION_ID : settingsSection;
   const activeSection =
-    SETTINGS_SECTIONS.find((section) => section.id === settingsSection) ??
-    SETTINGS_SECTIONS[0];
-  const ActiveSectionIcon = SETTINGS_SECTION_ICONS[activeSection.id];
+    dialogSections.find((section) => section.id === activeSectionId) ??
+    dialogSections[0];
+  const ActiveSectionIcon =
+    activeSection.id === INTRO_SECTION_ID
+      ? (introSection?.icon ?? KeyRound)
+      : SETTINGS_SECTION_ICONS[activeSection.id];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const visibleSections = useMemo(() => {
     if (!normalizedSearchQuery) {
-      return SETTINGS_SECTIONS;
+      return dialogSections;
     }
 
-    return SETTINGS_SECTIONS.filter((section) =>
+    return dialogSections.filter((section) =>
       [section.label, section.description, ...section.keywords]
         .join(" ")
         .toLowerCase()
         .includes(normalizedSearchQuery),
     );
-  }, [normalizedSearchQuery]);
+  }, [dialogSections, normalizedSearchQuery]);
 
   useEffect(() => {
     if (pendingNavigation) {
@@ -206,18 +284,75 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     }
   }, [pendingNavigation]);
 
+  const runPrimaryAction = async (): Promise<void> => {
+    if (
+      !primaryAction ||
+      primaryAction.disabled ||
+      primaryActionRunning ||
+      closeActionRunning
+    ) {
+      return;
+    }
+
+    setActionError(null);
+    setPrimaryActionRunning(true);
+
+    try {
+      await primaryAction.onAction();
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Setup could not be completed.",
+      );
+    } finally {
+      setPrimaryActionRunning(false);
+    }
+  };
+
+  const runCloseAction = async (): Promise<void> => {
+    if (closeActionRunning || primaryActionRunning) {
+      return;
+    }
+
+    setActionError(null);
+    setCloseActionRunning(true);
+
+    try {
+      await onClose();
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Settings could not be closed.",
+      );
+    } finally {
+      setCloseActionRunning(false);
+    }
+  };
+
   const performNavigation = (
     target: PendingNavigation["target"],
-    section?: SettingsSection,
+    section?: SettingsDialogSectionId,
     restoreSectionFocus = false,
   ): void => {
     if (target === "close") {
-      onClose();
+      void runCloseAction();
+      return;
+    }
+
+    if (target === "primary") {
+      void runPrimaryAction();
       return;
     }
 
     if (section) {
-      onSettingsSectionChange(section);
+      if (section === INTRO_SECTION_ID) {
+        setIntroActive(true);
+      } else {
+        setIntroActive(false);
+        onSettingsSectionChange(section);
+      }
 
       if (restoreSectionFocus) {
         window.setTimeout(() => {
@@ -251,8 +386,8 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     );
   }, [discarding, navigationGuard, pendingNavigation]);
 
-  const requestSectionChange = (section: SettingsSection): void => {
-    if (section === settingsSection) {
+  const requestSectionChange = (section: SettingsDialogSectionId): void => {
+    if (section === activeSectionId) {
       return;
     }
 
@@ -270,10 +405,37 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
       return;
     }
 
-    onSettingsSectionChange(section);
+    performNavigation("section", section);
+  };
+
+  const requestPrimaryAction = (): void => {
+    if (
+      !primaryAction ||
+      primaryAction.disabled ||
+      primaryActionRunning ||
+      closeActionRunning
+    ) {
+      return;
+    }
+
+    if (navigationGuard) {
+      pendingTriggerRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      setNavigationError(null);
+      setPendingNavigation({ target: "primary", guard: navigationGuard });
+      return;
+    }
+
+    void runPrimaryAction();
   };
 
   const requestClose = (): void => {
+    if (closeActionRunning || primaryActionRunning) {
+      return;
+    }
+
     if (navigationGuard) {
       pendingTriggerRef.current =
         document.activeElement instanceof HTMLElement
@@ -284,7 +446,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
       return;
     }
 
-    onClose();
+    void runCloseAction();
   };
 
   const cancelPendingNavigation = (): void => {
@@ -333,7 +495,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
 
   const handleNavigationKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
-    section: SettingsSection,
+    section: SettingsDialogSectionId,
   ): void => {
     const currentIndex = visibleSections.findIndex(
       (candidate) => candidate.id === section,
@@ -376,21 +538,33 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
         event.preventDefault();
         requestClose();
       }}
-      className="app-settings-dialog h-[min(760px,calc(100dvh-24px))] max-h-none w-[min(1040px,calc(100vw-24px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
+      className="app-settings-dialog h-[min(800px,calc(100dvh-24px))] max-h-none w-[min(1240px,calc(100vw-24px))] max-w-none gap-0 overflow-hidden rounded-2xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
     >
       <div
-        inert={pendingNavigation ? true : undefined}
+        inert={
+          pendingNavigation || primaryActionRunning || closeActionRunning
+            ? true
+            : undefined
+        }
         aria-hidden={pendingNavigation ? true : undefined}
+        aria-busy={
+          primaryActionRunning || closeActionRunning ? true : undefined
+        }
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
-        <DialogHeader className="min-h-14 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
+        <DialogHeader className="min-h-16 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
           <div className="min-w-0">
             <DialogTitle className="text-lg font-semibold tracking-tight text-white">
-              Settings
+              {title}
             </DialogTitle>
-            <DialogDescription className="sr-only">
-              Configure how Machdoch looks, connects, and works.
+            <DialogDescription className="mt-0.5 truncate text-xs text-slate-400">
+              {description}
             </DialogDescription>
+            {actionError ? (
+              <p role="alert" className="mt-1 text-xs text-rose-300">
+                {actionError}
+              </p>
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {navigationGuard ? (
@@ -402,10 +576,11 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
               type="button"
               variant="ghost"
               size="icon"
-              aria-label="Close settings"
-              title="Close settings"
+              aria-label={closeLabel}
+              title={closeLabel}
+              disabled={closeActionRunning || primaryActionRunning}
               onClick={requestClose}
-              className="size-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+              className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
               <X className="size-4" />
             </Button>
@@ -419,15 +594,17 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           <select
             ref={mobileSectionRef}
             id="mobile-settings-section"
-            value={settingsSection}
+            value={activeSectionId}
             onChange={(event) =>
-              requestSectionChange(event.target.value as SettingsSection)
+              requestSectionChange(
+                event.target.value as SettingsDialogSectionId,
+              )
             }
             className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
           >
             {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
               <optgroup key={group} label={group}>
-                {SETTINGS_SECTIONS.filter(
+                {dialogSections.filter(
                   (section) => section.group === group,
                 ).map((section) => (
                   <option key={section.id} value={section.id}>
@@ -439,12 +616,12 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           </select>
         </div>
 
-        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[14rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[13rem_minmax(0,1fr)]">
           <nav
             aria-label="Settings sections"
-            className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-4 md:block"
+            className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
           >
-            <div className="relative mb-4">
+            <div className="relative mb-3">
               <SearchIcon
                 aria-hidden="true"
                 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-500"
@@ -473,7 +650,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                 </Button>
               </div>
             ) : (
-              <div className="grid gap-4">
+              <div className="grid gap-3">
                 {SETTINGS_SECTION_GROUP_ORDER.map((group) => {
                   const groupSections = visibleSections.filter(
                     (section) => section.group === group,
@@ -489,8 +666,11 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                         {group}
                       </p>
                       {groupSections.map((section) => {
-                        const SectionIcon = SETTINGS_SECTION_ICONS[section.id];
-                        const selected = settingsSection === section.id;
+                        const SectionIcon =
+                          section.id === INTRO_SECTION_ID
+                            ? (introSection?.icon ?? KeyRound)
+                            : SETTINGS_SECTION_ICONS[section.id];
+                        const selected = activeSectionId === section.id;
 
                         return (
                           <Button
@@ -513,7 +693,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                             }
                             onClick={() => requestSectionChange(section.id)}
                             className={cn(
-                              "h-9 w-full justify-start rounded-lg border border-transparent bg-transparent px-3 text-sm text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-100",
+                              "h-8.5 w-full justify-start rounded-lg border border-transparent bg-transparent px-3 text-sm text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-100",
                               selected &&
                                 "border-sky-500/25 bg-sky-500/10 font-semibold text-sky-100",
                             )}
@@ -531,14 +711,14 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           </nav>
 
           <ScrollArea
-            key={settingsSection}
+            key={activeSectionId}
             type="always"
             role="region"
             aria-labelledby="active-settings-section-title"
             className="min-h-0 bg-slate-950/40 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
           >
-            <div className="mx-auto grid w-full max-w-3xl content-start gap-5 px-4 py-5 pr-7 sm:px-6 sm:py-6 sm:pr-9">
-              <header className="flex items-start gap-3 border-b border-slate-800/70 pb-5">
+            <div className="mx-auto grid w-full max-w-5xl content-start gap-4 px-4 py-4 pr-7 sm:px-6 sm:py-5 sm:pr-9">
+              <header className="flex items-start gap-3 border-b border-slate-800/70 pb-4">
                 <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-sky-500/20 bg-sky-500/10 text-sky-300">
                   <ActiveSectionIcon className="size-4.5" />
                 </span>
@@ -558,11 +738,49 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
               <SettingsNavigationGuardProvider
                 onGuardChange={setNavigationGuard}
               >
-                {renderSettingsPanel(props)}
+                {activeSectionId === INTRO_SECTION_ID && introSection
+                  ? introSection.content
+                  : renderSettingsPanel({
+                      ...props,
+                      settingsSection: activeSectionId as SettingsSection,
+                    })}
               </SettingsNavigationGuardProvider>
             </div>
           </ScrollArea>
         </div>
+        {primaryAction || closeText ? (
+          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-5">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={closeActionRunning || primaryActionRunning}
+              onClick={requestClose}
+              className="h-9 rounded-lg border-slate-700 bg-slate-900 px-4 text-slate-200 hover:bg-slate-800"
+            >
+              {closeActionRunning ? "Closing…" : (closeText ?? "Cancel")}
+            </Button>
+            {primaryAction ? (
+              <Button
+                type="button"
+                disabled={
+                  primaryAction.disabled ||
+                  primaryActionRunning ||
+                  closeActionRunning
+                }
+                aria-busy={primaryActionRunning}
+                onClick={requestPrimaryAction}
+                className="h-9 rounded-lg bg-sky-400 px-4 text-slate-950 hover:bg-sky-300"
+              >
+                {primaryActionRunning ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : null}
+                {primaryActionRunning
+                  ? (primaryAction.pendingLabel ?? `${primaryAction.label}…`)
+                  : primaryAction.label}
+              </Button>
+            ) : null}
+          </footer>
+        ) : null}
       </div>
 
       {pendingNavigation && pendingGuard ? (
@@ -623,7 +841,13 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                   ) : null}
                   {discarding
                     ? "Finishing…"
-                    : (pendingGuard.confirmLabel ?? "Discard changes")}
+                    : pendingNavigation.target === "primary"
+                      ? (primaryAction?.discardLabel ??
+                        "Discard changes and finish")
+                      : pendingNavigation.target === "close" &&
+                          closeDiscardLabel
+                        ? closeDiscardLabel
+                      : (pendingGuard.confirmLabel ?? "Discard changes")}
                 </Button>
               ) : null}
             </div>

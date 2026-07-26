@@ -21,8 +21,11 @@ describe("built-in media flow templates", () => {
       "text-to-image-variants",
       "product-cutout-quality",
       "quality-gated-campaign",
+      "generated-character-idle-loop",
     ]);
-    for (const template of templates) {
+    for (const template of templates.filter(
+      (candidate) => candidate.category !== "Animation",
+    )) {
       expect(template.flow.variables.length).toBeGreaterThanOrEqual(2);
       expect(template.flow.presets.length).toBeGreaterThan(0);
       expect(template.flow.nodes.some((node) => node.type === "output.asset")).toBe(true);
@@ -46,7 +49,71 @@ describe("built-in media flow templates", () => {
     }
   });
 
-  it("forks an isolated flow and layout without mutating the catalog template", () => {
+  it("ships a connected generated-frame WAN loop with two publication paths", () => {
+    const template = listBuiltInMediaFlowTemplates().find(
+      (candidate) => candidate.id === "generated-character-idle-loop",
+    );
+    expect(template).toBeDefined();
+    expect(template?.category).toBe("Animation");
+    expect(validateMediaFlowDocument(template!.flow)).toEqual([]);
+
+    const models = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+      isLocalBiRefNetInstalled: true,
+    });
+    const flux = models.find(
+      (candidate) => candidate.id === "local:flux-2-klein-4b",
+    );
+    expect(flux).toBeDefined();
+    models.push({
+      ...flux!,
+      id: "local:wan2.2-ti2v-5b",
+      providerId: "local-wan",
+      displayName: "WAN 2.2 TI2V 5B",
+      family: "WAN 2.2",
+      capabilities: [
+        "text-to-video",
+        "image-to-video",
+        "start-end-to-video",
+        "transparent-output",
+        "alpha-video",
+        "video-composite",
+      ],
+      architecture: "wan-2.2-ti2v",
+      addonCapabilities: [],
+      installedRevision: "test-revision",
+    });
+
+    const plan = compileMediaFlow({
+      flow: template!.flow,
+      models,
+      compiledAt: CREATED_AT,
+    });
+    expect(plan.status).toBe("ready");
+    expect(plan.runtimeBindings.map((binding) => binding.modality)).toEqual([
+      "image",
+      "video",
+    ]);
+    expect(plan.preflight.estimatedOutputs).toBe(2);
+    expect(
+      template!.flow.edges.filter(
+        (edge) =>
+          edge.fromNodeId === "cutout-character-frame" &&
+          edge.toNodeId === "generate-idle-loop",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toPortId: "first-frame" }),
+        expect.objectContaining({ toPortId: "last-frame" }),
+      ]),
+    );
+    expect(
+      template!.flow.nodes.filter((node) => node.type === "output.video"),
+    ).toHaveLength(2);
+  });
+
+  it("forks an isolated flow without mutating the catalog template", () => {
     const result = instantiateMediaFlowTemplate({
       templateId: "product-cutout-quality",
       flowId: "flow:product-fork",
@@ -56,10 +123,6 @@ describe("built-in media flow templates", () => {
 
     expect(result.flow.id).toBe("flow:product-fork");
     expect(result.flow.createdAt).toBe(CREATED_AT);
-    expect(result.layout.flowId).toBe(result.flow.id);
-    expect(result.layout.nodes.map((node) => node.nodeId).sort()).toEqual(
-      result.flow.nodes.map((node) => node.id).sort(),
-    );
     expect(
       listBuiltInMediaFlowTemplates()
         .find((template) => template.id === "product-cutout-quality")

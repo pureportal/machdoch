@@ -48,6 +48,7 @@ import { WorkspacePicker } from "./workspace-picker";
 
 export interface SessionComposerProps {
   activeSession: ChatSessionRecord;
+  editingMessageId?: string | null;
   chooserProviders: RuntimeProvider[];
   activeRunMode: RunMode;
   activeRunModeMeta: (typeof RUN_MODE_META)[RunMode];
@@ -154,6 +155,7 @@ export interface SessionComposerProps {
 
 export const SessionComposer = ({
   activeSession,
+  editingMessageId = null,
   chooserProviders,
   activeRunMode,
   activeRunModeMeta,
@@ -459,13 +461,34 @@ export const SessionComposer = ({
         />
       ) : null}
 
+      {editingMessageId ? (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-sky-100"
+        >
+          <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Editing a sent message. Saving replaces this point in the
+            conversation and reruns the task with the selected options.
+          </span>
+        </div>
+      ) : null}
+
       <div className="relative">
         <AgentComposer
           variant="session"
-          draftIdentity={activeSession.id}
+          draftIdentity={
+            editingMessageId
+              ? `${activeSession.id}:message-edit:${editingMessageId}`
+              : activeSession.id
+          }
           draft={activeSession.draft}
-          textareaLabel="Task composer"
-          placeholder="What should machdoch do next?"
+          textareaLabel={editingMessageId ? "Edit message" : "Task composer"}
+          placeholder={
+            editingMessageId
+              ? "Update the message and its options"
+              : "What should machdoch do next?"
+          }
           chooserProviders={chooserProviders}
           activeProvider={activeSession.provider}
           activeModel={activeSession.model}
@@ -474,13 +497,18 @@ export const SessionComposer = ({
           imageInputDisabledReason={imageInputDisabledReason}
           canSend={canSendMessage}
           sendDisabledReason={sendDisabledReason}
-          isExecuting={isExecuting}
+          isExecuting={editingMessageId ? false : isExecuting}
           inputBlocked={promptEnhancementBlocked}
+          autoFocus={Boolean(editingMessageId)}
+          submissionLabel={
+            editingMessageId ? "Save and submit" : undefined
+          }
+          showCancelAlongsideSend={Boolean(editingMessageId)}
           toolbarControls={toolbarControls}
           toggles={toggles}
           actions={actions}
           runningTaskMessageAction={runningTaskMessageAction}
-          queuedMessages={queuedMessages}
+          queuedMessages={editingMessageId ? [] : queuedMessages}
           onModelSelection={onSessionModelSelection}
           onSelectContextFiles={onSelectContextFiles}
           onSelectContextFolders={onSelectContextFolders}

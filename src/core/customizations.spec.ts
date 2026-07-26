@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverCustomizations } from "./customizations.ts";
 
-const workspacesToClean: string[] = [];
+const pathsToClean: string[] = [];
 const originalUserConfigDirectory = process.env.MACHDOCH_USER_CONFIG_DIR;
 
-const createWorkspace = async (): Promise<string> => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-custom-"));
-  workspacesToClean.push(workspaceRoot);
-  return workspaceRoot;
+const createTemporaryDirectory = async (): Promise<string> => {
+  const path = await mkdtemp(join(tmpdir(), "machdoch-custom-"));
+  pathsToClean.push(path);
+  return path;
 };
 
 afterEach(async () => {
@@ -18,61 +18,31 @@ afterEach(async () => {
   } else {
     process.env.MACHDOCH_USER_CONFIG_DIR = originalUserConfigDirectory;
   }
-
   await Promise.all(
-    workspacesToClean
-      .splice(0)
-      .map((workspaceRoot) =>
-        rm(workspaceRoot, { recursive: true, force: true }),
-      ),
+    pathsToClean.splice(0).map((path) =>
+      rm(path, { recursive: true, force: true }),
+    ),
   );
 });
 
 describe("discoverCustomizations", () => {
-  it("returns empty discovery results when no customization folders exist", async () => {
-    const workspaceRoot = await createWorkspace();
-
+  it("returns an empty prompt and skill inventory", async () => {
+    const workspaceRoot = await createTemporaryDirectory();
     await expect(discoverCustomizations(workspaceRoot)).resolves.toEqual({
       workspaceRoot,
-      instructions: [],
       prompts: [],
       skills: [],
     });
   });
 
-  it("discovers instructions, prompts, and skills from .machdoch", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await mkdir(join(workspaceRoot, ".machdoch", "instructions"), {
-      recursive: true,
-    });
+  it("discovers workspace prompts and skills", async () => {
+    const workspaceRoot = await createTemporaryDirectory();
     await mkdir(join(workspaceRoot, ".machdoch", "prompts"), {
       recursive: true,
     });
     await mkdir(
-      join(workspaceRoot, ".machdoch", "skills", "browser-automation"),
+      join(workspaceRoot, ".machdoch", "skills", "release-automation"),
       { recursive: true },
-    );
-
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "instructions.md"),
-      "Always-on rules",
-    );
-    await writeFile(
-      join(
-        workspaceRoot,
-        ".machdoch",
-        "instructions",
-        "security.instructions.md",
-      ),
-      `---
-name: Security defaults
-description: Apply security rules
-keywords: ["auth", "token"]
-priority: 90
----
-Protect secrets.
-`,
     );
     await writeFile(
       join(workspaceRoot, ".machdoch", "prompts", "debug-build.prompt.md"),
@@ -81,13 +51,9 @@ name: debug-build
 description: Diagnose build failures
 agent: agent
 model: auto
-argument-hint: "Build error"
-tools:
-  - filesystem
-  - terminal
-inputs:
-  - error
-  - logs
+argument-hint: Build error
+tools: [filesystem, terminal]
+inputs: [error, logs]
 ---
 Prompt body.
 Second line.
@@ -98,11 +64,11 @@ Second line.
         workspaceRoot,
         ".machdoch",
         "skills",
-        "browser-automation",
+        "release-automation",
         "SKILL.md",
       ),
       `---
-description: Automates browser tasks
+description: Automates release tasks
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -110,410 +76,96 @@ Skill body.
 `,
     );
 
-    const customizations = await discoverCustomizations(workspaceRoot);
-
-    expect(customizations.instructions).toHaveLength(2);
-    expect(customizations.instructions[0]).toMatchObject({
-      kind: "always-on",
-      path: ".machdoch/instructions.md",
-      body: "Always-on rules",
-      keywords: [],
+    await expect(discoverCustomizations(workspaceRoot)).resolves.toEqual({
+      workspaceRoot,
+      prompts: [
+        {
+          path: ".machdoch/prompts/debug-build.prompt.md",
+          name: "debug-build",
+          description: "Diagnose build failures",
+          agent: "agent",
+          model: "auto",
+          argumentHint: "Build error",
+          inputs: ["error", "logs"],
+          tools: ["filesystem", "shell"],
+          body: "Prompt body.\nSecond line.",
+        },
+      ],
+      skills: [
+        {
+          path: ".machdoch/skills/release-automation/SKILL.md",
+          name: "release-automation",
+          description: "Automates release tasks",
+          userInvocable: false,
+          disableModelInvocation: true,
+        },
+      ],
     });
-    expect(customizations.instructions[1]).toEqual({
-      kind: "conditional",
-      path: ".machdoch/instructions/security.instructions.md",
-      name: "Security defaults",
-      description: "Apply security rules",
-      keywords: ["auth", "token"],
-      priority: 90,
-      body: "Protect secrets.",
-    });
-    expect(customizations.prompts).toEqual([
-      {
-        path: ".machdoch/prompts/debug-build.prompt.md",
-        name: "debug-build",
-        description: "Diagnose build failures",
-        agent: "agent",
-        model: "auto",
-        argumentHint: "Build error",
-        inputs: ["error", "logs"],
-        tools: ["filesystem", "shell"],
-        body: "Prompt body.\nSecond line.",
-      },
-    ]);
-    expect(customizations.skills).toEqual([
-      {
-        path: ".machdoch/skills/browser-automation/SKILL.md",
-        name: "browser-automation",
-        description: "Automates browser tasks",
-        userInvocable: false,
-        disableModelInvocation: true,
-      },
-    ]);
   });
 
-  it("discovers user prompts and skills as global customizations", async () => {
-    const workspaceRoot = await createWorkspace();
-    const userConfigRoot = await createWorkspace();
-    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
-    const userPromptPath = join(
-      userConfigRoot,
-      "prompts",
-      "release-audit.prompt.md",
-    );
-    const userSkillPath = join(
-      userConfigRoot,
-      "skills",
-      "release-review",
-      "SKILL.md",
+  it("discovers user prompts and skills when requested", async () => {
+    const workspaceRoot = await createTemporaryDirectory();
+    const userRoot = await createTemporaryDirectory();
+    process.env.MACHDOCH_USER_CONFIG_DIR = userRoot;
+    const promptPath = join(userRoot, "prompts", "release.prompt.md");
+    const skillPath = join(userRoot, "skills", "review", "SKILL.md");
+    await mkdir(join(userRoot, "prompts"), { recursive: true });
+    await mkdir(join(userRoot, "skills", "review"), { recursive: true });
+    await writeFile(promptPath, "---\nname: release\n---\nAudit releases.\n");
+    await writeFile(
+      skillPath,
+      "---\ndescription: Reviews releases\n---\nReview.\n",
     );
 
-    await mkdir(join(userConfigRoot, "prompts"), { recursive: true });
-    await mkdir(join(userConfigRoot, "skills", "release-review"), {
-      recursive: true,
-    });
-    await writeFile(
-      userPromptPath,
-      `---
-name: release-audit
-description: Review release notes
----
-Audit release risk.
-`,
-    );
-    await writeFile(
-      userSkillPath,
-      `---
-description: Reviews release readiness
----
-Skill body.
-`,
-    );
-
-    const customizations = await discoverCustomizations(workspaceRoot, {
+    const result = await discoverCustomizations(workspaceRoot, {
       discoverUserCustomizations: true,
     });
-
-    expect(customizations.prompts).toEqual([
-      {
-        path: userPromptPath,
-        scope: "user",
-        name: "release-audit",
-        description: "Review release notes",
-        inputs: [],
-        tools: [],
-        body: "Audit release risk.",
-      },
-    ]);
-    expect(customizations.skills).toEqual([
-      {
-        path: userSkillPath,
-        scope: "user",
-        name: "release-review",
-        description: "Reviews release readiness",
-        userInvocable: true,
-        disableModelInvocation: false,
-      },
-    ]);
+    expect(result.prompts[0]).toMatchObject({
+      path: promptPath,
+      scope: "user",
+      name: "release",
+    });
+    expect(result.skills[0]).toMatchObject({
+      path: skillPath,
+      scope: "user",
+      name: "review",
+    });
   });
 
-  it("derives fallback names and normalizes aliased prompt tools", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await mkdir(join(workspaceRoot, ".machdoch", "instructions"), {
-      recursive: true,
-    });
-    await mkdir(join(workspaceRoot, ".machdoch", "prompts"), {
-      recursive: true,
-    });
-    await mkdir(join(workspaceRoot, ".machdoch", "skills", "fallback-skill"), {
-      recursive: true,
-    });
-
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "instructions", "repo.instructions.md"),
-      `---
-applyTo: src/**/*.ts
----
-Rules.
-`,
-    );
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "prompts", "review.prompt.md"),
-      `---
-description: Review the workspace
-tools: [terminal, bash, website, uuid, terminal, unknown]
----
-Prompt body.
-`,
-    );
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "skills", "fallback-skill", "SKILL.md"),
-      "Skill body without frontmatter.",
-    );
-
-    const customizations = await discoverCustomizations(workspaceRoot);
-
-    expect(customizations.instructions).toEqual([
-      {
-        kind: "conditional",
-        path: ".machdoch/instructions/repo.instructions.md",
-        name: "repo",
-        body: "Rules.",
-        applyTo: "src/**/*.ts",
-        keywords: [],
-      },
-    ]);
-    expect(customizations.prompts).toEqual([
-      {
-        path: ".machdoch/prompts/review.prompt.md",
-        name: "review",
-        description: "Review the workspace",
-        inputs: [],
-        tools: ["shell", "browser", "utilities"],
-        body: "Prompt body.",
-      },
-    ]);
-    expect(customizations.skills).toEqual([
-      {
-        path: ".machdoch/skills/fallback-skill/SKILL.md",
-        name: "fallback-skill",
-        description: "No description provided.",
-        userInvocable: true,
-        disableModelInvocation: false,
-      },
-    ]);
-  });
-
-  it("ignores GitHub-style customization files unless compatibility mode is enabled", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await mkdir(join(workspaceRoot, ".github", "instructions"), {
-      recursive: true,
-    });
+  it("discovers GitHub prompts and skills only when enabled", async () => {
+    const workspaceRoot = await createTemporaryDirectory();
     await mkdir(join(workspaceRoot, ".github", "prompts"), {
       recursive: true,
     });
-    await mkdir(join(workspaceRoot, ".github", "skills", "repo-skill"), {
+    await mkdir(join(workspaceRoot, ".github", "skills", "review"), {
       recursive: true,
     });
-
     await writeFile(
-      join(workspaceRoot, ".github", "copilot-instructions.md"),
-      "GitHub instructions",
-    );
-    await writeFile(join(workspaceRoot, "AGENTS.md"), "Agent instructions");
-    await writeFile(
-      join(workspaceRoot, ".github", "instructions", "repo.instructions.md"),
-      `---
-name: Repo rules
-keywords: ["release"]
----
-Rules.
-`,
+      join(workspaceRoot, ".github", "prompts", "review.prompt.md"),
+      "---\ntools: [git, terminal, uuid, unknown]\n---\nReview.\n",
     );
     await writeFile(
-      join(workspaceRoot, ".github", "prompts", "release.prompt.md"),
-      `---
-name: release
-tools: ["git"]
----
-Prompt body.
-`,
-    );
-    await writeFile(
-      join(workspaceRoot, ".github", "skills", "repo-skill", "SKILL.md"),
-      `---
-description: Repo skill
----
-Skill body.
-`,
+      join(workspaceRoot, ".github", "skills", "review", "SKILL.md"),
+      "Review skill.",
     );
 
-    const withoutCompatibility = await discoverCustomizations(workspaceRoot);
-    const withCompatibility = await discoverCustomizations(workspaceRoot, {
+    const disabled = await discoverCustomizations(workspaceRoot);
+    expect(disabled.prompts).toEqual([]);
+    expect(disabled.skills).toEqual([]);
+
+    const enabled = await discoverCustomizations(workspaceRoot, {
       discoverGithubCustomizations: true,
     });
-
-    expect(withoutCompatibility.instructions).toHaveLength(0);
-    expect(withoutCompatibility.prompts).toHaveLength(0);
-    expect(withoutCompatibility.skills).toHaveLength(0);
-
-    expect(withCompatibility.instructions).toEqual([
-      {
-        kind: "always-on",
-        path: ".github/copilot-instructions.md",
-        name: "copilot-instructions",
-        body: "GitHub instructions",
-        keywords: [],
-        scope: "compatibility",
-      },
-      {
-        kind: "always-on",
-        path: "AGENTS.md",
-        name: "AGENTS",
-        body: "Agent instructions",
-        keywords: [],
-        scope: "compatibility",
-      },
-      {
-        kind: "conditional",
-        path: ".github/instructions/repo.instructions.md",
-        name: "Repo rules",
-        body: "Rules.",
-        keywords: ["release"],
-        scope: "compatibility",
-      },
-    ]);
-    expect(withCompatibility.prompts).toEqual([
-      {
-        path: ".github/prompts/release.prompt.md",
-        scope: "compatibility",
-        name: "release",
-        inputs: [],
-        tools: ["git"],
-        body: "Prompt body.",
-      },
-    ]);
-    expect(withCompatibility.skills).toEqual([
-      {
-        path: ".github/skills/repo-skill/SKILL.md",
-        scope: "compatibility",
-        name: "repo-skill",
-        description: "Repo skill",
-        userInvocable: true,
-        disableModelInvocation: false,
-      },
-    ]);
-  });
-
-  it("discovers user-global instructions when explicitly enabled", async () => {
-    const workspaceRoot = await createWorkspace();
-    const userConfigRoot = await createWorkspace();
-    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
-
-    await mkdir(join(userConfigRoot, "instructions"), {
-      recursive: true,
+    expect(enabled.prompts[0]).toMatchObject({
+      path: ".github/prompts/review.prompt.md",
+      scope: "github",
+      name: "review",
+      tools: ["git", "shell", "utilities"],
     });
-    await writeFile(
-      join(userConfigRoot, "instructions.md"),
-      "Use the user's global defaults.",
-    );
-    await writeFile(
-      join(userConfigRoot, "instructions", "typescript.instructions.md"),
-      `---
-name: User TypeScript rules
-mode: agent-requested
-audience: executor
-applyTo:
-  - src/**/*.ts
-  - tests/**/*.ts
-exclude:
-  - src/generated/**
-keywords: typescript, strict
-priority: 40
----
-Prefer strict TypeScript.
-`,
-    );
-
-    const withoutUserInstructions = await discoverCustomizations(workspaceRoot);
-    const withUserInstructions = await discoverCustomizations(workspaceRoot, {
-      discoverUserCustomizations: true,
+    expect(enabled.skills[0]).toMatchObject({
+      path: ".github/skills/review/SKILL.md",
+      scope: "github",
+      name: "review",
     });
-
-    expect(withoutUserInstructions.instructions).toHaveLength(0);
-    expect(withUserInstructions.instructions).toEqual([
-      {
-        kind: "always-on",
-        path: join(userConfigRoot, "instructions.md"),
-        name: "user-instructions",
-        body: "Use the user's global defaults.",
-        keywords: [],
-        scope: "user",
-      },
-      {
-        kind: "conditional",
-        path: join(
-          userConfigRoot,
-          "instructions",
-          "typescript.instructions.md",
-        ),
-        name: "User TypeScript rules",
-        body: "Prefer strict TypeScript.",
-        applyTo: "src/**/*.ts",
-        applyToPatterns: ["src/**/*.ts", "tests/**/*.ts"],
-        excludePatterns: ["src/generated/**"],
-        keywords: ["typescript", "strict"],
-        priority: 40,
-        mode: "agent-requested",
-        audience: "executor",
-        scope: "user",
-      },
-    ]);
-  });
-
-  it("discovers instructions scoped to a specific Ralph flow", async () => {
-    const workspaceRoot = await createWorkspace();
-    const flowInstructionRoot = join(
-      workspaceRoot,
-      ".machdoch",
-      "ralph",
-      "instructions",
-      "build-flow",
-    );
-
-    await mkdir(join(flowInstructionRoot, "instructions"), {
-      recursive: true,
-    });
-    await writeFile(
-      join(flowInstructionRoot, "instructions.md"),
-      "Always apply build flow defaults.",
-    );
-    await writeFile(
-      join(flowInstructionRoot, "instructions", "release.instructions.md"),
-      `---
-name: Release flow rules
-mode: auto
-keywords: release
----
-Keep release steps idempotent.
-`,
-    );
-
-    await expect(discoverCustomizations(workspaceRoot)).resolves.toMatchObject({
-      instructions: [],
-    });
-
-    const customizations = await discoverCustomizations(workspaceRoot, {
-      ralphFlow: {
-        id: "Build Flow",
-        scope: "workspace",
-      },
-    });
-
-    expect(customizations.instructions).toEqual([
-      {
-        kind: "always-on",
-        path: ".machdoch/ralph/instructions/build-flow/instructions.md",
-        name: "build-flow-instructions",
-        body: "Always apply build flow defaults.",
-        keywords: [],
-        scope: "ralph-flow",
-        ralphFlowId: "build-flow",
-        ralphFlowScope: "workspace",
-      },
-      {
-        kind: "conditional",
-        path: ".machdoch/ralph/instructions/build-flow/instructions/release.instructions.md",
-        name: "Release flow rules",
-        body: "Keep release steps idempotent.",
-        keywords: ["release"],
-        mode: "auto",
-        scope: "ralph-flow",
-        ralphFlowId: "build-flow",
-        ralphFlowScope: "workspace",
-      },
-    ]);
   });
 });

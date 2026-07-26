@@ -314,7 +314,7 @@ Commands:
 | `machdoch --default-model <model>` | Persist workspace default model |
 | `machdoch config` | Print resolved runtime config |
 | `machdoch config set <setting> <value>` | Persist a user or workspace setting |
-| `machdoch inspect` | List discovered workspace customizations |
+| `machdoch inspect` | List discovered prompts and skills |
 | `machdoch tools` | List tool areas and model-facing function calls |
 
 Flags:
@@ -362,7 +362,7 @@ The desktop app adds:
 - Workspace, provider, model, and mode controls per session.
 - Context attachments for files, folders, and images.
 - Per-session memory, global memory, and desktop UI-control toggles.
-- Settings panels for Providers, Web search, Agent, Appearance, Voice, Memory, and Desktop.
+- Settings panels for Providers, Instructions, Web search, Agent, Appearance, Voice, Memory, and Desktop.
 - Quick Voice with global shortcut and optional spoken replies.
 - Assistant bubble, popup, tray behavior, sign-in startup behavior, and optional Windows administrator launch.
 
@@ -370,77 +370,67 @@ Desktop task runs are executed through the shared CLI one-shot path. The GUI for
 
 On Windows, **Settings > Desktop > Always run as administrator** stores a user preference. Packaged app launches request elevation through the normal UAC prompt. Dev builds do not relaunch unless `MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV=true` is set.
 
-## Workspace Customization
+## Instructions and Workspace Customization
 
-Native customization files live under `.machdoch/`:
+Machdoch instructions have four explicit sources:
+
+- reusable Markdown profiles in the user-owned instruction library;
+- ordered all-workspaces, entire-workspace, and folder assignments;
+- ordinary root or nested repository `AGENTS.md` files;
+- optional RALPH flow `guidance`.
+
+Task keywords, mentioned paths, roles, globs, frontmatter, and manual references
+do not select instructions. The resolver always uses structural assignments and
+local scopes, freezes one canonical envelope before the first provider call,
+and never truncates or silently omits a source.
+
+Non-empty MCP server initialization hints are separate advisory context. Hints
+from enabled servers are frozen, exact-deduplicated, bounded, budgeted, and
+delivered to every model-executed role without granting tools or permissions.
+
+Prompts and skills remain ordinary workspace customizations:
 
 ```text
 .machdoch/
   config.json
-  instructions.md
-  instructions/
-    security.instructions.md
-  ralph/
-    instructions/
-      review-flow/
-        instructions.md
-        instructions/
-          release.instructions.md
   prompts/
     debug-build.prompt.md
   skills/
     browser-automation/
       SKILL.md
+AGENTS.md
+apps/
+  web/
+    AGENTS.md
 ```
 
-Discovered native files:
-
-- `.machdoch/instructions.md`
-- `.machdoch/instructions/**/*.instructions.md`
-- `.machdoch/prompts/**/*.prompt.md`
-- `.machdoch/skills/**/SKILL.md`
-
-When `compatibility.discoverGithubCustomizations` is enabled, `machdoch` also discovers:
-
-- `.github/copilot-instructions.md`
-- `.github/instructions/**/*.instructions.md`
-- `.github/prompts/**/*.prompt.md`
-- `.github/skills/**/SKILL.md`
-- `AGENTS.md`
-
-Global instruction files are discovered from the user config directory when a
-task or management command loads customizations:
-
-- `instructions.md`
-- `instructions/**/*.instructions.md`
-
-Ralph flow instruction files are discovered only for the flow being run,
-resumed, scheduled, generated from an existing flow, or selected by
-`machdoch instructions --scope ralph-flow`:
-
-- `.machdoch/ralph/instructions/<flow-id>/instructions.md`
-- `.machdoch/ralph/instructions/<flow-id>/instructions/**/*.instructions.md`
-- user-scoped Ralph flows use the same `ralph/instructions/<flow-id>/...`
-  layout under the user config directory
-
-Instruction files may declare frontmatter metadata:
-
-- `mode`: `always`, `auto`, `agent-requested`, `manual`, or `disabled`
-- `audience`: `executor`, `validator`, `generator`, or `all`
-- `applyTo` and `exclude`: workspace glob lists
-- `keywords`: task-text activation terms
-- `priority`: higher priority instructions are ordered first
-
-Manage instruction files from the desktop Settings > Instructions panel or with:
+Manage profiles, assignments, local files, and previews from **Settings >
+Instructions**, or use the CLI:
 
 ```bash
-machdoch instructions list --scope workspace
-machdoch instructions show "Security defaults"
-machdoch instructions create "Review rules" --prompt "Prefer focused tests."
-machdoch instructions save "Review rules" --path .machdoch/instructions/review.instructions.md --prompt "Updated rules."
-machdoch instructions generate "Review rules" --prompt "Create durable review instructions for TypeScript work."
-machdoch instructions create "Flow rules" --scope ralph-flow --ralph-flow review-flow --prompt "Keep this flow focused."
+machdoch instructions profiles create "Review rules" --prompt "Prefer focused tests."
+machdoch instructions profiles list --json
+machdoch instructions workspaces register .
+machdoch instructions assignments set <workspace-uuid> --path . --profile <profile-uuid>
+machdoch instructions local create apps/web --prompt "Use the web package commands."
+machdoch instructions resolve --path apps/web/src --json
 ```
+
+Profile and local bodies are omitted from JSON inspection by default. Use
+`--include-content` only when deliberate disclosure is appropriate. Local
+create/edit/delete commands are explicit repository writes; local edit and
+delete require the current `--expected-digest`.
+
+Persistent `provider-sync` reconciles MCP configuration only. Instruction
+delivery is run-scoped: API providers receive the frozen envelope in their
+request field, while CLI providers use owner-restricted temporary adaptation.
+Compatible (rather than fully conformant) delivery is shown before execution
+and requires explicit acknowledgement; unattended runs block by default.
+Persistent sync is opt-in and blocks unmanaged name collisions, stale or linked
+targets, and malformed ownership state rather than overwriting them.
+
+See [Instruction profiles](docs/instruction-profiles.md) for the complete
+workflow, precedence rules, provider support, transfer, and recovery.
 
 ## Capabilities
 

@@ -2021,12 +2021,12 @@ export const McpSettingsPanel = ({
   return (
     <SettingsCard
       title="MCP servers"
-      description="Manage Model Context Protocol servers, credentials, discovery, and tool exposure."
+      description="Configure servers, credentials, discovery, and tools."
     >
       <div className="grid gap-4 py-4">
         <PanelBlock
           title="Automatic provider enrollment"
-          description="When enabled, Machdoch projects its managed instructions and MCP servers into detected provider CLIs. Machdoch-launched runs still receive an isolated per-task snapshot."
+          description="Syncs managed MCP entries only; instructions remain run-scoped."
         >
           <ProviderSyncControl
             workspaceRoot={setup.workspaceRoot}

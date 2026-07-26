@@ -154,6 +154,10 @@ const isMessageVersionRegression = (
     return true;
   }
 
+  if (currentMessage.settings && !incomingMessage.settings) {
+    return true;
+  }
+
   const currentSource = currentMessage.source;
   const incomingSource = incomingMessage.source;
 
@@ -817,6 +821,7 @@ const didRemoveBaseMessages = (
 const getMessageCompletenessScore = (message: ChatSessionMessage): number => {
   let score = message.content.trim().length;
   score += (message.contextAttachments?.length ?? 0) * 1_000;
+  score += message.settings ? 500 : 0;
 
   const source = message.source;
 

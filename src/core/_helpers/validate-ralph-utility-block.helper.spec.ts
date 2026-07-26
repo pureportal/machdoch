@@ -73,16 +73,6 @@ describe("validateRalphUtilityBlock", () => {
       { type: "SELECT_SCOPE", strategy: "round-robin" },
       { type: "MARK_SCOPE_RESULT" },
       { type: "SEARCH_FILES", glob: "**/*.ts" },
-      {
-        type: "UI_ANALYZE",
-        adapter: "browser",
-        targetUrl: "http://127.0.0.1:4173",
-        server: { healthUrl: "https://example.com/health" },
-        viewports: [
-          { width: 320, height: 320 },
-          { width: 3840, height: 3840 },
-        ],
-      },
       { type: "SET_VARIABLE", variableName: "result", value: "" },
       { type: "TRANSFORM_JSON", expression: "input" },
       { type: "VALIDATE_JSON", schema: null },
@@ -285,46 +275,4 @@ describe("validateRalphUtilityBlock", () => {
     ).toContain("utility-condition-path-required");
   });
 
-  it("validates UI_ANALYZE adapters, URLs, and viewport bounds", () => {
-    const browserErrors = validateUtility({
-      type: "UI_ANALYZE",
-      adapter: "browser",
-      targetUrl: "file:///tmp/index.html",
-      server: { healthUrl: "ftp://127.0.0.1/health" },
-      viewports: [{ width: 319, height: 900 }],
-    });
-
-    expect(getCodes(browserErrors)).toEqual(
-      expect.arrayContaining([
-        "utility-ui-target-url-invalid",
-        "utility-ui-health-url-invalid",
-        "utility-ui-viewport-invalid",
-      ]),
-    );
-
-    expect(
-      getCodes(validateUtility({ type: "UI_ANALYZE", adapter: "image" })),
-    ).toEqual(
-      expect.arrayContaining([
-        "utility-ui-target-required",
-        "utility-ui-screenshot-required",
-      ]),
-    );
-
-    expect(
-      getCodes(
-        validateUtility({ type: "UI_ANALYZE", adapter: "playwright-mcp" }),
-      ),
-    ).toContain("utility-ui-mcp-required");
-  });
-
-  it("allows templated UI_ANALYZE URLs because runtime resolves placeholders", () => {
-    expect(
-      validateUtility({
-        type: "UI_ANALYZE",
-        adapter: "browser",
-        targetUrl: "{{targetUrl:url}}",
-      }),
-    ).toEqual([]);
-  });
 });

@@ -39,7 +39,6 @@ const runtimeConfig: RuntimeConfig = {
 
 const customizations: CustomizationDiscoveryResult = {
   workspaceRoot: "C:/workspace",
-  instructions: [],
   prompts: [],
   skills: [],
 };

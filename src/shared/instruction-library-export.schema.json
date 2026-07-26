@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://machdoch.local/schemas/instruction-library-export.schema.json",
+  "title": "Portable Machdoch instruction library export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "exportedAt", "profiles", "defaults"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "profiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profiles"],
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uuid" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "workspaces": {
+      "type": "array",
+      "description": "Optional unbound assignment records. Absolute workspace roots are intentionally forbidden and each record must be explicitly relinked after import.",
+      "items": { "$ref": "#/$defs/unboundWorkspace" }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "body", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 131072,
+          "description": "The runtime additionally enforces a 131072-byte UTF-8 limit; JSON Schema maxLength counts Unicode code points."
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "profiles"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(\\.|(?![A-Za-z]:)(?!\\.\\.?(?:/|$))[^/\\\\\\u0000]+(?:/(?!\\.\\.?(?:/|$))[^/\\\\\\u0000]+)*)$"
+        },
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uuid" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "identityHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gitRemote": { "type": "string", "maxLength": 2000 },
+        "repositoryId": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "unboundWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scopes"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "displayName": { "type": "string", "maxLength": 300 },
+        "identityHints": { "$ref": "#/$defs/identityHints" },
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scope" }
+        }
+      }
+    }
+  }
+}

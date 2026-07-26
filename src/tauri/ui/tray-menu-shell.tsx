@@ -14,6 +14,10 @@ import {
   quitMachdoch,
   revealMainWindow,
 } from "./assistant-surface";
+import {
+  IS_DEVELOPMENT_BUILD,
+  MACHDOCH_DISPLAY_NAME,
+} from "./build-info";
 
 const TRAY_MENU_BLUR_HIDE_DELAY_MS = 90;
 
@@ -79,7 +83,7 @@ export const TrayMenuShell = (): JSX.Element => {
   const actions: TrayMenuAction[] = [
     {
       id: "open-app",
-      label: "Open machdoch",
+      label: `Open ${MACHDOCH_DISPLAY_NAME}`,
       icon: ArrowUpRight,
       tone: "slate",
       onSelect: revealMainWindow,
@@ -97,7 +101,7 @@ export const TrayMenuShell = (): JSX.Element => {
       : []),
     {
       id: "quit",
-      label: "Quit machdoch",
+      label: `Quit ${MACHDOCH_DISPLAY_NAME}`,
       icon: LogOut,
       tone: "danger",
       onSelect: quitMachdoch,
@@ -221,10 +225,15 @@ export const TrayMenuShell = (): JSX.Element => {
             >
               <Sparkles className="h-5 w-5" />
             </span>
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-sm font-semibold text-white">
                 machdoch
               </p>
+              {IS_DEVELOPMENT_BUILD ? (
+                <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]">
+                  Developer
+                </span>
+              ) : null}
             </div>
           </div>
         </header>

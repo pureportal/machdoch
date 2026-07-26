@@ -5,7 +5,6 @@ import type {
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
-import { compileInstructionBundle } from "../provider-enrollment/instruction-compiler.js";
 
 const BROAD_REASONING_TASK_PATTERN =
   /\b(debug|diagnos(?:e|is)|investigat(?:e|ion)|root cause|analy(?:ze|sis)|compare|research|benchmark|best\s+practices?|optimi(?:se|ze|sation|zation)|performance|security|architecture|design|redesign|migration|workflow|agent|autopilot|orchestrat(?:e|ion)|refactor|whole|entire|system|multi(?:ple|-)?step|multi(?:ple|-)?file)\b/i;
@@ -232,13 +231,10 @@ export const createExecutorSystemPrompt = (
     taskContext,
     continuationRequest,
   );
-  const instructionBundle = compileInstructionBundle(
-    taskContext,
-    additionalSystemPromptSections,
-  );
+  const instructionResolution = taskContext.instructionResolution;
   const instructionText =
-    instructionBundle.renderedText ||
-    "No additional task-specific instructions were discovered.";
+    instructionResolution?.renderedEnvelope ??
+    "MACHDOCH-INSTRUCTION-ENVELOPE/1\nNo canonical instruction snapshot was supplied.\n";
   const promptContextLines = taskContext.invokedPrompt
     ? [
         `Resolved prompt: /${taskContext.invokedPrompt.name}`,
@@ -294,16 +290,19 @@ export const createExecutorSystemPrompt = (
       .filter((line): line is string => line !== undefined)
       .join("\n"),
     [
-      `<instructions digest="${instructionBundle.digest}">`,
+      `<instructions digest="${instructionResolution?.canonicalDigest ?? "unresolved"}">`,
       instructionText,
       "</instructions>",
     ].join("\n"),
-    mcpInitializationSections.length > 0
+    additionalSystemPromptSections.length > 0
       ? [
-          "<mcp_server_initialization_instructions>",
-          ...mcpInitializationSections,
-          "</mcp_server_initialization_instructions>",
+          "<machdoch_runtime_sections>",
+          ...additionalSystemPromptSections,
+          "</machdoch_runtime_sections>",
         ].join("\n\n")
+      : undefined,
+    mcpInitializationSections.length > 0
+      ? mcpInitializationSections.join("\n\n")
       : undefined,
     createMemoryContract(tools, conversationContext),
     conversationContext.uiControlEnabled

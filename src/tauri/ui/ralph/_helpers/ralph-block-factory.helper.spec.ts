@@ -5,8 +5,6 @@ import type {
 import {
   createBlock,
   createBlockId,
-  createCopiedBlock,
-  createDefaultUtilityConfig,
   createEdgeId,
 } from "./ralph-block-factory.helper";
 
@@ -49,35 +47,6 @@ describe("ralph-block-factory helper", () => {
     );
   });
 
-  it("prevents copying a second start block", () => {
-    const startBlock: RalphFlowBlock = {
-      id: "start",
-      type: "START",
-      title: "Start",
-      position: { x: 80, y: 120 },
-    };
-
-    expect(createCopiedBlock(createFlow([startBlock]), startBlock)).toBeNull();
-  });
-
-  it("copies non-start blocks with a new id, title, and displaced position", () => {
-    const promptBlock: RalphFlowBlock = {
-      id: "prompt-1",
-      type: "PROMPT",
-      title: "Collect data",
-      prompt: "Collect it.",
-      position: { x: 80, y: 120 },
-    };
-    const copy = createCopiedBlock(createFlow([promptBlock]), promptBlock);
-
-    expect(copy).toMatchObject({
-      id: "prompt-2",
-      title: "Collect data Copy",
-      position: { x: 116, y: 156 },
-    });
-    expect(copy).not.toBe(promptBlock);
-  });
-
   it("creates utility blocks with the wait default config", () => {
     const block = createBlock(createFlow(), "UTILITY");
 
@@ -104,21 +73,4 @@ describe("ralph-block-factory helper", () => {
     });
   });
 
-  it("creates default UI analysis config for existing preview servers", () => {
-    expect(createDefaultUtilityConfig("UI_ANALYZE")).toMatchObject({
-      type: "UI_ANALYZE",
-      adapter: "browser",
-      server: {
-        mode: "existing",
-        reuseExisting: true,
-      },
-      checks: {
-        accessibility: true,
-        console: true,
-        network: true,
-        responsive: true,
-        screenshots: true,
-      },
-    });
-  });
 });

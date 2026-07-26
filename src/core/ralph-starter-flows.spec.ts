@@ -954,11 +954,6 @@ describe("Ralph starter flows", () => {
           to: "validate-goal",
         }),
         expect.objectContaining({
-          from: "visual-decision",
-          fromOutput: "NO_MATCH",
-          to: "validate-goal",
-        }),
-        expect.objectContaining({
           from: "goals-per-run-counter",
           to: "detect-project-commands",
         }),
@@ -975,10 +970,6 @@ describe("Ralph starter flows", () => {
           from: "implement-feature",
           fromOutput: "SUCCESS",
           to: "verification-decision",
-        }),
-        expect.objectContaining({
-          from: "visual-decision",
-          to: "git-diff-summary",
         }),
       ]),
     );
@@ -1150,11 +1141,6 @@ describe("Ralph starter flows", () => {
           fromOutput: "NO_MATCH",
           to: "validate-progress",
         }),
-        expect.objectContaining({
-          from: "visual-decision",
-          fromOutput: "NO_MATCH",
-          to: "validate-progress",
-        }),
       ]),
     );
     expect(flow?.edges).not.toEqual(
@@ -1163,10 +1149,6 @@ describe("Ralph starter flows", () => {
           from: "implement-feature",
           fromOutput: "SUCCESS",
           to: "verification-decision",
-        }),
-        expect.objectContaining({
-          from: "visual-decision",
-          to: "git-diff-summary",
         }),
       ]),
     );
@@ -1659,292 +1641,6 @@ describe("Ralph starter flows", () => {
     });
   });
 
-  it("includes an autonomous UI improvement loop with design-policy and runtime visual-review controls", () => {
-    const starterFlow = getRalphStarterFlow(
-      "autonomous-ui-improvement-loop",
-    );
-    const flow = starterFlow?.flow;
-    const designPolicy = flow?.variables?.find(
-      (variable) => variable.name === "designPolicy",
-    );
-    const scopeSelectionStrategy = flow?.variables?.find(
-      (variable) => variable.name === "scopeSelectionStrategy",
-    );
-    const riskTolerance = flow?.variables?.find(
-      (variable) => variable.name === "riskTolerance",
-    );
-    const enableVisualReview = flow?.variables?.find(
-      (variable) => variable.name === "enableVisualReview",
-    );
-    const targetUrl = flow?.variables?.find(
-      (variable) => variable.name === "targetUrl",
-    );
-    const targetUrlEnvKey = flow?.variables?.find(
-      (variable) => variable.name === "targetUrlEnvKey",
-    );
-    const healthUrlEnvKey = flow?.variables?.find(
-      (variable) => variable.name === "healthUrlEnvKey",
-    );
-    const chooseUiImprovement = flow?.blocks.find(
-      (block) => block.id === "choose-ui-improvement",
-    );
-    const selectVerificationCommand = flow?.blocks.find(
-      (block) => block.id === "select-verification-command",
-    );
-    const resolveRuntimeUrls = flow?.blocks.find(
-      (block) => block.id === "resolve-runtime-urls",
-    );
-    const passCounter = flow?.blocks.find(
-      (block) => block.id === "count-ui-improvement-pass",
-    );
-    const implementImprovement = flow?.blocks.find(
-      (block) => block.id === "implement-ui-improvement",
-    );
-    const visualReview = flow?.blocks.find(
-      (block) => block.id === "visual-review",
-    );
-    const validateImprovement = flow?.blocks.find(
-      (block) => block.id === "validate-ui-improvement",
-    );
-    const importedAt = "2026-07-02T00:00:00.000Z";
-    const importedFlow = starterFlow
-      ? createImportedRalphStarterFlow(starterFlow, {
-          id: "imported-ui-loop",
-          alias: "imported-ui-loop",
-          importedAt,
-        })
-      : undefined;
-    const serializedFlow = JSON.stringify(flow);
-    const policyText = designPolicy?.default ?? "";
-
-    expect(starterFlow).toMatchObject({
-      defaultAlias: "autonomous-ui-improvement-loop",
-      category: "Design Quality",
-    });
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(5);
-    expect(flow).toMatchObject({
-      name: "Autonomous UI Improvement Loop",
-      settings: { maxTransitions: 500 },
-    });
-    expect(importedFlow).toMatchObject({
-      id: "imported-ui-loop",
-      alias: "imported-ui-loop",
-      source: {
-        kind: "starter",
-        id: "autonomous-ui-improvement-loop",
-        version: starterFlow?.version,
-        importedAt,
-      },
-    });
-    expect(designPolicy).toMatchObject({
-      type: "text",
-    });
-    expect(policyText).toContain("clean, minimalist, modern");
-    expect(policyText).toContain("responsive and mobile friendly");
-    expect(policyText).toContain("badges sparingly");
-    expect(policyText).toContain("overexplained helper text");
-    expect(policyText).toContain("Use icons only when they improve");
-    expect(policyText).toContain("WCAG 2.2");
-    expect(policyText).toContain("overlapping text");
-    expect(policyText).toContain("hydration-sensitive");
-    expect(riskTolerance).toMatchObject({
-      type: "text",
-      default: "ambitious",
-    });
-    expect(scopeSelectionStrategy).toMatchObject({
-      type: "text",
-      default: "ui-first",
-    });
-    expect(enableVisualReview).toMatchObject({
-      type: "boolean",
-      default: "true",
-    });
-    expect(targetUrl).toMatchObject({
-      type: "url",
-      default: "",
-    });
-    expect(targetUrlEnvKey).toMatchObject({
-      type: "text",
-      default: "RALPH_UI_TARGET_URL",
-    });
-    expect(healthUrlEnvKey).toMatchObject({
-      type: "text",
-      default: "RALPH_UI_HEALTH_URL",
-    });
-    expect(chooseUiImprovement).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "PROMPT_JSON",
-        prompt: expect.stringContaining("uiScope={{uiScope:text=auto-detect}}"),
-      },
-    });
-    expect(chooseUiImprovement).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        prompt: expect.stringContaining("cohesive UI work package"),
-      },
-    });
-    expect(selectVerificationCommand).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("focusedVerificationCommand"),
-      },
-    });
-    expect(resolveRuntimeUrls).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("process.env"),
-      },
-    });
-    expect(resolveRuntimeUrls).toMatchObject({
-      utility: {
-        expression: expect.stringContaining("targetUrlEnvKey"),
-      },
-    });
-    expect(passCounter).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "LOOP_COUNTER",
-        counterName: expect.stringContaining(
-          "{{data:choose-ui-improvement:output.selectedCandidate.id}}",
-        ),
-        maxAttempts: "{{maxUiImprovementPasses:number=8}}",
-      },
-    });
-    expect(implementImprovement).toMatchObject({
-      type: "PROMPT",
-      prompt: expect.stringContaining("latest validator/reviewer feedback"),
-    });
-    expect(implementImprovement).toMatchObject({
-      type: "PROMPT",
-      prompt: expect.stringContaining("work-yield evidence"),
-    });
-    expect(implementImprovement).toMatchObject({
-      type: "PROMPT",
-      prompt: expect.stringContaining("verification routing"),
-    });
-    expect(visualReview).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "UI_ANALYZE",
-        targetUrl: "{{data:resolve-runtime-urls:output.targetUrl}}",
-        server: {
-          mode: "managed",
-          healthUrl: "{{data:resolve-runtime-urls:output.healthUrl}}",
-          command: "{{data:resolve-runtime-urls:output.serverCommand}}",
-          cwd: "{{data:resolve-runtime-urls:output.serverCwd}}",
-          reuseExisting: true,
-        },
-      },
-    });
-    expect(validateImprovement).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "VALIDATOR_JSON",
-        prompt: expect.stringContaining("flow counter enforces"),
-      },
-    });
-    expect(serializedFlow).toContain("provisional UI portfolio");
-    expect(serializedFlow).toContain("{{scopeSelectionStrategy:text=ui-first}}");
-    expect(flow?.edges).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          from: "git-snapshot-before",
-          to: "baseline-verification",
-        }),
-        expect.objectContaining({
-          from: "baseline-verification",
-          fromOutput: "SUCCESS",
-          to: "count-ui-improvement-pass",
-        }),
-        expect.objectContaining({
-          from: "count-ui-improvement-pass",
-          fromOutput: "CONTINUE",
-          to: "implement-ui-improvement",
-        }),
-        expect.objectContaining({
-          from: "count-ui-improvement-pass",
-          fromOutput: "LIMIT_REACHED",
-          to: "defer-scope",
-        }),
-        expect.objectContaining({
-          from: "count-verification-repair",
-          fromOutput: "LIMIT_REACHED",
-          to: "defer-scope",
-        }),
-        expect.objectContaining({
-          from: "implement-ui-improvement",
-          fromOutput: "SUCCESS",
-          to: "select-verification-command",
-        }),
-        expect.objectContaining({
-          from: "validate-ui-improvement",
-          fromOutput: "CONTINUE",
-          to: "count-ui-improvement-pass",
-        }),
-        expect.objectContaining({
-          from: "validate-ui-improvement",
-          fromOutput: "RETRY",
-          to: "count-verification-repair",
-        }),
-        expect.objectContaining({
-          from: "archive-active-ui-improvement",
-          fromOutput: "SUCCESS",
-          to: "final-report",
-        }),
-        expect.objectContaining({
-          from: "archive-active-ui-improvement",
-          fromOutput: "NOT_FOUND",
-          to: "final-report",
-        }),
-        expect.objectContaining({
-          from: "mark-scope-result",
-          fromOutput: "SUCCESS",
-          to: "record-done-outcome",
-        }),
-        expect.objectContaining({
-          from: "scope-cycle-complete",
-          fromOutput: "NO_MATCH",
-          to: "select-scope",
-        }),
-      ]),
-    );
-    expect(flow?.edges).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          from: "archive-active-ui-improvement",
-          to: "read-completed-ui-improvements",
-        }),
-      ]),
-    );
-    expect(validateImprovement).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "VALIDATOR_JSON",
-        prompt: expect.stringContaining("desktop/mobile overflow"),
-      },
-    });
-    expect(serializedFlow.toLowerCase()).toContain("do not start/restart servers");
-    expect(serializedFlow).not.toContain("localhost");
-    expect(serializedFlow).not.toContain("127.0.0.1");
-    expect(serializedFlow).not.toContain("npm run dev");
-    expect(serializedFlow).not.toContain("pnpm dev");
-    expect(serializedFlow).not.toContain("yarn dev");
-    expect(serializedFlow).not.toContain("next dev");
-    expect(serializedFlow).not.toContain("tauri dev");
-    if (visualReview?.type === "UTILITY") {
-      expect(visualReview.utility).toMatchObject({
-        type: "UI_ANALYZE",
-        server: { mode: "managed", reuseExisting: true },
-      });
-      expect(visualReview.utility.server?.command).toBe(
-        "{{data:resolve-runtime-urls:output.serverCommand}}",
-      );
-    }
-  });
-
   it("keeps bundled git-diff validators tolerant of shared workspace changes", () => {
     const scopeGuardedStarterIds = new Set([
       "autonomous-code-improvement-loop",
@@ -1971,106 +1667,6 @@ describe("Ralph starter flows", () => {
           "ignore unrelated workspace changes",
         );
       }
-    }
-  });
-
-  it("configures visual UI analysis for URL or screenshot evidence", () => {
-    const visualReviewBlocks = [
-      {
-        starterFlowId: "autonomous-code-improvement-loop",
-        minimumVersion: 8,
-        decisionBlockId: "visual-decision",
-        analyzeBlockId: "visual-review",
-        expectedTargetUrl: "{{targetUrl:url=}}",
-        expectedHealthUrl: "{{healthUrl:url=}}",
-        expectedServerMode: "existing",
-      },
-      {
-        starterFlowId: "autonomous-ui-improvement-loop",
-        minimumVersion: 2,
-        decisionBlockId: "visual-decision",
-        analyzeBlockId: "visual-review",
-        expectedTargetUrl: "{{data:resolve-runtime-urls:output.targetUrl}}",
-        expectedHealthUrl: "{{data:resolve-runtime-urls:output.healthUrl}}",
-        expectedServerMode: "managed",
-      },
-      {
-        starterFlowId: "autonomous-feature-generation-loop",
-        minimumVersion: 7,
-        decisionBlockId: "visual-decision",
-        analyzeBlockId: "visual-review",
-        expectedTargetUrl: "{{targetUrl:url=}}",
-        expectedHealthUrl: "{{healthUrl:url=}}",
-        expectedServerMode: "existing",
-      },
-      {
-        starterFlowId: "full-feature-implementation",
-        minimumVersion: 7,
-        decisionBlockId: "visual-decision",
-        analyzeBlockId: "visual-analysis",
-        expectedTargetUrl: "{{targetUrl:url=}}",
-        expectedHealthUrl: "{{healthUrl:url=}}",
-        expectedServerMode: "existing",
-      },
-    ] as const;
-
-    for (const {
-      starterFlowId,
-      minimumVersion,
-      decisionBlockId,
-      analyzeBlockId,
-      expectedTargetUrl,
-      expectedHealthUrl,
-      expectedServerMode,
-    } of visualReviewBlocks) {
-      const starterFlow = getRalphStarterFlow(starterFlowId);
-      const flow = starterFlow?.flow;
-      const decisionBlock = flow?.blocks.find(
-        (block) => block.id === decisionBlockId,
-      );
-      const analyzeBlock = flow?.blocks.find(
-        (block) => block.id === analyzeBlockId,
-      );
-
-      expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
-      expect(decisionBlock).toMatchObject({
-        type: "UTILITY",
-        utility: {
-          type: "CONDITION",
-          condition: {
-            expression: expect.stringContaining("screenshotPath"),
-          },
-        },
-      });
-      expect(analyzeBlock).toMatchObject({
-        type: "UTILITY",
-        utility: {
-          type: "UI_ANALYZE",
-          adapter: "auto",
-          targetUrl: expectedTargetUrl,
-          screenshotPath: "{{screenshotPath:path=}}",
-          server: {
-            mode: expectedServerMode,
-            healthUrl: expectedHealthUrl,
-          },
-          checks: {
-            screenshots: true,
-            accessibility: true,
-            console: true,
-            network: true,
-            responsive: true,
-          },
-          viewports: [
-            { name: "desktop", width: 1280, height: 900 },
-            { name: "tablet", width: 768, height: 1024 },
-            { name: "mobile", width: 390, height: 844 },
-            { name: "small-mobile", width: 320, height: 568 },
-          ],
-          timeoutSeconds: 30,
-          fullPage: true,
-          waitUntil: "domcontentloaded",
-        },
-      });
     }
   });
 
@@ -2476,19 +2072,13 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("researches provisional portfolios before final code, UI, and refactor selection", () => {
+  it("researches provisional portfolios before final code and refactor selection", () => {
     const expectations = [
       {
         id: "autonomous-code-improvement-loop",
         propose: "propose-improvements",
         research: "improvement-research",
         refine: "choose-improvement",
-      },
-      {
-        id: "autonomous-ui-improvement-loop",
-        propose: "propose-ui-improvements",
-        research: "ui-research",
-        refine: "choose-ui-improvement",
       },
       {
         id: "autonomous-refactoring-flow",
@@ -2514,54 +2104,6 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("keeps the UI starter inspection-first, benchmark-aware, and ambitious about coherent scope", () => {
-    const starterFlow = getRalphStarterFlow("autonomous-ui-improvement-loop");
-    const flow = starterFlow?.flow;
-    const proposal = flow?.blocks.find(
-      (block) => block.id === "propose-ui-improvements",
-    );
-    const research = flow?.blocks.find((block) => block.id === "ui-research");
-    const selection = flow?.blocks.find(
-      (block) => block.id === "choose-ui-improvement",
-    );
-    const implementation = flow?.blocks.find(
-      (block) => block.id === "implement-ui-improvement",
-    );
-    const review = flow?.blocks.find(
-      (block) => block.id === "independent-ui-review",
-    );
-    const validator = flow?.blocks.find(
-      (block) => block.id === "validate-ui-improvement",
-    );
-
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(9);
-    expect(proposal).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "PROMPT_JSON",
-        prompt: expect.stringContaining("without editing files"),
-      },
-    });
-    expect(JSON.stringify(proposal)).toContain("sibling views");
-    expect(JSON.stringify(research)).toContain("GitHub Primer");
-    expect(JSON.stringify(research)).toContain("npm registry");
-    expect(JSON.stringify(selection)).toContain("view-level refactor");
-    expect(JSON.stringify(selection)).toContain("rather than by line count");
-    expect(implementation).toMatchObject({
-      type: "PROMPT",
-      prompt: expect.stringContaining("full view/component refactor"),
-    });
-    expect(JSON.stringify(implementation)).toContain(
-      "Do not declare success after a small diff",
-    );
-    expect(JSON.stringify(review)).toContain(
-      "Do not reward a small clean diff",
-    );
-    expect(JSON.stringify(validator)).toContain(
-      "never evidence of completion by themselves",
-    );
-  });
-
   it("keeps strict candidate schemas aligned with the planning prompts", () => {
     const expectations = [
       {
@@ -2582,30 +2124,6 @@ describe("Ralph starter flows", () => {
           "verificationPlan",
           "verificationTier",
           "reviewTier",
-          "rollbackNotes",
-          "remainingRelatedWork",
-        ],
-      },
-      {
-        flowId: "autonomous-ui-improvement-loop",
-        blockId: "choose-ui-improvement",
-        fields: [
-          "id",
-          "title",
-          "evidence",
-          "userValue",
-          "currentBehavior",
-          "proposedBehavior",
-          "relatedChanges",
-          "affectedFiles",
-          "acceptanceCriteria",
-          "expectedOutcome",
-          "visualReviewPlan",
-          "verificationPlan",
-          "verificationTier",
-          "reviewTier",
-          "accessibilityConsiderations",
-          "responsiveConsiderations",
           "rollbackNotes",
           "remainingRelatedWork",
         ],

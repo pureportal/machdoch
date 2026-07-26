@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { promisify } from "node:util";
 import {
   getAgentCliProviders,
   resolveAgentCliProviderBinary,
@@ -14,30 +16,29 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import { discoverCustomizations } from "../customizations.js";
 import { getUserConfigPath, loadWorkspaceEnv } from "../env.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
-import type { DiscoveredInstruction } from "../types.js";
 import {
   PROVIDER_CAPABILITY_REGISTRY,
   probeProviderCli,
 } from "./capability-registry.js";
 import { loadProviderEnrollmentConfig } from "./config.js";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
-import { sha256 } from "./digests.js";
-import { compilePersistentInstructionBundle } from "./instruction-compiler.js";
+import { compareCanonicalStrings, sha256 } from "./digests.js";
 import { projectMcpForProvider } from "./mcp-projector.js";
-import { scanNativeInstructionSources } from "./native-source-scanner.js";
 import {
+  assertStableManagedTargetUnchanged,
   inspectManagedTarget,
   installManagedTarget,
   loadOwnershipManifest,
+  loadOwnershipManifestSnapshot,
+  readStableManagedTarget,
   saveOwnershipManifest,
-  stripManagedProviderRegions,
   uninstallManagedTarget,
   type ManagedTargetFormat,
   type ProviderOwnershipManifest,
   type ProviderOwnershipRecord,
+  type StableManagedTargetSnapshot,
 } from "./ownership-merge.js";
 import {
   getProviderSyncAutostartPath,
@@ -58,9 +59,12 @@ const COVERAGE_FILE_NAME = "coverage-ledger.json";
 const WORKSPACE_REGISTRY_FILE_NAME = "workspace-roots.json";
 const RECONCILE_LOCK_FILE_NAME = "reconcile.state";
 const RECONCILE_LOCK_TIMEOUT_MS = 30_000;
+const execFileAsync = promisify(execFile);
+
+const getReconcileLockTarget = (): string =>
+  join(getProviderEnrollmentStateDirectory(), RECONCILE_LOCK_FILE_NAME);
 
 interface ProviderTargetPaths {
-  instructionPath: string;
   mcpPath: string;
   mcpFormat: Extract<ManagedTargetFormat, "toml" | "json">;
 }
@@ -68,6 +72,7 @@ interface ProviderTargetPaths {
 interface ReconcileOutput {
   status: ProviderSyncStatus;
   ownership: ProviderOwnershipManifest;
+  ownershipTargetSnapshot: StableManagedTargetSnapshot | undefined;
   coverage: EnrollmentCoverageEntry[];
 }
 
@@ -95,7 +100,9 @@ const getWorkspaceStateSuffix = (workspaceRoot: string): string => {
     "/",
   );
   return sha256(
-    process.platform === "win32" ? normalized.toLocaleLowerCase() : normalized,
+    process.platform === "win32"
+      ? normalized.toLocaleLowerCase("en-US")
+      : normalized,
   ).slice(0, 16);
 };
 
@@ -130,26 +137,48 @@ const deduplicateWorkspaceRoots = (roots: readonly string[]): string[] => {
     const resolvedRoot = resolve(root);
     const key =
       process.platform === "win32"
-        ? normalizeWorkspaceRootIdentity(resolvedRoot).toLocaleLowerCase()
+        ? normalizeWorkspaceRootIdentity(resolvedRoot).toLocaleLowerCase(
+            "en-US",
+          )
         : resolvedRoot;
     if (!unique.has(key)) unique.set(key, resolvedRoot);
   }
-  return [...unique.values()].sort((left, right) => left.localeCompare(right));
+  return [...unique.values()].sort(compareCanonicalStrings);
+};
+
+const parseStoredProviderSyncWorkspaceRoots = (
+  path: string,
+  snapshot: StableManagedTargetSnapshot | undefined,
+): string[] => {
+  if (!snapshot) return [];
+  const value = JSON.parse(snapshot.content) as unknown;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("schemaVersion" in value) ||
+    value.schemaVersion !== 1 ||
+    !("workspaceRoots" in value) ||
+    !Array.isArray(value.workspaceRoots) ||
+    value.workspaceRoots.length > 4_096 ||
+    !value.workspaceRoots.every(
+      (root) =>
+        typeof root === "string" &&
+        root.length > 0 &&
+        root.length <= 32_768 &&
+        resolve(root) === root,
+    )
+  ) {
+    throw new Error(`${path} is not a valid provider-sync workspace registry.`);
+  }
+  return value.workspaceRoots;
 };
 
 const loadStoredProviderSyncWorkspaceRoots = async (): Promise<string[]> => {
-  try {
-    const value = JSON.parse(
-      await readFile(getProviderSyncWorkspaceRegistryPath(), "utf8"),
-    ) as { workspaceRoots?: unknown };
-    return Array.isArray(value.workspaceRoots)
-      ? value.workspaceRoots.filter(
-          (root): root is string => typeof root === "string",
-        )
-      : [];
-  } catch {
-    return [];
-  }
+  const path = getProviderSyncWorkspaceRegistryPath();
+  return parseStoredProviderSyncWorkspaceRoots(
+    path,
+    await readStableManagedTarget(path),
+  );
 };
 
 export const loadRegisteredProviderSyncWorkspaces = async (
@@ -172,24 +201,26 @@ export const registerProviderSyncWorkspace = async (
   await withCooperativeFileLock(
     path,
     async () => {
-      const storedRoots = await loadStoredProviderSyncWorkspaceRoots();
-      const existingRoots = deduplicateWorkspaceRoots(storedRoots).filter(
-        (root) => existsSync(root),
-      );
-      const roots = deduplicateWorkspaceRoots([
-        ...existingRoots,
-        workspaceRoot,
-      ]).filter((root) => existsSync(root));
+      const before = await readStableManagedTarget(path);
+      const storedRoots = parseStoredProviderSyncWorkspaceRoots(path, before);
+      const roots = deduplicateWorkspaceRoots([...storedRoots, workspaceRoot]);
       if (
         roots.length === storedRoots.length &&
         roots.every((root, index) => root === storedRoots[index])
       ) {
         return;
       }
-      await writeJsonAtomically(path, {
-        schemaVersion: 1,
-        workspaceRoots: roots,
-      });
+      await writeJsonAtomically(
+        path,
+        {
+          schemaVersion: 1,
+          workspaceRoots: roots,
+        },
+        {
+          beforeCommit: async () =>
+            assertStableManagedTargetUnchanged(path, before),
+        },
+      );
     },
     {
       ownerDescription: "provider-sync workspace registry update",
@@ -220,79 +251,34 @@ const getProviderTargetPaths = (
     case "codex-cli":
       return scope === "user"
         ? {
-            instructionPath: join(home, "AGENTS.md"),
             mcpPath: join(home, "config.toml"),
             mcpFormat: "toml",
           }
         : {
-            instructionPath: join(workspaceRoot, "AGENTS.md"),
             mcpPath: join(workspaceRoot, ".codex", "config.toml"),
             mcpFormat: "toml",
           };
     case "claude-cli":
       return scope === "user"
         ? {
-            instructionPath: join(home, "CLAUDE.md"),
             mcpPath: join(homedir(), ".claude.json"),
             mcpFormat: "json",
           }
         : {
-            instructionPath: join(workspaceRoot, "CLAUDE.md"),
             mcpPath: join(workspaceRoot, ".mcp.json"),
             mcpFormat: "json",
           };
     case "copilot-cli":
       return scope === "user"
         ? {
-            instructionPath: join(home, "copilot-instructions.md"),
             mcpPath: join(home, "mcp-config.json"),
             mcpFormat: "json",
           }
         : {
-            instructionPath: join(
-              workspaceRoot,
-              ".github",
-              "copilot-instructions.md",
-            ),
             mcpPath: join(workspaceRoot, ".github", "mcp.json"),
             mcpFormat: "json",
           };
   }
-};
-
-const isOwnNativeInstruction = (
-  provider: AgentCliProvider,
-  instruction: DiscoveredInstruction,
-): boolean => {
-  const path = instruction.path.replaceAll("\\", "/").toLowerCase();
-  if (provider === "codex-cli") {
-    return path === "agents.md" || path === "agents.override.md";
-  }
-  if (provider === "copilot-cli") {
-    return (
-      path === "agents.md" ||
-      path === ".github/copilot-instructions.md" ||
-      path.startsWith(".github/instructions/")
-    );
-  }
-  return (
-    path === "claude.md" ||
-    path === "claude.local.md" ||
-    path.startsWith(".claude/rules/")
-  );
-};
-
-const prepareInstructions = (
-  provider: AgentCliProvider,
-  instructions: readonly DiscoveredInstruction[],
-): DiscoveredInstruction[] => {
-  return instructions
-    .filter((instruction) => !isOwnNativeInstruction(provider, instruction))
-    .map((instruction) => ({
-      ...instruction,
-      body: stripManagedProviderRegions(instruction.body),
-    }))
-    .filter((instruction) => instruction.body.trim().length > 0);
 };
 
 const getMcpPayload = (
@@ -312,80 +298,79 @@ const getMcpPayload = (
 const addWorkspaceGitExclude = async (
   workspaceRoot: string,
   targetPath: string,
-): Promise<void> => {
-  const excludePath = join(workspaceRoot, ".git", "info", "exclude");
-  if (!existsSync(join(workspaceRoot, ".git"))) return;
+): Promise<string | undefined> => {
+  if (!existsSync(join(workspaceRoot, ".git"))) return undefined;
   const workspacePath = relative(workspaceRoot, targetPath).replaceAll(
     "\\",
     "/",
   );
-  if (!workspacePath || workspacePath.startsWith("../")) return;
-  const existing = await readFile(excludePath, "utf8").catch(() => "");
-  const marker = `/${workspacePath}`;
-  if (existing.split(/\r?\n/u).includes(marker)) return;
-  await writeFileAtomically(
-    excludePath,
-    `${existing.trimEnd()}${existing.trim() ? "\n" : ""}${marker}\n`,
-  );
+  if (!workspacePath || workspacePath.startsWith("../")) return undefined;
+
+  let excludePath: string;
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "--no-optional-locks",
+        "rev-parse",
+        "--git-path",
+        "info/exclude",
+      ],
+      {
+        cwd: workspaceRoot,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024,
+        timeout: 5_000,
+        windowsHide: true,
+      },
+    );
+    const reportedPath = stdout.trim();
+    if (
+      !reportedPath ||
+      reportedPath.includes("\0") ||
+      reportedPath.includes("\n") ||
+      reportedPath.length > 32_768
+    ) {
+      throw new Error("Git returned an invalid exclude path.");
+    }
+    excludePath = resolve(workspaceRoot, reportedPath);
+  } catch (error) {
+    return `Could not resolve the Git exclude file for ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
+  try {
+    await withCooperativeFileLock(
+      excludePath,
+      async () => {
+        const before = await readStableManagedTarget(excludePath);
+        const existing = before?.content ?? "";
+        const marker = `/${workspacePath}`;
+        if (existing.split(/\r?\n/u).includes(marker)) return;
+        await writeFileAtomically(
+          excludePath,
+          `${existing.trimEnd()}${existing.trim() ? "\n" : ""}${marker}\n`,
+          "utf8",
+          {
+            beforeCommit: async () =>
+              assertStableManagedTargetUnchanged(excludePath, before),
+          },
+        );
+      },
+      { ownerDescription: `provider-sync Git exclusion for ${workspaceRoot}` },
+    );
+  } catch (error) {
+    return `Could not add ${workspacePath} to ${excludePath}: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return undefined;
 };
 
 const createCoverageEntries = (
   provider: AgentCliProvider,
   scope: "user" | "workspace",
-  bundle: ReturnType<typeof compilePersistentInstructionBundle>,
   projection: Awaited<ReturnType<typeof projectMcpForProvider>>,
 ): EnrollmentCoverageEntry[] => {
   const refreshState = "awaiting-provider-refresh" as const;
-  const degradedSourceIds = new Set(bundle.degradedSourceIds);
   return [
-    ...bundle.sources.flatMap((source): EnrollmentCoverageEntry[] =>
-      source.sourceIds.map((sourceId) => ({
-        entityId: `${scope}:${sourceId}`,
-        entityKind: "instruction",
-        provider,
-        digest: source.bodyHash,
-        route: degradedSourceIds.has(source.id)
-          ? "uncovered"
-          : "provider-native-adopted",
-        fidelity: degradedSourceIds.has(source.id) ? "degraded" : "baseline",
-        refreshState: degradedSourceIds.has(source.id)
-          ? "degraded"
-          : refreshState,
-        covered: !degradedSourceIds.has(source.id),
-        evidence: [
-          {
-            kind: "file-hash",
-            detail: `${scope} provider-native managed region`,
-            digest: bundle.digest,
-          },
-        ],
-        ...(degradedSourceIds.has(source.id)
-          ? {
-              warning:
-                "Instruction content was truncated by the enrollment budget.",
-            }
-          : {}),
-      })),
-    ),
-    ...bundle.omittedSources.flatMap((source): EnrollmentCoverageEntry[] =>
-      source.sourceIds.map((sourceId) => ({
-        entityId: `${scope}:${sourceId}`,
-        entityKind: "instruction",
-        provider,
-        digest: source.bodyHash,
-        route: "uncovered",
-        fidelity: "degraded",
-        refreshState: "degraded",
-        covered: false,
-        evidence: [
-          {
-            kind: "fallback",
-            detail: "Instruction omitted by enrollment budget.",
-          },
-        ],
-        warning: "Instruction was omitted by the enrollment budget.",
-      })),
-    ),
     ...projection.servers.flatMap((server): EnrollmentCoverageEntry[] => {
       const serverEntry: EnrollmentCoverageEntry = {
         entityId: `${scope}:mcp-server:${server.canonicalId}`,
@@ -454,8 +439,8 @@ const reconcileProviderScope = async (
   provider: AgentCliProvider,
   scope: "user" | "workspace",
   workspaceRoot: string,
-  instructions: readonly DiscoveredInstruction[],
   ownership: ProviderOwnershipManifest,
+  checkpointOwnership: (record: ProviderOwnershipRecord) => Promise<void>,
 ): Promise<{
   status: ProviderSyncTargetStatus;
   records: ProviderOwnershipRecord[];
@@ -463,53 +448,21 @@ const reconcileProviderScope = async (
 }> => {
   const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
   const warnings: string[] = [];
-  const previousInstruction = findPrevious(ownership, paths.instructionPath);
   const previousMcp = findPrevious(ownership, paths.mcpPath);
   const recordsByPath = new Map(
-    [previousInstruction, previousMcp]
+    [previousMcp]
       .filter((record): record is ProviderOwnershipRecord => Boolean(record))
       .map((record) => [record.path, record]),
   );
+  let ownershipCheckpointCommitted = false;
   try {
-    const bundle = compilePersistentInstructionBundle(
-      prepareInstructions(provider, instructions),
-      "executor",
-      { scope },
-    );
     const projection = await projectMcpForProvider(provider, workspaceRoot, {
       persistent: true,
       scope,
     });
-    let instructionInstall:
-      | Awaited<ReturnType<typeof installManagedTarget>>
-      | undefined;
     let mcpInstall:
       | Awaited<ReturnType<typeof installManagedTarget>>
       | undefined;
-    if (bundle.renderedText.trim().length > 0) {
-      instructionInstall = await installManagedTarget({
-        path: paths.instructionPath,
-        provider,
-        scope,
-        format: "markdown",
-        payload: [
-          `# Machdoch managed instructions (${scope})`,
-          `Canonical bundle digest: ${bundle.digest}`,
-          "",
-          bundle.renderedText,
-        ].join("\n"),
-        ...(previousInstruction ? { previous: previousInstruction } : {}),
-      });
-      recordsByPath.set(paths.instructionPath, instructionInstall.record);
-      warnings.push(...instructionInstall.warnings);
-    } else if (previousInstruction) {
-      const removal = await uninstallManagedTarget(previousInstruction, {
-        force: true,
-      });
-      if (removal.warning) warnings.push(removal.warning);
-      if (removal.removed) recordsByPath.delete(paths.instructionPath);
-    }
-
     if (projection.servers.length > 0) {
       mcpInstall = await installManagedTarget({
         path: paths.mcpPath,
@@ -518,6 +471,10 @@ const reconcileProviderScope = async (
         format: paths.mcpFormat,
         payload: getMcpPayload(paths.mcpFormat, projection.config),
         ...(previousMcp ? { previous: previousMcp } : {}),
+        beforeTargetCommit: async (record) => {
+          await checkpointOwnership(record);
+          ownershipCheckpointCommitted = true;
+        },
       });
       recordsByPath.set(paths.mcpPath, mcpInstall.record);
       warnings.push(...mcpInstall.warnings);
@@ -528,16 +485,17 @@ const reconcileProviderScope = async (
       if (removal.warning) warnings.push(removal.warning);
       if (removal.removed) recordsByPath.delete(paths.mcpPath);
     }
-    warnings.push(...bundle.warnings, ...projection.warnings);
+    warnings.push(...projection.warnings);
     if (scope === "workspace") {
-      if (instructionInstall?.record.createdFile) {
-        await addWorkspaceGitExclude(workspaceRoot, paths.instructionPath);
-      }
       if (mcpInstall?.record.createdFile) {
-        await addWorkspaceGitExclude(workspaceRoot, paths.mcpPath);
+        const gitExcludeWarning = await addWorkspaceGitExclude(
+          workspaceRoot,
+          paths.mcpPath,
+        );
+        if (gitExcludeWarning) warnings.push(gitExcludeWarning);
       }
     }
-    const coverage = createCoverageEntries(provider, scope, bundle, projection);
+    const coverage = createCoverageEntries(provider, scope, projection);
     const coverageSummary = summarizeEnrollmentCoverage(coverage);
     return {
       status: {
@@ -546,8 +504,7 @@ const reconcileProviderScope = async (
         state: coverageSummary.complete
           ? "awaiting-provider-refresh"
           : "degraded",
-        targetPaths: [paths.instructionPath, paths.mcpPath],
-        bundleDigest: bundle.digest,
+        targetPaths: [paths.mcpPath],
         updatedAt: new Date().toISOString(),
         warnings,
       },
@@ -555,12 +512,13 @@ const reconcileProviderScope = async (
       coverage,
     };
   } catch (error) {
+    if (ownershipCheckpointCommitted) throw error;
     return {
       status: {
         provider,
         scope,
         state: "degraded",
-        targetPaths: [paths.instructionPath, paths.mcpPath],
+        targetPaths: [paths.mcpPath],
         updatedAt: new Date().toISOString(),
         warnings,
         error: error instanceof Error ? error.message : String(error),
@@ -612,7 +570,30 @@ const reconcileOnce = async (
   workspaceRoot: string,
 ): Promise<ReconcileOutput> => {
   const config = await loadProviderEnrollmentConfig();
-  const ownership = await loadOwnershipManifest(getProviderSyncOwnershipPath());
+  const ownershipPath = getProviderSyncOwnershipPath();
+  const loadedOwnership = await loadOwnershipManifestSnapshot(ownershipPath);
+  const ownership = loadedOwnership.manifest;
+  let ownershipTargetSnapshot = loadedOwnership.targetSnapshot;
+  let checkpointManifest = ownership;
+  const checkpointOwnership = async (
+    record: ProviderOwnershipRecord,
+  ): Promise<void> => {
+    const nextManifest: ProviderOwnershipManifest = {
+      schemaVersion: 1,
+      targets: [
+        ...checkpointManifest.targets.filter(
+          (candidate) => candidate.path !== record.path,
+        ),
+        record,
+      ].sort((left, right) => compareCanonicalStrings(left.path, right.path)),
+    };
+    ownershipTargetSnapshot = await saveOwnershipManifest(
+      ownershipPath,
+      nextManifest,
+      { expectedTargetSnapshot: ownershipTargetSnapshot },
+    );
+    checkpointManifest = nextManifest;
+  };
   const daemon = await buildDaemonStatus();
   if (!config.enabled || !config.persistentSync.enabled) {
     const cleanup = await uninstallOwnedRecords(ownership.targets);
@@ -628,18 +609,12 @@ const reconcileOnce = async (
         schemaVersion: 1,
         targets: cleanup.retained,
       },
+      ownershipTargetSnapshot,
       coverage: [],
     };
   }
 
-  const [customizations, env] = await Promise.all([
-    discoverCustomizations(workspaceRoot, {
-      discoverGithubCustomizations: true,
-      discoverUserCustomizations: true,
-      includeDiagnostics: true,
-    }),
-    loadWorkspaceEnv(workspaceRoot),
-  ]);
+  const env = await loadWorkspaceEnv(workspaceRoot);
   const statuses: ProviderSyncTargetStatus[] = [];
   const records: ProviderOwnershipRecord[] = [];
   const coverage: EnrollmentCoverageEntry[] = [];
@@ -648,7 +623,6 @@ const reconcileOnce = async (
   for (const provider of getAgentCliProviders()) {
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
-      managedPaths.add(paths.instructionPath);
       managedPaths.add(paths.mcpPath);
     }
     if (!config.providers[provider].enabled) continue;
@@ -656,7 +630,6 @@ const reconcileOnce = async (
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
       const hasPreviousTarget = Boolean(
-        findPrevious(ownership, paths.instructionPath) ||
         findPrevious(ownership, paths.mcpPath),
       );
       if (!binary.available && !hasPreviousTarget) {
@@ -664,7 +637,7 @@ const reconcileOnce = async (
           provider,
           scope,
           state: "not-installed",
-          targetPaths: [paths.instructionPath, paths.mcpPath],
+          targetPaths: [paths.mcpPath],
           updatedAt: new Date().toISOString(),
           warnings: [binary.reason ?? `${provider} is not installed.`],
         });
@@ -675,8 +648,8 @@ const reconcileOnce = async (
         provider,
         scope,
         workspaceRoot,
-        customizations.instructions,
         ownership,
+        checkpointOwnership,
       );
       if (!binary.available && result.status.state !== "degraded") {
         result.status = {
@@ -696,7 +669,8 @@ const reconcileOnce = async (
 
   const currentPaths = new Set(records.map((record) => record.path));
   const obsoleteRecords = ownership.targets.filter(
-    (record) => managedPaths.has(record.path) && !currentPaths.has(record.path),
+    (record) =>
+      managedPaths.has(record.path) && !currentPaths.has(record.path),
   );
   const cleanup = await uninstallOwnedRecords(obsoleteRecords);
   const retainedRecords = ownership.targets.filter(
@@ -705,7 +679,7 @@ const reconcileOnce = async (
   const nextOwnership: ProviderOwnershipManifest = {
     schemaVersion: 1,
     targets: [...retainedRecords, ...cleanup.retained, ...records].sort(
-      (left, right) => left.path.localeCompare(right.path),
+      (left, right) => compareCanonicalStrings(left.path, right.path),
     ),
   };
   return {
@@ -718,6 +692,7 @@ const reconcileOnce = async (
       targets: statuses,
     },
     ownership: nextOwnership,
+    ownershipTargetSnapshot,
     coverage,
   };
 };
@@ -729,9 +704,8 @@ export const reconcileProviderSync = async (
   const stateDirectory = getProviderEnrollmentStateDirectory();
   await mkdir(stateDirectory, { recursive: true });
   await registerProviderSyncWorkspace(workspaceRoot);
-  const lockTarget = join(stateDirectory, RECONCILE_LOCK_FILE_NAME);
   return await withCooperativeFileLock(
-    lockTarget,
+    getReconcileLockTarget(),
     async () => {
       let lastError: unknown;
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -740,6 +714,9 @@ export const reconcileProviderSync = async (
           await saveOwnershipManifest(
             getProviderSyncOwnershipPath(),
             output.ownership,
+            {
+              expectedTargetSnapshot: output.ownershipTargetSnapshot,
+            },
           );
           await writeJsonAtomically(
             getProviderCoverageLedgerPath(workspaceRoot),
@@ -799,32 +776,45 @@ export const loadProviderSyncStatus = async (
 };
 
 export const uninstallProviderSyncTargets = async (): Promise<string[]> => {
-  const manifest = await loadOwnershipManifest(getProviderSyncOwnershipPath());
-  const warnings: string[] = [];
-  const retained: ProviderOwnershipRecord[] = [];
-  for (const record of manifest.targets) {
-    const result = await uninstallManagedTarget(record, { force: true });
-    if (result.warning) warnings.push(result.warning);
-    if (!result.removed) retained.push(record);
-  }
-  await saveOwnershipManifest(getProviderSyncOwnershipPath(), {
-    schemaVersion: 1,
-    targets: retained,
-  });
-  return warnings;
+  const stateDirectory = getProviderEnrollmentStateDirectory();
+  await mkdir(stateDirectory, { recursive: true });
+  return await withCooperativeFileLock(
+    getReconcileLockTarget(),
+    async () => {
+      const loadedManifest = await loadOwnershipManifestSnapshot(
+        getProviderSyncOwnershipPath(),
+      );
+      const manifest = loadedManifest.manifest;
+      const warnings: string[] = [];
+      const retained: ProviderOwnershipRecord[] = [];
+      for (const record of manifest.targets) {
+        const result = await uninstallManagedTarget(record, { force: true });
+        if (result.warning) warnings.push(result.warning);
+        if (!result.removed) retained.push(record);
+      }
+      await saveOwnershipManifest(
+        getProviderSyncOwnershipPath(),
+        {
+          schemaVersion: 1,
+          targets: retained,
+        },
+        { expectedTargetSnapshot: loadedManifest.targetSnapshot },
+      );
+      return warnings;
+    },
+    {
+      timeoutMs: RECONCILE_LOCK_TIMEOUT_MS,
+      ownerDescription: "provider-sync uninstall",
+    },
+  );
 };
 
 export const createProviderSyncPlan = async (
   workspaceRoot: string,
   onlyProvider?: AgentCliProvider,
 ): Promise<Record<string, unknown>> => {
-  const [config, customizations, env, status] = await Promise.all([
+  const [config, env, status] = await Promise.all([
     loadProviderEnrollmentConfig(),
-    discoverCustomizations(workspaceRoot, {
-      discoverGithubCustomizations: true,
-      discoverUserCustomizations: true,
-      includeDiagnostics: true,
-    }),
     loadWorkspaceEnv(workspaceRoot),
     loadProviderSyncStatus(workspaceRoot),
   ]);
@@ -838,62 +828,14 @@ export const createProviderSyncPlan = async (
     const scopes: Record<string, unknown>[] = [];
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
-      const bundle = compilePersistentInstructionBundle(
-        prepareInstructions(provider, customizations.instructions),
-        "executor",
-        { scope },
-      );
       const projection = await projectMcpForProvider(provider, workspaceRoot, {
         persistent: true,
         scope,
       });
-      const coverage = createCoverageEntries(
-        provider,
-        scope,
-        bundle,
-        projection,
-      );
-      const nativeInstructionFindings =
-        scope === "workspace"
-          ? await scanNativeInstructionSources(provider, workspaceRoot, bundle)
-          : [];
+      const coverage = createCoverageEntries(provider, scope, projection);
       scopes.push({
         scope,
-        instructionTarget: paths.instructionPath,
         mcpTarget: paths.mcpPath,
-        bundleDigest: bundle.digest,
-        instructionCount: [...bundle.sources, ...bundle.omittedSources].reduce(
-          (count, source) => count + source.sourceIds.length,
-          0,
-        ),
-        instructionEntities: [
-          ...bundle.sources.flatMap((source) =>
-            source.sourceIds.map((id) => ({
-              id,
-              route: bundle.degradedSourceIds.includes(source.id)
-                ? "uncovered"
-                : "provider-native-adopted",
-              fallbackChain: [
-                "provider-native-adopted",
-                "cli-prompt-fallback",
-                "uncovered",
-              ],
-            })),
-          ),
-          ...bundle.omittedSources.flatMap((source) =>
-            source.sourceIds.map((id) => ({
-              id,
-              route: "uncovered",
-              fallbackChain: [
-                "provider-native-adopted",
-                "cli-prompt-fallback",
-                "uncovered",
-              ],
-            })),
-          ),
-        ],
-        nativeInstructionFindings,
-        estimatedTokens: bundle.estimatedTokens,
         mcpCatalogDigest: projection.catalogDigest,
         mcpServers: projection.servers.map((server) => ({
           id: server.canonicalId,
@@ -907,7 +849,7 @@ export const createProviderSyncPlan = async (
           ],
         })),
         coverage: summarizeEnrollmentCoverage(coverage),
-        warnings: [...bundle.warnings, ...projection.warnings],
+        warnings: projection.warnings,
       });
     }
     providers.push({
@@ -924,12 +866,10 @@ export const createProviderSyncPlan = async (
   return {
     enabled: config.enabled && config.persistentSync.enabled,
     workspaceRoot,
-    unmanagedInstructionPolicy: config.instructions.unmanagedNative,
     unmanagedMcpPolicy: config.mcp.unmanagedNative,
     approvals: config.mcp.approvals,
     providers,
     currentStatus: status,
-    diagnostics: customizations.diagnostics ?? [],
   };
 };
 

@@ -15,7 +15,6 @@ use super::{
     MediaResult, MediaRuntimePaths,
 };
 
-const MAX_EXPORT_BYTES: usize = 64 * 1024 * 1024;
 const PRIVACY_JPEG_QUALITY: u8 = 95;
 
 pub(crate) fn export_asset(
@@ -78,6 +77,12 @@ fn prepare_export(
     let (bytes, expected_pixels) = match mode {
         MediaAssetExportMode::VerifiedOriginal => (original_bytes, None),
         MediaAssetExportMode::MetadataStripped => {
+            if mime_type == "video/webm" {
+                return Err(
+                    "WebM video export must use verified-original mode so VP9 alpha and loop metadata remain intact"
+                        .to_string(),
+                );
+            }
             if mime_type == "image/svg+xml" {
                 return Err(
                     "SVG assets are already Secure Static canonical documents; metadata-stripped export is raster-only"
@@ -89,10 +94,11 @@ fn prepare_export(
             (encoded, Some(image))
         }
     };
-    if bytes.is_empty() || bytes.len() > MAX_EXPORT_BYTES {
+    let max_export_bytes = transform::max_asset_blob_bytes(mime_type) as usize;
+    if bytes.is_empty() || bytes.len() > max_export_bytes {
         return Err(format!(
-            "Prepared export exceeds the {} MB encoded-byte limit",
-            MAX_EXPORT_BYTES / 1024 / 1024
+            "Prepared export exceeds the {} MB encoded-byte limit for {mime_type}",
+            max_export_bytes / 1024 / 1024
         ));
     }
     let digest = format!("{:x}", Sha256::digest(&bytes));
@@ -199,6 +205,7 @@ fn validate_destination(destination_path: &str, mime_type: &str) -> MediaResult<
         "image/jpeg" => matches!(extension.as_str(), "jpg" | "jpeg"),
         "image/webp" => extension == "webp",
         "image/svg+xml" => extension == "svg",
+        "video/webm" => extension == "webm",
         _ => false,
     };
     if !extension_matches {

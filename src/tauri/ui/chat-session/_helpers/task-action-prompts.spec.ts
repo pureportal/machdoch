@@ -1,12 +1,10 @@
 import {
-  CONTINUE_TASK_DISPLAY_CONTENT,
   getConciseTaskObjective,
-  getTaskActionDisplayContent,
   shouldOmitTaskActionPromptFromAiContext,
 } from "./task-action-prompts";
 
 describe("task action prompt helpers", () => {
-  it("compacts nested legacy continuation prompts to the original objective", () => {
+  it("extracts the original objective from nested legacy continuation prompts", () => {
     const nestedPrompt = [
       "Continue from this previous task.",
       "",
@@ -28,17 +26,13 @@ describe("task action prompt helpers", () => {
     expect(getConciseTaskObjective(nestedPrompt)).toBe(
       "Wie viel Uhr haben wir es?",
     );
-    expect(getTaskActionDisplayContent(nestedPrompt)).toBe(
-      CONTINUE_TASK_DISPLAY_CONTENT,
-    );
     expect(shouldOmitTaskActionPromptFromAiContext(nestedPrompt)).toBe(true);
   });
 
-  it("does not collapse normal user messages that only start with an action phrase", () => {
+  it("keeps normal user messages that only start with an action phrase in AI context", () => {
     const userPrompt =
       "Continue the previous task by checking a different timezone.";
 
-    expect(getTaskActionDisplayContent(userPrompt)).toBeNull();
     expect(shouldOmitTaskActionPromptFromAiContext(userPrompt)).toBe(false);
   });
 });

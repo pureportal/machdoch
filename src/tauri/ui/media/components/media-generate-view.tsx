@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   ChevronDown,
   CircleAlert,
+  Clapperboard,
+  FolderOpen,
   ImagePlus,
   ImageIcon,
   Images,
@@ -12,6 +14,7 @@ import {
   LoaderCircle,
   Minus,
   Plus,
+  Search,
   ShieldAlert,
   SlidersHorizontal,
   Sparkles,
@@ -20,7 +23,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type JSX } from "react";
-import { inspectMediaModelAddonCompatibility } from "../../../../core/media/model-addons.js";
+import {
+  inspectMediaModelAddonCompatibility,
+  matchesMediaModelAddonQuery,
+} from "../../../../core/media/model-addons.js";
+import { matchesMediaAssetQuery } from "../../../../core/media/asset-library.js";
+import { isMediaModelReady } from "../../../../core/media/model-readiness.js";
+import { paginateMediaItems } from "../../../../core/media/gallery.js";
 import type {
   ImageRecipeSettings,
   MediaAssetRecord,
@@ -37,6 +46,10 @@ import { Textarea } from "../../components/ui/textarea";
 import { usePromptHistoryNavigation } from "../../_helpers/use-prompt-history-navigation";
 import { cn } from "../../lib/utils";
 import { readMediaAssetReferencePreview } from "../media-runtime";
+import { MediaPagination } from "./media-pagination";
+
+const ADDON_PICKER_PAGE_SIZE = 12;
+const REFERENCE_PICKER_PAGE_SIZE = 24;
 
 interface MediaGenerateViewProps {
   settings: ImageRecipeSettings;
@@ -52,12 +65,16 @@ interface MediaGenerateViewProps {
   promptHistory?: readonly string[];
   onChange: (settings: ImageRecipeSettings) => void;
   onOpenFlow: () => void;
+  onOpenVideoFlow: () => void;
   onOpenModels: () => void;
   onOpenProviderSettings: () => void;
   onGenerate: () => void;
   onGenerateWithReview?: () => void;
   onOpenRunReview?: () => void;
   onAddReferenceImages: () => void;
+  onEditResult: (asset: MediaAssetRecord) => void;
+  onAnimateResult: (asset: MediaAssetRecord) => void;
+  onOpenResult: (asset: MediaAssetRecord) => void;
   generationPending: boolean;
   runtimeMode: "native" | "browser-preview" | null;
 }
@@ -121,7 +138,7 @@ const simpleDiagnosticMessage = (
   fallback: string,
 ): string => {
   if (code === "TRANSPARENCY_REQUIRES_POSTPROCESS") {
-    return "Machdoch will remove the generated background locally because GPT Image 2 does not provide native transparency.";
+    return "Machdoch will remove the generated background locally because the selected image model does not provide native transparency.";
   }
   return fallback;
 };
@@ -130,12 +147,10 @@ const isSimpleGenerationModelAvailable = (
   model: MediaModelDescriptor,
   directGenerationModelIds: readonly string[] | null,
 ): boolean => {
-  if (directGenerationModelIds?.includes(model.id) !== true) return false;
-  if (model.target === "remote") return model.configured;
-  if (model.providerId === "local-diffusers") {
-    return model.installed && model.runtimeReadiness === "ready";
-  }
-  return model.installed;
+  return (
+    directGenerationModelIds?.includes(model.id) === true &&
+    isMediaModelReady(model)
+  );
 };
 
 const SegmentedControl = <T extends string,>({
@@ -178,10 +193,18 @@ const GeneratedAssetPreview = ({
   asset,
   index,
   fixture,
+  actionsEnabled,
+  onEdit,
+  onAnimate,
+  onOpen,
 }: {
   asset: MediaAssetRecord;
   index: number;
   fixture: boolean;
+  actionsEnabled: boolean;
+  onEdit: (asset: MediaAssetRecord) => void;
+  onAnimate: (asset: MediaAssetRecord) => void;
+  onOpen: (asset: MediaAssetRecord) => void;
 }): JSX.Element => {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -235,6 +258,45 @@ const GeneratedAssetPreview = ({
 
   return (
     <div className="group relative h-full min-h-40 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/55">
+      {actionsEnabled ? (
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-slate-700/70 bg-slate-950/85 p-1 shadow-lg backdrop-blur-sm">
+          {asset.kind === "image" ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                aria-label={`Edit image ${index + 1} in Create`}
+                onClick={() => onEdit(asset)}
+                className="h-7 px-2 text-[10px] text-sky-200 hover:bg-sky-400/10"
+              >
+                <Sparkles className="h-3 w-3" /> Edit
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                aria-label={`Animate image ${index + 1} as a video workflow`}
+                onClick={() => onAnimate(asset)}
+                className="h-7 px-2 text-[10px] text-emerald-200 hover:bg-emerald-400/10"
+              >
+                <Clapperboard className="h-3 w-3" /> Animate
+              </Button>
+            </>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Open ${isVector ? "SVG" : "image"} ${index + 1} in Library`}
+            title="Open in Library"
+            onClick={() => onOpen(asset)}
+            className="h-7 w-7 text-slate-300 hover:bg-slate-800"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ) : null}
       {url ? (
         <img
           src={url}
@@ -421,10 +483,16 @@ const GeneratedImages = ({
   run,
   aspectRatio,
   onOpenRunReview,
+  onEditResult,
+  onAnimateResult,
+  onOpenResult,
 }: {
   run: MediaRunDetail | null;
   aspectRatio: ImageRecipeSettings["aspectRatio"];
   onOpenRunReview?: () => void;
+  onEditResult: (asset: MediaAssetRecord) => void;
+  onAnimateResult: (asset: MediaAssetRecord) => void;
+  onOpenResult: (asset: MediaAssetRecord) => void;
 }): JSX.Element => {
   const images = run?.assets.filter(
     (asset) => asset.kind === "image" || asset.kind === "vector",
@@ -435,7 +503,11 @@ const GeneratedImages = ({
   const fixture = run?.executor === "deterministic-fixture";
 
   return (
-    <section aria-labelledby="media-results-heading" className="space-y-3">
+    <section
+      id="media-generation-results"
+      aria-labelledby="media-results-heading"
+      className="scroll-mt-6 space-y-3"
+    >
       <div className="flex items-center justify-between gap-4">
         <h2 id="media-results-heading" className="text-sm font-semibold text-slate-200">
           {fixture ? "Browser previews" : isVectorRun ? "Your SVGs" : "Your images"}
@@ -485,7 +557,15 @@ const GeneratedImages = ({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {images.map((asset, index) => (
               <div key={asset.id} className={ASPECT_CLASSES[aspectRatio]}>
-                <GeneratedAssetPreview asset={asset} index={index} fixture={fixture} />
+                <GeneratedAssetPreview
+                  asset={asset}
+                  index={index}
+                  fixture={fixture}
+                  actionsEnabled={run?.status === "completed"}
+                  onEdit={onEditResult}
+                  onAnimate={onAnimateResult}
+                  onOpen={onOpenResult}
+                />
               </div>
             ))}
           </div>
@@ -535,16 +615,27 @@ export const MediaGenerateView = ({
   promptHistory = [],
   onChange,
   onOpenFlow,
+  onOpenVideoFlow,
   onOpenModels,
   onOpenProviderSettings,
   onGenerate,
   onGenerateWithReview,
   onOpenRunReview,
   onAddReferenceImages,
+  onEditResult,
+  onAnimateResult,
+  onOpenResult,
   generationPending,
   runtimeMode,
 }: MediaGenerateViewProps): JSX.Element => {
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
+  const [referenceQuery, setReferenceQuery] = useState("");
+  const [referencePage, setReferencePage] = useState(1);
+  const [addonPanelOpen, setAddonPanelOpen] = useState(
+    settings.modelAddons.some((selection) => selection.enabled),
+  );
+  const [addonQuery, setAddonQuery] = useState("");
+  const [addonPage, setAddonPage] = useState(1);
   const isSvg = settings.outputFormat === "svg";
   const isSvgVectorization = isSvg && settings.svgMode === "vectorize";
   const hasReferences = settings.referenceImages.length > 0;
@@ -639,6 +730,66 @@ export const MediaGenerateView = ({
     },
     [catalog.addons, selectedModel, settings.modelAddons],
   );
+  const activeAddonCount = settings.modelAddons.filter(
+    (selection) => selection.enabled,
+  ).length;
+  const matchingAddOnCount = useMemo(
+    () =>
+      addOnRows.filter((row) =>
+        matchesMediaModelAddonQuery(row.addon, addonQuery),
+      ).length,
+    [addOnRows, addonQuery],
+  );
+  const activeAddOnRows = useMemo(
+    () =>
+      addOnRows.filter((row) => row.selection?.enabled === true),
+    [addOnRows],
+  );
+  const inactiveMatchingAddOnRows = useMemo(
+    () =>
+      addOnRows.filter(
+        (row) =>
+          row.selection?.enabled !== true &&
+          matchesMediaModelAddonQuery(row.addon, addonQuery),
+      ),
+    [addOnRows, addonQuery],
+  );
+  const addOnPagination = useMemo(
+    () =>
+      paginateMediaItems(
+        inactiveMatchingAddOnRows,
+        addonPage,
+        ADDON_PICKER_PAGE_SIZE,
+      ),
+    [addonPage, inactiveMatchingAddOnRows],
+  );
+  const visibleAddOnRows = useMemo(
+    () => [...activeAddOnRows, ...addOnPagination.items],
+    [activeAddOnRows, addOnPagination.items],
+  );
+  const activeAddonCounts = useMemo(
+    () =>
+      settings.modelAddons.reduce(
+        (counts, selection) => {
+          if (selection.enabled) counts[selection.kind] += 1;
+          return counts;
+        },
+        { lora: 0, "textual-inversion": 0 },
+      ),
+    [settings.modelAddons],
+  );
+  const exceededAddonLimits =
+    selectedModel?.addonCapabilities.filter(
+      (capability) =>
+        activeAddonCounts[capability.kind] > capability.maxActive,
+    ) ?? [];
+  useEffect(() => {
+    if (activeAddonCount > 0) setAddonPanelOpen(true);
+  }, [activeAddonCount]);
+  useEffect(() => {
+    const normalizedPage = addOnPagination.page || 1;
+    if (addonPage !== normalizedPage) setAddonPage(normalizedPage);
+  }, [addOnPagination.page, addonPage]);
   const referenceSupported =
     selectedModel !== null &&
     directReferenceImageModelIds?.includes(selectedModel.id) === true &&
@@ -680,6 +831,26 @@ export const MediaGenerateView = ({
       return true;
     });
   }, [referenceAssets, settings.referenceImages]);
+  const filteredReferenceAssets = useMemo(
+    () =>
+      selectableReferenceAssets.filter((asset) =>
+        matchesMediaAssetQuery(asset, referenceQuery),
+      ),
+    [referenceQuery, selectableReferenceAssets],
+  );
+  const referencePagination = useMemo(
+    () =>
+      paginateMediaItems(
+        filteredReferenceAssets,
+        referencePage,
+        REFERENCE_PICKER_PAGE_SIZE,
+      ),
+    [filteredReferenceAssets, referencePage],
+  );
+  useEffect(() => {
+    const normalizedPage = referencePagination.page || 1;
+    if (referencePage !== normalizedPage) setReferencePage(normalizedPage);
+  }, [referencePage, referencePagination.page]);
   const canAddReferences =
     referenceSupported &&
     settings.referenceImages.length < maxReferenceCount &&
@@ -737,10 +908,31 @@ export const MediaGenerateView = ({
     row: (typeof addOnRows)[number],
   ): void => {
     if (row.selection) {
+      const limit = selectedModel?.addonCapabilities.find(
+        (capability) => capability.kind === row.addon.kind,
+      )?.maxActive;
+      if (
+        !row.selection.enabled &&
+        (row.compatibility?.status === "incompatible" ||
+          limit === undefined ||
+          activeAddonCounts[row.addon.kind] >= limit)
+      ) {
+        return;
+      }
       updateModelAddon(row.addon.id, (selection) => ({
         ...selection,
         enabled: !selection.enabled,
       }));
+      return;
+    }
+    const limit = selectedModel?.addonCapabilities.find(
+      (capability) => capability.kind === row.addon.kind,
+    )?.maxActive;
+    if (
+      row.compatibility?.status === "incompatible" ||
+      limit === undefined ||
+      activeAddonCounts[row.addon.kind] >= limit
+    ) {
       return;
     }
     updateSettings("modelAddons", [
@@ -885,6 +1077,10 @@ export const MediaGenerateView = ({
       },
     ]);
   };
+  const generatedAssetCount =
+    generatedRun?.assets.filter(
+      (asset) => asset.kind === "image" || asset.kind === "vector",
+    ).length ?? 0;
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
@@ -893,29 +1089,64 @@ export const MediaGenerateView = ({
           <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
             Create {isSvg ? "SVG" : "image"}
           </h1>
-          <div className="flex rounded-xl border border-slate-800 bg-slate-950/70 p-1" aria-label="Asset type">
-            {(["image", "svg"] as const).map((kind) => (
-              <button
-                key={kind}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              title="Open this recipe as an editable typed workflow"
+              onClick={onOpenFlow}
+              className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+            >
+              <Workflow className="h-4 w-4" /> Workflow
+            </Button>
+            {generatedAssetCount > 0 ? (
+              <Button
                 type="button"
-                aria-pressed={(kind === "svg") === isSvg}
-                onClick={() => onChange({
-                  ...settings,
-                  outputFormat: kind === "svg" ? "svg" : "png",
-                  modelId: null,
-                  referenceImages: settings.referenceImages,
-                  qualityGateEnabled: false,
-                })}
-                className={cn(
-                  "rounded-lg px-4 py-1.5 text-xs font-semibold capitalize transition-colors",
-                  (kind === "svg") === isSvg
-                    ? "bg-sky-400 text-slate-950"
-                    : "text-slate-500 hover:text-slate-200",
-                )}
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  document
+                    .getElementById("media-generation-results")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+                className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
               >
-                {kind}
+                <Images className="h-4 w-4" /> View results · {generatedAssetCount}
+              </Button>
+            ) : null}
+            <div className="flex rounded-xl border border-slate-800 bg-slate-950/70 p-1" aria-label="Asset type">
+              {(["image", "svg"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={(kind === "svg") === isSvg}
+                  onClick={() => onChange({
+                    ...settings,
+                    outputFormat: kind === "svg" ? "svg" : "png",
+                    modelId: null,
+                    referenceImages: settings.referenceImages,
+                    qualityGateEnabled: false,
+                  })}
+                  className={cn(
+                    "rounded-lg px-4 py-1.5 text-xs font-semibold capitalize transition-colors",
+                    (kind === "svg") === isSvg
+                      ? "bg-sky-400 text-slate-950"
+                      : "text-slate-500 hover:text-slate-200",
+                  )}
+                >
+                  {kind}
+                </button>
+              ))}
+              <button
+                type="button"
+                aria-label="Create a typed video workflow"
+                onClick={onOpenVideoFlow}
+                className="flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:text-emerald-200"
+              >
+                <Clapperboard className="h-3.5 w-3.5" /> Video
               </button>
-            ))}
+            </div>
           </div>
         </header>
 
@@ -1077,8 +1308,48 @@ export const MediaGenerateView = ({
                   ) : null}
                 </div>
                 {selectableReferenceAssets.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <label className="relative min-w-[min(100%,16rem)] flex-1">
+                      <span className="sr-only">Search Library reference images</span>
+                      <Search
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
+                      />
+                      <input
+                        type="search"
+                        value={referenceQuery}
+                        onChange={(event) => {
+                          setReferenceQuery(event.currentTarget.value);
+                          setReferencePage(1);
+                        }}
+                        placeholder="Search Library images, tags, or provenance"
+                        className="h-8 w-full rounded-md border border-slate-800 bg-slate-950 pr-2.5 pl-8 text-[10px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-sky-400/45 focus:ring-2 focus:ring-sky-400/10"
+                      />
+                    </label>
+                    <span
+                      aria-live="polite"
+                      className="text-[9px] tabular-nums text-slate-600"
+                    >
+                      {filteredReferenceAssets.length} of{" "}
+                      {selectableReferenceAssets.length}
+                    </span>
+                  </div>
+                ) : null}
+                {selectableReferenceAssets.length > 0 ? (
+                  <>
+                  <MediaPagination
+                    page={referencePagination.page}
+                    pageCount={referencePagination.pageCount}
+                    firstItemNumber={referencePagination.firstItemNumber}
+                    lastItemNumber={referencePagination.lastItemNumber}
+                    totalItems={referencePagination.totalItems}
+                    itemLabel="reference images"
+                    onPageChange={setReferencePage}
+                    className="mt-3"
+                  />
+                  {filteredReferenceAssets.length > 0 ? (
                   <div className="mt-3 grid max-h-80 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                    {selectableReferenceAssets.map((asset) => (
+                    {referencePagination.items.map((asset) => (
                       <ReferenceLibraryAssetButton
                         key={asset.id}
                         asset={asset}
@@ -1086,6 +1357,12 @@ export const MediaGenerateView = ({
                       />
                     ))}
                   </div>
+                  ) : (
+                    <p className="mt-3 rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-xs text-slate-600">
+                      No unused Library images match “{referenceQuery.trim()}”.
+                    </p>
+                  )}
+                  </>
                 ) : (
                   <p className="mt-3 rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-xs text-slate-600">
                     No unused Library images are available.
@@ -1174,56 +1451,153 @@ export const MediaGenerateView = ({
                 })}
               </select>
             </label>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onOpenModels}
+              className="h-[46px] shrink-0 border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-900"
+            >
+              <SlidersHorizontal className="h-4 w-4" /> Models
+            </Button>
           </div>
 
-          {!isSvg ? (
-            <div className="mb-5 rounded-xl border border-slate-800 bg-slate-950/35 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="flex items-center gap-2 text-xs font-semibold text-slate-200">
-                    <Sparkles className="h-3.5 w-3.5 text-cyan-300" /> Looks &amp; concepts
-                  </h2>
-                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                    Optional LoRAs and embeddings. Compatibility follows the selected provider and model.
-                  </p>
+          {!isSvg &&
+          ((selectedModel?.addonCapabilities.length ?? 0) > 0 ||
+            addOnRows.length > 0 ||
+            settings.modelAddons.length > 0) ? (
+            <details
+              open={addonPanelOpen}
+              onToggle={(event) => setAddonPanelOpen(event.currentTarget.open)}
+              className="group mb-5 rounded-xl border border-slate-800 bg-slate-950/35"
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-semibold text-slate-300 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-400/40">
+                <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+                Looks &amp; concepts
+                {activeAddonCount > 0 ? (
+                  <span className="font-normal text-cyan-300">
+                    {activeAddonCount} active
+                  </span>
+                ) : null}
+                <ChevronDown className="ml-auto h-3.5 w-3.5 text-slate-600 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="border-t border-slate-800/70 p-4 pt-3">
+                <div className="flex justify-end">
+                  <Button type="button" variant="ghost" size="xs" onClick={onOpenModels} className="text-cyan-300 hover:bg-cyan-950/30">
+                    Manage library
+                  </Button>
                 </div>
-                <Button type="button" variant="ghost" size="xs" onClick={onOpenModels} className="text-cyan-300 hover:bg-cyan-950/30">
-                  Manage library
-                </Button>
-              </div>
+                {addOnRows.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <label className="relative min-w-[min(100%,16rem)] flex-1">
+                      <span className="sr-only">Search available model add-ons</span>
+                      <Search
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
+                      />
+                      <input
+                        type="search"
+                        value={addonQuery}
+                        onChange={(event) => {
+                          setAddonQuery(event.currentTarget.value);
+                          setAddonPage(1);
+                        }}
+                        placeholder="Find a LoRA, trigger, architecture, or target"
+                        className="h-8 w-full rounded-md border border-slate-800 bg-slate-950 pr-2.5 pl-8 text-[10px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/45 focus:ring-2 focus:ring-cyan-400/10"
+                      />
+                    </label>
+                    <span aria-live="polite" className="text-[9px] tabular-nums text-slate-600">
+                      {matchingAddOnCount} of {addOnRows.length}
+                      {activeAddonCount > 0
+                        ? ` · ${activeAddonCount} active pinned`
+                        : ""}
+                    </span>
+                  </div>
+                ) : null}
 
               {selectedModel?.addonCapabilities.length === 0 ? (
                 <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/35 px-3 py-2.5 text-[11px] leading-5 text-slate-500">
-                  {selectedModel?.providerId === "openai"
-                    ? "OpenAI image generation does not accept LoRA weights or textual-inversion tokens. Choose a compatible local SD or FLUX model to use them."
-                    : "This model does not advertise LoRA or textual-inversion support."}
+                  This model does not advertise LoRA or textual-inversion
+                  support. Active add-ons remain below so you can disable them
+                  without switching models.
                   {selectedModel?.target === "remote" && !selectedModel.configured ? (
                     <button type="button" onClick={onOpenProviderSettings} className="ml-1 text-sky-300 underline decoration-sky-400/30 underline-offset-2">Configure provider</button>
                   ) : null}
                 </div>
-              ) : addOnRows.length === 0 ? (
+              ) : null}
+              {exceededAddonLimits.length > 0 ? (
+                <div
+                  role="alert"
+                  className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2.5 text-[11px] leading-5 text-amber-100/75"
+                >
+                  {exceededAddonLimits
+                    .map(
+                      (capability) =>
+                        `${activeAddonCounts[capability.kind]} active ${capability.kind === "lora" ? "LoRAs" : "embeddings"}; this model allows ${capability.maxActive}`,
+                    )
+                    .join(". ")}
+                  . Disable extras before generating.
+                </div>
+              ) : null}
+              {addOnRows.length === 0 ? (
                 <button type="button" onClick={onOpenModels} className="mt-3 w-full rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-[11px] text-slate-600 hover:border-cyan-400/25 hover:text-cyan-300">
                   Import a LoRA or embedding in Models
                 </button>
+              ) : visibleAddOnRows.length === 0 ? (
+                <div className="mt-3 rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-[11px] text-slate-600">
+                  No model add-ons match “{addonQuery.trim()}”. Active add-ons
+                  always remain visible.
+                </div>
               ) : (
+                <>
+                <MediaPagination
+                  page={addOnPagination.page}
+                  pageCount={addOnPagination.pageCount}
+                  firstItemNumber={addOnPagination.firstItemNumber}
+                  lastItemNumber={addOnPagination.lastItemNumber}
+                  totalItems={addOnPagination.totalItems}
+                  itemLabel="available add-ons"
+                  onPageChange={setAddonPage}
+                  className="mt-3"
+                />
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {addOnRows.map((row) => {
+                  {visibleAddOnRows.map((row) => {
                     const active = row.selection?.enabled === true;
                     const incompatible = row.compatibility?.status === "incompatible";
+                    const activationLimit = selectedModel?.addonCapabilities.find(
+                      (capability) => capability.kind === row.addon.kind,
+                    )?.maxActive;
+                    const activationLimitReached =
+                      !active &&
+                      (activationLimit === undefined ||
+                        activeAddonCounts[row.addon.kind] >= activationLimit);
+                    const activationDisabled =
+                      !active && (incompatible || activationLimitReached);
+                    const activationTitle = incompatible
+                      ? row.compatibility?.reason
+                      : activationLimitReached
+                        ? activationLimit === undefined
+                          ? "The selected model does not support this add-on type."
+                          : `${row.addon.kind === "lora" ? "LoRA" : "Embedding"} limit reached (${activationLimit}). Disable another active add-on first.`
+                        : undefined;
+                    const compatibilityMessage =
+                      activationTitle ??
+                      row.compatibility?.reason ??
+                      "Choose a model to check compatibility.";
                     return (
                       <div key={row.addon.id} className={cn("rounded-lg border p-3", active ? "border-cyan-400/25 bg-cyan-950/10" : "border-slate-800 bg-slate-900/25")}>
                         <div className="flex items-start gap-3">
                           <input
                             type="checkbox"
                             checked={active}
-                            disabled={incompatible && !active}
+                            disabled={activationDisabled}
+                            title={activationTitle}
                             aria-label={`Use ${row.addon.displayName}`}
                             onChange={() => toggleModelAddon(row)}
                             className="mt-0.5 h-4 w-4 accent-cyan-400"
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="truncate text-[11px] font-semibold text-slate-200">{row.addon.displayName}</span>
+                              <span className="min-w-0 break-words text-[11px] leading-4 font-semibold text-slate-200">{row.addon.displayName}</span>
                               <div className="flex shrink-0 items-center gap-1">
                                 {row.stackPosition !== null ? (
                                   <span className="text-[8px] font-semibold uppercase text-cyan-400/70">
@@ -1255,8 +1629,8 @@ export const MediaGenerateView = ({
                                 <span className="text-[8px] font-semibold uppercase text-slate-600">{row.addon.kind === "lora" ? "LoRA" : "Embedding"}</span>
                               </div>
                             </div>
-                            <p className={cn("mt-1 text-[9px] leading-4", incompatible ? "text-amber-300/70" : row.compatibility?.status === "unverified" ? "text-amber-200/60" : "text-slate-600")}>
-                              {row.compatibility?.reason ?? "Choose a model to check compatibility."}
+                            <p className={cn("mt-1 text-[9px] leading-4", incompatible || activationLimitReached ? "text-amber-300/70" : row.compatibility?.status === "unverified" ? "text-amber-200/60" : "text-slate-600")}>
+                              {compatibilityMessage}
                             </p>
                           </div>
                         </div>
@@ -1325,8 +1699,10 @@ export const MediaGenerateView = ({
                     );
                   })}
                 </div>
+                </>
               )}
-            </div>
+              </div>
+            </details>
           ) : null}
 
           <div className="grid items-end gap-5 md:grid-cols-[minmax(0,1fr)_180px_auto]">
@@ -1690,19 +2066,12 @@ export const MediaGenerateView = ({
             run={generatedRun}
             aspectRatio={settings.aspectRatio}
             onOpenRunReview={onOpenRunReview}
+            onEditResult={onEditResult}
+            onAnimateResult={onAnimateResult}
+            onOpenResult={onOpenResult}
           />
         ) : null}
 
-        <div className="flex justify-center border-t border-slate-800/70 pt-4">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onOpenFlow}
-            className="rounded-xl text-slate-500 hover:bg-slate-900 hover:text-slate-200"
-          >
-            <Workflow /> Open in Flow
-          </Button>
-        </div>
       </div>
     </div>
   );

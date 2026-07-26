@@ -8,12 +8,8 @@ import { createFlowAlias } from "./create-flow-alias.helper";
 import {
   getBlockOutputs,
   isExecutableRalphCanvasBlock,
-  isVisualRalphCanvasBlock,
 } from "./get-block-outputs.helper";
-import {
-  RALPH_NOTE_MIN_SIZE,
-  validateFlowLocally,
-} from "./validate-flow-locally.helper";
+import { validateFlowLocally } from "./validate-flow-locally.helper";
 
 const createConnectedFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
   schemaVersion: 1,
@@ -63,7 +59,7 @@ describe("Ralph flow editor local validation helpers", () => {
     expect(createFlowAlias("a".repeat(100))).toHaveLength(80);
   });
 
-  it("derives block outputs for utility, decision, visual, and terminal blocks", () => {
+  it("derives block outputs for utility and decision blocks", () => {
     const pollWithLimit: RalphFlowBlock = {
       id: "poll",
       type: "UTILITY",
@@ -83,13 +79,6 @@ describe("Ralph flow editor local validation helpers", () => {
       prompt: "Choose.",
       labels: ["APPROVE", "APPROVE", "REJECT"],
     };
-    const note: RalphFlowBlock = {
-      id: "note",
-      type: "NOTE",
-      title: "Note",
-      text: "Read me.",
-    };
-
     expect(getBlockOutputs(pollWithLimit)).toEqual([
       "SUCCESS",
       "TIMEOUT",
@@ -97,8 +86,6 @@ describe("Ralph flow editor local validation helpers", () => {
     ]);
     expect(getBlockOutputs(pollWithoutLimit)).toEqual(["SUCCESS", "ERROR"]);
     expect(getBlockOutputs(decision)).toEqual(["APPROVE", "REJECT", "ERROR"]);
-    expect(getBlockOutputs(note)).toEqual([]);
-    expect(isVisualRalphCanvasBlock(note)).toBe(true);
     expect(isExecutableRalphCanvasBlock(decision)).toBe(true);
   });
 
@@ -181,30 +168,24 @@ describe("Ralph flow editor local validation helpers", () => {
     ).toContain("Flow alias review-flow is already used by another flow.");
   });
 
-  it("reports structural errors for missing starts, duplicate ids, bad edges, and visual routes", () => {
-    const note: RalphFlowBlock = {
-      id: "note",
-      type: "NOTE",
-      title: "Note",
-      text: "Context",
-    };
+  it("reports structural errors for missing starts, duplicate ids, and bad edges", () => {
     const messages = issueMessages(
       createConnectedFlow({
         blocks: [
           { id: "end", type: "END", title: "End" },
           { id: "end", type: "END", title: "Duplicate End" },
-          note,
+          { id: "prompt", type: "PROMPT", title: "Prompt", prompt: "Run." },
         ],
         edges: [
           {
-            id: "missing-to-note",
+            id: "missing-to-end",
             from: "missing",
             fromOutput: "SUCCESS",
-            to: "note",
+            to: "end",
           },
           {
-            id: "note-to-missing",
-            from: "note",
+            id: "prompt-to-missing",
+            from: "prompt",
             fromOutput: "SUCCESS",
             to: "missing-target",
           },
@@ -214,12 +195,10 @@ describe("Ralph flow editor local validation helpers", () => {
 
     expect(messages).toContain("Flow must contain exactly one START block.");
     expect(messages).toContain("Block id end is duplicated.");
-    expect(messages).toContain("Edge missing-to-note references missing source missing.");
+    expect(messages).toContain("Edge missing-to-end references missing source missing.");
     expect(messages).toContain(
-      "Edge note-to-missing references missing target missing-target.",
+      "Edge prompt-to-missing references missing target missing-target.",
     );
-    expect(messages).toContain("Route missing-to-note cannot target visual block Note.");
-    expect(messages).toContain("Route note-to-missing cannot start from visual block Note.");
   });
 
   it("validates prompt-like blocks, selected validator scope, and route coverage", () => {
@@ -261,46 +240,6 @@ describe("Ralph flow editor local validation helpers", () => {
     expect(messages).toContain("Prompt does not route SUCCESS.");
     expect(messages).toContain("Prompt does not route ERROR.");
     expect(messages).toContain("Validator is unreachable from START.");
-  });
-
-  it("checks annotation boundary sizes at and below the configured minimums", () => {
-    const atBoundary = issueMessages(
-      createConnectedFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "note",
-            type: "NOTE",
-            title: "Note",
-            text: "Context",
-            size: { ...RALPH_NOTE_MIN_SIZE },
-          },
-          { id: "end", type: "END", title: "End" },
-        ],
-      }),
-    );
-    const belowBoundary = issueMessages(
-      createConnectedFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "note",
-            type: "NOTE",
-            title: "Note",
-            text: "",
-            size: {
-              width: RALPH_NOTE_MIN_SIZE.width - 1,
-              height: RALPH_NOTE_MIN_SIZE.height,
-            },
-          },
-          { id: "end", type: "END", title: "End" },
-        ],
-      }),
-    );
-
-    expect(atBoundary).not.toContain("Note is smaller than the note minimum size.");
-    expect(belowBoundary).toContain("Note is empty.");
-    expect(belowBoundary).toContain("Note is smaller than the note minimum size.");
   });
 
   it("warns for cycles without maxTransitions and errors for invalid maxTransitions", () => {

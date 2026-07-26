@@ -6,7 +6,6 @@ import {
   getRalphBlockOutputs,
   getRalphUtilityOutputs,
   isExecutableRalphBlock,
-  isVisualRalphBlock,
 } from "./get-ralph-block-outputs.helper.ts";
 
 describe("getRalphUtilityOutputs", () => {
@@ -64,7 +63,6 @@ describe("getRalphUtilityOutputs", () => {
     [{ type: "TRANSFORM_JSON" }, ["SUCCESS", "ERROR"]],
     [{ type: "SEARCH_FILES" }, ["SUCCESS", "EMPTY", "ERROR"]],
     [{ type: "RUN_CHECK" }, ["SUCCESS", "FAILED", "ERROR"]],
-    [{ type: "UI_ANALYZE" }, ["SUCCESS", "UNAVAILABLE", "ERROR"]],
     [{ type: "VALIDATE_JSON" }, ["SUCCESS", "INVALID", "ERROR"]],
     [{ type: "FINAL_REPORT" }, ["SUCCESS", "ERROR"]],
   ] as const)("returns outputs for utility %#", (utility, outputs) => {
@@ -139,14 +137,6 @@ describe("getRalphBlockOutputs", () => {
       ["SUCCESS", "CANCELLED", "TIMEOUT", "ERROR"],
     ],
     [
-      { id: "note", type: "NOTE", title: "Note", text: "" },
-      [],
-    ],
-    [
-      { id: "group", type: "GROUP", title: "Group", childBlockIds: [] },
-      [],
-    ],
-    [
       { id: "end", type: "END", title: "End" },
       [],
     ],
@@ -183,22 +173,8 @@ describe("getRalphBlockOutputs", () => {
 
 describe("Ralph block execution classification", () => {
   it.each([
-    [{ id: "note", type: "NOTE", title: "Note", text: "" }, true],
-    [{ id: "group", type: "GROUP", title: "Group", childBlockIds: [] }, true],
     [{ id: "start", type: "START", title: "Start" }, false],
     [{ id: "end", type: "END", title: "End" }, false],
-  ] satisfies Array<[RalphFlowBlock, boolean]>)(
-    "detects visual block %#",
-    (block, expected) => {
-      expect(isVisualRalphBlock(block)).toBe(expected);
-    },
-  );
-
-  it.each([
-    [{ id: "start", type: "START", title: "Start" }, false],
-    [{ id: "end", type: "END", title: "End" }, false],
-    [{ id: "note", type: "NOTE", title: "Note", text: "" }, false],
-    [{ id: "group", type: "GROUP", title: "Group", childBlockIds: [] }, false],
     [
       { id: "prompt", type: "PROMPT", title: "Prompt", prompt: "Do it." },
       true,

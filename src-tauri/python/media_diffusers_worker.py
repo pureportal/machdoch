@@ -1,4 +1,4 @@
-"""Isolated local Diffusers image worker for Media Studio.
+"""Isolated local Diffusers image and video worker for Media Studio.
 
 The desktop process passes only absolute, application-owned paths. Hub access and
 remote code are disabled before importing ML libraries. The worker emits exactly
@@ -8,6 +8,7 @@ directory selected by the desktop process.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import importlib.metadata
 import inspect
@@ -16,12 +17,18 @@ import math
 import os
 from pathlib import Path
 import platform
+import re
 import sys
 import traceback
+import types
 from typing import Any
 
-WORKER_VERSION = "media-diffusers-worker/1.3.0"
+WORKER_VERSION = "media-diffusers-worker/1.18.0"
+KREA_IDENTITY_EDIT_V1_2_R64_DIGEST = (
+    "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423"
+)
 SCHEMA_VERSION = 4
+MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
 LORA_TENSOR_PAIRS = (
     (".lora_down.weight", ".lora_up.weight"),
     (".lora_a.weight", ".lora_b.weight"),
@@ -42,6 +49,8 @@ SUPPORTED_ARCHITECTURES = (
     "stable-diffusion-3",
     "flux-1",
     "flux-2",
+    "krea-2",
+    "wan-2.2-ti2v",
 )
 REQUIRED_PACKAGES = (
     "torch",
@@ -51,15 +60,19 @@ REQUIRED_PACKAGES = (
     "peft",
     "safetensors",
     "Pillow",
+    "imageio-ffmpeg",
 )
-EXPECTED_PACKAGE_VERSIONS = {
-    "torch": "2.13.0",
-    "diffusers": "0.39.0",
-    "transformers": "5.13.0",
-    "accelerate": "1.14.0",
-    "peft": "0.19.1",
-    "safetensors": "0.8.0",
-    "pillow": "12.3.0",
+ACCEPTED_PACKAGE_VERSIONS = {
+    # Torch is selected with the accelerator bundle. AMD's current supported
+    # Windows wheel deliberately trails the generic runtime contract.
+    "torch": ("2.13.0", "2.12.0+rocm7.14.0"),
+    "diffusers": ("0.39.0",),
+    "transformers": ("5.13.0",),
+    "accelerate": ("1.14.0",),
+    "peft": ("0.19.1",),
+    "safetensors": ("0.8.0",),
+    "pillow": ("12.3.0",),
+    "imageio-ffmpeg": ("0.6.0",),
 }
 
 # Never resolve model components or custom Python code over the network.
@@ -92,11 +105,42 @@ def _runtime() -> tuple[Any, Any]:
     return torch, diffusers
 
 
+def _select_cuda_device(torch: Any) -> int:
+    device_count = int(torch.cuda.device_count())
+    if device_count < 1:
+        raise WorkerError("PyTorch reported CUDA availability without a CUDA device")
+    requested = os.environ.get("MACHDOCH_MEDIA_CUDA_DEVICE")
+    if requested is not None:
+        try:
+            index = int(requested)
+        except ValueError as error:
+            raise WorkerError(
+                "MACHDOCH_MEDIA_CUDA_DEVICE must be a numeric CUDA device index"
+            ) from error
+        if not 0 <= index < device_count:
+            raise WorkerError(
+                f"MACHDOCH_MEDIA_CUDA_DEVICE={index} is outside the available device range"
+            )
+        return index
+
+    # Prefer the adapter with the largest usable memory. This is important on
+    # hybrid AMD systems where torch.cuda defaults to the integrated adapter.
+    return max(
+        range(device_count),
+        key=lambda index: (
+            int(torch.cuda.get_device_properties(index).total_memory),
+            0 if "graphics" in str(torch.cuda.get_device_name(index)).lower() else 1,
+            -index,
+        ),
+    )
+
+
 def _device(torch: Any) -> tuple[str, str, int | None]:
     if torch.cuda.is_available():
-        index = torch.cuda.current_device()
+        index = _select_cuda_device(torch)
+        torch.cuda.set_device(index)
         memory = int(torch.cuda.get_device_properties(index).total_memory)
-        return "cuda", str(torch.cuda.get_device_name(index)), memory
+        return "cuda", f"{torch.cuda.get_device_name(index)} (cuda:{index})", memory
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return "mps", "Apple Metal Performance Shaders", None
     return "cpu", platform.processor() or platform.machine(), None
@@ -106,9 +150,9 @@ def probe() -> dict[str, Any]:
     versions = _package_versions()
     missing = [name for name, version in versions.items() if version is None]
     mismatched = [
-        f"{name}={version} (expected {EXPECTED_PACKAGE_VERSIONS[name]})"
+        f"{name}={version} (expected one of {', '.join(ACCEPTED_PACKAGE_VERSIONS[name])})"
         for name, version in versions.items()
-        if version is not None and version != EXPECTED_PACKAGE_VERSIONS[name]
+        if version is not None and version not in ACCEPTED_PACKAGE_VERSIONS[name]
     ]
     if missing or mismatched:
         problems = []
@@ -126,7 +170,22 @@ def probe() -> dict[str, Any]:
             "deviceLabel": None,
             "deviceMemoryBytes": None,
             "architectures": list(SUPPORTED_ARCHITECTURES),
-            "capabilities": ["lora", "textual-inversion", "multi-lora"],
+            "capabilities": [
+                "lora",
+                "textual-inversion",
+                "multi-lora",
+                "local-image-edit",
+                "krea2-grounded-reference-edit",
+                "image-to-video",
+                "start-end-to-video",
+                "vp9-alpha",
+                "alpha-video",
+                "temporal-chroma-matte",
+                "video-quality-presets",
+                "non-looping-video",
+                "seamless-video-loop",
+                "video-composite",
+            ],
             "diagnostic": "Pinned Python runtime is not ready: " + "; ".join(problems),
         }
     try:
@@ -143,7 +202,22 @@ def probe() -> dict[str, Any]:
             "deviceLabel": None,
             "deviceMemoryBytes": None,
             "architectures": list(SUPPORTED_ARCHITECTURES),
-            "capabilities": ["lora", "textual-inversion", "multi-lora"],
+            "capabilities": [
+                "lora",
+                "textual-inversion",
+                "multi-lora",
+                "local-image-edit",
+                "krea2-grounded-reference-edit",
+                "image-to-video",
+                "start-end-to-video",
+                "vp9-alpha",
+                "alpha-video",
+                "temporal-chroma-matte",
+                "video-quality-presets",
+                "non-looping-video",
+                "seamless-video-loop",
+                "video-composite",
+            ],
             "diagnostic": str(error),
         }
     return {
@@ -156,7 +230,22 @@ def probe() -> dict[str, Any]:
         "deviceLabel": label,
         "deviceMemoryBytes": memory,
         "architectures": list(SUPPORTED_ARCHITECTURES),
-        "capabilities": ["lora", "textual-inversion", "multi-lora"],
+        "capabilities": [
+            "lora",
+            "textual-inversion",
+            "multi-lora",
+            "local-image-edit",
+            "krea2-grounded-reference-edit",
+            "image-to-video",
+            "start-end-to-video",
+            "vp9-alpha",
+            "alpha-video",
+            "temporal-chroma-matte",
+            "video-quality-presets",
+            "non-looping-video",
+            "seamless-video-loop",
+            "video-composite",
+        ],
         "diagnostic": "Pinned local Diffusers imports succeeded.",
     }
 
@@ -193,6 +282,771 @@ def _fresh_output_directory(value: Any) -> Path:
     return path.resolve(strict=True)
 
 
+def _krea_runtime_paths(config_path: Path) -> tuple[Path, Path]:
+    manifest_path = config_path / "krea-runtime.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise WorkerError(
+            "KREA runtime manifest is missing; re-import the checkpoint after "
+            "installing models/krea-2/runtime"
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WorkerError(f"KREA runtime manifest is invalid: {error}") from error
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schemaVersion") != 1
+        or manifest.get("textEncoder", {}).get("revision")
+        != "ebb281ec70b05090aa6165b016eac8ec08e71b17"
+        or manifest.get("vae", {}).get("revision")
+        != "75e0b4be04f60ec59a75f475837eced720f823b6"
+    ):
+        raise WorkerError("KREA runtime manifest does not pin the supported revisions")
+    runtime_root = _absolute_existing_path(manifest.get("runtimeRoot"), file=False)
+    text_root = runtime_root / "qwen3-vl"
+    vae_root = runtime_root / "qwen-image" / "vae"
+    required = (
+        text_root / "config.json",
+        text_root / "tokenizer_config.json",
+        text_root / "tokenizer.json",
+        text_root / "model.safetensors.index.json",
+        text_root / "model-00001-of-00002.safetensors",
+        text_root / "model-00002-of-00002.safetensors",
+        vae_root / "config.json",
+        vae_root / "diffusion_pytorch_model.safetensors",
+    )
+    missing = [
+        path.relative_to(runtime_root).as_posix()
+        for path in required
+        if not path.is_file() or path.is_symlink() or path.stat().st_size == 0
+    ]
+    if missing:
+        raise WorkerError("KREA runtime bundle is incomplete; missing " + ", ".join(missing))
+    if sum(path.stat().st_size for path in required) < 8_500_000_000:
+        raise WorkerError("KREA runtime bundle is truncated")
+    return text_root, vae_root
+
+
+def _krea_state_key(source_key: str) -> str:
+    key = source_key.removeprefix("model.diffusion_model.")
+    suffix = ""
+    for candidate in (".weight", ".bias", ".scale", ".lin"):
+        if key.endswith(candidate):
+            key, suffix = key[: -len(candidate)], candidate
+            break
+    standalone = {
+        "first": "img_in",
+        "last.linear": "final_layer.linear",
+        "last.norm": "final_layer.norm",
+        "last.modulation": "final_layer.scale_shift_table",
+        "tmlp.0": "time_embed.linear_1",
+        "tmlp.2": "time_embed.linear_2",
+        "tproj.1": "time_mod_proj",
+        "txtmlp.0": "txt_in.norm",
+        "txtmlp.1": "txt_in.linear_1",
+        "txtmlp.3": "txt_in.linear_2",
+        "txtfusion.projector": "text_fusion.projector",
+    }
+    block_match = re.fullmatch(r"blocks\.(\d+)\.(.*)", key)
+    text_match = re.fullmatch(
+        r"txtfusion\.(layerwise_blocks|refiner_blocks)\.(\d+)\.(.*)", key
+    )
+    module_map = {
+        "prenorm": "norm1",
+        "postnorm": "norm2",
+        "mod": "scale_shift_table",
+        "attn.wq": "attn.to_q",
+        "attn.wk": "attn.to_k",
+        "attn.wv": "attn.to_v",
+        "attn.wo": "attn.to_out.0",
+        "attn.gate": "attn.to_gate",
+        "attn.qknorm.qnorm": "attn.norm_q",
+        "attn.qknorm.knorm": "attn.norm_k",
+        "mlp.gate": "ff.gate",
+        "mlp.up": "ff.up",
+        "mlp.down": "ff.down",
+    }
+    if block_match:
+        index, module = block_match.groups()
+        destination = f"transformer_blocks.{index}.{module_map[module]}"
+    elif text_match:
+        group, index, module = text_match.groups()
+        destination = f"text_fusion.{group}.{index}.{module_map[module]}"
+    else:
+        destination = standalone[key]
+    destination_suffix = {
+        ".weight": ".weight",
+        ".bias": ".bias",
+        ".scale": ".weight",
+        ".lin": "",
+    }[suffix]
+    return destination + destination_suffix
+
+
+def _krea_scaled_fp8_linear_forward(module: Any, input_tensor: Any) -> Any:
+    import torch
+
+    original_shape = input_tensor.shape
+    input_2d = input_tensor.reshape(-1, original_shape[-1])
+    # The checkpoint stores Wq and one FP32 scale such that W = Wq * scale.
+    # gfx1201 exposes the scaled FP8 GEMM directly. Dynamically quantizing the
+    # activation avoids materializing a BF16 copy of projections as large as
+    # 100M parameters (roughly 200 MB each).
+    activation_scale = (
+        input_2d.detach().abs().amax().to(torch.float32) / 448.0
+    ).clamp_min(1e-12)
+    quantized_input = (
+        input_2d / activation_scale.to(dtype=input_2d.dtype)
+    ).to(torch.float8_e4m3fn)
+    output = torch._scaled_mm(
+        quantized_input,
+        module.weight.t(),
+        scale_a=activation_scale,
+        scale_b=module._machdoch_weight_scale.to(  # noqa: SLF001
+            device=input_2d.device, dtype=torch.float32
+        ),
+        out_dtype=input_2d.dtype,
+        use_fast_accum=False,
+    )
+    if module.bias is not None:
+        output.add_(module.bias.to(dtype=output.dtype))
+    return output.reshape(*original_shape[:-1], output.shape[-1])
+
+
+def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
+    from accelerate import init_empty_weights
+    from accelerate.utils import set_module_tensor_to_device
+    from safetensors import safe_open
+
+    with init_empty_weights():
+        transformer = diffusers.Krea2Transformer2DModel()
+    expected = set(transformer.state_dict())
+    observed: set[str] = set()
+    scaled_modules: list[tuple[str, Any]] = []
+    with safe_open(str(checkpoint), framework="pt", device="cpu") as tensor_file:
+        source_keys = [
+            key
+            for key in tensor_file.keys()
+            if not key.endswith(".comfy_quant") and not key.endswith(".weight_scale")
+        ]
+        for source_key in source_keys:
+            try:
+                destination = _krea_state_key(source_key)
+            except (KeyError, AttributeError) as error:
+                raise WorkerError(
+                    f"KREA checkpoint contains an unmapped tensor: {source_key}"
+                ) from error
+            if destination in observed:
+                raise WorkerError(f"KREA checkpoint maps duplicate tensor {destination}")
+            value = tensor_file.get_tensor(source_key)
+            if destination.endswith("scale_shift_table") and value.ndim == 1:
+                value = value.reshape(-1, 6144)
+            if tuple(value.shape) != tuple(transformer.state_dict()[destination].shape):
+                raise WorkerError(
+                    f"KREA tensor {source_key} has an incompatible shape for {destination}"
+                )
+            is_fp8 = value.dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
+            set_module_tensor_to_device(
+                transformer,
+                destination,
+                "cpu",
+                value=value,
+                # Accelerate treats dtype=None as "cast to the meta
+                # parameter's default" (FP32); pass FP8 explicitly so the
+                # 13.1 GB checkpoint does not expand to roughly 50 GB.
+                dtype=value.dtype if is_fp8 else torch.bfloat16,
+            )
+            observed.add(destination)
+            if is_fp8:
+                scale_key = source_key.removesuffix(".weight") + ".weight_scale"
+                quant_key = source_key.removesuffix(".weight") + ".comfy_quant"
+                if scale_key not in tensor_file.keys() or quant_key not in tensor_file.keys():
+                    raise WorkerError(f"KREA FP8 tensor {source_key} has no scale metadata")
+                try:
+                    quant = json.loads(
+                        bytes(tensor_file.get_tensor(quant_key).tolist()).decode("utf-8")
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise WorkerError(
+                        f"KREA FP8 tensor {source_key} has invalid quantization metadata"
+                    ) from error
+                if quant.get("format") != "float8_e4m3fn":
+                    raise WorkerError(
+                        f"KREA tensor {source_key} uses unsupported {quant.get('format')} quantization"
+                    )
+                module_name = destination.removesuffix(".weight")
+                scaled_modules.append((module_name, tensor_file.get_tensor(scale_key)))
+    if observed != expected:
+        missing = sorted(expected - observed)
+        raise WorkerError(
+            "KREA checkpoint does not cover the complete transformer"
+            + (f"; missing {', '.join(missing[:8])}" if missing else "")
+        )
+    for module_name, scale in scaled_modules:
+        module = transformer.get_submodule(module_name)
+        if not isinstance(module, torch.nn.Linear):
+            raise WorkerError(f"KREA FP8 target {module_name} is not a linear layer")
+        module.register_buffer("_machdoch_weight_scale", scale.to(torch.float32))
+        module.forward = types.MethodType(_krea_scaled_fp8_linear_forward, module)
+    transformer.eval().requires_grad_(False)
+    return transformer
+
+
+def _load_krea_pipeline(
+    diffusers: Any, torch: Any, model: dict[str, Any], checkpoint: Path
+) -> Any:
+    if getattr(torch.version, "hip", None) is None:
+        raise WorkerError("The managed KREA 2 FP8 profile requires the AMD ROCm runtime")
+    if not torch.cuda.is_bf16_supported():
+        raise WorkerError("KREA 2 requires bfloat16 support on the selected AMD adapter")
+    config_path = _absolute_existing_path(model.get("configPath"), file=False)
+    text_root, vae_root = _krea_runtime_paths(config_path)
+    transformer = _load_krea_transformer(diffusers, torch, checkpoint)
+    vae = diffusers.AutoencoderKLQwenImage.from_pretrained(
+        str(vae_root),
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+    )
+    scheduler = diffusers.FlowMatchEulerDiscreteScheduler(
+        num_train_timesteps=1_000,
+        use_dynamic_shifting=True,
+        base_shift=0.5,
+        max_shift=1.15,
+        base_image_seq_len=256,
+        max_image_seq_len=6_400,
+        time_shift_type="exponential",
+    )
+    pipeline = diffusers.Krea2Pipeline(
+        scheduler=scheduler,
+        vae=vae,
+        text_encoder=None,
+        tokenizer=None,
+        transformer=transformer,
+        is_distilled=True,
+    )
+    pipeline._machdoch_krea_text_root = text_root
+    pipeline._machdoch_krea_runtime_root = text_root.parent
+    pipeline.vae.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+    if hasattr(pipeline.vae, "enable_tiling"):
+        pipeline.vae.enable_tiling()
+    if hasattr(pipeline, "set_progress_bar_config"):
+        pipeline.set_progress_bar_config(
+            disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
+        )
+    return pipeline
+
+
+def _physical_memory_bytes() -> int | None:
+    """Return installed RAM without adding a runtime dependency."""
+    if os.name == "nt":
+        import ctypes
+
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [
+                ("length", ctypes.c_ulong),
+                ("memory_load", ctypes.c_ulong),
+                ("total_physical", ctypes.c_ulonglong),
+                ("available_physical", ctypes.c_ulonglong),
+                ("total_page_file", ctypes.c_ulonglong),
+                ("available_page_file", ctypes.c_ulonglong),
+                ("total_virtual", ctypes.c_ulonglong),
+                ("available_virtual", ctypes.c_ulonglong),
+                ("available_extended_virtual", ctypes.c_ulonglong),
+            ]
+
+        status = MemoryStatus()
+        status.length = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return int(status.total_physical)
+        return None
+    page_size = getattr(os, "sysconf", lambda _name: None)("SC_PAGE_SIZE")
+    page_count = getattr(os, "sysconf", lambda _name: None)("SC_PHYS_PAGES")
+    if isinstance(page_size, int) and isinstance(page_count, int):
+        return page_size * page_count
+    return None
+
+
+def _krea_disk_cache_directory(
+    pipeline: Any,
+    model: dict[str, Any],
+    addons: list[dict[str, Any]],
+) -> tuple[Path, str]:
+    model_digest = _required_text(model, "digest", 64)
+    enabled_addons = [
+        {
+            "kind": addon.get("kind"),
+            "digest": addon.get("digest"),
+        }
+        for addon in addons
+        if isinstance(addon, dict) and addon.get("enabled", True)
+    ]
+    signature = hashlib.sha256(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "workerVersion": WORKER_VERSION,
+                "torchVersion": __import__("torch").__version__,
+                "diffusersVersion": __import__("diffusers").__version__,
+                "modelDigest": model_digest,
+                "addons": enabled_addons,
+                "groupSize": 1,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    runtime_root = Path(pipeline._machdoch_krea_runtime_root).resolve(strict=True)
+    cache_root = runtime_root / "transformer-offload"
+    return cache_root / signature, signature
+
+
+def _validated_krea_disk_cache(cache_directory: Path, signature: str) -> bool:
+    manifest_path = cache_directory / "complete.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schemaVersion") != 1
+        or manifest.get("signature") != signature
+        or not isinstance(files, list)
+        or not files
+    ):
+        return False
+    expected_names: set[str] = set()
+    for item in files:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("name"), str)
+            or not re.fullmatch(r"group_[0-9a-f]+\.safetensors", item["name"])
+            or not isinstance(item.get("sizeBytes"), int)
+            or item["sizeBytes"] <= 0
+        ):
+            return False
+        expected_names.add(item["name"])
+        path = cache_directory / item["name"]
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.stat().st_size != item["sizeBytes"]
+        ):
+            return False
+    observed_names = {
+        path.name for path in cache_directory.glob("group_*.safetensors")
+    }
+    return observed_names == expected_names
+
+
+def _remove_incomplete_krea_disk_cache(
+    cache_directory: Path,
+    runtime_root: Path,
+) -> None:
+    import shutil
+
+    resolved_root = runtime_root.resolve(strict=True)
+    resolved_cache = cache_directory.resolve(strict=False)
+    if (
+        resolved_cache.parent != (resolved_root / "transformer-offload").resolve(
+            strict=False
+        )
+        or not re.fullmatch(r"[0-9a-f]{64}", resolved_cache.name)
+    ):
+        raise WorkerError("Refusing to replace an unsafe KREA offload cache path")
+    if resolved_cache.exists():
+        shutil.rmtree(resolved_cache)
+
+
+def _install_windows_krea_disk_offload_fixes(torch: Any) -> bool:
+    if os.name != "nt":
+        return False
+    import functools
+    import safetensors.torch as safe_torch
+    from diffusers.hooks.group_offloading import ModuleGroup
+
+    selected_device = int(torch.cuda.current_device())
+    original_load_file = getattr(
+        safe_torch.load_file,
+        "_machdoch_original",
+        safe_torch.load_file,
+    )
+
+    @functools.wraps(original_load_file)
+    def load_file_on_selected_device(
+        filename: str,
+        device: str = "cpu",
+    ) -> Any:
+        # Diffusers 0.39 reduces cuda:1 to "cuda" at this boundary.
+        if device == "cuda":
+            device = f"cuda:{selected_device}"
+        return original_load_file(filename, device=device)
+
+    load_file_on_selected_device._machdoch_original = original_load_file
+    safe_torch.load_file = load_file_on_selected_device
+
+    original_offload = getattr(
+        ModuleGroup._offload_to_disk,
+        "_machdoch_original",
+        ModuleGroup._offload_to_disk,
+    )
+
+    @functools.wraps(original_offload)
+    def compact_offload_to_disk(group: Any) -> None:
+        group._check_disk_offload_torchao()
+        if (
+            not group._is_offloaded_to_disk
+            and not os.path.exists(group.safetensors_file_path)
+        ):
+            os.makedirs(os.path.dirname(group.safetensors_file_path), exist_ok=True)
+            tensors_to_save = {
+                key: tensor.data.to(group.offload_device)
+                for tensor, key in group.tensor_to_key.items()
+            }
+            safe_torch.save_file(tensors_to_save, group.safetensors_file_path)
+        group._is_offloaded_to_disk = True
+        # Upstream uses empty_like() here. On Windows that reserves the entire
+        # 12.2 GB model again and WDDM counts it against the page-file commit,
+        # even though the pages are never touched. Parameter.data accepts a
+        # zero-sized placeholder and the hook restores the exact shape before
+        # every forward, eliminating that false duplicate residency.
+        for tensor in group.tensor_to_key:
+            tensor.data = torch.empty(
+                0,
+                dtype=tensor.dtype,
+                device=group.offload_device,
+            )
+
+    compact_offload_to_disk._machdoch_original = original_offload
+    ModuleGroup._offload_to_disk = compact_offload_to_disk
+    return True
+
+
+def _configure_krea_offload(
+    pipeline: Any,
+    torch: Any,
+    model: dict[str, Any],
+    addons: list[dict[str, Any]],
+    requested_profile: Any,
+) -> dict[str, Any]:
+    if requested_profile is None:
+        requested_profile = "auto"
+    if requested_profile not in (
+        "auto",
+        "memory-saver",
+        "balanced",
+        "maximum-speed",
+    ):
+        raise WorkerError(
+            "memoryProfile must be auto, memory-saver, balanced, or maximum-speed"
+        )
+    physical_memory = _physical_memory_bytes()
+    if requested_profile == "auto":
+        # The 12.2 GB FP8 transformer, WDDM's GPU commit backing, and the host
+        # application exceed a 32 GB machine's page-file commit during edit
+        # attention. Official Diffusers disk group offload removes the duplicate
+        # host residency while preserving the exact checkpoint and adapter.
+        effective_profile = (
+            "memory-saver"
+            if physical_memory is None or physical_memory < 48 * 1024**3
+            else "balanced"
+        )
+    else:
+        effective_profile = requested_profile
+    disk_cache_hit = False
+    windows_disk_fixes = False
+    cache_directory: Path | None = None
+    group_size = 1 if effective_profile != "maximum-speed" else 4
+    arguments: dict[str, Any] = {
+        "onload_device": torch.device(f"cuda:{torch.cuda.current_device()}"),
+        "offload_device": torch.device("cpu"),
+        "offload_type": "block_level",
+        "num_blocks_per_group": group_size,
+        "use_stream": False,
+        "exclude_modules": "vae",
+    }
+    if effective_profile == "memory-saver":
+        cache_directory, signature = _krea_disk_cache_directory(
+            pipeline,
+            model,
+            addons,
+        )
+        runtime_root = Path(pipeline._machdoch_krea_runtime_root)
+        disk_cache_hit = _validated_krea_disk_cache(cache_directory, signature)
+        if cache_directory.exists() and not disk_cache_hit:
+            _remove_incomplete_krea_disk_cache(cache_directory, runtime_root)
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        windows_disk_fixes = _install_windows_krea_disk_offload_fixes(torch)
+        arguments["offload_to_disk_path"] = str(cache_directory)
+    pipeline.enable_group_offload(**arguments)
+    cache_size = None
+    cache_files = None
+    if cache_directory is not None:
+        group_files = sorted(cache_directory.glob("group_*.safetensors"))
+        cache_size = sum(path.stat().st_size for path in group_files)
+        cache_files = len(group_files)
+        if not disk_cache_hit:
+            manifest = {
+                "schemaVersion": 1,
+                "signature": signature,
+                "files": [
+                    {"name": path.name, "sizeBytes": path.stat().st_size}
+                    for path in group_files
+                ],
+            }
+            temporary_manifest = cache_directory / f".complete.{os.getpid()}.tmp"
+            temporary_manifest.write_text(
+                json.dumps(manifest, separators=(",", ":"), sort_keys=True),
+                encoding="utf-8",
+            )
+            os.replace(temporary_manifest, cache_directory / "complete.json")
+    return {
+        "requestedMemoryProfile": requested_profile,
+        "effectiveMemoryProfile": effective_profile,
+        "physicalMemoryBytes": physical_memory,
+        "offloadType": "block-level-disk"
+        if cache_directory is not None
+        else "block-level-cpu",
+        "blocksPerGroup": group_size,
+        "diskCacheHit": disk_cache_hit if cache_directory is not None else None,
+        "diskCachePath": str(cache_directory) if cache_directory is not None else None,
+        "diskCacheFiles": cache_files,
+        "diskCacheBytes": cache_size,
+        "windowsDiskOffloadCompatibility": windows_disk_fixes,
+    }
+
+
+def _encode_krea_prompt(torch: Any, text_root: Path, prompt: str) -> tuple[Any, Any]:
+    from transformers import AutoTokenizer, Qwen3VLForConditionalGeneration
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(text_root), local_files_only=True, trust_remote_code=False
+    )
+    encoder = Qwen3VLForConditionalGeneration.from_pretrained(
+        str(text_root),
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        trust_remote_code=False,
+        low_cpu_mem_usage=True,
+    )
+    device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    encoder.to(device).eval().requires_grad_(False)
+    prefix = (
+        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, "
+        "texture, quantity, text, spatial relationships of the objects and background:"
+        "<|im_end|>\n<|im_start|>user\n"
+    )
+    suffix = "<|im_end|>\n<|im_start|>assistant\n"
+    prefix_tokens = 34
+    text_tokens = tokenizer(
+        [prefix + prompt],
+        truncation=True,
+        padding="max_length",
+        max_length=512 + prefix_tokens - 5,
+        return_tensors="pt",
+    ).to(device)
+    suffix_tokens = tokenizer([suffix], return_tensors="pt").to(device)
+    input_ids = torch.cat((text_tokens.input_ids, suffix_tokens.input_ids), dim=1)
+    attention_mask = torch.cat(
+        (text_tokens.attention_mask, suffix_tokens.attention_mask), dim=1
+    ).bool()
+    position_ids = (attention_mask.long().cumsum(dim=-1) - 1).clamp(min=0)
+    position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+    with torch.inference_mode():
+        states = encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            output_hidden_states=True,
+        )
+        # Windows ROCm 7.14 intermittently faults in the HIP cat kernel used by
+        # torch.stack for this 68 MB tensor. The encoder work remains on the
+        # GPU; copying the twelve selected taps separately and stacking on the
+        # host avoids that unnecessary kernel and lowers peak VRAM.
+        selected = [
+            states.hidden_states[index][:, prefix_tokens:].to(
+                device="cpu", dtype=torch.bfloat16
+            )
+            for index in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
+        ]
+    hidden = torch.stack(selected, dim=2)
+    mask = attention_mask[:, prefix_tokens:].to(device="cpu")
+    del states, encoder, tokenizer, input_ids, attention_mask, position_ids
+    del text_tokens, suffix_tokens, selected
+    gc.collect()
+    torch.cuda.empty_cache()
+    return hidden, mask
+
+
+def _encode_krea_grounded_prompt(
+    torch: Any,
+    text_root: Path,
+    prompt: str,
+    reference_path: Path,
+    grounding_pixels: int,
+) -> tuple[Any, Any, dict[str, Any]]:
+    """Run KREA Edit's training-matched image-plus-instruction Qwen path."""
+    from PIL import Image
+    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+
+    if not 384 <= grounding_pixels <= 1_024:
+        raise WorkerError("groundingPixels must be between 384 and 1024")
+    source_digest = _sha256_file(reference_path)
+    cache_key = hashlib.sha256(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "engine": "qwen3-vl-grounded-krea-edit-v1",
+                "textRevision": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+                "sourceDigest": source_digest,
+                "prompt": prompt,
+                "groundingPixels": grounding_pixels,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    cache_directory = text_root.parent / "grounding-cache"
+    cache_path = cache_directory / f"{cache_key}.safetensors"
+    if cache_path.is_file() and not cache_path.is_symlink():
+        from safetensors.torch import load_file
+
+        cached = load_file(str(cache_path), device="cpu")
+        hidden = cached.get("hidden")
+        mask_tensor = cached.get("mask")
+        if (
+            hidden is not None
+            and mask_tensor is not None
+            and tuple(hidden.shape) == (1, 512, 12, 2560)
+            and tuple(mask_tensor.shape) == (1, 512)
+        ):
+            with Image.open(reference_path) as opened:
+                original_size = opened.size
+            return hidden, mask_tensor.bool(), {
+                "engine": "qwen3-vl-grounded-krea-edit-v1",
+                "sourceDigest": source_digest,
+                "originalWidth": original_size[0],
+                "originalHeight": original_size[1],
+                "groundingPixels": grounding_pixels,
+                "device": "persistent-safe-tensor-cache",
+                "cacheHit": True,
+                "cacheKey": cache_key,
+                "sequenceLength": 512,
+                "selectedHiddenLayers": [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35],
+            }
+    processor = AutoProcessor.from_pretrained(
+        str(text_root),
+        local_files_only=True,
+        trust_remote_code=False,
+    )
+    encoder = Qwen3VLForConditionalGeneration.from_pretrained(
+        str(text_root),
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        trust_remote_code=False,
+        low_cpu_mem_usage=True,
+    )
+    with Image.open(reference_path) as opened:
+        grounded_image = opened.convert("RGB")
+    original_size = grounded_image.size
+    grounded_image.thumbnail(
+        (grounding_pixels, grounding_pixels),
+        Image.Resampling.LANCZOS,
+    )
+    grounded_size = grounded_image.size
+    prefix = (
+        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, "
+        "texture, quantity, text, spatial relationships of the objects and background:"
+        "<|im_end|>\n<|im_start|>user\n"
+    )
+    template = (
+        prefix
+        + "<|vision_start|><|image_pad|><|vision_end|>"
+        + prompt
+        + "<|im_end|>\n<|im_start|>assistant\n"
+    )
+    # The system and opening user turn are 34 tokens for this pinned tokenizer.
+    # Padding to 546 leaves the exact 512-token KREA transformer contract after
+    # the prefix is removed, while retaining image tokens inside that sequence.
+    prefix_tokens = 34
+    inputs = processor(
+        text=[template],
+        images=[grounded_image],
+        truncation=True,
+        padding="max_length",
+        max_length=512 + prefix_tokens,
+        return_tensors="pt",
+    )
+    # Qwen3-VL's multimodal RoPE path reaches a HIP gather kernel that can
+    # access-violate (rather than raise) in the pinned Windows ROCm 7.14 build.
+    # Text-only Qwen is unaffected. Run only this sequential grounding pass on
+    # the host on HIP; it is released before the FP8 KREA denoiser is loaded.
+    grounded_on_cpu = getattr(torch.version, "hip", None) is not None
+    device = (
+        torch.device("cpu")
+        if grounded_on_cpu
+        else torch.device(f"cuda:{torch.cuda.current_device()}")
+    )
+    encoder.to(device).eval().requires_grad_(False)
+    inputs = inputs.to(device)
+    with torch.inference_mode():
+        states = encoder(
+            **inputs,
+            output_hidden_states=True,
+        )
+        selected = [
+            states.hidden_states[index][:, prefix_tokens:].to(
+                device="cpu",
+                dtype=torch.bfloat16,
+            )
+            for index in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
+        ]
+    hidden = torch.stack(selected, dim=2)
+    mask = inputs.attention_mask[:, prefix_tokens:].to(device="cpu").bool()
+    if hidden.shape[1] != 512 or mask.shape[1] != 512:
+        raise WorkerError("KREA grounded encoder did not preserve its 512-token contract")
+    del states, encoder, processor, inputs, selected
+    gc.collect()
+    torch.cuda.empty_cache()
+    evidence = {
+        "engine": "qwen3-vl-grounded-krea-edit-v1",
+        "sourceDigest": source_digest,
+        "originalWidth": original_size[0],
+        "originalHeight": original_size[1],
+        "groundedWidth": grounded_size[0],
+        "groundedHeight": grounded_size[1],
+        "groundingPixels": grounding_pixels,
+        "device": "cpu-windows-rocm-safety-fallback" if grounded_on_cpu else "cuda",
+        "cacheHit": False,
+        "cacheKey": cache_key,
+        "sequenceLength": 512,
+        "selectedHiddenLayers": [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35],
+    }
+    from safetensors.torch import save_file
+
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    temporary_cache = cache_directory / f".{cache_key}.{os.getpid()}.tmp"
+    save_file(
+        {
+            "hidden": hidden.contiguous(),
+            "mask": mask.to(dtype=torch.uint8).contiguous(),
+        },
+        str(temporary_cache),
+        metadata={
+            "schemaVersion": "1",
+            "engine": "qwen3-vl-grounded-krea-edit-v1",
+            "sourceDigest": source_digest,
+        },
+    )
+    os.replace(temporary_cache, cache_path)
+    return hidden, mask, evidence
+
+
 def _load_pipeline(diffusers: Any, torch: Any, model: dict[str, Any]) -> Any:
     architecture = _required_text(model, "architecture", 64)
     if architecture not in SUPPORTED_ARCHITECTURES:
@@ -208,7 +1062,9 @@ def _load_pipeline(diffusers: Any, torch: Any, model: dict[str, Any]) -> Any:
         "local_files_only": True,
         "use_safetensors": True,
     }
-    if package_kind == "diffusers-directory":
+    if architecture == "krea-2" and package_kind == "single-file":
+        pipeline = _load_krea_pipeline(diffusers, torch, model, model_path)
+    elif package_kind == "diffusers-directory":
         pipeline = diffusers.DiffusionPipeline.from_pretrained(
             str(model_path), trust_remote_code=False, **common
         )
@@ -234,8 +1090,10 @@ def _load_pipeline(diffusers: Any, torch: Any, model: dict[str, Any]) -> Any:
     else:
         raise WorkerError(f"Unsupported model package kind: {package_kind}")
 
-    if device == "cuda" and hasattr(pipeline, "enable_model_cpu_offload"):
-        pipeline.enable_model_cpu_offload()
+    if architecture == "krea-2":
+        pass
+    elif device == "cuda" and hasattr(pipeline, "enable_model_cpu_offload"):
+        pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device())
     else:
         pipeline.to(device)
     if hasattr(pipeline, "set_progress_bar_config"):
@@ -250,16 +1108,36 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(model, dict):
         raise WorkerError("model is required")
     torch, diffusers = _runtime()
-    pipeline = _load_pipeline(diffusers, torch, model)
     architecture = _required_text(model, "architecture", 64)
-    required_methods = ["load_lora_weights", "set_adapters", "get_list_adapters"]
-    if architecture in (
-        "stable-diffusion-1",
-        "stable-diffusion-2",
-        "stable-diffusion-xl",
-        "flux-1",
-    ):
-        required_methods.append("load_textual_inversion")
+    if architecture == "wan-2.2-ti2v":
+        pipeline, _, _ = _load_video_pipeline(diffusers, torch, model)
+        required_methods: list[str] = []
+        capabilities = [
+            "image-to-video",
+            "start-end-to-video",
+            "vp9-alpha",
+            "alpha-video",
+            "video-composite",
+        ]
+    else:
+        pipeline = _load_pipeline(diffusers, torch, model)
+        required_methods = ["load_lora_weights", "set_adapters", "get_list_adapters"]
+        if architecture in (
+            "stable-diffusion-1",
+            "stable-diffusion-2",
+            "stable-diffusion-xl",
+            "flux-1",
+        ):
+            required_methods.append("load_textual_inversion")
+        capabilities = [
+            "lora",
+            "multi-lora",
+            *(
+                ["textual-inversion"]
+                if hasattr(pipeline, "load_textual_inversion")
+                else []
+            ),
+        ]
     missing_methods = [name for name in required_methods if not hasattr(pipeline, name)]
     if missing_methods:
         raise WorkerError(
@@ -285,11 +1163,7 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         "architecture": architecture,
         "pipelineClass": type(pipeline).__name__,
         "components": component_names[:64],
-        "capabilities": [
-            "lora",
-            "multi-lora",
-            *(["textual-inversion"] if hasattr(pipeline, "load_textual_inversion") else []),
-        ],
+        "capabilities": capabilities,
         "device": device,
         "deviceLabel": device_label,
         "deviceMemoryBytes": device_memory,
@@ -697,6 +1571,40 @@ def _apply_addons(
                 adapter_name=name,
                 low_cpu_mem_usage=True,
             )
+            # PEFT initializes adapter matrices from the base layer's dtype. For
+            # scaled-FP8 KREA checkpoints that would leave LoRA A/B in FP8 and
+            # route them through ordinary addmm, which ROCm intentionally does
+            # not implement. The frozen base still uses its checkpoint scale
+            # through _scaled_mm; adapters are small and compute in BF16.
+            if getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
+                import torch
+
+                cast_adapter_modules = 0
+                for component in pipeline.components.values():
+                    if not isinstance(component, torch.nn.Module):
+                        continue
+                    for module in component.modules():
+                        for collection_name in (
+                            "lora_A",
+                            "lora_B",
+                            "lora_embedding_A",
+                            "lora_embedding_B",
+                        ):
+                            collection = getattr(module, collection_name, None)
+                            if collection is None or name not in collection:
+                                continue
+                            adapter_module = collection[name]
+                            if isinstance(adapter_module, torch.nn.Module):
+                                adapter_module.to(dtype=torch.bfloat16)
+                            elif isinstance(adapter_module, torch.nn.Parameter):
+                                adapter_module.data = adapter_module.data.to(
+                                    dtype=torch.bfloat16
+                                )
+                            cast_adapter_modules += 1
+                if cast_adapter_modules == 0:
+                    raise WorkerError(
+                        f"LoRA {addon_id} registered no BF16 adapter matrices"
+                    )
             loaded_components = _confirmed_lora_components(
                 pipeline, name, target_components
             )
@@ -904,8 +1812,21 @@ def _scheduled_lora_callback(
     return on_step_end
 
 
-def _dimensions(architecture: str, aspect_ratio: str) -> tuple[int, int]:
+def _dimensions(
+    architecture: str, aspect_ratio: str, policy: str
+) -> tuple[int, int]:
     small = architecture in ("stable-diffusion-1", "stable-diffusion-2")
+    if architecture in ("flux-2", "krea-2"):
+        scale = {"fast": 512, "balanced": 768, "quality": 1024}[policy]
+        table = {
+            "1:1": (scale, scale),
+            "4:5": (scale // 8 * 7, scale // 8 * 9),
+            "16:9": (scale // 8 * 11, scale // 8 * 6),
+            "9:16": (scale // 8 * 6, scale // 8 * 11),
+        }
+        if aspect_ratio not in table:
+            raise WorkerError(f"Unsupported aspect ratio: {aspect_ratio}")
+        return table[aspect_ratio]
     table = {
         "1:1": (512, 512) if small else (1024, 1024),
         "4:5": (448, 560) if small else (896, 1120),
@@ -920,7 +1841,394 @@ def _dimensions(architecture: str, aspect_ratio: str) -> tuple[int, int]:
 def _steps(architecture: str, policy: str) -> int:
     if architecture == "flux-2":
         return {"fast": 4, "balanced": 6, "quality": 8}[policy]
+    if architecture == "krea-2":
+        return {"fast": 8, "balanced": 10, "quality": 12}[policy]
     return {"fast": 16, "balanced": 24, "quality": 32}[policy]
+
+
+def _validate_generated_pixels(
+    image: Any,
+    applied_addons: list[dict[str, Any]],
+    require_chroma_background: bool,
+) -> None:
+    """Reject collapsed adapter output and explicitly requested broken chroma plates."""
+    if any(addon.get("kind") == "lora" for addon in applied_addons):
+        sample = image.convert("RGB")
+        sample.thumbnail((128, 128))
+        extrema = sample.getextrema()
+        histogram = sample.histogram()
+        pixel_count = sample.width * sample.height
+        channel_means = [
+            sum(
+                value * count
+                for value, count in enumerate(histogram[offset : offset + 256])
+            )
+            / pixel_count
+            for offset in (0, 256, 512)
+        ]
+        peak = max(maximum for _, maximum in extrema)
+        floor = min(minimum for minimum, _ in extrema)
+        collapsed_dark = max(channel_means) < 6.0 and peak < 160
+        collapsed_light = min(channel_means) > 249.0 and floor > 95
+        if collapsed_dark or collapsed_light:
+            addon_ids = ", ".join(
+                str(addon.get("addonId", "unknown"))
+                for addon in applied_addons
+                if addon.get("kind") == "lora"
+            )
+            raise WorkerError(
+                "Generated pixels collapsed near "
+                f"{'black' if collapsed_dark else 'white'} after applying LoRA {addon_ids}. "
+                "The adapter is incompatible with this model/runtime at the selected strength; "
+                "lower its strength or choose a compatible adapter."
+            )
+    if require_chroma_background:
+        import numpy as np
+
+        pixels = np.asarray(image.convert("RGB"), dtype=np.uint8).astype(np.int16)
+        border_width = max(2, round(min(pixels.shape[:2]) * 0.025))
+        border = np.concatenate(
+            (
+                pixels[:border_width].reshape(-1, 3),
+                pixels[-border_width:].reshape(-1, 3),
+                pixels[:, :border_width].reshape(-1, 3),
+                pixels[:, -border_width:].reshape(-1, 3),
+            )
+        )
+        dominance = border[:, 1] - np.maximum(border[:, 0], border[:, 2])
+        keyed_ratio = float(np.mean(dominance >= 28))
+        if keyed_ratio < 0.55:
+            raise WorkerError(
+                "Generated pixels lost the requested chroma-green background "
+                f"({keyed_ratio:.1%} usable border). The edit numerically collapsed "
+                "or ignored its transparency staging instruction; retry with a "
+                "reviewed seed or lower edit/reference strength."
+            )
+
+
+def _krea_edit_source_pixels(
+    source: Any,
+    target_width: int,
+    target_height: int,
+    fit_mode: str,
+) -> tuple[Any, dict[str, Any]]:
+    from PIL import Image, ImageOps
+
+    if fit_mode not in ("fit", "crop"):
+        raise WorkerError("referenceFit must be fit or crop")
+    source = source.convert("RGB")
+    input_width, input_height = source.size
+    if fit_mode == "crop":
+        prepared = ImageOps.fit(
+            source,
+            (target_width, target_height),
+            method=Image.Resampling.BICUBIC,
+            centering=(0.5, 0.5),
+        )
+    else:
+        scale = min(target_height / input_height, target_width / input_width)
+        scaled_height = input_height * scale
+        scaled_width = input_width * scale
+        near_match = (
+            scaled_height >= target_height * 0.92
+            and scaled_width >= target_width * 0.92
+        )
+        if near_match:
+            prepared = ImageOps.fit(
+                source,
+                (target_width, target_height),
+                method=Image.Resampling.BICUBIC,
+                centering=(0.5, 0.5),
+            )
+        else:
+            # v1.2 was trained with a fit-inside source whose dimensions are
+            # floored to /16, then positioned at a centered integer token offset.
+            prepared_width = min(
+                max(16, int(scaled_width) // 16 * 16),
+                max(16, target_width // 16 * 16),
+            )
+            prepared_height = min(
+                max(16, int(scaled_height) // 16 * 16),
+                max(16, target_height // 16 * 16),
+            )
+            prepared = source.resize(
+                (prepared_width, prepared_height),
+                Image.Resampling.BICUBIC,
+            )
+    return prepared, {
+        "fitMode": fit_mode,
+        "sourceWidth": input_width,
+        "sourceHeight": input_height,
+        "encodedWidth": prepared.width,
+        "encodedHeight": prepared.height,
+        "targetWidth": target_width,
+        "targetHeight": target_height,
+    }
+
+
+def _patch_krea_transformer_for_edit(
+    pipeline: Any,
+    torch: Any,
+    source_tokens: Any,
+    source_grid: tuple[int, int],
+    target_grid: tuple[int, int],
+    reference_boost: float,
+) -> None:
+    """Prepend clean source tokens to Diffusers KREA's [text|target] stream."""
+    import torch.nn.functional as functional
+    from diffusers.models.modeling_outputs import Transformer2DModelOutput
+
+    transformer = pipeline.transformer
+    transformer._machdoch_edit_source_tokens = source_tokens
+    transformer._machdoch_edit_source_grid = source_grid
+    transformer._machdoch_edit_target_grid = target_grid
+    transformer._machdoch_edit_reference_boost = reference_boost
+
+    def edit_forward(
+        self: Any,
+        hidden_states: Any,
+        encoder_hidden_states: Any,
+        timestep: Any,
+        position_ids: Any,
+        encoder_attention_mask: Any = None,
+        attention_kwargs: dict[str, Any] | None = None,
+        return_dict: bool = True,
+    ) -> Any:
+        del position_ids, attention_kwargs
+        batch_size, target_sequence_length, _ = hidden_states.shape
+        text_sequence_length = encoder_hidden_states.shape[1]
+        source = self._machdoch_edit_source_tokens.to(
+            device=hidden_states.device,
+            dtype=hidden_states.dtype,
+        )
+        if source.shape[0] != batch_size:
+            source = source[:1].expand(batch_size, -1, -1)
+        source_sequence_length = source.shape[1]
+
+        temporal_embedding = self.time_embed(
+            timestep,
+            dtype=hidden_states.dtype,
+        )
+        temporal_modulation = self.time_mod_proj(
+            functional.gelu(temporal_embedding, approximate="tanh")
+        )
+        text_attention_mask = None
+        attention_mask = None
+        if encoder_attention_mask is not None:
+            text_attention_mask = encoder_attention_mask[:, None, None, :]
+            image_mask = encoder_attention_mask.new_ones(
+                (batch_size, source_sequence_length + target_sequence_length)
+            )
+            attention_mask = torch.cat(
+                [encoder_attention_mask, image_mask],
+                dim=1,
+            )[:, None, None, :]
+
+        encoder_hidden_states = self.text_fusion(
+            encoder_hidden_states,
+            attention_mask=text_attention_mask,
+        )
+        encoder_hidden_states = self.txt_in(encoder_hidden_states)
+        source_hidden_states = self.img_in(source)
+        target_hidden_states = self.img_in(hidden_states)
+        combined = torch.cat(
+            [
+                encoder_hidden_states,
+                source_hidden_states,
+                target_hidden_states,
+            ],
+            dim=1,
+        )
+
+        source_height, source_width = self._machdoch_edit_source_grid
+        target_height, target_width = self._machdoch_edit_target_grid
+        source_ids = torch.zeros(
+            source_height,
+            source_width,
+            3,
+            device=combined.device,
+        )
+        source_ids[..., 0] = 1.0
+        source_ids[..., 1] = (
+            torch.arange(source_height, device=combined.device)[:, None]
+            + max(0, (target_height - source_height) // 2)
+        )
+        source_ids[..., 2] = (
+            torch.arange(source_width, device=combined.device)[None, :]
+            + max(0, (target_width - source_width) // 2)
+        )
+        target_ids = torch.zeros(
+            target_height,
+            target_width,
+            3,
+            device=combined.device,
+        )
+        target_ids[..., 1] = torch.arange(
+            target_height,
+            device=combined.device,
+        )[:, None]
+        target_ids[..., 2] = torch.arange(
+            target_width,
+            device=combined.device,
+        )[None, :]
+        text_ids = torch.zeros(
+            text_sequence_length,
+            3,
+            device=combined.device,
+        )
+        edit_position_ids = torch.cat(
+            [
+                text_ids,
+                source_ids.reshape(-1, 3),
+                target_ids.reshape(-1, 3),
+            ],
+            dim=0,
+        )
+        if edit_position_ids.shape[0] != combined.shape[1]:
+            raise WorkerError(
+                "KREA edit source/target token geometry changed unexpectedly"
+            )
+        image_rotary_embedding = self.rotary_emb(edit_position_ids)
+
+        reference_boost_value = float(
+            self._machdoch_edit_reference_boost
+        )
+        if reference_boost_value != 1.0:
+            sequence_length = combined.shape[1]
+            additive_mask = torch.zeros(
+                (batch_size, 1, sequence_length, sequence_length),
+                device=combined.device,
+                dtype=combined.dtype,
+            )
+            if encoder_attention_mask is not None:
+                invalid_text = ~encoder_attention_mask.bool()
+                additive_mask[:, :, :, :text_sequence_length].masked_fill_(
+                    invalid_text[:, None, None, :],
+                    torch.finfo(combined.dtype).min,
+                )
+            source_start = text_sequence_length
+            target_start = source_start + source_sequence_length
+            additive_mask[
+                :,
+                :,
+                target_start:,
+                source_start:target_start,
+            ] += math.log(max(reference_boost_value, 1e-4))
+            attention_mask = additive_mask
+
+        for block in self.transformer_blocks:
+            combined = block(
+                combined,
+                temporal_modulation,
+                image_rotary_embedding,
+                attention_mask,
+            )
+        target_output = combined[
+            :,
+            text_sequence_length + source_sequence_length :,
+        ]
+        output = self.final_layer(target_output, temporal_embedding)
+        if not return_dict:
+            return (output,)
+        return Transformer2DModelOutput(sample=output)
+
+    patched_forward = types.MethodType(edit_forward, transformer)
+    hook_registry = getattr(transformer, "_diffusers_hook", None)
+    hook_references = getattr(hook_registry, "_fn_refs", None)
+    if hook_references:
+        # Diffusers' native HookRegistry wraps Module.forward and stores the
+        # original callable in the first reference. Replacing the public wrapper
+        # bypasses its group-onload pre-hook; replacing this leaf preserves the
+        # complete device-alignment chain.
+        hook_references[0].forward = patched_forward
+    elif hasattr(transformer, "_old_forward"):
+        transformer._old_forward = patched_forward
+    else:
+        transformer.forward = patched_forward
+
+
+def _prepare_krea_edit_source(
+    pipeline: Any,
+    torch: Any,
+    reference_path: Path,
+    width: int,
+    height: int,
+    fit_mode: str,
+    reference_boost: float,
+) -> dict[str, Any]:
+    from PIL import Image
+
+    with Image.open(reference_path) as opened:
+        source_image = opened.convert("RGB")
+    prepared, evidence = _krea_edit_source_pixels(
+        source_image,
+        width,
+        height,
+        fit_mode,
+    )
+    device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    pixels = pipeline.image_processor.preprocess(
+        prepared,
+        height=prepared.height,
+        width=prepared.width,
+    ).to(device=device, dtype=pipeline.vae.dtype)
+    if getattr(torch.version, "hip", None) is not None:
+        # Match the native HIP Conv3D fallback used by WAN. MIOpen's gfx1201
+        # tiled Qwen VAE encode path currently reports invalid-device-function.
+        torch.backends.cudnn.enabled = False
+    with torch.inference_mode():
+        posterior = pipeline.vae.encode(pixels.unsqueeze(2)).latent_dist
+        source_latent = posterior.mode()
+    latent_mean = torch.tensor(
+        pipeline.vae.config.latents_mean,
+        device=device,
+        dtype=source_latent.dtype,
+    ).view(1, pipeline.vae.config.z_dim, 1, 1, 1)
+    latent_std = torch.tensor(
+        pipeline.vae.config.latents_std,
+        device=device,
+        dtype=source_latent.dtype,
+    ).view(1, pipeline.vae.config.z_dim, 1, 1, 1)
+    source_latent = (source_latent - latent_mean) / latent_std
+    source_latent = source_latent[:, :, 0]
+    latent_height, latent_width = source_latent.shape[-2:]
+    source_tokens = pipeline._pack_latents(  # noqa: SLF001
+        source_latent,
+        source_latent.shape[0],
+        source_latent.shape[1],
+        latent_height,
+        latent_width,
+    )
+    target_grid = (
+        height // (pipeline.vae_scale_factor * pipeline.patch_size),
+        width // (pipeline.vae_scale_factor * pipeline.patch_size),
+    )
+    source_grid = (
+        latent_height // pipeline.patch_size,
+        latent_width // pipeline.patch_size,
+    )
+    _patch_krea_transformer_for_edit(
+        pipeline,
+        torch,
+        source_tokens,
+        source_grid,
+        target_grid,
+        reference_boost,
+    )
+    return {
+        "engine": "clean-vae-source-tokens-v1",
+        "sourceDigest": _sha256_file(reference_path),
+        **evidence,
+        "sourceGridHeight": source_grid[0],
+        "sourceGridWidth": source_grid[1],
+        "targetGridHeight": target_grid[0],
+        "targetGridWidth": target_grid[1],
+        "sourceTokenCount": int(source_tokens.shape[1]),
+        "targetTokenCount": target_grid[0] * target_grid[1],
+        "referenceBoost": reference_boost,
+        "sourceRopeFrame": 1,
+        "targetRopeFrame": 0,
+    }
 
 
 def generate(request: dict[str, Any]) -> dict[str, Any]:
@@ -947,12 +2255,60 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(seed, int) or not 0 <= seed < 2**63:
         raise WorkerError("seed is invalid")
     architecture = _required_text(model, "architecture", 64)
-    width, height = _dimensions(architecture, request.get("aspectRatio"))
+    width, height = _dimensions(architecture, request.get("aspectRatio"), policy)
     output_directory = _fresh_output_directory(request.get("outputDirectory"))
     addons = request.get("addons", [])
     if not isinstance(addons, list) or len(addons) > 24:
         raise WorkerError("addons is invalid")
+    require_chroma_background = request.get("requireChromaBackground", False)
+    if not isinstance(require_chroma_background, bool):
+        raise WorkerError("requireChromaBackground must be a boolean")
 
+    krea_prompt_embeds = None
+    krea_prompt_mask = None
+    krea_grounding_evidence = None
+    krea_source_evidence = None
+    krea_performance_evidence = None
+    reference_path = None
+    reference_value = request.get("referenceImagePath")
+    if reference_value is not None:
+        reference_path = _absolute_existing_path(reference_value, file=True)
+        if reference_path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            raise WorkerError("referenceImagePath must be a supported image")
+        if architecture != "krea-2":
+            raise WorkerError(
+                "Local reference editing currently requires a KREA 2 model"
+            )
+    if architecture == "krea-2":
+        config_path = _absolute_existing_path(model.get("configPath"), file=False)
+        krea_text_root, _ = _krea_runtime_paths(config_path)
+        # Qwen3-VL and the 12B KREA transformer do not overlap in the graph.
+        # Encode first and release Qwen before materializing the FP8 denoiser,
+        # avoiding a 22+ GB host working set on 32 GB systems.
+        if reference_path is None:
+            krea_prompt_embeds, krea_prompt_mask = _encode_krea_prompt(
+                torch,
+                krea_text_root,
+                prompt,
+            )
+        else:
+            grounding_pixels = request.get("groundingPixels", 768)
+            if (
+                not isinstance(grounding_pixels, int)
+                or isinstance(grounding_pixels, bool)
+            ):
+                raise WorkerError("groundingPixels must be an integer")
+            (
+                krea_prompt_embeds,
+                krea_prompt_mask,
+                krea_grounding_evidence,
+            ) = _encode_krea_grounded_prompt(
+                torch,
+                krea_text_root,
+                prompt,
+                reference_path,
+                grounding_pixels,
+            )
     pipeline = _load_pipeline(diffusers, torch, model)
     (
         prompt,
@@ -964,6 +2320,65 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     ) = _apply_addons(
         pipeline, addons, prompt, negative_prompt
     )
+    if reference_path is not None:
+        edit_addons = [
+            addon
+            for addon in addons
+            if addon.get("enabled", True)
+            and addon.get("kind") == "lora"
+            and (
+                addon.get("digest") == KREA_IDENTITY_EDIT_V1_2_R64_DIGEST
+                or Path(str(addon.get("path", ""))).name.startswith(
+                    "krea2_identity_edit_v1_2"
+                )
+            )
+        ]
+        if len(edit_addons) != 1:
+            raise WorkerError(
+                "KREA local editing requires exactly one reviewed "
+                "krea2_identity_edit_v1_2 adapter"
+            )
+        edit_strength = request.get("editStrength", 0.5)
+        if (
+            not isinstance(edit_strength, (int, float))
+            or isinstance(edit_strength, bool)
+            or not math.isfinite(float(edit_strength))
+            or not 0.0 <= float(edit_strength) <= 1.0
+        ):
+            raise WorkerError("editStrength must be between 0 and 1")
+        default_reference_boost = 1.0 + (1.0 - float(edit_strength)) * 3.0
+        reference_boost = request.get(
+            "referenceBoost",
+            default_reference_boost,
+        )
+        if (
+            not isinstance(reference_boost, (int, float))
+            or isinstance(reference_boost, bool)
+            or not math.isfinite(float(reference_boost))
+            or not 0.25 <= float(reference_boost) <= 8.0
+        ):
+            raise WorkerError("referenceBoost must be between 0.25 and 8")
+        reference_fit = request.get("referenceFit", "fit")
+        if not isinstance(reference_fit, str):
+            raise WorkerError("referenceFit must be a string")
+        krea_source_evidence = _prepare_krea_edit_source(
+            pipeline,
+            torch,
+            reference_path,
+            width,
+            height,
+            reference_fit,
+            float(reference_boost),
+        )
+        krea_source_evidence["editStrength"] = float(edit_strength)
+    if architecture == "krea-2":
+        krea_performance_evidence = _configure_krea_offload(
+            pipeline,
+            torch,
+            model,
+            addons,
+            request.get("memoryProfile"),
+        )
     device, device_label, device_memory = _device(torch)
     call_parameters = inspect.signature(pipeline.__call__).parameters
     step_count = _steps(architecture, policy)
@@ -982,7 +2397,9 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                 ),
             )
         image_seed = seed + index
-        generator_device = "cuda" if device == "cuda" else "cpu"
+        generator_device = (
+            f"cuda:{torch.cuda.current_device()}" if device == "cuda" else "cpu"
+        )
         generator = torch.Generator(device=generator_device).manual_seed(image_seed)
         arguments: dict[str, Any] = {
             "prompt": prompt,
@@ -992,6 +2409,18 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             "generator": generator,
             "num_images_per_prompt": 1,
         }
+        if architecture == "krea-2":
+            cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+            arguments["prompt"] = None
+            arguments["prompt_embeds"] = krea_prompt_embeds.to(cuda_device)
+            arguments["prompt_embeds_mask"] = krea_prompt_mask.to(cuda_device)
+            # Community KREA 2 accelerated checkpoints document CFG=1. In the
+            # Diffusers KREA convention the conditional-only equivalent is 0.
+            arguments["guidance_scale"] = 0.0
+        if architecture == "flux-2" and "guidance_scale" in call_parameters:
+            # FLUX.2 Klein is distilled for guidance 1.0. Larger classifier-free
+            # guidance values cost memory and diverge from the model card recipe.
+            arguments["guidance_scale"] = 1.0
         if "negative_prompt" in call_parameters and negative_prompt.strip():
             arguments["negative_prompt"] = negative_prompt
         elif negative_prompt.strip():
@@ -1010,6 +2439,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         destination = output_directory / filename
         save_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}[output_format]
         image = result.images[0].convert("RGB")
+        _validate_generated_pixels(image, applied, require_chroma_background)
         image.save(destination, format=save_format, quality=95, exif=b"")
         outputs.append(
             {
@@ -1029,9 +2459,2577 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         "deviceMemoryBytes": device_memory,
         "prompt": prompt,
         "negativePrompt": negative_prompt,
+        "modelPolicy": policy,
+        "aspectRatio": request.get("aspectRatio"),
+        "numInferenceSteps": step_count,
         "addons": applied,
+        "performance": krea_performance_evidence,
+        "requireChromaBackground": require_chroma_background,
+        "editConditioning": (
+            {
+                "mode": "krea2-identity-edit-v1.2",
+                "grounding": krea_grounding_evidence,
+                "sourceTokens": krea_source_evidence,
+            }
+            if reference_path is not None
+            else None
+        ),
         "outputs": outputs,
     }
+
+
+def _encode_video_prompt_embeddings(
+    torch: Any,
+    model_path: Path,
+    prompt: str,
+    negative_prompt: str,
+) -> tuple[Any, Any]:
+    """Encode WAN text before loading the transformer.
+
+    UMT5-XXL and the WAN transformer together exceed this host's available
+    commit during pipeline.from_pretrained(). Their execution order does not
+    overlap, so retaining both models is unnecessary. Encode both prompt
+    channels first, release UMT5, and only then load the denoiser.
+    """
+    from diffusers.pipelines.wan.pipeline_wan import prompt_clean
+    from transformers import AutoTokenizer, UMT5EncoderModel
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(model_path),
+        subfolder="tokenizer",
+        local_files_only=True,
+        trust_remote_code=False,
+    )
+    text_encoder = UMT5EncoderModel.from_pretrained(
+        str(model_path),
+        subfolder="text_encoder",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        trust_remote_code=False,
+        low_cpu_mem_usage=True,
+    )
+    cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    text_encoder.to(cuda_device)
+    cleaned_prompts = [prompt_clean(prompt), prompt_clean(negative_prompt)]
+    text_inputs = tokenizer(
+        cleaned_prompts,
+        padding="max_length",
+        max_length=512,
+        truncation=True,
+        add_special_tokens=True,
+        return_attention_mask=True,
+        return_tensors="pt",
+    )
+    input_ids = text_inputs.input_ids.to(cuda_device)
+    attention_mask = text_inputs.attention_mask.to(cuda_device)
+    sequence_lengths = attention_mask.gt(0).sum(dim=1).long().tolist()
+    with torch.inference_mode():
+        hidden_states = text_encoder(input_ids, attention_mask).last_hidden_state
+    embeddings = []
+    for hidden_state, sequence_length in zip(hidden_states, sequence_lengths):
+        # The text encoder itself runs on the AMD adapter. Assemble the small
+        # padded result on the host because Windows ROCm 7.14 can
+        # nondeterministically fault in a standalone HIP cat kernel after a
+        # large model forward (the same limitation handled by KREA above).
+        trimmed = hidden_state[:sequence_length].to(
+            device="cpu", dtype=torch.bfloat16
+        )
+        embeddings.append(
+            torch.cat(
+                (
+                    trimmed,
+                    trimmed.new_zeros(512 - trimmed.size(0), trimmed.size(1)),
+                )
+            )
+        )
+    embeddings = torch.stack(embeddings)
+    prompt_embeddings = embeddings[0:1].contiguous()
+    negative_prompt_embeddings = embeddings[1:2].contiguous()
+    del hidden_states, embeddings, text_inputs, input_ids, attention_mask
+    del text_encoder, tokenizer
+    gc.collect()
+    torch.cuda.empty_cache()
+    return prompt_embeddings, negative_prompt_embeddings
+
+
+def _wan_disk_cache_directory(
+    model: dict[str, Any],
+) -> tuple[Path, str]:
+    model_path = _absolute_existing_path(model.get("path"), file=False)
+    model_digest = _required_text(model, "digest", 160)
+    signature = hashlib.sha256(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "workerVersion": WORKER_VERSION,
+                "torchVersion": __import__("torch").__version__,
+                "diffusersVersion": __import__("diffusers").__version__,
+                "modelDigest": model_digest,
+                "component": "transformer",
+                "groupSize": 1,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return model_path / "runtime" / "transformer-offload" / signature, signature
+
+
+def _remove_incomplete_wan_disk_cache(cache_directory: Path, model_path: Path) -> None:
+    import shutil
+
+    expected_parent = (
+        model_path.resolve(strict=True) / "runtime" / "transformer-offload"
+    ).resolve(strict=False)
+    resolved_cache = cache_directory.resolve(strict=False)
+    if (
+        resolved_cache.parent != expected_parent
+        or not re.fullmatch(r"[0-9a-f]{64}", resolved_cache.name)
+    ):
+        raise WorkerError("Refusing to replace an unsafe WAN offload cache path")
+    if resolved_cache.exists():
+        shutil.rmtree(resolved_cache)
+
+
+def _configure_wan_offload(
+    transformer: Any,
+    torch: Any,
+    model: dict[str, Any],
+    requested_profile: Any,
+) -> dict[str, Any]:
+    if requested_profile is None:
+        requested_profile = "auto"
+    if requested_profile not in (
+        "auto",
+        "memory-saver",
+        "balanced",
+        "maximum-speed",
+    ):
+        raise WorkerError(
+            "memoryProfile must be auto, memory-saver, balanced, or maximum-speed"
+        )
+    physical_memory = _physical_memory_bytes()
+    if requested_profile == "auto":
+        effective_profile = (
+            "memory-saver"
+            if physical_memory is None or physical_memory < 48 * 1024**3
+            else "balanced"
+        )
+    else:
+        effective_profile = requested_profile
+    group_size = 1 if effective_profile != "maximum-speed" else 4
+    cache_directory: Path | None = None
+    disk_cache_hit = False
+    windows_disk_fixes = False
+    arguments: dict[str, Any] = {
+        "onload_device": torch.device(f"cuda:{torch.cuda.current_device()}"),
+        "offload_device": torch.device("cpu"),
+        "offload_type": "block_level",
+        "num_blocks_per_group": group_size,
+        "use_stream": False,
+    }
+    if effective_profile == "memory-saver":
+        cache_directory, signature = _wan_disk_cache_directory(model)
+        model_path = _absolute_existing_path(model.get("path"), file=False)
+        disk_cache_hit = _validated_krea_disk_cache(cache_directory, signature)
+        if cache_directory.exists() and not disk_cache_hit:
+            _remove_incomplete_wan_disk_cache(cache_directory, model_path)
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        windows_disk_fixes = _install_windows_krea_disk_offload_fixes(torch)
+        arguments["offload_to_disk_path"] = str(cache_directory)
+    transformer.enable_group_offload(**arguments)
+    cache_size = None
+    cache_files = None
+    if cache_directory is not None:
+        group_files = sorted(cache_directory.glob("group_*.safetensors"))
+        cache_size = sum(path.stat().st_size for path in group_files)
+        cache_files = len(group_files)
+        if not disk_cache_hit:
+            manifest = {
+                "schemaVersion": 1,
+                "signature": signature,
+                "files": [
+                    {"name": path.name, "sizeBytes": path.stat().st_size}
+                    for path in group_files
+                ],
+            }
+            temporary_manifest = cache_directory / f".complete.{os.getpid()}.tmp"
+            temporary_manifest.write_text(
+                json.dumps(manifest, separators=(",", ":"), sort_keys=True),
+                encoding="utf-8",
+            )
+            os.replace(temporary_manifest, cache_directory / "complete.json")
+    return {
+        "requestedMemoryProfile": requested_profile,
+        "effectiveMemoryProfile": effective_profile,
+        "physicalMemoryBytes": physical_memory,
+        "offloadType": "block-level-disk"
+        if cache_directory is not None
+        else "block-level-cpu",
+        "blocksPerGroup": group_size,
+        "diskCacheHit": disk_cache_hit if cache_directory is not None else None,
+        "diskCachePath": str(cache_directory) if cache_directory is not None else None,
+        "diskCacheFiles": cache_files,
+        "diskCacheBytes": cache_size,
+        "windowsDiskOffloadCompatibility": windows_disk_fixes,
+    }
+
+
+def _load_video_pipeline(
+    diffusers: Any,
+    torch: Any,
+    model: dict[str, Any],
+    prompt: str = "",
+    negative_prompt: str = "",
+    memory_profile: Any = None,
+) -> tuple[Any, Any, Any]:
+    architecture = _required_text(model, "architecture", 64)
+    if architecture != "wan-2.2-ti2v":
+        raise WorkerError(
+            "The local video adapter supports only Wan2.2 TI2V 5B Diffusers packages"
+        )
+    if _required_text(model, "packageKind", 64) != "diffusers-directory":
+        raise WorkerError("Wan video generation requires a Diffusers directory")
+    model_path = _absolute_existing_path(model.get("path"), file=False)
+    required = (
+        model_path / "model_index.json",
+        model_path / "transformer" / "diffusion_pytorch_model.safetensors.index.json",
+        model_path / "text_encoder" / "model.safetensors.index.json",
+        model_path / "vae" / "diffusion_pytorch_model.safetensors",
+    )
+    missing = [path.relative_to(model_path).as_posix() for path in required if not path.is_file()]
+    if missing:
+        raise WorkerError(
+            "Wan model package is incomplete; missing " + ", ".join(missing)
+        )
+    device, _, _ = _device(torch)
+    if device != "cuda":
+        raise WorkerError("Wan video generation requires a supported GPU runtime")
+    if not torch.cuda.is_bf16_supported():
+        raise WorkerError("Wan video generation requires bfloat16 GPU support")
+    prompt_embeddings, negative_prompt_embeddings = (
+        _encode_video_prompt_embeddings(
+            torch,
+            model_path,
+            prompt,
+            negative_prompt,
+        )
+    )
+    transformer = diffusers.WanTransformer3DModel.from_pretrained(
+        str(model_path),
+        subfolder="transformer",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        trust_remote_code=False,
+        low_cpu_mem_usage=True,
+    )
+    # Offload the 9.3 GB BF16 denoiser before loading the 2.6 GB FP32 VAE. This
+    # ordering prevents their initialization peaks from overlapping on 32 GB
+    # Windows systems and leaves the VAE resident for endpoint encode/decode.
+    performance = _configure_wan_offload(
+        transformer,
+        torch,
+        model,
+        memory_profile,
+    )
+    gc.collect()
+    torch.cuda.empty_cache()
+    vae = diffusers.AutoencoderKLWan.from_pretrained(
+        str(model_path),
+        subfolder="vae",
+        torch_dtype=torch.float32,
+        local_files_only=True,
+        use_safetensors=True,
+    )
+    vae.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+    scheduler = diffusers.UniPCMultistepScheduler.from_pretrained(
+        str(model_path),
+        subfolder="scheduler",
+        local_files_only=True,
+    )
+    pipeline = diffusers.WanImageToVideoPipeline(
+        tokenizer=None,
+        text_encoder=None,
+        vae=vae,
+        scheduler=scheduler,
+        transformer=transformer,
+        transformer_2=None,
+        boundary_ratio=None,
+        expand_timesteps=True,
+    )
+    _enable_wan_last_frame_conditioning(pipeline, torch)
+    if hasattr(pipeline.vae, "enable_tiling"):
+        pipeline.vae.enable_tiling()
+    pipeline._machdoch_wan_performance = performance
+    if hasattr(pipeline, "set_progress_bar_config"):
+        pipeline.set_progress_bar_config(
+            disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
+        )
+    return pipeline, prompt_embeddings, negative_prompt_embeddings
+
+
+def _enable_wan_last_frame_conditioning(pipeline: Any, torch: Any) -> None:
+    """Lock both WAN 2.2 TI2V endpoints in latent space.
+
+    Diffusers 0.39 documents ``last_image`` for ``WanImageToVideoPipeline``,
+    but its WAN 2.2 ``expand_timesteps`` branch builds ``video_condition`` from
+    only the first image and masks only latent frame zero. As a result, a
+    radically different supplied last image is silently ignored. Preserve the
+    model's required expanded-timestep input while encoding the endpoints once
+    as a complete temporal sequence. WAN's causal VAE must see a valid
+    four-frame terminal group: an isolated one-frame encode produces a
+    first-frame latent in the terminal slot, while neutral context leaks into
+    the decoded tail. Repeating the last endpoint over one temporal stride
+    supplies stable causal context without conditioning the denoised middle.
+    """
+    from diffusers.pipelines.wan.pipeline_wan_i2v import retrieve_latents
+    from diffusers.utils.torch_utils import randn_tensor
+
+    original_prepare_latents = pipeline.prepare_latents
+
+    def prepare_first_last_latents(
+        self: Any,
+        image: Any,
+        batch_size: int,
+        num_channels_latents: int = 16,
+        height: int = 480,
+        width: int = 832,
+        num_frames: int = 81,
+        dtype: Any = None,
+        device: Any = None,
+        generator: Any = None,
+        latents: Any = None,
+        last_image: Any = None,
+    ) -> tuple[Any, Any, Any]:
+        if last_image is None:
+            return original_prepare_latents(
+                image,
+                batch_size,
+                num_channels_latents,
+                height,
+                width,
+                num_frames,
+                dtype,
+                device,
+                generator,
+                latents,
+                None,
+            )
+        num_latent_frames = (
+            (num_frames - 1) // self.vae_scale_factor_temporal + 1
+        )
+        if num_latent_frames < 2:
+            raise WorkerError(
+                "Distinct WAN endpoints require at least two latent frames"
+            )
+        latent_height = height // self.vae_scale_factor_spatial
+        latent_width = width // self.vae_scale_factor_spatial
+        shape = (
+            batch_size,
+            num_channels_latents,
+            num_latent_frames,
+            latent_height,
+            latent_width,
+        )
+        if isinstance(generator, list) and len(generator) != batch_size:
+            raise WorkerError(
+                "WAN generator list length does not match the effective batch size"
+            )
+        if latents is None:
+            latents = randn_tensor(
+                shape,
+                generator=generator,
+                device=device,
+                dtype=dtype,
+            )
+        else:
+            latents = latents.to(device=device, dtype=dtype)
+
+        first_video = image.unsqueeze(2).to(device=device, dtype=self.vae.dtype)
+        last_video = last_image.unsqueeze(2).to(
+            device=device,
+            dtype=self.vae.dtype,
+        )
+        terminal_context_frames = min(
+            num_frames - 1,
+            self.vae_scale_factor_temporal,
+        )
+        neutral_frame_count = num_frames - 1 - terminal_context_frames
+        neutral_middle = first_video.new_zeros(
+            (
+                first_video.shape[0],
+                first_video.shape[1],
+                neutral_frame_count,
+                height,
+                width,
+            )
+        )
+        terminal_context = last_video.repeat(
+            1,
+            1,
+            terminal_context_frames,
+            1,
+            1,
+        )
+        video_condition = torch.cat(
+            (first_video, neutral_middle, terminal_context),
+            dim=2,
+        )
+        if isinstance(generator, list):
+            encoded = [
+                retrieve_latents(
+                    self.vae.encode(video_condition),
+                    sample_mode="argmax",
+                )
+                for _ in generator
+            ]
+            latent_condition = torch.cat(encoded)
+        else:
+            latent_condition = retrieve_latents(
+                self.vae.encode(video_condition),
+                sample_mode="argmax",
+            )
+            latent_condition = latent_condition.repeat(
+                batch_size,
+                1,
+                1,
+                1,
+                1,
+            )
+        if (
+            latent_condition.shape[0] != batch_size
+            or latent_condition.shape[1] != num_channels_latents
+            or latent_condition.shape[2] != num_latent_frames
+            or latent_condition.shape[3] != latent_height
+            or latent_condition.shape[4] != latent_width
+        ):
+            raise WorkerError(
+                "WAN temporal endpoint VAE encoding returned an incompatible latent shape"
+            )
+        latent_condition = latent_condition.to(dtype=dtype)
+        latents_mean = (
+            torch.tensor(self.vae.config.latents_mean)
+            .view(1, self.vae.config.z_dim, 1, 1, 1)
+            .to(latents.device, latents.dtype)
+        )
+        latents_std = (
+            1.0
+            / torch.tensor(self.vae.config.latents_std)
+            .view(1, self.vae.config.z_dim, 1, 1, 1)
+            .to(latents.device, latents.dtype)
+        )
+        latent_condition = (latent_condition - latents_mean) * latents_std
+        endpoint_mask = torch.ones(
+            batch_size,
+            1,
+            num_latent_frames,
+            latent_height,
+            latent_width,
+            dtype=dtype,
+            device=device,
+        )
+        endpoint_mask[:, :, 0] = 0
+        endpoint_mask[:, :, -1] = 0
+        return latents, latent_condition, endpoint_mask
+
+    pipeline.prepare_latents = types.MethodType(
+        prepare_first_last_latents,
+        pipeline,
+    )
+    pipeline._machdoch_wan_conditioning_mode = (  # noqa: SLF001
+        "first-last-temporal-context-lock-v3"
+    )
+
+
+def _configure_wan_conv3d_backend(torch: Any) -> str:
+    """Select and prove a working 3D-convolution path for WAN.
+
+    PyTorch exposes AMD ROCm through its CUDA-compatible API. On the current
+    Windows ROCm stack, MIOpen advertises BF16 Conv3D for gfx1201 but dispatches
+    a kernel that fails with ``hipErrorInvalidDeviceFunction``. Disabling the
+    cuDNN compatibility switch bypasses MIOpen for Conv3D while all tensors and
+    model blocks remain on the selected HIP device. A real GPU convolution is
+    exercised here so an incompatible runtime fails before the 32 GiB model is
+    loaded.
+    """
+    if getattr(torch.version, "hip", None) is None:
+        return "cudnn"
+    if not hasattr(torch.backends, "cudnn"):
+        raise WorkerError(
+            "The AMD PyTorch runtime does not expose the MIOpen compatibility switch "
+            "required by the WAN Conv3D fallback"
+        )
+    torch.backends.cudnn.enabled = False
+    device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    try:
+        sample = torch.ones((1, 1, 3, 8, 8), device=device, dtype=torch.bfloat16)
+        kernel = torch.ones((1, 1, 3, 3, 3), device=device, dtype=torch.bfloat16)
+        with torch.inference_mode():
+            result = torch.nn.functional.conv3d(sample, kernel, padding=1)
+        if result.device.type != "cuda" or not bool(torch.isfinite(result).all()):
+            raise RuntimeError("native HIP Conv3D returned invalid output")
+    except Exception as error:
+        raise WorkerError(
+            "WAN cannot execute a BF16 Conv3D on the selected AMD adapter after "
+            f"bypassing MIOpen: {type(error).__name__}: {error}"
+        ) from error
+    finally:
+        for name in ("sample", "kernel", "result"):
+            if name in locals():
+                del locals()[name]
+        torch.cuda.empty_cache()
+    return "aten-native-hip"
+
+
+def _video_dimensions(
+    aspect_ratio: str,
+    resolution: str = "preview-512",
+) -> tuple[int, int]:
+    """Resolve a WAN canvas without stretching or post-generation cropping.
+
+    Every dimension is divisible by WAN's 16-pixel spatial compression factor.
+    The 768 profile remains well below the official 1280x704/24 GiB recipe but
+    gives 2.25x as many pixels as the legacy 512x288 preview on capable consumer
+    adapters. Square is deliberately bounded at 640 for that profile because it
+    otherwise exceeds the 16:9 latent area by 78 percent.
+    """
+    profiles = {
+        "preview-512": {
+            "1:1": (512, 512),
+            "16:9": (512, 288),
+            "9:16": (288, 512),
+            "21:9": (512, 224),
+        },
+        "quality-640": {
+            "1:1": (576, 576),
+            "16:9": (640, 352),
+            "9:16": (352, 640),
+            "21:9": (640, 288),
+        },
+        "quality-768": {
+            "1:1": (640, 640),
+            "16:9": (768, 432),
+            "9:16": (432, 768),
+            "21:9": (768, 336),
+        },
+    }
+    dimensions = profiles.get(resolution)
+    if dimensions is None:
+        raise WorkerError(
+            "Wan video resolution must be preview-512, quality-640, or quality-768"
+        )
+    resolved = dimensions.get(aspect_ratio)
+    if resolved is None:
+        raise WorkerError("Wan video aspectRatio must be 1:1, 16:9, 9:16, or 21:9")
+    return resolved
+
+
+def _frame_rgb_array(frame: Any) -> Any:
+    import numpy as np
+    from PIL import Image
+
+    if isinstance(frame, Image.Image):
+        return np.asarray(frame.convert("RGB"), dtype=np.uint8)
+    array = np.asarray(frame)
+    if array.dtype.kind == "f":
+        array = np.clip(
+            array * 255.0 if float(array.max()) <= 1.0 else array,
+            0.0,
+            255.0,
+        )
+    if array.ndim != 3 or array.shape[2] < 3:
+        raise WorkerError("WAN returned a frame without three color channels")
+    return np.asarray(array[..., :3], dtype=np.uint8)
+
+
+def _green_screen_alpha(
+    rgb: Any,
+    opaque_dominance: float = 18.0,
+    transparent_dominance: float = 58.0,
+) -> Any:
+    import numpy as np
+
+    signed = np.asarray(rgb, dtype=np.uint8).astype(np.int16)
+    red = signed[..., 0]
+    green = signed[..., 1]
+    blue = signed[..., 2]
+    green_dominance = green - np.maximum(red, blue)
+    span = max(transparent_dominance - opaque_dominance, 1.0)
+    alpha = np.clip(
+        (
+            transparent_dominance
+            - green_dominance.astype(np.float32)
+        )
+        / span,
+        0.0,
+        1.0,
+    )
+    return np.rint(alpha * 255.0).astype(np.uint8)
+
+
+def _frame_green_key(rgb: Any) -> tuple[Any, float, float]:
+    """Estimate the generated screen from border pixels, not ideal #00ff00."""
+    import numpy as np
+
+    signed = np.asarray(rgb, dtype=np.uint8).astype(np.int16)
+    height, width = signed.shape[:2]
+    border_width = max(2, round(min(width, height) * 0.025))
+    border = np.concatenate(
+        (
+            signed[:border_width, :, :].reshape(-1, 3),
+            signed[-border_width:, :, :].reshape(-1, 3),
+            signed[:, :border_width, :].reshape(-1, 3),
+            signed[:, -border_width:, :].reshape(-1, 3),
+        ),
+        axis=0,
+    )
+    dominance = border[:, 1] - np.maximum(border[:, 0], border[:, 2])
+    keyed = dominance >= 28
+    keyed_ratio = float(np.mean(keyed))
+    if keyed_ratio < 0.55:
+        raise WorkerError(
+            "Transparent video requires a predominantly green border in every WAN "
+            f"frame; observed {keyed_ratio:.1%}. Keep subject motion and effects away "
+            "from the boundary and use a uniform chroma-green source background."
+        )
+    candidates = border[keyed]
+    key = np.median(candidates, axis=0).astype(np.float32)
+    background_floor = float(np.percentile(dominance[keyed], 8.0))
+    transparent_dominance = float(np.clip(background_floor * 0.42, 48.0, 72.0))
+    return key, keyed_ratio, transparent_dominance
+
+
+def _spatially_refine_alpha(alpha: Any, strength: float) -> Any:
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    raw = np.asarray(alpha, dtype=np.uint8)
+    if strength <= 0.0:
+        return raw
+    alpha_image = Image.fromarray(raw)
+    median = np.asarray(alpha_image.filter(ImageFilter.MedianFilter(3)), dtype=np.float32)
+    feathered = np.asarray(
+        alpha_image.filter(ImageFilter.GaussianBlur(radius=0.55)),
+        dtype=np.float32,
+    )
+    raw_float = raw.astype(np.float32)
+    uncertain = (raw_float > 2.0) & (raw_float < 253.0)
+    refined = raw_float.copy()
+    blended = raw_float * (1.0 - 0.55 * strength)
+    blended += median * (0.35 * strength)
+    blended += feathered * (0.20 * strength)
+    refined[uncertain] = blended[uncertain]
+    refined[raw_float <= 1.0] = 0.0
+    refined[raw_float >= 254.0] = 255.0
+    return np.rint(np.clip(refined, 0.0, 255.0)).astype(np.uint8)
+
+
+def _temporally_stabilize_alpha(
+    alphas: list[Any],
+    strength: float,
+) -> list[Any]:
+    """Suppress stationary matte chatter without smearing moving boundaries."""
+    import numpy as np
+
+    if strength <= 0.0 or len(alphas) < 3:
+        return alphas
+    stabilized: list[Any] = []
+    for index, current_value in enumerate(alphas):
+        current = np.asarray(current_value, dtype=np.float32)
+        if index == 0 or index == len(alphas) - 1:
+            stabilized.append(current_value)
+            continue
+        window = np.stack(
+            (
+                np.asarray(alphas[index - 1], dtype=np.float32),
+                current,
+                np.asarray(alphas[index + 1], dtype=np.float32),
+            )
+        )
+        median = np.median(window, axis=0)
+        spread = np.max(window, axis=0) - np.min(window, axis=0)
+        # Large spread is usually real edge motion. Only use temporal memory in
+        # a stable ambiguity band, retaining sub-pixel hair/fabric motion.
+        stable_edge = (
+            (current > 2.0)
+            & (current < 253.0)
+            & (spread <= 42.0)
+        )
+        output = current.copy()
+        output[stable_edge] = (
+            current[stable_edge] * (1.0 - strength)
+            + median[stable_edge] * strength
+        )
+        output[current <= 1.0] = 0.0
+        output[current >= 254.0] = 255.0
+        stabilized.append(
+            np.rint(np.clip(output, 0.0, 255.0)).astype(np.uint8)
+        )
+    return stabilized
+
+
+def _isolate_primary_alpha_subject(alpha: Any) -> tuple[Any, dict[str, Any]]:
+    """Keep the keyed character and its soft edge, not a restaged studio plate.
+
+    A generated endpoint can contain wrinkles, seams, shadows, or tracking
+    markers whose color is no longer sufficiently green for a chroma-distance
+    threshold. Those regions may form large, partially opaque islands even
+    though the actual character still has a clean opaque core. Production
+    character mattes use that core as a hysteresis seed and retain a generous
+    soft-edge envelope around it. This is deliberately performed before color
+    decontamination; otherwise low-alpha green plate pixels can be amplified
+    into saturated magenta or cyan contamination.
+    """
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    output = np.asarray(alpha, dtype=np.uint8).copy()
+    height, width = output.shape
+    # Seed only from effectively opaque pixels. A badly lit backdrop can reach
+    # the lower "strong edge" band (roughly 224-245), but a real foreground
+    # character contains a much larger 250+ core.
+    strong_components = _binary_run_components(output >= 250)
+    non_border = [
+        component
+        for component in strong_components
+        if not component["touchesBorder"]
+    ]
+    if not non_border:
+        return output, {
+            "engine": "primary-opaque-core-hysteresis-v1",
+            "applied": False,
+            "reason": "no-non-border-opaque-core",
+            "removedPixels": 0,
+        }
+
+    primary = max(non_border, key=lambda component: component["area"])
+    minimum_core_area = max(64, round(width * height * 0.001))
+    if primary["area"] < minimum_core_area:
+        return output, {
+            "engine": "primary-opaque-core-hysteresis-v1",
+            "applied": False,
+            "reason": "opaque-core-too-small",
+            "primaryCoreArea": int(primary["area"]),
+            "removedPixels": 0,
+        }
+
+    primary_mask = np.zeros((height, width), dtype=np.uint8)
+    for y, start, end in primary["runs"]:
+        primary_mask[y, start : end + 1] = 255
+    # A 3.5%-of-short-edge envelope is wide enough for antialiased hair,
+    # fabric, fingers, and nearby magic particles, while excluding remote
+    # plate seams and floor wrinkles. Clamp it so preview and 768 profiles
+    # behave consistently.
+    envelope_radius = max(8, min(24, round(min(width, height) * 0.035)))
+    filter_size = envelope_radius * 2 + 1
+    envelope = np.asarray(
+        Image.fromarray(primary_mask).filter(ImageFilter.MaxFilter(filter_size)),
+        dtype=np.uint8,
+    ) > 0
+    before = int(np.count_nonzero(output))
+    output[~envelope] = 0
+    removed = before - int(np.count_nonzero(output))
+    return output, {
+        "engine": "primary-opaque-core-hysteresis-v1",
+        "applied": True,
+        "primaryCoreArea": int(primary["area"]),
+        "primaryCoreBox": [int(value) for value in primary["box"]],
+        "envelopeRadiusPixels": envelope_radius,
+        "removedPixels": removed,
+    }
+
+
+def _binary_run_components(mask: Any) -> list[dict[str, Any]]:
+    """Return 8-connected components as row spans.
+
+    A pixel-by-pixel Python flood fill is prohibitively slow for production
+    video mattes, especially when finding holes in a 512-768px background.
+    Run-length union-find keeps the work proportional to boundary complexity
+    and avoids adding an OpenCV/SciPy runtime dependency.
+    """
+    import numpy as np
+
+    binary = np.asarray(mask, dtype=bool)
+    if binary.ndim != 2:
+        raise WorkerError("Connected-component masks must be two-dimensional")
+    height, width = binary.shape
+    parent: list[int] = []
+    runs: list[tuple[int, int, int, int]] = []
+    previous: list[tuple[int, int, int]] = []
+
+    def create_label() -> int:
+        label = len(parent)
+        parent.append(label)
+        return label
+
+    def find(label: int) -> int:
+        root = label
+        while parent[root] != root:
+            root = parent[root]
+        while parent[label] != label:
+            next_label = parent[label]
+            parent[label] = root
+            label = next_label
+        return root
+
+    def union(first: int, second: int) -> None:
+        first_root = find(first)
+        second_root = find(second)
+        if first_root != second_root:
+            parent[max(first_root, second_root)] = min(first_root, second_root)
+
+    for y in range(height):
+        padded = np.pad(binary[y].astype(np.int8), (1, 1))
+        changes = np.diff(padded)
+        starts = np.flatnonzero(changes == 1)
+        ends = np.flatnonzero(changes == -1) - 1
+        current: list[tuple[int, int, int]] = []
+        previous_index = 0
+        for start, end in zip(starts.tolist(), ends.tolist(), strict=True):
+            while (
+                previous_index < len(previous)
+                and previous[previous_index][1] < start - 1
+            ):
+                previous_index += 1
+            overlaps: list[int] = []
+            candidate = previous_index
+            while (
+                candidate < len(previous)
+                and previous[candidate][0] <= end + 1
+            ):
+                overlaps.append(previous[candidate][2])
+                candidate += 1
+            label = overlaps[0] if overlaps else create_label()
+            for overlap in overlaps[1:]:
+                union(label, overlap)
+            current.append((start, end, label))
+            runs.append((y, start, end, label))
+        previous = current
+
+    components: dict[int, dict[str, Any]] = {}
+    for y, start, end, label in runs:
+        root = find(label)
+        component = components.setdefault(
+            root,
+            {
+                "runs": [],
+                "area": 0,
+                "box": [start, y, end, y],
+                "touchesBorder": False,
+            },
+        )
+        component["runs"].append((y, start, end))
+        component["area"] += end - start + 1
+        component["box"][0] = min(component["box"][0], start)
+        component["box"][1] = min(component["box"][1], y)
+        component["box"][2] = max(component["box"][2], end)
+        component["box"][3] = max(component["box"][3], y)
+        component["touchesBorder"] |= (
+            y in (0, height - 1) or start == 0 or end == width - 1
+        )
+    return list(components.values())
+
+
+def _cleanup_alpha_components(alpha: Any) -> tuple[Any, dict[str, int]]:
+    """Remove detached key noise and fill pinholes without losing real limbs."""
+    import numpy as np
+
+    output = np.asarray(alpha, dtype=np.uint8).copy()
+    foreground = output >= 8
+    height, width = foreground.shape
+    components = _binary_run_components(foreground)
+    if not components:
+        return output, {
+            "removedComponents": 0,
+            "removedPixels": 0,
+            "filledHoles": 0,
+            "filledHolePixels": 0,
+        }
+    non_border_indices = [
+        index
+        for index, component in enumerate(components)
+        if not component["touchesBorder"]
+    ]
+    candidate_indices = non_border_indices or list(range(len(components)))
+    largest_index = max(
+        candidate_indices,
+        key=lambda index: components[index]["area"],
+    )
+    largest_component = components[largest_index]
+    largest_box = largest_component["box"]
+    largest_area = largest_component["area"]
+    # Only bridge a genuinely adjacent antialias gap. The previous 2.5% radius
+    # retained five-to-nine-pixel tracking markers near a hand or boot; 1% is
+    # still enough for separated hair tips at every supported delivery size.
+    proximity = max(3, min(8, round(min(width, height) * 0.01)))
+    minimum_detached_area = max(24, round(largest_area * 0.02))
+    largest_rows: dict[int, list[tuple[int, int]]] = {}
+    for y, start, end in largest_component["runs"]:
+        largest_rows.setdefault(y, []).append((start, end))
+
+    def is_near_largest(
+        component: dict[str, Any],
+        allowed_proximity: int,
+    ) -> bool:
+        # Bounding boxes are insufficient here: a tracking marker can sit well
+        # inside a full-body subject's tall box while remaining hundreds of
+        # pixels from the actual silhouette. Compare row spans directly using
+        # Chebyshev distance so nearby hair/cloth fragments survive and plate
+        # debris does not.
+        for y, start, end in component["runs"]:
+            for nearby_y in range(
+                max(largest_box[1], y - allowed_proximity),
+                min(largest_box[3], y + allowed_proximity) + 1,
+            ):
+                for largest_start, largest_end in largest_rows.get(nearby_y, ()):
+                    if (
+                        largest_start <= end + allowed_proximity
+                        and largest_end >= start - allowed_proximity
+                    ):
+                        return True
+        return False
+
+    removed_components = 0
+    removed_pixels = 0
+    for index, component in enumerate(components):
+        # A valid chroma-keyed subject is required to leave a predominantly
+        # green border. Any residual alpha connected to that border is screen
+        # contamination, even when a shadow or seam makes it relatively large.
+        if component["touchesBorder"] and index != largest_index:
+            for y, start, end in component["runs"]:
+                output[y, start : end + 1] = 0
+            removed_components += 1
+            removed_pixels += component["area"]
+            continue
+        fragment_proximity = (
+            1
+            if component["area"] < 64
+            else proximity
+        )
+        if (
+            index == largest_index
+            or component["area"] >= minimum_detached_area
+            or is_near_largest(component, fragment_proximity)
+        ):
+            continue
+        for y, start, end in component["runs"]:
+            output[y, start : end + 1] = 0
+        removed_components += 1
+        removed_pixels += component["area"]
+
+    # Fill only tiny enclosed holes. Larger gaps preserve fingers, hair strands,
+    # cape cutouts, and other legitimate negative space.
+    foreground = output >= 128
+    background = ~foreground
+    maximum_hole_area = max(12, round(largest_area * 0.001))
+    filled_holes = 0
+    filled_hole_pixels = 0
+    for component in _binary_run_components(background):
+        if (
+            not component["touchesBorder"]
+            and component["area"] <= maximum_hole_area
+        ):
+            for y, start, end in component["runs"]:
+                output[y, start : end + 1] = 255
+            filled_holes += 1
+            filled_hole_pixels += component["area"]
+    return output, {
+        "removedComponents": removed_components,
+        "removedPixels": removed_pixels,
+        "filledHoles": filled_holes,
+        "filledHolePixels": filled_hole_pixels,
+    }
+
+
+def _pad_transparent_edge_colors(
+    colors: Any,
+    alpha: Any,
+    iterations: int,
+) -> Any:
+    """Extend straight foreground color under alpha for 4:2:0-safe edges."""
+    import numpy as np
+
+    output = np.asarray(colors, dtype=np.float32).copy()
+    valid = np.asarray(alpha, dtype=np.float32) >= 20.0
+    for _ in range(iterations):
+        padded_colors = np.pad(output, ((1, 1), (1, 1), (0, 0)), mode="edge")
+        padded_valid = np.pad(valid, ((1, 1), (1, 1)), mode="constant")
+        color_sum = np.zeros_like(output)
+        count = np.zeros(valid.shape, dtype=np.float32)
+        for y_offset in range(3):
+            for x_offset in range(3):
+                if y_offset == 1 and x_offset == 1:
+                    continue
+                neighbor_valid = padded_valid[
+                    y_offset : y_offset + valid.shape[0],
+                    x_offset : x_offset + valid.shape[1],
+                ]
+                neighbor_colors = padded_colors[
+                    y_offset : y_offset + valid.shape[0],
+                    x_offset : x_offset + valid.shape[1],
+                    :,
+                ]
+                color_sum += neighbor_colors * neighbor_valid[..., None]
+                count += neighbor_valid
+        candidates = (~valid) & (count > 0.0)
+        output[candidates] = color_sum[candidates] / count[candidates, None]
+        valid |= candidates
+    output[~valid] = 0.0
+    return output
+
+
+def _decontaminate_green_edges(
+    rgb: Any,
+    alpha: Any,
+    key_color: Any,
+    padding_iterations: int,
+) -> Any:
+    """Recover straight foreground RGB and remove generated green spill."""
+    import numpy as np
+
+    colors = np.asarray(rgb, dtype=np.float32)
+    matte = np.asarray(alpha, dtype=np.float32) / 255.0
+    key = np.asarray(key_color, dtype=np.float32)[None, None, :]
+    safe_alpha = np.maximum(matte[..., None], 0.08)
+    recovered = (
+        colors - (1.0 - matte[..., None]) * key
+    ) / safe_alpha
+    recovered = np.clip(recovered, 0.0, 255.0)
+
+    despilled = colors.copy()
+    green_excess = np.maximum(
+        despilled[..., 1] - np.maximum(despilled[..., 0], despilled[..., 2]),
+        0.0,
+    )
+    despill_strength = np.clip((0.98 - matte) / 0.90, 0.0, 1.0)
+    despilled[..., 1] -= green_excess * despill_strength * 0.92
+    recovery_strength = np.clip((0.92 - matte) / 0.82, 0.0, 1.0) * 0.82
+    cleaned = (
+        despilled * (1.0 - recovery_strength[..., None])
+        + recovered * recovery_strength[..., None]
+    )
+    cleaned = _pad_transparent_edge_colors(
+        cleaned,
+        alpha,
+        padding_iterations,
+    )
+    return np.rint(np.clip(cleaned, 0.0, 255.0)).astype(np.uint8)
+
+
+def _matte_video_frames(
+    frames: list[Any],
+    matte_quality: str,
+) -> tuple[list[Any], dict[str, Any]]:
+    """Create a calibrated, temporally stable, decontaminated RGBA sequence."""
+    import numpy as np
+
+    if matte_quality not in ("fast", "balanced", "production"):
+        raise WorkerError("matteQuality must be fast, balanced, or production")
+    profiles = {
+        "fast": (0.20, 0.0, 2),
+        "balanced": (0.55, 0.24, 4),
+        "production": (0.85, 0.42, 6),
+    }
+    spatial_strength, temporal_strength, padding_iterations = profiles[matte_quality]
+    rgb_frames = [_frame_rgb_array(frame) for frame in frames]
+    calibrations = []
+    for index, rgb in enumerate(rgb_frames):
+        try:
+            calibrations.append(_frame_green_key(rgb))
+        except WorkerError as error:
+            raise WorkerError(f"WAN frame {index}: {error}") from error
+    key_colors = np.stack([calibration[0] for calibration in calibrations])
+    keyed_ratios = [calibration[1] for calibration in calibrations]
+    transparent_threshold = float(
+        np.median([calibration[2] for calibration in calibrations])
+    )
+    # A shot-wide key and threshold prevent framewise screen fluctuations from
+    # becoming alpha flicker. Per-frame estimates remain in provenance.
+    shot_key = np.median(key_colors, axis=0).astype(np.float32)
+    raw_alphas = [
+        _green_screen_alpha(
+            rgb,
+            opaque_dominance=18.0,
+            transparent_dominance=transparent_threshold,
+        )
+        for rgb in rgb_frames
+    ]
+    refined_alphas = [
+        _spatially_refine_alpha(alpha, spatial_strength)
+        for alpha in raw_alphas
+    ]
+    final_alphas = _temporally_stabilize_alpha(
+        refined_alphas,
+        temporal_strength,
+    )
+    primary_subject_isolation: list[dict[str, Any]] = []
+    component_cleanup: list[dict[str, int]] = []
+    if matte_quality == "production":
+        isolated_alphas = []
+        for alpha in final_alphas:
+            isolated, isolation = _isolate_primary_alpha_subject(alpha)
+            isolated_alphas.append(isolated)
+            primary_subject_isolation.append(isolation)
+        final_alphas = isolated_alphas
+        cleaned_alphas = []
+        for alpha in final_alphas:
+            cleaned, cleanup = _cleanup_alpha_components(alpha)
+            cleaned_alphas.append(cleaned)
+            component_cleanup.append(cleanup)
+        final_alphas = cleaned_alphas
+    ground_suppression = None
+    if matte_quality == "production":
+        final_alphas, ground_suppression = _suppress_transient_ground_alpha(
+            final_alphas
+        )
+    rgba_frames: list[Any] = []
+    spill_before: list[float] = []
+    spill_after: list[float] = []
+    for rgb, alpha in zip(rgb_frames, final_alphas, strict=True):
+        edge = (alpha > 4) & (alpha < 251)
+        original = rgb.astype(np.float32)
+        original_spill = np.maximum(
+            original[..., 1] - np.maximum(original[..., 0], original[..., 2]),
+            0.0,
+        )
+        cleaned = _decontaminate_green_edges(
+            rgb,
+            alpha,
+            shot_key,
+            padding_iterations,
+        )
+        cleaned_float = cleaned.astype(np.float32)
+        cleaned_spill = np.maximum(
+            cleaned_float[..., 1]
+            - np.maximum(cleaned_float[..., 0], cleaned_float[..., 2]),
+            0.0,
+        )
+        spill_before.append(float(original_spill[edge].mean()) if np.any(edge) else 0.0)
+        spill_after.append(float(cleaned_spill[edge].mean()) if np.any(edge) else 0.0)
+        rgba_frames.append(
+            np.concatenate((cleaned, alpha[..., None]), axis=2)
+        )
+    return rgba_frames, {
+        "engine": "adaptive-temporal-chroma-matte-v1",
+        "quality": matte_quality,
+        "shotKeyRgb": [round(float(value), 3) for value in shot_key],
+        "perFrameKeyRgb": [
+            [round(float(value), 3) for value in key]
+            for key in key_colors
+        ],
+        "minimumKeyedBorderRatio": round(min(keyed_ratios), 6),
+        "meanKeyedBorderRatio": round(float(np.mean(keyed_ratios)), 6),
+        "opaqueDominance": 18.0,
+        "transparentDominance": round(transparent_threshold, 3),
+        "spatialRefinementStrength": spatial_strength,
+        "temporalStabilizationStrength": temporal_strength,
+        "primarySubjectIsolation": (
+            {
+                "engine": "primary-opaque-core-hysteresis-v1",
+                "appliedFrames": int(
+                    sum(bool(frame.get("applied")) for frame in primary_subject_isolation)
+                ),
+                "removedPixels": int(
+                    sum(int(frame.get("removedPixels", 0)) for frame in primary_subject_isolation)
+                ),
+                "minimumEnvelopeRadiusPixels": int(
+                    min(
+                        (
+                            int(frame["envelopeRadiusPixels"])
+                            for frame in primary_subject_isolation
+                            if frame.get("applied")
+                        ),
+                        default=0,
+                    )
+                ),
+                "maximumEnvelopeRadiusPixels": int(
+                    max(
+                        (
+                            int(frame["envelopeRadiusPixels"])
+                            for frame in primary_subject_isolation
+                            if frame.get("applied")
+                        ),
+                        default=0,
+                    )
+                ),
+            }
+            if primary_subject_isolation
+            else None
+        ),
+        "componentCleanup": (
+            {
+                key: int(sum(frame[key] for frame in component_cleanup))
+                for key in (
+                    "removedComponents",
+                    "removedPixels",
+                    "filledHoles",
+                    "filledHolePixels",
+                )
+            }
+            if component_cleanup
+            else None
+        ),
+        "transientGroundSuppression": ground_suppression,
+        "transparentColorPaddingPixels": padding_iterations,
+        "edgeGreenSpillBeforeMean": round(float(np.mean(spill_before)), 6),
+        "edgeGreenSpillAfterMean": round(float(np.mean(spill_after)), 6),
+    }
+
+
+def _suppress_transient_ground_alpha(
+    alphas: list[Any],
+) -> tuple[list[Any], dict[str, Any]]:
+    """Remove low-opacity, short-lived floor shadows without clipping feet.
+
+    Chroma-conditioned generators can darken the plate beneath a character.
+    A color key interprets that darkening as foreground, and temporal smoothing
+    can spread it into a wide translucent floor halo. Restrict suppression to
+    the bottom 22 percent and require low temporal persistence. Opaque transient
+    pixels survive only when the same column has strong foreground support in
+    the preceding 12 pixels, preserving a moving foot attached to its leg while
+    removing detached horizontal shadow fragments.
+    """
+    from collections import deque
+    import numpy as np
+
+    if not alphas:
+        return [], {
+            "engine": "low-persistence-ground-alpha-v3",
+            "floorStartFraction": 0.78,
+            "suppressedPixels": 0,
+            "affectedFrames": 0,
+        }
+    stack = np.stack(alphas).astype(np.uint8)
+    persistent = np.percentile(stack, 25.0, axis=0)
+    height = stack.shape[1]
+    floor_start = int(round(height * 0.78))
+    floor_mask = np.zeros(stack.shape[1:], dtype=bool)
+    floor_mask[floor_start:, :] = True
+    cleaned: list[Any] = []
+    suppressed_pixels = 0
+    affected_frames = 0
+    removed_opaque_components = 0
+    removed_opaque_pixels = 0
+    for alpha in stack:
+        vertical_support = np.zeros_like(floor_mask)
+        for row in range(floor_start, stack.shape[1]):
+            support_start = max(0, row - 12)
+            vertical_support[row] = np.max(
+                alpha[support_start : row + 1],
+                axis=0,
+            ) >= 160
+        suppress = floor_mask & (
+            ((persistent < 8.0) & (alpha < 160))
+            | ((persistent < 32.0) & (alpha < 64))
+            | ((persistent < 8.0) & ~vertical_support)
+        )
+        removed = int(np.count_nonzero(suppress & (alpha > 0)))
+        output = alpha.copy()
+        output[suppress] = 0
+        strong = output >= 128
+        visited = np.zeros_like(strong)
+        for start_y, start_x in zip(
+            *np.nonzero(strong & floor_mask),
+            strict=True,
+        ):
+            if visited[start_y, start_x]:
+                continue
+            queue = deque([(int(start_y), int(start_x))])
+            visited[start_y, start_x] = True
+            component: list[int] = []
+            anchored = False
+            while queue:
+                row, column = queue.popleft()
+                component.append(row * strong.shape[1] + column)
+                anchored |= (
+                    row < floor_start
+                    or persistent[row, column] >= 128.0
+                )
+                for neighbor_y in range(max(0, row - 1), min(strong.shape[0], row + 2)):
+                    for neighbor_x in range(
+                        max(0, column - 1),
+                        min(strong.shape[1], column + 2),
+                    ):
+                        if (
+                            strong[neighbor_y, neighbor_x]
+                            and not visited[neighbor_y, neighbor_x]
+                        ):
+                            visited[neighbor_y, neighbor_x] = True
+                            queue.append((neighbor_y, neighbor_x))
+            if not anchored:
+                flattened = output.reshape(-1)
+                flattened[np.asarray(component, dtype=np.int64)] = 0
+                removed_opaque_components += 1
+                removed_opaque_pixels += len(component)
+                removed += len(component)
+        cleaned.append(output)
+        suppressed_pixels += removed
+        affected_frames += int(removed > 0)
+    return cleaned, {
+        "engine": "low-persistence-ground-alpha-v3",
+        "floorStartFraction": 0.78,
+        "persistencePercentile": 25,
+        "softRuleMaximumAlpha": 159,
+        "opaqueTransientRule": "retain-with-12px-vertical-support",
+        "removedOpaqueComponents": removed_opaque_components,
+        "removedOpaquePixels": removed_opaque_pixels,
+        "suppressedPixels": suppressed_pixels,
+        "affectedFrames": affected_frames,
+    }
+
+
+def _restore_wan_endpoint_colors(
+    frames: list[Any],
+    endpoint: Any,
+) -> tuple[list[Any], dict[str, Any]]:
+    """Restore contrast near a causally encoded WAN release endpoint.
+
+    Encoding the last still with a causal terminal context makes WAN honor its
+    pose on the 5B expanded-timestep path, but the final decoded frames can
+    still inherit a compressed tonal range. Estimate a bounded per-channel affine
+    correction from the exact endpoint reference and ease it across the final
+    five forward frames. A smoothstep ramp avoids the legacy pass's abrupt
+    65-percent correction on its first affected frame. Geometry and motion
+    remain model-generated.
+    """
+    import numpy as np
+    from PIL import Image
+
+    if len(frames) < 5:
+        raise WorkerError("WAN endpoint restoration requires at least five frames")
+    endpoint_rgb = _frame_rgb_array(endpoint)
+    final_rgb = _frame_rgb_array(frames[-1])
+    if endpoint_rgb.shape != final_rgb.shape:
+        raise WorkerError("WAN endpoint reference dimensions changed unexpectedly")
+    final_alpha = _green_screen_alpha(final_rgb)
+    endpoint_alpha = _green_screen_alpha(endpoint_rgb)
+    common_subject = (final_alpha >= 224) & (endpoint_alpha >= 224)
+    if int(common_subject.sum()) < 2_048:
+        raise WorkerError(
+            "WAN endpoint restoration could not align enough foreground pixels"
+        )
+
+    channel_scales: list[float] = []
+    channel_offsets: list[float] = []
+    for channel in range(3):
+        generated_values = final_rgb[..., channel][common_subject]
+        reference_values = endpoint_rgb[..., channel][common_subject]
+        generated_low, generated_high = np.percentile(
+            generated_values,
+            (5.0, 95.0),
+        )
+        reference_low, reference_high = np.percentile(
+            reference_values,
+            (5.0, 95.0),
+        )
+        generated_range = max(float(generated_high - generated_low), 1.0)
+        scale = float(
+            np.clip(
+                (reference_high - reference_low) / generated_range,
+                0.75,
+                2.5,
+            )
+        )
+        offset = float(
+            np.clip(reference_low - generated_low * scale, -160.0, 160.0)
+        )
+        channel_scales.append(scale)
+        channel_offsets.append(offset)
+
+    scales = np.asarray(channel_scales, dtype=np.float32)[None, None, :]
+    offsets = np.asarray(channel_offsets, dtype=np.float32)[None, None, :]
+    restored = list(frames)
+    restoration_frame_count = min(5, len(restored))
+    start_frame = len(restored) - restoration_frame_count
+    strengths = []
+    for offset in range(restoration_frame_count):
+        linear = (offset + 1) / restoration_frame_count
+        strengths.append(linear * linear * (3.0 - 2.0 * linear))
+    for index, strength in zip(
+        range(start_frame, len(restored)),
+        strengths,
+        strict=True,
+    ):
+        original = _frame_rgb_array(restored[index])
+        corrected = np.clip(
+            original.astype(np.float32) * scales + offsets,
+            0.0,
+            255.0,
+        )
+        subject = (
+            _green_screen_alpha(original).astype(np.float32) / 255.0
+        )[..., None]
+        blend = subject * strength
+        output = np.rint(
+            original.astype(np.float32) * (1.0 - blend) + corrected * blend
+        ).astype(np.uint8)
+        restored[index] = Image.fromarray(output)
+    final_restored = _frame_rgb_array(restored[-1]).astype(np.float32)
+    endpoint_blend = endpoint_alpha.astype(np.float32)[..., None] / 255.0
+    exact_endpoint = np.rint(
+        final_restored * (1.0 - endpoint_blend)
+        + endpoint_rgb.astype(np.float32) * endpoint_blend
+    ).astype(np.uint8)
+    restored[-1] = Image.fromarray(exact_endpoint)
+    return restored, {
+        "engine": "endpoint-reference-color-and-pixel-restore-v3",
+        "startFrame": start_frame,
+        "frameCount": restoration_frame_count,
+        "exactEndpointFrame": True,
+        "easing": "smoothstep",
+        "lowPercentile": 5,
+        "highPercentile": 95,
+        "channelScales": [round(value, 6) for value in channel_scales],
+        "channelOffsets": [round(value, 6) for value in channel_offsets],
+    }
+
+
+def _restore_wan_seam_endpoints(
+    frames: list[Any],
+    endpoint: Any,
+) -> tuple[list[Any], dict[str, Any]]:
+    """Pin a requested loop to the exact same decoded first/last still."""
+    if len(frames) < 3:
+        raise WorkerError("WAN seamless restoration requires at least three frames")
+    restored = list(frames)
+    from PIL import Image
+
+    exact = Image.fromarray(_frame_rgb_array(endpoint))
+    restored[0] = exact.copy()
+    restored[-1] = exact.copy()
+    return restored, {
+        "engine": "exact-source-loop-endpoint-v1",
+        "exactFirstFrame": True,
+        "exactLastFrame": True,
+        "duplicateClosureFrame": True,
+    }
+
+
+def _video_frame_to_rgba(frame: Any) -> tuple[Any, int, int]:
+    import numpy as np
+    from PIL import Image
+
+    rgba_frames, _ = _matte_video_frames([frame], "balanced")
+    rgba = rgba_frames[0]
+    alpha = rgba[..., 3]
+    return Image.fromarray(rgba), int(alpha.min()), int(alpha.max())
+
+
+def _animated_background_config(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise WorkerError("animatedBackground must be an object")
+    style = value.get("style")
+    direction = value.get("direction")
+    color_start = value.get("colorStart")
+    color_end = value.get("colorEnd")
+    cycles = value.get("cycles")
+    if style not in ("gradient-wave", "enchanted-beach"):
+        raise WorkerError(
+            "animatedBackground.style must be gradient-wave or enchanted-beach"
+        )
+    if direction not in ("horizontal", "vertical", "diagonal"):
+        raise WorkerError(
+            "animatedBackground.direction must be horizontal, vertical, or diagonal"
+        )
+    for name, color in (("colorStart", color_start), ("colorEnd", color_end)):
+        if (
+            not isinstance(color, str)
+            or not re.fullmatch(r"#[0-9a-fA-F]{6}", color)
+        ):
+            raise WorkerError(f"animatedBackground.{name} must be a six-digit color")
+    if (
+        not isinstance(cycles, int)
+        or isinstance(cycles, bool)
+        or not 1 <= cycles <= 4
+    ):
+        raise WorkerError("animatedBackground.cycles must be an integer from 1 to 4")
+    return {
+        "style": style,
+        "direction": direction,
+        "colorStart": color_start.lower(),
+        "colorEnd": color_end.lower(),
+        "cycles": cycles,
+    }
+
+
+def _rgb_hex(value: str) -> Any:
+    import numpy as np
+
+    return np.asarray(
+        [int(value[index : index + 2], 16) for index in (1, 3, 5)],
+        dtype=np.float32,
+    )
+
+
+def _enchanted_beach_pixels(
+    width: int,
+    height: int,
+    phase: float,
+    color_start: Any,
+    color_end: Any,
+) -> tuple[Any, Any, Any]:
+    """Render a seamless layered beach plus foreground spell interaction.
+
+    The background deliberately contains several independently moving cues:
+    clouds and aurora in the sky, rolling sea bands and foam at the shore,
+    drifting magic motes, a pulsing rune around the casting hand, and spray
+    around the character's boots. Every term is periodic in ``phase`` so the
+    first and last loop samples remain identical.
+    """
+    import numpy as np
+
+    x = np.linspace(0.0, 1.0, width, dtype=np.float32)[None, :]
+    y = np.linspace(0.0, 1.0, height, dtype=np.float32)[:, None]
+    xx = np.broadcast_to(x, (height, width))
+    yy = np.broadcast_to(y, (height, width))
+
+    # Sunset sky with a moving lavender cloud shelf and magical aurora.
+    sky_mix = np.clip(yy / 0.56, 0.0, 1.0)[..., None]
+    sky_top = np.asarray([10.0, 18.0, 63.0], dtype=np.float32)
+    sky_horizon = np.asarray([239.0, 126.0, 159.0], dtype=np.float32)
+    background = sky_top * (1.0 - sky_mix) + sky_horizon * sky_mix
+    cloud_center = 0.19 + 0.035 * np.sin(2.0 * np.pi * xx * 0.85 - phase)
+    cloud = np.exp(-((yy - cloud_center) ** 2) / 0.0025)
+    cloud *= 0.55 + 0.45 * np.sin(2.0 * np.pi * xx * 1.7 + phase * 2.0) ** 2
+    background += cloud[..., None] * np.asarray(
+        [37.0, 24.0, 55.0], dtype=np.float32
+    )
+    aurora_center = 0.31 + 0.045 * np.sin(2.0 * np.pi * xx * 1.2 + phase)
+    aurora = np.exp(-((yy - aurora_center) ** 2) / 0.0018)
+    aurora *= 0.35 + 0.65 * np.sin(2.0 * np.pi * xx * 2.1 - phase * 2.0) ** 2
+    aurora_color = color_end * 0.65 + np.asarray(
+        [30.0, 95.0, 120.0], dtype=np.float32
+    )
+    background += aurora[..., None] * aurora_color[None, None, :] * 0.38
+
+    # A glowing moon/sun gives the moving water a visible reflected light path.
+    sun_distance = (xx - 0.82) ** 2 + ((yy - 0.18) * 1.8) ** 2
+    sun_glow = np.exp(-sun_distance / 0.012)
+    background += sun_glow[..., None] * np.asarray(
+        [82.0, 49.0, 18.0], dtype=np.float32
+    )
+
+    # Layered ocean. Independent waves move at different rates and the horizon
+    # gently rises and falls, making the environment read as animation even
+    # behind a large centered character.
+    horizon = 0.53 + 0.006 * np.sin(phase)
+    shore = 0.77 + 0.018 * np.sin(2.0 * np.pi * xx * 1.7 - phase)
+    ocean_mask = (yy >= horizon) & (yy < shore)
+    ocean_depth = np.clip((yy - horizon) / 0.25, 0.0, 1.0)
+    ocean = (
+        np.asarray([15.0, 68.0, 129.0], dtype=np.float32)[None, None, :]
+        * (1.0 - ocean_depth[..., None])
+        + np.asarray([22.0, 151.0, 177.0], dtype=np.float32)[None, None, :]
+        * ocean_depth[..., None]
+    )
+    water_ripples = (
+        np.sin(2.0 * np.pi * (xx * 5.5 + yy * 2.0) - phase * 2.0)
+        + np.sin(2.0 * np.pi * (xx * 9.0 - yy * 1.5) + phase)
+    )
+    ocean += water_ripples[..., None] * np.asarray(
+        [3.0, 8.0, 12.0], dtype=np.float32
+    )
+    background = np.where(ocean_mask[..., None], ocean, background)
+    crest = np.exp(
+        -(
+            (
+                yy
+                - (
+                    0.62
+                    + 0.012 * np.sin(2.0 * np.pi * xx * 3.2 - phase * 2.0)
+                )
+            )
+            ** 2
+        )
+        / 0.00009
+    )
+    background += crest[..., None] * ocean_mask[..., None] * np.asarray(
+        [54.0, 63.0, 60.0], dtype=np.float32
+    )
+
+    # Warm sand and a travelling shoreline foam band.
+    sand_mask = yy >= shore
+    sand_depth = np.clip((yy - 0.74) / 0.26, 0.0, 1.0)
+    sand = (
+        np.asarray([201.0, 146.0, 91.0], dtype=np.float32)[None, None, :]
+        * (1.0 - sand_depth[..., None])
+        + np.asarray([119.0, 72.0, 73.0], dtype=np.float32)[None, None, :]
+        * sand_depth[..., None]
+    )
+    sand += (
+        4.0 * np.sin(2.0 * np.pi * (xx * 4.0 + yy) + phase)
+    )[..., None]
+    background = np.where(sand_mask[..., None], sand, background)
+    foam = np.exp(-((yy - shore) ** 2) / 0.00018)
+    foam *= 0.55 + 0.45 * np.sin(2.0 * np.pi * xx * 7.0 + phase) ** 2
+    background += foam[..., None] * np.asarray(
+        [64.0, 71.0, 69.0], dtype=np.float32
+    )
+
+    # A subtle moving reflection connects the hand spell to the ocean.
+    cast_progress = 0.5 - 0.5 * np.cos(phase)
+    spell_center_x = 0.50 + 0.25 * cast_progress
+    spell_center_y = 0.34 - 0.14 * cast_progress
+    reflection = np.exp(-((xx - spell_center_x) ** 2) / 0.008)
+    reflection *= ocean_mask * (
+        0.3 + 0.7 * np.sin(2.0 * np.pi * (yy * 11.0) - phase) ** 2
+    )
+    background += reflection[..., None] * color_start[None, None, :] * 0.28
+
+    # Additive spell layer composited after the character: a pulsing double
+    # rune, orbiting motes, and sea spray around her feet.
+    spell_rgb = np.zeros((height, width, 3), dtype=np.float32)
+    spell_alpha = np.zeros((height, width, 1), dtype=np.float32)
+    rune_distance = np.sqrt(
+        ((xx - spell_center_x) * 1.0) ** 2
+        + ((yy - spell_center_y) * 1.78) ** 2
+    )
+    pulse = 0.052 + 0.036 * cast_progress + 0.006 * np.sin(phase * 2.0)
+    rune = np.exp(-((rune_distance - pulse) ** 2) / 0.000035)
+    rune += 0.7 * np.exp(-((rune_distance - pulse * 0.68) ** 2) / 0.000025)
+    spokes = np.sin(
+        np.arctan2(
+            (yy - spell_center_y) * 1.78,
+            xx - spell_center_x,
+        )
+        * 8.0
+        + phase
+    )
+    rune *= 0.72 + 0.28 * spokes**2
+    spell_alpha[..., 0] = np.clip(rune * 0.78, 0.0, 0.88)
+    spell_rgb += rune[..., None] * (
+        color_start[None, None, :] * 0.55
+        + np.asarray([46.0, 188.0, 210.0], dtype=np.float32)
+    )
+    golden_angle = 2.3999632
+    for mote_index in range(20):
+        mote_offset = mote_index * golden_angle
+        radius = 0.055 + 0.012 * (mote_index % 5)
+        mote_x = spell_center_x + radius * np.cos(
+            phase * (1 + mote_index % 3) + mote_offset
+        )
+        mote_y = spell_center_y + radius * 0.56 * np.sin(
+            phase * (1 + mote_index % 2) + mote_offset
+        )
+        mote = np.exp(
+            -(
+                (xx - mote_x) ** 2
+                + ((yy - mote_y) * 1.78) ** 2
+            )
+            / 0.000045
+        )
+        spell_alpha[..., 0] = np.maximum(
+            spell_alpha[..., 0], np.clip(mote * 0.9, 0.0, 0.9)
+        )
+        spell_rgb += mote[..., None] * np.asarray(
+            [85.0, 235.0, 255.0], dtype=np.float32
+        )
+    for spray_index in range(11):
+        spray_offset = spray_index * 0.83
+        spray_x = 0.50 + 0.12 * np.sin(
+            phase * (1 + spray_index % 2) + spray_offset
+        )
+        spray_y = 0.86 - 0.035 * (
+            0.5
+            + 0.5
+            * np.sin(phase * (2 + spray_index % 3) + spray_offset)
+        )
+        spray = np.exp(
+            -(
+                (xx - spray_x) ** 2
+                + ((yy - spray_y) * 1.78) ** 2
+            )
+            / 0.000035
+        )
+        spell_alpha[..., 0] = np.maximum(
+            spell_alpha[..., 0], np.clip(spray * 0.55, 0.0, 0.6)
+        )
+        spell_rgb += spray[..., None] * np.asarray(
+            [90.0, 190.0, 205.0], dtype=np.float32
+        )
+    return (
+        np.clip(background, 0.0, 255.0),
+        np.clip(spell_rgb, 0.0, 255.0),
+        np.clip(spell_alpha, 0.0, 0.92),
+    )
+
+
+def _vp9_quality_arguments(
+    encoding_quality: str,
+    *,
+    alpha: bool,
+) -> list[str]:
+    if encoding_quality not in ("draft", "balanced", "production", "lossless"):
+        raise WorkerError(
+            "encodingQuality must be draft, balanced, production, or lossless"
+        )
+    if encoding_quality == "lossless":
+        rate_control = ["-lossless", "1", "-b:v", "0"]
+        cpu_used = "1"
+    else:
+        crf = {
+            "draft": "30",
+            "balanced": "20",
+            "production": "12",
+        }[encoding_quality]
+        rate_control = ["-crf", crf, "-b:v", "0"]
+        cpu_used = {
+            "draft": "6",
+            "balanced": "4",
+            "production": "2",
+        }[encoding_quality]
+    arguments = [
+        "-deadline",
+        "good",
+        "-cpu-used",
+        cpu_used,
+        "-row-mt",
+        "1",
+        *rate_control,
+    ]
+    if alpha:
+        # VP9 alpha cannot use alternate reference frames without corrupting the
+        # alpha plane in common WebM decoders.
+        arguments.extend(
+            [
+                "-auto-alt-ref",
+                "0",
+                "-metadata:s:v:0",
+                "alpha_mode=1",
+            ]
+        )
+    return arguments
+
+
+def _assemble_video_frames(frames: list[Any], loop_mode: str) -> list[Any]:
+    if loop_mode == "none":
+        return list(frames)
+    if loop_mode == "ping-pong":
+        return list(frames) + list(reversed(frames[:-1]))
+    if loop_mode == "seamless":
+        # First/last endpoint restoration is handled before matting. Retaining
+        # the exact closing endpoint makes the repeat seam deterministic; at a
+        # quality delivery rate the duplicate hold lasts one frame.
+        return list(frames)
+    raise WorkerError("loopMode must be none, ping-pong, or seamless")
+
+
+def _encode_animated_composite(
+    rgba_frames: list[Any],
+    output_directory: Path,
+    fps: int,
+    config: dict[str, Any],
+    loop_mode: str,
+    encoding_quality: str,
+) -> tuple[Path, dict[str, Any]]:
+    """Composite an alpha sequence over a deterministic seamless background."""
+    import imageio_ffmpeg
+    import numpy as np
+    import subprocess
+    from PIL import Image
+
+    if not rgba_frames:
+        raise WorkerError("Animated video composition requires at least one frame")
+    frame_count = len(rgba_frames)
+    height, width = rgba_frames[0].shape[:2]
+    color_start = _rgb_hex(config["colorStart"])
+    color_end = _rgb_hex(config["colorEnd"])
+    x = np.linspace(0.0, 1.0, width, dtype=np.float32)[None, :]
+    y = np.linspace(0.0, 1.0, height, dtype=np.float32)[:, None]
+    if config["direction"] == "horizontal":
+        position = np.broadcast_to(x, (height, width))
+    elif config["direction"] == "vertical":
+        position = np.broadcast_to(y, (height, width))
+    else:
+        position = (x + y) * 0.5
+    composite_directory = output_directory / "composite-frames"
+    composite_directory.mkdir()
+    endpoint_frames: list[Any] = []
+    denominator = max(frame_count - 1, 1)
+    for index, rgba in enumerate(rgba_frames):
+        # Integer cycles ensure the procedural background's final sample is
+        # identical to its first sample, preserving the repeat seam.
+        phase = 2.0 * np.pi * config["cycles"] * (index / denominator)
+        if config["style"] == "enchanted-beach":
+            background, spell_rgb, spell_alpha = _enchanted_beach_pixels(
+                width,
+                height,
+                phase,
+                color_start,
+                color_end,
+            )
+        else:
+            blend = (np.sin(2.0 * np.pi * position + phase) + 1.0) * 0.5
+            blend = np.clip(0.12 + 0.76 * blend, 0.0, 1.0)[..., None]
+            background = (
+                color_start[None, None, :] * (1.0 - blend)
+                + color_end[None, None, :] * blend
+            )
+            spell_rgb = np.zeros_like(background)
+            spell_alpha = np.zeros((height, width, 1), dtype=np.float32)
+        alpha = rgba[..., 3:4].astype(np.float32) / 255.0
+        composed_float = (
+            rgba[..., :3].astype(np.float32) * alpha
+            + background * (1.0 - alpha)
+        )
+        composed_float = (
+            composed_float * (1.0 - spell_alpha)
+            + np.maximum(composed_float, spell_rgb) * spell_alpha
+        )
+        composed = np.rint(composed_float).clip(0, 255).astype(np.uint8)
+        Image.fromarray(composed).save(
+            composite_directory / f"frame-{index:04d}.png",
+            format="PNG",
+            compress_level=3,
+        )
+        if index in (0, frame_count - 1):
+            endpoint_frames.append(composed)
+    endpoint_mae = float(
+        np.mean(
+            np.abs(
+                endpoint_frames[0].astype(np.int16)
+                - endpoint_frames[-1].astype(np.int16)
+            )
+        )
+    )
+    destination = output_directory / "output-0001.webm"
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    encoded = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-framerate",
+            str(fps),
+            "-i",
+            str(composite_directory / "frame-%04d.png"),
+            "-an",
+            "-c:v",
+            "libvpx-vp9",
+            "-pix_fmt",
+            "yuv420p",
+            *_vp9_quality_arguments(encoding_quality, alpha=False),
+            str(destination),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15 * 60,
+        check=False,
+    )
+    if encoded.returncode != 0:
+        raise WorkerError(
+            "Animated-background VP9 encoding failed: "
+            + encoded.stderr.strip()[-2_000:]
+        )
+    if (
+        not destination.is_file()
+        or destination.stat().st_size == 0
+        or destination.read_bytes()[:4] != b"\x1aE\xdf\xa3"
+    ):
+        raise WorkerError(
+            "Animated-background encoder produced an invalid WebM container"
+        )
+    verified = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(destination),
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "rawvideo",
+            "-",
+        ],
+        capture_output=True,
+        timeout=5 * 60,
+        check=False,
+    )
+    expected_bytes = width * height * 3 * frame_count
+    if verified.returncode != 0 or len(verified.stdout) != expected_bytes:
+        raise WorkerError(
+            "Animated-background WebM did not decode to the expected RGB VP9 frame sequence"
+        )
+    decoded_frames = np.frombuffer(verified.stdout, dtype=np.uint8).reshape(
+        (frame_count, height, width, 3)
+    )
+    decoded_endpoint_mae = float(
+        np.mean(
+            np.abs(
+                decoded_frames[0].astype(np.int16)
+                - decoded_frames[-1].astype(np.int16)
+            )
+        )
+    )
+    if loop_mode != "none" and decoded_endpoint_mae > 1.0:
+        raise WorkerError(
+            "Animated-background WebM introduced an excessive decoded loop seam: "
+            f"{decoded_endpoint_mae:.3f} MAE"
+        )
+    return destination, {
+        "index": 1,
+        "fileName": destination.name,
+        "width": width,
+        "height": height,
+        "frameCount": frame_count,
+        "fps": fps,
+        "durationSeconds": frame_count / fps,
+        "hasAlpha": False,
+        "loopMode": loop_mode,
+        "loopEndpointMae": endpoint_mae,
+        "decodedFrameCount": frame_count,
+        "decodedLoopEndpointMae": decoded_endpoint_mae,
+        "encodingQuality": encoding_quality,
+        "codec": "vp9",
+        "container": "webm",
+        "background": {
+            "engine": (
+                "animated-enchanted-beach-v1"
+                if config["style"] == "enchanted-beach"
+                else "animated-gradient-v1"
+            ),
+            **config,
+        },
+    }
+
+
+def _encode_video_webm(
+    frames: list[Any],
+    output_directory: Path,
+    fps: int,
+    animated_background: dict[str, Any] | None,
+    *,
+    transparent_background: bool,
+    loop_mode: str,
+    matte_quality: str,
+    encoding_quality: str,
+) -> tuple[
+    Path,
+    dict[str, Any],
+    tuple[Path, dict[str, Any]] | None,
+]:
+    import imageio_ffmpeg
+    import numpy as np
+    import subprocess
+
+    if not frames:
+        raise WorkerError("WAN returned no frames")
+    if animated_background is not None and not transparent_background:
+        raise WorkerError(
+            "animatedBackground requires transparentBackground so the generated "
+            "subject can be composited"
+        )
+    frame_directory = output_directory / "frames"
+    frame_directory.mkdir()
+    if transparent_background:
+        rgba_arrays, matte_evidence = _matte_video_frames(frames, matte_quality)
+    else:
+        rgba_arrays = []
+        for frame in frames:
+            rgb = _frame_rgb_array(frame)
+            rgba_arrays.append(
+                np.concatenate(
+                    (
+                        rgb,
+                        np.full(
+                            (*rgb.shape[:2], 1),
+                            255,
+                            dtype=np.uint8,
+                        ),
+                    ),
+                    axis=2,
+                )
+            )
+        matte_evidence = None
+    alpha_minimum = min(int(frame[..., 3].min()) for frame in rgba_arrays)
+    alpha_maximum = max(int(frame[..., 3].max()) for frame in rgba_arrays)
+    output_frames = _assemble_video_frames(rgba_arrays, loop_mode)
+    for index, frame in enumerate(output_frames):
+        from PIL import Image
+
+        Image.fromarray(
+            frame if transparent_background else frame[..., :3],
+        ).save(
+            frame_directory / f"frame-{index:04d}.png",
+            format="PNG",
+            compress_level=3,
+        )
+    endpoint_mae = float(
+        np.mean(
+            np.abs(
+                output_frames[0].astype(np.int16)
+                - output_frames[-1].astype(np.int16)
+            )
+        )
+    )
+    destination = output_directory / "output-0000.webm"
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    command = [
+        ffmpeg,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-framerate",
+        str(fps),
+        "-i",
+        str(frame_directory / "frame-%04d.png"),
+        "-an",
+        "-c:v",
+        "libvpx-vp9",
+        "-pix_fmt",
+        "yuva420p" if transparent_background else "yuv420p",
+        *_vp9_quality_arguments(
+            encoding_quality,
+            alpha=transparent_background,
+        ),
+        str(destination),
+    ]
+    encoded = subprocess.run(
+        command, capture_output=True, text=True, timeout=15 * 60, check=False
+    )
+    if encoded.returncode != 0:
+        raise WorkerError(
+            "VP9 alpha encoding failed: " + encoded.stderr.strip()[-2_000:]
+        )
+    if not destination.is_file() or destination.stat().st_size == 0:
+        raise WorkerError("VP9 alpha encoder produced no output")
+    if destination.read_bytes()[:4] != b"\x1aE\xdf\xa3":
+        raise WorkerError("VP9 alpha encoder produced an invalid WebM container")
+
+    # Force libvpx for transparent decode; FFmpeg's native decoder may discard
+    # the WebM alpha plane even when the stream metadata is valid.
+    verify_command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+    ]
+    if transparent_background:
+        verify_command.extend(["-c:v", "libvpx-vp9"])
+    verify_command.extend(
+        [
+            "-i",
+            str(destination),
+            "-pix_fmt",
+            "rgba" if transparent_background else "rgb24",
+            "-f",
+            "rawvideo",
+            "-",
+        ]
+    )
+    verified = subprocess.run(
+        verify_command,
+        capture_output=True,
+        timeout=5 * 60,
+        check=False,
+    )
+    channel_count = 4 if transparent_background else 3
+    expected_frame_bytes = (
+        output_frames[0].shape[0]
+        * output_frames[0].shape[1]
+        * channel_count
+    )
+    expected_bytes = expected_frame_bytes * len(output_frames)
+    if verified.returncode != 0 or len(verified.stdout) != expected_bytes:
+        raise WorkerError(
+            "Encoded WebM did not decode to the expected "
+            f"{'RGBA' if transparent_background else 'RGB'} VP9 frame sequence"
+        )
+    decoded_frames = np.frombuffer(verified.stdout, dtype=np.uint8).reshape(
+        (
+            len(output_frames),
+            output_frames[0].shape[0],
+            output_frames[0].shape[1],
+            channel_count,
+        )
+    )
+    if transparent_background:
+        decoded_alpha = decoded_frames[..., 3]
+        decoded_alpha_minimum = int(decoded_alpha.min())
+        decoded_alpha_maximum = int(decoded_alpha.max())
+        if decoded_alpha_minimum == 255 or decoded_alpha_maximum != 255:
+            raise WorkerError(
+                "Encoded WebM did not retain a usable transparent alpha plane"
+            )
+    else:
+        decoded_alpha = np.full(
+            decoded_frames.shape[:3],
+            255,
+            dtype=np.uint8,
+        )
+        decoded_alpha_minimum = 255
+        decoded_alpha_maximum = 255
+    decoded_loop_endpoint_mae = float(
+        np.mean(
+            np.abs(
+                decoded_frames[0].astype(np.int16)
+                - decoded_frames[-1].astype(np.int16)
+            )
+        )
+    )
+    decoded_alpha_loop_endpoint_mae = (
+        float(
+            np.mean(
+                np.abs(
+                    decoded_frames[0, ..., 3].astype(np.int16)
+                    - decoded_frames[-1, ..., 3].astype(np.int16)
+                )
+            )
+        )
+        if transparent_background
+        else 0.0
+    )
+    if (
+        loop_mode != "none"
+        and (
+            decoded_loop_endpoint_mae > 1.0
+            or decoded_alpha_loop_endpoint_mae > 1.0
+        )
+    ):
+        raise WorkerError(
+            "Encoded WebM introduced an excessive decoded loop seam: "
+            f"{decoded_loop_endpoint_mae:.3f} RGBA MAE, "
+            f"{decoded_alpha_loop_endpoint_mae:.3f} alpha MAE"
+        )
+    evidence = {
+        "frameCount": len(output_frames),
+        "sourceFrameCount": len(frames),
+        "fps": fps,
+        "durationSeconds": len(output_frames) / fps,
+        "alphaMinimum": alpha_minimum,
+        "alphaMaximum": alpha_maximum,
+        "decodedAlphaMinimum": decoded_alpha_minimum,
+        "decodedAlphaMaximum": decoded_alpha_maximum,
+        "decodedFrameCount": len(decoded_frames),
+        "decodedLoopEndpointMae": decoded_loop_endpoint_mae,
+        "decodedAlphaLoopEndpointMae": decoded_alpha_loop_endpoint_mae,
+        "loopMode": loop_mode,
+        "loopEndpointMae": endpoint_mae,
+        "hasAlpha": transparent_background,
+        "matte": matte_evidence,
+        "encodingQuality": encoding_quality,
+        "codec": "vp9",
+        "container": "webm",
+    }
+    composite = (
+        _encode_animated_composite(
+            output_frames,
+            output_directory,
+            fps,
+            animated_background,
+            loop_mode,
+            encoding_quality,
+        )
+        if animated_background is not None
+        else None
+    )
+    return destination, evidence, composite
+
+
+def _prepare_video_conditioning_frame(
+    path: Path,
+    width: int,
+    height: int,
+    transparent_background: bool,
+) -> tuple[Any, dict[str, Any]]:
+    """Frame a detected subject without stretching or blind aspect cropping."""
+    import numpy as np
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as opened:
+        rgba = opened.convert("RGBA")
+        rgba_pixels = np.asarray(rgba, dtype=np.uint8)
+    source_height, source_width = rgba_pixels.shape[:2]
+    original_alpha = rgba_pixels[..., 3]
+    alpha_is_usable = bool(
+        int(original_alpha.min()) < 250
+        and int(original_alpha.max()) == 255
+    )
+    detected_plate = False
+    if alpha_is_usable:
+        plate_color = (
+            np.asarray((0, 255, 0), dtype=np.uint8)
+            if transparent_background
+            else np.asarray((18, 20, 26), dtype=np.uint8)
+        )
+        alpha, _ = _cleanup_alpha_components(original_alpha)
+    else:
+        rgb = rgba_pixels[..., :3]
+        key_color, keyed_border_ratio, transparent_threshold = _frame_green_key(rgb)
+        detected_plate = keyed_border_ratio >= 0.80
+        if detected_plate:
+            plate_color = np.rint(np.clip(key_color, 0, 255)).astype(np.uint8)
+            raw_alpha = _green_screen_alpha(
+                rgb,
+                opaque_dominance=18.0,
+                transparent_dominance=transparent_threshold,
+            )
+            alpha, _ = _cleanup_alpha_components(
+                _spatially_refine_alpha(raw_alpha, 0.55)
+            )
+        else:
+            plate_color = np.asarray((18, 20, 26), dtype=np.uint8)
+            alpha = np.full((source_height, source_width), 255, dtype=np.uint8)
+
+    background = Image.new(
+        "RGBA",
+        (source_width, source_height),
+        (*[int(value) for value in plate_color], 255),
+    )
+    composite = Image.alpha_composite(
+        background,
+        Image.fromarray(rgba_pixels),
+    ).convert("RGB")
+    detected_components = _binary_run_components(alpha >= 8)
+    primary_component = (
+        max(detected_components, key=lambda component: component["area"])
+        if detected_components
+        else None
+    )
+    subject_detected = bool(
+        (alpha_is_usable or detected_plate)
+        and primary_component is not None
+    )
+    if not subject_detected:
+        fitted = ImageOps.fit(
+            composite,
+            (width, height),
+            method=Image.Resampling.LANCZOS,
+            centering=(0.5, 0.5),
+        )
+        return fitted, {
+            "mode": "center-crop",
+            "sourceWidth": source_width,
+            "sourceHeight": source_height,
+            "targetWidth": width,
+            "targetHeight": height,
+            "subjectDetected": False,
+        }
+
+    assert primary_component is not None
+    minimum_x, minimum_y, maximum_x, maximum_y = [
+        int(value) for value in primary_component["box"]
+    ]
+    subject_width = maximum_x - minimum_x + 1
+    subject_height = maximum_y - minimum_y + 1
+    crop_padding = max(4, round(max(subject_width, subject_height) * 0.04))
+    crop_left = max(0, minimum_x - crop_padding)
+    crop_top = max(0, minimum_y - crop_padding)
+    crop_right = min(source_width, maximum_x + crop_padding + 1)
+    crop_bottom = min(source_height, maximum_y + crop_padding + 1)
+    primary_alpha = np.zeros_like(alpha)
+    for y, start, end in primary_component["runs"]:
+        primary_alpha[y, start : end + 1] = alpha[y, start : end + 1]
+    cleaned_rgb = _decontaminate_green_edges(
+        rgba_pixels[..., :3],
+        primary_alpha,
+        plate_color,
+        4,
+    )
+    subject_rgba = np.concatenate(
+        (cleaned_rgb, primary_alpha[..., None]),
+        axis=2,
+    )
+    cropped = Image.fromarray(subject_rgba).crop(
+        (crop_left, crop_top, crop_right, crop_bottom)
+    )
+    safe_width = max(16, round(width * 0.88))
+    safe_height = max(16, round(height * 0.88))
+    contained = ImageOps.contain(
+        cropped,
+        (safe_width, safe_height),
+        method=Image.Resampling.LANCZOS,
+    )
+    target = Image.new(
+        "RGBA",
+        (width, height),
+        (*[int(value) for value in plate_color], 255),
+    )
+    paste_x = (width - contained.width) // 2
+    paste_y = (height - contained.height) // 2
+    target.alpha_composite(contained, (paste_x, paste_y))
+    return target.convert("RGB"), {
+        "mode": "subject-aware-fit",
+        "sourceWidth": source_width,
+        "sourceHeight": source_height,
+        "targetWidth": width,
+        "targetHeight": height,
+        "subjectDetected": True,
+        "sourceHadAlpha": alpha_is_usable,
+        "chromaPlateDetected": detected_plate,
+        "detectedComponentCount": len(detected_components),
+        "primaryComponentPixels": int(primary_component["area"]),
+        "plateDebrisExcluded": True,
+        "subjectBounds": {
+            "left": minimum_x,
+            "top": minimum_y,
+            "right": maximum_x,
+            "bottom": maximum_y,
+        },
+        "cropBounds": {
+            "left": crop_left,
+            "top": crop_top,
+            "right": crop_right,
+            "bottom": crop_bottom,
+        },
+        "placedWidth": contained.width,
+        "placedHeight": contained.height,
+        "leftMargin": paste_x,
+        "topMargin": paste_y,
+        "rightMargin": width - paste_x - contained.width,
+        "bottomMargin": height - paste_y - contained.height,
+        "stretched": False,
+        "croppedSubject": False,
+    }
+
+
+def generate_video(request: dict[str, Any]) -> dict[str, Any]:
+    if request.get("schemaVersion") != SCHEMA_VERSION:
+        raise WorkerError("Unsupported worker request schema")
+    if request.get("experimentalLowMemory") is not True:
+        raise WorkerError(
+            "Wan2.2 TI2V requires the explicit experimentalLowMemory profile on this adapter"
+        )
+    torch, diffusers = _runtime()
+    model = request.get("model")
+    if not isinstance(model, dict):
+        raise WorkerError("model is required")
+    prompt = _required_text(request, "prompt", 8_000)
+    first_frame_path = _absolute_existing_path(
+        request.get("firstFramePath"), file=True
+    )
+    last_frame_path = _absolute_existing_path(
+        request.get("lastFramePath"), file=True
+    )
+    if first_frame_path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise WorkerError("firstFramePath must be a supported image")
+    if last_frame_path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise WorkerError("lastFramePath must be a supported image")
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    animated_background = _animated_background_config(
+        request.get("animatedBackground")
+    )
+    aspect_ratio = request.get("aspectRatio")
+    resolution = request.get("resolution", "preview-512")
+    if not isinstance(resolution, str):
+        raise WorkerError("resolution must be a string")
+    width, height = _video_dimensions(aspect_ratio, resolution)
+    num_frames = request.get("numFrames")
+    if (
+        not isinstance(num_frames, int)
+        or isinstance(num_frames, bool)
+        or not 17 <= num_frames <= 121
+        or (num_frames - 1) % 4 != 0
+    ):
+        raise WorkerError(
+            "Wan numFrames must be from 17 through 121 in the required 4k+1 form"
+        )
+    steps = request.get("numInferenceSteps")
+    if (
+        not isinstance(steps, int)
+        or isinstance(steps, bool)
+        or not 4 <= steps <= 50
+    ):
+        raise WorkerError("numInferenceSteps must be between 4 and 50")
+    fps = request.get("fps")
+    if (
+        not isinstance(fps, int)
+        or isinstance(fps, bool)
+        or not 1 <= fps <= 60
+    ):
+        raise WorkerError("fps must be between 1 and 60")
+    loop_mode = request.get("loopMode", "ping-pong")
+    if loop_mode not in ("none", "ping-pong", "seamless"):
+        raise WorkerError("loopMode must be none, ping-pong, or seamless")
+    transparent_background = request.get("transparentBackground", True)
+    if not isinstance(transparent_background, bool):
+        raise WorkerError("transparentBackground must be boolean")
+    matte_quality = request.get("matteQuality", "production")
+    if not isinstance(matte_quality, str):
+        raise WorkerError("matteQuality must be a string")
+    encoding_quality = request.get("encodingQuality", "lossless")
+    if not isinstance(encoding_quality, str):
+        raise WorkerError("encodingQuality must be a string")
+    guidance_scale = request.get("guidanceScale", 5.0)
+    if (
+        not isinstance(guidance_scale, (int, float))
+        or isinstance(guidance_scale, bool)
+        or not math.isfinite(float(guidance_scale))
+        or not 1.0 <= float(guidance_scale) <= 10.0
+    ):
+        raise WorkerError("guidanceScale must be between 1 and 10")
+    seed = request.get("seed")
+    if not isinstance(seed, int) or not 0 <= seed < 2**63:
+        raise WorkerError("seed is invalid")
+    device, device_label, device_memory = _device(torch)
+    # Display drivers reserve a small portion of VRAM, so nominal 16 GB
+    # adapters report just under 16 GiB usable to Torch.
+    if (
+        device_memory is not None
+        and device_memory < MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES
+    ):
+        raise WorkerError(
+            "The bounded Wan preview profile requires a nominal 16 GB adapter "
+            "(at least 15 GiB reported usable)"
+        )
+    if (
+        device_memory is not None
+        and device_memory < 23 * 1024**3
+        and num_frames > 33
+    ):
+        raise WorkerError(
+            "Adapters below 24 GiB are bounded to at most 33 WAN source frames; "
+            "use frame interpolation for a higher delivery rate"
+        )
+
+    source, first_frame_framing = _prepare_video_conditioning_frame(
+        first_frame_path,
+        width,
+        height,
+        transparent_background,
+    )
+    last_source, last_frame_framing = _prepare_video_conditioning_frame(
+        last_frame_path,
+        width,
+        height,
+        transparent_background,
+    )
+    same_endpoint = _sha256_file(first_frame_path) == _sha256_file(last_frame_path)
+    if loop_mode == "seamless" and not same_endpoint:
+        raise WorkerError(
+            "seamless loopMode requires the same first and last source asset; "
+            "use none for an intentionally changing shot or ping-pong for reversal"
+        )
+    conv3d_backend = _configure_wan_conv3d_backend(torch)
+    requested_negative_prompt = request.get("negativePrompt")
+    if requested_negative_prompt is not None and (
+        not isinstance(requested_negative_prompt, str)
+        or len(requested_negative_prompt) > 8_000
+    ):
+        raise WorkerError("negativePrompt must be a string up to 8000 characters")
+    default_negative_prompt = (
+        "static, motionless, frozen pose, still picture, idle pose, mannequin, "
+        "camera shake, unintended camera movement, zoom, pan, scene cut, "
+        "background-only motion, changing identity, changing costume, changing "
+        "face, changing prop, low resolution, blur, motion smear, texture crawl, "
+        "flicker, temporal discontinuity, compression artifacts, subtitles, "
+        "watermark, duplicate character, extra limbs, missing limbs, deformed "
+        "hands, fused fingers, extra fingers, poorly drawn face, malformed anatomy"
+    )
+    negative_prompt = (
+        requested_negative_prompt.strip()
+        if isinstance(requested_negative_prompt, str)
+        and requested_negative_prompt.strip()
+        else default_negative_prompt
+    )
+    pipeline, prompt_embeddings, negative_prompt_embeddings = (
+        _load_video_pipeline(
+            diffusers,
+            torch,
+            model,
+            prompt,
+            negative_prompt,
+            request.get("memoryProfile"),
+        )
+    )
+    cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    prompt_embeddings = prompt_embeddings.to(cuda_device)
+    negative_prompt_embeddings = negative_prompt_embeddings.to(cuda_device)
+    generator = torch.Generator(
+        device=f"cuda:{torch.cuda.current_device()}"
+    ).manual_seed(seed)
+    result = pipeline(
+        image=source,
+        last_image=last_source,
+        prompt=None,
+        negative_prompt=None,
+        prompt_embeds=prompt_embeddings,
+        negative_prompt_embeds=negative_prompt_embeddings,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        num_inference_steps=steps,
+        guidance_scale=float(guidance_scale),
+        generator=generator,
+    )
+    if (
+        result.frames is None
+        or len(result.frames) == 0
+        or len(result.frames[0]) == 0
+    ):
+        raise WorkerError("Wan pipeline returned no video frames")
+    generated_frames = list(result.frames[0])
+    endpoint_restoration = None
+    loop_endpoint_restoration = None
+    if not same_endpoint:
+        generated_frames, endpoint_restoration = _restore_wan_endpoint_colors(
+            generated_frames,
+            last_source,
+        )
+    elif loop_mode == "seamless":
+        generated_frames, loop_endpoint_restoration = _restore_wan_seam_endpoints(
+            generated_frames,
+            source,
+        )
+    destination, evidence, composite = _encode_video_webm(
+        generated_frames,
+        output_directory,
+        fps,
+        animated_background,
+        transparent_background=transparent_background,
+        loop_mode=loop_mode,
+        matte_quality=matte_quality,
+        encoding_quality=encoding_quality,
+    )
+    response = {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "packages": _package_versions(),
+        "device": device,
+        "deviceLabel": device_label,
+        "deviceMemoryBytes": device_memory,
+        "performance": pipeline._machdoch_wan_performance,  # noqa: SLF001
+        "conv3dBackend": conv3d_backend,
+        "conditioningMode": pipeline._machdoch_wan_conditioning_mode,  # noqa: SLF001
+        "conditioningFraming": {
+            "firstFrame": first_frame_framing,
+            "lastFrame": last_frame_framing,
+        },
+        "endpointRestoration": endpoint_restoration,
+        "loopEndpointRestoration": loop_endpoint_restoration,
+        "prompt": prompt,
+        "negativePrompt": negative_prompt,
+        "resolution": resolution,
+        "guidanceScale": float(guidance_scale),
+        "numInferenceSteps": steps,
+        "transparentBackground": transparent_background,
+        "modelRevision": _required_text(model, "revision", 128),
+        "modelDigest": _required_text(model, "digest", 160),
+        "output": {
+            "index": 0,
+            "fileName": destination.name,
+            "seed": seed,
+            "width": width,
+            "height": height,
+            **evidence,
+        },
+    }
+    if composite is not None:
+        _, composite_evidence = composite
+        response["compositeOutput"] = {
+            "seed": seed,
+            **composite_evidence,
+        }
+    return response
 
 
 def _emit(value: dict[str, Any]) -> None:
@@ -1057,7 +5055,15 @@ def main() -> int:
                 raise WorkerError("Worker request must be a JSON object")
             _emit(generate(request))
             return 0
-        raise WorkerError("Expected exactly one command: probe, probe-model, or generate")
+        if command == "generate-video":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(generate_video(request))
+            return 0
+        raise WorkerError(
+            "Expected exactly one command: probe, probe-model, generate, or generate-video"
+        )
     except WorkerError as error:
         _emit(
             {

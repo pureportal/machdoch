@@ -31,6 +31,24 @@ describe("atomic file persistence", () => {
     expect(await scavengeAtomicTemporaryFiles(directory, { maxAgeMs: 0 })).toBe(0);
   });
 
+  it("runs a final stale-write guard before replacing the destination", async () => {
+    const directory = await createTemporaryDirectory("atomic-guard-");
+    const path = join(directory, "record.json");
+    await writeFile(path, "external", "utf8");
+
+    await expect(
+      writeFileAtomically(path, "pending", "utf8", {
+        beforeCommit: () => {
+          throw new Error("stale destination");
+        },
+      }),
+    ).rejects.toThrow("stale destination");
+    expect(await readFile(path, "utf8")).toBe("external");
+    expect(await scavengeAtomicTemporaryFiles(directory, { maxAgeMs: 0 })).toBe(
+      0,
+    );
+  });
+
   it("removes abandoned atomic temporary files after the retention window", async () => {
     const directory = await createTemporaryDirectory("ralph-atomic-stale-");
     await mkdir(directory, { recursive: true });

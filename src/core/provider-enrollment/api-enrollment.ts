@@ -1,96 +1,82 @@
 import type { ProviderSurface } from "./types.js";
 import type { TaskExecutionSection } from "../types.js";
+import type {
+  FrozenInstructionSet,
+  InstructionDeliveryPlan,
+} from "../instruction-system/types.js";
 import {
   listEnabledMcpServers,
   loadMcpConfig,
-  loadMcpDiscoveryCacheSync,
+  loadMcpDiscoveryCache,
 } from "../mcp/config.js";
-import { digestJson, sha256 } from "./digests.js";
+import {
+  loadMcpInitializationInstructionSnapshot,
+  mcpInitializationInstructionSnapshotDigest,
+  renderMcpInitializationInstructionSections,
+} from "../mcp/initialization-instructions.js";
+import { digestJson } from "./digests.js";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
 import type {
-  CompiledInstructionBundle,
   EnrollmentCoverageEntry,
   EnrollmentCoverageSummary,
 } from "./types.js";
 
 export interface ApiEnrollmentSnapshot {
   provider: ProviderSurface;
-  bundleDigest: string;
+  resolutionId: string;
+  planId: string;
+  canonicalDigest: string;
+  environmentDigest: string;
+  instructionRoute: string;
   coverage: EnrollmentCoverageEntry[];
   coverageSummary: EnrollmentCoverageSummary;
 }
 
 export const loadMcpInitializationInstructionSections = async (
   workspaceRoot: string,
-): Promise<string[]> => {
-  const config = await loadMcpConfig(workspaceRoot);
-  const discovery = loadMcpDiscoveryCacheSync(workspaceRoot).servers;
-  const byDigest = new Map<string, { serverIds: string[]; body: string }>();
-  for (const server of listEnabledMcpServers(config)) {
-    const body = discovery[server.id]?.instructions?.trim();
-    if (!body) continue;
-    const digest = sha256(body);
-    const existing = byDigest.get(digest);
-    if (existing) {
-      existing.serverIds.push(server.id);
-    } else {
-      byDigest.set(digest, { serverIds: [server.id], body });
-    }
-  }
-  return [...byDigest.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([digest, entry]) => [
-      `<mcp_server_initialization_instruction server_ids=${JSON.stringify(entry.serverIds.sort().join(","))} digest="${digest}">`,
-      entry.body,
-      "</mcp_server_initialization_instruction>",
-    ].join("\n"));
-};
+): Promise<string[]> =>
+  renderMcpInitializationInstructionSections(
+    await loadMcpInitializationInstructionSnapshot(workspaceRoot),
+  );
 
 export const createApiEnrollmentSnapshot = async (
   provider: ProviderSurface,
-  bundle: CompiledInstructionBundle,
+  resolution: FrozenInstructionSet,
+  plan: InstructionDeliveryPlan,
   workspaceRoot: string,
 ): Promise<ApiEnrollmentSnapshot> => {
-  const degradedSourceIds = new Set(bundle.degradedSourceIds);
-  const coverage: EnrollmentCoverageEntry[] = bundle.sources.flatMap((source) => source.sourceIds.map((sourceId) => ({
-    entityId: sourceId,
-    entityKind: "instruction",
-    provider,
-    digest: source.bodyHash,
-    route: degradedSourceIds.has(source.id) ? "uncovered" : "api-request",
-    fidelity: degradedSourceIds.has(source.id) ? "degraded" : "exact",
-    refreshState: degradedSourceIds.has(source.id) ? "degraded" : "request-current",
-    covered: !degradedSourceIds.has(source.id),
-    evidence: [{
-      kind: "request-field",
-      detail:
-        provider === "openai"
-          ? "Responses API instructions"
-          : provider === "anthropic"
-            ? "Messages API system"
-            : provider === "google"
-              ? "Gemini systemInstruction"
-              : "First system message",
-      digest: bundle.digest,
-    }],
-    ...(degradedSourceIds.has(source.id)
-      ? { warning: "Instruction content was truncated by the enrollment budget." }
-      : {}),
-  })));
-  coverage.push(...bundle.omittedSources.flatMap((source) => source.sourceIds.map((sourceId) => ({
-    entityId: sourceId,
-    entityKind: "instruction" as const,
-    provider,
-    digest: source.bodyHash,
-    route: "uncovered" as const,
-    fidelity: "degraded" as const,
-    refreshState: "degraded" as const,
-    covered: false,
-    evidence: [{ kind: "fallback" as const, detail: "Instruction omitted by enrollment budget." }],
-    warning: "Instruction was omitted by the enrollment budget.",
-  }))));
+  if (
+    resolution.surface !== "api" ||
+    resolution.providerId !== provider ||
+    plan.resolutionId !== resolution.resolutionId ||
+    plan.canonicalDigest !== resolution.canonicalDigest ||
+    plan.environmentDigest !== resolution.environmentDigest ||
+    plan.providerId !== resolution.providerId ||
+    plan.surface !== resolution.surface ||
+    plan.grade === "unsupported" ||
+    plan.blockingReasons.length > 0
+  ) {
+    throw new Error(
+      "API enrollment requires a matching, deliverable frozen instruction plan.",
+    );
+  }
+  const currentMcpInitializationInstructions =
+    await loadMcpInitializationInstructionSnapshot(workspaceRoot);
+  if (
+    mcpInitializationInstructionSnapshotDigest(
+      currentMcpInitializationInstructions,
+    ) !==
+    mcpInitializationInstructionSnapshotDigest(
+      resolution.mcpInitializationInstructions,
+    )
+  ) {
+    throw new Error(
+      "MCP initialization instructions changed after instruction-plan review. Refresh resolution before provider launch.",
+    );
+  }
+  const coverage: EnrollmentCoverageEntry[] = [];
   const mcpConfig = await loadMcpConfig(workspaceRoot);
-  const discovery = loadMcpDiscoveryCacheSync(workspaceRoot).servers;
+  const discovery = (await loadMcpDiscoveryCache(workspaceRoot)).servers;
   for (const server of listEnabledMcpServers(mcpConfig)) {
     const capabilities = discovery[server.id]
       ? [
@@ -140,7 +126,11 @@ export const createApiEnrollmentSnapshot = async (
   }
   return {
     provider,
-    bundleDigest: bundle.digest,
+    resolutionId: resolution.resolutionId,
+    planId: plan.planId,
+    canonicalDigest: resolution.canonicalDigest,
+    environmentDigest: resolution.environmentDigest,
+    instructionRoute: plan.route,
     coverage,
     coverageSummary: summarizeEnrollmentCoverage(coverage),
   };
@@ -152,10 +142,13 @@ export const createApiEnrollmentSection = (
   title: "Provider enrollment",
   lines: [
     `provider: ${snapshot.provider}`,
-    "instruction route: request-native system/developer field",
+    `instruction route: ${snapshot.instructionRoute}`,
     "MCP route: Machdoch application-managed direct/meta tools",
-    `bundle digest: ${snapshot.bundleDigest}`,
-    `coverage: ${snapshot.coverageSummary.covered}/${snapshot.coverageSummary.total}`,
+    `instruction resolution: ${snapshot.resolutionId}`,
+    `instruction plan: ${snapshot.planId}`,
+    `canonical digest: ${snapshot.canonicalDigest}`,
+    `environment digest: ${snapshot.environmentDigest}`,
+    `MCP coverage: ${snapshot.coverageSummary.covered}/${snapshot.coverageSummary.total}`,
     ...snapshot.coverage.map(
       (entry) => `${entry.entityId}: ${entry.route} ${entry.fidelity}`,
     ),

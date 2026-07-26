@@ -1,6 +1,8 @@
 import {
   Bot,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   History,
@@ -18,6 +20,9 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
   useState,
   type JSX,
   type MouseEvent,
@@ -42,6 +47,10 @@ import {
   createExecutionThinkingTrace,
   getRenderedMessageContent,
 } from "../_helpers/execution-message.tsx";
+import {
+  getConversationMessageNavigationState,
+  getRenderedMessageLimitForTarget,
+} from "../_helpers/message-navigation";
 import { createContextAttachmentsFromTaskBlock } from "../_helpers/session-context-attachments";
 import { MessageAttachmentsList } from "./context-attachments";
 import { ExecutionInsightRow } from "./execution-insight-row";
@@ -69,6 +78,8 @@ export interface ConversationFeedProps {
   onRetryTask: (message: ChatSessionMessage) => void;
   onRetryMessage?: (message: ChatSessionMessage) => boolean;
   onEditMessage?: (message: ChatSessionMessage, content: string) => boolean;
+  onStartEditMessage?: (message: ChatSessionMessage) => void;
+  activeEditingMessageId?: string | null;
   onContinueTask: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
@@ -87,6 +98,7 @@ const MESSAGE_CONTEXT_MENU_ITEM_HEIGHT = 32;
 const MESSAGE_CONTEXT_MENU_MARGIN = 8;
 const INITIAL_RENDERED_MESSAGE_LIMIT = 80;
 const RENDERED_MESSAGE_PAGE_SIZE = 80;
+const MESSAGE_NAVIGATION_HIGHLIGHT_DURATION_MS = 1_800;
 
 interface MessageContextMenuState {
   role: ChatSessionMessage["role"];
@@ -254,6 +266,8 @@ interface ConversationMessageRowProps {
   editContent: string;
   isEditing: boolean;
   isAiContextStart: boolean;
+  isNavigationHighlighted: boolean;
+  isNavigationTarget: boolean;
   isOriginalPromptExpanded: boolean;
   isSpeakingMessage: boolean;
   message: ChatSessionMessage;
@@ -269,6 +283,10 @@ interface ConversationMessageRowProps {
     canSaveAsContextPack: boolean,
   ) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
+  onMessageElementChange: (
+    messageId: string,
+    element: HTMLDivElement | null,
+  ) => void;
   onRetryTask: (message: ChatSessionMessage) => void;
   onRetryMessage?: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
@@ -286,6 +304,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   editContent,
   isEditing,
   isAiContextStart,
+  isNavigationHighlighted,
+  isNavigationTarget,
   isOriginalPromptExpanded,
   isSpeakingMessage,
   message,
@@ -296,6 +316,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   onOpenAttachment,
   onOpenMessageContextMenu,
   onOpenWorkspaceFile,
+  onMessageElementChange,
   onRetryTask,
   onRetryMessage,
   onSaveMessageAsContextPack,
@@ -355,7 +376,17 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   };
 
   return (
-    <div className="app-message-container grid w-full gap-6 [contain-intrinsic-size:auto_180px] [content-visibility:auto]">
+    <div
+      ref={(element) => onMessageElementChange(message.id, element)}
+      aria-current={isNavigationTarget ? "true" : undefined}
+      data-message-id={message.id}
+      data-message-role={message.role}
+      className={cn(
+        "app-message-container grid w-full gap-6 [contain-intrinsic-size:auto_180px] [content-visibility:auto]",
+        isNavigationHighlighted &&
+          "app-message-container--navigation-highlight",
+      )}
+    >
       {isAiContextStart ? (
         <div
           role="separator"
@@ -666,6 +697,8 @@ export const ConversationFeed = ({
   onRetryTask,
   onRetryMessage,
   onEditMessage,
+  onStartEditMessage,
+  activeEditingMessageId = null,
   onContinueTask,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
@@ -681,6 +714,60 @@ export const ConversationFeed = ({
   const [editContent, setEditContent] = useState("");
   const [renderedMessageLimit, setRenderedMessageLimit] = useState(
     INITIAL_RENDERED_MESSAGE_LIMIT,
+  );
+  const [selectedNavigationMessageId, setSelectedNavigationMessageId] =
+    useState<string | null>(null);
+  const [highlightedNavigationMessageId, setHighlightedNavigationMessageId] =
+    useState<string | null>(null);
+  const [navigationScrollTargetId, setNavigationScrollTargetId] = useState<
+    string | null
+  >(null);
+  const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const navigationState = useMemo(
+    () =>
+      getConversationMessageNavigationState(
+        visibleMessages,
+        selectedNavigationMessageId,
+      ),
+    [selectedNavigationMessageId, visibleMessages],
+  );
+
+  const setMessageElement = useCallback(
+    (messageId: string, element: HTMLDivElement | null): void => {
+      if (element) {
+        messageElementsRef.current.set(messageId, element);
+        return;
+      }
+
+      messageElementsRef.current.delete(messageId);
+    },
+    [],
+  );
+
+  const navigateToMessage = useCallback(
+    (message: ChatSessionMessage | null): void => {
+      if (!message) {
+        return;
+      }
+
+      setRenderedMessageLimit((currentLimit) =>
+        getRenderedMessageLimitForTarget(
+          visibleMessages,
+          message.id,
+          currentLimit,
+        ),
+      );
+      setSelectedNavigationMessageId(message.id);
+      setHighlightedNavigationMessageId(message.id);
+      setNavigationScrollTargetId(message.id);
+    },
+    [visibleMessages],
+  );
+  const retryConversationMessage = useCallback(
+    (message: ChatSessionMessage): void => {
+      void onRetryMessage?.(message);
+    },
+    [onRetryMessage],
   );
 
   const toggleOriginalPrompt = useCallback((messageId: string): void => {
@@ -702,10 +789,18 @@ export const ConversationFeed = ({
     setEditContent("");
   }, []);
 
-  const startEditing = useCallback((message: ChatSessionMessage): void => {
-    setEditingMessageId(message.id);
-    setEditContent(getRenderedMessageContent(message));
-  }, []);
+  const startEditing = useCallback(
+    (message: ChatSessionMessage): void => {
+      if (onStartEditMessage) {
+        onStartEditMessage(message);
+        return;
+      }
+
+      setEditingMessageId(message.id);
+      setEditContent(getRenderedMessageContent(message));
+    },
+    [onStartEditMessage],
+  );
 
   const submitEditedMessage = useCallback(
     (message: ChatSessionMessage): void => {
@@ -727,6 +822,63 @@ export const ConversationFeed = ({
       cancelEditing();
     }
   }, [cancelEditing, editingMessageId, isSessionRunning, visibleMessages]);
+
+  useEffect(() => {
+    if (
+      !selectedNavigationMessageId ||
+      navigationState.messages.some(
+        (message) => message.id === selectedNavigationMessageId,
+      )
+    ) {
+      return;
+    }
+
+    setSelectedNavigationMessageId(null);
+    setHighlightedNavigationMessageId(null);
+    setNavigationScrollTargetId(null);
+  }, [navigationState.messages, selectedNavigationMessageId]);
+
+  useEffect(() => {
+    if (!highlightedNavigationMessageId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setHighlightedNavigationMessageId(null);
+    }, MESSAGE_NAVIGATION_HIGHLIGHT_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [highlightedNavigationMessageId]);
+
+  useLayoutEffect(() => {
+    if (!navigationScrollTargetId) {
+      return;
+    }
+
+    const targetElement =
+      messageElementsRef.current.get(navigationScrollTargetId);
+
+    if (!targetElement) {
+      return;
+    }
+
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    targetElement.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    setNavigationScrollTargetId(null);
+  }, [
+    navigationScrollTargetId,
+    renderedMessageLimit,
+    visibleMessages,
+  ]);
 
   useEffect(() => {
     if (!messageContextMenu) {
@@ -879,9 +1031,58 @@ export const ConversationFeed = ({
   const retryableAgentMessageIds = getRetryableAgentMessageIds(visibleMessages);
   const latestRetryableAgentMessageId =
     Array.from(retryableAgentMessageIds).at(-1) ?? null;
+  const currentNavigationPosition =
+    navigationState.currentIndex === null
+      ? null
+      : navigationState.currentIndex + 1;
+  const navigationMessageCount = navigationState.messages.length;
+  const activeNavigationMessageId = navigationState.currentMessage?.id ?? null;
 
   return (
-    <div className="app-conversation-feed mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
+    <div className="app-conversation-feed mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
+      {activeNavigationMessageId && currentNavigationPosition ? (
+        <nav
+          aria-label="Message navigation"
+          className="app-message-navigation sticky top-3 z-30 mx-auto flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/90 p-1 text-slate-300 shadow-lg shadow-slate-950/35 backdrop-blur-xl"
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            aria-label="Previous message"
+            title="Previous message"
+            disabled={!navigationState.previousMessage}
+            onClick={() =>
+              navigateToMessage(navigationState.previousMessage)
+            }
+            className="h-7 rounded-full px-2 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-35"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Previous</span>
+          </Button>
+          <span
+            role="status"
+            aria-live="polite"
+            aria-label={`Message ${currentNavigationPosition} of ${navigationMessageCount}`}
+            className="min-w-12 px-1 text-center text-[0.6875rem] font-medium tabular-nums text-slate-400"
+          >
+            {currentNavigationPosition} / {navigationMessageCount}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            aria-label="Next message"
+            title="Next message"
+            disabled={!navigationState.nextMessage}
+            onClick={() => navigateToMessage(navigationState.nextMessage)}
+            className="h-7 rounded-full px-2 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-35"
+          >
+            <span className="hidden sm:inline">Next</span>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </nav>
+      ) : null}
       {hiddenMessageCount > 0 ? (
         <div className="flex justify-center">
           <Button
@@ -916,16 +1117,22 @@ export const ConversationFeed = ({
           editContent={editingMessageId === message.id ? editContent : ""}
           isEditing={editingMessageId === message.id}
           isAiContextStart={cutoffMessageId === message.id}
+          isNavigationHighlighted={
+            highlightedNavigationMessageId === message.id
+          }
+          isNavigationTarget={activeNavigationMessageId === message.id}
           isOriginalPromptExpanded={expandedOriginalPromptIds.has(message.id)}
           isSpeakingMessage={voicePlayback.speakingMessageId === message.id}
           voicePlaybackSupported={voicePlayback.supported}
           workspaceRoot={workspaceRoot}
           onRetryTask={onRetryTask}
           onRetryMessage={
-            onRetryMessage ? (target) => void onRetryMessage(target) : undefined
+            onRetryMessage ? retryConversationMessage : undefined
           }
           onEditMessage={
-            onEditMessage && !isSessionRunning
+            (onEditMessage || onStartEditMessage) &&
+            !isSessionRunning &&
+            activeEditingMessageId !== message.id
               ? editingMessageId === message.id
                 ? submitEditedMessage
                 : startEditing
@@ -936,6 +1143,7 @@ export const ConversationFeed = ({
           onContinueTask={onContinueTask}
           onSaveMessageAsContextPack={onSaveMessageAsContextPack}
           onOpenWorkspaceFile={onOpenWorkspaceFile}
+          onMessageElementChange={setMessageElement}
           onOpenAttachment={onOpenAttachment}
           onSpeakMessage={voicePlayback.onSpeakMessage}
           onStopSpeaking={voicePlayback.onStopSpeaking}

@@ -1,10 +1,20 @@
-import { existsSync, readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+} from "node:fs";
+import { lstat, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { getUserConfigPath } from "../env.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
+import {
+  readOpenedFileExactly,
+  readOpenedFileExactlySync,
+} from "../_helpers/read-opened-file-exactly.helper.js";
 import type { ToolCallEffect, ToolRiskLevel } from "../types.js";
 import { enrichMcpDiscoveryMetadata } from "./discovery-metadata.js";
 import { getMcpPreset, listMcpPresets } from "./presets.js";
@@ -63,6 +73,141 @@ const DEFAULT_MCP_DEFAULTS: McpEffectiveDefaults = {
   sampling: "disabled",
   tasks: "optional",
   elicitation: "disabled",
+};
+const MAX_MCP_CONFIGURATION_FILE_BYTES = 16 * 1024 * 1024;
+
+const isMissingFileError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  error.code === "ENOENT";
+
+const sameMcpFileIdentity = (
+  before: {
+    dev: number | bigint;
+    ino: number | bigint;
+    size: number | bigint;
+    mtimeMs: number;
+  },
+  after: {
+    dev: number | bigint;
+    ino: number | bigint;
+    size: number | bigint;
+    mtimeMs: number;
+  },
+): boolean =>
+  before.dev === after.dev &&
+  before.ino === after.ino &&
+  before.size === after.size &&
+  before.mtimeMs === after.mtimeMs;
+
+const decodeMcpConfigurationBytes = (
+  path: string,
+  bytes: Uint8Array,
+): string => {
+  try {
+    return new TextDecoder("utf-8", { fatal: true })
+      .decode(bytes)
+      .replace(/^\uFEFF/u, "");
+  } catch (error) {
+    throw new Error(`${path} is not valid UTF-8.`, { cause: error });
+  }
+};
+
+const readStableMcpConfigurationFile = async (
+  path: string,
+): Promise<string | undefined> => {
+  let beforePath;
+  try {
+    beforePath = await lstat(path);
+  } catch (error) {
+    if (isMissingFileError(error)) return undefined;
+    throw error;
+  }
+  if (
+    !beforePath.isFile() ||
+    beforePath.isSymbolicLink() ||
+    beforePath.size > MAX_MCP_CONFIGURATION_FILE_BYTES
+  ) {
+    throw new Error(
+      `${path} must be a regular, unlinked file no larger than ${MAX_MCP_CONFIGURATION_FILE_BYTES} bytes.`,
+    );
+  }
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY |
+        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+    );
+    const beforeOpened = await handle.stat();
+    if (!sameMcpFileIdentity(beforePath, beforeOpened)) {
+      throw new Error(`${path} changed before it could be opened safely.`);
+    }
+    const bytes = await readOpenedFileExactly(handle, beforeOpened.size);
+    const [afterOpened, afterPath] = await Promise.all([
+      handle.stat(),
+      lstat(path),
+    ]);
+    if (
+      !sameMcpFileIdentity(beforeOpened, afterOpened) ||
+      !sameMcpFileIdentity(beforeOpened, afterPath)
+    ) {
+      throw new Error(`${path} changed while it was being read.`);
+    }
+    return decodeMcpConfigurationBytes(path, bytes);
+  } finally {
+    await handle?.close();
+  }
+};
+
+const readStableMcpConfigurationFileSync = (
+  path: string,
+): string | undefined => {
+  let beforePath;
+  try {
+    beforePath = lstatSync(path);
+  } catch (error) {
+    if (isMissingFileError(error)) return undefined;
+    throw error;
+  }
+  if (
+    !beforePath.isFile() ||
+    beforePath.isSymbolicLink() ||
+    beforePath.size > MAX_MCP_CONFIGURATION_FILE_BYTES
+  ) {
+    throw new Error(
+      `${path} must be a regular, unlinked file no larger than ${MAX_MCP_CONFIGURATION_FILE_BYTES} bytes.`,
+    );
+  }
+  const descriptor = openSync(
+    path,
+    constants.O_RDONLY |
+      (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+  );
+  try {
+    const beforeOpened = fstatSync(descriptor);
+    if (!sameMcpFileIdentity(beforePath, beforeOpened)) {
+      throw new Error(`${path} changed before it could be opened safely.`);
+    }
+    const bytes = readOpenedFileExactlySync(
+      descriptor,
+      beforeOpened.size,
+    );
+    const [afterOpened, afterPath] = [
+      fstatSync(descriptor),
+      lstatSync(path),
+    ];
+    if (
+      !sameMcpFileIdentity(beforeOpened, afterOpened) ||
+      !sameMcpFileIdentity(beforeOpened, afterPath)
+    ) {
+      throw new Error(`${path} changed while it was being read.`);
+    }
+    return decodeMcpConfigurationBytes(path, bytes);
+  } finally {
+    closeSync(descriptor);
+  }
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -652,19 +797,13 @@ const parseMcpConfigFile = (raw: string): McpConfigFile => {
 };
 
 const readConfigFile = async (path: string): Promise<McpConfigFile> => {
-  if (!existsSync(path)) {
-    return {};
-  }
-
-  return parseMcpConfigFile(await readFile(path, "utf8"));
+  const raw = await readStableMcpConfigurationFile(path);
+  return raw === undefined ? {} : parseMcpConfigFile(raw);
 };
 
 const readConfigFileSync = (path: string): McpConfigFile => {
-  if (!existsSync(path)) {
-    return {};
-  }
-
-  return parseMcpConfigFile(readFileSync(path, "utf8"));
+  const raw = readStableMcpConfigurationFileSync(path);
+  return raw === undefined ? {} : parseMcpConfigFile(raw);
 };
 
 export const getUserMcpConfigPath = (): string => {
@@ -1284,27 +1423,29 @@ const parseDiscoveryCache = (raw: string): McpDiscoveryCacheFile => {
 };
 
 const loadDiscoveryCacheFileSync = (path: string): McpDiscoveryCacheFile => {
-  if (!existsSync(path)) {
+  const raw = readStableMcpConfigurationFileSync(path);
+  if (raw === undefined) {
     return {
       schemaVersion: MCP_DISCOVERY_CACHE_SCHEMA_VERSION,
       servers: {},
     };
   }
 
-  return parseDiscoveryCache(readFileSync(path, "utf8"));
+  return parseDiscoveryCache(raw);
 };
 
 const loadDiscoveryCacheFile = async (
   path: string,
 ): Promise<McpDiscoveryCacheFile> => {
-  if (!existsSync(path)) {
+  const raw = await readStableMcpConfigurationFile(path);
+  if (raw === undefined) {
     return {
       schemaVersion: MCP_DISCOVERY_CACHE_SCHEMA_VERSION,
       servers: {},
     };
   }
 
-  return parseDiscoveryCache(await readFile(path, "utf8"));
+  return parseDiscoveryCache(raw);
 };
 
 export const loadMcpDiscoveryCacheSync = (

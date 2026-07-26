@@ -11,6 +11,7 @@ import type { RuntimeProvider } from "../../model-catalog";
 import {
   isMediaAssetContextAttachment,
   type ChatSessionContextAttachment,
+  type ChatSessionMessageSettings,
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
@@ -27,6 +28,8 @@ export interface ChatInterviewStartContext {
   provider: RuntimeProvider;
   model: string;
   reasoning?: ReasoningMode;
+  messageSettings?: ChatSessionMessageSettings;
+  conversationCutoffMessageId?: string;
 }
 
 export type ChatInterviewDialogStatus =

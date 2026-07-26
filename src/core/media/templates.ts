@@ -1,4 +1,5 @@
 import {
+  createGeneratedLoopVideoFlow,
   createImageRecipeFlow,
   createMediaFlowLayout,
 } from "./compiler.js";
@@ -156,6 +157,84 @@ const variantCountVariable = (defaultValue: number): MediaFlowVariable => ({
   constraints: { min: 1, max: 8, step: 1 },
 });
 
+const createCharacterLoopTemplate = (): MediaFlowTemplateDescriptor => {
+  const variables: MediaFlowVariable[] = [
+    creativeBriefVariable(
+      "A full-body game-style fantasy heroine in a relaxed neutral idle pose, facing the camera with arms naturally at her sides, detailed adventurer outfit, centered and fully visible",
+    ),
+    {
+      id: "idle-motion",
+      name: "Idle motion",
+      description:
+        "Subtle motion direction shared by WAN while the generated endpoint frame remains exact.",
+      type: "choice",
+      required: true,
+      defaultValue: "Subtle breathing and natural hair movement",
+      constraints: {
+        options: [
+          "Subtle breathing and natural hair movement",
+          "Gentle cloth movement and a slow blink",
+          "Soft breathing with a slight weight shift",
+        ],
+      },
+    },
+  ];
+  const flow = createGeneratedLoopVideoFlow({
+    id: "template:generated-character-idle-loop",
+    createdAt: TEMPLATE_CREATED_AT,
+    prompt:
+      "{{creative-brief}}, even studio lighting on a perfectly uniform chroma-green background, {{idle-motion}}, fixed front-facing camera, seamless loop, no shadows or background movement",
+  });
+  flow.variables = variables;
+  flow.presets = [
+    {
+      id: "preset-fantasy-heroine",
+      name: "Fantasy heroine idle",
+      description:
+        "A practical full-body game-character example with restrained idle motion.",
+      values: {
+        "creative-brief":
+          "A full-body game-style fantasy heroine in a relaxed neutral idle pose, facing the camera with arms naturally at her sides, detailed adventurer outfit, centered and fully visible",
+        "idle-motion": "Subtle breathing and natural hair movement",
+      },
+    },
+    {
+      id: "preset-robot-scout",
+      name: "Robot scout idle",
+      description:
+        "A non-human production example using the same endpoint and transparency pipeline.",
+      values: {
+        "creative-brief":
+          "A full-body stylized game robot scout in a neutral idle stance, centered and fully visible, clean mechanical silhouette",
+        "idle-motion": "Soft breathing with a slight weight shift",
+      },
+    },
+  ];
+  flow.name = "Generated character idle loop";
+  return {
+    schemaVersion: 1,
+    id: "generated-character-idle-loop",
+    name: flow.name,
+    description:
+      "Generate one character frame, reuse its transparent cutout as both WAN endpoints, and publish transparent plus animated-background loops.",
+    category: "Animation",
+    tags: [
+      "character",
+      "image-to-video",
+      "WAN",
+      "transparency",
+      "animated-background",
+    ],
+    workflowSummary:
+      "Character brief → image model + optional LoRA → subject cutout → same first/last WAN endpoints → VP9 alpha master + animated composite",
+    privacySummary:
+      "The image model, matting, WAN inference, alpha encoding, and animated compositing are pinned to local runtimes.",
+    remoteCapable: false,
+    flow,
+    layout: createMediaFlowLayout(flow),
+  };
+};
+
 const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
   createTemplate({
     id: "text-to-image-variants",
@@ -168,7 +247,7 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
     settings: {
       prompt: "",
       providerPolicy: "auto",
-      modelPolicy: "balanced",
+      modelPolicy: "quality",
       modelId: null,
       aspectRatio: "1:1",
       outputCount: 4,
@@ -326,6 +405,7 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       requireComment: true,
     },
   }),
+  createCharacterLoopTemplate(),
 ];
 
 export const listBuiltInMediaFlowTemplates = (): readonly MediaFlowTemplateDescriptor[] =>

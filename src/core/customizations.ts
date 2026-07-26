@@ -1,24 +1,13 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
-import {
-  getRalphFlowAlwaysOnInstructionPath,
-  getRalphFlowConditionalInstructionDirectory,
-  type RalphFlowScope,
-} from "./_helpers/create-ralph-storage-paths.helper.js";
-import { normalizeFlowId } from "./_helpers/ralph-flow-ids.helper.js";
 import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
-  CustomizationDiagnostic,
   CustomizationDiscoveryResult,
-  DiscoveredInstruction,
+  CustomizationScope,
   DiscoveredPrompt,
   DiscoveredSkill,
-  FrontmatterValue,
-  InstructionAudience,
-  InstructionMode,
-  InstructionScope,
 } from "./types.js";
 import type { ToolName } from "./runtime-contract.generated.js";
 
@@ -43,13 +32,12 @@ const PROMPT_TOOL_ALIASES: Record<string, ToolName> = {
   folders: "filesystem",
   fs: "filesystem",
   git: "git",
+  guid: "utilities",
+  hash: "utilities",
   http: "network",
   https: "network",
   json: "utilities",
   network: "network",
-  guid: "utilities",
-  hash: "utilities",
-  regex: "utilities",
   npm: "packages",
   package: "packages",
   "package-manager": "packages",
@@ -57,28 +45,29 @@ const PROMPT_TOOL_ALIASES: Record<string, ToolName> = {
   pip: "packages",
   pnpm: "packages",
   powershell: "shell",
+  random: "utilities",
+  recurrence: "scheduler",
+  recurring: "scheduler",
+  regex: "utilities",
   repo: "git",
   repository: "git",
   request: "network",
   requests: "network",
-  random: "utilities",
-  recurring: "scheduler",
-  recurrence: "scheduler",
-  semver: "utilities",
   schedule: "scheduler",
   scheduled: "scheduler",
   scheduler: "scheduler",
   schedules: "scheduler",
-  slug: "utilities",
-  shell: "shell",
+  semver: "utilities",
   sh: "shell",
+  shell: "shell",
+  slug: "utilities",
   terminal: "shell",
   terminals: "shell",
   time: "utilities",
+  ulid: "utilities",
   utilities: "utilities",
   utility: "utilities",
   uuid: "utilities",
-  ulid: "utilities",
   version: "utilities",
   web: "browser",
   webpage: "browser",
@@ -90,381 +79,77 @@ export interface CustomizationDiscoveryOptions {
   discoverGithubCustomizations?: boolean;
   discoverUserCustomizations?: boolean;
   includeDiagnostics?: boolean;
-  ralphFlow?: {
-    id: string;
-    scope?: RalphFlowScope;
-  };
 }
 
-const MAX_INSTRUCTION_FILE_BYTES = 128 * 1024;
-
-const INSTRUCTION_MODE_VALUES = new Set<InstructionMode>([
-  "always",
-  "auto",
-  "agent-requested",
-  "manual",
-  "disabled",
-]);
-
-const INSTRUCTION_AUDIENCE_VALUES = new Set<InstructionAudience>([
-  "executor",
-  "validator",
-  "generator",
-  "all",
-]);
-
-/**
- * Converts an absolute path into a normalized workspace-relative path.
- */
 const toWorkspaceRelativePath = (
   workspaceRoot: string,
   absolutePath: string,
-): string => {
-  return relative(workspaceRoot, absolutePath).split("\\").join("/");
-};
+): string => relative(workspaceRoot, absolutePath).split("\\").join("/");
 
-export const getUserCustomizationRoot = (): string => {
-  return dirname(getUserConfigPath());
-};
+export const getUserCustomizationRoot = (): string =>
+  dirname(getUserConfigPath());
 
-export const getUserInstructionDirectory = (): string => {
-  return join(getUserCustomizationRoot(), "instructions");
-};
+export const getUserPromptDirectory = (): string =>
+  join(getUserCustomizationRoot(), "prompts");
 
-export const getUserPromptDirectory = (): string => {
-  return join(getUserCustomizationRoot(), "prompts");
-};
-
-export const getUserSkillDirectory = (): string => {
-  return join(getUserCustomizationRoot(), "skills");
-};
-
-/**
- * Uses absolute paths for user-global instructions and workspace-relative paths
- * for repository-owned instruction files.
- */
-const toInstructionPath = (
-  workspaceRoot: string,
-  absolutePath: string,
-  options?: {
-    scope?: InstructionScope;
-    pathRoot?: "user" | "workspace";
-  },
-): string => {
-  if (options?.scope === "user" || options?.pathRoot === "user") {
-    return absolutePath;
-  }
-
-  return toWorkspaceRelativePath(workspaceRoot, absolutePath);
-};
+export const getUserSkillDirectory = (): string =>
+  join(getUserCustomizationRoot(), "skills");
 
 const toCustomizationPath = (
   workspaceRoot: string,
   absolutePath: string,
   options?: {
-    scope?: "user" | "workspace" | "compatibility";
+    scope?: CustomizationScope;
     pathRoot?: "user" | "workspace";
   },
-): string => {
-  if (options?.scope === "user" || options?.pathRoot === "user") {
-    return absolutePath;
-  }
+): string =>
+  options?.scope === "user" || options?.pathRoot === "user"
+    ? absolutePath
+    : toWorkspaceRelativePath(workspaceRoot, absolutePath);
 
-  return toWorkspaceRelativePath(workspaceRoot, absolutePath);
-};
-
-/**
- * Recursively collects file paths beneath a directory when it exists.
- */
 const walkFiles = async (directoryPath: string): Promise<string[]> => {
-  if (!existsSync(directoryPath)) {
-    return [];
-  }
+  if (!existsSync(directoryPath)) return [];
 
   const entries = await readdir(directoryPath, { withFileTypes: true });
   const files = await Promise.all(
     entries.map(async (entry) => {
       const fullPath = join(directoryPath, entry.name);
-
-      if (entry.isDirectory()) {
-        return walkFiles(fullPath);
-      }
-
-      return [fullPath];
+      return entry.isDirectory() ? walkFiles(fullPath) : [fullPath];
     }),
   );
-
   return files.flat();
 };
 
-/**
- * Derives a display name from a file path by trimming a known suffix.
- */
 const deriveDocumentName = (filePath: string, suffix: string): string => {
   const fileName = basename(filePath);
-
   return fileName.endsWith(suffix)
     ? fileName.slice(0, -suffix.length)
     : fileName;
 };
 
-const readStringAttribute = (
-  attributes: Record<string, FrontmatterValue>,
-  names: string[],
-): string | undefined => {
-  for (const name of names) {
-    const value = attributes[name];
-
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-
-  return undefined;
-};
-
-const readStringListAttribute = (
-  attributes: Record<string, FrontmatterValue>,
-  names: string[],
-): string[] => {
-  const values: string[] = [];
-
-  for (const name of names) {
-    const value = attributes[name];
-
-    if (Array.isArray(value)) {
-      values.push(...value);
-      continue;
-    }
-
-    if (typeof value === "string") {
-      values.push(...value.split(/[,;\n]/u));
-    }
-  }
-
-  return Array.from(
-    new Set(
-      values
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
-    ),
-  );
-};
-
-const readNumberAttribute = (
-  attributes: Record<string, FrontmatterValue>,
-  name: string,
-): number | undefined => {
-  const value = attributes[name];
-
-  return typeof value === "number" ? value : undefined;
-};
-
-const normalizeInstructionModeValue = (
-  value: string,
-): InstructionMode | undefined => {
-  const normalizedValue = value.trim().toLowerCase().replace(/_/gu, "-");
-
-  if (normalizedValue === "always-on") {
-    return "always";
-  }
-
-  if (normalizedValue === "auto-attached") {
-    return "auto";
-  }
-
-  return INSTRUCTION_MODE_VALUES.has(normalizedValue as InstructionMode)
-    ? (normalizedValue as InstructionMode)
-    : undefined;
-};
-
-const readInstructionMode = (
-  attributes: Record<string, FrontmatterValue>,
-  filePath: string,
-  diagnostics?: CustomizationDiagnostic[],
-): InstructionMode | undefined => {
-  const value = readStringAttribute(attributes, ["mode", "activation"]);
-
-  if (!value) {
-    return undefined;
-  }
-
-  const mode = normalizeInstructionModeValue(value);
-
-  if (!mode) {
-    diagnostics?.push({
-      level: "warning",
-      code: "invalid-instruction-mode",
-      message: `Unsupported instruction mode "${value}". Expected always, auto, agent-requested, manual, disabled.`,
-      path: filePath,
-    });
-  }
-
-  return mode;
-};
-
-const readInstructionAudience = (
-  attributes: Record<string, FrontmatterValue>,
-  filePath: string,
-  diagnostics?: CustomizationDiagnostic[],
-): InstructionAudience | undefined => {
-  const value = readStringAttribute(attributes, ["audience"]);
-
-  if (!value) {
-    return undefined;
-  }
-
-  const normalizedValue = value.trim().toLowerCase();
-
-  if (INSTRUCTION_AUDIENCE_VALUES.has(normalizedValue as InstructionAudience)) {
-    return normalizedValue as InstructionAudience;
-  }
-
-  diagnostics?.push({
-    level: "warning",
-    code: "invalid-instruction-audience",
-    message: `Unsupported instruction audience "${value}". Expected executor, validator, generator, or all.`,
-    path: filePath,
-  });
-
-  return undefined;
-};
-
-/**
- * Maps prompt-declared tool aliases to canonical internal tool names.
- */
 const normalizePromptTools = (tools: unknown): ToolName[] => {
-  if (!Array.isArray(tools)) {
-    return [];
-  }
+  if (!Array.isArray(tools)) return [];
 
   const normalizedTools: ToolName[] = [];
-
   for (const tool of tools) {
-    if (typeof tool !== "string") {
-      continue;
-    }
-
+    if (typeof tool !== "string") continue;
     const normalizedTool = PROMPT_TOOL_ALIASES[tool.trim().toLowerCase()];
-
-    if (!normalizedTool || normalizedTools.includes(normalizedTool)) {
-      continue;
+    if (normalizedTool && !normalizedTools.includes(normalizedTool)) {
+      normalizedTools.push(normalizedTool);
     }
-
-    normalizedTools.push(normalizedTool);
   }
-
   return normalizedTools;
 };
 
-/**
- * Loads a discovered instruction document and normalizes its metadata.
- */
-interface LoadInstructionOptions {
-  fallbackName?: string;
-  scope?: InstructionScope;
-  pathRoot?: "user" | "workspace";
-  ralphFlowId?: string;
-  ralphFlowScope?: RalphFlowScope;
-  diagnostics?: CustomizationDiagnostic[];
-}
-
-const loadInstruction = async (
-  workspaceRoot: string,
-  filePath: string,
-  kind: DiscoveredInstruction["kind"],
-  options?: LoadInstructionOptions,
-): Promise<DiscoveredInstruction> => {
-  const content = await readFile(filePath, "utf8");
-  const sizeBytes = Buffer.byteLength(content, "utf8");
-  const effectiveContent =
-    sizeBytes > MAX_INSTRUCTION_FILE_BYTES
-      ? content.slice(0, MAX_INSTRUCTION_FILE_BYTES)
-      : content;
-
-  if (sizeBytes > MAX_INSTRUCTION_FILE_BYTES) {
-    options?.diagnostics?.push({
-      level: "warning",
-      code: "instruction-file-too-large",
-      message: `Instruction file exceeds ${MAX_INSTRUCTION_FILE_BYTES} bytes and was truncated during discovery.`,
-      path: filePath,
-    });
-  }
-
-  const document = parseMarkdownDocument(effectiveContent);
-  const description = readStringAttribute(document.attributes, ["description"]);
-  const applyToPatterns = readStringListAttribute(document.attributes, [
-    "applyTo",
-    "apply_to",
-    "apply-to",
-    "globs",
-    "paths",
-  ]);
-  const excludePatterns = readStringListAttribute(document.attributes, [
-    "exclude",
-    "excludeTo",
-    "exclude_to",
-    "exclude-to",
-    "excludePaths",
-    "exclude_paths",
-  ]);
-  const mode = readInstructionMode(
-    document.attributes,
-    filePath,
-    options?.diagnostics,
-  );
-  const audience = readInstructionAudience(
-    document.attributes,
-    filePath,
-    options?.diagnostics,
-  );
-  const priority = readNumberAttribute(document.attributes, "priority");
-  const primaryApplyTo = applyToPatterns[0];
-
-  return {
-    kind,
-    path: toInstructionPath(workspaceRoot, filePath, {
-      ...(options?.scope ? { scope: options.scope } : {}),
-      ...(options?.pathRoot ? { pathRoot: options.pathRoot } : {}),
-    }),
-    name:
-      typeof document.attributes.name === "string"
-        ? document.attributes.name
-        : typeof options?.fallbackName === "string"
-          ? options.fallbackName
-          : deriveDocumentName(filePath, ".instructions.md"),
-    body: document.body,
-    ...(description ? { description } : {}),
-    ...(primaryApplyTo ? { applyTo: primaryApplyTo } : {}),
-    ...(applyToPatterns.length > 1 ? { applyToPatterns } : {}),
-    ...(excludePatterns.length > 0 ? { excludePatterns } : {}),
-    keywords: readStringListAttribute(document.attributes, [
-      "keywords",
-      "keyword",
-    ]),
-    ...(typeof priority === "number" ? { priority } : {}),
-    ...(mode ? { mode } : {}),
-    ...(audience ? { audience } : {}),
-    ...(options?.scope ? { scope: options.scope } : {}),
-    ...(options?.ralphFlowId ? { ralphFlowId: options.ralphFlowId } : {}),
-    ...(options?.ralphFlowScope ? { ralphFlowScope: options.ralphFlowScope } : {}),
-    ...(sizeBytes > MAX_INSTRUCTION_FILE_BYTES ? { sizeBytes } : {}),
-  };
-};
-
-/**
- * Loads a discovered prompt file and normalizes its frontmatter fields.
- */
 const loadPrompt = async (
   workspaceRoot: string,
   filePath: string,
   options?: {
-    scope?: "user" | "workspace" | "compatibility";
+    scope?: CustomizationScope;
     pathRoot?: "user" | "workspace";
   },
 ): Promise<DiscoveredPrompt> => {
-  const content = await readFile(filePath, "utf8");
-  const document = parseMarkdownDocument(content);
+  const document = parseMarkdownDocument(await readFile(filePath, "utf8"));
   const description =
     typeof document.attributes.description === "string"
       ? document.attributes.description
@@ -481,9 +166,6 @@ const loadPrompt = async (
     typeof document.attributes["argument-hint"] === "string"
       ? document.attributes["argument-hint"]
       : undefined;
-  const inputs = Array.isArray(document.attributes.inputs)
-    ? document.attributes.inputs
-    : [];
 
   return {
     path: toCustomizationPath(workspaceRoot, filePath, options),
@@ -496,28 +178,25 @@ const loadPrompt = async (
     ...(agent ? { agent } : {}),
     ...(model ? { model } : {}),
     ...(argumentHint ? { argumentHint } : {}),
-    inputs,
+    inputs: Array.isArray(document.attributes.inputs)
+      ? document.attributes.inputs
+      : [],
     tools: normalizePromptTools(document.attributes.tools),
     body: document.body,
   };
 };
 
-/**
- * Loads a discovered skill definition and normalizes its metadata.
- */
 const loadSkill = async (
   workspaceRoot: string,
   filePath: string,
   options?: {
-    scope?: "user" | "workspace" | "compatibility";
+    scope?: CustomizationScope;
     pathRoot?: "user" | "workspace";
   },
 ): Promise<DiscoveredSkill> => {
-  const content = await readFile(filePath, "utf8");
-  const document = parseMarkdownDocument(content);
+  const document = parseMarkdownDocument(await readFile(filePath, "utf8"));
   const displayPath = toCustomizationPath(workspaceRoot, filePath, options);
   const pathSegments = displayPath.replace(/\\/gu, "/").split("/");
-  const fallbackName = pathSegments.at(-2) ?? "skill";
   const argumentHint =
     typeof document.attributes["argument-hint"] === "string"
       ? document.attributes["argument-hint"]
@@ -528,7 +207,7 @@ const loadSkill = async (
     name:
       typeof document.attributes.name === "string"
         ? document.attributes.name
-        : fallbackName,
+        : pathSegments.at(-2) ?? "skill",
     ...(options?.scope ? { scope: options.scope } : {}),
     description:
       typeof document.attributes.description === "string"
@@ -546,267 +225,73 @@ const loadSkill = async (
   };
 };
 
-/**
- * Discovers workspace and user-level instructions, prompts, and skills from
- * native `.machdoch` folders and optional GitHub-compatible customization folders.
- */
 export const discoverCustomizations = async (
   workspaceRoot: string,
   options?: CustomizationDiscoveryOptions,
 ): Promise<CustomizationDiscoveryResult> => {
-  const diagnostics: CustomizationDiagnostic[] | undefined =
-    options?.includeDiagnostics ? [] : undefined;
-  const userCustomizationRoot = getUserCustomizationRoot();
-  const machdochRoot = join(workspaceRoot, ".machdoch");
+  const userRoot = getUserCustomizationRoot();
+  const workspaceRootDirectory = join(workspaceRoot, ".machdoch");
   const githubRoot = join(workspaceRoot, ".github");
-  const userAlwaysOnInstructionPath = join(
-    userCustomizationRoot,
-    "instructions.md",
-  );
-  const userConditionalInstructionRoot = getUserInstructionDirectory();
-  const userPromptsRoot = getUserPromptDirectory();
-  const userSkillsRoot = getUserSkillDirectory();
-  const alwaysOnInstructionPath = join(machdochRoot, "instructions.md");
-  const conditionalInstructionRoot = join(machdochRoot, "instructions");
-  const promptsRoot = join(machdochRoot, "prompts");
-  const skillsRoot = join(machdochRoot, "skills");
-  const githubAlwaysOnInstructionPath = join(
-    githubRoot,
-    "copilot-instructions.md",
-  );
-  const githubConditionalInstructionRoot = join(githubRoot, "instructions");
-  const githubPromptsRoot = join(githubRoot, "prompts");
-  const githubSkillsRoot = join(githubRoot, "skills");
-  const agentsInstructionPath = join(workspaceRoot, "AGENTS.md");
-  const ralphFlowId = options?.ralphFlow
-    ? normalizeFlowId(options.ralphFlow.id)
-    : "";
-  const ralphFlowScope = options?.ralphFlow?.scope ?? "workspace";
-  const ralphFlowAlwaysOnInstructionPath = ralphFlowId
-    ? getRalphFlowAlwaysOnInstructionPath(
-        workspaceRoot,
-        ralphFlowId,
-        ralphFlowScope,
-      )
-    : undefined;
-  const ralphFlowConditionalInstructionRoot = ralphFlowId
-    ? getRalphFlowConditionalInstructionDirectory(
-        workspaceRoot,
-        ralphFlowId,
-        ralphFlowScope,
-      )
-    : undefined;
 
-  const instructions: DiscoveredInstruction[] = [];
-  const instructionOptions = (
-    base: LoadInstructionOptions = {},
-  ): LoadInstructionOptions => {
-    return {
-      ...base,
-      ...(diagnostics ? { diagnostics } : {}),
-    };
-  };
-
-  if (options?.discoverUserCustomizations) {
-    if (existsSync(userAlwaysOnInstructionPath)) {
-      instructions.push(
-        await loadInstruction(
-          workspaceRoot,
-          userAlwaysOnInstructionPath,
-          "always-on",
-          instructionOptions({
-            fallbackName: "user-instructions",
-            scope: "user",
-          }),
-        ),
-      );
-    }
-  }
-
-  if (existsSync(alwaysOnInstructionPath)) {
-    instructions.push(
-      await loadInstruction(
-        workspaceRoot,
-        alwaysOnInstructionPath,
-        "always-on",
-        instructionOptions(),
-      ),
-    );
-  }
-
-  if (options?.discoverGithubCustomizations) {
-    if (existsSync(githubAlwaysOnInstructionPath)) {
-      instructions.push(
-        await loadInstruction(
-          workspaceRoot,
-          githubAlwaysOnInstructionPath,
-          "always-on",
-          instructionOptions({
-            fallbackName: "copilot-instructions",
-            scope: "compatibility",
-          }),
-        ),
-      );
-    }
-
-    if (existsSync(agentsInstructionPath)) {
-      instructions.push(
-        await loadInstruction(
-          workspaceRoot,
-          agentsInstructionPath,
-          "always-on",
-          instructionOptions({
-            fallbackName: "AGENTS",
-            scope: "compatibility",
-          }),
-        ),
-      );
-    }
-  }
-
-  if (
-    ralphFlowId &&
-    ralphFlowAlwaysOnInstructionPath &&
-    existsSync(ralphFlowAlwaysOnInstructionPath)
-  ) {
-    instructions.push(
-      await loadInstruction(
-        workspaceRoot,
-        ralphFlowAlwaysOnInstructionPath,
-        "always-on",
-        instructionOptions({
-          fallbackName: `${ralphFlowId}-instructions`,
-          scope: "ralph-flow",
-          pathRoot: ralphFlowScope === "user" ? "user" : "workspace",
-          ralphFlowId,
-          ralphFlowScope,
-        }),
-      ),
-    );
-  }
-
-  const userConditionalInstructionPaths = options?.discoverUserCustomizations
-    ? (await walkFiles(userConditionalInstructionRoot)).filter((filePath) =>
-        filePath.endsWith(".instructions.md"),
-      )
-    : [];
-  const userPromptPaths = options?.discoverUserCustomizations
-    ? (await walkFiles(userPromptsRoot)).filter((filePath) =>
-        filePath.endsWith(".prompt.md"),
-      )
-    : [];
-  const userSkillPaths = options?.discoverUserCustomizations
-    ? (await walkFiles(userSkillsRoot)).filter(
-        (filePath) => basename(filePath) === "SKILL.md",
-      )
-    : [];
-  const conditionalInstructionPaths = (
-    await walkFiles(conditionalInstructionRoot)
-  ).filter((filePath) => filePath.endsWith(".instructions.md"));
-  const ralphFlowConditionalInstructionPaths =
-    ralphFlowId && ralphFlowConditionalInstructionRoot
-      ? (await walkFiles(ralphFlowConditionalInstructionRoot)).filter(
-          (filePath) => filePath.endsWith(".instructions.md"),
-        )
-      : [];
-  const promptPaths = (await walkFiles(promptsRoot)).filter((filePath) =>
-    filePath.endsWith(".prompt.md"),
-  );
-  const skillPaths = (await walkFiles(skillsRoot)).filter(
-    (filePath) => basename(filePath) === "SKILL.md",
-  );
-
-  const githubConditionalInstructionPaths =
-    options?.discoverGithubCustomizations
-      ? (await walkFiles(githubConditionalInstructionRoot)).filter((filePath) =>
-          filePath.endsWith(".instructions.md"),
-        )
-      : [];
+  const workspacePromptPaths = (
+    await walkFiles(join(workspaceRootDirectory, "prompts"))
+  )
+    .filter((path) => path.endsWith(".prompt.md"))
+    .sort();
+  const workspaceSkillPaths = (
+    await walkFiles(join(workspaceRootDirectory, "skills"))
+  )
+    .filter((path) => basename(path) === "SKILL.md")
+    .sort();
   const githubPromptPaths = options?.discoverGithubCustomizations
-    ? (await walkFiles(githubPromptsRoot)).filter((filePath) =>
-        filePath.endsWith(".prompt.md"),
-      )
+    ? (await walkFiles(join(githubRoot, "prompts")))
+        .filter((path) => path.endsWith(".prompt.md"))
+        .sort()
     : [];
   const githubSkillPaths = options?.discoverGithubCustomizations
-    ? (await walkFiles(githubSkillsRoot)).filter(
-        (filePath) => basename(filePath) === "SKILL.md",
-      )
+    ? (await walkFiles(join(githubRoot, "skills")))
+        .filter((path) => basename(path) === "SKILL.md")
+        .sort()
+    : [];
+  const userPromptPaths = options?.discoverUserCustomizations
+    ? (await walkFiles(join(userRoot, "prompts")))
+        .filter((path) => path.endsWith(".prompt.md"))
+        .sort()
+    : [];
+  const userSkillPaths = options?.discoverUserCustomizations
+    ? (await walkFiles(join(userRoot, "skills")))
+        .filter((path) => basename(path) === "SKILL.md")
+        .sort()
     : [];
 
-  for (const filePath of [
-    ...userConditionalInstructionPaths,
-    ...conditionalInstructionPaths,
-    ...githubConditionalInstructionPaths,
-    ...ralphFlowConditionalInstructionPaths,
-  ].sort()) {
-    const isUserInstruction = userConditionalInstructionPaths.includes(filePath);
-    const isCompatibilityInstruction =
-      githubConditionalInstructionPaths.includes(filePath);
-    const isRalphFlowInstruction =
-      ralphFlowConditionalInstructionPaths.includes(filePath);
-    instructions.push(
-      await loadInstruction(
-        workspaceRoot,
-        filePath,
-        "conditional",
-        instructionOptions(
-          isUserInstruction
-            ? { scope: "user" }
-            : isCompatibilityInstruction
-              ? { scope: "compatibility" }
-              : isRalphFlowInstruction
-                ? {
-                    scope: "ralph-flow",
-                    pathRoot: ralphFlowScope === "user" ? "user" : "workspace",
-                    ralphFlowId,
-                    ralphFlowScope,
-                  }
-              : {},
-        ),
-      ),
-    );
-  }
-
-  const prompts = await Promise.all(
-    [
-      ...promptPaths.sort().map((filePath) => ({ filePath })),
-      ...githubPromptPaths
-        .sort()
-        .map((filePath) => ({ filePath, scope: "compatibility" as const })),
-      ...userPromptPaths
-        .sort()
-        .map((filePath) => ({
-          filePath,
-          scope: "user" as const,
-          pathRoot: "user" as const,
-        })),
-    ].map(({ filePath, ...loadOptions }) =>
-      loadPrompt(workspaceRoot, filePath, loadOptions),
+  const prompts = await Promise.all([
+    ...workspacePromptPaths.map((path) => loadPrompt(workspaceRoot, path)),
+    ...githubPromptPaths.map((path) =>
+      loadPrompt(workspaceRoot, path, { scope: "github" }),
     ),
-  );
-  const skills = await Promise.all(
-    [
-      ...skillPaths.sort().map((filePath) => ({ filePath })),
-      ...githubSkillPaths
-        .sort()
-        .map((filePath) => ({ filePath, scope: "compatibility" as const })),
-      ...userSkillPaths
-        .sort()
-        .map((filePath) => ({
-          filePath,
-          scope: "user" as const,
-          pathRoot: "user" as const,
-        })),
-    ].map(({ filePath, ...loadOptions }) =>
-      loadSkill(workspaceRoot, filePath, loadOptions),
+    ...userPromptPaths.map((path) =>
+      loadPrompt(workspaceRoot, path, {
+        scope: "user",
+        pathRoot: "user",
+      }),
     ),
-  );
+  ]);
+  const skills = await Promise.all([
+    ...workspaceSkillPaths.map((path) => loadSkill(workspaceRoot, path)),
+    ...githubSkillPaths.map((path) =>
+      loadSkill(workspaceRoot, path, { scope: "github" }),
+    ),
+    ...userSkillPaths.map((path) =>
+      loadSkill(workspaceRoot, path, {
+        scope: "user",
+        pathRoot: "user",
+      }),
+    ),
+  ]);
 
   return {
     workspaceRoot,
-    instructions,
     prompts,
     skills,
-    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
   };
 };

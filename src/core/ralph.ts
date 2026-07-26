@@ -176,6 +176,8 @@ import {
   type RalphGitChangedFileSnapshot,
 } from "./_helpers/ralph-git-change-snapshot.helper.js";
 import { executeTask } from "./execution.js";
+import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
+import { resolveReviewModelRuntimeConfig } from "./review-model.js";
 import { mcpClientManager } from "./mcp/client.js";
 import {
   createImageInputUnsupportedModelMessage,
@@ -207,10 +209,21 @@ import type {
   TaskExecutionTokenUsage,
 } from "./types.js";
 import type {
+  ConfiguredModelProvider,
   ModelProvider,
   ReasoningMode,
   RuntimeConfig,
 } from "./runtime-contract.generated.js";
+import {
+  adaptFrozenInstructionSet,
+  assertInstructionDeliveryAllowed,
+  canonicalDigest,
+  resolveInstructionSet,
+  type FrozenInstructionSet,
+  type InstructionDeliveryPlan,
+  type InstructionDeliveryReceipt,
+} from "./instruction-system/index.js";
+import { createInstructionDeliveryPlanForRuntime } from "./provider-enrollment/instruction-delivery-preflight.js";
 
 const addFormats = (
   typeof addFormatsModule.default === "function"
@@ -894,6 +907,7 @@ export interface RalphFlow {
   alias?: string;
   name: string;
   description?: string;
+  guidance?: string;
   createdAt?: string;
   updatedAt?: string;
   source?: RalphFlowSource;
@@ -1143,6 +1157,15 @@ export interface RalphRunOptions {
   leaseOwnerId?: string;
   leaseDurationMs?: number;
   forceLeaseTakeover?: boolean;
+  resolvedInstructions?: FrozenInstructionSet;
+  instructionDeliveryPlan?: InstructionDeliveryPlan;
+  instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
+  acknowledgeCompatibleInstructionDelivery?: boolean;
+  instructionBoundaryPolicy?:
+    | "require-match"
+    | "original-boundary"
+    | "new-boundary";
+  instructionBoundaries?: Record<string, RalphInstructionBoundary>;
 }
 
 export interface RalphExecutionOptionsSource {
@@ -1150,6 +1173,17 @@ export interface RalphExecutionOptionsSource {
   logger?: RalphRunLogger;
   signal?: AbortSignal;
   onStateChange?: TaskExecutionProgressHandler;
+  resolvedInstructions?: FrozenInstructionSet;
+  instructionDeliveryPlan?: InstructionDeliveryPlan;
+  instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
+  acknowledgeCompatibleInstructionDelivery?: boolean;
+  instructionBoundaries?: Record<string, RalphInstructionBoundary>;
+}
+
+export interface RalphInstructionBoundary {
+  resolution: FrozenInstructionSet;
+  plan: InstructionDeliveryPlan;
+  receipts: InstructionDeliveryReceipt[];
 }
 
 export interface RalphRunResult {
@@ -1237,6 +1271,20 @@ export interface RalphRunRecordBlock {
   summary: string;
   markdown?: string;
   error?: string;
+  instructionDelivery?: {
+    resolutionId: string;
+    canonicalDigest: string;
+    environmentDigest: string;
+    planId: string;
+    grade: string;
+    sources: unknown[];
+    nativeInventory: unknown[];
+    mcpInitializationInstructions: unknown[];
+    diagnostics: unknown[];
+    plans: unknown[];
+    adapterEvidence?: unknown;
+    receipts: unknown[];
+  };
 }
 
 export interface RalphInterviewState {
@@ -1269,6 +1317,8 @@ export interface RalphRunCheckpoint {
   startedAt?: string;
   flowId?: string;
   flowFingerprint?: string;
+  instructionCanonicalDigest?: string;
+  instructionEnvironmentDigests?: Record<string, string>;
   lease?: RalphRunLease;
   nextRetryAt?: string;
   segment?: number;
@@ -3364,6 +3414,106 @@ const getRalphBlockMaxDurationMs = (block: RalphFlowBlock | undefined): number |
     : undefined;
 };
 
+const createRalphInstructionBoundaryKey = (
+  providerId: ConfiguredModelProvider,
+  model: string,
+  reasoning: ReasoningMode,
+): string => `${providerId}\u0000${model}\u0000${reasoning}`;
+
+const getConfiguredInstructionProvider = (
+  config: RuntimeConfig,
+): ConfiguredModelProvider =>
+  config.provider === "unconfigured" ? "openai" : config.provider;
+
+const isModelBackedRalphBlock = (block: RalphFlowBlock): boolean =>
+  block.type === "PROMPT" ||
+  block.type === "VALIDATOR" ||
+  block.type === "DECISION" ||
+  block.type === "INTERVIEW" ||
+  (block.type === "UTILITY" &&
+    ["PROMPT_JSON", "VALIDATOR_JSON"].includes(block.utility.type));
+
+const preflightRalphInstructionBoundaries = async (
+  flow: RalphFlow,
+  config: RuntimeConfig,
+  options: RalphRunOptions,
+): Promise<Record<string, RalphInstructionBoundary>> => {
+  const executionConfigs = flow.blocks
+    .filter(isModelBackedRalphBlock)
+    .map((block) => createBlockConfig(config, block));
+  if (executionConfigs.length === 0) {
+    return {};
+  }
+  const seedConfig = executionConfigs[0] as RuntimeConfig;
+  const baseProvider = getConfiguredInstructionProvider(seedConfig);
+  const baseSurface = isAgentCliProvider(baseProvider) ? "cli" : "api";
+  const baseResolution =
+    options.resolvedInstructions ??
+    (await resolveInstructionSet({
+      workspaceRoot: config.workspaceRoot,
+      providerId: baseProvider,
+      surface: baseSurface,
+      model: seedConfig.model,
+      flow: {
+        id: flow.id,
+        ...(flow.guidance === undefined ? {} : { guidance: flow.guidance }),
+      },
+      unattended: true,
+    }));
+  const configs = executionConfigs.flatMap((blockConfig) => [
+    blockConfig,
+    resolveReviewModelRuntimeConfig(blockConfig),
+  ]);
+  const boundaries: Record<string, RalphInstructionBoundary> = {};
+  for (const blockConfig of configs) {
+    const providerId = getConfiguredInstructionProvider(blockConfig);
+    const key = createRalphInstructionBoundaryKey(
+      providerId,
+      blockConfig.model,
+      blockConfig.reasoning,
+    );
+    if (boundaries[key]) continue;
+    const surface = isAgentCliProvider(providerId) ? "cli" : "api";
+    const resolution =
+      providerId === baseResolution.providerId &&
+      surface === baseResolution.surface &&
+      blockConfig.model === baseResolution.model
+        ? baseResolution
+        : await adaptFrozenInstructionSet(baseResolution, {
+            workspaceRoot: config.workspaceRoot,
+            providerId,
+            surface,
+            model: blockConfig.model,
+          });
+    const plan =
+      options.instructionDeliveryPlan &&
+      options.instructionDeliveryPlan.providerId === providerId &&
+      options.instructionDeliveryPlan.resolutionId === resolution.resolutionId
+        ? options.instructionDeliveryPlan
+        : await createInstructionDeliveryPlanForRuntime(resolution, {
+            workspaceRoot: config.workspaceRoot,
+            reasoning: blockConfig.reasoning,
+            unattended: true,
+            acknowledgedCompatible:
+              options.acknowledgeCompatibleInstructionDelivery === true,
+          });
+    assertInstructionDeliveryAllowed(plan, {
+      unattended: true,
+      acknowledgedCompatible:
+        options.acknowledgeCompatibleInstructionDelivery === true,
+    });
+    boundaries[key] = {
+      resolution,
+      plan,
+      receipts:
+        providerId === baseProvider && blockConfig.model === seedConfig.model
+          ? options.instructionDeliveryReceipts ?? []
+          : [],
+    };
+  }
+  return boundaries;
+};
+
 const createExecutionOptions = async (
   options: RalphExecutionOptionsSource,
   config: RuntimeConfig,
@@ -3468,6 +3618,15 @@ const createExecutionOptions = async (
       }
     : undefined;
   const maxDurationMs = getRalphBlockMaxDurationMs(block);
+  const providerId = getConfiguredInstructionProvider(config);
+  const instructionBoundary =
+    options.instructionBoundaries?.[
+      createRalphInstructionBoundaryKey(
+        providerId,
+        config.model,
+        config.reasoning,
+      )
+    ];
 
   return {
     ...(options.signal ? { signal: options.signal } : {}),
@@ -3477,6 +3636,32 @@ const createExecutionOptions = async (
     ...(conversationContext ? { conversationContext } : {}),
     ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
     ...(imageInputs.length > 0 ? { imageInputs } : {}),
+    ...(instructionBoundary
+      ? {
+          resolvedInstructions: instructionBoundary.resolution,
+          instructionDeliveryPlan: instructionBoundary.plan,
+          instructionDeliveryReceipts: instructionBoundary.receipts,
+          unattendedInstructionDelivery: true,
+          acknowledgeCompatibleInstructionDelivery:
+            options.acknowledgeCompatibleInstructionDelivery === true,
+        }
+      : options.resolvedInstructions
+        ? {
+            resolvedInstructions: options.resolvedInstructions,
+            ...(options.instructionDeliveryPlan === undefined
+              ? {}
+              : { instructionDeliveryPlan: options.instructionDeliveryPlan }),
+            ...(options.instructionDeliveryReceipts === undefined
+              ? {}
+              : {
+                  instructionDeliveryReceipts:
+                    options.instructionDeliveryReceipts,
+                }),
+            unattendedInstructionDelivery: true,
+            acknowledgeCompatibleInstructionDelivery:
+              options.acknowledgeCompatibleInstructionDelivery === true,
+          }
+        : {}),
     ralphProgressEvents: progressEvents,
   };
 };
@@ -12008,6 +12193,7 @@ export const runRalphFlow = async (
   customizations: CustomizationDiscoveryResult,
   options: RalphRunOptions = {},
 ): Promise<RalphRunResult> => {
+  options = { ...options };
   const checkpoint = options.checkpoint;
   const logger = options.logger;
   const runId = logger?.runId ?? options.runId ?? checkpoint?.runId ??
@@ -12070,6 +12256,46 @@ export const runRalphFlow = async (
     config,
     variableValues: resolvedVariables.values,
   });
+  let instructionBoundaryError: unknown;
+  try {
+    options.instructionBoundaries = await preflightRalphInstructionBoundaries(
+      flow,
+      config,
+      options,
+    );
+  } catch (error) {
+    instructionBoundaryError = error;
+  }
+  const instructionBoundaries = Object.entries(
+    options.instructionBoundaries ?? {},
+  );
+  const activeInstructionCanonicalDigest =
+    instructionBoundaries[0]?.[1].resolution.canonicalDigest;
+  const activeInstructionEnvironmentDigests = Object.fromEntries(
+    instructionBoundaries.map(([key, boundary]) => [
+      key,
+      canonicalDigest({
+        environmentDigest: boundary.resolution.environmentDigest,
+        deliveryPlanId: boundary.plan.planId,
+      }),
+    ]),
+  );
+  const instructionCanonicalChanged =
+    checkpoint !== undefined &&
+    checkpoint.instructionCanonicalDigest !==
+      activeInstructionCanonicalDigest;
+  const instructionEnvironmentChanged =
+    checkpoint !== undefined &&
+    JSON.stringify(
+      canonicalizeRalphValue(
+        checkpoint.instructionEnvironmentDigests ?? {},
+      ),
+    ) !==
+      JSON.stringify(
+        canonicalizeRalphValue(activeInstructionEnvironmentDigests),
+      );
+  const instructionBoundaryChanged =
+    instructionCanonicalChanged || instructionEnvironmentChanged;
   const autonomyPolicy = resolveRalphAutonomyPolicy(
     flow.settings?.autonomy,
     options.autonomy,
@@ -12456,6 +12682,37 @@ export const runRalphFlow = async (
     };
   }
 
+  if (instructionBoundaryError) {
+    const message =
+      instructionBoundaryError instanceof Error
+        ? instructionBoundaryError.message
+        : String(instructionBoundaryError);
+    return finishRun(
+      createBlockedRunResult(
+        flow,
+        validation,
+        `Ralph instruction preflight failed before the first block: ${message}`,
+      ),
+    );
+  }
+  if (
+    instructionBoundaryChanged &&
+    options.instructionBoundaryPolicy !== "new-boundary"
+  ) {
+    const originalUnavailable =
+      options.instructionBoundaryPolicy === "original-boundary";
+    return finishRun({
+      ...createBlockedRunResult(
+        flow,
+        validation,
+        originalUnavailable
+          ? "The checkpoint's original instruction boundary is not retained with recoverable bodies, so original-boundary resume is unavailable. Restart the flow or explicitly choose a new boundary."
+          : "Ralph instruction boundary changed since the checkpoint. Resume is paused: restart the flow, supply the original retained boundary when available, or explicitly choose a new boundary.",
+      ),
+      checkpoint: checkpoint!,
+    });
+  }
+
   logRunStart();
 
   if (checkpoint?.runId && checkpoint.runId !== runId) {
@@ -12583,7 +12840,12 @@ export const runRalphFlow = async (
   let currentBlockId: string | undefined = checkpoint?.currentBlockId ?? start.id;
   let transitions = checkpoint?.transitions ?? 0;
   let transitionBase = checkpoint?.transitionBase ?? checkpoint?.totalTransitions ?? 0;
-  let segment = checkpoint?.segment ?? 1;
+  let segment =
+    (checkpoint?.segment ?? 1) +
+    (instructionBoundaryChanged &&
+    options.instructionBoundaryPolicy === "new-boundary"
+      ? 1
+      : 0);
   const syncTotalTransitions = (): number => {
     const totalTransitions = transitionBase + transitions;
 
@@ -12636,6 +12898,18 @@ export const runRalphFlow = async (
       startedAt,
       flowId: flow.id,
       flowFingerprint,
+      ...(activeInstructionCanonicalDigest === undefined
+        ? {}
+        : {
+            instructionCanonicalDigest:
+              activeInstructionCanonicalDigest,
+          }),
+      ...(Object.keys(activeInstructionEnvironmentDigests).length === 0
+        ? {}
+        : {
+            instructionEnvironmentDigests:
+              activeInstructionEnvironmentDigests,
+          }),
       lease: runLease,
       segment,
       ...(nextRetryAt ? { nextRetryAt } : {}),

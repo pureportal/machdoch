@@ -1,14 +1,9 @@
 import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
-import type { InstructionAudience, InstructionMode } from "../../core/types.js";
 import type { AgentCliProvider, ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
 import {
   INSTRUCTION_ACTIONS,
-  INSTRUCTION_ACTIONS_REQUIRING_SUBJECT,
-  INSTRUCTION_AUDIENCES,
-  INSTRUCTION_MODES,
-  INSTRUCTION_SCOPES,
   MCP_ACTIONS,
   MCP_ACTIONS_REQUIRING_SERVER,
   MCP_ACTIONS_REQUIRING_TARGET,
@@ -47,8 +42,8 @@ import {
 export type {
   CommandName,
   InstructionCliAction,
+  InstructionCliGroup,
   InstructionCliOptions,
-  InstructionCliScope,
   McpCliAction,
   ProviderSyncCliAction,
   ProviderSyncCliOptions,
@@ -66,7 +61,7 @@ export type {
 } from "./cli-args-types.js";
 import type {
   InstructionCliAction,
-  InstructionCliScope,
+  InstructionCliGroup,
   McpCliAction,
   ProviderSyncCliAction,
   ParsedCliArgs,
@@ -163,6 +158,7 @@ export const parseCliArgs = (
         "retry-current"?: boolean;
         "max-rounds"?: string;
         "max-transitions"?: string;
+        "instruction-boundary-policy"?: string;
         trace?: boolean;
         "context-pack"?: string[];
         macro?: string[];
@@ -204,14 +200,19 @@ export const parseCliArgs = (
         apply?: boolean;
         scope?: string;
         path?: string;
-        "apply-to"?: string[];
-        exclude?: string[];
-        keyword?: string[];
-        "instruction-mode"?: string;
-        audience?: string;
-        priority?: string;
         "ralph-flow"?: string;
         "flow-scope"?: string;
+        description?: string;
+        profile?: string[];
+        "expected-revision"?: string;
+        "expected-digest"?: string;
+        surface?: string;
+        "include-content"?: boolean;
+        "include-workspaces"?: boolean;
+        "decisions-file"?: string;
+        "acknowledge-compatible"?: boolean;
+        "acknowledge-instruction-plan"?: string;
+        "confirm-assignment-removal"?: boolean;
       }
     | undefined;
   let positionals: string[] = [];
@@ -291,6 +292,7 @@ export const parseCliArgs = (
         "retry-current": { type: "boolean" },
         "max-rounds": { type: "string" },
         "max-transitions": { type: "string" },
+        "instruction-boundary-policy": { type: "string" },
         trace: { type: "boolean" },
         "context-pack": { type: "string", multiple: true },
         macro: { type: "string", multiple: true },
@@ -332,14 +334,19 @@ export const parseCliArgs = (
         apply: { type: "boolean" },
         scope: { type: "string" },
         path: { type: "string" },
-        "apply-to": { type: "string", multiple: true },
-        exclude: { type: "string", multiple: true },
-        keyword: { type: "string", multiple: true },
-        "instruction-mode": { type: "string" },
-        audience: { type: "string" },
-        priority: { type: "string" },
         "ralph-flow": { type: "string" },
         "flow-scope": { type: "string" },
+        description: { type: "string" },
+        profile: { type: "string", multiple: true },
+        "expected-revision": { type: "string" },
+        "expected-digest": { type: "string" },
+        surface: { type: "string" },
+        "include-content": { type: "boolean" },
+        "include-workspaces": { type: "boolean" },
+        "decisions-file": { type: "string" },
+        "acknowledge-compatible": { type: "boolean" },
+        "acknowledge-instruction-plan": { type: "string" },
+        "confirm-assignment-removal": { type: "boolean" },
       },
       allowPositionals: true,
       strict: true,
@@ -486,6 +493,9 @@ export const parseCliArgs = (
   const rawRalphRetryCurrent = values?.["retry-current"] === true;
   const rawRalphMaxRounds = normalizeOptionalString(values?.["max-rounds"]);
   const rawRalphMaxTransitions = normalizeOptionalString(values?.["max-transitions"]);
+  const rawRalphInstructionBoundaryPolicy = normalizeOptionalString(
+    values?.["instruction-boundary-policy"],
+  );
   const rawRalphTrace = values?.trace === true;
   const rawSchedulerContextPacks = values?.["context-pack"]
     ?.map((entry) => normalizeOptionalString(entry))
@@ -573,25 +583,28 @@ export const parseCliArgs = (
   const rawMcpUnusedDays = normalizeOptionalString(values?.["unused-days"]);
   const rawMcpNeverUsedDays = normalizeOptionalString(values?.["never-used-days"]);
   const applyMcpCleanup = values?.apply === true;
-  const rawInstructionScope = normalizeOptionalString(values?.scope);
+  const rawRalphScope = normalizeOptionalString(values?.scope);
   const rawInstructionPath = normalizeOptionalString(values?.path);
-  const rawInstructionApplyTo = values?.["apply-to"]
-    ?.map((entry) => normalizeOptionalString(entry))
-    .filter((entry): entry is string => Boolean(entry));
-  const rawInstructionExclude = values?.exclude
-    ?.map((entry) => normalizeOptionalString(entry))
-    .filter((entry): entry is string => Boolean(entry));
-  const rawInstructionKeywords = values?.keyword
-    ?.map((entry) => normalizeOptionalString(entry))
-    .filter((entry): entry is string => Boolean(entry));
-  const rawInstructionMode = normalizeOptionalString(
-    values?.["instruction-mode"],
-  );
-  const rawInstructionAudience = normalizeOptionalString(values?.audience);
-  const rawInstructionPriority = normalizeOptionalString(values?.priority);
   const rawInstructionRalphFlow = normalizeOptionalString(values?.["ralph-flow"]);
   const rawInstructionRalphFlowScope = normalizeOptionalString(
     values?.["flow-scope"],
+  );
+  const rawInstructionDescription =
+    typeof values?.description === "string"
+      ? values.description
+      : undefined;
+  const rawInstructionProfileIds = values?.profile
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawInstructionExpectedRevision = normalizeOptionalString(
+    values?.["expected-revision"],
+  );
+  const rawInstructionExpectedDigest = normalizeOptionalString(
+    values?.["expected-digest"],
+  );
+  const rawInstructionSurface = normalizeOptionalString(values?.surface);
+  const rawInstructionDecisionsFile = normalizeOptionalString(
+    values?.["decisions-file"],
   );
 
   if (values?.mode !== undefined && !rawMode) {
@@ -600,17 +613,6 @@ export const parseCliArgs = (
 
   if (rawMode && !VALID_MODES.has(rawMode as RunMode)) {
     fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
-  }
-
-  if (values?.scope !== undefined && !rawInstructionScope) {
-    fail("Expected --scope to be followed by user, workspace, compatibility, or ralph-flow.");
-  }
-
-  if (
-    rawInstructionScope &&
-    !INSTRUCTION_SCOPES.has(rawInstructionScope as InstructionCliScope)
-  ) {
-    fail("Expected --scope to be followed by user, workspace, compatibility, or ralph-flow.");
   }
 
   if (values?.["ralph-flow"] !== undefined && !rawInstructionRalphFlow) {
@@ -629,32 +631,6 @@ export const parseCliArgs = (
     !RALPH_SCOPES.has(rawInstructionRalphFlowScope as RalphCliScope)
   ) {
     fail("Expected --flow-scope to be followed by user or workspace.");
-  }
-
-  if (values?.["instruction-mode"] !== undefined && !rawInstructionMode) {
-    fail(
-      "Expected --instruction-mode to be followed by always, auto, agent-requested, manual, or disabled.",
-    );
-  }
-
-  if (
-    rawInstructionMode &&
-    !INSTRUCTION_MODES.has(rawInstructionMode as InstructionMode)
-  ) {
-    fail(
-      "Expected --instruction-mode to be followed by always, auto, agent-requested, manual, or disabled.",
-    );
-  }
-
-  if (values?.audience !== undefined && !rawInstructionAudience) {
-    fail("Expected --audience to be followed by executor, validator, generator, or all.");
-  }
-
-  if (
-    rawInstructionAudience &&
-    !INSTRUCTION_AUDIENCES.has(rawInstructionAudience as InstructionAudience)
-  ) {
-    fail("Expected --audience to be followed by executor, validator, generator, or all.");
   }
 
   if (values?.provider !== undefined && !rawProvider) {
@@ -768,10 +744,6 @@ export const parseCliArgs = (
     ? parsePositiveInteger(rawAutopilotIterations, "--autopilot-iterations")
     : undefined;
   const infinite = values?.infinite === true;
-  const instructionPriority = parseOptionalInteger(
-    rawInstructionPriority,
-    "--priority",
-  );
   const agentLimits: RuntimeAgentLimitOverrides | undefined = infinite
     ? { infinite: true }
     : executorTurns !== undefined || autopilotExecutorIterations !== undefined
@@ -865,6 +837,9 @@ export const parseCliArgs = (
   }
 
   const resolvedMode = rawMode;
+  const acknowledgedInstructionDeliveryPlanId = normalizeOptionalString(
+    values?.["acknowledge-instruction-plan"],
+  );
 
   const sharedOptions = createSharedParsedOptions({
     json,
@@ -890,6 +865,12 @@ export const parseCliArgs = (
       : {}),
     ...(rawContextPaths ? { contextPaths: rawContextPaths } : {}),
     ...(rawImagePaths ? { imagePaths: rawImagePaths } : {}),
+    ...(values?.["acknowledge-compatible"] === true
+      ? { acknowledgeCompatibleInstructionDelivery: true }
+      : {}),
+    ...(acknowledgedInstructionDeliveryPlanId
+      ? { acknowledgedInstructionDeliveryPlanId }
+      : {}),
   });
 
   if (setGlobalMemoryEnabled !== undefined) {
@@ -973,6 +954,10 @@ export const parseCliArgs = (
   }
 
   const [first, ...rest] = positionals;
+
+  if (first !== "mcp" && applyMcpCleanup) {
+    fail("--apply is only valid for `machdoch mcp cleanup`.");
+  }
 
   if (
     first !== "instructions" &&
@@ -1377,11 +1362,28 @@ export const parseCliArgs = (
       fail("--max-transitions is only valid for `machdoch ralph run` or `machdoch ralph resume`.");
     }
 
+    if (
+      rawRalphInstructionBoundaryPolicy &&
+      !["require-match", "original-boundary", "new-boundary"].includes(
+        rawRalphInstructionBoundaryPolicy,
+      )
+    ) {
+      fail(
+        "--instruction-boundary-policy must be require-match, original-boundary, or new-boundary.",
+      );
+    }
+
+    if (action !== "resume" && rawRalphInstructionBoundaryPolicy) {
+      fail(
+        "--instruction-boundary-policy is only valid for `machdoch ralph resume`.",
+      );
+    }
+
     if (action !== "log" && rawRalphTrace) {
       fail("--trace is only valid for `machdoch ralph log`.");
     }
 
-    if (rawInstructionScope && !RALPH_SCOPES.has(rawInstructionScope as RalphCliScope)) {
+    if (rawRalphScope && !RALPH_SCOPES.has(rawRalphScope as RalphCliScope)) {
       fail("Expected Ralph --scope to be followed by user or workspace.");
     }
 
@@ -1444,8 +1446,8 @@ export const parseCliArgs = (
             : ralphSubject
               ? { subject: ralphSubject }
               : {}),
-          ...(rawInstructionScope
-            ? { scope: rawInstructionScope as RalphCliScope }
+          ...(rawRalphScope
+            ? { scope: rawRalphScope as RalphCliScope }
             : {}),
           ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
           ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
@@ -1481,6 +1483,15 @@ export const parseCliArgs = (
           ...(ralphMaxTransitions !== undefined
             ? { maxTransitions: ralphMaxTransitions }
             : {}),
+          ...(rawRalphInstructionBoundaryPolicy
+            ? {
+                instructionBoundaryPolicy:
+                  rawRalphInstructionBoundaryPolicy as
+                    | "require-match"
+                    | "original-boundary"
+                    | "new-boundary",
+              }
+            : {}),
           ...(rawRalphTrace ? { trace: true } : {}),
           ...(watchActionText
             ? { watchAction: watchActionText as RalphWatchCliAction }
@@ -1495,102 +1506,75 @@ export const parseCliArgs = (
       fail("`machdoch instructions` cannot be combined with --quick or --task.");
     }
 
-    const [rawAction, rawSubject, ...extraPositionals] = rest;
-    const actionText = normalizeOptionalString(rawAction) ?? "list";
-
-    if (!INSTRUCTION_ACTIONS.has(actionText as InstructionCliAction)) {
-      fail(
-        `Expected \`machdoch instructions\` action to be one of ${Array.from(
-          INSTRUCTION_ACTIONS,
-        ).join(", ")}.`,
-      );
-    }
-
+    const instructionGroups = new Set<InstructionCliGroup>([
+      "profiles",
+      "assignments",
+      "local",
+      "workspaces",
+      "transfer",
+      "recovery",
+    ]);
+    const [rawFirst, rawSecond, rawThird, rawFourth, ...extraPositionals] = rest;
+    const firstInstructionWord = normalizeOptionalString(rawFirst) ?? "profiles";
+    const group = instructionGroups.has(firstInstructionWord as InstructionCliGroup)
+      ? (firstInstructionWord as InstructionCliGroup)
+      : undefined;
+    const groupAction = normalizeOptionalString(rawSecond);
+    const instructionGroupPrefix: Record<InstructionCliGroup, string> = {
+      profiles: "profile",
+      assignments: "assignment",
+      local: "local",
+      workspaces: "workspace",
+      transfer: "transfer",
+      recovery: "recovery",
+    };
+    const actionText = group
+      ? `${instructionGroupPrefix[group]}-${
+          groupAction ?? (group === "recovery" ? "status" : "list")
+        }`
+      : firstInstructionWord;
     const action = actionText as InstructionCliAction;
-
-    if (extraPositionals.length > 0) {
+    if (!INSTRUCTION_ACTIONS.has(action)) {
       fail(
-        `Command \`instructions ${action}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+        `Unknown instruction command \`${[firstInstructionWord, groupAction]
+          .filter(Boolean)
+          .join(" ")}\`. Use profiles, assignments, local, workspaces, transfer, recovery, resolve, or validate.`,
       );
     }
-
+    const rawSubject = group ? rawThird : rawSecond;
+    const rawSecondarySubject = group ? rawFourth : rawThird;
+    const unexpected = [
+      ...(group ? [] : rawFourth ? [rawFourth] : []),
+      ...extraPositionals,
+    ].filter((entry): entry is string => typeof entry === "string");
+    if (unexpected.length > 0) {
+      fail(
+        `Command \`instructions ${firstInstructionWord}\` has unexpected positional arguments: ${unexpected.join(" ")}`,
+      );
+    }
     if (
-      INSTRUCTION_ACTIONS_REQUIRING_SUBJECT.has(action) &&
-      !normalizeOptionalString(rawSubject)
+      rawInstructionSurface &&
+      rawInstructionSurface !== "api" &&
+      rawInstructionSurface !== "cli"
     ) {
-      fail(`Expected an instruction name or path after \`machdoch instructions ${action}\`.`);
+      fail("Expected --surface to be followed by api or cli.");
     }
-
-    if (
-      (action === "create" || action === "save" || action === "generate") &&
-      !normalizeOptionalString(rawSubject) &&
-      !rawSchedulerName
-    ) {
-      fail(`\`machdoch instructions ${action}\` expects a name or --name.`);
+    if (rawSchedulerPrompt && rawSchedulerPromptFile) {
+      fail("Use either --prompt or --prompt-file, not both.");
     }
-
-    if (
-      (action === "create" || action === "save" || action === "generate") &&
-      !rawSchedulerPrompt &&
-      !rawSchedulerPromptFile
-    ) {
-      fail(`\`machdoch instructions ${action}\` expects --prompt or --prompt-file.`);
-    }
-
-    if (
-      (action === "create" || action === "save" || action === "generate") &&
-      rawSchedulerPrompt &&
-      rawSchedulerPromptFile
-    ) {
-      fail(`Use either --prompt or --prompt-file for \`machdoch instructions ${action}\`, not both.`);
-    }
-
-    if (
-      action !== "create" &&
-      action !== "save" &&
-      action !== "generate" &&
-      (rawSchedulerPrompt || rawSchedulerPromptFile)
-    ) {
-      fail("--prompt and --prompt-file are only valid for `machdoch instructions create`, `machdoch instructions save`, or `machdoch instructions generate`.");
-    }
-
-    if (
-      action !== "create" &&
-      action !== "save" &&
-      action !== "generate" &&
-      rawInstructionPath
-    ) {
-      fail("--path is only valid for `machdoch instructions create`, `machdoch instructions save`, or `machdoch instructions generate`.");
-    }
-
-    if (action !== "generate" && rawRalphMaxRounds) {
-      fail("--max-rounds is only valid for `machdoch instructions generate`.");
-    }
-
-    if (
-      (action === "create" || action === "save" || action === "generate") &&
-      rawInstructionScope === "compatibility"
-    ) {
-      fail("Compatibility instruction files are read-only; use user, workspace, or ralph-flow scope.");
-    }
-
-    if (rawInstructionScope === "ralph-flow" && !rawInstructionRalphFlow) {
-      fail("Ralph flow instruction scope requires --ralph-flow.");
-    }
-
-    if (rawInstructionScope !== "ralph-flow" && rawInstructionRalphFlow) {
-      fail("--ralph-flow requires --scope ralph-flow.");
-    }
-
-    if (rawInstructionScope !== "ralph-flow" && rawInstructionRalphFlowScope) {
-      fail("--flow-scope requires --scope ralph-flow.");
-    }
-
     const instructionSubject = normalizeOptionalString(rawSubject);
-    const instructionMaxRounds = parseOptionalPositiveInteger(
-      rawRalphMaxRounds,
-      "--max-rounds",
+    const instructionSecondarySubject =
+      normalizeOptionalString(rawSecondarySubject);
+    const instructionExpectedRevision = parseOptionalInteger(
+      rawInstructionExpectedRevision,
+      "--expected-revision",
     );
+    if (
+      instructionExpectedRevision !== undefined &&
+      instructionExpectedRevision < 0
+    ) {
+      fail("--expected-revision must be zero or greater.");
+    }
 
     return createParsedArgs(
       {
@@ -1600,10 +1584,41 @@ export const parseCliArgs = (
       {
         instructions: {
           action,
+          ...(group ? { group } : {}),
           ...(instructionSubject ? { subject: instructionSubject } : {}),
+          ...(instructionSecondarySubject
+            ? { secondarySubject: instructionSecondarySubject }
+            : {}),
           ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
-          ...(rawInstructionScope
-            ? { scope: rawInstructionScope as InstructionCliScope }
+          ...(rawInstructionDescription !== undefined
+            ? { description: rawInstructionDescription }
+            : {}),
+          ...(rawInstructionProfileIds && rawInstructionProfileIds.length > 0
+            ? { profileIds: rawInstructionProfileIds }
+            : {}),
+          ...(instructionExpectedRevision === undefined
+            ? {}
+            : { expectedRevision: instructionExpectedRevision }),
+          ...(rawInstructionExpectedDigest
+            ? { expectedDigest: rawInstructionExpectedDigest }
+            : {}),
+          ...(rawInstructionSurface
+            ? { surface: rawInstructionSurface as "api" | "cli" }
+            : {}),
+          ...(values?.["include-content"] === true
+            ? { includeContent: true }
+            : {}),
+          ...(values?.["include-workspaces"] === true
+            ? { includeWorkspaces: true }
+            : {}),
+          ...(rawInstructionDecisionsFile
+            ? { decisionsFile: rawInstructionDecisionsFile }
+            : {}),
+          ...(values?.["acknowledge-compatible"] === true
+            ? { acknowledgeCompatible: true }
+            : {}),
+          ...(values?.["confirm-assignment-removal"] === true
+            ? { confirmAssignmentRemoval: true }
             : {}),
           ...(rawInstructionRalphFlow
             ? { ralphFlow: rawInstructionRalphFlow }
@@ -1611,30 +1626,11 @@ export const parseCliArgs = (
           ...(rawInstructionRalphFlowScope
             ? { ralphFlowScope: rawInstructionRalphFlowScope as RalphCliScope }
             : {}),
-          ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
+          ...(typeof values?.prompt === "string"
+            ? { prompt: values.prompt }
+            : {}),
           ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
           ...(rawInstructionPath ? { path: rawInstructionPath } : {}),
-          ...(rawInstructionApplyTo && rawInstructionApplyTo.length > 0
-            ? { applyTo: rawInstructionApplyTo }
-            : {}),
-          ...(rawInstructionExclude && rawInstructionExclude.length > 0
-            ? { exclude: rawInstructionExclude }
-            : {}),
-          ...(rawInstructionKeywords && rawInstructionKeywords.length > 0
-            ? { keywords: rawInstructionKeywords }
-            : {}),
-          ...(rawInstructionMode
-            ? { mode: rawInstructionMode as InstructionMode }
-            : {}),
-          ...(rawInstructionAudience
-            ? { audience: rawInstructionAudience as InstructionAudience }
-            : {}),
-          ...(instructionPriority !== undefined
-            ? { priority: instructionPriority }
-            : {}),
-          ...(instructionMaxRounds !== undefined
-            ? { maxRounds: instructionMaxRounds }
-            : {}),
         },
       },
     );

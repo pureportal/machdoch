@@ -1487,6 +1487,19 @@ async fn execute_inner(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<(
         .join("staging")
         .join(job_id)
         .join("repository");
+    let revision_root = paths
+        .models_root()?
+        .join("packages")
+        .join(manifest.slug)
+        .join("revisions")
+        .join(manifest.revision);
+    if revision_root.exists() && !stage_root.exists() {
+        // A crash can occur after the atomic staging rename but before SQLite
+        // records activation. Do not recreate staging and download the entire
+        // package again: activate() re-hashes the reviewed revision before it
+        // commits the interrupted job.
+        return activate(paths, job_id, &stage_root);
+    }
     fs::create_dir_all(&stage_root)
         .map_err(|error| format!("failed to create model staging root: {error}"))?;
 

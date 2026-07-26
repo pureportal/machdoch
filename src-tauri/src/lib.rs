@@ -19,6 +19,26 @@ use tauri::Manager as _;
 #[cfg(desktop)]
 use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags as WindowStateFlags};
 
+const DEVELOPMENT_APP_IDENTIFIER_SUFFIX: &str = ".dev";
+const PRODUCTION_APP_TITLE: &str = "machdoch";
+const DEVELOPMENT_APP_TITLE: &str = "machdoch Developer";
+
+fn app_identifier(identifier: &str, is_development: bool) -> String {
+    if is_development && !identifier.ends_with(DEVELOPMENT_APP_IDENTIFIER_SUFFIX) {
+        format!("{identifier}{DEVELOPMENT_APP_IDENTIFIER_SUFFIX}")
+    } else {
+        identifier.to_string()
+    }
+}
+
+fn app_title(is_development: bool) -> &'static str {
+    if is_development {
+        DEVELOPMENT_APP_TITLE
+    } else {
+        PRODUCTION_APP_TITLE
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     desktop_shell::hide_console_window_for_background_ui_launch();
@@ -84,6 +104,34 @@ pub fn run() {
             )
             .build(),
     );
+
+    let mut context = tauri::generate_context!();
+
+    {
+        let is_development = cfg!(debug_assertions);
+        let config = context.config_mut();
+
+        // Tauri's single-instance plugin keys its process lock from this identifier.
+        // Keep debug and installed release builds independent so both can run at once.
+        let identifier = config.identifier.clone();
+        config.identifier = app_identifier(&identifier, is_development);
+
+        if let Some(main_window) = config
+            .app
+            .windows
+            .iter_mut()
+            .find(|window| window.label == desktop_shell::MAIN_WINDOW_LABEL)
+        {
+            main_window.title = app_title(is_development).to_string();
+            // Materialize the configured WebView2 window before setup applies
+            // the user's launch policy. An initially invisible configured
+            // window can otherwise remain a non-operational placeholder on
+            // Windows: get_webview_window() finds it, but show(), sizing, and
+            // IPC fail because no webview was created. Setup still hides the
+            // window before the event loop paints when start-in-tray is active.
+            main_window.visible = true;
+        }
+    }
 
     builder
         .manage(desktop_task::AttachmentPathGrantMap::default())
@@ -179,6 +227,7 @@ pub fn run() {
             media::media_analyze_image_quality,
             media::media_enqueue_fixture_run,
             media::media_generate_images,
+            media::media_generate_video,
             media::media_generate_svg,
             media::media_execute_remote_image_edit_flow,
             media::media_enqueue_mock_remote_run,
@@ -186,6 +235,7 @@ pub fn run() {
             media::media_export_flow_revision,
             media::media_get_run_detail,
             media::media_get_model_catalog,
+            media::media_discover_workspace_models,
             media::media_get_flow,
             media::media_plan_model_install,
             media::media_start_model_install,
@@ -194,6 +244,7 @@ pub fn run() {
             media::media_plan_model_removal,
             media::media_remove_model,
             media::media_initialize_runtime,
+            media::media_refresh_local_diffusers_runtime,
             media::media_import_image,
             media::media_inspect_hardware,
             media::media_inspect_flow_import,
@@ -208,6 +259,7 @@ pub fn run() {
             media::media_plan_model_addon_removal,
             media::media_remove_model_addon,
             media::media_list_assets,
+            media::media_list_asset_page,
             media::media_list_flows,
             media::media_set_asset_tags,
             media::media_auto_tag_asset,
@@ -215,6 +267,7 @@ pub fn run() {
             media::media_delete_asset,
             media::media_execute_local_image_flow,
             media::media_list_runs,
+            media::media_list_run_page,
             media::media_save_flow_revision,
             media::media_read_asset_preview,
             media::media_read_quality_report,
@@ -281,6 +334,34 @@ pub fn run() {
             voice::synthesize_user_voice_audio,
             voice::transcribe_user_speech_audio
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running machdoch desktop shell");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_identifier_separates_development_builds_only() {
+        let production_identifier = "com.machdoch.desktop";
+        let development_identifier = app_identifier(production_identifier, true);
+
+        assert_eq!(development_identifier, "com.machdoch.desktop.dev");
+        assert_ne!(development_identifier, production_identifier);
+        assert_eq!(
+            app_identifier(&development_identifier, true),
+            development_identifier
+        );
+        assert_eq!(
+            app_identifier(production_identifier, false),
+            production_identifier
+        );
+    }
+
+    #[test]
+    fn app_title_marks_development_builds_only() {
+        assert_eq!(app_title(true), "machdoch Developer");
+        assert_eq!(app_title(false), "machdoch");
+    }
 }

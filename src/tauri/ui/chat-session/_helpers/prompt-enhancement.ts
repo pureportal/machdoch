@@ -1,6 +1,9 @@
 import {
   isMediaAssetContextAttachment,
   type ChatSessionContextAttachment,
+  type ChatSessionMessagePromptEnhancement,
+  type ChatSessionQueuedMessage,
+  type ChatSessionQueuedPromptEnhancementRequest,
 } from "../../chat-session.model";
 
 export const PROMPT_ENHANCEMENT_MODES = [
@@ -22,8 +25,131 @@ export const PROMPT_ENHANCEMENT_LABELS = {
   "web-search": "Enhance with web search",
 } satisfies Record<PromptEnhancementMode, string>;
 
+const PROMPT_ENHANCEMENT_OPERATION_SESSION_PREFIX = "prompt-enhancement:";
+
 const ENHANCED_PROMPT_TAG_PATTERN =
   /<machdoch_enhanced_prompt>\s*([\s\S]*?)\s*<\/machdoch_enhanced_prompt>/iu;
+
+/**
+ * Desktop tasks use their session id as an operation lock. Prompt enhancement
+ * must be able to run while the source chat task is active, but concurrent
+ * enhancements for the same chat should still share one lock.
+ */
+export const resolvePromptEnhancementOperationSessionId = (
+  sourceSessionId: string,
+  sourceSessionOperationActive: boolean,
+): string => {
+  const normalizedSessionId = sourceSessionId.trim();
+
+  return sourceSessionOperationActive
+    ? `${PROMPT_ENHANCEMENT_OPERATION_SESSION_PREFIX}${normalizedSessionId}`
+    : normalizedSessionId;
+};
+
+export const createMessagePromptEnhancement = (
+  content: string,
+  originalContent: string | undefined,
+): ChatSessionMessagePromptEnhancement | undefined => {
+  const normalizedContent = content.trim();
+  const normalizedOriginalContent = originalContent?.trim();
+
+  if (
+    !normalizedOriginalContent ||
+    normalizedOriginalContent === normalizedContent
+  ) {
+    return undefined;
+  }
+
+  return { originalContent: normalizedOriginalContent };
+};
+
+export const createQueuedPromptEnhancementRequest = (
+  mode: PromptEnhancementMode,
+): ChatSessionQueuedPromptEnhancementRequest | undefined => {
+  return mode === "off" ? undefined : { mode };
+};
+
+export const shouldDeferPromptEnhancementUntilQueuedDispatch = (
+  mode: PromptEnhancementMode,
+  runningAction: "steer" | "stop-and-send" | "queue" | null,
+): boolean => {
+  return (
+    mode !== "off" &&
+    (runningAction === "stop-and-send" || runningAction === "queue")
+  );
+};
+
+export interface QueuedMessageDispatchPrompt {
+  task: string;
+  visibleMessageContent: string;
+  promptHistoryContent: string;
+  promptEnhancement?: ChatSessionMessagePromptEnhancement;
+}
+
+export interface QueuedMessagePromptAfterOperationConflict
+  extends QueuedMessageDispatchPrompt {
+  promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
+}
+
+export const createQueuedMessagePromptAfterOperationConflict = (
+  prompt: QueuedMessageDispatchPrompt,
+  promptEnhancementRequest:
+    | ChatSessionQueuedPromptEnhancementRequest
+    | undefined,
+): QueuedMessagePromptAfterOperationConflict => {
+  if (!promptEnhancementRequest) {
+    return prompt;
+  }
+
+  const originalPrompt =
+    prompt.promptEnhancement?.originalContent.trim() ||
+    prompt.promptHistoryContent.trim() ||
+    prompt.task.trim();
+
+  return {
+    task: originalPrompt,
+    visibleMessageContent: originalPrompt,
+    promptHistoryContent: originalPrompt,
+    promptEnhancementRequest,
+  };
+};
+
+export const createQueuedMessageDispatchPrompt = (
+  message: Pick<
+    ChatSessionQueuedMessage,
+    | "task"
+    | "visibleMessageContent"
+    | "promptHistoryContent"
+    | "promptEnhancement"
+  >,
+  enhancedPrompt?: string,
+): QueuedMessageDispatchPrompt => {
+  const queuedTask = message.task.trim();
+
+  if (enhancedPrompt !== undefined) {
+    const normalizedEnhancedPrompt = enhancedPrompt.trim();
+    const promptEnhancement = createMessagePromptEnhancement(
+      normalizedEnhancedPrompt,
+      queuedTask,
+    );
+
+    return {
+      task: normalizedEnhancedPrompt,
+      visibleMessageContent: normalizedEnhancedPrompt,
+      promptHistoryContent: queuedTask,
+      ...(promptEnhancement ? { promptEnhancement } : {}),
+    };
+  }
+
+  return {
+    task: queuedTask,
+    visibleMessageContent: message.visibleMessageContent?.trim() || queuedTask,
+    promptHistoryContent: message.promptHistoryContent?.trim() || queuedTask,
+    ...(message.promptEnhancement
+      ? { promptEnhancement: message.promptEnhancement }
+      : {}),
+  };
+};
 
 const formatAttachmentKind = (attachment: ChatSessionContextAttachment): string => {
   switch (attachment.kind) {

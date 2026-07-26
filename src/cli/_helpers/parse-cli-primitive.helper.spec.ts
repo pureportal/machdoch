@@ -41,8 +41,10 @@ describe("parse CLI primitive helpers", () => {
       9_007_199_254_740_991,
     );
     expect(parsePositiveNumber("0.1", "--factor")).toBe(0.1);
-    expect(parseOptionalInteger("-3", "--priority")).toBe(-3);
-    expect(parseOptionalInteger(undefined, "--priority")).toBeUndefined();
+    expect(parseOptionalInteger("-3", "--max-transitions")).toBe(-3);
+    expect(
+      parseOptionalInteger(undefined, "--max-transitions"),
+    ).toBeUndefined();
     expect(parseOptionalPositiveInteger(undefined, "--count")).toBeUndefined();
     expect(parseOptionalPositiveNumber(undefined, "--factor")).toBeUndefined();
   });

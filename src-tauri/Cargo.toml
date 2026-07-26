@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.37.3"
+version = "0.38.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -85,3 +85,12 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Model installation and CAS integrity checks deliberately hash multi-gigabyte
+# artifacts. Keep those cryptographic primitives optimized in hot-reload
+# builds; an unoptimized 15.98 GiB recovery pass otherwise takes many minutes.
+[profile.dev.package.digest]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

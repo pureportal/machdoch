@@ -152,11 +152,6 @@ describe("getRalphUtilityOutputs", () => {
       outputs: ["SUCCESS", "FAILED", "ERROR"],
     },
     {
-      name: "UI_ANALYZE",
-      utility: { type: "UI_ANALYZE" },
-      outputs: ["SUCCESS", "UNAVAILABLE", "ERROR"],
-    },
-    {
       name: "GIT_STATUS",
       utility: { type: "GIT_STATUS" },
       outputs: ["SUCCESS", "ERROR"],

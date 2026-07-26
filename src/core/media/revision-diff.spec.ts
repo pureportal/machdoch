@@ -39,7 +39,7 @@ const createRevision = ({
 });
 
 describe("createMediaFlowRevisionDiff", () => {
-  it("separates execution, document metadata, and layout changes", () => {
+  it("separates execution and document metadata changes", () => {
     const baseFlow = createImageRecipeFlow({
       id: "flow:diff",
       createdAt: "2026-07-14T08:00:00.000Z",
@@ -79,12 +79,6 @@ describe("createMediaFlowRevisionDiff", () => {
       ),
     };
     const baseLayout = createMediaFlowLayout(baseFlow);
-    const targetLayout: MediaFlowLayout = {
-      ...structuredClone(baseLayout),
-      nodes: baseLayout.nodes.map((node) =>
-        node.nodeId === "prompt" ? { ...node, x: node.x + 80 } : node,
-      ),
-    };
 
     const diff = createMediaFlowRevisionDiff(
       createRevision({
@@ -97,7 +91,7 @@ describe("createMediaFlowRevisionDiff", () => {
         revisionId: "revision-2",
         revisionNumber: 2,
         flow: targetFlow,
-        layout: targetLayout,
+        layout: baseLayout,
       }),
     );
 
@@ -105,7 +99,7 @@ describe("createMediaFlowRevisionDiff", () => {
       schemaVersion: 1,
       documentChanged: true,
       executionChanged: true,
-      layoutChanged: true,
+      layoutChanged: false,
       metadataFieldsChanged: ["name"],
     });
     expect(diff.nodeChanges).toEqual([
@@ -131,14 +125,7 @@ describe("createMediaFlowRevisionDiff", () => {
       kind: "added",
       changedFields: ["preset"],
     }]);
-    expect(diff.layoutChanges).toEqual([
-      {
-        nodeId: "prompt",
-        kind: "modified",
-        before: { x: 52, y: 80 },
-        after: { x: 132, y: 80 },
-      },
-    ]);
+    expect(diff.layoutChanges).toEqual([]);
   });
 
   it("rejects comparisons across different flow identities", () => {

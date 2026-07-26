@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   installProviderSyncAutostart: vi.fn(),
   isProviderSyncAutostartInstalled: vi.fn(),
   removeProviderSyncAutostart: vi.fn(),
-  cleanupProviderNativeState: vi.fn(),
 }));
 
 vi.mock("../../core/provider-enrollment/config.js", () => ({
@@ -44,10 +43,6 @@ vi.mock("../../core/provider-enrollment/platform-autostart.js", () => ({
   removeProviderSyncAutostart: mocks.removeProviderSyncAutostart,
 }));
 
-vi.mock("../../core/provider-enrollment/provider-native-cleanup.js", () => ({
-  cleanupProviderNativeState: mocks.cleanupProviderNativeState,
-}));
-
 import {
   ensureAutomaticProviderSync,
   printProviderSyncSummary,
@@ -57,13 +52,6 @@ import type { ParsedCliArgs } from "./cli-args.js";
 const createConfig = (watch: boolean) => ({
   schemaVersion: 1,
   enabled: true,
-  instructions: {
-    mode: "native-when-available",
-    unmanagedNative: "adopt",
-    strictConflicts: false,
-    fallback: "automatic",
-    failOnTruncation: false,
-  },
   mcp: {
     mode: "direct-native",
     fallback: "per-server-stdio-proxy",
@@ -96,11 +84,6 @@ describe("automatic provider sync", () => {
     mocks.reconcileProviderSync.mockResolvedValue({});
     mocks.registerProviderSyncWorkspace.mockResolvedValue(undefined);
     mocks.uninstallProviderSyncTargets.mockResolvedValue([]);
-    mocks.cleanupProviderNativeState.mockResolvedValue({
-      removedInstructionFiles: [],
-      cleanedMcpFiles: [],
-      backupFiles: [],
-    });
     mocks.removeProviderSyncAutostart.mockResolvedValue(undefined);
   });
 
@@ -141,7 +124,7 @@ describe("automatic provider sync", () => {
     expect(mocks.reconcileProviderSync).toHaveBeenCalledWith("C:\\workspace");
   });
 
-  it("cleans provider-native state before the first enabled reconciliation", async () => {
+  it("enables MCP reconciliation without filename-based instruction cleanup", async () => {
     const disabledConfig = createConfig(false);
     disabledConfig.persistentSync.enabled = false;
     const enabledConfig = createConfig(false);
@@ -163,13 +146,10 @@ describe("automatic provider sync", () => {
     } as ParsedCliArgs);
 
     expect(mocks.uninstallProviderSyncTargets).toHaveBeenCalledOnce();
-    expect(mocks.cleanupProviderNativeState).toHaveBeenCalledWith(
-      "C:\\workspace",
-    );
     expect(mocks.setPersistentProviderSyncEnabled).toHaveBeenCalledWith(true);
     expect(mocks.reconcileProviderSync).toHaveBeenCalledWith("C:\\workspace");
     expect(
-      mocks.cleanupProviderNativeState.mock.invocationCallOrder[0],
+      mocks.setPersistentProviderSyncEnabled.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.reconcileProviderSync.mock.invocationCallOrder[0]!);
   });
 });

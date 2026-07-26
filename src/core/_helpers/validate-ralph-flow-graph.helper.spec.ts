@@ -2,11 +2,9 @@ import type { RalphFlow, RalphFlowBlock } from "../ralph.ts";
 import { createFlow } from "../__test__/ralph-test-helpers.ts";
 import {
   createRalphFlowGraphIndex,
-  DEFAULT_RALPH_GROUP_MAX_DEPTH,
   findOutgoingRalphEdge,
   getRalphBlockIdsWithPathToEnd,
   getRalphBlockById,
-  getRalphGroupDepthIssue,
   getReachableRalphBlockIds,
   hasGraphCycle,
   hasOutgoingRalphEdge,
@@ -124,62 +122,5 @@ describe("Ralph flow graph traversal helpers", () => {
       ),
     ).toBe(true);
     expect(hasGraphCycle(createFlow())).toBe(true);
-  });
-});
-
-describe("getRalphGroupDepthIssue", () => {
-  it("allows group nesting at the configured boundary", () => {
-    const child: RalphFlowBlock = {
-      id: "child",
-      type: "PROMPT",
-      title: "Child",
-      prompt: "Run.",
-      parentGroupId: "g3",
-    };
-    const blocks: RalphFlowBlock[] = [
-      child,
-      { id: "g3", type: "GROUP", title: "Group 3", childBlockIds: [], parentGroupId: "g2" },
-      { id: "g2", type: "GROUP", title: "Group 2", childBlockIds: [], parentGroupId: "g1" },
-      { id: "g1", type: "GROUP", title: "Group 1", childBlockIds: [] },
-    ];
-
-    expect(DEFAULT_RALPH_GROUP_MAX_DEPTH).toBe(3);
-    expect(getRalphGroupDepthIssue(child, new Map(blocks.map((block) => [block.id, block])))).toBeUndefined();
-  });
-
-  it("reports nesting beyond the maximum depth", () => {
-    const child: RalphFlowBlock = {
-      id: "child",
-      type: "PROMPT",
-      title: "Child",
-      prompt: "Run.",
-      parentGroupId: "g4",
-    };
-    const blocks: RalphFlowBlock[] = [
-      child,
-      { id: "g4", type: "GROUP", title: "Group 4", childBlockIds: [], parentGroupId: "g3" },
-      { id: "g3", type: "GROUP", title: "Group 3", childBlockIds: [], parentGroupId: "g2" },
-      { id: "g2", type: "GROUP", title: "Group 2", childBlockIds: [], parentGroupId: "g1" },
-      { id: "g1", type: "GROUP", title: "Group 1", childBlockIds: [] },
-    ];
-
-    expect(getRalphGroupDepthIssue(child, new Map(blocks.map((block) => [block.id, block])))).toBe("too-deep");
-  });
-
-  it("reports parent group cycles", () => {
-    const child: RalphFlowBlock = {
-      id: "child",
-      type: "PROMPT",
-      title: "Child",
-      prompt: "Run.",
-      parentGroupId: "g1",
-    };
-    const blocks: RalphFlowBlock[] = [
-      child,
-      { id: "g1", type: "GROUP", title: "Group 1", childBlockIds: [], parentGroupId: "g2" },
-      { id: "g2", type: "GROUP", title: "Group 2", childBlockIds: [], parentGroupId: "g1" },
-    ];
-
-    expect(getRalphGroupDepthIssue(child, new Map(blocks.map((block) => [block.id, block])))).toBe("cycle");
   });
 });

@@ -3,6 +3,7 @@ import {
   ListOrdered,
   SendHorizonal,
   Square,
+  X,
 } from "lucide-react";
 import type {
   ClipboardEvent,
@@ -79,6 +80,9 @@ export interface AgentComposerProps {
   sendDisabledReason: string | null;
   isExecuting: boolean;
   inputBlocked?: boolean;
+  autoFocus?: boolean;
+  submissionLabel?: string;
+  showCancelAlongsideSend?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   toolbarControls?: ReactNode;
   toggles?: AgentComposerToggle[];
@@ -362,6 +366,9 @@ export const AgentComposer = ({
   sendDisabledReason,
   isExecuting,
   inputBlocked = false,
+  autoFocus = false,
+  submissionLabel,
+  showCancelAlongsideSend = false,
   textareaRef,
   toolbarControls,
   toggles = [],
@@ -405,11 +412,12 @@ export const AgentComposer = ({
   const selectedRunningActionMeta =
     getRunningTaskMessageActionMeta(selectedRunningAction);
   const sendLabel =
-    variant === "session" && isExecuting
+    submissionLabel ??
+    (variant === "session" && isExecuting
       ? selectedRunningActionMeta.sendLabel
       : variant === "quick"
         ? "Send"
-        : "Send message";
+        : "Send message");
   const queuePanelVisible = variant === "session" && queuedMessages.length > 0;
 
   const submit = (): void => {
@@ -423,6 +431,12 @@ export const AgentComposer = ({
     event: KeyboardEvent<HTMLTextAreaElement>,
   ): void => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
+
+    if (event.key === "Escape" && showCancelAlongsideSend) {
+      event.preventDefault();
+      onCancel();
       return;
     }
 
@@ -483,6 +497,7 @@ export const AgentComposer = ({
   const textarea = (
     <Textarea
       ref={textareaRef}
+      autoFocus={autoFocus}
       aria-label={textareaLabel}
       value={bufferedDraft.value}
       onChange={(event) => bufferedDraft.setValue(event.target.value)}
@@ -593,6 +608,19 @@ export const AgentComposer = ({
       <SendHorizonal className={styles.iconClassName} />
     </Button>
   );
+  const editCancelControl = showCancelAlongsideSend ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      aria-label="Cancel edit"
+      title="Cancel edit"
+      onClick={onCancel}
+      className={styles.cancelButton}
+    >
+      <X className={styles.iconClassName} />
+    </Button>
+  ) : null;
 
   if (variant === "quick") {
     return (
@@ -675,6 +703,7 @@ export const AgentComposer = ({
           {attachmentMenu}
           {textarea}
           {actionButtons}
+          {editCancelControl}
           {sendControl}
         </form>
 

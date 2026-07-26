@@ -1,6 +1,9 @@
 import {
   AlertTriangle,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
+  Clapperboard,
   Crop,
   Download,
   Ellipsis,
@@ -13,6 +16,8 @@ import {
   Maximize2,
   MessageCircle,
   PanelRightOpen,
+  Pause,
+  Play,
   Plus,
   ScanSearch,
   Search,
@@ -27,6 +32,7 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type JSX,
   type ReactElement,
@@ -48,6 +54,12 @@ import type {
   MediaQualityVerdict,
   MediaRuntimeStatus,
 } from "../../../../core/media/contracts.js";
+import { matchesMediaAssetQuery } from "../../../../core/media/asset-library.js";
+import {
+  isMediaGalleryAssetKind,
+  paginateMediaItems,
+  stepMediaGalleryAssetId,
+} from "../../../../core/media/gallery.js";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -66,6 +78,10 @@ import {
 } from "../../components/ui/popover";
 import { cn } from "../../lib/utils";
 import { readMediaAssetReferencePreview } from "../media-runtime";
+import { MediaPagination } from "./media-pagination";
+
+const ASSET_PAGE_SIZE = 24;
+const ASSET_DIALOG_PAGE_SIZE = 20;
 
 interface MediaLibraryViewProps {
   assets: readonly MediaAssetRecord[];
@@ -92,6 +108,8 @@ interface MediaLibraryViewProps {
   onUpdateTags: (update: MediaAssetTagUpdate) => void;
   onAutoTag: (assetId: string) => void;
   onSendToChat: (asset: MediaAssetRecord) => void;
+  onUseAsReference: (asset: MediaAssetRecord) => void;
+  onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
   onOpenAsFlow: (asset: MediaAssetRecord) => void;
   onOpenBackgroundRemovalAsFlow: (asset: MediaAssetRecord) => void;
   onOpenAlphaMatteAsFlow: (asset: MediaAssetRecord) => void;
@@ -131,6 +149,8 @@ const formatMediaType = (mimeType: MediaAssetRecord["mimeType"]): string => {
       return "SVG";
     case "application/json":
       return "JSON";
+    case "video/webm":
+      return "WebM";
   }
 };
 
@@ -273,10 +293,12 @@ const AssetPreview = ({
   asset,
   maxEdge = 512,
   fit = "cover",
+  interactiveVideo = false,
 }: {
   asset: MediaAssetRecord;
   maxEdge?: number;
   fit?: "contain" | "cover";
+  interactiveVideo?: boolean;
 }): JSX.Element => {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -287,7 +309,11 @@ const AssetPreview = ({
     let objectUrl: string | null = null;
     setUrl(null);
     setFailed(false);
-    void readMediaAssetReferencePreview(assetId, maxEdge)
+    void readMediaAssetReferencePreview(
+      assetId,
+      maxEdge,
+      asset.kind === "video" ? asset.mimeType : "image/webp",
+    )
       .then((blob) => {
         if (cancelled || typeof URL.createObjectURL !== "function") {
           return;
@@ -306,9 +332,27 @@ const AssetPreview = ({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [assetId, maxEdge]);
+  }, [asset.mimeType, assetId, maxEdge]);
 
   if (url) {
+    if (asset.kind === "video") {
+      return (
+        <video
+          src={url}
+          aria-label={`${interactiveVideo ? "Playing" : "Preview of"} ${asset.width} by ${asset.height} video asset`}
+          autoPlay={interactiveVideo}
+          controls={interactiveVideo}
+          loop={interactiveVideo}
+          muted
+          playsInline
+          preload="metadata"
+          className={cn(
+            "h-full w-full bg-[repeating-conic-gradient(rgba(148,163,184,0.08)_0_25%,transparent_0_50%)] bg-[length:24px_24px]",
+            fit === "contain" ? "object-contain" : "object-cover",
+          )}
+        />
+      );
+    }
     return (
       <img
         src={url}
@@ -339,24 +383,121 @@ const AssetPreview = ({
 
 const AssetPreviewDialog = ({
   asset,
+  assets,
+  playing,
+  onActiveAssetChange,
+  onPlayingChange,
   onOpenChange,
 }: {
   asset: MediaAssetRecord | null;
+  assets: readonly MediaAssetRecord[];
+  playing: boolean;
+  onActiveAssetChange: (assetId: string) => void;
+  onPlayingChange: (playing: boolean) => void;
   onOpenChange: (open: boolean) => void;
 }): JSX.Element => (
   <Dialog open={asset !== null} onOpenChange={onOpenChange}>
     {asset ? (
       <DialogContent className="flex h-[min(860px,calc(100vh-32px))] w-[min(1120px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
         <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
-          <DialogTitle className="truncate text-base font-semibold text-white">
-            Preview {assetDisplayName(asset)}
-          </DialogTitle>
+          <div className="flex min-w-0 items-center gap-3">
+            <DialogTitle className="min-w-0 flex-1 break-words pr-2 text-base leading-6 font-semibold text-white">
+              {assetDisplayName(asset)}
+            </DialogTitle>
+            <span
+              aria-live={playing ? "off" : "polite"}
+              className="shrink-0 text-[10px] tabular-nums text-slate-500"
+            >
+              {Math.max(0, assets.findIndex((candidate) => candidate.id === asset.id)) + 1} / {assets.length}
+              <span className="sr-only">: {assetDisplayName(asset)}</span>
+            </span>
+          </div>
           <DialogDescription className="text-xs text-slate-500">
             {asset.width} × {asset.height} · {formatAspectRatio(asset.width, asset.height)} · {formatBytes(asset.byteSize)} · {formatMediaType(asset.mimeType)}
           </DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 bg-[repeating-conic-gradient(rgba(148,163,184,0.055)_0_25%,transparent_0_50%)] bg-[length:24px_24px] p-4">
-          <AssetPreview asset={asset} maxEdge={2_048} fit="contain" />
+        <div
+          role="group"
+          aria-roledescription="slide"
+          aria-label={`${Math.max(0, assets.findIndex((candidate) => candidate.id === asset.id)) + 1} of ${assets.length}: ${assetDisplayName(asset)}`}
+          className="min-h-0 flex-1 bg-[repeating-conic-gradient(rgba(148,163,184,0.055)_0_25%,transparent_0_50%)] bg-[length:24px_24px] p-4"
+        >
+          <AssetPreview
+            asset={asset}
+            maxEdge={2_048}
+            fit="contain"
+            interactiveVideo
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2 border-t border-slate-800/80 px-4 py-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={assets.length < 2}
+            aria-label="Previous gallery item"
+            onClick={() => {
+              const previousId = stepMediaGalleryAssetId(
+                assets.map((candidate) => candidate.id),
+                asset.id,
+                -1,
+              );
+              if (previousId) onActiveAssetChange(previousId);
+              onPlayingChange(false);
+            }}
+            className="text-slate-300 hover:bg-slate-800"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={assets.length < 2}
+            aria-label={playing ? "Pause slideshow" : "Play slideshow"}
+            aria-pressed={playing}
+            onClick={() => onPlayingChange(!playing)}
+            className="min-w-28 border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+          >
+            {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {playing ? "Pause" : "Slideshow"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={assets.length < 2}
+            aria-label="Next gallery item"
+            onClick={() => {
+              const nextId = stepMediaGalleryAssetId(
+                assets.map((candidate) => candidate.id),
+                asset.id,
+                1,
+              );
+              if (nextId) onActiveAssetChange(nextId);
+              onPlayingChange(false);
+            }}
+            className="text-slate-300 hover:bg-slate-800"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <select
+            aria-label="Jump to gallery item"
+            value={asset.id}
+            onChange={(event) => {
+              onPlayingChange(false);
+              onActiveAssetChange(event.target.value);
+            }}
+            className="h-9 max-w-64 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-slate-300"
+          >
+            {assets.map((candidate, index) => (
+              <option key={candidate.id} value={candidate.id}>
+                {index + 1}. {assetDisplayName(candidate)}
+              </option>
+            ))}
+          </select>
+          <span className="text-[9px] text-slate-600">
+            ← → navigate · Space play/pause
+          </span>
         </div>
       </DialogContent>
     ) : null}
@@ -375,6 +516,8 @@ interface AssetCardContextMenuProps {
   onPreview: (assetId: string) => void;
   onInspect: (assetId: string) => void;
   onSendToChat: (asset: MediaAssetRecord) => void;
+  onUseAsReference: (asset: MediaAssetRecord) => void;
+  onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
   onOpenAsFlow: (asset: MediaAssetRecord) => void;
   onAnalyzeQuality: (asset: MediaAssetRecord) => void;
   onExport: (asset: MediaAssetRecord) => void;
@@ -390,13 +533,16 @@ const AssetCardContextMenu = ({
   onPreview,
   onInspect,
   onSendToChat,
+  onUseAsReference,
+  onOpenVideoAsFlow,
   onOpenAsFlow,
   onAnalyzeQuality,
   onExport,
   onRequestDeletion,
 }: AssetCardContextMenuProps): JSX.Element => {
   const isImage = asset.kind === "image";
-  const isVisual = isImage || asset.kind === "vector";
+  const isVideo = asset.kind === "video";
+  const isVisual = isImage || isVideo || asset.kind === "vector";
 
   return (
     <ContextMenuPrimitive.Root>
@@ -441,23 +587,41 @@ const AssetCardContextMenu = ({
           {isImage ? (
             <ContextMenuPrimitive.Separator className="my-1 h-px bg-slate-800" />
           ) : null}
+          {isImage ? (
+            <>
+              <ContextMenuPrimitive.Item
+                className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
+                onSelect={() => onUseAsReference(asset)}
+              >
+                <WandSparkles className="text-sky-300" /> Edit in Create
+              </ContextMenuPrimitive.Item>
+              <ContextMenuPrimitive.Item
+                className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
+                onSelect={() => onOpenVideoAsFlow(asset)}
+              >
+                <Clapperboard className="text-emerald-300" /> Animate as video workflow
+              </ContextMenuPrimitive.Item>
+            </>
+          ) : null}
           {isImage && !isAlphaMatteAsset(asset) ? (
             <ContextMenuPrimitive.Item
               className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
               onSelect={() => onOpenAsFlow(asset)}
             >
-              <WandSparkles className="text-orange-300" /> Open text-guided edit as Flow
+              <WandSparkles className="text-orange-300" /> Open text-guided edit workflow
             </ContextMenuPrimitive.Item>
           ) : null}
-          {isImage ? (
+          {isImage || isVideo ? (
             <>
-              <ContextMenuPrimitive.Item
-                disabled={qualityLoading}
-                className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
-                onSelect={() => onAnalyzeQuality(asset)}
-              >
-                <ShieldCheck className="text-amber-300" /> Analyze technical quality
-              </ContextMenuPrimitive.Item>
+              {isImage ? (
+                <ContextMenuPrimitive.Item
+                  disabled={qualityLoading}
+                  className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
+                  onSelect={() => onAnalyzeQuality(asset)}
+                >
+                  <ShieldCheck className="text-amber-300" /> Analyze technical quality
+                </ContextMenuPrimitive.Item>
+              ) : null}
               <ContextMenuPrimitive.Item
                 disabled={exportLoading}
                 className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
@@ -605,12 +769,14 @@ const AssetDeletionDialog = ({
   asset,
   impact,
   loading,
+  submitting,
   onOpenChange,
   onConfirm,
 }: {
   asset: MediaAssetRecord | null;
   impact: MediaAssetDeletionImpact | null;
   loading: boolean;
+  submitting: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (
     mode: MediaAssetDeletionMode,
@@ -637,7 +803,7 @@ const AssetDeletionDialog = ({
 
   return (
     <Dialog open={asset !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(720px,calc(100vh-28px))] w-[min(620px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+      <DialogContent className="max-h-[min(720px,calc(100vh-28px))] w-[min(620px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
         <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold text-white">
             <Trash2 className="h-4 w-4 text-rose-300" /> Delete asset safely
@@ -774,7 +940,7 @@ const AssetDeletionDialog = ({
           </span>
           <div className="flex justify-end gap-2">
             <DialogClose asChild>
-              <Button type="button" variant="ghost" disabled={loading}>
+              <Button type="button" variant="ghost" disabled={submitting}>
                 Cancel
               </Button>
             </DialogClose>
@@ -813,24 +979,29 @@ const AssetExportDialog = ({
 
   useEffect(() => {
     if (asset) {
-      setMode("metadata-stripped");
+      setMode(
+        asset.kind === "image" ? "metadata-stripped" : "verified-original",
+      );
     }
   }, [asset]);
 
   return (
     <Dialog open={asset !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(620px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+      <DialogContent className="max-h-[min(720px,calc(100vh-28px))] w-[min(620px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
         <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold text-white">
-            <Download className="h-4 w-4 text-sky-300" /> Review image export
+            <Download className="h-4 w-4 text-sky-300" /> Review media export
           </DialogTitle>
           <DialogDescription className="text-xs leading-5 text-slate-500">
-            Choose whether the destination receives the immutable source bytes or a privacy-clean image. Media Studio keeps local provenance in either case.
+            {asset?.kind === "video"
+              ? "Export the immutable VP9-alpha WebM after exact-byte and SHA-256 verification."
+              : "Choose whether the destination receives the immutable source bytes or a privacy-clean image. Media Studio keeps local provenance in either case."}
           </DialogDescription>
         </DialogHeader>
 
-        <fieldset className="space-y-3 px-5 py-5">
+        <fieldset className="min-h-0 space-y-3 overflow-y-auto px-5 py-5">
           <legend className="sr-only">Export mode</legend>
+          {asset?.kind === "image" ? (
           <label
             className={cn(
               "block cursor-pointer rounded-2xl border p-4 transition-colors",
@@ -861,6 +1032,7 @@ const AssetExportDialog = ({
               </span>
             </span>
           </label>
+          ) : null}
 
           <label
             className={cn(
@@ -949,6 +1121,8 @@ interface TransformInspectorProps {
   onRequestDeletion: (asset: MediaAssetRecord) => void;
   chatWorkspaceAvailable: boolean;
   onSendToChat: (asset: MediaAssetRecord) => void;
+  onUseAsReference: (asset: MediaAssetRecord) => void;
+  onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
   onOpenAsFlow: (asset: MediaAssetRecord) => void;
   onOpenBackgroundRemovalAsFlow: (asset: MediaAssetRecord) => void;
   onOpenAlphaMatteAsFlow: (asset: MediaAssetRecord) => void;
@@ -1007,6 +1181,8 @@ const TransformInspector = ({
   onRequestDeletion,
   chatWorkspaceAvailable,
   onSendToChat,
+  onUseAsReference,
+  onOpenVideoAsFlow,
   onOpenAsFlow,
   onOpenBackgroundRemovalAsFlow,
   onOpenAlphaMatteAsFlow,
@@ -1125,6 +1301,25 @@ const TransformInspector = ({
         <span className="shrink-0 text-[9px] text-slate-500">
           {runtimeMode === "native" ? "Native" : "Preview"}
         </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onUseAsReference(asset)}
+          className="border-sky-400/25 bg-sky-400/5 text-sky-200 hover:bg-sky-400/10"
+        >
+          <WandSparkles className="h-4 w-4" /> Edit in Create
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onOpenVideoAsFlow(asset)}
+          className="border-emerald-400/25 bg-emerald-400/5 text-emerald-200 hover:bg-emerald-400/10"
+        >
+          <Clapperboard className="h-4 w-4" /> Animate
+        </Button>
       </div>
 
       {missingSourceAssetIds.length > 0 ? (
@@ -1383,10 +1578,10 @@ const TransformInspector = ({
           className="max-h-[min(520px,var(--radix-popover-content-available-height))] w-72 overflow-y-auto border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
         >
           <div className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.1em] text-slate-500 uppercase">
-            Flow
+            Workflows
           </div>
           <FollowUpAction
-            label="Open current transform as Flow"
+            label="Open current transform workflow"
             icon={FolderOpen}
             onClick={() =>
               runFollowUp(() => useValidatedRequest(onOpenTransformAsFlow))
@@ -1395,24 +1590,24 @@ const TransformInspector = ({
           {!isAlphaMatte ? (
             <>
               <FollowUpAction
-                label="Open text-guided edit as Flow"
+                label="Open text-guided edit workflow"
                 icon={WandSparkles}
                 onClick={() => runFollowUp(() => onOpenAsFlow(asset))}
               />
               <FollowUpAction
-                label="Cut out subject as Flow"
+                label="Cut out subject workflow"
                 icon={ScanSearch}
                 onClick={() =>
                   runFollowUp(() => onOpenBackgroundRemovalAsFlow(asset))
                 }
               />
               <FollowUpAction
-                label="Extract alpha matte as Flow"
+                label="Extract alpha matte workflow"
                 icon={ImageIcon}
                 onClick={() => runFollowUp(() => onOpenAlphaMatteAsFlow(asset))}
               />
               <FollowUpAction
-                label="Composite over background as Flow"
+                label="Composite over background workflow"
                 icon={Boxes}
                 onClick={() =>
                   runFollowUp(() => onRequestCompositeBackground(asset))
@@ -1663,6 +1858,8 @@ export const MediaLibraryView = ({
   onUpdateTags,
   onAutoTag,
   onSendToChat,
+  onUseAsReference,
+  onOpenVideoAsFlow,
   onOpenAsFlow,
   onOpenBackgroundRemovalAsFlow,
   onOpenAlphaMatteAsFlow,
@@ -1673,17 +1870,26 @@ export const MediaLibraryView = ({
   onDeleteAsset,
 }: MediaLibraryViewProps): JSX.Element => {
   const [query, setQuery] = useState("");
+  const [assetPage, setAssetPage] = useState(1);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
+  const [slideshowPlaying, setSlideshowPlaying] = useState(false);
   const [exportAsset, setExportAsset] = useState<MediaAssetRecord | null>(null);
   const [compositeForeground, setCompositeForeground] =
     useState<MediaAssetRecord | null>(null);
+  const [compositeQuery, setCompositeQuery] = useState("");
+  const [compositePage, setCompositePage] = useState(1);
   const [contactSheetOpen, setContactSheetOpen] = useState(false);
   const [contactSheetAssetIds, setContactSheetAssetIds] = useState<string[]>([]);
+  const [contactSheetQuery, setContactSheetQuery] = useState("");
+  const [contactSheetPage, setContactSheetPage] = useState(1);
   const [deletionAsset, setDeletionAsset] = useState<MediaAssetRecord | null>(null);
   const [deletionImpact, setDeletionImpact] =
     useState<MediaAssetDeletionImpact | null>(null);
   const [deletionLoading, setDeletionLoading] = useState(false);
+  const [deletionSubmitting, setDeletionSubmitting] = useState(false);
+  const assetResultsRef = useRef<HTMLElement | null>(null);
+  const deletionOperationSequence = useRef(0);
   const activeAssetIds = useMemo(
     () => new Set(assets.map((asset) => asset.id)),
     [assets],
@@ -1698,6 +1904,22 @@ export const MediaLibraryView = ({
       ),
     [assets, compositeForeground?.id],
   );
+  const filteredCompositeBackgrounds = useMemo(
+    () =>
+      compositeBackgrounds.filter((candidate) =>
+        matchesMediaAssetQuery(candidate, compositeQuery),
+      ),
+    [compositeBackgrounds, compositeQuery],
+  );
+  const compositePagination = useMemo(
+    () =>
+      paginateMediaItems(
+        filteredCompositeBackgrounds,
+        compositePage,
+        ASSET_DIALOG_PAGE_SIZE,
+      ),
+    [compositePage, filteredCompositeBackgrounds],
+  );
   const contactSheetCandidates = useMemo(
     () => assets.filter((candidate) => candidate.kind === "image"),
     [assets],
@@ -1705,34 +1927,54 @@ export const MediaLibraryView = ({
   const selectedContactSheetAssets = contactSheetAssetIds
     .map((assetId) => contactSheetCandidates.find((asset) => asset.id === assetId))
     .filter((asset): asset is MediaAssetRecord => Boolean(asset));
+  const selectedContactSheetAssetIds = useMemo(
+    () => new Set(contactSheetAssetIds),
+    [contactSheetAssetIds],
+  );
+  const filteredContactSheetCandidates = useMemo(
+    () =>
+      contactSheetCandidates.filter(
+        (candidate) =>
+          !selectedContactSheetAssetIds.has(candidate.id) &&
+          matchesMediaAssetQuery(candidate, contactSheetQuery),
+      ),
+    [contactSheetCandidates, contactSheetQuery, selectedContactSheetAssetIds],
+  );
+  const contactSheetPagination = useMemo(
+    () =>
+      paginateMediaItems(
+        filteredContactSheetCandidates,
+        contactSheetPage,
+        ASSET_DIALOG_PAGE_SIZE,
+      ),
+    [contactSheetPage, filteredContactSheetCandidates],
+  );
+  const visibleContactSheetCandidates = [
+    ...selectedContactSheetAssets,
+    ...contactSheetPagination.items,
+  ];
   const filteredAssets = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-      return assets;
-    }
-    return assets.filter((asset) =>
-      [
-        asset.id,
-        asset.runId,
-        asset.digest,
-        asset.mimeType,
-        asset.operation?.kind ?? "",
-        qualityOperation(asset)?.profileId ?? "",
-        qualityOperation(asset)?.verdict ?? "",
-        assetProvenance(asset),
-        ...asset.sourceAssetIds,
-        ...asset.tags.flatMap((tag) => [tag.value, tag.label, tag.source]),
-      ].some((value) => value.toLowerCase().includes(normalized)),
-    );
+    return assets.filter((asset) => matchesMediaAssetQuery(asset, query));
   }, [assets, query]);
+  const filteredVisualAssets = useMemo(
+    () => filteredAssets.filter((asset) => isMediaGalleryAssetKind(asset.kind)),
+    [filteredAssets],
+  );
+  const assetPagination = useMemo(
+    () => paginateMediaItems(filteredAssets, assetPage, ASSET_PAGE_SIZE),
+    [assetPage, filteredAssets],
+  );
+  const filteredVisualAssetIds = useMemo(
+    () => filteredVisualAssets.map((asset) => asset.id),
+    [filteredVisualAssets],
+  );
   const selectedAsset =
     assets.find((asset) => asset.id === selectedAssetId) ?? null;
-  const previewAsset =
-    assets.find(
-      (asset) =>
-        asset.id === previewAssetId &&
-        (asset.kind === "image" || asset.kind === "vector"),
-    ) ?? null;
+  const previewAsset = previewAssetId
+    ? filteredVisualAssets.find((asset) => asset.id === previewAssetId) ??
+      filteredVisualAssets[0] ??
+      null
+    : null;
   const selectedMissingSourceAssetIds = selectedAsset
     ? selectedAsset.sourceAssetIds.filter((sourceId) => !activeAssetIds.has(sourceId))
     : [];
@@ -1749,9 +1991,35 @@ export const MediaLibraryView = ({
     : null;
 
   useEffect(() => {
+    const normalizedPage = assetPagination.page || 1;
+    if (assetPage !== normalizedPage) {
+      setAssetPage(normalizedPage);
+    }
+  }, [assetPage, assetPagination.page]);
+  useEffect(() => {
+    const normalizedPage = compositePagination.page || 1;
+    if (compositePage !== normalizedPage) setCompositePage(normalizedPage);
+  }, [compositePage, compositePagination.page]);
+  useEffect(() => {
+    const normalizedPage = contactSheetPagination.page || 1;
+    if (contactSheetPage !== normalizedPage) setContactSheetPage(normalizedPage);
+  }, [contactSheetPage, contactSheetPagination.page]);
+
+  const revealAssetPage = (page: number): void => {
+    setAssetPage(page);
+    window.requestAnimationFrame(() => {
+      assetResultsRef.current?.focus({ preventScroll: true });
+      assetResultsRef.current?.scrollIntoView({ block: "start" });
+    });
+  };
+
+  useEffect(() => {
     if (!openAssetId || !assets.some((asset) => asset.id === openAssetId)) {
       return;
     }
+    const assetIndex = assets.findIndex((asset) => asset.id === openAssetId);
+    setQuery("");
+    setAssetPage(Math.floor(assetIndex / ASSET_PAGE_SIZE) + 1);
     setSelectedAssetId(openAssetId);
     onOpenAssetHandled?.();
   }, [assets, onOpenAssetHandled, openAssetId]);
@@ -1763,19 +2031,99 @@ export const MediaLibraryView = ({
   }, [assets, selectedAssetId]);
 
   useEffect(() => {
-    if (previewAssetId && !assets.some((asset) => asset.id === previewAssetId)) {
-      setPreviewAssetId(null);
+    if (
+      selectedAssetId &&
+      !filteredAssets.some((asset) => asset.id === selectedAssetId)
+    ) {
+      setSelectedAssetId(null);
     }
-  }, [assets, previewAssetId]);
+  }, [filteredAssets, selectedAssetId]);
+
+  useEffect(() => {
+    if (!previewAssetId || filteredVisualAssetIds.includes(previewAssetId)) return;
+    setPreviewAssetId(filteredVisualAssetIds[0] ?? null);
+    if (filteredVisualAssetIds.length < 2) setSlideshowPlaying(false);
+  }, [filteredVisualAssetIds, previewAssetId]);
+
+  useEffect(() => {
+    if (!slideshowPlaying || !previewAssetId || filteredVisualAssetIds.length < 2) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      setPreviewAssetId((currentAssetId) =>
+        stepMediaGalleryAssetId(filteredVisualAssetIds, currentAssetId, 1),
+      );
+    }, 4_000);
+    return () => window.clearInterval(intervalId);
+  }, [filteredVisualAssetIds, previewAssetId, slideshowPlaying]);
+
+  useEffect(() => {
+    if (!previewAssetId) return;
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable ||
+          ["A", "AUDIO", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "VIDEO"].includes(
+            event.target.tagName,
+          ))
+      ) {
+        return;
+      }
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        setPreviewAssetId((currentAssetId) =>
+          stepMediaGalleryAssetId(
+            filteredVisualAssetIds,
+            currentAssetId,
+            event.key === "ArrowLeft" ? -1 : 1,
+          ),
+        );
+        setSlideshowPlaying(false);
+      } else if (event.key === " ") {
+        event.preventDefault();
+        setSlideshowPlaying((playing) => !playing);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [filteredVisualAssetIds, previewAssetId]);
+
+  const openPreview = (assetId: string): void => {
+    setSlideshowPlaying(false);
+    setPreviewAssetId(assetId);
+  };
+
+  const selectAssetForInspection = (assetId: string): void => {
+    const assetIndex = assets.findIndex((asset) => asset.id === assetId);
+    if (assetIndex < 0) return;
+    setQuery("");
+    setAssetPage(Math.floor(assetIndex / ASSET_PAGE_SIZE) + 1);
+    setSelectedAssetId(assetId);
+  };
 
   const requestDeletion = (asset: MediaAssetRecord): void => {
+    const operationSequence = ++deletionOperationSequence.current;
     setDeletionAsset(asset);
     setDeletionImpact(null);
+    setDeletionSubmitting(false);
     setDeletionLoading(true);
     void onPlanDeletion(asset.id)
-      .then((impact) => setDeletionImpact(impact))
-      .catch(() => setDeletionAsset(null))
-      .finally(() => setDeletionLoading(false));
+      .then((impact) => {
+        if (operationSequence === deletionOperationSequence.current) {
+          setDeletionImpact(impact);
+        }
+      })
+      .catch(() => {
+        if (operationSequence === deletionOperationSequence.current) {
+          setDeletionAsset(null);
+          setDeletionImpact(null);
+        }
+      })
+      .finally(() => {
+        if (operationSequence === deletionOperationSequence.current) {
+          setDeletionLoading(false);
+        }
+      });
   };
 
   const confirmDeletion = (
@@ -1785,24 +2133,43 @@ export const MediaLibraryView = ({
     if (!deletionAsset || !deletionImpact || deletionLoading) {
       return;
     }
+    const asset = deletionAsset;
+    const operationSequence = ++deletionOperationSequence.current;
+    setDeletionSubmitting(true);
     setDeletionLoading(true);
     void onDeleteAsset({
-      assetId: deletionAsset.id,
+      assetId: asset.id,
       mode,
       confirmationToken: deletionImpact.confirmationToken,
       confirmDependencies,
     })
       .then(() => {
-        setSelectedAssetId(null);
-        setDeletionAsset(null);
-        setDeletionImpact(null);
+        if (operationSequence === deletionOperationSequence.current) {
+          setSelectedAssetId(null);
+          setDeletionAsset(null);
+          setDeletionImpact(null);
+        }
       })
-      .catch(() => {
-        void onPlanDeletion(deletionAsset.id)
-          .then((impact) => setDeletionImpact(impact))
-          .catch(() => setDeletionAsset(null));
+      .catch(async () => {
+        if (operationSequence !== deletionOperationSequence.current) return;
+        try {
+          const impact = await onPlanDeletion(asset.id);
+          if (operationSequence === deletionOperationSequence.current) {
+            setDeletionImpact(impact);
+          }
+        } catch {
+          if (operationSequence === deletionOperationSequence.current) {
+            setDeletionAsset(null);
+            setDeletionImpact(null);
+          }
+        }
       })
-      .finally(() => setDeletionLoading(false));
+      .finally(() => {
+        if (operationSequence === deletionOperationSequence.current) {
+          setDeletionLoading(false);
+          setDeletionSubmitting(false);
+        }
+      });
   };
 
   return (
@@ -1816,14 +2183,31 @@ export const MediaLibraryView = ({
             <Button
               type="button"
               variant="outline"
+              disabled={filteredVisualAssets.length === 0}
+              title="View every visible visual asset with keyboard navigation and optional playback"
+              onClick={() => {
+                const firstAsset = filteredVisualAssets[0];
+                if (!firstAsset) return;
+                setPreviewAssetId(firstAsset.id);
+                setSlideshowPlaying(filteredVisualAssets.length > 1);
+              }}
+              className="border-violet-400/20 bg-violet-400/5 text-violet-200 hover:bg-violet-400/10"
+            >
+              <Play className="h-4 w-4" /> Slideshow
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               disabled={contactSheetCandidates.length < 2}
               title={
                 contactSheetCandidates.length < 2
                   ? "Add at least two images to build a comparison sheet"
-                  : "Choose two to eight images and open an editable local comparison flow"
+                  : "Choose two to eight images and open an editable local comparison workflow"
               }
               onClick={() => {
                 setContactSheetAssetIds([]);
+                setContactSheetQuery("");
+                setContactSheetPage(1);
                 setContactSheetOpen(true);
               }}
               className="border-sky-400/20 bg-sky-400/5 text-sky-200 hover:bg-sky-400/10"
@@ -1852,7 +2236,10 @@ export const MediaLibraryView = ({
                   aria-label="Search media assets"
                   placeholder="Search assets…"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setAssetPage(1);
+                  }}
                   className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
                 />
               </div>
@@ -1888,16 +2275,32 @@ export const MediaLibraryView = ({
             <h2 className="mt-3 text-sm font-medium text-slate-300">No assets yet</h2>
           </div>
         ) : (
-          <section aria-label="Published assets" className="mt-6">
+          <section
+            ref={assetResultsRef}
+            aria-label="Published assets"
+            tabIndex={-1}
+            className="mt-6 scroll-mt-4 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/35"
+          >
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xs font-semibold text-slate-300">Assets</h2>
               <span aria-live="polite" className="text-[10px] text-slate-600">
-                {filteredAssets.length} of {assets.length} records
+                {filteredVisualAssets.length} visual · {filteredAssets.length} of {assets.length} records
               </span>
             </div>
             <div className={cn("grid items-start gap-4", selectedAsset && "lg:grid-cols-[minmax(0,1fr)_340px]") }>
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-                {filteredAssets.map((asset, assetIndex) => {
+              <div className="min-w-0">
+                <MediaPagination
+                  page={assetPagination.page}
+                  pageCount={assetPagination.pageCount}
+                  firstItemNumber={assetPagination.firstItemNumber}
+                  lastItemNumber={assetPagination.lastItemNumber}
+                  totalItems={assetPagination.totalItems}
+                  itemLabel="assets"
+                  onPageChange={revealAssetPage}
+                  className="mb-4"
+                />
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+                {assetPagination.items.map((asset, assetIndex) => {
                   const selected = asset.id === selectedAssetId;
                   const missingSourceCount = asset.sourceAssetIds.filter(
                     (sourceId) => !activeAssetIds.has(sourceId),
@@ -1909,9 +2312,11 @@ export const MediaLibraryView = ({
                       chatWorkspaceAvailable={chatWorkspaceAvailable}
                       exportLoading={exportLoading}
                       qualityLoading={qualityLoadingAssetId === asset.id}
-                      onPreview={setPreviewAssetId}
+                      onPreview={openPreview}
                       onInspect={setSelectedAssetId}
                       onSendToChat={onSendToChat}
+                      onUseAsReference={onUseAsReference}
+                      onOpenVideoAsFlow={onOpenVideoAsFlow}
                       onOpenAsFlow={onOpenAsFlow}
                       onAnalyzeQuality={onAnalyzeQuality}
                       onExport={setExportAsset}
@@ -1924,16 +2329,23 @@ export const MediaLibraryView = ({
                           selected ? "border-sky-400/45 ring-1 ring-sky-400/15" : "border-slate-800 hover:border-slate-700",
                         )}
                       >
-                      {asset.kind === "image" || asset.kind === "vector" ? (
+                      {asset.kind === "image" ||
+                      asset.kind === "vector" ||
+                      asset.kind === "video" ? (
                         <button
                           type="button"
-                          aria-label={`Preview ${assetDisplayName(asset)}, item ${assetIndex + 1}`}
-                          onClick={() => setPreviewAssetId(asset.id)}
+                          aria-label={`Preview ${assetDisplayName(asset)}, item ${assetPagination.startIndex + assetIndex + 1}`}
+                          onClick={() => openPreview(asset.id)}
                           className="group relative block aspect-[16/9] w-full overflow-hidden border-b border-slate-800 bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(139,92,246,0.08)),repeating-conic-gradient(rgba(148,163,184,0.035)_0_25%,transparent_0_50%)] bg-[length:auto,24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
                         >
                           <AssetPreview
                             asset={asset}
-                            fit={asset.kind === "vector" ? "contain" : "cover"}
+                            fit={
+                              asset.kind === "vector" ||
+                              asset.kind === "video"
+                                ? "contain"
+                                : "cover"
+                            }
                           />
                           <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-slate-950/75 px-3 py-2 text-[9px] font-medium text-slate-300 opacity-80 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                             <Maximize2 className="h-3 w-3" /> Preview
@@ -1952,17 +2364,19 @@ export const MediaLibraryView = ({
                       <button
                         type="button"
                         aria-pressed={selected}
-                        aria-label={`Select ${assetProvenance(asset)} asset ${assetDisplayName(asset)}, item ${assetIndex + 1}`}
+                        aria-label={`Select ${assetProvenance(asset)} asset ${assetDisplayName(asset)}, item ${assetPagination.startIndex + assetIndex + 1}`}
                         onClick={() => setSelectedAssetId(selected ? null : asset.id)}
                         className="block w-full p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
                       >
-                        <div className="truncate text-xs font-semibold text-slate-200">
+                        <div className="break-words text-xs leading-5 font-semibold text-slate-200">
                           {assetDisplayName(asset)}
                         </div>
                         <dl
                           className={cn(
                             "mt-3 grid gap-x-3 text-[10px]",
-                            asset.kind === "image" || asset.kind === "vector"
+                            asset.kind === "image" ||
+                            asset.kind === "vector" ||
+                            asset.kind === "video"
                               ? "grid-cols-4"
                               : "grid-cols-3",
                           )}
@@ -1989,7 +2403,9 @@ export const MediaLibraryView = ({
                               {formatMediaType(asset.mimeType)}
                             </dd>
                           </div>
-                          {asset.kind === "image" || asset.kind === "vector" ? (
+                          {asset.kind === "image" ||
+                          asset.kind === "vector" ||
+                          asset.kind === "video" ? (
                             <div className="min-w-0">
                               <dt className="text-slate-600">Aspect ratio</dt>
                               <dd className="mt-0.5 truncate text-slate-400">
@@ -2023,6 +2439,17 @@ export const MediaLibraryView = ({
                     No assets match “{query.trim()}”.
                   </div>
                 ) : null}
+                </div>
+                <MediaPagination
+                  page={assetPagination.page}
+                  pageCount={assetPagination.pageCount}
+                  firstItemNumber={assetPagination.firstItemNumber}
+                  lastItemNumber={assetPagination.lastItemNumber}
+                  totalItems={assetPagination.totalItems}
+                  itemLabel="assets"
+                  onPageChange={revealAssetPage}
+                  className="mt-4"
+                />
               </div>
               {selectedAsset?.kind === "image" ? (
                 <TransformInspector
@@ -2043,7 +2470,7 @@ export const MediaLibraryView = ({
                   }
                   tagLoading={tagLoadingAssetId === selectedAsset.id}
                   missingSourceAssetIds={selectedMissingSourceAssetIds}
-                  onSelectSource={setSelectedAssetId}
+                  onSelectSource={selectAssetForInspection}
                   onTransform={onTransform}
                   onExport={setExportAsset}
                   onAnalyzeQuality={onAnalyzeQuality}
@@ -2053,10 +2480,16 @@ export const MediaLibraryView = ({
                   onRequestDeletion={requestDeletion}
                   chatWorkspaceAvailable={chatWorkspaceAvailable}
                   onSendToChat={onSendToChat}
+                  onUseAsReference={onUseAsReference}
+                  onOpenVideoAsFlow={onOpenVideoAsFlow}
                   onOpenAsFlow={onOpenAsFlow}
                   onOpenBackgroundRemovalAsFlow={onOpenBackgroundRemovalAsFlow}
                   onOpenAlphaMatteAsFlow={onOpenAlphaMatteAsFlow}
-                  onRequestCompositeBackground={setCompositeForeground}
+                  onRequestCompositeBackground={(asset) => {
+                    setCompositeQuery("");
+                    setCompositePage(1);
+                    setCompositeForeground(asset);
+                  }}
                   onOpenTransformAsFlow={onOpenTransformAsFlow}
                 />
               ) : selectedAsset ? (
@@ -2083,9 +2516,14 @@ export const MediaLibraryView = ({
         )}
         <AssetPreviewDialog
           asset={previewAsset}
+          assets={filteredVisualAssets}
+          playing={slideshowPlaying}
+          onActiveAssetChange={setPreviewAssetId}
+          onPlayingChange={setSlideshowPlaying}
           onOpenChange={(open) => {
             if (!open) {
               setPreviewAssetId(null);
+              setSlideshowPlaying(false);
             }
           }}
         />
@@ -2093,10 +2531,13 @@ export const MediaLibraryView = ({
           asset={deletionAsset}
           impact={deletionImpact}
           loading={deletionLoading}
+          submitting={deletionSubmitting}
           onOpenChange={(open) => {
-            if (!open && !deletionLoading) {
+            if (!open && !deletionSubmitting) {
+              deletionOperationSequence.current += 1;
               setDeletionAsset(null);
               setDeletionImpact(null);
+              setDeletionLoading(false);
             }
           }}
           onConfirm={confirmDeletion}
@@ -2120,20 +2561,59 @@ export const MediaLibraryView = ({
         <Dialog
           open={Boolean(compositeForeground)}
           onOpenChange={(open) => {
-            if (!open) setCompositeForeground(null);
+            if (!open) {
+              setCompositeForeground(null);
+              setCompositeQuery("");
+              setCompositePage(1);
+            }
           }}
         >
-          <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-xl">
+          <DialogContent className="max-h-[calc(100vh-28px)] grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>Choose composite background</DialogTitle>
               <DialogDescription className="text-slate-400">
                 The selected foreground keeps its immutable source edge. The background
-                defines the output canvas; fit and opacity remain editable in Flow.
+                defines the output canvas; fit and opacity remain editable in the workflow.
               </DialogDescription>
             </DialogHeader>
-            <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-              {compositeBackgrounds.length > 0 ? (
-                compositeBackgrounds.map((candidate) => (
+            {compositeBackgrounds.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="relative min-w-[min(100%,16rem)] flex-1">
+                  <span className="sr-only">Search composite backgrounds</span>
+                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
+                  <Input
+                    type="search"
+                    value={compositeQuery}
+                    onChange={(event) => {
+                      setCompositeQuery(event.currentTarget.value);
+                      setCompositePage(1);
+                    }}
+                    placeholder="Search backgrounds, tags, or dimensions…"
+                    className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
+                  />
+                </label>
+                <span
+                  aria-live="polite"
+                  className="text-[10px] tabular-nums text-slate-600"
+                >
+                  {filteredCompositeBackgrounds.length} of{" "}
+                  {compositeBackgrounds.length}
+                </span>
+              </div>
+            ) : null}
+            <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+              <MediaPagination
+                page={compositePagination.page}
+                pageCount={compositePagination.pageCount}
+                firstItemNumber={compositePagination.firstItemNumber}
+                lastItemNumber={compositePagination.lastItemNumber}
+                totalItems={compositePagination.totalItems}
+                itemLabel="backgrounds"
+                onPageChange={setCompositePage}
+                className="sticky top-0 z-10 mb-2 bg-slate-950/95 backdrop-blur"
+              />
+              {filteredCompositeBackgrounds.length > 0 ? (
+                compositePagination.items.map((candidate) => (
                   <button
                     key={candidate.id}
                     type="button"
@@ -2159,6 +2639,10 @@ export const MediaLibraryView = ({
                     </span>
                   </button>
                 ))
+              ) : compositeBackgrounds.length > 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
+                  No backgrounds match “{compositeQuery.trim()}”.
+                </p>
               ) : (
                 <p className="rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
                   Add another image asset to use as the background.
@@ -2178,28 +2662,64 @@ export const MediaLibraryView = ({
           open={contactSheetOpen}
           onOpenChange={(open) => {
             setContactSheetOpen(open);
-            if (!open) setContactSheetAssetIds([]);
+            if (!open) {
+              setContactSheetAssetIds([]);
+              setContactSheetQuery("");
+              setContactSheetPage(1);
+            }
           }}
         >
-          <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-2xl">
+          <DialogContent className="max-h-[calc(100vh-28px)] grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Build contact sheet</DialogTitle>
               <DialogDescription className="text-slate-400">
                 Choose two to eight images in the order they should appear. Cell size,
-                columns, labels, gap, and background remain editable in Flow.
+                columns, labels, gap, and background remain editable in the workflow.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-between gap-3 text-[10px] text-slate-500">
-              <span aria-live="polite">
-                {contactSheetAssetIds.length} selected · 2 minimum · 8 maximum
-              </span>
-              <span>Selection order becomes source lineage order</span>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
+                <span aria-live="polite">
+                  {contactSheetAssetIds.length} selected · 2 minimum · 8 maximum
+                </span>
+                <span>Selection order becomes source lineage order</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="relative min-w-[min(100%,16rem)] flex-1">
+                  <span className="sr-only">Search contact sheet images</span>
+                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
+                  <Input
+                    type="search"
+                    value={contactSheetQuery}
+                    onChange={(event) => {
+                      setContactSheetQuery(event.currentTarget.value);
+                      setContactSheetPage(1);
+                    }}
+                    placeholder="Search images, tags, or provenance…"
+                    className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
+                  />
+                </label>
+                <span className="text-[10px] tabular-nums text-slate-600">
+                  {filteredContactSheetCandidates.length} available
+                </span>
+              </div>
             </div>
             <div
-              className="grid max-h-[50vh] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2"
+              className="min-h-0 overflow-y-auto pr-1"
               aria-label="Contact sheet images"
             >
-              {contactSheetCandidates.map((candidate) => {
+              <MediaPagination
+                page={contactSheetPagination.page}
+                pageCount={contactSheetPagination.pageCount}
+                firstItemNumber={contactSheetPagination.firstItemNumber}
+                lastItemNumber={contactSheetPagination.lastItemNumber}
+                totalItems={contactSheetPagination.totalItems}
+                itemLabel="available images"
+                onPageChange={setContactSheetPage}
+                className="sticky top-0 z-10 mb-2 bg-slate-950/95 backdrop-blur"
+              />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {visibleContactSheetCandidates.map((candidate) => {
                 const selectionIndex = contactSheetAssetIds.indexOf(candidate.id);
                 const selected = selectionIndex >= 0;
                 const atLimit = contactSheetAssetIds.length >= 8;
@@ -2247,6 +2767,12 @@ export const MediaLibraryView = ({
                   </button>
                 );
               })}
+              {visibleContactSheetCandidates.length === 0 ? (
+                <p className="col-span-full rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
+                  No images match “{contactSheetQuery.trim()}”.
+                </p>
+              ) : null}
+              </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -2261,10 +2787,12 @@ export const MediaLibraryView = ({
                   onOpenContactSheetAsFlow(selectedContactSheetAssets);
                   setContactSheetOpen(false);
                   setContactSheetAssetIds([]);
+                  setContactSheetQuery("");
+                  setContactSheetPage(1);
                 }}
                 className="bg-sky-300 text-slate-950 hover:bg-sky-200"
               >
-                <LayoutGrid className="h-4 w-4" /> Open {selectedContactSheetAssets.length} images as Flow
+                <LayoutGrid className="h-4 w-4" /> Open {selectedContactSheetAssets.length} images as workflow
               </Button>
             </DialogFooter>
           </DialogContent>

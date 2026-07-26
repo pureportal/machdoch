@@ -535,7 +535,7 @@ export const createTaskInterviewWithAgent = async (
       ...(options.signal ? { signal: options.signal } : {}),
       additionalToolDefinitions: createTaskInterviewToolDefinitions(),
       systemPromptSections: [createTaskInterviewSystemPrompt()],
-      instructionAudience: "executor",
+      executionRole: "executor",
       maxDurationMs: null,
     },
   );

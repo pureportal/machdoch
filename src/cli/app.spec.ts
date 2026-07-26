@@ -585,26 +585,13 @@ describe("parseCliArgs", () => {
           "--cwd",
           "C:/repo",
           "instructions",
+          "profiles",
           "create",
           "TypeScript rules",
+          "--description",
+          "Shared TypeScript policy",
           "--prompt",
           "Prefer strict types.",
-          "--scope",
-          "workspace",
-          "--apply-to",
-          "src/**/*.ts",
-          "--apply-to",
-          "tests/**/*.ts",
-          "--exclude",
-          "src/generated/**",
-          "--keyword",
-          "typescript",
-          "--instruction-mode",
-          "auto",
-          "--audience",
-          "executor",
-          "--priority",
-          "25",
         ],
         {
           currentWorkingDirectory: "C:/workspace",
@@ -613,16 +600,11 @@ describe("parseCliArgs", () => {
     ).toEqual({
       command: "instructions",
       instructions: {
-        action: "create",
+        action: "profile-create",
+        group: "profiles",
         subject: "TypeScript rules",
-        scope: "workspace",
+        description: "Shared TypeScript policy",
         prompt: "Prefer strict types.",
-        applyTo: ["src/**/*.ts", "tests/**/*.ts"],
-        exclude: ["src/generated/**"],
-        keywords: ["typescript"],
-        mode: "auto",
-        audience: "executor",
-        priority: 25,
       },
       json: true,
       verbose: false,
@@ -631,7 +613,15 @@ describe("parseCliArgs", () => {
 
     expect(
       parseCliArgs(
-        ["instructions", "list", "--scope", "compatibility"],
+        [
+          "instructions",
+          "assignments",
+          "set-defaults",
+          "--profile",
+          "11111111-1111-4111-8111-111111111111",
+          "--expected-revision",
+          "2",
+        ],
         {
           currentWorkingDirectory: "C:/workspace",
         },
@@ -639,8 +629,10 @@ describe("parseCliArgs", () => {
     ).toEqual({
       command: "instructions",
       instructions: {
-        action: "list",
-        scope: "compatibility",
+        action: "assignment-set-defaults",
+        group: "assignments",
+        profileIds: ["11111111-1111-4111-8111-111111111111"],
+        expectedRevision: 2,
       },
       json: false,
       verbose: false,
@@ -649,17 +641,7 @@ describe("parseCliArgs", () => {
 
     expect(
       parseCliArgs(
-        [
-          "instructions",
-          "save",
-          "TypeScript rules",
-          "--prompt",
-          "Prefer strict types and regression tests.",
-          "--path",
-          ".machdoch/instructions/typescript-rules.instructions.md",
-          "--scope",
-          "workspace",
-        ],
+        ["instructions", "local", "show", "packages/core"],
         {
           currentWorkingDirectory: "C:/workspace",
         },
@@ -667,78 +649,15 @@ describe("parseCliArgs", () => {
     ).toEqual({
       command: "instructions",
       instructions: {
-        action: "save",
-        subject: "TypeScript rules",
-        prompt: "Prefer strict types and regression tests.",
-        path: ".machdoch/instructions/typescript-rules.instructions.md",
-        scope: "workspace",
+        action: "local-show",
+        group: "local",
+        subject: "packages/core",
       },
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
     });
 
-    expect(
-      parseCliArgs(
-        [
-          "instructions",
-          "generate",
-          "Review rules",
-          "--prompt",
-          "Create review instructions for React accessibility work.",
-          "--path",
-          "instructions/review-rules.instructions.md",
-          "--scope",
-          "user",
-          "--max-rounds",
-          "3",
-        ],
-        {
-          currentWorkingDirectory: "C:/workspace",
-        },
-      ),
-    ).toEqual({
-      command: "instructions",
-      instructions: {
-        action: "generate",
-        subject: "Review rules",
-        prompt: "Create review instructions for React accessibility work.",
-        path: "instructions/review-rules.instructions.md",
-        scope: "user",
-        maxRounds: 3,
-      },
-      json: false,
-      verbose: false,
-      workspaceRoot: "C:/workspace",
-    });
-
-    expect(() =>
-      parseCliArgs(
-        ["instructions", "save", "Rules", "--prompt", "Body", "--max-rounds", "2"],
-        {
-          currentWorkingDirectory: "C:/workspace",
-        },
-      ),
-    ).toThrow("--max-rounds is only valid for `machdoch instructions generate`.");
-
-    expect(() =>
-      parseCliArgs(
-        [
-          "instructions",
-          "generate",
-          "Rules",
-          "--prompt",
-          "Body",
-          "--scope",
-          "compatibility",
-        ],
-        {
-          currentWorkingDirectory: "C:/workspace",
-        },
-      ),
-    ).toThrow(
-      "Compatibility instruction files are read-only; use user, workspace, or ralph-flow scope.",
-    );
   });
 
   it("parses Ralph flow commands", () => {

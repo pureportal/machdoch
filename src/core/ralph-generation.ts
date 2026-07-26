@@ -963,6 +963,7 @@ const RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA: RalphGenerationJsonSchema = {
     alias: { type: "string" },
     name: { type: "string" },
     description: { type: "string" },
+    guidance: { type: "string" },
     createdAt: { type: "string" },
     updatedAt: { type: "string" },
     settings: {
@@ -2152,6 +2153,7 @@ const createFlowGenerationTask = (
     "- For SEARCH_FILES, use rootPath for the narrowest source root that fits the request and set pattern or glob as a single string; avoid scanning the workspace root when possible.",
     "- For repository-wide coverage, use SCAN_SCOPE_EVIDENCE -> UPDATE_SCOPE_REGISTRY -> SELECT_SCOPE -> focused work -> MARK_SCOPE_RESULT instead of a prompt-only SCOPE=ALL convention.",
     "- Keep block ids stable kebab-case.",
+    "- Put flow-wide persistent Markdown instructions in top-level guidance. Do not encode them as per-block matcher metadata or sidecar files.",
     "- Store graph positions so the canvas is readable.",
     "- Use Ralph-specific tools for node contracts, utility contracts, candidate validation, layout normalization, and structured candidate submission.",
     "- Use tools only when they materially reduce uncertainty. For simple self-contained requests, produce the flow directly from this prompt.",
@@ -2183,6 +2185,7 @@ const createFlowGenerationTask = (
         ...(alias ? { alias } : {}),
         name,
         description: "Short description",
+        guidance: "Optional flow-wide guidance delivered after profiles and project-local instructions.",
         settings: { maxTransitions: 30 },
         blocks: [
           { id: "start", type: "START", title: "Start", position: { x: 0, y: 0 } },
@@ -2245,7 +2248,6 @@ const createFlowGenerationTask = (
 const UI_VERIFICATION_SCRIPT_PRIORITY = [
   "typecheck:ui",
   "build:ui",
-  "test:ui",
   "lint",
   "typecheck",
   "build",
@@ -2562,7 +2564,7 @@ const executeGenerationActorWithFallback = async (
       },
       maxDurationMs:
         executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
-      instructionAudience: actor,
+      executionRole: actor,
       ...(actor === "generator" && agentRuntime
         ? {
             additionalToolDefinitions: agentRuntime.toolDefinitions,
@@ -2692,7 +2694,7 @@ export const createRalphGenerationInterviewWithAgent = async (
       ...executionOptions,
       additionalToolDefinitions: createRalphGenerationInterviewToolDefinitions(),
       systemPromptSections: [createRalphGenerationInterviewSystemPrompt()],
-      instructionAudience: "generator",
+      executionRole: "generator",
       maxDurationMs:
         executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
     },

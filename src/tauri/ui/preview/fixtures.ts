@@ -1,6 +1,5 @@
 import type {
   ResolvedPromptInvocation,
-  TaskCustomizationMatch,
   TaskExecutionResult,
   TaskExecutionStatus,
   TaskRunPreview,
@@ -152,52 +151,6 @@ const createInvokedPrompt = (
   };
 };
 
-const createApplicableInstructions = (
-  task: string,
-): TaskCustomizationMatch[] => {
-  const tokens = createTokenSet(task);
-  const instructions: TaskCustomizationMatch[] = [
-    {
-      kind: "always-on",
-      name: "Workspace defaults",
-      path: ".machdoch/instructions.md",
-      priority: 20,
-      body: "Keep changes small, verify the result, and surface mode boundaries clearly.",
-      reason: "Always-on workspace instruction.",
-    },
-  ];
-
-  if (
-    ["build", "debug", "test", "typescript"].some((token) => tokens.has(token))
-  ) {
-    instructions.push({
-      kind: "conditional",
-      name: "TypeScript testing rules",
-      path: ".machdoch/instructions/testing.instructions.md",
-      priority: 70,
-      body: "Prefer behavior-focused tests and verify only the smallest relevant scope.",
-      reason: "Matched task terms: build, debug, test, or typescript.",
-    });
-  }
-
-  if (
-    ["auth", "permission", "security", "token"].some((token) =>
-      tokens.has(token),
-    )
-  ) {
-    instructions.push({
-      kind: "conditional",
-      name: "Security guardrails",
-      path: ".machdoch/instructions/security.instructions.md",
-      priority: 80,
-      body: "Keep privileged actions in Machdoch mode and avoid leaking secrets into logs.",
-      reason: "Matched task terms: auth, permission, security, or token.",
-    });
-  }
-
-  return instructions;
-};
-
 const createPreviewWarnings = (
   invokedPrompt?: ResolvedPromptInvocation,
 ): string[] => {
@@ -213,7 +166,6 @@ const createPreviewWarnings = (
 };
 
 const createPreviewNotes = (
-  instructions: TaskCustomizationMatch[],
   context?: FixtureModelContext,
   invokedPrompt?: ResolvedPromptInvocation,
 ): string[] => {
@@ -226,7 +178,6 @@ const createPreviewNotes = (
     ...(invokedPrompt?.model
       ? [`The prompt prefers model \`${invokedPrompt.model}\`.`]
       : []),
-    `${instructions.length} instruction(s) appear relevant to this task.`,
     "The desktop shell currently renders representative task states while the live executor is still being wired in.",
   ];
 };
@@ -238,8 +189,6 @@ export const createPreviewFixture = (
   const normalizedTask = normalizeTask(task, DEFAULT_PREVIEW_TASK);
   const suggestedTools = inferSuggestedTools(normalizedTask);
   const invokedPrompt = createInvokedPrompt(normalizedTask);
-  const applicableInstructions = createApplicableInstructions(normalizedTask);
-
   return {
     task: normalizedTask,
     mode: context.mode ?? "machdoch",
@@ -248,11 +197,10 @@ export const createPreviewFixture = (
       : "This staged preview maps the request to likely tools, mode constraints, and next steps before a live run begins.",
     suggestedTools,
     ...(invokedPrompt ? { invokedPrompt } : {}),
-    applicableInstructions,
     suggestedPrompts: [],
     suggestedSkills: [],
     warnings: createPreviewWarnings(invokedPrompt),
-    notes: createPreviewNotes(applicableInstructions, context, invokedPrompt),
+    notes: createPreviewNotes(context, invokedPrompt),
     steps: [
       {
         title: "Load workspace context",
@@ -277,7 +225,6 @@ export const createPreviewFixture = (
       },
     ],
     customizationCounts: {
-      instructions: applicableInstructions.length,
       prompts: 1,
       skills: 1,
     },

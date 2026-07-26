@@ -4,6 +4,11 @@ export const sha256 = (value: string | NodeJS.ArrayBufferView): string => {
   return createHash("sha256").update(value).digest("hex");
 };
 
+export const compareCanonicalStrings = (
+  left: string,
+  right: string,
+): number => (left < right ? -1 : left > right ? 1 : 0);
+
 const sortValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(sortValue);
@@ -15,7 +20,7 @@ const sortValue = (value: unknown): unknown => {
 
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareCanonicalStrings(left, right))
       .map(([key, entry]) => [key, sortValue(entry)]),
   );
 };

@@ -649,6 +649,11 @@ interface RunRalphFlowForCliOptions {
   checkpoint?: RalphRunCheckpoint;
   inputResponse?: RalphInputResponse;
   maxTransitions?: number;
+  acknowledgeCompatibleInstructionDelivery?: boolean;
+  instructionBoundaryPolicy?:
+    | "require-match"
+    | "original-boundary"
+    | "new-boundary";
 }
 
 const runRalphFlowForCli = async ({
@@ -661,6 +666,8 @@ const runRalphFlowForCli = async ({
   checkpoint,
   inputResponse,
   maxTransitions,
+  acknowledgeCompatibleInstructionDelivery,
+  instructionBoundaryPolicy,
 }: RunRalphFlowForCliOptions): Promise<RalphRunResult> => {
   const controller = new AbortController();
   const startedAt = new Date().toISOString();
@@ -684,6 +691,12 @@ const runRalphFlowForCli = async ({
       ...(checkpoint ? { checkpoint } : {}),
       ...(inputResponse ? { inputResponse } : {}),
       ...(maxTransitions !== undefined ? { maxTransitions } : {}),
+      ...(acknowledgeCompatibleInstructionDelivery === true
+        ? { acknowledgeCompatibleInstructionDelivery: true }
+        : {}),
+      ...(instructionBoundaryPolicy === undefined
+        ? {}
+        : { instructionBoundaryPolicy }),
       ...(json
         ? {
             onEvent: createRalphEventProgressReporter(flow, config.mode),
@@ -1559,9 +1572,18 @@ export const printRalphSummary = async (
         customizations,
         variableValues,
         logger,
+        ...(args.acknowledgeCompatibleInstructionDelivery === true
+          ? { acknowledgeCompatibleInstructionDelivery: true }
+          : {}),
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
           : {}),
+        ...(options.instructionBoundaryPolicy === undefined
+          ? {}
+          : {
+              instructionBoundaryPolicy:
+                options.instructionBoundaryPolicy,
+            }),
       });
       if (!logger.paths) {
         throw new Error("Ralph file logger did not expose artifact paths.");
@@ -1669,11 +1691,20 @@ export const printRalphSummary = async (
         customizations,
         variableValues: record.variableValues,
         logger,
+        ...(args.acknowledgeCompatibleInstructionDelivery === true
+          ? { acknowledgeCompatibleInstructionDelivery: true }
+          : {}),
         ...(checkpoint ? { checkpoint } : {}),
         ...(inputResponse ? { inputResponse } : {}),
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
           : {}),
+        ...(options.instructionBoundaryPolicy === undefined
+          ? {}
+          : {
+              instructionBoundaryPolicy:
+                options.instructionBoundaryPolicy,
+            }),
       });
       const runRecord = { paths, path: paths.recordPath };
 

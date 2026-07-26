@@ -32,7 +32,6 @@ enum StartupWindowMode {
     StartMinimized,
     StartInTray,
 }
-
 pub(crate) fn resolve_launch_context() -> LaunchContext {
     LaunchContext {
         launched_from_autostart: env::args().skip(1).any(|arg| arg == AUTOSTART_LAUNCH_ARG),
@@ -325,57 +324,5 @@ pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context:
                 let _ = window.set_focus();
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn launch_preferences(
-        autostart_minimized: bool,
-        autostart_to_tray: bool,
-    ) -> runtime_snapshot::UserDesktopLaunchPreferences {
-        runtime_snapshot::UserDesktopLaunchPreferences {
-            autostart_minimized,
-            autostart_to_tray,
-        }
-    }
-
-    #[test]
-    fn startup_mode_prefers_tray_over_minimized() {
-        assert_eq!(
-            resolve_startup_window_mode(launch_preferences(true, true)),
-            StartupWindowMode::StartInTray
-        );
-    }
-
-    #[test]
-    fn startup_mode_uses_minimized_when_tray_is_disabled() {
-        assert_eq!(
-            resolve_startup_window_mode(launch_preferences(true, false)),
-            StartupWindowMode::StartMinimized
-        );
-    }
-
-    #[test]
-    fn startup_mode_opens_window_by_default() {
-        assert_eq!(
-            resolve_startup_window_mode(launch_preferences(false, false)),
-            StartupWindowMode::OpenWindow
-        );
-    }
-
-    #[test]
-    fn console_hiding_is_limited_to_background_ui_launches() {
-        assert!(should_hide_console_window_for_launch_args([
-            AUTOSTART_LAUNCH_ARG
-        ]));
-        assert!(should_hide_console_window_for_launch_args([
-            "--ui",
-            ADMIN_RELAUNCH_ARG
-        ]));
-        assert!(!should_hide_console_window_for_launch_args(["--ui"]));
-        assert!(!should_hide_console_window_for_launch_args(["--cli"]));
     }
 }

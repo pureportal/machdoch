@@ -1,6 +1,8 @@
 export type MediaAssetKind =
   | "prompt"
   | "image"
+  | "video"
+  | "audio"
   | "vector"
   | "alpha-matte"
   | "report"
@@ -32,6 +34,13 @@ export type MediaCapability =
   | "render-verified"
   | "image-to-image"
   | "multi-reference-edit"
+  | "text-to-video"
+  | "image-to-video"
+  | "start-end-to-video"
+  | "alpha-video"
+  | "video-composite"
+  | "text-to-audio"
+  | "audio-to-audio"
   | "background-remove"
   | "image-quality-analysis"
   | "transparent-output";
@@ -67,13 +76,44 @@ export type MediaModelPackageType =
   | "onnx"
   | "native-utility";
 
-export type MediaLocalModelArchitecture =
+export type MediaModelAcquisition =
+  | "remote"
+  | "bundled"
+  | "managed-install"
+  | "file-import"
+  | "workspace-discovery"
+  | "external-runtime";
+
+export type MediaModelVerification =
+  | "none"
+  | "model-probe"
+  | "runtime-probe";
+
+export interface MediaModelManagement {
+  acquisition: MediaModelAcquisition;
+  verification: MediaModelVerification;
+}
+
+export type MediaBuiltinLocalModelArchitecture =
   | "stable-diffusion-1"
   | "stable-diffusion-2"
   | "stable-diffusion-xl"
   | "stable-diffusion-3"
   | "flux-1"
-  | "flux-2";
+  | "flux-2"
+  | "krea-2"
+  | "wan-2.2-ti2v";
+
+/**
+ * Built-ins receive first-party import/runtime profiles, while the branded
+ * string intersection lets capability adapters register future families
+ * without widening this shared contract for every new model name.
+ */
+export type MediaLocalModelArchitecture =
+  | MediaBuiltinLocalModelArchitecture
+  | (string & Record<never, never>);
+
+export type MediaModality = "image" | "video" | "audio";
 
 export type MediaLocalModelArchitectureConfidence =
   | "high"
@@ -147,8 +187,10 @@ export type MediaNodeLayer =
 export type MediaNodeType =
   | "source.prompt"
   | "source.image"
+  | "source.animated-background"
   | "task.generate-image"
   | "task.edit-image"
+  | "task.generate-video"
   | "operation.crop"
   | "operation.resize"
   | "operation.format-convert"
@@ -158,16 +200,19 @@ export type MediaNodeType =
   | "operation.subject-cutout"
   | "operation.alpha-matte"
   | "operation.composite"
+  | "operation.video-composite"
   | "operation.quality-analyze"
   | "control.quality-gate"
   | "control.human-review"
-  | "output.asset";
+  | "output.asset"
+  | "output.video";
 
 export type MediaPortDataType =
   | "prompt"
   | "image"
-  | "report"
-  | "asset-ref";
+  | "video"
+  | "audio"
+  | "quality-report";
 
 export interface MediaFlowNode {
   id: string;
@@ -290,7 +335,11 @@ export interface MediaFlowLayout {
   comments: MediaFlowLayoutComment[];
 }
 
-export type MediaFlowTemplateCategory = "Generation" | "Product" | "Quality";
+export type MediaFlowTemplateCategory =
+  | "Generation"
+  | "Product"
+  | "Quality"
+  | "Animation";
 
 export interface MediaFlowTemplateDescriptor {
   schemaVersion: 1;
@@ -526,6 +575,7 @@ export interface MediaModelDescriptor {
   installationStatus: MediaModelInstallationStatus;
   installedRevision?: string;
   packageType: MediaModelPackageType;
+  management: MediaModelManagement;
   architecture: MediaLocalModelArchitecture | null;
   addonCapabilities: readonly MediaModelAddonCapability[];
   runtimeReadiness?:
@@ -592,6 +642,37 @@ export interface MediaModelCatalogSnapshot {
   providers: MediaProviderCatalogEntry[];
   models: MediaModelDescriptor[];
   addons: MediaModelAddonDescriptor[];
+}
+
+export interface MediaDiscoveredModelArtifact {
+  path: string;
+  relativePath: string;
+  displayName: string;
+  kind:
+    | "diffusers-model"
+    | "checkpoint"
+    | "model-addon"
+    | "source-repository";
+  status:
+    | "ready"
+    | "importable"
+    | "incompatible"
+    | "incomplete"
+    | "unsupported";
+  architecture: MediaLocalModelArchitecture | null;
+  byteSize: number;
+  fileCount: number;
+  capabilities: string[];
+  diagnostic: string;
+}
+
+export interface MediaWorkspaceModelDiscovery {
+  schemaVersion: 1;
+  rootPath: string;
+  scannedAt: string;
+  entries: MediaDiscoveredModelArtifact[];
+  truncated: boolean;
+  warnings: string[];
 }
 
 export interface MediaLocalModelImportInspection {
@@ -914,6 +995,12 @@ export interface ImageRecipeSettings {
   transparentBackground: boolean;
   qualityGateEnabled: boolean;
   referenceImages: MediaImageReference[];
+  editStrength?: number;
+  referenceBoost?: number;
+  requireChromaBackground?: boolean;
+  referenceFit?: "fit" | "crop";
+  groundingPixels?: number;
+  memoryProfile?: "auto" | "memory-saver" | "balanced" | "maximum-speed";
   svgMode?: "generate" | "vectorize";
   svgAutoCrop?: boolean;
   svgTargetSize?: number;
@@ -1065,6 +1152,7 @@ export interface MediaCompilerDiagnostic {
     | "REMOTE_EXECUTION_SELECTED"
     | "REMOTE_ASSET_UPLOAD_SELECTED"
     | "SVG_CRITIC_UNAVAILABLE"
+    | "VIDEO_EXECUTOR_UNAVAILABLE"
     | "SUBJECT_CUTOUT_FALLBACK_SELECTED"
     | "LOCAL_MODEL_DOWNLOAD_REQUIRED";
   severity: MediaDiagnosticSeverity;
@@ -1079,9 +1167,11 @@ export interface MediaExecutionStep {
   kind:
     | "normalize-prompt"
     | "resolve-asset"
-     | "resolve-model"
+    | "resolve-animated-background"
+    | "resolve-model"
     | "resolve-model-addons"
     | "generate-image"
+    | "generate-video"
     | "generate-svg"
     | "vectorize-svg"
     | "validate-svg"
@@ -1098,6 +1188,7 @@ export interface MediaExecutionStep {
     | "cutout-subject"
     | "extract-alpha-matte"
     | "composite-image"
+    | "composite-video"
     | "analyze-quality"
     | "evaluate-gate"
     | "wait-for-review"
@@ -1138,11 +1229,24 @@ export interface MediaCompiledPlan {
   flowFingerprint: string;
   status: "ready" | "blocked";
   compiledAt: string;
+  /**
+   * Legacy primary binding retained for direct single-stage callers. New
+   * executors consume runtimeBindings so mixed image/video/audio graphs do not
+   * need a new plan shape when another modality is introduced.
+   */
   model: MediaModelDescriptor | null;
+  runtimeBindings: MediaRuntimeBinding[];
   addons: MediaResolvedModelAddon[];
   steps: MediaExecutionStep[];
   diagnostics: MediaCompilerDiagnostic[];
   preflight: MediaPreflightSummary;
+}
+
+export interface MediaRuntimeBinding {
+  nodeId: string;
+  modality: MediaModality;
+  requiredCapability: MediaCapability;
+  model: MediaModelDescriptor;
 }
 
 export interface MediaResolvedModelAddon {
@@ -1227,10 +1331,20 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
     | "local-transform"
     | "local-image-flow"
     | "local-analysis"
+    | "local-wan-video"
     | "mock-remote-provider"
     | "svg-ai-pipeline";
   error: string | null;
   failure: MediaErrorDetail | null;
+}
+
+export interface MediaRunPage {
+  schemaVersion: 1;
+  revision: string;
+  offset: number;
+  totalItems: number | null;
+  unchanged: boolean;
+  items: MediaRuntimeRunRecord[];
 }
 
 export interface MediaRunEvent {
@@ -1254,6 +1368,7 @@ export interface MediaRunEvent {
     | "asset_analyzed"
     | "asset_tagged"
     | "asset_deleted"
+    | "video_generated"
     | "provider_prepared"
     | "provider_submission_started"
     | "provider_accepted"
@@ -1312,12 +1427,13 @@ export interface MediaAssetRecord {
   id: string;
   runId: string;
   digest: string;
-  kind: "image" | "vector" | "report";
+  kind: "image" | "video" | "vector" | "report";
   mimeType:
     | "image/png"
     | "image/jpeg"
     | "image/webp"
     | "image/svg+xml"
+    | "video/webm"
     | "application/json";
   byteSize: number;
   width: number;
@@ -1328,6 +1444,15 @@ export interface MediaAssetRecord {
   operation: MediaAssetOperation | null;
   sourceAssetIds: string[];
   tags: MediaAssetTag[];
+}
+
+export interface MediaAssetPage {
+  schemaVersion: 1;
+  revision: string;
+  offset: number;
+  totalItems: number | null;
+  unchanged: boolean;
+  items: MediaAssetRecord[];
 }
 
 export interface MediaAssetTag {
@@ -1493,9 +1618,113 @@ export interface MediaLocalDiffusionGenerationOperation {
   deviceMemoryBytes: number | null;
   prompt: string;
   negativePrompt: string;
+  modelPolicy?: "fast" | "balanced" | "quality";
+  aspectRatio?: "1:1" | "4:5" | "16:9" | "9:16";
+  numInferenceSteps?: number;
   addons: unknown[];
+  performance: Record<string, unknown> | null;
+  requireChromaBackground?: boolean;
+  editConditioning: Record<string, unknown> | null;
+  referenceImageAssetId: string | null;
+  referenceImageDigest: string | null;
   output: { index: number; seed: number } | null;
   subjectCutout?: MediaSubjectCutoutSummary | null;
+}
+
+export interface MediaLocalWanVideoGenerationOperation {
+  kind: "local-wan-video-generation";
+  providerId: "local-wan";
+  modelId: "local:wan2.2-ti2v-5b";
+  flowRevisionId: string;
+  modelRevision: string;
+  modelDigest: string;
+  workerVersion: string;
+  packages: Record<string, string | null>;
+  device: string;
+  deviceLabel: string;
+  deviceMemoryBytes: number | null;
+  performance: Record<string, unknown> | null;
+  conv3dBackend: "aten-native-hip" | "cudnn";
+  conditioningMode:
+    | "first-last-latent-lock-v1"
+    | "first-last-temporal-vae-lock-v2"
+    | "first-last-temporal-context-lock-v3";
+  endpointRestoration: {
+    engine: "endpoint-reference-color-and-pixel-restore-v3";
+    startFrame: number;
+    frameCount: 5;
+    exactEndpointFrame: true;
+    easing: "smoothstep";
+    lowPercentile: 5;
+    highPercentile: 95;
+    channelScales: [number, number, number];
+    channelOffsets: [number, number, number];
+  } | null;
+  loopEndpointRestoration: {
+    engine: "exact-source-loop-endpoint-v1";
+    exactFirstFrame: true;
+    exactLastFrame: true;
+    duplicateClosureFrame: true;
+  } | null;
+  prompt: string;
+  negativePrompt: string;
+  resolution: "preview-512" | "quality-640" | "quality-768";
+  guidanceScale: number;
+  numInferenceSteps: number;
+  transparentBackground: boolean;
+  memoryProfile: "auto" | "memory-saver" | "balanced" | "maximum-speed";
+  firstFrameAssetId: string;
+  firstFrameDigest: string;
+  lastFrameAssetId: string;
+  lastFrameDigest: string;
+  sameEndpointConditioning: boolean;
+  output:
+    | {
+    index: 0;
+    seed: number;
+    width: number;
+    height: number;
+    frameCount: number;
+    sourceFrameCount: number;
+    fps: number;
+    durationSeconds: number;
+    hasAlpha: boolean;
+    alphaMinimum: number;
+    alphaMaximum: number;
+    decodedAlphaMinimum: number;
+    decodedAlphaMaximum: number;
+    decodedFrameCount: number;
+    decodedLoopEndpointMae: number;
+    decodedAlphaLoopEndpointMae: number;
+    loopMode: "none" | "ping-pong" | "seamless";
+    loopEndpointMae: number;
+    matte: Record<string, unknown> | null;
+    encodingQuality: "draft" | "balanced" | "production" | "lossless";
+    codec: "vp9";
+    container: "webm";
+      }
+    | {
+        index: 1;
+        seed: number;
+        width: number;
+        height: number;
+        frameCount: number;
+        fps: number;
+        durationSeconds: number;
+        hasAlpha: false;
+        loopMode: "none" | "ping-pong" | "seamless";
+        loopEndpointMae: number;
+        decodedFrameCount: number;
+        decodedLoopEndpointMae: number;
+        encodingQuality: "draft" | "balanced" | "production" | "lossless";
+        codec: "vp9";
+        container: "webm";
+        background: MediaAnimatedBackgroundConfig & {
+          engine: "animated-gradient-v1" | "animated-enchanted-beach-v1";
+        };
+      };
+  sourceTransparentVideoAssetId?: string;
+  sourceTransparentVideoDigest?: string;
 }
 
 export interface MediaSubjectCutoutSummary {
@@ -1621,6 +1850,7 @@ export type MediaAssetOperation =
   | MediaLocalImageFlowOperation
   | MediaRemoteImageGenerationOperation
   | MediaLocalDiffusionGenerationOperation
+  | MediaLocalWanVideoGenerationOperation
   | MediaRemoteImageEditOperation
   | MediaRemoteSvgGenerationOperation;
 
@@ -1952,6 +2182,14 @@ export interface GenerateMediaImagesRequest {
   modelAddons: MediaModelAddonSelection[];
   transparentBackground: boolean;
   subjectCutoutModelPriority: string[];
+  negativePrompt?: string;
+  referenceImageAssetId?: string | null;
+  editStrength?: number;
+  referenceBoost?: number;
+  requireChromaBackground?: boolean;
+  groundingPixels?: number;
+  referenceFit?: "fit" | "crop";
+  memoryProfile?: "auto" | "memory-saver" | "balanced" | "maximum-speed";
   planSnapshot: MediaRunPlanSnapshot;
 }
 
@@ -1980,6 +2218,47 @@ export interface GenerateMediaSvgRequest {
   referenceImages: MediaImageReference[];
   allowRemoteUpload: boolean;
   planSnapshot: MediaRunPlanSnapshot;
+}
+
+export interface GenerateMediaVideoRequest {
+  schemaVersion: 1;
+  runId: string;
+  flowId: string;
+  flowRevisionId: string;
+  flowName: string;
+  planId: string;
+  prompt: string;
+  modelId: "local:wan2.2-ti2v-5b";
+  modelLabel: string;
+  diagnosticCount: number;
+  workspaceRoot: string;
+  firstFrameAssetId: string;
+  lastFrameAssetId: string;
+  aspectRatio: "1:1" | "16:9" | "9:16" | "21:9";
+  resolution: "preview-512" | "quality-640" | "quality-768";
+  outputFormat: "webm";
+  transparentBackground: boolean;
+  loopMode: "none" | "ping-pong" | "seamless";
+  fps: number;
+  numFrames: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  seed: number;
+  negativePrompt: string;
+  matteQuality: "fast" | "balanced" | "production";
+  encodingQuality: "draft" | "balanced" | "production" | "lossless";
+  memoryProfile: "auto" | "memory-saver" | "balanced" | "maximum-speed";
+  experimentalLowMemory: true;
+  animatedBackground: MediaAnimatedBackgroundConfig | null;
+  planSnapshot: MediaRunPlanSnapshot;
+}
+
+export interface MediaAnimatedBackgroundConfig {
+  style: "gradient-wave" | "enchanted-beach";
+  direction: "horizontal" | "vertical" | "diagonal";
+  colorStart: string;
+  colorEnd: string;
+  cycles: number;
 }
 
 export interface MediaImageImportResult {

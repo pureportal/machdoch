@@ -6,25 +6,28 @@ use std::{
 };
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::{params, types::Type, Connection, OptionalExtension as _, Row, Transaction};
+use rusqlite::{
+    params, params_from_iter, types::Type, Connection, OptionalExtension as _, Row, Transaction,
+};
 use sha2::{Digest as _, Sha256};
 
 use super::{
     catalog,
     error::MediaError,
-    provider_local_diffusers::LocalGeneratedImageBatch,
+    provider_local_diffusers::{LocalGeneratedImageBatch, LocalGeneratedVideo},
     provider_openai::{self, GeneratedImageBatch},
     provider_svg::{self, GeneratedSvgBatch, SvgReferencePlan},
-    EnqueueFixtureRunRequest, GenerateMediaImagesRequest, GenerateMediaSvgRequest,
-    MediaAssetDeletionImpact, MediaAssetDeletionRequest, MediaAssetDeletionResult,
-    MediaAssetExportMode, MediaAssetExportRecord, MediaAssetRecord, MediaAssetTag,
-    MediaAssetTombstone, MediaHumanReviewDecisionRequest, MediaHumanReviewRecord,
-    MediaImageImportResult, MediaModelCatalogSnapshot, MediaNodeExecutionRecord,
-    MediaProviderJobRecord, MediaProviderPolicySnapshot, MediaResult, MediaRunDetail,
-    MediaRunEvent, MediaRunPlanSnapshot, MediaRunRecord, MediaRuntimePaths,
+    transform, EnqueueFixtureRunRequest, GenerateMediaImagesRequest, GenerateMediaSvgRequest,
+    GenerateMediaVideoRequest, MediaAssetDeletionImpact, MediaAssetDeletionRequest,
+    MediaAssetDeletionResult, MediaAssetExportMode, MediaAssetExportRecord, MediaAssetPage,
+    MediaAssetRecord, MediaAssetTag, MediaAssetTombstone, MediaHumanReviewDecisionRequest,
+    MediaHumanReviewRecord, MediaImageImportResult, MediaModelCatalogSnapshot,
+    MediaNodeExecutionRecord, MediaProviderJobRecord, MediaProviderPolicySnapshot, MediaResult,
+    MediaRunDetail, MediaRunEvent, MediaRunPage, MediaRunPlanSnapshot, MediaRunRecord,
+    MediaRuntimePaths,
 };
 
-pub(crate) const SCHEMA_VERSION: u32 = 25;
+pub(crate) const SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug)]
 pub(crate) struct AssetBlobSource {
@@ -97,6 +100,34 @@ pub(crate) fn initialize(paths: &MediaRuntimePaths) -> MediaResult<RecoverySumma
     let summary = recover_interrupted_runs(&mut open(paths)?)?;
     recover_pending_blob_gc(paths)?;
     Ok(summary)
+}
+
+fn sqlite_table_exists(connection: &Connection, table: &str) -> MediaResult<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1
+               FROM sqlite_master
+               WHERE type = 'table' AND name = ?1
+             )",
+            params![table],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("failed to inspect SQLite table {table}: {error}"))
+}
+
+fn sqlite_column_exists(connection: &Connection, table: &str, column: &str) -> MediaResult<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1
+               FROM pragma_table_info(?1)
+               WHERE name = ?2
+             )",
+            params![table, column],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("failed to inspect SQLite column {table}.{column}: {error}"))
 }
 
 pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
@@ -1010,6 +1041,184 @@ pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
         transaction
             .commit()
             .map_err(|error| format!("failed to commit LoRA tensor profile migration: {error}"))?;
+    }
+
+    if version < 26 {
+        let transaction = connection.transaction().map_err(|error| {
+            format!("failed to begin media catalog revision migration: {error}")
+        })?;
+        transaction
+            .execute_batch(
+                "CREATE TABLE media_catalog_revisions (
+                   catalog TEXT PRIMARY KEY,
+                   instance_id TEXT NOT NULL,
+                   revision INTEGER NOT NULL CHECK(revision > 0)
+                 );
+                 INSERT INTO media_catalog_revisions(catalog, instance_id, revision)
+                   VALUES ('asset-library', lower(hex(randomblob(16))), 1);
+                 INSERT INTO media_catalog_revisions(catalog, instance_id, revision)
+                   VALUES ('run-library', lower(hex(randomblob(16))), 1);",
+            )
+            .map_err(|error| format!("failed to add media catalog revisions: {error}"))?;
+
+        if sqlite_table_exists(&transaction, "assets")? {
+            transaction
+                .execute_batch(
+                    "CREATE TRIGGER asset_library_revision_assets_insert
+                   AFTER INSERT ON assets BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_assets_update
+                   AFTER UPDATE ON assets BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_assets_delete
+                   AFTER DELETE ON assets BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;",
+                )
+                .map_err(|error| {
+                    format!("failed to add asset catalog revision triggers: {error}")
+                })?;
+        }
+
+        if sqlite_table_exists(&transaction, "asset_inputs")? {
+            transaction
+                .execute_batch(
+                    "CREATE TRIGGER asset_library_revision_inputs_insert
+                   AFTER INSERT ON asset_inputs BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_inputs_update
+                   AFTER UPDATE ON asset_inputs BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_inputs_delete
+                   AFTER DELETE ON asset_inputs BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;",
+                )
+                .map_err(|error| format!("failed to add asset input revision triggers: {error}"))?;
+        }
+
+        if sqlite_table_exists(&transaction, "asset_tags")? {
+            transaction
+                .execute_batch(
+                    "CREATE TRIGGER asset_library_revision_tags_insert
+                   AFTER INSERT ON asset_tags BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_tags_update
+                   AFTER UPDATE ON asset_tags BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_tags_delete
+                   AFTER DELETE ON asset_tags BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;",
+                )
+                .map_err(|error| format!("failed to add asset tag revision triggers: {error}"))?;
+        }
+
+        if sqlite_table_exists(&transaction, "human_reviews")? {
+            transaction
+                .execute_batch(
+                    "CREATE TRIGGER asset_library_revision_reviews_insert
+                   AFTER INSERT ON human_reviews BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_reviews_update
+                   AFTER UPDATE ON human_reviews BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_reviews_delete
+                   AFTER DELETE ON human_reviews BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;",
+                )
+                .map_err(|error| {
+                    format!("failed to add asset review revision triggers: {error}")
+                })?;
+        }
+
+        if sqlite_table_exists(&transaction, "human_review_decisions")? {
+            transaction
+                .execute_batch(
+                    "CREATE TRIGGER asset_library_revision_decisions_insert
+                   AFTER INSERT ON human_review_decisions BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_decisions_update
+                   AFTER UPDATE ON human_review_decisions BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;
+                 CREATE TRIGGER asset_library_revision_decisions_delete
+                   AFTER DELETE ON human_review_decisions BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;",
+                )
+                .map_err(|error| {
+                    format!("failed to add asset decision revision triggers: {error}")
+                })?;
+        }
+
+        if sqlite_table_exists(&transaction, "runs")? {
+            if sqlite_column_exists(&transaction, "runs", "status")? {
+                transaction
+                    .execute_batch(
+                        "CREATE TRIGGER asset_library_revision_run_status
+                   AFTER UPDATE OF status ON runs
+                   WHEN OLD.status IS NOT NEW.status BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'asset-library';
+                   END;",
+                    )
+                    .map_err(|error| {
+                        format!("failed to add run status revision trigger: {error}")
+                    })?;
+            }
+
+            transaction
+                .execute_batch(
+                    "CREATE TRIGGER run_library_revision_runs_insert
+                   AFTER INSERT ON runs BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'run-library';
+                   END;
+                 CREATE TRIGGER run_library_revision_runs_delete
+                   AFTER DELETE ON runs BEGIN
+                     UPDATE media_catalog_revisions SET revision = revision + 1
+                       WHERE catalog = 'run-library';
+                   END;",
+                )
+                .map_err(|error| format!("failed to add run catalog revision triggers: {error}"))?;
+        }
+        transaction
+            .execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+                params![26_u32, now()],
+            )
+            .map_err(|error| {
+                format!("failed to record media catalog revision migration: {error}")
+            })?;
+        transaction.commit().map_err(|error| {
+            format!("failed to commit media catalog revision migration: {error}")
+        })?;
     }
 
     Ok(())
@@ -2871,18 +3080,27 @@ pub(crate) fn complete_local_diffusers_generation(
             "deviceMemoryBytes": batch.provenance.device_memory_bytes,
             "prompt": batch.provenance.prompt,
             "negativePrompt": batch.provenance.negative_prompt,
+            "modelPolicy": batch.provenance.model_policy,
+            "aspectRatio": batch.provenance.aspect_ratio,
+            "numInferenceSteps": batch.provenance.num_inference_steps,
             "addons": batch.provenance.addons,
+            "performance": batch.provenance.performance,
+            "requireChromaBackground": batch.provenance.require_chroma_background,
+            "editConditioning": batch.provenance.edit_conditioning,
+            "referenceImageAssetId": batch.provenance.reference_image_asset_id,
+            "referenceImageDigest": batch.provenance.reference_image_digest,
             "output": batch.provenance.outputs.iter().find(|output| output.index == asset.output_index),
             "subjectCutout": asset.subject_cutout,
         })
         .to_string();
+        let asset_id = format!("asset:{}:{}", request.run_id, asset.output_index);
         transaction
             .execute(
                 "INSERT INTO assets(id, run_id, blob_digest, kind, mime_type, byte_size, width, height,
                    created_at, output_index, fixture, operation_json)
                  VALUES (?1, ?2, ?3, 'image', ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)",
                 params![
-                    format!("asset:{}:{}", request.run_id, asset.output_index),
+                    asset_id,
                     request.run_id,
                     asset.digest,
                     asset.mime_type,
@@ -2895,6 +3113,17 @@ pub(crate) fn complete_local_diffusers_generation(
                 ],
             )
             .map_err(|error| format!("failed to register locally generated image asset: {error}"))?;
+        if let Some(reference_asset_id) = request.reference_image_asset_id.as_deref() {
+            transaction
+                .execute(
+                    "INSERT INTO asset_inputs(asset_id, input_asset_id, role)
+                     VALUES (?1, ?2, 'edit-reference')",
+                    params![asset_id, reference_asset_id],
+                )
+                .map_err(|error| {
+                    format!("failed to register local edit reference lineage: {error}")
+                })?;
+        }
         append_event(
             &transaction,
             &request.run_id,
@@ -2910,6 +3139,510 @@ pub(crate) fn complete_local_diffusers_generation(
     transaction
         .commit()
         .map_err(|error| format!("failed to commit local image publication: {error}"))?;
+    transition_nodes_by_type(
+        paths,
+        &request.run_id,
+        &[
+            "task.generate-video",
+            "source.animated-background",
+            "operation.video-composite",
+            "output.video",
+        ],
+        "skipped",
+        Some("connected-stage.deferred"),
+        Some("Deferred to the connected WAN stage after endpoint publication"),
+        Some(0.96),
+    )?;
+    complete_run(paths, &request.run_id)?;
+    get_run_detail(paths, &request.run_id)
+}
+
+pub(crate) fn begin_local_wan_generation(
+    paths: &MediaRuntimePaths,
+    request: &GenerateMediaVideoRequest,
+) -> MediaResult<bool> {
+    let mut connection = open(paths)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("failed to begin local WAN generation: {error}"))?;
+    validate_run_flow_revision(
+        &transaction,
+        &request.flow_id,
+        Some(&request.flow_revision_id),
+        Some(&request.plan_snapshot),
+    )?;
+    let timestamp = now();
+    let plan_snapshot_json = serde_json::to_string(&request.plan_snapshot)
+        .map_err(|error| format!("failed to serialize WAN generation plan: {error}"))?;
+    let output_count = if request.animated_background.is_some() {
+        2_u32
+    } else {
+        1_u32
+    };
+    let inserted = transaction
+        .execute(
+            "INSERT OR IGNORE INTO runs(
+               id, flow_id, flow_name, plan_id, status, created_at, updated_at, prompt, model_label, target,
+               output_count, diagnostic_count, progress, current_step, executor, aspect_ratio,
+               plan_snapshot_json, flow_revision_id
+             ) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?5, ?6, ?7, 'local',
+               ?8, ?9, 0.04, 'Validating WAN model and endpoint frames', 'local-wan-video', ?10, ?11, ?12)",
+            params![
+                request.run_id,
+                request.flow_id,
+                request.flow_name,
+                request.plan_id,
+                timestamp,
+                request.prompt,
+                request.model_label,
+                output_count,
+                request.diagnostic_count,
+                request.aspect_ratio,
+                plan_snapshot_json,
+                request.flow_revision_id,
+            ],
+        )
+        .map_err(|error| format!("failed to register local WAN generation: {error}"))?;
+    if inserted == 0 {
+        validate_existing_run_identity(
+            &transaction,
+            &request.run_id,
+            &request.flow_id,
+            Some(&request.flow_revision_id),
+            &request.plan_id,
+            "local-wan-video",
+        )?;
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to commit local WAN replay: {error}"))?;
+        return Ok(false);
+    }
+    seed_node_executions(
+        &transaction,
+        &request.run_id,
+        &request.plan_snapshot,
+        "pending",
+    )?;
+    transaction
+        .execute(
+            "INSERT INTO jobs(id, run_id, status, attempts, started_at, heartbeat_at)
+             VALUES (?1, ?2, 'running', 1, ?3, ?3)",
+            params![format!("job:{}", request.run_id), request.run_id, timestamp],
+        )
+        .map_err(|error| format!("failed to register local WAN job: {error}"))?;
+    let delivery_contract = if request.transparent_background {
+        "alpha-plane encoder and decoder verification"
+    } else {
+        "opaque encoder and decoder verification"
+    };
+    let ending_contract = match request.loop_mode.as_str() {
+        "seamless" => "seamless endpoint policy",
+        "ping-pong" => "ping-pong endpoint policy",
+        _ => "intentional one-way ending policy",
+    };
+    append_event(
+        &transaction,
+        &request.run_id,
+        "worker_prepared",
+        &format!(
+            "The exact workspace WAN revision, immutable first and last frames, bounded 4k+1 frame contract, {delivery_contract}, optional animated composite, and {ending_contract} will be verified before publication."
+        ),
+        Some(0.04),
+        Some("local-wan.prepare"),
+    )?;
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to commit local WAN generation: {error}"))?;
+    Ok(true)
+}
+
+fn verify_local_wan_cas_blob(
+    paths: &MediaRuntimePaths,
+    label: &str,
+    digest: &str,
+    relative_path: &str,
+    byte_size: u64,
+) -> MediaResult<()> {
+    transform::resolve_verified_blob_path(
+        paths,
+        &AssetBlobSource {
+            digest: digest.to_string(),
+            relative_path: relative_path.to_string(),
+            byte_size,
+            mime_type: "video/webm".to_string(),
+        },
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        format!("{label} was generated but is not durably available in the managed CAS: {error}")
+    })
+}
+
+fn verify_local_wan_publication(
+    paths: &MediaRuntimePaths,
+    request: &GenerateMediaVideoRequest,
+    video: &LocalGeneratedVideo,
+) -> MediaResult<()> {
+    verify_local_wan_cas_blob(
+        paths,
+        if video.transparent_background {
+            "The transparent WAN video"
+        } else {
+            "The WAN video"
+        },
+        &video.digest,
+        &video.relative_path,
+        video.byte_size,
+    )?;
+
+    let has_any_composite_evidence = video.composite_digest.is_some()
+        || video.composite_relative_path.is_some()
+        || video.composite_byte_size.is_some()
+        || video.composite_output.is_some();
+    if request.animated_background.is_some() {
+        let (digest, relative_path, byte_size) = match (
+            video.composite_digest.as_deref(),
+            video.composite_relative_path.as_deref(),
+            video.composite_byte_size,
+            video.composite_output.as_ref(),
+        ) {
+            (Some(digest), Some(relative_path), Some(byte_size), Some(_)) => {
+                (digest, relative_path, byte_size)
+            }
+            _ => {
+                return Err(
+                    "The requested WAN animated composite was not durably produced; no completed output was published"
+                        .to_string(),
+                )
+            }
+        };
+        verify_local_wan_cas_blob(
+            paths,
+            "The composited WAN video",
+            digest,
+            relative_path,
+            byte_size,
+        )?;
+    } else if has_any_composite_evidence {
+        return Err(
+            "WAN composite publication evidence was returned without an animated-background request"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn complete_local_wan_generation(
+    paths: &MediaRuntimePaths,
+    request: &GenerateMediaVideoRequest,
+    video: &LocalGeneratedVideo,
+) -> MediaResult<MediaRunDetail> {
+    verify_local_wan_publication(paths, request, video)?;
+    let mut connection = open(paths)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("failed to begin local WAN publication: {error}"))?;
+    let status = transaction
+        .query_row(
+            "SELECT status FROM runs WHERE id = ?1",
+            params![request.run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to inspect local WAN generation: {error}"))?
+        .ok_or_else(|| format!("media run {} was not found", request.run_id))?;
+    if status == "completed" {
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to commit completed WAN replay: {error}"))?;
+        return get_run_detail(paths, &request.run_id);
+    }
+    if status == "canceling" {
+        finalize_cancellation(&transaction, &request.run_id)?;
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to commit WAN cancellation: {error}"))?;
+        return get_run_detail(paths, &request.run_id);
+    }
+    if status != "running" {
+        return Err(format!(
+            "local WAN generation cannot publish from {status} state"
+        ));
+    }
+    let timestamp = now();
+    transaction
+        .execute(
+            "INSERT INTO blobs(digest, byte_size, mime_type, relative_path, created_at, available)
+             VALUES (?1, ?2, 'video/webm', ?3, ?4, 1)
+             ON CONFLICT(digest) DO UPDATE SET
+               byte_size = excluded.byte_size,
+               mime_type = excluded.mime_type,
+               relative_path = excluded.relative_path,
+               available = 1",
+            params![
+                video.digest,
+                video.byte_size as i64,
+                video.relative_path,
+                timestamp,
+            ],
+        )
+        .map_err(|error| format!("failed to register WAN video blob: {error}"))?;
+    let operation_json = serde_json::json!({
+        "kind": "local-wan-video-generation",
+        "providerId": "local-wan",
+        "modelId": request.model_id,
+        "flowRevisionId": request.flow_revision_id,
+        "modelRevision": video.model_revision,
+        "modelDigest": video.model_digest,
+        "workerVersion": video.worker_version,
+        "packages": video.packages,
+        "device": video.device,
+        "deviceLabel": video.device_label,
+        "deviceMemoryBytes": video.device_memory_bytes,
+        "performance": video.performance,
+        "conv3dBackend": video.conv3d_backend,
+        "conditioningMode": video.conditioning_mode,
+        "conditioningFraming": video.conditioning_framing,
+        "endpointRestoration": video.endpoint_restoration,
+        "loopEndpointRestoration": video.loop_endpoint_restoration,
+        "prompt": video.prompt,
+        "negativePrompt": video.negative_prompt,
+        "resolution": video.resolution,
+        "guidanceScale": video.guidance_scale,
+        "numInferenceSteps": video.num_inference_steps,
+        "transparentBackground": video.transparent_background,
+        "memoryProfile": video.memory_profile,
+        "firstFrameAssetId": request.first_frame_asset_id,
+        "firstFrameDigest": video.first_frame_digest,
+        "lastFrameAssetId": request.last_frame_asset_id,
+        "lastFrameDigest": video.last_frame_digest,
+        "sameEndpointConditioning": video.first_frame_digest == video.last_frame_digest,
+        "output": video.output,
+    })
+    .to_string();
+    let asset_id = format!("asset:{}:0", request.run_id);
+    transaction
+        .execute(
+            "INSERT INTO assets(id, run_id, blob_digest, kind, mime_type, byte_size, width, height,
+               created_at, output_index, fixture, operation_json)
+             VALUES (?1, ?2, ?3, 'video', 'video/webm', ?4, ?5, ?6, ?7, 0, 0, ?8)",
+            params![
+                asset_id,
+                request.run_id,
+                video.digest,
+                video.byte_size as i64,
+                video.output.width,
+                video.output.height,
+                timestamp,
+                operation_json,
+            ],
+        )
+        .map_err(|error| format!("failed to register WAN video asset: {error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, 'first-frame')",
+            params![asset_id, request.first_frame_asset_id],
+        )
+        .map_err(|error| format!("failed to register WAN first-frame lineage: {error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, 'last-frame')",
+            params![asset_id, request.last_frame_asset_id],
+        )
+        .map_err(|error| format!("failed to register WAN last-frame lineage: {error}"))?;
+    let mut technical_tags = vec![("wan2-2-ti2v", "Wan2.2 TI2V")];
+    if video.transparent_background {
+        technical_tags.extend([
+            ("transparent-video", "Transparent video"),
+            ("vp9-alpha", "VP9 alpha"),
+        ]);
+    } else {
+        technical_tags.push(("opaque-video", "Opaque video"));
+    }
+    technical_tags.push(match request.loop_mode.as_str() {
+        "ping-pong" => ("ping-pong-loop", "Ping-pong loop"),
+        "seamless" => ("seamless-loop", "Seamless loop"),
+        _ => ("non-looping-shot", "Non-looping shot"),
+    });
+    for (tag, label) in technical_tags {
+        transaction
+            .execute(
+                "INSERT OR REPLACE INTO asset_tags(asset_id, normalized_tag, display_tag, source, confidence, created_at)
+                 VALUES (?1, ?2, ?3, 'technical', 1.0, ?4)",
+                params![asset_id, tag, label, timestamp],
+            )
+            .map_err(|error| format!("failed to tag WAN video asset: {error}"))?;
+    }
+    if let (
+        Some(composite_digest),
+        Some(composite_relative_path),
+        Some(composite_byte_size),
+        Some(composite_output),
+    ) = (
+        video.composite_digest.as_ref(),
+        video.composite_relative_path.as_ref(),
+        video.composite_byte_size,
+        video.composite_output.as_ref(),
+    ) {
+        transaction
+            .execute(
+                "INSERT INTO blobs(digest, byte_size, mime_type, relative_path, created_at, available)
+                 VALUES (?1, ?2, 'video/webm', ?3, ?4, 1)
+                 ON CONFLICT(digest) DO UPDATE SET
+                   byte_size = excluded.byte_size,
+                   mime_type = excluded.mime_type,
+                   relative_path = excluded.relative_path,
+                   available = 1",
+                params![
+                    composite_digest,
+                    composite_byte_size as i64,
+                    composite_relative_path,
+                    timestamp,
+                ],
+            )
+            .map_err(|error| {
+                format!("failed to register WAN composite video blob: {error}")
+            })?;
+        let composite_operation_json = serde_json::json!({
+            "kind": "local-wan-video-generation",
+            "providerId": "local-wan",
+            "modelId": request.model_id,
+            "flowRevisionId": request.flow_revision_id,
+            "modelRevision": video.model_revision,
+            "modelDigest": video.model_digest,
+            "workerVersion": video.worker_version,
+            "packages": video.packages,
+            "device": video.device,
+            "deviceLabel": video.device_label,
+            "deviceMemoryBytes": video.device_memory_bytes,
+            "performance": video.performance,
+            "conv3dBackend": video.conv3d_backend,
+            "conditioningMode": video.conditioning_mode,
+            "conditioningFraming": video.conditioning_framing,
+            "endpointRestoration": video.endpoint_restoration,
+            "loopEndpointRestoration": video.loop_endpoint_restoration,
+            "prompt": video.prompt,
+            "negativePrompt": video.negative_prompt,
+            "resolution": video.resolution,
+            "guidanceScale": video.guidance_scale,
+            "numInferenceSteps": video.num_inference_steps,
+            "transparentBackground": video.transparent_background,
+            "memoryProfile": video.memory_profile,
+            "firstFrameAssetId": request.first_frame_asset_id,
+            "firstFrameDigest": video.first_frame_digest,
+            "lastFrameAssetId": request.last_frame_asset_id,
+            "lastFrameDigest": video.last_frame_digest,
+            "sameEndpointConditioning": video.first_frame_digest == video.last_frame_digest,
+            "sourceTransparentVideoAssetId": asset_id,
+            "sourceTransparentVideoDigest": video.digest,
+            "output": composite_output,
+        })
+        .to_string();
+        let composite_asset_id = format!("asset:{}:1", request.run_id);
+        transaction
+            .execute(
+                "INSERT INTO assets(id, run_id, blob_digest, kind, mime_type, byte_size, width, height,
+                   created_at, output_index, fixture, operation_json)
+                 VALUES (?1, ?2, ?3, 'video', 'video/webm', ?4, ?5, ?6, ?7, 1, 0, ?8)",
+                params![
+                    composite_asset_id,
+                    request.run_id,
+                    composite_digest,
+                    composite_byte_size as i64,
+                    composite_output.width,
+                    composite_output.height,
+                    timestamp,
+                    composite_operation_json,
+                ],
+            )
+            .map_err(|error| {
+                format!("failed to register WAN composite video asset: {error}")
+            })?;
+        transaction
+            .execute(
+                "INSERT INTO asset_inputs(asset_id, input_asset_id, role)
+                 VALUES (?1, ?2, 'transparent-foreground-video')",
+                params![composite_asset_id, asset_id],
+            )
+            .map_err(|error| format!("failed to register WAN composite lineage: {error}"))?;
+        let mut composite_tags = vec![
+            ("animated-background", "Animated background"),
+            ("composited-video", "Composited video"),
+            ("wan2-2-ti2v", "Wan2.2 TI2V"),
+        ];
+        composite_tags.push(match request.loop_mode.as_str() {
+            "ping-pong" => ("ping-pong-loop", "Ping-pong loop"),
+            "seamless" => ("seamless-loop", "Seamless loop"),
+            _ => ("non-looping-shot", "Non-looping shot"),
+        });
+        for (tag, label) in composite_tags {
+            transaction
+                .execute(
+                    "INSERT OR REPLACE INTO asset_tags(asset_id, normalized_tag, display_tag, source, confidence, created_at)
+                     VALUES (?1, ?2, ?3, 'technical', 1.0, ?4)",
+                    params![composite_asset_id, tag, label, timestamp],
+                )
+                .map_err(|error| {
+                    format!("failed to tag WAN composite video asset: {error}")
+                })?;
+        }
+    } else if video.composite_digest.is_some()
+        || video.composite_relative_path.is_some()
+        || video.composite_byte_size.is_some()
+        || video.composite_output.is_some()
+    {
+        return Err("WAN composite publication evidence is incomplete".to_string());
+    }
+    let delivery_label = if video.transparent_background {
+        "alpha"
+    } else {
+        "opaque"
+    };
+    let ending_label = match request.loop_mode.as_str() {
+        "seamless" => "seamless-loop",
+        "ping-pong" => "ping-pong-loop",
+        _ => "one-way-shot",
+    };
+    append_event(
+        &transaction,
+        &request.run_id,
+        "video_generated",
+        &format!(
+            "WAN conditioned on immutable first and last frames, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps with {:.3} source and {:.3} decoded endpoint MAE.",
+            video.output.source_frame_count,
+            video.output.frame_count,
+            video.output.fps,
+            video.output.loop_endpoint_mae,
+            video.output.decoded_loop_endpoint_mae,
+        ),
+        Some(0.92),
+        Some("local-wan.generate"),
+    )?;
+    append_event(
+        &transaction,
+        &request.run_id,
+        "asset_published",
+        if video.transparent_background {
+            "The WebM container decoded with a verified non-opaque alpha plane and was ingested into immutable CAS."
+        } else {
+            "The opaque WebM container decoded with the expected dimensions and frame count and was ingested into immutable CAS."
+        },
+        Some(0.98),
+        Some("asset.publish"),
+    )?;
+    if video.composite_output.is_some() {
+        append_event(
+            &transaction,
+            &request.run_id,
+            "asset_published",
+            "The transparent master was composited frame-by-frame over the requested animated background and the opaque VP9 companion was ingested into immutable CAS.",
+            Some(0.99),
+            Some("video.composite"),
+        )?;
+    }
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to commit local WAN publication: {error}"))?;
     complete_run(paths, &request.run_id)?;
     get_run_detail(paths, &request.run_id)
 }
@@ -3833,6 +4566,12 @@ pub(crate) fn complete_run(paths: &MediaRuntimePaths, run_id: &str) -> MediaResu
             "openai-image-edit-api" => {
                 "All edited OpenAI image outputs passed bounded decode, lineage, and immutable CAS publication checks."
             }
+            "local-wan-video" => {
+                "The WAN output passed WebM, VP9 alpha-plane, immutable lineage, and loop-endpoint validation."
+            }
+            "local-diffusers" => {
+                "All local image outputs passed bounded decode, add-on evidence, cutout, and immutable CAS publication checks."
+            }
             _ => "All fixture outputs passed decode and CAS ingestion checks.",
         };
         return update_terminal_run(
@@ -4500,7 +5239,7 @@ pub(crate) fn list_runs(paths: &MediaRuntimePaths, limit: u32) -> MediaResult<Ve
         .prepare(
             "SELECT id, flow_id, flow_name, plan_id, status, created_at, updated_at, prompt, model_label, target,\n\
                     output_count, diagnostic_count, progress, current_step, executor, error, flow_revision_id\n\
-             FROM runs ORDER BY created_at DESC LIMIT ?1",
+             FROM runs ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT ?1",
         )
         .map_err(|error| format!("failed to prepare media run query: {error}"))?;
     let runs = statement
@@ -4509,6 +5248,80 @@ pub(crate) fn list_runs(paths: &MediaRuntimePaths, limit: u32) -> MediaResult<Ve
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to decode media runs: {error}"))?;
     Ok(runs)
+}
+
+pub(crate) fn list_run_page(
+    paths: &MediaRuntimePaths,
+    offset: u32,
+    limit: u32,
+    known_revision: Option<&str>,
+) -> MediaResult<MediaRunPage> {
+    let mut connection = open(paths)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("failed to begin run history snapshot: {error}"))?;
+    let (instance_id, revision_number) = transaction
+        .query_row(
+            "SELECT instance_id, revision FROM media_catalog_revisions
+             WHERE catalog = 'run-library'",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .map_err(|error| format!("failed to read run history revision: {error}"))?;
+    if revision_number < 1 {
+        return Err("run history revision is invalid".to_string());
+    }
+    let revision = format!("{instance_id}:{revision_number}");
+
+    if offset == 0 && known_revision == Some(revision.as_str()) {
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to finish unchanged run history snapshot: {error}"))?;
+        return Ok(MediaRunPage {
+            schema_version: 1,
+            revision,
+            offset,
+            total_items: None,
+            unchanged: true,
+            items: Vec::new(),
+        });
+    }
+
+    let total_items_i64 = transaction
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get::<_, i64>(0))
+        .map_err(|error| format!("failed to count media runs: {error}"))?;
+    let total_items = u32::try_from(total_items_i64)
+        .map_err(|_| "run history contains more entries than Studio can address".to_string())?;
+    let items = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id, flow_id, flow_name, plan_id, status, created_at, updated_at,
+                        prompt, model_label, target, output_count, diagnostic_count, progress,
+                        current_step, executor, error, flow_revision_id
+                 FROM runs
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|error| format!("failed to prepare media run page query: {error}"))?;
+        let runs = statement
+            .query_map(params![limit, offset], map_run)
+            .map_err(|error| format!("failed to query media run page: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode media run page: {error}"))?;
+        runs
+    };
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to finish run history snapshot: {error}"))?;
+
+    Ok(MediaRunPage {
+        schema_version: 1,
+        revision,
+        offset,
+        total_items: Some(total_items),
+        unchanged: false,
+        items,
+    })
 }
 
 pub(crate) fn get_run_detail(
@@ -4558,38 +5371,117 @@ pub(crate) fn get_run_detail(
     })
 }
 
-pub(crate) fn list_assets(
-    paths: &MediaRuntimePaths,
+const VISIBLE_ASSET_FILTER: &str = "
+  a.deleted_at IS NULL
+  AND (
+    NOT EXISTS (SELECT 1 FROM human_reviews hr WHERE hr.run_id = a.run_id)
+    OR (r.status = 'completed' AND EXISTS (
+      SELECT 1 FROM human_reviews hr
+      JOIN human_review_decisions d ON d.review_id = hr.id
+      JOIN json_each(d.selected_asset_ids_json) selected
+      WHERE hr.run_id = a.run_id AND d.action = 'approve'
+        AND hr.sequence = (
+          SELECT MAX(last_hr.sequence)
+          FROM human_reviews last_hr
+          WHERE last_hr.run_id = a.run_id
+        )
+        AND selected.value = a.id
+    ))
+  )";
+
+fn query_visible_assets(
+    connection: &Connection,
+    offset: u32,
     limit: u32,
 ) -> MediaResult<Vec<MediaAssetRecord>> {
-    let connection = open(paths)?;
+    let query = format!(
+        "SELECT a.id, a.run_id, a.blob_digest, a.kind, a.mime_type, a.byte_size, \
+                a.width, a.height, a.created_at, a.output_index, a.fixture, a.operation_json
+         FROM assets a JOIN runs r ON r.id = a.run_id
+         WHERE {VISIBLE_ASSET_FILTER}
+         ORDER BY r.created_at DESC, r.id DESC, a.output_index ASC, a.id ASC
+         LIMIT ?1 OFFSET ?2"
+    );
     let mut statement = connection
-        .prepare(
-            "SELECT a.id, a.run_id, a.blob_digest, a.kind, a.mime_type, a.byte_size, a.width, a.height, a.created_at, a.output_index, a.fixture, a.operation_json\n\
-             FROM assets a JOIN runs r ON r.id = a.run_id\n\
-             WHERE a.deleted_at IS NULL\n\
-               AND (\n\
-                 NOT EXISTS (SELECT 1 FROM human_reviews hr WHERE hr.run_id = a.run_id)\n\
-                 OR (r.status = 'completed' AND EXISTS (\n\
-                   SELECT 1 FROM human_reviews hr\n\
-                   JOIN human_review_decisions d ON d.review_id = hr.id\n\
-                   JOIN json_each(d.selected_asset_ids_json) selected\n\
-                   WHERE hr.run_id = a.run_id AND d.action = 'approve'\n\
-                     AND hr.sequence = (SELECT MAX(last_hr.sequence) FROM human_reviews last_hr WHERE last_hr.run_id = a.run_id)\n\
-                     AND selected.value = a.id\n\
-                 ))\n\
-               )\n\
-             ORDER BY r.created_at DESC, a.output_index ASC LIMIT ?1",
-        )
+        .prepare(&query)
         .map_err(|error| format!("failed to prepare media asset query: {error}"))?;
     let mut assets = statement
-        .query_map(params![limit], map_asset)
+        .query_map(params![limit, offset], map_asset)
         .map_err(|error| format!("failed to query media assets: {error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to decode media assets: {error}"))?;
     attach_asset_inputs(&connection, &mut assets)?;
     attach_asset_tags(&connection, &mut assets)?;
     Ok(assets)
+}
+
+pub(crate) fn list_assets(
+    paths: &MediaRuntimePaths,
+    limit: u32,
+) -> MediaResult<Vec<MediaAssetRecord>> {
+    query_visible_assets(&open(paths)?, 0, limit)
+}
+
+pub(crate) fn list_asset_page(
+    paths: &MediaRuntimePaths,
+    offset: u32,
+    limit: u32,
+    known_revision: Option<&str>,
+) -> MediaResult<MediaAssetPage> {
+    let mut connection = open(paths)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("failed to begin asset library snapshot: {error}"))?;
+    let (instance_id, revision_number) = transaction
+        .query_row(
+            "SELECT instance_id, revision FROM media_catalog_revisions
+             WHERE catalog = 'asset-library'",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .map_err(|error| format!("failed to read asset library revision: {error}"))?;
+    if revision_number < 1 {
+        return Err("asset library revision is invalid".to_string());
+    }
+    let revision = format!("{instance_id}:{revision_number}");
+
+    if offset == 0 && known_revision == Some(revision.as_str()) {
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to finish unchanged asset snapshot: {error}"))?;
+        return Ok(MediaAssetPage {
+            schema_version: 1,
+            revision,
+            offset,
+            total_items: None,
+            unchanged: true,
+            items: Vec::new(),
+        });
+    }
+
+    let count_query = format!(
+        "SELECT COUNT(*)
+         FROM assets a JOIN runs r ON r.id = a.run_id
+         WHERE {VISIBLE_ASSET_FILTER}"
+    );
+    let total_items_i64 = transaction
+        .query_row(&count_query, [], |row| row.get::<_, i64>(0))
+        .map_err(|error| format!("failed to count visible media assets: {error}"))?;
+    let total_items = u32::try_from(total_items_i64)
+        .map_err(|_| "asset library contains more entries than Studio can address".to_string())?;
+    let items = query_visible_assets(&transaction, offset, limit)?;
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to finish asset library snapshot: {error}"))?;
+
+    Ok(MediaAssetPage {
+        schema_version: 1,
+        revision,
+        offset,
+        total_items: Some(total_items),
+        unchanged: false,
+        items,
+    })
 }
 
 pub(crate) fn set_user_asset_tags(
@@ -5909,22 +6801,33 @@ fn attach_asset_inputs(
         .enumerate()
         .map(|(index, asset)| (asset.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut statement = connection
-        .prepare(
+    let asset_ids = assets
+        .iter()
+        .map(|asset| asset.id.clone())
+        .collect::<Vec<_>>();
+    for chunk in asset_ids.chunks(250) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query = format!(
             "SELECT asset_id, input_asset_id FROM asset_inputs
-             ORDER BY asset_id, role, input_asset_id",
-        )
-        .map_err(|error| format!("failed to prepare asset lineage query: {error}"))?;
-    let inputs = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| format!("failed to query asset lineage: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to decode asset lineage: {error}"))?;
-    for (asset_id, input_asset_id) in inputs {
-        if let Some(index) = indices.get(&asset_id) {
-            assets[*index].source_asset_ids.push(input_asset_id);
+             WHERE asset_id IN ({placeholders})
+             ORDER BY asset_id, role, input_asset_id"
+        );
+        let mut statement = connection
+            .prepare(&query)
+            .map_err(|error| format!("failed to prepare asset lineage query: {error}"))?;
+        let inputs = statement
+            .query_map(params_from_iter(chunk.iter()), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| format!("failed to query asset lineage: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode asset lineage: {error}"))?;
+        for (asset_id, input_asset_id) in inputs {
+            if let Some(index) = indices.get(&asset_id) {
+                assets[*index].source_asset_ids.push(input_asset_id);
+            }
         }
     }
     Ok(())
@@ -5939,31 +6842,43 @@ fn attach_asset_tags(connection: &Connection, assets: &mut [MediaAssetRecord]) -
         .enumerate()
         .map(|(index, asset)| (asset.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut statement = connection
-        .prepare(
-            "SELECT asset_id, normalized_tag, display_tag, source, confidence, created_at\n\
-             FROM asset_tags ORDER BY normalized_tag, source",
-        )
-        .map_err(|error| format!("failed to prepare asset tag query: {error}"))?;
-    let tags = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                MediaAssetTag {
-                    value: row.get(1)?,
-                    label: row.get(2)?,
-                    source: row.get(3)?,
-                    confidence: row.get(4)?,
-                    created_at: row.get(5)?,
-                },
-            ))
-        })
-        .map_err(|error| format!("failed to query asset tags: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to decode asset tags: {error}"))?;
-    for (asset_id, tag) in tags {
-        if let Some(index) = indices.get(&asset_id) {
-            assets[*index].tags.push(tag);
+    let asset_ids = assets
+        .iter()
+        .map(|asset| asset.id.clone())
+        .collect::<Vec<_>>();
+    for chunk in asset_ids.chunks(250) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query = format!(
+            "SELECT asset_id, normalized_tag, display_tag, source, confidence, created_at
+             FROM asset_tags
+             WHERE asset_id IN ({placeholders})
+             ORDER BY normalized_tag, source"
+        );
+        let mut statement = connection
+            .prepare(&query)
+            .map_err(|error| format!("failed to prepare asset tag query: {error}"))?;
+        let tags = statement
+            .query_map(params_from_iter(chunk.iter()), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    MediaAssetTag {
+                        value: row.get(1)?,
+                        label: row.get(2)?,
+                        source: row.get(3)?,
+                        confidence: row.get(4)?,
+                        created_at: row.get(5)?,
+                    },
+                ))
+            })
+            .map_err(|error| format!("failed to query asset tags: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode asset tags: {error}"))?;
+        for (asset_id, tag) in tags {
+            if let Some(index) = indices.get(&asset_id) {
+                assets[*index].tags.push(tag);
+            }
         }
     }
     Ok(())
@@ -6394,6 +7309,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use sha2::{Digest as _, Sha256};
+
     use super::*;
 
     fn test_paths(label: &str) -> MediaRuntimePaths {
@@ -6473,6 +7390,14 @@ mod tests {
             model_addons: Vec::new(),
             transparent_background: false,
             subject_cutout_model_priority: Vec::new(),
+            negative_prompt: String::new(),
+            reference_image_asset_id: None,
+            edit_strength: None,
+            reference_boost: None,
+            require_chroma_background: false,
+            grounding_pixels: None,
+            reference_fit: None,
+            memory_profile: Some("auto".to_string()),
             plan_snapshot: plan_snapshot(),
         }
     }
@@ -6612,6 +7537,293 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    fn prepare_wan_publication(
+        paths: &MediaRuntimePaths,
+        run_id: &str,
+        animated_background: Option<crate::media::MediaAnimatedBackgroundConfig>,
+    ) -> GenerateMediaVideoRequest {
+        initialize(paths).unwrap();
+        insert_openai_test_revision(paths);
+        enqueue_fixture_run(paths, &request("run:wan-source")).unwrap();
+        record_fixture_asset(
+            paths,
+            "run:wan-source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aa/source.png",
+            64,
+            (512, 288),
+        );
+        let request = GenerateMediaVideoRequest {
+            schema_version: 1,
+            run_id: run_id.to_string(),
+            flow_id: "flow-1".to_string(),
+            flow_revision_id: "revision:openai-test".to_string(),
+            flow_name: "WAN publication fixture".to_string(),
+            plan_id: "plan-1".to_string(),
+            prompt: "Animate the immutable endpoint".to_string(),
+            model_id: "local:wan2.2-ti2v-5b".to_string(),
+            model_label: "Wan2.2 TI2V 5B".to_string(),
+            diagnostic_count: 0,
+            workspace_root: paths.database.parent().unwrap().display().to_string(),
+            first_frame_asset_id: "asset:run:wan-source:0".to_string(),
+            last_frame_asset_id: "asset:run:wan-source:0".to_string(),
+            aspect_ratio: "16:9".to_string(),
+            resolution: "preview-512".to_string(),
+            output_format: "webm".to_string(),
+            transparent_background: true,
+            loop_mode: "ping-pong".to_string(),
+            fps: 8,
+            num_frames: 17,
+            num_inference_steps: 4,
+            guidance_scale: 5.0,
+            seed: 7,
+            negative_prompt: String::new(),
+            matte_quality: "production".to_string(),
+            encoding_quality: "production".to_string(),
+            memory_profile: "auto".to_string(),
+            experimental_low_memory: true,
+            animated_background,
+            plan_snapshot: plan_snapshot(),
+        };
+        assert!(begin_local_wan_generation(paths, &request).unwrap());
+        request
+    }
+
+    fn generated_wan_video(
+        digest: String,
+        relative_path: String,
+        byte_size: u64,
+    ) -> LocalGeneratedVideo {
+        let output = serde_json::from_value(serde_json::json!({
+            "index": 0,
+            "fileName": "output-0000.webm",
+            "seed": 7,
+            "width": 512,
+            "height": 288,
+            "frameCount": 33,
+            "sourceFrameCount": 17,
+            "fps": 8,
+            "durationSeconds": 4.125,
+            "alphaMinimum": 0,
+            "alphaMaximum": 255,
+            "decodedAlphaMinimum": 0,
+            "decodedAlphaMaximum": 255,
+            "decodedFrameCount": 33,
+            "decodedLoopEndpointMae": 0.01,
+            "decodedAlphaLoopEndpointMae": 0.01,
+            "loopMode": "ping-pong",
+            "loopEndpointMae": 0.0,
+            "hasAlpha": true,
+            "matte": {"engine": "test-matte"},
+            "encodingQuality": "production",
+            "codec": "vp9",
+            "container": "webm"
+        }))
+        .unwrap();
+        LocalGeneratedVideo {
+            digest,
+            relative_path,
+            byte_size,
+            first_frame_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
+            last_frame_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
+            worker_version: "test-worker/1".to_string(),
+            packages: std::collections::HashMap::new(),
+            device: "test".to_string(),
+            device_label: "Test device".to_string(),
+            device_memory_bytes: None,
+            performance: Some(serde_json::json!({"profile": "test"})),
+            conv3d_backend: "test".to_string(),
+            conditioning_mode: "first-last-temporal-context-lock-v3".to_string(),
+            conditioning_framing: None,
+            endpoint_restoration: None,
+            loop_endpoint_restoration: None,
+            model_revision: "test-revision".to_string(),
+            model_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                .to_string(),
+            prompt: "Animate the immutable endpoint".to_string(),
+            negative_prompt: "test negative prompt".to_string(),
+            resolution: "preview-512".to_string(),
+            guidance_scale: 5.0,
+            num_inference_steps: 4,
+            transparent_background: true,
+            memory_profile: "auto".to_string(),
+            output,
+            composite_digest: None,
+            composite_relative_path: None,
+            composite_byte_size: None,
+            composite_output: None,
+        }
+    }
+
+    #[test]
+    fn local_wan_publication_rejects_a_blob_outside_the_canonical_cas_root() {
+        let mut paths = test_paths("wan-wrong-cas-root");
+        paths.blobs = paths.blobs.join("sha256");
+        let request = prepare_wan_publication(&paths, "run:wan-wrong-cas-root", None);
+        let bytes = b"\x1a\x45\xdf\xa3test-wan-video";
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        let relative_path = transform::cas_relative_path(&digest);
+        let misplaced_path = paths.blobs.parent().unwrap().join(&relative_path);
+        fs::create_dir_all(misplaced_path.parent().unwrap()).unwrap();
+        fs::write(&misplaced_path, bytes).unwrap();
+        let video = generated_wan_video(
+            digest,
+            relative_path.to_string_lossy().into_owned(),
+            bytes.len() as u64,
+        );
+
+        let error = complete_local_wan_generation(&paths, &request, &video).unwrap_err();
+
+        assert!(error.contains("not durably available in the managed CAS"));
+        assert!(error.contains("missing from managed content-addressed storage"));
+        assert!(!paths.blobs.join(&relative_path).exists());
+        assert!(get_asset_blob_source(&paths, "asset:run:wan-wrong-cas-root:0").is_err());
+        fail_run(&paths, &request.run_id, &error).unwrap();
+        let detail = get_run_detail(&paths, &request.run_id).unwrap();
+        assert_eq!(detail.run.status, "failed");
+        assert_eq!(detail.run.error.as_deref(), Some(error.as_str()));
+        assert!(detail.assets.is_empty());
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn local_wan_publication_requires_the_requested_composite_blob() {
+        let mut paths = test_paths("wan-missing-composite");
+        paths.blobs = paths.blobs.join("sha256");
+        let request = prepare_wan_publication(
+            &paths,
+            "run:wan-missing-composite",
+            Some(crate::media::MediaAnimatedBackgroundConfig {
+                style: "gradient-wave".to_string(),
+                direction: "diagonal".to_string(),
+                color_start: "#172554".to_string(),
+                color_end: "#7c3aed".to_string(),
+                cycles: 1,
+            }),
+        );
+        let transparent_bytes = b"\x1a\x45\xdf\xa3durable-transparent-wan-video";
+        let transparent_digest = format!("{:x}", Sha256::digest(transparent_bytes));
+        let transparent_relative_path = transform::cas_relative_path(&transparent_digest);
+        transform::publish_cas_bytes(
+            &paths,
+            &transparent_relative_path,
+            &transparent_digest,
+            transparent_bytes,
+        )
+        .unwrap();
+        let missing_composite_bytes = b"\x1a\x45\xdf\xa3missing-composite-wan-video";
+        let missing_composite_digest = format!("{:x}", Sha256::digest(missing_composite_bytes));
+        let missing_composite_relative_path =
+            transform::cas_relative_path(&missing_composite_digest);
+        let mut video = generated_wan_video(
+            transparent_digest,
+            transparent_relative_path.to_string_lossy().into_owned(),
+            transparent_bytes.len() as u64,
+        );
+        video.composite_digest = Some(missing_composite_digest);
+        video.composite_relative_path = Some(
+            missing_composite_relative_path
+                .to_string_lossy()
+                .into_owned(),
+        );
+        video.composite_byte_size = Some(missing_composite_bytes.len() as u64);
+        video.composite_output = Some(
+            serde_json::from_value(serde_json::json!({
+                "index": 1,
+                "fileName": "output-0001.webm",
+                "seed": 7,
+                "width": 512,
+                "height": 288,
+                "frameCount": 33,
+                "fps": 8,
+                "durationSeconds": 4.125,
+                "hasAlpha": false,
+                "loopMode": "ping-pong",
+                "loopEndpointMae": 0.0,
+                "decodedFrameCount": 33,
+                "decodedLoopEndpointMae": 0.01,
+                "encodingQuality": "production",
+                "codec": "vp9",
+                "container": "webm",
+                "background": {
+                    "engine": "animated-gradient-v1",
+                    "style": "gradient-wave",
+                    "direction": "diagonal",
+                    "colorStart": "#172554",
+                    "colorEnd": "#7c3aed",
+                    "cycles": 1
+                }
+            }))
+            .unwrap(),
+        );
+
+        let error = complete_local_wan_generation(&paths, &request, &video).unwrap_err();
+
+        assert!(error.contains("composited WAN video"));
+        assert!(error.contains("not durably available in the managed CAS"));
+        assert!(error.contains("missing from managed content-addressed storage"));
+        assert!(get_asset_blob_source(&paths, "asset:run:wan-missing-composite:0").is_err());
+        assert!(get_asset_blob_source(&paths, "asset:run:wan-missing-composite:1").is_err());
+        fail_run(&paths, &request.run_id, &error).unwrap();
+        let detail = get_run_detail(&paths, &request.run_id).unwrap();
+        assert_eq!(detail.run.status, "failed");
+        assert_eq!(detail.run.error.as_deref(), Some(error.as_str()));
+        assert!(detail.assets.is_empty());
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn local_wan_publication_repairs_blob_metadata_and_supports_preview_and_export() {
+        let mut paths = test_paths("wan-durable-delivery");
+        paths.blobs = paths.blobs.join("sha256");
+        let request = prepare_wan_publication(&paths, "run:wan-durable-delivery", None);
+        let bytes = b"\x1a\x45\xdf\xa3durable-test-wan-video";
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        let relative_path = transform::cas_relative_path(&digest);
+        transform::publish_cas_bytes(&paths, &relative_path, &digest, bytes).unwrap();
+        open(&paths)
+            .unwrap()
+            .execute(
+                "INSERT INTO blobs(digest, byte_size, mime_type, relative_path, created_at, available)
+                 VALUES (?1, 1, 'application/octet-stream', 'legacy/missing', ?2, 0)",
+                params![digest, now()],
+            )
+            .unwrap();
+        let video = generated_wan_video(
+            digest.clone(),
+            relative_path.to_string_lossy().into_owned(),
+            bytes.len() as u64,
+        );
+
+        let detail = complete_local_wan_generation(&paths, &request, &video).unwrap();
+
+        assert_eq!(detail.run.status, "completed");
+        assert_eq!(detail.assets.len(), 1);
+        let source = get_asset_blob_source(&paths, &detail.assets[0].id).unwrap();
+        assert_eq!(source.relative_path, relative_path.to_string_lossy());
+        assert_eq!(source.byte_size, bytes.len() as u64);
+        assert_eq!(source.mime_type, "video/webm");
+        assert_eq!(
+            transform::read_asset_preview(&paths, &detail.assets[0].id, 512).unwrap(),
+            bytes
+        );
+        let destination = paths.database.parent().unwrap().join("exported.webm");
+        let export = crate::media::exporting::export_asset(
+            &paths,
+            &crate::media::MediaAssetExportRequest {
+                asset_id: detail.assets[0].id.clone(),
+                destination_path: destination.display().to_string(),
+                mode: MediaAssetExportMode::VerifiedOriginal,
+            },
+        )
+        .unwrap();
+        assert_eq!(export.digest, digest);
+        assert_eq!(fs::read(destination).unwrap(), bytes);
+        cleanup(&paths);
     }
 
     #[test]
@@ -6952,6 +8164,32 @@ mod tests {
             text_encoder_strength: Some(0.5),
             denoising_schedule: None,
         }];
+        request.plan_snapshot.nodes.extend([
+            crate::media::MediaRunPlanNodeSnapshot {
+                id: "node:video".to_string(),
+                r#type: "task.generate-video".to_string(),
+                label: "Animate endpoint".to_string(),
+                layer: "task".to_string(),
+            },
+            crate::media::MediaRunPlanNodeSnapshot {
+                id: "node:background".to_string(),
+                r#type: "source.animated-background".to_string(),
+                label: "Animated background".to_string(),
+                layer: "source".to_string(),
+            },
+            crate::media::MediaRunPlanNodeSnapshot {
+                id: "node:composite".to_string(),
+                r#type: "operation.video-composite".to_string(),
+                label: "Composite video".to_string(),
+                layer: "operation".to_string(),
+            },
+            crate::media::MediaRunPlanNodeSnapshot {
+                id: "node:video-output".to_string(),
+                r#type: "output.video".to_string(),
+                label: "Publish video".to_string(),
+                layer: "output".to_string(),
+            },
+        ]);
         assert!(begin_local_diffusers_generation(&paths, &request).unwrap());
         let batch = LocalGeneratedImageBatch {
             assets: vec![provider_openai::GeneratedImageAsset {
@@ -6974,6 +8212,9 @@ mod tests {
                 model_digest: "m".repeat(64),
                 prompt: request.prompt.clone(),
                 negative_prompt: String::new(),
+                model_policy: request.model_policy.clone(),
+                aspect_ratio: request.aspect_ratio.clone(),
+                num_inference_steps: 24,
                 addons: vec![serde_json::json!({
                     "kind": "lora",
                     "addonId": "addon:lora-digest",
@@ -6982,6 +8223,11 @@ mod tests {
                     "textEncoderStrength": 0.5,
                     "adapterName": "machdoch_aaaaaaaaaaaaaaaa"
                 })],
+                performance: None,
+                require_chroma_background: false,
+                edit_conditioning: None,
+                reference_image_asset_id: None,
+                reference_image_digest: None,
                 outputs: vec![
                     crate::media::provider_local_diffusers::LocalDiffusersOutputProvenance {
                         index: 0,
@@ -7005,6 +8251,24 @@ mod tests {
             "machdoch_aaaaaaaaaaaaaaaa"
         );
         assert_eq!(operation["output"]["seed"], 42);
+        let deferred = detail
+            .node_executions
+            .iter()
+            .filter(|node| {
+                matches!(
+                    node.node_type.as_str(),
+                    "task.generate-video"
+                        | "source.animated-background"
+                        | "operation.video-composite"
+                        | "output.video"
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(deferred.len(), 4);
+        assert!(deferred.iter().all(|node| node.status == "skipped"));
+        assert!(deferred
+            .iter()
+            .all(|node| { node.runtime_phase.as_deref() == Some("connected-stage.deferred") }));
         cleanup(&paths);
     }
 
@@ -7311,7 +8575,7 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 7);
-        assert_eq!(initial.models.len(), 11);
+        assert_eq!(initial.models.len(), 12);
         assert!(
             initial
                 .models
@@ -7438,6 +8702,135 @@ mod tests {
             .unwrap();
         assert_eq!(revisions, 2);
         drop(connection);
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn asset_pages_expose_the_complete_library_and_invalidate_by_revision() {
+        let paths = test_paths("asset-pages");
+        initialize(&paths).unwrap();
+        let mut run_request = request("run-asset-pages");
+        run_request.output_count = 205;
+        enqueue_fixture_run(&paths, &run_request).unwrap();
+
+        let timestamp = now();
+        let mut connection = open(&paths).unwrap();
+        let transaction = connection.transaction().unwrap();
+        for output_index in 0..205_u32 {
+            let digest = format!("{output_index:064x}");
+            let relative_path = format!("pages/{output_index}.png");
+            transaction
+                .execute(
+                    "INSERT INTO blobs(
+                       digest, byte_size, mime_type, relative_path, created_at
+                     ) VALUES (?1, 128, 'image/png', ?2, ?3)",
+                    params![digest, relative_path, timestamp],
+                )
+                .unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO assets(
+                       id, run_id, blob_digest, kind, mime_type, byte_size, width, height,
+                       created_at, output_index, fixture
+                     ) VALUES (?1, 'run-asset-pages', ?2, 'image', 'image/png', 128,
+                       512, 512, ?3, ?4, 0)",
+                    params![
+                        format!("asset:run-asset-pages:{output_index}"),
+                        digest,
+                        timestamp,
+                        output_index,
+                    ],
+                )
+                .unwrap();
+        }
+        transaction.commit().unwrap();
+        drop(connection);
+
+        let first = list_asset_page(&paths, 0, 128, None).unwrap();
+        assert_eq!(first.total_items, Some(205));
+        assert_eq!(first.items.len(), 128);
+        assert_eq!(first.items[0].output_index, 0);
+        assert_eq!(first.items[127].output_index, 127);
+
+        let second = list_asset_page(&paths, 128, 128, None).unwrap();
+        assert_eq!(second.revision, first.revision);
+        assert_eq!(second.total_items, Some(205));
+        assert_eq!(second.items.len(), 77);
+        assert_eq!(second.items[0].output_index, 128);
+        assert_eq!(second.items[76].output_index, 204);
+
+        let unchanged = list_asset_page(&paths, 0, 128, Some(first.revision.as_str())).unwrap();
+        assert!(unchanged.unchanged);
+        assert_eq!(unchanged.total_items, None);
+        assert!(unchanged.items.is_empty());
+
+        set_user_asset_tags(
+            &paths,
+            &first.items[0].id,
+            &[("hero".to_string(), "Hero".to_string())],
+        )
+        .unwrap();
+        let changed = list_asset_page(&paths, 0, 128, Some(first.revision.as_str())).unwrap();
+        assert!(!changed.unchanged);
+        assert_ne!(changed.revision, first.revision);
+        assert!(changed.items[0].tags.iter().any(|tag| tag.value == "hero"));
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn run_pages_expose_complete_membership_without_churning_on_progress_updates() {
+        let paths = test_paths("run-pages");
+        initialize(&paths).unwrap();
+        let timestamp = now();
+        let connection = open(&paths).unwrap();
+        connection
+            .execute(
+                "WITH RECURSIVE sequence(value) AS (
+                   SELECT 0
+                   UNION ALL
+                   SELECT value + 1 FROM sequence WHERE value < 204
+                 )
+                 INSERT INTO runs(
+                   id, flow_id, flow_name, plan_id, status, created_at, updated_at, prompt,
+                   model_label, target, output_count, diagnostic_count, progress, current_step,
+                   executor, aspect_ratio
+                 )
+                 SELECT printf('run-page-%03d', value), 'flow-pages', 'Paged workflow',
+                   'plan-pages', 'completed', ?1, ?1, printf('Prompt %03d', value),
+                   'Fixture executor', 'local', 1, 0, 1, 'Completed',
+                   'deterministic-fixture', '1:1'
+                 FROM sequence",
+                params![timestamp],
+            )
+            .unwrap();
+        drop(connection);
+
+        let first = list_run_page(&paths, 0, 125, None).unwrap();
+        let second = list_run_page(&paths, 125, 125, None).unwrap();
+        assert_eq!(first.total_items, Some(205));
+        assert_eq!(first.items.len(), 125);
+        assert_eq!(second.items.len(), 80);
+        assert_eq!(first.revision, second.revision);
+        assert_eq!(first.items[0].id, "run-page-204");
+        assert_eq!(second.items[79].id, "run-page-000");
+
+        open(&paths)
+            .unwrap()
+            .execute(
+                "UPDATE runs SET status = 'running', progress = 0.5, updated_at = ?2
+                 WHERE id = ?1",
+                params!["run-page-000", now()],
+            )
+            .unwrap();
+        let unchanged = list_run_page(&paths, 0, 125, Some(first.revision.as_str())).unwrap();
+        assert!(unchanged.unchanged);
+
+        let new_request = request("run-page-new");
+        enqueue_fixture_run(&paths, &new_request).unwrap();
+        let changed = list_run_page(&paths, 0, 125, Some(first.revision.as_str())).unwrap();
+        assert!(!changed.unchanged);
+        assert_eq!(changed.total_items, Some(206));
+        assert_ne!(changed.revision, first.revision);
         cleanup(&paths);
     }
 

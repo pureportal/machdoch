@@ -3,11 +3,8 @@ import { createMediaModelCatalog } from "./catalog.js";
 import {
   createMediaFlowDocumentDigest,
   createMediaFlowFingerprint,
-  createMediaFlowLayoutDigest,
 } from "./canonicalize.js";
 import {
-  addMediaFlowLayoutComment,
-  addMediaFlowLayoutGroup,
   compileMediaFlow,
   createAlphaMatteFlow,
   createSubjectCutoutFlow,
@@ -15,16 +12,14 @@ import {
   createImageContactSheetFlow,
   createImageEditFlow,
   createImageRecipeFlow,
+  createImageToVideoFlow,
   createImageTransformFlow,
-  createMediaFlowLayout,
-  reconcileMediaFlowLayout,
   readImageRecipeSettings,
-  removeMediaFlowLayoutComment,
-  removeMediaFlowLayoutGroup,
-  updateMediaFlowLayoutComment,
-  updateMediaFlowLayoutGroup,
 } from "./compiler.js";
-import { getMediaModelAddonCapabilities } from "./model-addons.js";
+import {
+  getMediaModelAddonCapabilities,
+  inspectMediaModelAddonCompatibility,
+} from "./model-addons.js";
 import {
   DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY,
   LOCAL_BIREFNET_MODEL_ID,
@@ -34,6 +29,7 @@ import type {
   ImageRecipeSettings,
   MediaFlow,
   MediaModelAddonDescriptor,
+  MediaModelDescriptor,
 } from "./contracts.js";
 
 const DEFAULT_SETTINGS = {
@@ -58,6 +54,36 @@ const createFlow = (
     createdAt: "2026-07-14T00:00:00.000Z",
     settings,
   });
+};
+
+const createWanModel = (): MediaModelDescriptor => {
+  const localFlux = createMediaModelCatalog({
+    isOpenAiConfigured: false,
+    isLocalFluxInstalled: true,
+  }).find((model) => model.id === "local:flux-2-klein-4b");
+  if (!localFlux) {
+    throw new Error("Expected the local FLUX fixture.");
+  }
+  return {
+    ...localFlux,
+    id: "local:wan2.2-ti2v-5b",
+    providerId: "local-wan",
+    displayName: "Wan2.2 TI2V 5B",
+    family: "Wan2.2",
+    capabilities: [
+      "text-to-video",
+      "image-to-video",
+      "start-end-to-video",
+      "transparent-output",
+      "alpha-video",
+      "video-composite",
+    ],
+    installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
+    architecture: "wan-2.2-ti2v",
+    addonCapabilities: [],
+    minVramGb: 24,
+    expectedDownloadGb: 33.9,
+  };
 };
 
 const FLUX_LORA = {
@@ -125,6 +151,197 @@ const SDXL_EMBEDDING = {
 } as const satisfies MediaModelAddonDescriptor;
 
 describe("media flow compiler", () => {
+  it("creates an executable protected WAN image-to-video flow", () => {
+    const flow = createImageToVideoFlow({
+      id: "flow:image-to-video",
+      createdAt: "2026-07-24T00:00:00.000Z",
+      sourceAssetId: "asset:hero-frame",
+      prompt: "A slow push-in as warm practical lights turn on",
+    });
+    const plan = compileMediaFlow({
+      flow,
+      models: [createWanModel()],
+      compiledAt: "2026-07-24T00:01:00.000Z",
+    });
+
+    expect(flow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromNodeId: "first-frame",
+          fromPortId: "image",
+          toNodeId: "generate-video",
+          toPortId: "first-frame",
+        }),
+        expect.objectContaining({
+          fromNodeId: "generate-video",
+          fromPortId: "video",
+          toNodeId: "video-output",
+          toPortId: "video",
+        }),
+      ]),
+    );
+    expect(plan.status).toBe("ready");
+    expect(plan.model?.id).toBe("local:wan2.2-ti2v-5b");
+    expect(plan.steps).toContainEqual(
+      expect.objectContaining({
+        kind: "generate-video",
+        sourceNodeId: "generate-video",
+        label: expect.stringContaining("opaque one-way video"),
+      }),
+    );
+    expect(
+      plan.diagnostics.some((item) => item.code === "VIDEO_EXECUTOR_UNAVAILABLE"),
+    ).toBe(false);
+    expect(
+      plan.diagnostics.some((item) =>
+        item.message.includes("supported image generation"),
+      ),
+    ).toBe(false);
+    expect(plan.preflight.estimatedOutputs).toBe(1);
+    expect(plan.preflight.remoteUploadAssetIds).toEqual([]);
+    expect(
+      flow.nodes.find((node) => node.id === "generate-video")?.config,
+    ).toMatchObject({
+      modelPolicy: "quality",
+      resolution: "quality-640",
+      loopMode: "none",
+      transparentBackground: false,
+      numFrames: 33,
+      numInferenceSteps: 30,
+      guidanceScale: 5,
+      seed: 0,
+      matteQuality: "production",
+      encodingQuality: "lossless",
+      memoryProfile: "auto",
+    });
+    expect(
+      flow.nodes.find((node) => node.id === "video-output")?.config.role,
+    ).toBe("opaque");
+    expect(() =>
+      createImageToVideoFlow({
+        id: "flow:invalid-video",
+        createdAt: "2026-07-24T00:00:00.000Z",
+        lastFrameAssetId: "asset:closing-frame",
+      }),
+    ).toThrow("requires an explicit first frame");
+  });
+
+  it("accepts native ultra-wide opaque quality controls and rejects a false seamless endpoint", () => {
+    const base = createImageToVideoFlow({
+      id: "flow:quality-video",
+      createdAt: "2026-07-24T00:00:00.000Z",
+      sourceAssetId: "asset:first",
+      lastFrameAssetId: "asset:last",
+      prompt: "The actor walks deliberately through frame",
+    });
+    const qualityFlow = {
+      ...base,
+      nodes: base.nodes.map((node) =>
+        node.id === "generate-video"
+          ? {
+              ...node,
+              config: {
+                ...node.config,
+                aspectRatio: "21:9",
+                resolution: "quality-768",
+                transparentBackground: false,
+                loopMode: "none",
+                fps: 24,
+                numFrames: 33,
+                numInferenceSteps: 24,
+                guidanceScale: 5.5,
+                seed: 7,
+                matteQuality: "production",
+                encodingQuality: "lossless",
+                memoryProfile: "memory-saver",
+              },
+            }
+          : node.id === "video-output"
+            ? {
+                ...node,
+                config: {
+                  ...node.config,
+                  role: "opaque",
+                },
+              }
+          : node,
+      ),
+    } satisfies MediaFlow;
+    const qualityPlan = compileMediaFlow({
+      flow: qualityFlow,
+      models: [createWanModel()],
+      compiledAt: "2026-07-24T00:01:00.000Z",
+    });
+    expect(qualityPlan.status).toBe("ready");
+    expect(
+      qualityPlan.diagnostics.some((diagnostic) => diagnostic.code === "NODE_SCHEMA_INVALID"),
+    ).toBe(false);
+
+    const mismatchedOutput = {
+      ...qualityFlow,
+      nodes: qualityFlow.nodes.map((node) =>
+        node.id === "video-output"
+          ? {
+              ...node,
+              config: {
+                ...node.config,
+                role: "transparent",
+              },
+            }
+          : node,
+      ),
+    } satisfies MediaFlow;
+    expect(
+      compileMediaFlow({
+        flow: mismatchedOutput,
+        models: [createWanModel()],
+        compiledAt: "2026-07-24T00:01:30.000Z",
+      }).diagnostics,
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "NODE_SCHEMA_INVALID",
+        nodeId: "video-output",
+        message: expect.stringContaining("conflicts"),
+      }),
+    );
+
+    const invalidSeamless = {
+      ...qualityFlow,
+      nodes: qualityFlow.nodes.map((node) =>
+        node.id === "generate-video"
+          ? {
+              ...node,
+              config: {
+                ...node.config,
+                transparentBackground: true,
+                loopMode: "seamless",
+              },
+            }
+          : node.id === "video-output"
+            ? {
+                ...node,
+                config: {
+                  ...node.config,
+                  role: "transparent",
+                },
+              }
+          : node,
+      ),
+    } satisfies MediaFlow;
+    const invalidPlan = compileMediaFlow({
+      flow: invalidSeamless,
+      models: [createWanModel()],
+      compiledAt: "2026-07-24T00:02:00.000Z",
+    });
+    expect(invalidPlan.status).toBe("blocked");
+    expect(invalidPlan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "NODE_SCHEMA_INVALID",
+        message: expect.stringContaining("same source"),
+      }),
+    );
+  });
+
   it("compiles guided SVG references as explicit multimodal source lineage", () => {
     const catalog = createMediaModelCatalog({ isOpenAiConfigured: true });
     const guidedSvgModel = {
@@ -290,6 +507,42 @@ describe("media flow compiler", () => {
       }),
     ]);
     expect(plan.steps.map((step) => step.kind)).toContain("resolve-model-addons");
+  });
+
+  it("accepts exact normalized publisher base-family hints without a warning", () => {
+    const baseModel = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).find((model) => model.id === "local:flux-2-klein-4b")!;
+    const kreaModel = {
+      ...baseModel,
+      id: "local:user:krea-2",
+      displayName: "RedCraft KREA 2",
+      family: "KREA 2",
+      architecture: "krea-2",
+      addonCapabilities: getMediaModelAddonCapabilities(
+        "local-diffusers",
+        "krea-2",
+      ),
+    } as const satisfies MediaModelDescriptor;
+    const kreaLora = {
+      ...FLUX_LORA,
+      id: "addon:lora:krea-realism",
+      displayName: "KREA Realism",
+      architecture: "krea-2",
+      baseModelHint: "krea2",
+    } as const satisfies MediaModelAddonDescriptor;
+
+    expect(inspectMediaModelAddonCompatibility(kreaModel, kreaLora)).toEqual({
+      status: "compatible",
+      reason: expect.stringContaining("base-family hint"),
+    });
+    expect(
+      inspectMediaModelAddonCompatibility(kreaModel, {
+        ...kreaLora,
+        baseModelHint: "different-krea-fork",
+      }),
+    ).toMatchObject({ status: "unverified" });
   });
 
   it("rejects denoising schedules for LoRAs that also target text encoders", () => {
@@ -515,26 +768,6 @@ describe("media flow compiler", () => {
     );
   });
 
-  it("reconciles persisted layout without changing semantic flow identity", () => {
-    const flow = createFlow();
-    const fingerprintBeforeLayout = createMediaFlowFingerprint(flow);
-    const generated = createMediaFlowLayout(flow);
-    const moved = {
-      ...generated,
-      nodes: generated.nodes.map((entry) =>
-        entry.nodeId === "generate" ? { ...entry, x: 777, y: -42 } : entry,
-      ),
-    };
-
-    const reconciled = reconcileMediaFlowLayout(flow, moved);
-
-    expect(reconciled.nodes.find((entry) => entry.nodeId === "generate")).toMatchObject({
-      x: 777,
-      y: -42,
-    });
-    expect(createMediaFlowFingerprint(flow)).toBe(fingerprintBeforeLayout);
-  });
-
   it("selects a configured remote model and expands quality steps", () => {
     const plan = compileMediaFlow({
       flow: createFlow(),
@@ -634,6 +867,102 @@ describe("media flow compiler", () => {
       "evaluate-gate",
       "ingest-asset",
     ]);
+  });
+
+  it("accepts only the reviewed KREA identity adapter for local reference edits", () => {
+    const localFlux = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).find((model) => model.id === "local:flux-2-klein-4b")!;
+    const kreaModel = {
+      ...localFlux,
+      id: "local:user:krea-2",
+      providerId: "local-diffusers",
+      displayName: "KREA 2",
+      family: "KREA 2",
+      architecture: "krea-2",
+      capabilities: ["text-to-image", "image-to-image"],
+      addonCapabilities: getMediaModelAddonCapabilities(
+        "local-diffusers",
+        "krea-2",
+      ),
+    } as const satisfies MediaModelDescriptor;
+    const identityAdapter = {
+      ...FLUX_LORA,
+      id: "addon:lora:krea2-identity-edit-v1-2",
+      displayName: "KREA 2 Identity Edit v1.2 r64",
+      architecture: "krea-2",
+      baseModelHint: "krea2",
+      digest:
+        "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423",
+      relativePath:
+        "addons/sha256/f7/krea2_identity_edit_v1_2_r64.safetensors",
+    } as const satisfies MediaModelAddonDescriptor;
+    const createFlow = (adapter: MediaModelAddonDescriptor) =>
+      createImageEditFlow({
+        id: "flow:local-krea-reference-edit",
+        createdAt: "2026-07-26T00:00:00.000Z",
+        sourceAssetId: "asset:witch-key",
+        settings: {
+          ...DEFAULT_SETTINGS,
+          providerPolicy: "local",
+          modelPolicy: "quality",
+          modelId: kreaModel.id,
+          modelAddons: [
+            {
+              kind: "lora",
+              addonId: adapter.id,
+              enabled: true,
+              modelStrength: 1,
+              textEncoderStrength: null,
+              denoisingSchedule: null,
+            },
+          ],
+          outputCount: 1,
+          qualityGateEnabled: false,
+          editStrength: 0.72,
+          referenceBoost: 2,
+          requireChromaBackground: true,
+          referenceFit: "fit",
+          groundingPixels: 768,
+          memoryProfile: "memory-saver",
+        },
+      });
+    const createPlan = (adapter: MediaModelAddonDescriptor) =>
+      compileMediaFlow({
+        flow: createFlow(adapter),
+        models: [kreaModel],
+        addons: [adapter],
+        compiledAt: "2026-07-26T00:01:00.000Z",
+      });
+
+    expect(
+      readImageRecipeSettings(createFlow(identityAdapter))
+        ?.requireChromaBackground,
+    ).toBe(true);
+    const reviewedPlan = createPlan(identityAdapter);
+    expect(reviewedPlan.status).toBe("ready");
+    expect(reviewedPlan.model?.id).toBe(kreaModel.id);
+    expect(reviewedPlan.preflight.requiresRemoteRequest).toBe(false);
+    expect(reviewedPlan.steps.map((step) => step.kind)).toContain(
+      "resolve-model-addons",
+    );
+    expect(reviewedPlan.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "ADDON_CONFIG_INVALID" }),
+    );
+
+    const unreviewedPlan = createPlan({
+      ...identityAdapter,
+      digest: "c".repeat(64),
+      relativePath: "addons/sha256/cc/unrelated-krea-style.safetensors",
+    });
+    expect(unreviewedPlan.status).toBe("blocked");
+    expect(unreviewedPlan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "ADDON_CONFIG_INVALID",
+        message: expect.stringContaining("exactly one reviewed KREA 2 Identity Edit"),
+      }),
+    );
   });
 
   it("compiles labeled multi-reference edits with a stable exact upload order", () => {
@@ -1547,125 +1876,4 @@ describe("media flow compiler", () => {
     ]);
   });
 
-  it("canonicalizes layout identity independently of position array ordering", () => {
-    const layout = createMediaFlowLayout(createFlow());
-    const reordered = { ...layout, nodes: [...layout.nodes].reverse() };
-    const moved = {
-      ...layout,
-      nodes: layout.nodes.map((node) =>
-        node.nodeId === "generate" ? { ...node, x: node.x + 1 } : node,
-      ),
-    };
-
-    expect(createMediaFlowLayoutDigest(reordered)).toBe(
-      createMediaFlowLayoutDigest(layout),
-    );
-    expect(createMediaFlowLayoutDigest(moved)).not.toBe(
-      createMediaFlowLayoutDigest(layout),
-    );
-  });
-
-  it("creates a separate deterministic layout document", () => {
-    const flow = createFlow({
-      ...DEFAULT_SETTINGS,
-      transparentBackground: true,
-    });
-    const layout = createMediaFlowLayout(flow);
-
-    expect(layout.flowId).toBe(flow.id);
-    expect(layout.nodes).toHaveLength(flow.nodes.length);
-    expect(new Set(layout.nodes.map((node) => node.nodeId)).size).toBe(
-      flow.nodes.length,
-    );
-    expect(layout.groups).toEqual([]);
-    expect(layout.comments).toEqual([]);
-  });
-
-  it("creates bounded non-overlapping visual groups without affecting execution identity", () => {
-    const flow = createFlow();
-    const layout = createMediaFlowLayout(flow);
-    const executionDigest = createMediaFlowFingerprint(flow);
-    const grouped = addMediaFlowLayoutGroup({
-      layout,
-      nodeIds: ["prompt", "generate", "quality-analyze"],
-      label: "Creative generation",
-    });
-
-    expect(grouped.groupId).toBe("group-1");
-    expect(grouped.layout.groups).toEqual([
-      {
-        id: "group-1",
-        label: "Creative generation",
-        color: "cyan",
-        collapsed: false,
-        nodeIds: ["prompt", "generate", "quality-analyze"],
-      },
-    ]);
-    expect(createMediaFlowLayoutDigest(grouped.layout)).not.toBe(
-      createMediaFlowLayoutDigest(layout),
-    );
-    expect(createMediaFlowFingerprint(flow)).toBe(executionDigest);
-
-    const updated = updateMediaFlowLayoutGroup({
-      layout: grouped.layout,
-      groupId: grouped.groupId,
-      color: "violet",
-      collapsed: true,
-      label: "Generation chain",
-    });
-    expect(updated.groups[0]).toMatchObject({
-      label: "Generation chain",
-      color: "violet",
-      collapsed: true,
-    });
-    expect(() =>
-      addMediaFlowLayoutGroup({
-        layout: updated,
-        nodeIds: ["generate", "asset-output"],
-      }),
-    ).toThrow("already belongs");
-    expect(removeMediaFlowLayoutGroup(updated, grouped.groupId).groups).toEqual([]);
-  });
-
-  it("creates revisioned canvas comments without affecting execution identity", () => {
-    const flow = createFlow();
-    const layout = createMediaFlowLayout(flow);
-    const executionDigest = createMediaFlowFingerprint(flow);
-    const added = addMediaFlowLayoutComment({
-      layout,
-      body: "Review edge detail before export",
-      x: 120,
-      y: 180,
-    });
-
-    expect(added.commentId).toBe("comment-1");
-    expect(added.layout.comments[0]).toMatchObject({
-      body: "Review edge detail before export",
-      color: "amber",
-      x: 120,
-      y: 180,
-      width: 240,
-      height: 120,
-    });
-    expect(createMediaFlowLayoutDigest(added.layout)).not.toBe(
-      createMediaFlowLayoutDigest(layout),
-    );
-    expect(createMediaFlowFingerprint(flow)).toBe(executionDigest);
-
-    const updated = updateMediaFlowLayoutComment({
-      layout: added.layout,
-      commentId: added.commentId,
-      body: "Glass edges need human review",
-      color: "violet",
-      width: 1_000,
-      height: 20,
-    });
-    expect(updated.comments[0]).toMatchObject({
-      body: "Glass edges need human review",
-      color: "violet",
-      width: 600,
-      height: 80,
-    });
-    expect(removeMediaFlowLayoutComment(updated, added.commentId).comments).toEqual([]);
-  });
 });

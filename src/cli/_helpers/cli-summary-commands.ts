@@ -634,12 +634,8 @@ export const printCustomizationSummary = async (
 
   writeStdoutLine(`workspace: ${customizations.workspaceRoot}`);
   writeStdoutLine(
-    `github compatibility: ${config.compatibility.discoverGithubCustomizations ? "enabled" : "disabled"}`,
+    `github customizations: ${config.compatibility.discoverGithubCustomizations ? "enabled" : "disabled"}`,
   );
-  writeStdoutLine(`instructions: ${customizations.instructions.length}`);
-  for (const entry of customizations.instructions) {
-    writeStdoutLine(`  - [${entry.kind}] ${entry.path}`);
-  }
   writeStdoutLine(`prompts: ${customizations.prompts.length}`);
   for (const entry of customizations.prompts) {
     writeStdoutLine(`  - ${entry.name} (${entry.path})`);

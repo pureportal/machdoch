@@ -15,6 +15,8 @@ import {
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
+  type ChatSessionMessageSettings,
+  type ChatSessionQueuedPromptEnhancementRequest,
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import type {
@@ -22,6 +24,7 @@ import type {
   TaskExecutionResult,
 } from "../../../../core/types.js";
 import {
+  consumeCompatibleInstructionPlanAcknowledgement,
   loadUserMemorySettings,
   runDesktopTask,
   type RuntimeSnapshot,
@@ -40,6 +43,7 @@ import {
   getImageAttachmentPaths,
 } from "./session-context-attachments";
 import { getRenderedMessageContent } from "./execution-message.tsx";
+import { createQueuedMessagePromptAfterOperationConflict } from "./prompt-enhancement";
 import {
   createContinuationTaskPrompt,
   createExecutionFromTerminalProgress,
@@ -57,6 +61,11 @@ import {
   removeSessionArchiveFlag,
 } from "./session-shell";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
+import {
+  applySessionMessageSettings,
+  createSessionMessageSettings,
+  getSessionMessageSettings,
+} from "./session-message-settings";
 import {
   CONTINUE_TASK_DISPLAY_CONTENT,
   RETRY_TASK_DISPLAY_CONTENT,
@@ -202,6 +211,8 @@ export interface SubmitTaskToSessionOptions {
   visibleMessageContent?: string;
   promptHistoryContent?: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
+  promptEnhancementRequestOnConflict?: ChatSessionQueuedPromptEnhancementRequest;
+  messageSettings?: ChatSessionMessageSettings;
   messageIntent?: TaskActionPromptKind;
   conversationCutoffMessageId?: string;
 }
@@ -214,6 +225,7 @@ export interface SessionOperationConflictSubmission {
   visibleMessageContent: string;
   promptHistoryContent: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
+  promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
 }
 
 const getMessageTaskId = (message: ChatSessionMessage): string =>
@@ -447,12 +459,12 @@ export const useSessionTaskSubmission = (options: {
         return false;
       }
 
-      const sourceSessionSnapshot = currentSession ?? submittedSessionSnapshot;
-      const sessionSnapshotReasoning = normalizeSessionReasoningOverride(
-        sourceSessionSnapshot.reasoning,
-        sourceSessionSnapshot.provider,
-        sourceSessionSnapshot.model,
-      );
+      const sourceSessionSnapshot = submitOptions.messageSettings
+        ? applySessionMessageSettings(
+            currentSession ?? submittedSessionSnapshot,
+            submitOptions.messageSettings,
+          )
+        : (currentSession ?? submittedSessionSnapshot);
       const hasActiveTaskForSession = [
         ...currentOptions.activeDesktopTasksRef.current.values(),
       ].includes(sessionId);
@@ -475,6 +487,11 @@ export const useSessionTaskSubmission = (options: {
         return false;
       }
 
+      const sessionSnapshotReasoning = normalizeSessionReasoningOverride(
+        sessionSnapshot.reasoning,
+        sessionSnapshot.provider,
+        sessionSnapshot.model,
+      );
       const contextAttachments = submitOptions.contextAttachments;
       const executionTask = appendContextAttachmentsToTask(
         normalizedTask,
@@ -497,6 +514,9 @@ export const useSessionTaskSubmission = (options: {
       const userMessageContextAttachments = contextAttachments.map(
         (attachment) => ({ ...attachment }),
       );
+      const messageSettings =
+        submitOptions.messageSettings ??
+        createSessionMessageSettings(sessionSnapshot);
       const userMessage: ChatSessionMessage = {
         id: `${taskId}-user`,
         taskId,
@@ -510,6 +530,7 @@ export const useSessionTaskSubmission = (options: {
           ? { contextAttachments: userMessageContextAttachments }
           : {}),
         ...(promptEnhancement ? { promptEnhancement } : {}),
+        settings: { ...messageSettings },
       };
       let appendedPromptHistoryBaseline: Pick<
         ChatSessionRecord,
@@ -823,16 +844,23 @@ export const useSessionTaskSubmission = (options: {
             };
           });
 
+          const queuedPrompt =
+            createQueuedMessagePromptAfterOperationConflict(
+              {
+                task: normalizedTask,
+                visibleMessageContent,
+                promptHistoryContent,
+                ...(promptEnhancement ? { promptEnhancement } : {}),
+              },
+              submitOptions.promptEnhancementRequestOnConflict,
+            );
           const queued = currentOptions.onSessionOperationConflict?.({
             sessionId,
             activeTaskId: activeSessionTaskId,
-            task: normalizedTask,
             contextAttachments: contextAttachments.map((attachment) => ({
               ...attachment,
             })),
-            visibleMessageContent,
-            promptHistoryContent,
-            ...(promptEnhancement ? { promptEnhancement } : {}),
+            ...queuedPrompt,
           });
 
           if (!queued) {
@@ -1091,6 +1119,8 @@ export const useSessionTaskSubmission = (options: {
 
       currentOptions.activeDesktopTasksRef.current.set(taskId, sessionId);
 
+      const acknowledgedInstructionDeliveryPlanId =
+        consumeCompatibleInstructionPlanAcknowledgement(sessionWorkspace);
       const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
         conversationContext: taskConversationContext,
         ...(imagePaths.length > 0 ? { imagePaths } : {}),
@@ -1101,6 +1131,9 @@ export const useSessionTaskSubmission = (options: {
           ? { reasoning: sessionSnapshotReasoning }
           : {}),
         ...(sessionMode ? { mode: sessionMode } : {}),
+        ...(acknowledgedInstructionDeliveryPlanId === undefined
+          ? {}
+          : { acknowledgedInstructionDeliveryPlanId }),
         sessionId,
         taskId,
       });
@@ -1269,11 +1302,13 @@ export const useSessionTaskSubmission = (options: {
       }
 
       const sourceSession = getMessageSourceSession(message);
+      const messageSettings = getSessionMessageSettings(message, sourceSession);
 
       return submitTaskToSession({
         sessionSnapshot: sourceSession,
         task: normalizedContent,
         contextAttachments: getUserMessageContextAttachments(message),
+        messageSettings,
         clearDraft: false,
         activateSession: true,
         visibleMessageContent: normalizedContent,
@@ -1317,6 +1352,10 @@ export const useSessionTaskSubmission = (options: {
         sessionSnapshot: sourceSession,
         task,
         contextAttachments: getUserMessageContextAttachments(sourceUserMessage),
+        messageSettings: getSessionMessageSettings(
+          sourceUserMessage,
+          sourceSession,
+        ),
         clearDraft: false,
         activateSession: true,
         visibleMessageContent,

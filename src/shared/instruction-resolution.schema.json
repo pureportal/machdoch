@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://machdoch.local/schemas/instruction-resolution.schema.json",
+  "title": "Machdoch instruction resolution explanation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "resolutionId",
+    "canonicalDigest",
+    "environmentDigest",
+    "providerId",
+    "surface",
+    "libraryRevision",
+    "workspaceRegistered",
+    "sources",
+    "bodyGroups",
+    "nativeInventory",
+    "mcpInitializationInstructions",
+    "diagnostics",
+    "budget"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "resolutionId": {
+      "type": "string",
+      "pattern": "^instruction-resolution:[0-9a-f]{64}$"
+    },
+    "canonicalDigest": { "$ref": "#/$defs/digest" },
+    "environmentDigest": { "$ref": "#/$defs/digest" },
+    "providerId": {
+      "enum": [
+        "openai",
+        "anthropic",
+        "google",
+        "langdock",
+        "codex-cli",
+        "claude-cli",
+        "copilot-cli"
+      ]
+    },
+    "surface": { "enum": ["api", "cli"] },
+    "model": { "type": "string", "minLength": 1 },
+    "libraryRevision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "workspaceRegistered": { "type": "boolean" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "bodyGroups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/bodyGroup" }
+    },
+    "nativeInventory": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/native" }
+    },
+    "mcpInitializationInstructions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/mcpInitializationInstruction" },
+      "maxItems": 256
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "budget": { "$ref": "#/$defs/budget" },
+    "pathPreview": { "$ref": "#/$defs/pathPreview" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "status",
+        "scopePath",
+        "precedence",
+        "digest",
+        "byteLength",
+        "lineCount",
+        "trusted"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "profile-default",
+            "profile-workspace",
+            "project-local",
+            "flow-guidance"
+          ]
+        },
+        "status": { "enum": ["selected", "skipped"] },
+        "reason": {
+          "enum": [
+            "NO_APPLICABLE_ASSIGNMENT",
+            "DUPLICATE_INHERITED_ASSIGNMENT"
+          ]
+        },
+        "scopePath": { "$ref": "#/$defs/scopePath" },
+        "precedence": { "type": "integer", "minimum": 0 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "byteLength": { "type": "integer", "minimum": 1 },
+        "lineCount": { "type": "integer", "minimum": 1 },
+        "trusted": { "type": "boolean" },
+        "profileId": { "type": "string", "format": "uuid" },
+        "workspaceId": { "type": "string", "format": "uuid" },
+        "relativePath": { "type": "string", "minLength": 1 },
+        "assignmentPath": { "type": "string", "minLength": 1 },
+        "inheritedFrom": { "type": "string", "minLength": 1 },
+        "otherAssignments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["workspaceId", "scopePath"],
+            "properties": {
+              "workspaceId": { "type": "string", "format": "uuid" },
+              "scopePath": { "$ref": "#/$defs/scopePath" }
+            }
+          }
+        },
+        "body": { "type": "string", "minLength": 1 }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "scopePath", "precedence"],
+      "properties": {
+        "sourceId": { "type": "string", "minLength": 1 },
+        "scopePath": { "$ref": "#/$defs/scopePath" },
+        "precedence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "bodyGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "byteLength",
+        "lineCount",
+        "attributions",
+        "renderedAtPrecedence"
+      ],
+      "properties": {
+        "digest": { "$ref": "#/$defs/digest" },
+        "byteLength": { "type": "integer", "minimum": 1 },
+        "lineCount": { "type": "integer", "minimum": 1 },
+        "attributions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/attribution" },
+          "minItems": 1
+        },
+        "renderedAtPrecedence": { "type": "integer", "minimum": 0 },
+        "body": { "type": "string", "minLength": 1 }
+      }
+    },
+    "native": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "location", "convention", "status"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "location": { "enum": ["workspace", "user"] },
+        "convention": { "type": "string", "minLength": 1 },
+        "recognizingConventions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "canonical",
+            "native-extra",
+            "suppressed",
+            "inactive",
+            "unknown",
+            "unreadable"
+          ]
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "byteLength": { "type": "integer", "minimum": 0 },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mcpInitializationInstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverIds", "digest", "byteLength"],
+      "properties": {
+        "serverIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 131072
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": {
+          "enum": ["info", "advisory", "warning", "error"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "relativePath": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bodyBytes",
+        "envelopeBytes",
+        "runtimeSupplementBytes",
+        "lineCount",
+        "advisories",
+        "blockingErrors"
+      ],
+      "properties": {
+        "bodyBytes": { "type": "integer", "minimum": 0 },
+        "envelopeBytes": { "type": "integer", "minimum": 0 },
+        "runtimeSupplementBytes": { "type": "integer", "minimum": 0 },
+        "lineCount": { "type": "integer", "minimum": 0 },
+        "estimatedTokens": { "type": "integer", "minimum": 0 },
+        "estimatedRuntimeSupplementTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimatedTotalInstructionTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "providerLimitTokens": { "type": "integer", "minimum": 1 },
+        "providerReserveTokens": { "type": "integer", "minimum": 0 },
+        "availableInstructionTokens": { "type": "integer", "minimum": 0 },
+        "advisories": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "blockingErrors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "pathPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "applicableSourceIds", "effectiveOrder"],
+      "properties": {
+        "path": { "$ref": "#/$defs/scopePath" },
+        "applicableSourceIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "effectiveOrder": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "scopePath": {
+      "type": "string",
+      "pattern": "^(\\.|(?![A-Za-z]:)(?!\\.\\.?(?:/|$))[^/\\\\\\u0000]+(?:/(?!\\.\\.?(?:/|$))[^/\\\\\\u0000]+)*)$"
+    }
+  }
+}

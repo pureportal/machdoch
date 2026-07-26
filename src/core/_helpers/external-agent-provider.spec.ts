@@ -1,15 +1,27 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 import type {
-  InstructionTargetAudience,
+  TaskExecutionRole,
   TaskExecutionSection,
 } from "../types.ts";
+import {
+  createInstructionResolutionFixture,
+} from "../__test__/instruction-test-helpers.ts";
+import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
+import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
 import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.ts";
@@ -33,7 +45,23 @@ interface SpawnCall {
 const spawnCalls: SpawnCall[] = [];
 
 vi.mock("node:child_process", () => ({
-  spawnSync: vi.fn(() => ({ status: 0, stdout: "", stderr: "" })),
+  spawnSync: vi.fn((_executable: string, args: string[]) => ({
+    status: 0,
+    stdout: args.includes("--help")
+      ? [
+          "--config",
+          "--append-system-prompt-file",
+          "--mcp-config",
+          "--strict-mcp-config",
+          "--no-auto-update",
+          "--no-custom-instructions",
+          "--additional-mcp-config",
+          "--disable-builtin-mcps",
+          "--disable-mcp-server",
+        ].join("\n")
+      : "fixture-cli 1.0.0",
+    stderr: "",
+  })),
   spawn: vi.fn(
     (executable: string, args: string[], options: Record<string, unknown>) => {
       const child = new EventEmitter() as MockChildProcess;
@@ -112,6 +140,17 @@ const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-codex-cli-"));
   workspacesToClean.push(workspaceRoot);
   process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
+  process.env.CODEX_HOME = join(workspaceRoot, ".provider-state", "codex");
+  process.env.CLAUDE_CONFIG_DIR = join(
+    workspaceRoot,
+    ".provider-state",
+    "claude",
+  );
+  process.env.COPILOT_HOME = join(
+    workspaceRoot,
+    ".provider-state",
+    "copilot",
+  );
   return workspaceRoot;
 };
 
@@ -186,6 +225,38 @@ const contextSections: TaskExecutionSection[] = [
   },
 ];
 
+const createExternalInstructionPlan = (
+  resolution: ReturnType<typeof createInstructionResolutionFixture>,
+) =>
+  createInstructionDeliveryPlan(resolution, {
+    capability: createCliInstructionCapabilityFromProbe(resolution, {
+      provider: resolution.providerId as
+        | "codex-cli"
+        | "claude-cli"
+        | "copilot-cli",
+      executable: process.execPath,
+      available: true,
+      version: "fixture-cli 1.0.0",
+      features:
+        resolution.providerId === "claude-cli"
+          ? [
+              "--append-system-prompt-file",
+              "--mcp-config",
+              "--strict-mcp-config",
+            ]
+          : resolution.providerId === "copilot-cli"
+            ? [
+                "--no-auto-update",
+                "--no-custom-instructions",
+                "--additional-mcp-config",
+                "--disable-builtin-mcps",
+                "--disable-mcp-server",
+              ]
+            : ["--config"],
+      warnings: [],
+    }),
+  });
+
 const createParams = (
   workspaceRoot: string,
   overrides: Partial<
@@ -194,33 +265,52 @@ const createParams = (
       "mode" | "provider" | "model" | "reasoning" | "agentLimits"
     >
   > & {
-    instructionAudience?: InstructionTargetAudience;
+    executionRole?: TaskExecutionRole;
+    instructionBody?: string;
     onActionOutput?: ModelDrivenExecutionParams["onActionOutput"];
     task?: string;
   } = {},
 ): ModelDrivenExecutionParams & {
   preparedConversationContext: PreparedConversationPromptContext;
-} => ({
-  task: overrides.task ?? "inspect README.md",
-  config: createConfig(workspaceRoot, overrides),
-  taskContext: {
+} => {
+  const config = createConfig(workspaceRoot, overrides);
+
+  if (config.provider === "unconfigured") {
+    throw new Error("The external-provider fixture requires a provider.");
+  }
+
+  const instructionResolution = createInstructionResolutionFixture({
+    providerId: config.provider,
+    surface: "cli",
+    model: config.model,
+    ...(overrides.instructionBody === undefined
+      ? {}
+      : { body: overrides.instructionBody }),
+  });
+  return {
     task: overrides.task ?? "inspect README.md",
-    effectiveTask: overrides.task ?? "inspect README.md",
-    taskContextText: "",
-    instructionContextText: "",
-    workspacePaths: [],
-    suggestedTools: [],
-    ...(overrides.instructionAudience
-      ? { instructionAudience: overrides.instructionAudience }
+    config,
+    taskContext: {
+      task: overrides.task ?? "inspect README.md",
+      effectiveTask: overrides.task ?? "inspect README.md",
+      taskContextText: "",
+      workspacePaths: [],
+      suggestedTools: [],
+      executionRole: overrides.executionRole ?? "executor",
+      applicableInstructions: [],
+      instructionResolution,
+    },
+    contextSections,
+    instructionDeliveryPlan: createExternalInstructionPlan(
+      instructionResolution,
+    ),
+    acknowledgeCompatibleInstructionDelivery: true,
+    ...(overrides.onActionOutput
+      ? { onActionOutput: overrides.onActionOutput }
       : {}),
-    applicableInstructions: [],
-  },
-  contextSections,
-  ...(overrides.onActionOutput
-    ? { onActionOutput: overrides.onActionOutput }
-    : {}),
-  preparedConversationContext,
-});
+    preparedConversationContext,
+  };
+};
 
 beforeEach(() => {
   isolateEnvironment();
@@ -350,6 +440,50 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
+  it("removes run-scoped enrollment artifacts when request budget preflight fails", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot);
+    const resolution = {
+      ...params.taskContext.instructionResolution!,
+      budget: {
+        ...params.taskContext.instructionResolution!.budget,
+        providerLimitTokens: 16_400,
+      },
+    };
+    params.taskContext.instructionResolution = resolution;
+    params.instructionDeliveryPlan = createExternalInstructionPlan(resolution);
+    params.runId = "request-preflight-cleanup";
+
+    const result = await maybeExecuteExternalAgentProviderTask(params);
+
+    expect(result?.status).toBe("blocked");
+    expect(spawnCalls).toHaveLength(0);
+    const leakedMarkers = await Promise.all(
+      (await readdir(tmpdir(), { withFileTypes: true }))
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            entry.name.startsWith("machdoch-instruction-run-"),
+        )
+        .map(async (entry) =>
+          readFile(
+            join(
+              tmpdir(),
+              entry.name,
+              ".machdoch-instruction-session.json",
+            ),
+            "utf8",
+          ).catch(() => ""),
+        ),
+    );
+    expect(
+      leakedMarkers.some((marker) =>
+        marker.includes("request-preflight-cleanup"),
+      ),
+    ).toBe(false);
+  });
+
   it("passes GPT-5.6 Ultra through to Codex CLI", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -448,7 +582,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "codex-cli",
         model: "gpt-5.5",
         reasoning: "minimal",
-        instructionAudience: "generator",
+        executionRole: "generator",
         task: [
           "Create or update a Ralph flow graph.",
           "Output contract:",
@@ -663,7 +797,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.CODEX_API_KEY).toBe("codex-explicit-key");
-    expect(childEnv?.CODEX_HOME).toContain("machdoch-provider-enrollment-");
+    expect(childEnv?.CODEX_HOME).toContain("machdoch-instruction-run-");
     expect(childEnv?.CODEX_HOME).not.toBe(join(workspaceRoot, ".codex-home"));
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
@@ -740,13 +874,16 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         "--no-session-persistence",
         "--append-system-prompt-file",
         "--mcp-config",
+        "--strict-mcp-config",
         "--effort",
         "high",
         "--max-turns",
         "7",
       ]),
     );
-    expect(call?.args).not.toContain("--strict-mcp-config");
+    expect(call?.args.filter((arg) => arg === "--strict-mcp-config")).toHaveLength(
+      1,
+    );
     expect(call?.child.stdinText).toContain(
       "You are running as a delegated Claude CLI agent for Machdoch.",
     );
@@ -771,15 +908,19 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       const workspaceRoot = await createWorkspace();
       process.env[binaryKey] = process.execPath;
       const canary = `exact-once-${provider}`;
-      const params = createParams(workspaceRoot, { provider });
+      const params = createParams(workspaceRoot, {
+        provider,
+        instructionBody: canary,
+      });
       params.taskContext.applicableInstructions = [
         {
-          kind: "always-on",
+          id: "profile:exact-once",
+          digest: "a".repeat(64),
+          kind: "profile-default",
           name: "Exact once policy",
-          path: ".machdoch/instructions.md",
-          priority: 1,
           body: canary,
-          reason: "always",
+          scopePath: ".",
+          precedence: 1,
         },
       ];
       params.contextSections = [
@@ -810,13 +951,13 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           "utf8",
         );
       } else {
-        nativeInstructionText = await readFile(
-          join(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS!, "AGENTS.md"),
-          "utf8",
-        );
+        expect(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS).toBeUndefined();
+        nativeInstructionText = call.child.stdinText;
       }
 
-      expect(call.child.stdinText).not.toContain(canary);
+      if (provider !== "copilot-cli") {
+        expect(call.child.stdinText).not.toContain(canary);
+      }
       expect(
         nativeInstructionText.match(new RegExp(canary, "gu")),
       ).toHaveLength(1);
@@ -828,18 +969,22 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
-  it("retries with prompt enrollment when an installed CLI rejects its native enrollment flags", async () => {
+  it("does not retry a potentially mutating CLI step after native adaptation is rejected", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
-    const params = createParams(workspaceRoot, { provider: "claude-cli" });
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      instructionBody: "Apply the native fallback canary.",
+    });
     params.taskContext.applicableInstructions = [
       {
-        kind: "always-on",
+        id: "profile:fallback",
+        digest: "b".repeat(64),
+        kind: "profile-default",
         name: "Fallback policy",
-        path: ".machdoch/instructions.md",
-        priority: 1,
         body: "Apply the native fallback canary.",
-        reason: "always",
+        scopePath: ".",
+        precedence: 1,
       },
     ];
     params.contextSections = [
@@ -858,23 +1003,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     );
     spawnCalls[0]?.child.emit("close", 1, null);
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(2));
-    const retry = spawnCalls[1];
-    expect(retry?.args).not.toContain("--append-system-prompt-file");
-    expect(retry?.args).not.toContain("--mcp-config");
-    expect(retry?.child.stdinText).toContain(
-      "Apply the native fallback canary.",
-    );
-    expect(
-      retry?.child.stdinText.match(/Apply the native fallback canary\./gu),
-    ).toHaveLength(1);
-    retry?.child.stdout.write("Fallback completed.");
-    retry?.child.emit("close", 0, null);
-
     await expect(resultPromise).resolves.toMatchObject({
-      status: "executed",
-      response: { markdown: "Fallback completed." },
+      status: "blocked",
     });
+    expect(spawnCalls).toHaveLength(1);
   });
 
   it("does not leak Anthropic API keys into Claude CLI authentication", async () => {
@@ -1094,7 +1226,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(childEnv?.COPILOT_GITHUB_TOKEN).toBe("copilot-process-token");
     expect(childEnv?.GH_TOKEN).toBe("gh-process-token");
-    expect(childEnv?.COPILOT_HOME).toBe(join(workspaceRoot, ".copilot-home"));
+    expect(childEnv?.COPILOT_HOME).toContain("copilot-home");
+    expect(childEnv?.COPILOT_HOME).not.toBe(
+      join(workspaceRoot, ".copilot-home"),
+    );
     expect(childEnv?.COPILOT_MODEL).toBeUndefined();
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");

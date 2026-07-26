@@ -11,6 +11,10 @@ import type {
   TaskExecutionResult,
   TaskExecutionSection,
 } from "../types.js";
+import type {
+  InstructionDeliveryPlan,
+  InstructionDeliveryReceipt,
+} from "../instruction-system/types.js";
 import type { AgentToolDefinition } from "./agent-tools-shared.js";
 import type {
   RuntimeAgentLimitOverrides,
@@ -118,6 +122,10 @@ export interface ModelDrivenExecutionParams {
   additionalToolDefinitions?: AgentToolDefinition[];
   systemPromptSections?: string[];
   structuredOutput?: AgentModelStructuredOutput;
+  instructionDeliveryPlan?: InstructionDeliveryPlan;
+  instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
+  unattendedInstructionDelivery?: boolean;
+  acknowledgeCompatibleInstructionDelivery?: boolean;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
   onStreamActivity?: () => void;

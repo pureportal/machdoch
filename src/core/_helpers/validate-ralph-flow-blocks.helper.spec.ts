@@ -152,7 +152,7 @@ describe("validateRalphFlowBlocks", () => {
     expect(codes(validation.errors)).not.toContain("input-fields-required");
   });
 
-  it("validates block id, title, size, prompt, and decision label requirements", () => {
+  it("validates block id, title, prompt, and decision label requirements", () => {
     const validation = validateBlocks(
       createFlow({
         blocks: [
@@ -162,7 +162,6 @@ describe("validateRalphFlowBlocks", () => {
             type: "PROMPT",
             title: "",
             prompt: "",
-            size: { width: 0, height: Number.NaN },
           },
           {
             id: "Bad ID",
@@ -180,50 +179,9 @@ describe("validateRalphFlowBlocks", () => {
         "block-id-required",
         "block-id-invalid",
         "block-title-required",
-        "block-size-invalid",
         "block-prompt-required",
         "decision-labels-required",
       ]),
-    );
-  });
-
-  it("enforces note and group size boundaries while allowing collapsed groups", () => {
-    const validation = validateBlocks(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "note",
-            type: "NOTE",
-            title: "Note",
-            text: " ",
-            size: { width: 179, height: 120 },
-          },
-          {
-            id: "group",
-            type: "GROUP",
-            title: "Group",
-            childBlockIds: [],
-            size: { width: 280, height: 179 },
-          },
-          {
-            id: "collapsed",
-            type: "GROUP",
-            title: "Collapsed",
-            childBlockIds: [],
-            collapsed: true,
-            size: { width: 1, height: 1 },
-          },
-        ],
-      }),
-    );
-
-    expect(codes(validation.errors)).toEqual(
-      expect.arrayContaining(["note-size-invalid", "group-size-invalid"]),
-    );
-    expect(codes(validation.warnings)).toContain("note-empty");
-    expect(validation.errors).not.toContainEqual(
-      expect.objectContaining({ blockId: "collapsed" }),
     );
   });
 

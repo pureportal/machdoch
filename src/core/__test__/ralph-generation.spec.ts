@@ -479,39 +479,38 @@ describe("createRalphFlowWithAgent", () => {
 
     try {
       const staleFlow = createFlow({
-        id: "ui-improvement-loop",
-        alias: "ui-improvement-loop",
+        id: "code-improvement-loop",
+        alias: "code-improvement-loop",
         name: "Refactor loop",
       });
       const correctedFlow = createFlow({
-        id: "ui-improvement-loop",
-        alias: "ui-improvement-loop",
-        name: "UI improvement loop",
+        id: "code-improvement-loop",
+        alias: "code-improvement-loop",
+        name: "Code improvement loop",
         settings: { maxTransitions: 10 },
         blocks: [
           { id: "start", type: "START", title: "Start" },
           {
-            id: "collect-ui-evidence",
+            id: "inspect-workspace",
             type: "UTILITY",
-            title: "Collect UI Evidence",
+            title: "Inspect Workspace",
             utility: {
-              type: "UI_ANALYZE",
-              adapter: "image",
-              screenshotPath: "{{screenshotPath:path=}}",
+              type: "READ_FILE",
+              path: "package.json",
             },
           },
           {
-            id: "fix-ui",
+            id: "fix-code",
             type: "PROMPT",
-            title: "Fix UI",
-            prompt: "Improve the UI for {{scope:path=ALL}}.",
+            title: "Fix Code",
+            prompt: "Improve the code for {{scope:path=ALL}}.",
           },
           {
-            id: "validate-ui",
+            id: "validate-code",
             type: "VALIDATOR",
-            title: "Validate UI",
+            title: "Validate Code",
             prompt:
-              "Validate the UI improvement loop and end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+              "Validate the code improvement loop and end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
             validationScope: { mode: "sinceLastValidator" },
           },
           {
@@ -523,40 +522,34 @@ describe("createRalphFlowWithAgent", () => {
         ],
         edges: [
           {
-            id: "start-to-ui-evidence",
+            id: "start-to-inspection",
             from: "start",
             fromOutput: "SUCCESS",
-            to: "collect-ui-evidence",
+            to: "inspect-workspace",
           },
           {
-            id: "ui-evidence-to-fix",
-            from: "collect-ui-evidence",
+            id: "inspection-to-fix",
+            from: "inspect-workspace",
             fromOutput: "SUCCESS",
-            to: "fix-ui",
-          },
-          {
-            id: "ui-evidence-unavailable-to-fix",
-            from: "collect-ui-evidence",
-            fromOutput: "UNAVAILABLE",
-            to: "fix-ui",
+            to: "fix-code",
           },
           {
             id: "fix-to-validate",
-            from: "fix-ui",
+            from: "fix-code",
             fromOutput: "SUCCESS",
-            to: "validate-ui",
+            to: "validate-code",
           },
           {
             id: "validate-done",
-            from: "validate-ui",
+            from: "validate-code",
             fromOutput: "DONE",
             to: "success",
           },
           {
             id: "validate-continue",
-            from: "validate-ui",
+            from: "validate-code",
             fromOutput: "CONTINUE",
-            to: "fix-ui",
+            to: "fix-code",
           },
         ],
       });
@@ -566,8 +559,8 @@ describe("createRalphFlowWithAgent", () => {
         .mockResolvedValueOnce(createGeneratedFlowResult(correctedFlow));
 
       const result = await createRalphFlowWithAgent(workspace, {
-        name: "ui-improvement-loop",
-        prompt: "Create a UI improvement loop.",
+        name: "code-improvement-loop",
+        prompt: "Create a code improvement loop.",
         maxRounds: 2,
         config: runtimeConfig,
         customizations,
@@ -583,9 +576,9 @@ describe("createRalphFlowWithAgent", () => {
       expect(result.flow?.blocks).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            id: "collect-ui-evidence",
+            id: "inspect-workspace",
             type: "UTILITY",
-            utility: expect.objectContaining({ type: "UI_ANALYZE" }),
+            utility: expect.objectContaining({ type: "READ_FILE" }),
           }),
         ]),
       );
@@ -641,100 +634,6 @@ describe("createRalphFlowWithAgent", () => {
       await expect(readFile(result.flowPath, "utf8")).resolves.toContain(
         '"schemaVersion": 1',
       );
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("reports non-blocking quality warnings for example-shaped visual blocks", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
-
-    try {
-      vi.mocked(executeTask).mockResolvedValue(
-        createGeneratedFlowResult(
-          createFlow({
-            id: "visual-template-flow",
-            alias: "visual-template-flow",
-            name: "Visual template flow",
-            settings: { maxTransitions: 10 },
-            blocks: [
-              { id: "start", type: "START", title: "Start" },
-              {
-                id: "main-task",
-                type: "PROMPT",
-                title: "Main Task",
-                prompt: "Do the requested work.",
-              },
-              {
-                id: "review-result",
-                type: "VALIDATOR",
-                title: "Review Result",
-                prompt:
-                  "Validate the completed work. End with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
-                validationScope: { mode: "sinceLastValidator" },
-              },
-              {
-                id: "success",
-                type: "END",
-                title: "Success",
-                status: "success",
-              },
-              {
-                id: "work-note",
-                type: "NOTE",
-                title: "Operator note",
-                text: "Copied template note.",
-              },
-              {
-                id: "work-group",
-                type: "GROUP",
-                title: "Work loop",
-                childBlockIds: ["main-task", "review-result"],
-              },
-            ],
-            edges: [
-              {
-                id: "start-to-main-task",
-                from: "start",
-                fromOutput: "SUCCESS",
-                to: "main-task",
-              },
-              {
-                id: "main-task-to-review",
-                from: "main-task",
-                fromOutput: "SUCCESS",
-                to: "review-result",
-              },
-              {
-                id: "review-done",
-                from: "review-result",
-                fromOutput: "DONE",
-                to: "success",
-              },
-              {
-                id: "review-continue",
-                from: "review-result",
-                fromOutput: "CONTINUE",
-                to: "main-task",
-              },
-            ],
-          }),
-        ),
-      );
-
-      const result = await createRalphFlowWithAgent(workspace, {
-        name: "visual-template-flow",
-        prompt: "Create a small test flow.",
-        maxRounds: 1,
-        config: runtimeConfig,
-        customizations,
-      });
-      const validatorMarkdown = result.validatorResults[0]?.response?.markdown ?? "";
-
-      expect(result.status).toBe("created");
-      expect(validatorMarkdown).toContain("Small generated flows should usually omit NOTE and GROUP blocks");
-      expect(validatorMarkdown).toContain("schema-example block id(s)");
-      expect(validatorMarkdown).toContain("RALPH_DECISION: DONE");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -905,8 +804,7 @@ describe("createRalphFlowWithAgent", () => {
           {
             packageManager: "pnpm@10.12.1",
             scripts: {
-              "typecheck:ui": "tsc -p tsconfig.ui.json --noEmit",
-              "build:ui": "vite build",
+              typecheck: "tsc --noEmit",
               build: "tsc -p tsconfig.json",
             },
           },
@@ -949,8 +847,8 @@ describe("createRalphFlowWithAgent", () => {
                 transportType: "stdio",
                 tools: [
                   {
-                    name: "capture_screenshot",
-                    description: "Capture a screenshot of the live Tauri window.",
+                    name: "read_issue",
+                    description: "Read an issue.",
                     inputSchema: {},
                   },
                 ],
@@ -969,26 +867,19 @@ describe("createRalphFlowWithAgent", () => {
       vi.mocked(executeTask).mockResolvedValue(
         createGeneratedFlowResult(
           createFlow({
-            id: "ui-improvement-flow",
-            alias: "ui-improvement-flow",
-            name: "UI improvement loop",
+            id: "workflow-generation",
+            alias: "workflow-generation",
+            name: "Workflow generation",
             settings: {
               maxTransitions: 30,
             },
-            variables: [
-              {
-                name: "screenshotPath",
-                type: "path",
-                required: false,
-              },
-            ],
           }),
         ),
       );
 
       const result = await createRalphFlowWithAgent(workspace, {
-        name: "ui-improvement-flow",
-        prompt: "UI improvement loop.",
+        name: "workflow-generation",
+        prompt: "Create a workflow generation loop.",
         maxRounds: 1,
         config: runtimeConfig,
         customizations,
@@ -1000,41 +891,24 @@ describe("createRalphFlowWithAgent", () => {
       expect(generatorTask).toContain("Output contract:");
       expect(generatorTask).toContain("Preferred: call ralph_submit_flow_candidate");
       expect(generatorTask).toContain("<ralph_flow_json>");
-      expect(generatorTask).toContain(
-        "Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
-      );
-      expect(generatorTask).toContain(
-        "omit NOTE and GROUP blocks by default",
-      );
-      expect(generatorTask).toContain("A generated flow may have zero, one, or multiple NOTE/GROUP blocks");
-      expect(generatorTask).toContain("NOTE.text");
-      expect(generatorTask).toContain("GROUP.childBlockIds");
       expect(generatorTask).toContain("Minimal schema example:");
-      expect(generatorTask).not.toContain('"id": "work-note"');
-      expect(generatorTask).not.toContain('"id": "work-group"');
       expect(generatorTask).toContain("Do not write files yourself");
       expect(generatorTask).toContain("Use tools only when they materially reduce uncertainty.");
       expect(generatorTask).toContain("inspect workspace files or run short read-only commands");
       expect(generatorTask).toContain("Do not write files, modify code");
       expect(generatorTask).toContain("Detected package manager: pnpm.");
       expect(generatorTask).toContain(
-        "Prefer verification commands in this order: pnpm typecheck:ui && pnpm build:ui && pnpm build.",
+        "Prefer verification commands in this order: pnpm typecheck && pnpm build.",
       );
       expect(generatorTask).toContain("Available MCP capabilities:");
       expect(generatorTask).toContain(
-        "MCP_TOOL candidate: serverId=tauri-live, toolName=capture_screenshot",
+        "MCP_TOOL candidate: serverId=tauri-live, toolName=read_issue",
       );
       expect(generatorTask).toContain("Keep generated flows compact");
-      expect(generatorTask).toContain(
-        "Use UI_ANALYZE only when it materially helps satisfy that request",
-      );
       expect(generatorTask).toContain("settings.maxTransitions");
       expect(generatorTask).toContain("Generation scope: workspace.");
       expect(generatorOptions?.systemPromptSections?.join("\n")).toContain(
         "You are Ralph Flow Generator",
-      );
-      expect(generatorOptions?.systemPromptSections?.join("\n")).toContain(
-        "Omit NOTE and GROUP blocks by default",
       );
       expect(
         generatorOptions?.additionalToolDefinitions?.map(
@@ -1048,7 +922,6 @@ describe("createRalphFlowWithAgent", () => {
           "ralph_list_utility_types",
           "ralph_get_utility_contract",
           "ralph_validate_candidate_flow",
-          "ralph_normalize_layout",
           "ralph_submit_flow_candidate",
         ]),
       );
@@ -1124,8 +997,8 @@ describe("createRalphFlowWithAgent", () => {
                 transportType: "stdio",
                 tools: [
                   {
-                    name: "capture_screenshot",
-                    description: "Capture a screenshot of the live Tauri window.",
+                    name: "read_issue",
+                    description: "Read an issue.",
                     inputSchema: {},
                   },
                 ],
@@ -1165,11 +1038,7 @@ describe("createRalphFlowWithAgent", () => {
       expect(generatorTask).toContain("Detected package manager: pnpm.");
       expect(generatorTask).toContain("Available MCP capabilities:");
       expect(generatorTask).toContain(
-        "MCP_TOOL candidate: serverId=tauri-live, toolName=capture_screenshot",
-      );
-      expect(generatorTask).not.toContain("Keep UI-improvement loops compact");
-      expect(generatorTask).toContain(
-        "Use UI_ANALYZE only when it materially helps satisfy that request",
+        "MCP_TOOL candidate: serverId=tauri-live, toolName=read_issue",
       );
     } finally {
       await rm(workspace, { recursive: true, force: true });

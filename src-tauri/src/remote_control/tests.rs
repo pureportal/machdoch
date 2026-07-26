@@ -8,7 +8,6 @@ use super::{
         constant_time_eq, hash_remote_control_token, headers_are_authorized,
         state_changing_headers_allowed,
     },
-    mission_control_html::mission_control_html,
     now_millis,
     state::RecordCommandOutcome,
     status::{create_snapshot_locked, create_status_locked, create_token_hint},
@@ -600,28 +599,6 @@ fn older_shell_snapshot_cannot_overwrite_a_newer_snapshot() {
     assert_eq!(shell.active_session_id.as_deref(), Some("newer"));
     drop(inner);
     let _ = std::fs::remove_dir_all(directory);
-}
-
-#[test]
-fn mission_control_html_exposes_reasoning_control_wiring() {
-    let html = mission_control_html();
-
-    assert!(html.contains(r#"id="reasoningSelect""#));
-    assert!(html.contains(r#"aria-label="Reasoning""#));
-    for reasoning in [
-        "default", "none", "minimal", "low", "medium", "high", "xhigh", "max",
-    ] {
-        assert!(
-            html.contains(&format!(r#"<option value="{reasoning}">"#)),
-            "reasoning option {reasoning} should be rendered"
-        );
-    }
-    assert!(html.contains("const supportedReasoningModes = ["));
-    assert!(html.contains("session.effectiveReasoning"));
-    assert!(html.contains("composer.defaultReasoning"));
-    assert!(html.contains(r#"kind: "set-session-reasoning""#));
-    assert!(html.contains("reasoning: reasoningSelect.value"));
-    assert!(html.contains("supportedReasoningModes.includes(reasoningSelect.value)"));
 }
 
 #[test]

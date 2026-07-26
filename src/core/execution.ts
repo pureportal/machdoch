@@ -26,9 +26,19 @@ import {
   resolveTaskExecutionTimeouts,
   type ManagedTaskExecutionTimeout,
 } from "./_helpers/task-execution-timeouts.js";
-import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
+import {
+  attachInstructionDeliveryMetadata,
+  maybeExecuteModelDrivenTask,
+} from "./agent-runtime.js";
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
 import { resolveTaskContext } from "./task-context.js";
+import {
+  createInstructionDeliveryPlan,
+  resolveInstructionSet,
+  type InstructionDeliveryPlan,
+  type InstructionDeliveryReceipt,
+} from "./instruction-system/index.js";
+import { createInstructionDeliveryPlanForRuntime } from "./provider-enrollment/instruction-delivery-preflight.js";
 import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";
 import {
   extractExplicitInspectionPathReference,
@@ -47,6 +57,15 @@ const providerIsConfigured = (config: RuntimeConfig): boolean => {
     (entry) => entry.provider === config.provider && entry.configured,
   );
 };
+
+const shouldPrepareModelInstructionDelivery = (
+  config: RuntimeConfig,
+  options: TaskExecutionOptions,
+): boolean =>
+  options.modelAdapter !== undefined ||
+  (!config.offline &&
+    config.provider !== "unconfigured" &&
+    providerIsConfigured(config));
 
 const createLiveExecutionUnavailableMessage = (
   config: RuntimeConfig,
@@ -157,6 +176,61 @@ const runTaskExecutionStateMachine = async (
 
   let state: TaskExecutionState = "starting";
   let message = "Initialize the task execution loop.";
+  let instructionDeliveryPlan: InstructionDeliveryPlan | undefined =
+    options.instructionDeliveryPlan;
+  const instructionDeliveryReceipts: InstructionDeliveryReceipt[] =
+    options.instructionDeliveryReceipts ?? [];
+  const attachResolvedInstructionMetadata = (
+    result: TaskExecutionResult,
+  ): TaskExecutionResult => {
+    if (Array.isArray(result.metadata?.instructionDeliveryPlans)) {
+      return result;
+    }
+
+    const instructionResolution =
+      runtime.taskContext?.instructionResolution;
+    if (!instructionResolution) {
+      return result;
+    }
+
+    instructionDeliveryPlan ??= createInstructionDeliveryPlan(
+      instructionResolution,
+      {
+        ...(options.unattendedInstructionDelivery === undefined
+          ? {}
+          : { unattended: options.unattendedInstructionDelivery }),
+        acknowledgedCompatible:
+          options.acknowledgeCompatibleInstructionDelivery === true ||
+          options.acknowledgedInstructionDeliveryPlanId !== undefined,
+      },
+    );
+
+    return attachInstructionDeliveryMetadata(
+      result,
+      instructionResolution,
+      instructionDeliveryPlan,
+      [instructionDeliveryPlan],
+      instructionDeliveryReceipts,
+    );
+  };
+  const emitTerminalResultWithInstructions = (
+    terminalTask: string,
+    terminalConfig: RuntimeConfig,
+    terminalState: TaskExecutionState,
+    terminalMessage: string,
+    terminalRuntime: TaskExecutionRuntime,
+    terminalOptions: TaskExecutionOptions,
+    result: TaskExecutionResult,
+  ): Promise<TaskExecutionResult> =>
+    emitTerminalResult(
+      terminalTask,
+      terminalConfig,
+      terminalState,
+      terminalMessage,
+      terminalRuntime,
+      terminalOptions,
+      attachResolvedInstructionMetadata(result),
+    );
 
   while (true) {
     await emitExecutionState(task, config, state, message, runtime, options);
@@ -171,7 +245,7 @@ const runTaskExecutionStateMachine = async (
     );
 
     if (cancelledBeforeStep) {
-      return cancelledBeforeStep;
+      return attachResolvedInstructionMetadata(cancelledBeforeStep);
     }
 
     switch (state) {
@@ -183,10 +257,27 @@ const runTaskExecutionStateMachine = async (
       }
 
       case "resolving-context": {
+        const configuredProvider =
+          config.provider === "unconfigured" ? "openai" : config.provider;
+        const instructionResolution =
+          options.resolvedInstructions ??
+          (await resolveInstructionSet({
+            workspaceRoot: config.workspaceRoot,
+            providerId: configuredProvider,
+            surface: isAgentCliProvider(configuredProvider) ? "cli" : "api",
+            model: config.model,
+            ...(options.instructionFlow === undefined
+              ? {}
+              : { flow: options.instructionFlow }),
+            ...(options.unattendedInstructionDelivery === undefined
+              ? {}
+              : { unattended: options.unattendedInstructionDelivery }),
+          }));
         runtime.taskContext = resolveTaskContext(task, customizations, {
-          ...(options.instructionAudience
-            ? { instructionAudience: options.instructionAudience }
+          ...(options.executionRole
+            ? { executionRole: options.executionRole }
             : {}),
+          instructionResolution,
         });
         runtime.contextSections = createContextSections(runtime.taskContext);
         state = "checking-inputs";
@@ -199,7 +290,7 @@ const runTaskExecutionStateMachine = async (
         const taskContext = runtime.taskContext;
 
         if (!taskContext) {
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             "blocked",
@@ -220,7 +311,7 @@ const runTaskExecutionStateMachine = async (
           taskContext.invokedPrompt &&
           taskContext.invokedPrompt.missingInputs.length > 0
         ) {
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             "blocked",
@@ -264,6 +355,47 @@ const runTaskExecutionStateMachine = async (
 
       case "checking-tools": {
         if (runtime.taskContext) {
+          const instructionResolution = runtime.taskContext.instructionResolution;
+          if (!instructionResolution) {
+            return emitTerminalResultWithInstructions(
+              task,
+              config,
+              "blocked",
+              "Instruction resolution was not available at the provider boundary.",
+              runtime,
+              options,
+              createInvariantViolationResult(
+                task,
+                config,
+                runtime,
+                "The provider call was blocked because its immutable instruction snapshot was missing.",
+                "Internal invariant failed: instruction resolution was undefined.",
+              ),
+            );
+          }
+          if (
+            instructionDeliveryPlan === undefined &&
+            shouldPrepareModelInstructionDelivery(config, options)
+          ) {
+            instructionDeliveryPlan =
+              await createInstructionDeliveryPlanForRuntime(
+                instructionResolution,
+                {
+                workspaceRoot: config.workspaceRoot,
+                  reasoning: config.reasoning,
+                  ...(options.unattendedInstructionDelivery === undefined
+                    ? {}
+                    : {
+                        unattended:
+                          options.unattendedInstructionDelivery,
+                      }),
+                  acknowledgedCompatible:
+                    options.acknowledgeCompatibleInstructionDelivery === true ||
+                    options.acknowledgedInstructionDeliveryPlanId !==
+                      undefined,
+                },
+              );
+          }
           const modelDrivenResult = await maybeExecuteModelDrivenTask({
             task,
             config,
@@ -290,6 +422,27 @@ const runTaskExecutionStateMachine = async (
             ...(options.structuredOutput
               ? { structuredOutput: options.structuredOutput }
               : {}),
+            ...(instructionDeliveryPlan === undefined
+              ? {}
+              : { instructionDeliveryPlan }),
+            ...(options.unattendedInstructionDelivery === undefined
+              ? {}
+              : {
+                  unattendedInstructionDelivery:
+                    options.unattendedInstructionDelivery,
+                }),
+            ...(options.acknowledgeCompatibleInstructionDelivery ===
+                undefined &&
+              options.acknowledgedInstructionDeliveryPlanId === undefined
+              ? {}
+              : {
+                  acknowledgeCompatibleInstructionDelivery:
+                    options.acknowledgeCompatibleInstructionDelivery === true ||
+                    (instructionDeliveryPlan !== undefined &&
+                      options.acknowledgedInstructionDeliveryPlanId ===
+                        instructionDeliveryPlan.planId),
+                }),
+            instructionDeliveryReceipts,
             ...(options.onStateChange
               ? { onStateChange: options.onStateChange }
               : {}),
@@ -311,11 +464,13 @@ const runTaskExecutionStateMachine = async (
           );
 
           if (cancelledAfterModelExecution) {
-            return cancelledAfterModelExecution;
+            return attachResolvedInstructionMetadata(
+              cancelledAfterModelExecution,
+            );
           }
 
           if (modelDrivenResult) {
-            return emitTerminalResult(
+            return emitTerminalResultWithInstructions(
               task,
               config,
               TASK_EXECUTION_STATUS_TO_TERMINAL_STATE[modelDrivenResult.status],
@@ -334,7 +489,7 @@ const runTaskExecutionStateMachine = async (
         ) {
           const unavailable = createLiveExecutionUnavailableMessage(config);
 
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             "unsupported",
@@ -362,7 +517,7 @@ const runTaskExecutionStateMachine = async (
         }
 
         if (config.mode === "ask" && runtime.createFileTarget) {
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             "blocked",
@@ -426,11 +581,11 @@ const runTaskExecutionStateMachine = async (
         );
 
         if (cancelledAfterExecution) {
-          return cancelledAfterExecution;
+          return attachResolvedInstructionMetadata(cancelledAfterExecution);
         }
 
         if (runtime.pendingResult.status !== "executed") {
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             TASK_EXECUTION_STATUS_TO_TERMINAL_STATE[
@@ -453,7 +608,7 @@ const runTaskExecutionStateMachine = async (
         const pendingResult = runtime.pendingResult;
 
         if (!pendingResult) {
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             "blocked",
@@ -473,7 +628,7 @@ const runTaskExecutionStateMachine = async (
         const verificationFailure = verifyExecutedResult(pendingResult);
 
         if (verificationFailure) {
-          return emitTerminalResult(
+          return emitTerminalResultWithInstructions(
             task,
             config,
             "blocked",
@@ -495,7 +650,7 @@ const runTaskExecutionStateMachine = async (
           );
         }
 
-        return emitTerminalResult(
+        return emitTerminalResultWithInstructions(
           task,
           config,
           "completed",

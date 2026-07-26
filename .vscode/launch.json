@@ -322,23 +322,6 @@
       }
     },
     {
-      "name": "UI Tests",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "node",
-      "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
-      "args": ["run", "--config", "${workspaceFolder}/vitest.ui.config.ts"],
-      "envFile": "${workspaceFolder}/.env",
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
-      "autoAttachChildProcesses": true,
-      "presentation": {
-        "group": "UI",
-        "order": 4
-      }
-    },
-    {
       "name": "UI Typecheck",
       "type": "node",
       "request": "launch",
@@ -350,7 +333,7 @@
       "skipFiles": ["<node_internals>/**"],
       "presentation": {
         "group": "UI",
-        "order": 5
+        "order": 4
       }
     }
   ],

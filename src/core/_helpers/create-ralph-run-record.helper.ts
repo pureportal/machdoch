@@ -172,6 +172,71 @@ export const createRalphRunRecordBlock = (
   );
   const response = capRalphRunRecordResponse(blockResult.result?.response);
   const progress = capRalphRunRecordProgressEvents(blockResult.progress);
+  const instructionMetadata = blockResult.result?.metadata;
+  const instructionDelivery =
+    instructionMetadata &&
+    typeof instructionMetadata.instructionResolutionId === "string" &&
+    typeof instructionMetadata.instructionCanonicalDigest === "string" &&
+    typeof instructionMetadata.instructionEnvironmentDigest === "string" &&
+    typeof instructionMetadata.instructionDeliveryPlanId === "string"
+      ? {
+          resolutionId: instructionMetadata.instructionResolutionId,
+          canonicalDigest: instructionMetadata.instructionCanonicalDigest,
+          environmentDigest: instructionMetadata.instructionEnvironmentDigest,
+          planId: instructionMetadata.instructionDeliveryPlanId,
+          grade:
+            typeof instructionMetadata.instructionDeliveryGrade === "string"
+              ? instructionMetadata.instructionDeliveryGrade
+              : "unknown",
+          sources: Array.isArray(instructionMetadata.instructionSources)
+            ? (capRalphRunRecordValue(
+                instructionMetadata.instructionSources,
+              ) as unknown[])
+            : [],
+          nativeInventory: Array.isArray(
+            instructionMetadata.instructionNativeInventory,
+          )
+            ? (capRalphRunRecordValue(
+                instructionMetadata.instructionNativeInventory,
+              ) as unknown[])
+            : [],
+          mcpInitializationInstructions: Array.isArray(
+            instructionMetadata.instructionMcpInitializationInstructions,
+          )
+            ? (capRalphRunRecordValue(
+                instructionMetadata.instructionMcpInitializationInstructions,
+              ) as unknown[])
+            : [],
+          diagnostics: Array.isArray(
+            instructionMetadata.instructionDiagnostics,
+          )
+            ? (capRalphRunRecordValue(
+                instructionMetadata.instructionDiagnostics,
+              ) as unknown[])
+            : [],
+          plans: Array.isArray(
+            instructionMetadata.instructionDeliveryPlans,
+          )
+            ? (capRalphRunRecordValue(
+                instructionMetadata.instructionDeliveryPlans,
+              ) as unknown[])
+            : [],
+          ...(instructionMetadata.instructionAdapterEvidence === undefined
+            ? {}
+            : {
+                adapterEvidence: capRalphRunRecordValue(
+                  instructionMetadata.instructionAdapterEvidence,
+                ),
+              }),
+          receipts: Array.isArray(
+            instructionMetadata.instructionDeliveryReceipts,
+          )
+            ? (capRalphRunRecordValue(
+                instructionMetadata.instructionDeliveryReceipts,
+              ) as unknown[])
+            : [],
+        }
+      : undefined;
 
   return {
     blockId: blockResult.blockId,
@@ -197,6 +262,7 @@ export const createRalphRunRecordBlock = (
       : {}),
     ...(markdown ? { markdown } : {}),
     ...(error ? { error } : {}),
+    ...(instructionDelivery ? { instructionDelivery } : {}),
   };
 };
 

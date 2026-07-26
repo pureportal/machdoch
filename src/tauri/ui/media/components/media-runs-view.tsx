@@ -12,10 +12,11 @@ import {
   Plus,
   RadioTower,
   RotateCw,
+  Search,
   ShieldAlert,
   Workflow,
 } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type {
   MediaAssetRecord,
   MediaHumanReviewDecisionRequest,
@@ -25,10 +26,16 @@ import type {
   MediaRuntimeRunRecord,
   MediaRuntimeStatus,
 } from "../../../../core/media/contracts.js";
+import { paginateMediaItems } from "../../../../core/media/gallery.js";
+import { matchesMediaRunQuery } from "../../../../core/media/run-library.js";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { cn } from "../../lib/utils";
 import { readMediaAssetReferencePreview } from "../media-runtime";
+import { MediaPagination } from "./media-pagination";
+
+const RUN_HISTORY_PAGE_SIZE = 30;
 
 interface MediaRunsViewProps {
   runs: readonly MediaRunRecord[];
@@ -250,7 +257,7 @@ const RunInspector = ({
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
             <ListTree className="h-4 w-4 text-cyan-300" /> Execution log
           </div>
-          <p className="mt-1 truncate font-mono text-[10px] text-slate-600">
+          <p className="mt-1 break-all font-mono text-[10px] text-slate-600">
             {run.id}
           </p>
         </div>
@@ -593,7 +600,7 @@ const RunInspector = ({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-[10px] font-semibold text-slate-200">
+                      <p className="break-words text-[10px] leading-4 font-semibold text-slate-200">
                         {node.label}
                       </p>
                       <p className="mt-0.5 font-mono text-[8px] text-slate-600">
@@ -867,6 +874,31 @@ export const MediaRunsView = ({
   onInspectInFlow,
   onRefresh,
 }: MediaRunsViewProps): JSX.Element => {
+  const [query, setQuery] = useState("");
+  const [runPage, setRunPage] = useState(1);
+  const runListRef = useRef<HTMLDivElement | null>(null);
+  const filteredRuns = useMemo(
+    () => runs.filter((run) => matchesMediaRunQuery(run, query)),
+    [query, runs],
+  );
+  const runPagination = useMemo(
+    () => paginateMediaItems(filteredRuns, runPage, RUN_HISTORY_PAGE_SIZE),
+    [filteredRuns, runPage],
+  );
+
+  useEffect(() => {
+    const normalizedPage = runPagination.page || 1;
+    if (runPage !== normalizedPage) setRunPage(normalizedPage);
+  }, [runPage, runPagination.page]);
+
+  const revealRunPage = (page: number): void => {
+    setRunPage(page);
+    window.requestAnimationFrame(() => {
+      runListRef.current?.focus({ preventScroll: true });
+      runListRef.current?.scrollTo({ top: 0 });
+    });
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950 px-5 py-6 sm:px-7 sm:py-7">
       <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
@@ -900,6 +932,31 @@ export const MediaRunsView = ({
           </div>
         ) : null}
 
+        {runs.length > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="relative w-full sm:w-80">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
+              />
+              <Input
+                type="search"
+                aria-label="Search run history"
+                placeholder="Search workflow, prompt, model, or status…"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.currentTarget.value);
+                  setRunPage(1);
+                }}
+                className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
+              />
+            </div>
+            <span aria-live="polite" className="text-[10px] tabular-nums text-slate-600">
+              {filteredRuns.length} of {runs.length} runs
+            </span>
+          </div>
+        ) : null}
+
         {runs.length === 0 ? (
           <div className="mt-8 flex min-h-96 flex-1 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/15 px-6 text-center">
             <Clock3 className="h-8 w-8 text-slate-600" />
@@ -914,8 +971,23 @@ export const MediaRunsView = ({
               selectedRun && "xl:grid-cols-[minmax(0,1fr)_360px]",
             )}
           >
-            <div className="min-h-0 overflow-y-auto rounded-2xl border border-slate-800">
-              {runs.map((run) => {
+            <div
+              ref={runListRef}
+              tabIndex={-1}
+              className="min-h-0 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-sky-400/35"
+            >
+              <MediaPagination
+                page={runPagination.page}
+                pageCount={runPagination.pageCount}
+                firstItemNumber={runPagination.firstItemNumber}
+                lastItemNumber={runPagination.lastItemNumber}
+                totalItems={runPagination.totalItems}
+                itemLabel="runs"
+                onPageChange={revealRunPage}
+                className="sticky top-0 z-10 mb-3 bg-slate-950/95 backdrop-blur"
+              />
+              <div className="overflow-hidden rounded-2xl border border-slate-800">
+              {runPagination.items.map((run) => {
                 const runtimeRun = isRuntimeRun(run);
                 const selected = selectedRun?.id === run.id;
                 const content = (
@@ -923,7 +995,7 @@ export const MediaRunsView = ({
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-sm font-semibold text-slate-100">
+                          <h2 className="min-w-0 break-words text-sm font-semibold text-slate-100">
                             {run.flowName}
                           </h2>
                           <span
@@ -947,8 +1019,8 @@ export const MediaRunsView = ({
                     {runtimeRun ? (
                       <div className="mt-4">
                         <div className="flex items-center justify-between text-[10px] text-slate-600">
-                          <span>{run.currentStep}</span>
-                          <span className="tabular-nums">
+                          <span className="min-w-0 break-words pr-2">{run.currentStep}</span>
+                          <span className="shrink-0 tabular-nums">
                             {Math.round(run.progress * 100)}%
                           </span>
                         </div>
@@ -998,6 +1070,12 @@ export const MediaRunsView = ({
                   </article>
                 );
               })}
+              {filteredRuns.length === 0 ? (
+                <div className="flex min-h-52 items-center justify-center px-6 text-center text-xs text-slate-500">
+                  No runs match “{query.trim()}”.
+                </div>
+              ) : null}
+              </div>
             </div>
             {selectedRun ? (
               <RunInspector

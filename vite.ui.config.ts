@@ -31,6 +31,7 @@ export default defineConfig({
   clearScreen: false,
   root: previewRoot,
   define: {
+    __MACHDOCH_DEVELOPMENT__: JSON.stringify(tauriDebug),
     __MACHDOCH_VERSION__: JSON.stringify(appVersion),
   },
   plugins: [react(), tailwindcss()],

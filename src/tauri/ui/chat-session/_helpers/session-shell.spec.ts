@@ -4,7 +4,6 @@ import type { RuntimeSnapshot } from "../../runtime";
 import {
   createConversationContextFromSession,
   getEffectiveSessionMode,
-  getWorkspaceLabel,
 } from "./session-shell.ts";
 
 const createRuntimeSnapshot = (
@@ -74,15 +73,7 @@ describe("session shell helpers", () => {
     ).toBe("machdoch");
   });
 
-  it("formats workspace labels from path tails", () => {
-    expect(getWorkspaceLabel("c:\\Development\\machdoch")).toBe("machdoch");
-    expect(getWorkspaceLabel("/tmp/example-workspace")).toBe(
-      "example-workspace",
-    );
-    expect(getWorkspaceLabel(null)).toBe("Not Set");
-  });
-
-  it("builds conversation context from visible messages only", () => {
+  it("builds AI conversation context from completed messages", () => {
     const session = createSession({
       sessionMemoryEnabled: true,
       useGlobalMemory: true,

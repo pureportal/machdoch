@@ -81,7 +81,7 @@ pub(crate) fn capabilities_for_model(
                 supports_denoising_schedules: false,
             },
         ],
-        Some("stable-diffusion-3" | "flux-2") => vec![MediaModelAddonCapability {
+        Some("stable-diffusion-3" | "flux-2" | "krea-2") => vec![MediaModelAddonCapability {
             kind: "lora".to_string(),
             target_components: vec!["denoiser".to_string()],
             max_active: 8,
@@ -882,7 +882,7 @@ fn validate_request(
         );
     }
     if !model_import::SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
-        return Err("architecture is not a supported SD or FLUX family".to_string());
+        return Err("architecture is not a supported local image family".to_string());
     }
     let capability = capabilities_for_model("local-diffusers", Some(&request.architecture))
         .into_iter()
@@ -1613,6 +1613,40 @@ mod tests {
                 network_alpha_count: 1,
             })
         );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn detects_native_flux_2_klein_lora_tensor_names() {
+        let path = temp_path("flux-2-lora");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "__metadata__": {
+                    "format": "pt"
+                },
+                "transformer.double_stream_modulation_img.linear.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 4], "data_offsets": [0, 32]
+                },
+                "transformer.double_stream_modulation_img.linear.lora_B.weight": {
+                    "dtype": "F32", "shape": [4, 2], "data_offsets": [32, 64]
+                },
+                "transformer.single_stream_modulation.linear.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 4], "data_offsets": [64, 96]
+                },
+                "transformer.single_stream_modulation.linear.lora_B.weight": {
+                    "dtype": "F32", "shape": [4, 2], "data_offsets": [96, 128]
+                }
+            }),
+            &[0; 128],
+        );
+
+        let inspection =
+            inspect(path.to_string_lossy().as_ref()).expect("FLUX.2 LoRA inspection should pass");
+        assert_eq!(inspection.detected_kind.as_deref(), Some("lora"));
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
+        assert_eq!(inspection.architecture_confidence, "high");
+        assert_eq!(inspection.target_components, vec!["denoiser"]);
         let _ = fs::remove_file(path);
     }
 

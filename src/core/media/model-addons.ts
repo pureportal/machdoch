@@ -21,7 +21,7 @@ const capability = (
 });
 
 const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
-  Record<MediaLocalModelArchitecture, readonly MediaModelAddonCapability[]>
+  Partial<Record<MediaLocalModelArchitecture, readonly MediaModelAddonCapability[]>>
 > = {
   "stable-diffusion-1": [
     capability("lora", ["denoiser", "text-encoder"], 8, true, true),
@@ -41,6 +41,8 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
     capability("textual-inversion", ["text-encoder", "text-encoder-2"], 16, false, false),
   ],
   "flux-2": [capability("lora", ["denoiser"], 8, false, true)],
+  "krea-2": [capability("lora", ["denoiser"], 8, false, true)],
+  "wan-2.2-ti2v": [],
 };
 
 export const getMediaModelAddonCapabilities = (
@@ -48,13 +50,69 @@ export const getMediaModelAddonCapabilities = (
   architecture: MediaLocalModelArchitecture | null,
 ): readonly MediaModelAddonCapability[] => {
   if (providerId !== "local-diffusers" || architecture === null) return [];
-  return ARCHITECTURE_ADDON_CAPABILITIES[architecture];
+  return ARCHITECTURE_ADDON_CAPABILITIES[architecture] ?? [];
 };
 
 export interface MediaModelAddonCompatibility {
   status: "compatible" | "unverified" | "incompatible";
   reason: string;
 }
+
+const normalizeBaseModelIdentity = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/gu, "");
+
+const abbreviateBaseModelIdentity = (value: string): string =>
+  value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/gu)
+    .filter(Boolean)
+    .map((part) => (part.length <= 2 ? part : part[0]))
+    .join("");
+
+const modelBaseIdentities = (model: MediaModelDescriptor): Set<string> =>
+  new Set(
+    [model.architecture, model.family]
+      .filter((value): value is string => Boolean(value))
+      .flatMap((value) => [
+        normalizeBaseModelIdentity(value),
+        abbreviateBaseModelIdentity(value),
+      ])
+      .filter(Boolean),
+  );
+
+export const matchesMediaModelAddonQuery = (
+  addon: MediaModelAddonDescriptor,
+  query: string,
+): boolean => {
+  const terms = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/u)
+    .filter(Boolean);
+  if (terms.length === 0) return true;
+
+  const searchableText = [
+    addon.id,
+    addon.displayName,
+    addon.kind,
+    addon.architecture,
+    addon.architectureConfidence,
+    ...addon.targetComponents,
+    addon.baseModelHint ?? "",
+    ...addon.triggerWords,
+    addon.defaultToken ?? "",
+    addon.digest,
+    addon.relativePath,
+    addon.sourceUrl ?? "",
+    addon.license.name,
+    addon.license.spdxId ?? "",
+    addon.license.commercialUse,
+  ]
+    .join("\n")
+    .toLowerCase();
+
+  return terms.every((term) => searchableText.includes(term));
+};
 
 export const inspectMediaModelAddonCompatibility = (
   model: MediaModelDescriptor,
@@ -86,6 +144,13 @@ export const inspectMediaModelAddonCompatibility = (
     };
   }
   if (addon.baseModelHint) {
+    const normalizedHint = normalizeBaseModelIdentity(addon.baseModelHint);
+    if (modelBaseIdentities(model).has(normalizedHint)) {
+      return {
+        status: "compatible",
+        reason: `Provider, architecture, target components, and publisher base-family hint “${addon.baseModelHint}” match.`,
+      };
+    }
     return {
       status: "unverified",
       reason: `Architecture matches; publisher base-model hint “${addon.baseModelHint}” still needs runtime validation.`,

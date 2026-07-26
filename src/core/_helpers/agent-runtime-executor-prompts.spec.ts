@@ -43,9 +43,9 @@ const createTaskContext = (
     task: "Improve the Tauri updater flow.",
     effectiveTask: "Improve the Tauri updater flow.",
     taskContextText: "",
-    instructionContextText: "",
     workspacePaths: [],
     suggestedTools: ["filesystem", "network"],
+    executionRole: "executor",
     applicableInstructions: [],
     ...overrides,
   };

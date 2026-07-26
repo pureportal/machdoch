@@ -108,30 +108,6 @@ const createToolPlanSection = (preview: TaskRunPreview): TaskPanelSection => {
   };
 };
 
-const createInstructionSection = (
-  preview: TaskRunPreview,
-): TaskPanelSection | undefined => {
-  if (preview.applicableInstructions.length === 0) {
-    return undefined;
-  }
-
-  return {
-    id: "instructions",
-    title: "Relevant instructions",
-    lines: preview.applicableInstructions.flatMap((instruction) => {
-      const prioritySuffix =
-        instruction.priority !== 0 ? ` [priority ${instruction.priority}]` : "";
-
-      return [
-        `${instruction.name}${prioritySuffix} — ${instruction.reason}`,
-        ...createTextPreviewLines(instruction.body, 2, 88).map(
-          (line) => `  ${line}`,
-        ),
-      ];
-    }),
-  };
-};
-
 const createOptionalListSection = (
   id: string,
   title: string,
@@ -181,7 +157,6 @@ const createPreviewModel = (preview: TaskRunPreview): TaskPanelModel => {
   const sections = [
     createPromptSection(preview),
     createToolPlanSection(preview),
-    createInstructionSection(preview),
     createOptionalListSection("warnings", "Warnings", preview.warnings, "warning"),
     createOptionalListSection("notes", "Notes", preview.notes, "info"),
     createPlanSection(preview),

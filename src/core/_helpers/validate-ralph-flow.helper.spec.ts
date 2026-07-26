@@ -7,7 +7,6 @@ import { createValidationResult } from "./create-ralph-validation-result.helper.
 import {
   getRalphUtilityOutputs,
   isExecutableRalphBlock,
-  isVisualRalphBlock,
 } from "./get-ralph-block-outputs.helper.ts";
 import { hasGraphCycle } from "./validate-ralph-flow-graph.helper.ts";
 import { validateRalphFlow } from "./validate-ralph-flow.helper.ts";
@@ -50,7 +49,7 @@ describe("Ralph flow validation helpers", () => {
     });
   });
 
-  it("classifies utility outputs and visual/executable block types", () => {
+  it("classifies utility outputs and executable block types", () => {
     expect(getRalphUtilityOutputs({ type: "POLL", maxAttempts: 3 })).toEqual([
       "SUCCESS",
       "TIMEOUT",
@@ -62,8 +61,6 @@ describe("Ralph flow validation helpers", () => {
     ]);
     expect(getRalphUtilityOutputs({ type: "WAIT" })).toEqual(["SUCCESS"]);
 
-    expect(isVisualRalphBlock({ id: "note", type: "NOTE", title: "Note", text: "" })).toBe(true);
-    expect(isVisualRalphBlock({ id: "group", type: "GROUP", title: "Group", childBlockIds: [] })).toBe(true);
     expect(isExecutableRalphBlock({ id: "start", type: "START", title: "Start" })).toBe(false);
     expect(isExecutableRalphBlock({ id: "end", type: "END", title: "End", status: "success" })).toBe(false);
     expect(

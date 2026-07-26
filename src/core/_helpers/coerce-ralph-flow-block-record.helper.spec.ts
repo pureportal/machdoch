@@ -7,11 +7,6 @@ describe("coerceRalphFlowBlockRecord", () => {
       type: "PROMPT",
       title: "Prompt",
       prompt: "Do work.",
-      position: { x: 10, y: 20 },
-      size: { width: 320, height: 180 },
-      locked: true,
-      parentGroupId: "group",
-      groupBoundary: true,
       settings: {
         workspace: { mode: "default" },
         provider: "default",
@@ -33,11 +28,6 @@ describe("coerceRalphFlowBlockRecord", () => {
       type: "PROMPT",
       title: "Prompt",
       prompt: "Do work.",
-      position: { x: 10, y: 20 },
-      size: { width: 320, height: 180 },
-      locked: true,
-      parentGroupId: "group",
-      groupBoundary: true,
       settings: {
         workspace: { mode: "default" },
         provider: "default",
@@ -124,15 +114,13 @@ describe("coerceRalphFlowBlockRecord", () => {
     });
   });
 
-  it("uses safe defaults for malformed block variants", () => {
+  it("uses safe defaults for malformed executable block variants", () => {
     expect(
       coerceRalphFlowBlockRecord({
         id: 123,
         type: "UNKNOWN",
         title: false,
         prompt: 7,
-        position: { x: 1 },
-        size: { width: 100 },
         settings: null,
       }),
     ).toEqual({
@@ -140,26 +128,6 @@ describe("coerceRalphFlowBlockRecord", () => {
       title: "",
       type: "PROMPT",
       prompt: "",
-    });
-
-    expect(
-      coerceRalphFlowBlockRecord({
-        id: "group",
-        type: "GROUP",
-        title: "Group",
-        tone: "invalid",
-        childBlockIds: [1, "child"],
-        maxDepth: 2.9,
-        layoutMode: "grid",
-        executionBoundary: { mode: "unsupported", blockId: "child" },
-      }),
-    ).toMatchObject({
-      id: "group",
-      type: "GROUP",
-      childBlockIds: ["child"],
-      maxDepth: 2,
-      layoutMode: "freeform",
-      executionBoundary: { mode: "none", blockId: "child" },
     });
 
     expect(

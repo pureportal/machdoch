@@ -4,6 +4,7 @@ use std::{
     io::Write as _,
     path::{Component, Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
@@ -16,18 +17,32 @@ use tauri::{AppHandle, Manager as _};
 use super::{
     database, model_addon, model_import,
     provider_openai::{self, GeneratedImageAsset},
-    subject_cutout, transform, GenerateMediaImagesRequest, MediaEmbeddingVectorProfile,
-    MediaLoraDenoisingSchedule, MediaLoraTensorProfile, MediaModelAddonSelection,
-    MediaModelDescriptor, MediaResult, MediaRuntimePaths,
+    subject_cutout, transform, GenerateMediaImagesRequest, GenerateMediaVideoRequest,
+    MediaAnimatedBackgroundConfig, MediaEmbeddingVectorProfile, MediaLoraDenoisingSchedule,
+    MediaLoraTensorProfile, MediaModelAddonSelection, MediaModelDescriptor, MediaResult,
+    MediaRuntimePaths,
 };
 
 const WORKER_SCHEMA_VERSION: u32 = 4;
-const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+// Importing the pinned ROCm stack takes roughly 45 seconds on the reference
+// machine and can take materially longer while a hot-reload build is linking
+// or Windows is reclaiming memory after generation.
+// Treat that startup delay as expected instead of falling through to an
+// unrelated global Python installation.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const MODEL_PROBE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const VIDEO_GENERATION_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const MAX_WORKER_RESPONSE_BYTES: usize = 2 * 1_024 * 1_024;
 const MAX_WORKER_DIAGNOSTIC_BYTES: usize = 256 * 1_024;
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
+const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
+// A nominal 16 GB adapter reports slightly less usable memory after the
+// display driver reserves VRAM. Keep the bounded CPU-offload profile honest
+// while accepting those adapters instead of requiring a full 16 GiB report.
+const MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES: u64 = 15 * 1_024 * 1_024 * 1_024;
+static RUNTIME_PROBE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static PREFERRED_HIP_VISIBLE_DEVICE: OnceLock<String> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -133,6 +148,46 @@ struct WorkerGenerationRequest<'a> {
     seed: u64,
     output_directory: &'a Path,
     addons: Vec<WorkerAddon<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_image_path: Option<&'a Path>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit_strength: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_boost: Option<f64>,
+    require_chroma_background: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    grounding_pixels: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_fit: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory_profile: Option<&'a str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerVideoGenerationRequest<'a> {
+    schema_version: u32,
+    model: WorkerModel<'a>,
+    prompt: &'a str,
+    first_frame_path: &'a Path,
+    last_frame_path: &'a Path,
+    aspect_ratio: &'a str,
+    resolution: &'a str,
+    num_frames: u32,
+    num_inference_steps: u32,
+    guidance_scale: f64,
+    negative_prompt: &'a str,
+    transparent_background: bool,
+    loop_mode: &'a str,
+    matte_quality: &'a str,
+    encoding_quality: &'a str,
+    memory_profile: &'a str,
+    fps: u32,
+    seed: u64,
+    experimental_low_memory: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    animated_background: Option<&'a MediaAnimatedBackgroundConfig>,
+    output_directory: &'a Path,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,9 +219,127 @@ struct WorkerGenerationResponse {
     device_memory_bytes: Option<u64>,
     prompt: String,
     negative_prompt: String,
+    model_policy: String,
+    aspect_ratio: String,
+    num_inference_steps: u32,
     #[serde(default)]
     addons: Vec<serde_json::Value>,
+    #[serde(default)]
+    performance: Option<serde_json::Value>,
+    #[serde(default)]
+    require_chroma_background: bool,
+    #[serde(default)]
+    edit_conditioning: Option<serde_json::Value>,
     outputs: Vec<WorkerOutputRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalWanOutputProvenance {
+    pub(crate) index: u32,
+    file_name: String,
+    pub(crate) seed: u64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) frame_count: u32,
+    pub(crate) source_frame_count: u32,
+    pub(crate) fps: u32,
+    pub(crate) duration_seconds: f64,
+    pub(crate) alpha_minimum: u32,
+    pub(crate) alpha_maximum: u32,
+    pub(crate) decoded_alpha_minimum: u32,
+    pub(crate) decoded_alpha_maximum: u32,
+    pub(crate) decoded_frame_count: u32,
+    pub(crate) decoded_loop_endpoint_mae: f64,
+    pub(crate) decoded_alpha_loop_endpoint_mae: f64,
+    pub(crate) loop_mode: String,
+    pub(crate) loop_endpoint_mae: f64,
+    pub(crate) has_alpha: bool,
+    pub(crate) matte: Option<serde_json::Value>,
+    pub(crate) encoding_quality: String,
+    pub(crate) codec: String,
+    pub(crate) container: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalWanAnimatedBackgroundEvidence {
+    pub(crate) engine: String,
+    pub(crate) style: String,
+    pub(crate) direction: String,
+    pub(crate) color_start: String,
+    pub(crate) color_end: String,
+    pub(crate) cycles: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalWanCompositeOutputProvenance {
+    pub(crate) index: u32,
+    file_name: String,
+    pub(crate) seed: u64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) frame_count: u32,
+    pub(crate) fps: u32,
+    pub(crate) duration_seconds: f64,
+    pub(crate) has_alpha: bool,
+    pub(crate) loop_mode: String,
+    pub(crate) loop_endpoint_mae: f64,
+    pub(crate) decoded_frame_count: u32,
+    pub(crate) decoded_loop_endpoint_mae: f64,
+    pub(crate) encoding_quality: String,
+    pub(crate) codec: String,
+    pub(crate) container: String,
+    pub(crate) background: LocalWanAnimatedBackgroundEvidence,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalWanEndpointRestorationEvidence {
+    pub(crate) engine: String,
+    pub(crate) start_frame: u32,
+    pub(crate) frame_count: u32,
+    pub(crate) exact_endpoint_frame: bool,
+    #[serde(default)]
+    pub(crate) easing: Option<String>,
+    pub(crate) low_percentile: u32,
+    pub(crate) high_percentile: u32,
+    pub(crate) channel_scales: Vec<f64>,
+    pub(crate) channel_offsets: Vec<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerVideoGenerationResponse {
+    schema_version: u32,
+    worker_version: String,
+    #[serde(default)]
+    packages: HashMap<String, Option<String>>,
+    device: String,
+    device_label: String,
+    device_memory_bytes: Option<u64>,
+    #[serde(default)]
+    performance: Option<serde_json::Value>,
+    conv3d_backend: String,
+    conditioning_mode: String,
+    #[serde(default)]
+    conditioning_framing: Option<serde_json::Value>,
+    #[serde(default)]
+    endpoint_restoration: Option<LocalWanEndpointRestorationEvidence>,
+    #[serde(default)]
+    loop_endpoint_restoration: Option<serde_json::Value>,
+    prompt: String,
+    negative_prompt: String,
+    resolution: String,
+    guidance_scale: f64,
+    num_inference_steps: u32,
+    transparent_background: bool,
+    model_revision: String,
+    model_digest: String,
+    output: LocalWanOutputProvenance,
+    #[serde(default)]
+    composite_output: Option<LocalWanCompositeOutputProvenance>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -217,7 +390,15 @@ pub(crate) struct LocalDiffusersProvenance {
     pub(crate) model_digest: String,
     pub(crate) prompt: String,
     pub(crate) negative_prompt: String,
+    pub(crate) model_policy: String,
+    pub(crate) aspect_ratio: String,
+    pub(crate) num_inference_steps: u32,
     pub(crate) addons: Vec<serde_json::Value>,
+    pub(crate) performance: Option<serde_json::Value>,
+    pub(crate) require_chroma_background: bool,
+    pub(crate) edit_conditioning: Option<serde_json::Value>,
+    pub(crate) reference_image_asset_id: Option<String>,
+    pub(crate) reference_image_digest: Option<String>,
     pub(crate) outputs: Vec<LocalDiffusersOutputProvenance>,
 }
 
@@ -248,6 +429,40 @@ pub(crate) struct LocalDiffusersOutputProvenance {
 pub(crate) struct LocalGeneratedImageBatch {
     pub(crate) assets: Vec<GeneratedImageAsset>,
     pub(crate) provenance: LocalDiffusersProvenance,
+}
+
+#[derive(Debug)]
+pub(crate) struct LocalGeneratedVideo {
+    pub(crate) digest: String,
+    pub(crate) relative_path: String,
+    pub(crate) byte_size: u64,
+    pub(crate) first_frame_digest: String,
+    pub(crate) last_frame_digest: String,
+    pub(crate) worker_version: String,
+    pub(crate) packages: HashMap<String, Option<String>>,
+    pub(crate) device: String,
+    pub(crate) device_label: String,
+    pub(crate) device_memory_bytes: Option<u64>,
+    pub(crate) performance: Option<serde_json::Value>,
+    pub(crate) conv3d_backend: String,
+    pub(crate) conditioning_mode: String,
+    pub(crate) conditioning_framing: Option<serde_json::Value>,
+    pub(crate) endpoint_restoration: Option<LocalWanEndpointRestorationEvidence>,
+    pub(crate) loop_endpoint_restoration: Option<serde_json::Value>,
+    pub(crate) model_revision: String,
+    pub(crate) model_digest: String,
+    pub(crate) prompt: String,
+    pub(crate) negative_prompt: String,
+    pub(crate) resolution: String,
+    pub(crate) guidance_scale: f64,
+    pub(crate) num_inference_steps: u32,
+    pub(crate) transparent_background: bool,
+    pub(crate) memory_profile: String,
+    pub(crate) output: LocalWanOutputProvenance,
+    pub(crate) composite_digest: Option<String>,
+    pub(crate) composite_relative_path: Option<String>,
+    pub(crate) composite_byte_size: Option<u64>,
+    pub(crate) composite_output: Option<LocalWanCompositeOutputProvenance>,
 }
 
 struct InstalledModel {
@@ -324,6 +539,25 @@ fn python_candidates(app: &AppHandle) -> Vec<PathBuf> {
                 .join("python3"),
         );
     }
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(windows)]
+        candidates.push(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("python")
+                .join("runtime")
+                .join("Scripts")
+                .join("python.exe"),
+        );
+        #[cfg(not(windows))]
+        candidates.push(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("python")
+                .join("runtime")
+                .join("bin")
+                .join("python3"),
+        );
+    }
     #[cfg(windows)]
     candidates.push(PathBuf::from("python"));
     #[cfg(not(windows))]
@@ -342,7 +576,8 @@ fn run_worker(
     timeout: Duration,
     cancellation: Option<(&MediaRuntimePaths, &str)>,
 ) -> MediaResult<Output> {
-    let mut process = Command::new(python)
+    let mut worker = Command::new(python);
+    worker
         .arg("-I")
         .arg("-B")
         .arg(script)
@@ -351,8 +586,23 @@ fn run_worker(
         .env("TRANSFORMERS_OFFLINE", "1")
         .env("HF_HUB_DISABLE_TELEMETRY", "1")
         .env("DO_NOT_TRACK", "1")
+        // MIOpen's default exhaustive convolution search can fail VAE decode
+        // on RDNA 4 with `miopenStatusUnknownError`. The normal search mode is
+        // deterministic for these fixed shapes and succeeds on the reference
+        // RX 9070 while retaining GPU execution.
+        .env("MIOPEN_FIND_MODE", "2")
         .env_remove("HF_TOKEN")
-        .env_remove("HUGGING_FACE_HUB_TOKEN")
+        .env_remove("HUGGING_FACE_HUB_TOKEN");
+    if let Some(index) = PREFERRED_HIP_VISIBLE_DEVICE.get() {
+        // On hybrid AMD systems, selecting cuda:N after HIP initializes is not
+        // sufficient: large Qwen kernels can still fault while both adapters
+        // share the process. Isolate the discrete adapter before Torch loads;
+        // it is then exposed to the worker as cuda:0.
+        worker
+            .env("HIP_VISIBLE_DEVICES", index)
+            .env("MACHDOCH_MEDIA_CUDA_DEVICE", "0");
+    }
+    let mut process = worker
         .stdin(if stdin.is_some() {
             Stdio::piped()
         } else {
@@ -409,17 +659,25 @@ fn run_worker(
     Ok(output)
 }
 
-pub(crate) fn probe(app: &AppHandle) -> LocalDiffusersRuntimeStatus {
-    let script = match worker_script(app) {
-        Ok(script) => script,
-        Err(error) => return LocalDiffusersRuntimeStatus::unavailable(error),
-    };
+fn probe_with_python(
+    app: &AppHandle,
+    script: &Path,
+) -> (LocalDiffusersRuntimeStatus, Option<PathBuf>) {
+    // Importing Torch initializes the GPU runtime. Concurrent probes contend
+    // for the same adapter and can make an otherwise healthy pinned runtime
+    // miss its deadline. Serialize this short readiness phase, then let the
+    // actual generation worker own the device independently.
+    let _guard = RUNTIME_PROBE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut diagnostics = Vec::new();
+    let mut unavailable_probe = None;
     for python in python_candidates(app) {
-        match run_worker(&python, &script, "probe", None, PROBE_TIMEOUT, None) {
+        match run_worker(&python, script, "probe", None, PROBE_TIMEOUT, None) {
             Ok(output) => match serde_json::from_slice::<WorkerProbe>(&output.stdout) {
                 Ok(probe) if probe.schema_version == WORKER_SCHEMA_VERSION => {
-                    return LocalDiffusersRuntimeStatus {
+                    let status = LocalDiffusersRuntimeStatus {
                         status: if probe.ready { "ready" } else { "unavailable" }.to_string(),
                         ready: probe.ready,
                         worker_version: Some(probe.worker_version),
@@ -432,22 +690,64 @@ pub(crate) fn probe(app: &AppHandle) -> LocalDiffusersRuntimeStatus {
                         capabilities: probe.capabilities,
                         diagnostic: probe.diagnostic,
                     };
+                    if status.ready {
+                        if let Ok(configured) = std::env::var("HIP_VISIBLE_DEVICES") {
+                            if !configured.trim().is_empty() {
+                                let _ =
+                                    PREFERRED_HIP_VISIBLE_DEVICE.set(configured.trim().to_string());
+                            }
+                        } else if let Some(label) = status
+                            .device_label
+                            .as_deref()
+                            .filter(|label| label.to_ascii_lowercase().contains("amd"))
+                        {
+                            if let Some((_, suffix)) = label.rsplit_once("(cuda:") {
+                                if let Some(index) = suffix.strip_suffix(')') {
+                                    if index.chars().all(|character| character.is_ascii_digit()) {
+                                        let _ = PREFERRED_HIP_VISIBLE_DEVICE.set(index.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if status.ready {
+                        return (status, Some(python));
+                    }
+                    diagnostics.push(format!("{}: {}", python.display(), status.diagnostic));
+                    unavailable_probe.get_or_insert(status);
                 }
-                Ok(_) => {
-                    diagnostics.push("worker returned an unsupported probe schema".to_string())
-                }
-                Err(error) => {
-                    diagnostics.push(format!("worker probe returned invalid JSON: {error}"))
-                }
+                Ok(_) => diagnostics.push(format!(
+                    "{}: worker returned an unsupported probe schema",
+                    python.display()
+                )),
+                Err(error) => diagnostics.push(format!(
+                    "{}: worker probe returned invalid JSON: {error}",
+                    python.display()
+                )),
             },
-            Err(error) => diagnostics.push(error),
+            Err(error) => diagnostics.push(format!("{}: {error}", python.display())),
         }
     }
-    LocalDiffusersRuntimeStatus::unavailable(if diagnostics.is_empty() {
+    let diagnostic = if diagnostics.is_empty() {
         "No supported Python runtime was found.".to_string()
     } else {
         diagnostics.join("; ")
-    })
+    };
+    if let Some(mut probe) = unavailable_probe {
+        // Do not let an unrelated global Python probe conceal why the pinned
+        // managed runtime failed or timed out.
+        probe.diagnostic = diagnostic;
+        return (probe, None);
+    }
+    (LocalDiffusersRuntimeStatus::unavailable(diagnostic), None)
+}
+
+pub(crate) fn probe(app: &AppHandle) -> LocalDiffusersRuntimeStatus {
+    let script = match worker_script(app) {
+        Ok(script) => script,
+        Err(error) => return LocalDiffusersRuntimeStatus::unavailable(error),
+    };
+    probe_with_python(app, &script).0
 }
 
 fn runtime_fingerprint(runtime: &LocalDiffusersRuntimeStatus) -> Option<String> {
@@ -457,13 +757,18 @@ fn runtime_fingerprint(runtime: &LocalDiffusersRuntimeStatus) -> Option<String> 
     let mut packages = runtime.packages.iter().collect::<Vec<_>>();
     packages.sort_by(|left, right| left.0.cmp(right.0));
     let mut hasher = Sha256::new();
-    hasher.update(b"machdoch-local-diffusers-runtime-v1\0");
+    hasher.update(b"machdoch-local-diffusers-runtime-v2\0");
     let device_memory = runtime.device_memory_bytes.unwrap_or_default().to_string();
+    let device_label = runtime
+        .device_label
+        .as_deref()
+        .map(stable_device_label)
+        .unwrap_or("");
     for value in [
         runtime.worker_version.as_deref().unwrap_or(""),
         runtime.python_version.as_deref().unwrap_or(""),
         runtime.device.as_deref().unwrap_or(""),
-        runtime.device_label.as_deref().unwrap_or(""),
+        device_label,
         device_memory.as_str(),
     ] {
         hasher.update(value.as_bytes());
@@ -487,28 +792,37 @@ fn runtime_fingerprint(runtime: &LocalDiffusersRuntimeStatus) -> Option<String> 
     Some(format!("{:x}", hasher.finalize()))
 }
 
-fn ready_python(app: &AppHandle, script: &Path) -> MediaResult<PathBuf> {
-    let mut diagnostics = Vec::new();
-    for candidate in python_candidates(app) {
-        match run_worker(&candidate, script, "probe", None, PROBE_TIMEOUT, None) {
-            Ok(output) => match serde_json::from_slice::<WorkerProbe>(&output.stdout) {
-                Ok(probe) if probe.ready && probe.schema_version == WORKER_SCHEMA_VERSION => {
-                    return Ok(candidate);
-                }
-                Ok(probe) => diagnostics.push(probe.diagnostic),
-                Err(error) => diagnostics.push(format!("invalid worker probe: {error}")),
-            },
-            Err(error) => diagnostics.push(error),
-        }
+/// Torch reports an adapter's process-local ordinal in its display label. On a
+/// hybrid AMD system the same discrete GPU is `cuda:1` during discovery and
+/// becomes `cuda:0` after `HIP_VISIBLE_DEVICES` isolates it for inference.
+/// Readiness belongs to the physical adapter/runtime pair, so that unstable
+/// ordinal must not invalidate an otherwise identical clean model probe.
+fn stable_device_label(label: &str) -> &str {
+    let Some((identity, ordinal)) = label.rsplit_once(" (cuda:") else {
+        return label;
+    };
+    let Some(ordinal) = ordinal.strip_suffix(')') else {
+        return label;
+    };
+    if !ordinal.is_empty() && ordinal.chars().all(|character| character.is_ascii_digit()) {
+        identity
+    } else {
+        label
     }
-    Err(format!(
-        "Local Diffusers runtime is unavailable: {}",
-        if diagnostics.is_empty() {
-            "no supported Python runtime was found".to_string()
-        } else {
-            diagnostics.join("; ")
-        }
-    ))
+}
+
+fn ready_runtime(
+    app: &AppHandle,
+    script: &Path,
+) -> MediaResult<(LocalDiffusersRuntimeStatus, PathBuf)> {
+    let (runtime, python) = probe_with_python(app, script);
+    match python {
+        Some(python) if runtime.ready => Ok((runtime, python)),
+        _ => Err(format!(
+            "Local Diffusers runtime is unavailable: {}",
+            runtime.diagnostic
+        )),
+    }
 }
 
 pub(crate) fn annotate_catalog_readiness(
@@ -808,7 +1122,8 @@ pub(crate) fn probe_model(
 ) -> MediaResult<LocalModelRuntimeProbeResult> {
     let model = installed_model(paths, model_id)?;
     let checked_at = database::now();
-    let runtime = probe(app);
+    let script = worker_script(app)?;
+    let (runtime, python) = probe_with_python(app, &script);
     let Some(fingerprint) = runtime_fingerprint(&runtime) else {
         return Ok(LocalModelRuntimeProbeResult {
             schema_version: 1,
@@ -824,8 +1139,10 @@ pub(crate) fn probe_model(
             capabilities: Vec::new(),
         });
     };
-    let script = worker_script(app)?;
-    let python = ready_python(app, &script)?;
+    let python = python.ok_or_else(|| {
+        "The pinned local Diffusers runtime passed readiness without identifying its interpreter."
+            .to_string()
+    })?;
     let request = WorkerModelProbeRequest {
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
@@ -851,7 +1168,10 @@ pub(crate) fn probe_model(
     let failure = if output.status.success() {
         None
     } else if let Ok(failure) = serde_json::from_slice::<WorkerFailure>(&output.stdout) {
-        Some(failure.error)
+        Some(worker_failure_with_diagnostics(
+            failure.error,
+            &output.stderr,
+        ))
     } else {
         let diagnostic = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Some(if diagnostic.is_empty() {
@@ -1290,6 +1610,24 @@ pub(crate) fn runnable_model_ids(
         .collect())
 }
 
+pub(crate) fn runnable_reference_model_ids(
+    paths: &MediaRuntimePaths,
+    runtime: &LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    if !runtime
+        .capabilities
+        .contains(&"krea2-grounded-reference-edit".to_string())
+    {
+        return Ok(Vec::new());
+    }
+    Ok(runnable_model_ids(paths, runtime)?
+        .into_iter()
+        .filter(|model_id| {
+            installed_model(paths, model_id).is_ok_and(|model| model.architecture == "krea-2")
+        })
+        .collect())
+}
+
 fn create_staging_directory(paths: &MediaRuntimePaths) -> MediaResult<StagingDirectory> {
     let root = paths
         .database
@@ -1338,7 +1676,10 @@ fn deterministic_seed(request: &GenerateMediaImagesRequest) -> MediaResult<u64> 
 fn decode_generation_response(output: &Output) -> MediaResult<WorkerGenerationResponse> {
     if !output.status.success() {
         if let Ok(failure) = serde_json::from_slice::<WorkerFailure>(&output.stdout) {
-            return Err(failure.error);
+            return Err(worker_failure_with_diagnostics(
+                failure.error,
+                &output.stderr,
+            ));
         }
         let diagnostic = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if diagnostic.is_empty() {
@@ -1353,6 +1694,22 @@ fn decode_generation_response(output: &Output) -> MediaResult<WorkerGenerationRe
         return Err("local Diffusers worker returned an unsupported schema".to_string());
     }
     Ok(response)
+}
+
+fn worker_failure_with_diagnostics(summary: String, stderr: &[u8]) -> String {
+    const MAX_DETAIL_CHARS: usize = 4_096;
+
+    let diagnostic = String::from_utf8_lossy(stderr).trim().to_string();
+    if diagnostic.is_empty() || summary.contains(&diagnostic) {
+        return summary;
+    }
+    let detail_reversed = diagnostic
+        .chars()
+        .rev()
+        .take(MAX_DETAIL_CHARS)
+        .collect::<String>();
+    let detail = detail_reversed.chars().rev().collect::<String>();
+    format!("{summary}\nWorker diagnostics (tail):\n{detail}")
 }
 
 fn append_prompt_token(prompt: &str, token: &str) -> String {
@@ -1378,6 +1735,7 @@ fn validate_generation_evidence(
     response: &WorkerGenerationResponse,
     runtime: &LocalDiffusersRuntimeStatus,
     request_prompt: &str,
+    request_negative_prompt: &str,
     addons: &[ResolvedAddon],
 ) -> MediaResult<()> {
     if response.worker_version != runtime.worker_version.as_deref().unwrap_or("")
@@ -1397,7 +1755,7 @@ fn validate_generation_evidence(
         );
     }
     let mut expected_prompt = request_prompt.to_string();
-    let mut expected_negative_prompt = String::new();
+    let mut expected_negative_prompt = request_negative_prompt.to_string();
     for (index, (evidence, addon)) in response.addons.iter().zip(addons).enumerate() {
         let object = evidence
             .as_object()
@@ -1531,18 +1889,70 @@ fn validate_generation_evidence(
     Ok(())
 }
 
+fn stage_reference_image(
+    paths: &MediaRuntimePaths,
+    input_directory: &Path,
+    asset_id: &str,
+) -> MediaResult<(database::AssetBlobSource, PathBuf)> {
+    let source = database::get_published_image_blob_source(paths, asset_id)?;
+    if source.byte_size == 0 || source.byte_size > MAX_IMAGE_BYTES as u64 {
+        return Err("The local edit reference exceeds the bounded image input size".to_string());
+    }
+    let suffix = match source.mime_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        _ => {
+            return Err(
+                "The local edit reference must be a published PNG, JPEG, or WebP image asset"
+                    .to_string(),
+            )
+        }
+    };
+    let source_path = safe_managed_path(&paths.blobs, &source.relative_path)?;
+    let metadata = fs::symlink_metadata(&source_path)
+        .map_err(|error| format!("failed to inspect local edit reference bytes: {error}"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() != source.byte_size
+    {
+        return Err("The local edit reference failed its immutable size check".to_string());
+    }
+    let bytes = fs::read(&source_path)
+        .map_err(|error| format!("failed to verify local edit reference bytes: {error}"))?;
+    if format!("{:x}", Sha256::digest(&bytes)) != source.digest {
+        return Err("The local edit reference failed its immutable digest check".to_string());
+    }
+    let staged_path = input_directory.join(format!("reference.{suffix}"));
+    fs::copy(&source_path, &staged_path)
+        .map_err(|error| format!("failed to stage the local edit reference: {error}"))?;
+    Ok((source, staged_path))
+}
+
 pub(crate) fn generate(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
     request: &GenerateMediaImagesRequest,
 ) -> MediaResult<LocalGeneratedImageBatch> {
     let script = worker_script(app)?;
-    let runtime = probe(app);
-    let python = ready_python(app, &script)?;
+    let (runtime, python) = ready_runtime(app, &script)?;
     let model = installed_model(paths, &request.model_id)?;
     ensure_model_is_probe_ready(paths, &model, &runtime)?;
     let addons = resolve_addons(paths, &model, &request.model_addons)?;
     let staging = create_staging_directory(paths)?;
+    let input_directory = staging.0.join("input");
+    let output_directory = staging.0.join("output");
+    fs::create_dir(&input_directory)
+        .map_err(|error| format!("failed to prepare local image inputs: {error}"))?;
+    fs::create_dir(&output_directory)
+        .map_err(|error| format!("failed to prepare local image outputs: {error}"))?;
+    let (reference_source, reference_image_path) =
+        if let Some(asset_id) = request.reference_image_asset_id.as_deref() {
+            let (source, path) = stage_reference_image(paths, &input_directory, asset_id)?;
+            (Some(source), Some(path))
+        } else {
+            (None, None)
+        };
     let worker_addons = addons
         .iter()
         .map(|addon| WorkerAddon {
@@ -1573,14 +1983,21 @@ pub(crate) fn generate(
             digest: &model.digest,
         },
         prompt: &request.prompt,
-        negative_prompt: "",
+        negative_prompt: &request.negative_prompt,
         output_count: request.output_count,
         output_format: &request.output_format,
         model_policy: &request.model_policy,
         aspect_ratio: &request.aspect_ratio,
         seed: deterministic_seed(request)?,
-        output_directory: &staging.0,
+        output_directory: &output_directory,
         addons: worker_addons,
+        reference_image_path: reference_image_path.as_deref(),
+        edit_strength: request.edit_strength,
+        reference_boost: request.reference_boost,
+        require_chroma_background: request.require_chroma_background,
+        grounding_pixels: request.grounding_pixels,
+        reference_fit: request.reference_fit.as_deref(),
+        memory_profile: request.memory_profile.as_deref(),
     };
     let encoded = serde_json::to_vec(&worker_request)
         .map_err(|error| format!("failed to encode local Diffusers request: {error}"))?;
@@ -1593,7 +2010,44 @@ pub(crate) fn generate(
         Some((paths, &request.run_id)),
     )?;
     let response = decode_generation_response(&output)?;
-    validate_generation_evidence(&response, &runtime, &request.prompt, &addons)?;
+    validate_generation_evidence(
+        &response,
+        &runtime,
+        &request.prompt,
+        &request.negative_prompt,
+        &addons,
+    )?;
+    let expected_inference_steps =
+        match (model.architecture.as_str(), request.model_policy.as_str()) {
+            ("flux-2", "fast") => 4,
+            ("flux-2", "balanced") => 6,
+            ("flux-2", "quality") => 8,
+            ("krea-2", "fast") => 8,
+            ("krea-2", "balanced") => 10,
+            ("krea-2", "quality") => 12,
+            (_, "fast") => 16,
+            (_, "balanced") => 24,
+            (_, "quality") => 32,
+            _ => return Err("local Diffusers request has an invalid model policy".to_string()),
+        };
+    if response.model_policy != request.model_policy
+        || response.aspect_ratio != request.aspect_ratio
+        || response.num_inference_steps != expected_inference_steps
+    {
+        return Err(
+            "local Diffusers generation returned inconsistent sampling evidence".to_string(),
+        );
+    }
+    if response.edit_conditioning.is_some() != reference_source.is_some() {
+        return Err(
+            "local Diffusers generation returned inconsistent reference-edit evidence".to_string(),
+        );
+    }
+    if response.require_chroma_background != request.require_chroma_background {
+        return Err(
+            "local Diffusers generation returned inconsistent chroma-staging evidence".to_string(),
+        );
+    }
     if response.outputs.len() != request.output_count as usize {
         return Err("local Diffusers worker returned an unexpected output count".to_string());
     }
@@ -1611,7 +2065,7 @@ pub(crate) fn generate(
         {
             return Err("local Diffusers worker returned an invalid output manifest".to_string());
         }
-        let output_path = staging.0.join(&expected_name);
+        let output_path = output_directory.join(&expected_name);
         let metadata = fs::symlink_metadata(&output_path)
             .map_err(|error| format!("failed to inspect generated local image: {error}"))?;
         if metadata.file_type().is_symlink()
@@ -1672,9 +2126,600 @@ pub(crate) fn generate(
             model_digest: model.digest,
             prompt: response.prompt,
             negative_prompt: response.negative_prompt,
+            model_policy: response.model_policy,
+            aspect_ratio: response.aspect_ratio,
+            num_inference_steps: response.num_inference_steps,
             addons: response.addons,
+            performance: response.performance,
+            require_chroma_background: response.require_chroma_background,
+            edit_conditioning: response.edit_conditioning,
+            reference_image_asset_id: request.reference_image_asset_id.clone(),
+            reference_image_digest: reference_source.map(|source| source.digest),
             outputs: output_provenance,
         },
+    })
+}
+
+const WAN_MODEL_REVISION: &str = "b8fff7315c768468a5333511427288870b2e9635";
+
+fn wan_download_identity(model_root: &Path, relative: &Path) -> MediaResult<String> {
+    let relative = relative
+        .to_str()
+        .ok_or_else(|| "Wan component path is not valid Unicode".to_string())?
+        .replace('\\', "/");
+    let metadata_relative = format!(".cache/huggingface/download/{relative}.metadata");
+    let metadata_path = safe_managed_path(model_root, &metadata_relative).map_err(|_| {
+        format!(
+            "Wan component {relative} has no pinned Hugging Face download metadata; re-download revision {WAN_MODEL_REVISION}"
+        )
+    })?;
+    let metadata = fs::symlink_metadata(&metadata_path)
+        .map_err(|error| format!("failed to inspect Wan metadata for {relative}: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 4_096 {
+        return Err(format!(
+            "Wan download metadata for {relative} is unsafe or invalid"
+        ));
+    }
+    let encoded = fs::read_to_string(&metadata_path)
+        .map_err(|error| format!("failed to read Wan metadata for {relative}: {error}"))?;
+    let mut lines = encoded.lines().map(str::trim);
+    let revision = lines.next().unwrap_or("");
+    let content_identity = lines.next().unwrap_or("");
+    if revision != WAN_MODEL_REVISION {
+        return Err(format!(
+            "Wan component {relative} came from revision {revision}; expected {WAN_MODEL_REVISION}"
+        ));
+    }
+    if !matches!(content_identity.len(), 40 | 64)
+        || !content_identity
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "Wan component {relative} has invalid download content identity"
+        ));
+    }
+    Ok(content_identity.to_ascii_lowercase())
+}
+
+fn wan_index_shards(model_root: &Path, relative_index: &str) -> MediaResult<Vec<PathBuf>> {
+    let index_path = safe_managed_path(model_root, relative_index)?;
+    let encoded = fs::read(&index_path)
+        .map_err(|error| format!("failed to read Wan model index {relative_index}: {error}"))?;
+    let index = serde_json::from_slice::<serde_json::Value>(&encoded)
+        .map_err(|error| format!("Wan model index {relative_index} is invalid: {error}"))?;
+    let weight_map = index
+        .get("weight_map")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| format!("Wan model index {relative_index} has no weight_map"))?;
+    let parent = Path::new(relative_index)
+        .parent()
+        .ok_or_else(|| format!("Wan model index {relative_index} has no parent"))?;
+    let mut shards = weight_map
+        .values()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| format!("Wan model index {relative_index} has an invalid shard"))
+                .and_then(|name| {
+                    safe_managed_path(model_root, parent.join(name).to_string_lossy().as_ref())
+                })
+        })
+        .collect::<MediaResult<Vec<_>>>()?;
+    shards.sort();
+    shards.dedup();
+    if shards.is_empty() || shards.len() > 64 {
+        return Err(format!(
+            "Wan model index {relative_index} has an invalid shard inventory"
+        ));
+    }
+    Ok(shards)
+}
+
+fn resolve_wan_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
+    let workspace = crate::runtime_snapshot::resolve_workspace_root_path(workspace_root)?;
+    let models_root = workspace.join("models");
+    let models_root = fs::canonicalize(&models_root)
+        .map_err(|error| format!("failed to resolve workspace models directory: {error}"))?;
+    let model_root = super::model_discovery::resolve_workspace_diffusers_package(
+        workspace_root,
+        "wan-2.2-ti2v",
+        Some("wan-2.2-ti2v-5b"),
+    )?;
+    if !model_root.starts_with(&models_root) {
+        return Err("Wan model path escapes the workspace models directory".to_string());
+    }
+    let model_index_path = safe_managed_path(&model_root, "model_index.json")?;
+    let model_index = fs::read(&model_index_path)
+        .map_err(|error| format!("failed to read Wan model_index.json: {error}"))?;
+    let model_index_value = serde_json::from_slice::<serde_json::Value>(&model_index)
+        .map_err(|error| format!("Wan model_index.json is invalid: {error}"))?;
+    if model_index_value
+        .get("_class_name")
+        .and_then(serde_json::Value::as_str)
+        != Some("WanPipeline")
+    {
+        return Err(
+            "Wan model package does not declare the expected WanPipeline class".to_string(),
+        );
+    }
+    let mut files = vec![
+        model_index_path,
+        safe_managed_path(&model_root, "scheduler/scheduler_config.json")?,
+        safe_managed_path(&model_root, "text_encoder/config.json")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer_config.json")?,
+        safe_managed_path(&model_root, "tokenizer/special_tokens_map.json")?,
+        safe_managed_path(&model_root, "tokenizer/spiece.model")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer.json")?,
+        safe_managed_path(&model_root, "transformer/config.json")?,
+        safe_managed_path(&model_root, "vae/config.json")?,
+        safe_managed_path(&model_root, "vae/diffusion_pytorch_model.safetensors")?,
+        safe_managed_path(&model_root, "text_encoder/model.safetensors.index.json")?,
+        safe_managed_path(
+            &model_root,
+            "transformer/diffusion_pytorch_model.safetensors.index.json",
+        )?,
+    ];
+    files.extend(wan_index_shards(
+        &model_root,
+        "text_encoder/model.safetensors.index.json",
+    )?);
+    files.extend(wan_index_shards(
+        &model_root,
+        "transformer/diffusion_pytorch_model.safetensors.index.json",
+    )?);
+    files.sort();
+    files.dedup();
+    let mut total_bytes = 0_u64;
+    let mut hasher = Sha256::new();
+    hasher.update(b"machdoch-wan2.2-ti2v-inventory-v1\0");
+    hasher.update(WAN_MODEL_REVISION.as_bytes());
+    for path in files {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("Wan model package is incomplete: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "Wan model package contains an unsafe or empty component: {}",
+                path.display()
+            ));
+        }
+        let relative = path
+            .strip_prefix(&model_root)
+            .map_err(|_| "Wan component escaped its model package".to_string())?;
+        let content_identity = wan_download_identity(&model_root, relative)?;
+        total_bytes = total_bytes.saturating_add(metadata.len());
+        hasher.update(relative.to_string_lossy().as_bytes());
+        hasher.update(b"\0");
+        hasher.update(metadata.len().to_le_bytes());
+        hasher.update(b"\0");
+        hasher.update(content_identity.as_bytes());
+        if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
+            hasher.update(
+                fs::read(&path)
+                    .map_err(|error| format!("failed to verify Wan JSON component: {error}"))?,
+            );
+        }
+    }
+    if total_bytes < 30 * 1_024 * 1_024 * 1_024 {
+        return Err(format!(
+            "Wan model package is incomplete: verified components total only {:.2} GiB",
+            total_bytes as f64 / 1_024_f64.powi(3)
+        ));
+    }
+    Ok((model_root, format!("{:x}", hasher.finalize())))
+}
+
+fn decode_video_generation_response(output: &Output) -> MediaResult<WorkerVideoGenerationResponse> {
+    if !output.status.success() {
+        if let Ok(failure) = serde_json::from_slice::<WorkerFailure>(&output.stdout) {
+            return Err(worker_failure_with_diagnostics(
+                failure.error,
+                &output.stderr,
+            ));
+        }
+        let diagnostic = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if diagnostic.is_empty() {
+            format!("local WAN worker exited with {}", output.status)
+        } else {
+            format!(
+                "local WAN worker exited with {}: {diagnostic}",
+                output.status
+            )
+        });
+    }
+    let response = serde_json::from_slice::<WorkerVideoGenerationResponse>(&output.stdout)
+        .map_err(|error| format!("local WAN worker returned invalid JSON: {error}"))?;
+    if response.schema_version != WORKER_SCHEMA_VERSION {
+        return Err("local WAN worker returned an unsupported schema".to_string());
+    }
+    Ok(response)
+}
+
+fn stage_wan_frame(
+    paths: &MediaRuntimePaths,
+    input_directory: &Path,
+    asset_id: &str,
+    role: &str,
+) -> MediaResult<(database::AssetBlobSource, PathBuf)> {
+    let source = database::get_published_image_blob_source(paths, asset_id)?;
+    if source.byte_size == 0 || source.byte_size > MAX_IMAGE_BYTES as u64 {
+        return Err(format!(
+            "The WAN {role} frame exceeds the bounded image input size"
+        ));
+    }
+    let suffix = match source.mime_type.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        _ => {
+            return Err(format!(
+                "The WAN {role} frame must be a published PNG, JPEG, or WebP image asset"
+            ))
+        }
+    };
+    let source_path = safe_managed_path(&paths.blobs, &source.relative_path)?;
+    let source_metadata = fs::symlink_metadata(&source_path)
+        .map_err(|error| format!("failed to inspect WAN {role}-frame bytes: {error}"))?;
+    if source_metadata.file_type().is_symlink()
+        || !source_metadata.is_file()
+        || source_metadata.len() != source.byte_size
+    {
+        return Err(format!(
+            "The WAN {role}-frame blob failed its immutable size check"
+        ));
+    }
+    let staged_path = input_directory.join(format!("{role}-frame.{suffix}"));
+    fs::copy(&source_path, &staged_path)
+        .map_err(|error| format!("failed to stage the WAN {role} frame: {error}"))?;
+    Ok((source, staged_path))
+}
+
+pub(crate) fn generate_video(
+    app: &AppHandle,
+    paths: &MediaRuntimePaths,
+    request: &GenerateMediaVideoRequest,
+) -> MediaResult<LocalGeneratedVideo> {
+    let script = worker_script(app)?;
+    let (runtime, python) = ready_runtime(app, &script)?;
+    if !runtime.ready
+        || !runtime.architectures.contains(&"wan-2.2-ti2v".to_string())
+        || !runtime.capabilities.contains(&"image-to-video".to_string())
+        || !runtime
+            .capabilities
+            .contains(&"start-end-to-video".to_string())
+        || !runtime.capabilities.contains(&"vp9-alpha".to_string())
+        || (request.animated_background.is_some()
+            && !runtime
+                .capabilities
+                .contains(&"video-composite".to_string()))
+    {
+        return Err(format!(
+            "The local WAN runtime is not ready: {}",
+            runtime.diagnostic
+        ));
+    }
+    if runtime
+        .device_memory_bytes
+        .is_some_and(|bytes| bytes < MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES)
+    {
+        return Err(
+            "The bounded experimental WAN preview requires a nominal 16 GB adapter (at least 15 GiB reported usable); the official profile requires 24 GiB."
+                .to_string(),
+        );
+    }
+    let (model_path, model_digest) = resolve_wan_model(&request.workspace_root)?;
+    let staging = create_staging_directory(paths)?;
+    let input_directory = staging.0.join("input");
+    let output_directory = staging.0.join("output");
+    fs::create_dir(&input_directory)
+        .map_err(|error| format!("failed to prepare WAN input staging: {error}"))?;
+    fs::create_dir(&output_directory)
+        .map_err(|error| format!("failed to prepare WAN output staging: {error}"))?;
+    let (first_source, first_frame_path) = stage_wan_frame(
+        paths,
+        &input_directory,
+        &request.first_frame_asset_id,
+        "first",
+    )?;
+    let (last_source, last_frame_path) = stage_wan_frame(
+        paths,
+        &input_directory,
+        &request.last_frame_asset_id,
+        "last",
+    )?;
+    let worker_request = WorkerVideoGenerationRequest {
+        schema_version: WORKER_SCHEMA_VERSION,
+        model: WorkerModel {
+            id: &request.model_id,
+            architecture: "wan-2.2-ti2v",
+            package_kind: "diffusers-directory",
+            path: &model_path,
+            config_path: None,
+            revision: WAN_MODEL_REVISION,
+            digest: &model_digest,
+        },
+        prompt: &request.prompt,
+        first_frame_path: &first_frame_path,
+        last_frame_path: &last_frame_path,
+        aspect_ratio: &request.aspect_ratio,
+        resolution: &request.resolution,
+        num_frames: request.num_frames,
+        num_inference_steps: request.num_inference_steps,
+        guidance_scale: request.guidance_scale,
+        negative_prompt: &request.negative_prompt,
+        transparent_background: request.transparent_background,
+        loop_mode: &request.loop_mode,
+        matte_quality: &request.matte_quality,
+        encoding_quality: &request.encoding_quality,
+        memory_profile: &request.memory_profile,
+        fps: request.fps,
+        seed: request.seed,
+        experimental_low_memory: request.experimental_low_memory,
+        animated_background: request.animated_background.as_ref(),
+        output_directory: &output_directory,
+    };
+    let encoded = serde_json::to_vec(&worker_request)
+        .map_err(|error| format!("failed to encode the local WAN request: {error}"))?;
+    let output = run_worker(
+        &python,
+        &script,
+        "generate-video",
+        Some(&encoded),
+        VIDEO_GENERATION_TIMEOUT,
+        Some((paths, &request.run_id)),
+    )?;
+    let response = decode_video_generation_response(&output)?;
+    let expected_dimensions = match (request.resolution.as_str(), request.aspect_ratio.as_str()) {
+        ("preview-512", "1:1") => (512, 512),
+        ("preview-512", "16:9") => (512, 288),
+        ("preview-512", "9:16") => (288, 512),
+        ("preview-512", "21:9") => (512, 224),
+        ("quality-640", "1:1") => (576, 576),
+        ("quality-640", "16:9") => (640, 352),
+        ("quality-640", "9:16") => (352, 640),
+        ("quality-640", "21:9") => (640, 288),
+        ("quality-768", "1:1") => (640, 640),
+        ("quality-768", "16:9") => (768, 432),
+        ("quality-768", "9:16") => (432, 768),
+        ("quality-768", "21:9") => (768, 336),
+        _ => unreachable!("validated WAN resolution and aspect ratio"),
+    };
+    let expected_frame_count = if request.loop_mode == "ping-pong" {
+        request.num_frames * 2 - 1
+    } else {
+        request.num_frames
+    };
+    let expects_loop_seam = request.loop_mode != "none";
+    if response.worker_version != runtime.worker_version.as_deref().unwrap_or("")
+        || response.packages != runtime.packages
+        || response.device != runtime.device.as_deref().unwrap_or("")
+        || response.device_label != runtime.device_label.as_deref().unwrap_or("")
+        || response.device_memory_bytes != runtime.device_memory_bytes
+        || response.performance.is_none()
+        || response.prompt != request.prompt
+        || (!request.negative_prompt.is_empty()
+            && response.negative_prompt != request.negative_prompt)
+        || response.resolution != request.resolution
+        || response.guidance_scale != request.guidance_scale
+        || response.num_inference_steps != request.num_inference_steps
+        || response.transparent_background != request.transparent_background
+        || response.model_revision != WAN_MODEL_REVISION
+        || response.model_digest != model_digest
+        || response.output.index != 0
+        || response.output.file_name != "output-0000.webm"
+        || (response.output.width, response.output.height) != expected_dimensions
+        || response.output.source_frame_count != request.num_frames
+        || response.output.frame_count != expected_frame_count
+        || response.output.fps != request.fps
+        || response.output.loop_mode != request.loop_mode
+        || (expects_loop_seam && response.output.loop_endpoint_mae > 0.01)
+        || response.output.decoded_frame_count != response.output.frame_count
+        || !response.output.decoded_loop_endpoint_mae.is_finite()
+        || (expects_loop_seam && response.output.decoded_loop_endpoint_mae > 1.0)
+        || !response.output.decoded_alpha_loop_endpoint_mae.is_finite()
+        || (expects_loop_seam && response.output.decoded_alpha_loop_endpoint_mae > 1.0)
+        || response.output.has_alpha != request.transparent_background
+        || (request.transparent_background && response.output.alpha_minimum >= 255)
+        || response.output.alpha_maximum != 255
+        || (request.transparent_background && response.output.decoded_alpha_minimum >= 255)
+        || response.output.decoded_alpha_maximum != 255
+        || (!request.transparent_background
+            && (response.output.alpha_minimum != 255
+                || response.output.decoded_alpha_minimum != 255))
+        || response.output.matte.is_some() != request.transparent_background
+        || response.output.encoding_quality != request.encoding_quality
+        || response.output.codec != "vp9"
+        || response.output.container != "webm"
+        || !matches!(
+            response.conv3d_backend.as_str(),
+            "aten-native-hip" | "cudnn"
+        )
+        || response.conditioning_mode != "first-last-temporal-context-lock-v3"
+        || !response.output.duration_seconds.is_finite()
+    {
+        return Err(
+            "local WAN generation returned inconsistent alpha, loop, model, or runtime evidence"
+                .to_string(),
+        );
+    }
+    if first_source.digest == last_source.digest {
+        if response.endpoint_restoration.is_some()
+            || (request.loop_mode == "seamless") != response.loop_endpoint_restoration.is_some()
+        {
+            return Err(
+                "local WAN same-endpoint generation returned inconsistent loop restoration"
+                    .to_string(),
+            );
+        }
+    } else {
+        if response.loop_endpoint_restoration.is_some() {
+            return Err(
+                "local WAN distinct-endpoint generation returned unexpected loop restoration"
+                    .to_string(),
+            );
+        }
+        let restoration = response.endpoint_restoration.as_ref().ok_or_else(|| {
+            "local WAN distinct-endpoint generation omitted endpoint restoration evidence"
+                .to_string()
+        })?;
+        if restoration.engine != "endpoint-reference-color-and-pixel-restore-v3"
+            || restoration.start_frame != request.num_frames - 5
+            || restoration.frame_count != 5
+            || !restoration.exact_endpoint_frame
+            || restoration.easing.as_deref() != Some("smoothstep")
+            || restoration.low_percentile != 5
+            || restoration.high_percentile != 95
+            || restoration.channel_scales.len() != 3
+            || restoration.channel_offsets.len() != 3
+            || restoration
+                .channel_scales
+                .iter()
+                .any(|value| !value.is_finite() || !(0.75..=2.5).contains(value))
+            || restoration
+                .channel_offsets
+                .iter()
+                .any(|value| !value.is_finite() || !(-160.0..=160.0).contains(value))
+        {
+            return Err(
+                "local WAN endpoint restoration returned inconsistent evidence".to_string(),
+            );
+        }
+    }
+    match (
+        request.animated_background.as_ref(),
+        response.composite_output.as_ref(),
+    ) {
+        (None, None) => {}
+        (Some(background), Some(composite)) => {
+            if composite.index != 1
+                || composite.file_name != "output-0001.webm"
+                || composite.seed != response.output.seed
+                || (composite.width, composite.height) != expected_dimensions
+                || composite.frame_count != response.output.frame_count
+                || composite.fps != request.fps
+                || composite.has_alpha
+                || composite.loop_mode != request.loop_mode
+                || (expects_loop_seam && composite.loop_endpoint_mae > 0.01)
+                || composite.decoded_frame_count != composite.frame_count
+                || !composite.decoded_loop_endpoint_mae.is_finite()
+                || (expects_loop_seam && composite.decoded_loop_endpoint_mae > 1.0)
+                || composite.encoding_quality != request.encoding_quality
+                || composite.codec != "vp9"
+                || composite.container != "webm"
+                || composite.background.engine
+                    != if background.style == "enchanted-beach" {
+                        "animated-enchanted-beach-v1"
+                    } else {
+                        "animated-gradient-v1"
+                    }
+                || composite.background.style != background.style
+                || composite.background.direction != background.direction
+                || composite.background.color_start != background.color_start
+                || composite.background.color_end != background.color_end
+                || composite.background.cycles != background.cycles
+                || !composite.duration_seconds.is_finite()
+            {
+                return Err(
+                    "local WAN animated composite returned inconsistent frame, loop, or background evidence"
+                        .to_string(),
+                );
+            }
+        }
+        _ => {
+            return Err(
+                "local WAN animated composite output did not match the requested graph".to_string(),
+            )
+        }
+    }
+    let output_path = output_directory.join("output-0000.webm");
+    let metadata = fs::symlink_metadata(&output_path)
+        .map_err(|error| format!("failed to inspect generated WAN video: {error}"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() == 0
+        || metadata.len() > MAX_VIDEO_BYTES as u64
+    {
+        return Err("local WAN worker produced an unsafe video file".to_string());
+    }
+    let bytes = fs::read(&output_path)
+        .map_err(|error| format!("failed to read generated WAN video: {error}"))?;
+    if bytes.get(..4) != Some(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        return Err("local WAN worker produced an invalid WebM container".to_string());
+    }
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let relative_path = transform::cas_relative_path(&digest);
+    transform::publish_cas_bytes(paths, &relative_path, &digest, &bytes)?;
+    let (composite_digest, composite_relative_path, composite_byte_size) =
+        if response.composite_output.is_some() {
+            let composite_path = output_directory.join("output-0001.webm");
+            let metadata = fs::symlink_metadata(&composite_path).map_err(|error| {
+                format!("failed to inspect generated WAN composite video: {error}")
+            })?;
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || metadata.len() == 0
+                || metadata.len() > MAX_VIDEO_BYTES as u64
+            {
+                return Err("local WAN worker produced an unsafe composite video file".to_string());
+            }
+            let composite_bytes = fs::read(&composite_path)
+                .map_err(|error| format!("failed to read WAN composite video: {error}"))?;
+            if composite_bytes.get(..4) != Some(&[0x1a, 0x45, 0xdf, 0xa3]) {
+                return Err(
+                    "local WAN worker produced an invalid composite WebM container".to_string(),
+                );
+            }
+            let composite_digest = format!("{:x}", Sha256::digest(&composite_bytes));
+            let composite_relative_path = transform::cas_relative_path(&composite_digest);
+            transform::publish_cas_bytes(
+                paths,
+                &composite_relative_path,
+                &composite_digest,
+                &composite_bytes,
+            )?;
+            (
+                Some(composite_digest),
+                Some(composite_relative_path.to_string_lossy().into_owned()),
+                Some(composite_bytes.len() as u64),
+            )
+        } else {
+            (None, None, None)
+        };
+    Ok(LocalGeneratedVideo {
+        digest,
+        relative_path: relative_path.to_string_lossy().into_owned(),
+        byte_size: bytes.len() as u64,
+        first_frame_digest: first_source.digest,
+        last_frame_digest: last_source.digest,
+        worker_version: response.worker_version,
+        packages: response.packages,
+        device: response.device,
+        device_label: response.device_label,
+        device_memory_bytes: response.device_memory_bytes,
+        performance: response.performance,
+        conv3d_backend: response.conv3d_backend,
+        conditioning_mode: response.conditioning_mode,
+        conditioning_framing: response.conditioning_framing,
+        endpoint_restoration: response.endpoint_restoration,
+        loop_endpoint_restoration: response.loop_endpoint_restoration,
+        model_revision: response.model_revision,
+        model_digest: response.model_digest,
+        prompt: response.prompt,
+        negative_prompt: response.negative_prompt,
+        resolution: response.resolution,
+        guidance_scale: response.guidance_scale,
+        num_inference_steps: response.num_inference_steps,
+        transparent_background: response.transparent_background,
+        memory_profile: request.memory_profile.clone(),
+        output: response.output,
+        composite_digest,
+        composite_relative_path,
+        composite_byte_size,
+        composite_output: response.composite_output,
     })
 }
 
@@ -1707,9 +2752,48 @@ mod tests {
     }
 
     #[test]
+    fn wan_download_identity_requires_the_pinned_revision_and_content_id() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be available")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-wan-download-identity-{}-{unique}",
+            std::process::id()
+        ));
+        let relative = Path::new("transformer/config.json");
+        let component = root.join(relative);
+        let metadata = root.join(".cache/huggingface/download/transformer/config.json.metadata");
+        fs::create_dir_all(component.parent().unwrap()).unwrap();
+        fs::create_dir_all(metadata.parent().unwrap()).unwrap();
+        fs::write(&component, b"{}").unwrap();
+        fs::write(
+            &metadata,
+            format!("{WAN_MODEL_REVISION}\n{}\n0\n", "a".repeat(40)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            wan_download_identity(&root, relative).unwrap(),
+            "a".repeat(40)
+        );
+        fs::write(
+            &metadata,
+            format!("wrong-revision\n{}\n0\n", "b".repeat(64)),
+        )
+        .unwrap();
+        assert!(wan_download_identity(&root, relative)
+            .unwrap_err()
+            .contains("expected"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn worker_request_uses_local_paths_and_ordered_named_addons() {
         let model_path = Path::new("C:/models/base");
         let addon_path = Path::new("C:/models/addon.safetensors");
+        let reference_path = Path::new("C:/inputs/reference.png");
         let output_path = Path::new("C:/models/output");
         let target_components = vec!["denoiser".to_string()];
         let lora_profile = MediaLoraTensorProfile {
@@ -1761,12 +2845,75 @@ mod tests {
                 token: None,
                 placement: None,
             }],
+            reference_image_path: Some(reference_path),
+            edit_strength: Some(0.5),
+            reference_boost: Some(2.0),
+            require_chroma_background: true,
+            grounding_pixels: Some(768),
+            reference_fit: Some("fit"),
+            memory_profile: Some("memory-saver"),
         };
         let value = serde_json::to_value(request).expect("request should encode");
         assert_eq!(value["model"]["path"], "C:/models/base");
         assert_eq!(value["addons"][0]["modelStrength"], 0.8);
         assert_eq!(value["addons"][0]["denoisingSchedule"]["end"], 0.8);
+        assert_eq!(value["referenceImagePath"], "C:/inputs/reference.png");
+        assert_eq!(value["editStrength"], 0.5);
+        assert_eq!(value["referenceBoost"], 2.0);
+        assert_eq!(value["requireChromaBackground"], true);
+        assert_eq!(value["groundingPixels"], 768);
+        assert_eq!(value["referenceFit"], "fit");
+        assert_eq!(value["memoryProfile"], "memory-saver");
         assert_eq!(value["seed"], 42);
+    }
+
+    #[test]
+    fn wan_worker_request_carries_quality_transparency_loop_and_memory_controls() {
+        let request = WorkerVideoGenerationRequest {
+            schema_version: WORKER_SCHEMA_VERSION,
+            model: WorkerModel {
+                id: "local:wan2.2-ti2v-5b",
+                architecture: "wan-2.2-ti2v",
+                package_kind: "diffusers-directory",
+                path: Path::new("C:/models/wan"),
+                config_path: None,
+                revision: "revision",
+                digest: "digest",
+            },
+            prompt: "deliberate character action",
+            first_frame_path: Path::new("C:/inputs/first.png"),
+            last_frame_path: Path::new("C:/inputs/last.png"),
+            aspect_ratio: "21:9",
+            resolution: "quality-768",
+            num_frames: 33,
+            num_inference_steps: 24,
+            guidance_scale: 5.5,
+            negative_prompt: "identity drift, texture crawl",
+            transparent_background: false,
+            loop_mode: "none",
+            matte_quality: "production",
+            encoding_quality: "lossless",
+            memory_profile: "memory-saver",
+            fps: 24,
+            seed: 7,
+            experimental_low_memory: true,
+            animated_background: None,
+            output_directory: Path::new("C:/outputs"),
+        };
+        let value = serde_json::to_value(request).expect("WAN request should encode");
+        assert_eq!(value["aspectRatio"], "21:9");
+        assert_eq!(value["resolution"], "quality-768");
+        assert_eq!(value["numFrames"], 33);
+        assert_eq!(value["numInferenceSteps"], 24);
+        assert_eq!(value["guidanceScale"], 5.5);
+        assert_eq!(value["negativePrompt"], "identity drift, texture crawl");
+        assert_eq!(value["transparentBackground"], false);
+        assert_eq!(value["loopMode"], "none");
+        assert_eq!(value["matteQuality"], "production");
+        assert_eq!(value["encodingQuality"], "lossless");
+        assert_eq!(value["memoryProfile"], "memory-saver");
+        assert_eq!(value["fps"], 24);
+        assert_eq!(value["seed"], 7);
     }
 
     #[test]
@@ -1775,6 +2922,24 @@ mod tests {
         let mut second = first.clone();
         second.device_label = Some("Other GPU".to_string());
         assert_ne!(runtime_fingerprint(&first), runtime_fingerprint(&second));
+    }
+
+    #[test]
+    fn runtime_fingerprint_ignores_process_local_cuda_ordinal() {
+        let mut discovered = ready_runtime();
+        discovered.device_label = Some("AMD Radeon RX 9070 (cuda:1)".to_string());
+        let mut isolated = discovered.clone();
+        isolated.device_label = Some("AMD Radeon RX 9070 (cuda:0)".to_string());
+        assert_eq!(
+            runtime_fingerprint(&discovered),
+            runtime_fingerprint(&isolated)
+        );
+
+        isolated.device_label = Some("AMD Radeon RX 9060 XT (cuda:0)".to_string());
+        assert_ne!(
+            runtime_fingerprint(&discovered),
+            runtime_fingerprint(&isolated)
+        );
     }
 
     #[test]
@@ -1839,6 +3004,9 @@ mod tests {
             device_memory_bytes: runtime.device_memory_bytes,
             prompt: "portrait, <concept>".to_string(),
             negative_prompt: "<concept>".to_string(),
+            model_policy: "balanced".to_string(),
+            aspect_ratio: "1:1".to_string(),
+            num_inference_steps: 24,
             addons: vec![
                 serde_json::json!({
                     "kind": "lora",
@@ -1878,26 +3046,37 @@ mod tests {
                     }]
                 }),
             ],
+            performance: None,
+            require_chroma_background: false,
+            edit_conditioning: None,
             outputs: Vec::new(),
         };
-        validate_generation_evidence(&response, &runtime, "portrait", &addons)
+        validate_generation_evidence(&response, &runtime, "portrait", "", &addons)
             .expect("matching evidence should pass");
 
         let lora_evidence = response.addons[0].clone();
         response.addons[0]["loraProfile"]["rankMaximum"] = serde_json::json!(16);
-        assert!(validate_generation_evidence(&response, &runtime, "portrait", &addons).is_err());
+        assert!(
+            validate_generation_evidence(&response, &runtime, "portrait", "", &addons).is_err()
+        );
         response.addons[0] = lora_evidence;
         let lora_evidence = response.addons[0].clone();
         response.addons[0]["denoisingSchedule"]["end"] = serde_json::json!(0.9);
-        assert!(validate_generation_evidence(&response, &runtime, "portrait", &addons).is_err());
+        assert!(
+            validate_generation_evidence(&response, &runtime, "portrait", "", &addons).is_err()
+        );
         response.addons[0] = lora_evidence;
         let embedding_evidence = response.addons[1].clone();
         response.addons[1]["embeddingVectors"][0]["registeredTokens"] =
             serde_json::json!(["<concept>"]);
-        assert!(validate_generation_evidence(&response, &runtime, "portrait", &addons).is_err());
+        assert!(
+            validate_generation_evidence(&response, &runtime, "portrait", "", &addons).is_err()
+        );
         response.addons[1] = embedding_evidence;
         response.addons.swap(0, 1);
-        assert!(validate_generation_evidence(&response, &runtime, "portrait", &addons).is_err());
+        assert!(
+            validate_generation_evidence(&response, &runtime, "portrait", "", &addons).is_err()
+        );
     }
 
     #[test]

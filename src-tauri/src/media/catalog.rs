@@ -5,7 +5,7 @@ use rusqlite::{params, Connection};
 use super::{
     database, model_addon, model_import, MediaEmbeddingVectorProfile, MediaLoraTensorProfile,
     MediaModelAddonDescriptor, MediaModelCatalogSnapshot, MediaModelDescriptor, MediaModelLicense,
-    MediaProviderCatalogEntry, MediaResult,
+    MediaModelManagement, MediaProviderCatalogEntry, MediaResult,
 };
 
 pub(crate) const CATALOG_REVISION: &str = "builtin-2026-07-15.6-cutout-policy";
@@ -840,6 +840,36 @@ pub(crate) fn snapshot(
                     (status == "installed", status, installed_revision)
                 };
                 let user_imported = id.starts_with(model_import::USER_MODEL_ID_PREFIX);
+                let management = if target == "remote" {
+                    MediaModelManagement {
+                        acquisition: "remote".to_string(),
+                        verification: "none".to_string(),
+                    }
+                } else if bundled {
+                    MediaModelManagement {
+                        acquisition: "bundled".to_string(),
+                        verification: "none".to_string(),
+                    }
+                } else if externally_managed_local_runtime {
+                    MediaModelManagement {
+                        acquisition: "external-runtime".to_string(),
+                        verification: "none".to_string(),
+                    }
+                } else if user_imported {
+                    MediaModelManagement {
+                        acquisition: "file-import".to_string(),
+                        verification: "model-probe".to_string(),
+                    }
+                } else {
+                    MediaModelManagement {
+                        acquisition: "managed-install".to_string(),
+                        verification: if provider_id == "local-diffusers" {
+                            "model-probe".to_string()
+                        } else {
+                            "none".to_string()
+                        },
+                    }
+                };
                 Ok(MediaModelDescriptor {
                     id,
                     provider_id: provider_id.clone(),
@@ -866,6 +896,7 @@ pub(crate) fn snapshot(
                     addon_capabilities: serde_json::from_str(&addon_capabilities_json).map_err(
                         |error| format!("failed to decode model add-on capabilities: {error}"),
                     )?,
+                    management,
                     runtime_readiness: if provider_id == "local-diffusers" && installed {
                         "unverified".to_string()
                     } else {

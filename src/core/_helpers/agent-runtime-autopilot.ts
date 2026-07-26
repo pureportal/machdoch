@@ -168,17 +168,14 @@ const createTraceTranscript = (
 const createValidatorInstructionSection = (
   taskContext: ResolvedTaskContext | undefined,
 ): string => {
-  const validatorInstructions = taskContext?.applicableValidatorInstructions ?? [];
-  const instructionLines =
-    validatorInstructions.length > 0
-      ? validatorInstructions.map(
-          (instruction) => `${instruction.name}: ${instruction.body}`,
-        )
-      : ["No validator-specific instruction files were discovered for this task."];
+  const resolution = taskContext?.instructionResolution;
+  const instructionEnvelope =
+    resolution?.renderedEnvelope ??
+    "MACHDOCH-INSTRUCTION-ENVELOPE/1\nNo canonical instruction snapshot was supplied.\n";
 
   return [
-    "<validator_instructions>",
-    ...instructionLines,
+    `<validator_instructions digest="${resolution?.canonicalDigest ?? "unresolved"}">`,
+    instructionEnvelope,
     "</validator_instructions>",
   ].join("\n");
 };
@@ -186,6 +183,7 @@ const createValidatorInstructionSection = (
 export const createAutopilotMonitorSystemPrompt = (
   config: RuntimeConfig,
   taskContext?: ResolvedTaskContext,
+  mcpInitializationSections: readonly string[] = [],
 ): string => {
   return [
     "<role>You are Machdoch Monitor, a separate validator agent that judges whether the executor fully satisfied the user's request.</role>",
@@ -213,7 +211,12 @@ export const createAutopilotMonitorSystemPrompt = (
       .filter((line): line is string => line !== undefined)
       .join("\n"),
     createValidatorInstructionSection(taskContext),
-  ].join("\n\n");
+    mcpInitializationSections.length > 0
+      ? mcpInitializationSections.join("\n\n")
+      : undefined,
+  ]
+    .filter((section): section is string => section !== undefined)
+    .join("\n\n");
 };
 
 export const createAutopilotMonitorUserPrompt = (

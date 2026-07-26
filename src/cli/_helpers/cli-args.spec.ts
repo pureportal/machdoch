@@ -105,50 +105,76 @@ describe("cli args public parser", () => {
     });
   });
 
-  it("parses Ralph flow instruction scope options", () => {
+  it("parses Ralph flow guidance for canonical instruction resolution", () => {
     expect(
       parseCliArgs(
         [
           "instructions",
-          "create",
-          "Flow Rules",
-          "--scope",
-          "ralph-flow",
+          "resolve",
           "--ralph-flow",
           "build-flow",
           "--flow-scope",
           "workspace",
-          "--prompt",
-          "Keep flow steps focused.",
         ],
         { currentWorkingDirectory: "C:/workspace" },
       ),
     ).toMatchObject({
       command: "instructions",
       instructions: {
-        action: "create",
-        subject: "Flow Rules",
-        scope: "ralph-flow",
+        action: "resolve",
         ralphFlow: "build-flow",
         ralphFlowScope: "workspace",
-        prompt: "Keep flow steps focused.",
       },
     });
+  });
 
-    expect(() =>
+  it("parses explicit instruction-library recovery actions", () => {
+    expect(
+      parseCliArgs(["instructions", "recovery"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({
+      command: "instructions",
+      instructions: { action: "recovery-status" },
+    });
+    expect(
       parseCliArgs(
         [
           "instructions",
-          "create",
-          "Flow Rules",
-          "--scope",
-          "ralph-flow",
-          "--prompt",
-          "Keep flow steps focused.",
+          "recovery",
+          "restore",
+          "--expected-digest",
+          "a".repeat(64),
         ],
         { currentWorkingDirectory: "C:/workspace" },
       ),
-    ).toThrow("Ralph flow instruction scope requires --ralph-flow.");
+    ).toMatchObject({
+      command: "instructions",
+      instructions: {
+        action: "recovery-restore",
+        expectedDigest: "a".repeat(64),
+      },
+    });
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "recovery",
+          "export",
+          "--expected-digest",
+          "b".repeat(64),
+          "--include-content",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "instructions",
+      instructions: {
+        action: "recovery-export",
+        expectedDigest: "b".repeat(64),
+        includeContent: true,
+      },
+    });
   });
 
   it("rejects invalid empty, conflicting, and out-of-range inputs", () => {
@@ -175,5 +201,11 @@ describe("cli args public parser", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow("Expected --interval-ms to be followed by a positive integer.");
+
+    expect(() =>
+      parseCliArgs(["instructions", "validate", "--apply"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--apply is only valid for `machdoch mcp cleanup`.");
   });
 });

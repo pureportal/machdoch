@@ -66,10 +66,10 @@ describe("persisted Ralph starter upgrades", () => {
       nextStarter.flow.name = "Upstream Improved Name";
       nextStarter.flow.description = "Upstream changed description";
       nextStarter.flow.blocks.push({
-        id: "upstream-release-note",
-        type: "NOTE",
-        title: "Upstream Release Note",
-        text: "New upstream guidance",
+        id: "upstream-review",
+        type: "PROMPT",
+        title: "Upstream Review",
+        prompt: "Review the new upstream guidance.",
       });
       const upgrade = createUpgradedRalphStarterFlowWithReport(
         persistedLocal,
@@ -83,7 +83,7 @@ describe("persisted Ralph starter upgrades", () => {
       expect(upgrade.flow.name).toBe("Upstream Improved Name");
       expect(upgrade.flow.blocks).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: "upstream-release-note" }),
+          expect.objectContaining({ id: "upstream-review" }),
         ]),
       );
       expect(upgrade.report.conflicts).toEqual([

@@ -100,7 +100,7 @@ const createProjectedServerId = (
 ): string => {
   if (!persistent && provider !== "copilot-cli") return serverId;
   const slug = serverId
-    .toLocaleLowerCase()
+    .toLocaleLowerCase("en-US")
     .replace(/[^a-z0-9_-]+/gu, "-")
     .replace(/^-+|-+$/gu, "")
     .slice(0, 4) || "srv";

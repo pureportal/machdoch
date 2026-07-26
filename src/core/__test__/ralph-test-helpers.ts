@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import type { RalphFlow } from "../ralph.js";
 import type {
   CustomizationDiscoveryResult,
@@ -104,7 +106,11 @@ export const createUtilityFlow = (
   });
 
 export const runtimeConfig: RuntimeConfig = {
-  workspaceRoot: "C:/workspace",
+  workspaceRoot: resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "fixtures",
+    "empty-workspace",
+  ),
   mode: "machdoch",
   provider: "openai",
   model: "gpt-5.5",
@@ -129,8 +135,7 @@ export const runtimeConfig: RuntimeConfig = {
 };
 
 export const customizations: CustomizationDiscoveryResult = {
-  workspaceRoot: "C:/workspace",
-  instructions: [],
+  workspaceRoot: runtimeConfig.workspaceRoot,
   prompts: [],
   skills: [],
 };

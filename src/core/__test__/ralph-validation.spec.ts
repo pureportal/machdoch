@@ -61,105 +61,6 @@ describe("validateRalphFlow", () => {
     );
   });
 
-  it("accepts notes, groups, and annotation links without runtime routing", () => {
-    const parsed = parseRalphFlowJson(
-      JSON.stringify(
-        createFlow({
-          blocks: [
-            ...createFlow().blocks,
-            {
-              id: "context-note",
-              type: "NOTE",
-              title: "Context",
-              text: "Manual verification must include a screenshot.",
-              tone: "amber",
-              tags: ["manual QA"],
-              size: { width: 300, height: 180 },
-              pinnedBlockIds: ["validate"],
-            },
-            {
-              id: "verification-group",
-              type: "GROUP",
-              title: "Verification",
-              description: "Validation and evidence collection.",
-              tone: "sky",
-              size: { width: 720, height: 420 },
-              childBlockIds: ["validate", "context-note"],
-              executionBoundary: { mode: "selectedChild", blockId: "validate" },
-            },
-          ],
-          annotationLinks: [
-            {
-              id: "note-to-validate",
-              from: "context-note",
-              to: "validate",
-              kind: "evidence",
-            },
-          ],
-        }),
-      ),
-    );
-
-    expect(parsed.annotationLinks).toEqual([
-      {
-        id: "note-to-validate",
-        from: "context-note",
-        to: "validate",
-        kind: "evidence",
-      },
-    ]);
-    expect(validateRalphFlow(parsed)).toMatchObject({
-      valid: true,
-      errors: [],
-    });
-  });
-
-  it("coerces generated note body aliases into NOTE.text", () => {
-    const baseFlow = createFlow();
-    const parsed = parseRalphFlowJson(
-      JSON.stringify(
-        {
-          ...baseFlow,
-          blocks: [
-            ...baseFlow.blocks,
-            {
-              id: "note-alias",
-              type: "NOTE",
-              title: "Note alias",
-              note: "Generated note body.",
-            },
-            {
-              id: "content-alias",
-              type: "NOTE",
-              title: "Content alias",
-              text: "",
-              content: "Generated content body.",
-            },
-            {
-              id: "body-alias",
-              type: "NOTE",
-              title: "Body alias",
-              body: "Generated body text.",
-            },
-          ],
-        },
-      ),
-    );
-    const noteTextById = new Map(
-      parsed.blocks.flatMap((block) =>
-        block.type === "NOTE" ? [[block.id, block.text] as const] : [],
-      ),
-    );
-    const validation = validateRalphFlow(parsed);
-
-    expect(noteTextById.get("note-alias")).toBe("Generated note body.");
-    expect(noteTextById.get("content-alias")).toBe("Generated content body.");
-    expect(noteTextById.get("body-alias")).toBe("Generated body text.");
-    expect(validation.warningIssues.map((issue) => issue.code)).not.toContain(
-      "note-empty",
-    );
-  });
-
   it("coerces generated SEARCH_FILES aliases into the supported utility shape", () => {
     const baseFlow = createFlow();
     const parsed = parseRalphFlowJson(
@@ -240,8 +141,6 @@ describe("validateRalphFlow", () => {
             id: "start",
             type: "START",
             title: "Start",
-            position: { x: 0, y: "bad" },
-            size: { width: 100, height: "bad" },
           },
           {
             id: "unknown",
@@ -270,7 +169,6 @@ describe("validateRalphFlow", () => {
               type: "UNKNOWN",
               acceptedExitCodes: [0, "bad", 3],
               encoding: "utf-8",
-              viewports: [{ name: "wide", width: 800.9, height: 600.1 }],
             },
           },
           {
@@ -323,7 +221,6 @@ describe("validateRalphFlow", () => {
           type: "WAIT",
           acceptedExitCodes: [0, 3],
           encoding: "utf8",
-          viewports: [{ name: "wide", width: 800, height: 600 }],
         }),
       }),
       {
@@ -338,37 +235,6 @@ describe("validateRalphFlow", () => {
   it("rejects non-object Ralph JSON at parse time", () => {
     expect(() => parseRalphFlowJson("[]")).toThrow(
       "Expected Ralph flow JSON to be an object.",
-    );
-  });
-
-  it("rejects runtime routes to visual note and group blocks", () => {
-    const validation = validateRalphFlow(
-      createFlow({
-        blocks: [
-          ...createFlow().blocks,
-          {
-            id: "context-note",
-            type: "NOTE",
-            title: "Context",
-            text: "Do not execute.",
-            size: { width: 280, height: 180 },
-          },
-        ],
-        edges: [
-          ...createFlow().edges,
-          {
-            id: "validate-to-note",
-            from: "validate",
-            fromOutput: "ERROR",
-            to: "context-note",
-          },
-        ],
-      }),
-    );
-
-    expect(validation.valid).toBe(false);
-    expect(validation.errors).toContain(
-      "edge `validate-to-note` cannot use visual block `context-note` as a target.",
     );
   });
 
@@ -550,79 +416,6 @@ describe("validateRalphFlow", () => {
     );
   });
 
-  it("validates UI_ANALYZE utility targets and outputs", () => {
-    expect(getRalphUtilityOutputs({ type: "UI_ANALYZE" })).toEqual([
-      "SUCCESS",
-      "UNAVAILABLE",
-      "ERROR",
-    ]);
-
-    const missingTargetValidation = validateRalphFlow(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "analyze-ui",
-            type: "UTILITY",
-            title: "Analyze UI",
-            utility: {
-              type: "UI_ANALYZE",
-              adapter: "browser",
-            },
-          },
-        ],
-        edges: [
-          {
-            id: "start-to-analyze",
-            from: "start",
-            fromOutput: "SUCCESS",
-            to: "analyze-ui",
-          },
-        ],
-      }),
-    );
-
-    expect(missingTargetValidation.valid).toBe(false);
-    expect(missingTargetValidation.errors).toContain(
-      "analyze-ui browser analysis requires targetUrl.",
-    );
-
-    const validScreenshotValidation = validateRalphFlow(
-      createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "analyze-ui",
-            type: "UTILITY",
-            title: "Analyze UI",
-            utility: {
-              type: "UI_ANALYZE",
-              adapter: "image",
-              screenshotPath: "screenshots/home.png",
-            },
-          },
-          { id: "success", type: "END", title: "Success" },
-        ],
-        edges: [
-          {
-            id: "start-to-analyze",
-            from: "start",
-            fromOutput: "SUCCESS",
-            to: "analyze-ui",
-          },
-          {
-            id: "analyze-to-success",
-            from: "analyze-ui",
-            fromOutput: "SUCCESS",
-            to: "success",
-          },
-        ],
-      }),
-    );
-
-    expect(validScreenshotValidation.valid).toBe(true);
-  });
-
   it("rejects missing required config for every utility family", () => {
     const cases: Array<{
       name: string;
@@ -675,11 +468,6 @@ describe("validateRalphFlow", () => {
         errorCodes: ["utility-search-pattern-required"],
       },
       {
-        name: "UI_ANALYZE MCP",
-        utility: { type: "UI_ANALYZE", adapter: "tauri-mcp" },
-        errorCodes: ["utility-ui-mcp-required"],
-      },
-      {
         name: "SET_VARIABLE",
         utility: { type: "SET_VARIABLE" },
         errorCodes: ["utility-variable-name-required"],
@@ -721,34 +509,29 @@ describe("validateRalphFlow", () => {
     }
   });
 
-  it("rejects utility numeric bounds and invalid UI analysis URLs", () => {
+  it("rejects utility numeric bounds", () => {
     const validation = validateRalphFlow(
       createUtilityFlow(
         {
-          id: "analyze-ui",
+          id: "fetch",
           type: "UTILITY",
-          title: "Analyze UI",
+          title: "Fetch",
           utility: {
-            type: "UI_ANALYZE",
-            adapter: "browser",
-            targetUrl: "file:///tmp/index.html",
+            type: "HTTP_FETCH",
+            url: "https://example.com",
             delaySeconds: -1,
             intervalSeconds: -1,
             maxAttempts: 0,
             timeoutSeconds: -1,
             maxOutputBytes: 0,
-            server: {
-              healthUrl: "ftp://127.0.0.1/health",
-            },
-            viewports: [{ width: 319, height: 900 }],
           },
         },
         [
           {
-            id: "start-to-analyze",
+            id: "start-to-fetch",
             from: "start",
             fromOutput: "SUCCESS",
-            to: "analyze-ui",
+            to: "fetch",
           },
         ],
       ),
@@ -761,14 +544,11 @@ describe("validateRalphFlow", () => {
         "utility-max-attempts-invalid",
         "utility-timeout-invalid",
         "utility-output-limit-invalid",
-        "utility-ui-target-url-invalid",
-        "utility-ui-health-url-invalid",
-        "utility-ui-viewport-invalid",
       ]),
     );
   });
 
-  it("rejects invalid graph metadata, group boundaries, and annotation links", () => {
+  it("rejects invalid graph metadata and edge targets", () => {
     const validation = validateRalphFlow(
       createFlow({
         id: "Invalid Flow",
@@ -782,33 +562,15 @@ describe("validateRalphFlow", () => {
             type: "PROMPT",
             title: "Prompt",
             prompt: "Run.",
-            parentGroupId: "not-a-group",
-          },
-          {
-            id: "not-a-group",
-            type: "PROMPT",
-            title: "Not a group",
-            prompt: "Run.",
-          },
-          {
-            id: "group",
-            type: "GROUP",
-            title: "Group",
-            childBlockIds: ["prompt"],
-            executionBoundary: { mode: "selectedChild", blockId: "missing" },
           },
         ],
         edges: [
           {
             id: "bad edge",
-            from: "group",
+            from: "prompt",
             fromOutput: "SUCCESS",
             to: "missing",
           },
-        ],
-        annotationLinks: [
-          { id: "link", from: "missing", to: "prompt", kind: "explains" },
-          { id: "link", from: "prompt", to: "missing", kind: "risk" },
         ],
       }),
     );
@@ -820,18 +582,8 @@ describe("validateRalphFlow", () => {
         "flow-name-required",
         "multiple-start",
         "block-id-duplicate",
-        "parent-group-invalid",
-        "group-execution-boundary-missing",
-        "annotation-link-id-duplicate",
         "edge-id-invalid",
         "edge-to-missing",
-        "edge-from-visual-block",
-      ]),
-    );
-    expect(validation.warningIssues.map((issue) => issue.code)).toEqual(
-      expect.arrayContaining([
-        "annotation-link-from-missing",
-        "annotation-link-to-missing",
       ]),
     );
   });

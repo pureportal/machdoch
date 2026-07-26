@@ -1,17 +1,34 @@
-import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, rm } from "node:fs/promises";
+import { dirname, isAbsolute } from "node:path";
+import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
+import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import { digestJson, sha256 } from "./digests.js";
+import {
+  compareCanonicalStrings,
+  digestJson,
+  sha256,
+} from "./digests.js";
 
-const MARKDOWN_START = "<!-- machdoch-managed:provider-enrollment:start -->";
-const MARKDOWN_END = "<!-- machdoch-managed:provider-enrollment:end -->";
 const TOML_START = "# machdoch-managed:provider-enrollment:start";
 const TOML_END = "# machdoch-managed:provider-enrollment:end";
+const MAX_MANAGED_TARGET_BYTES = 16 * 1024 * 1024;
+const TOML_KEY_SOURCE =
+  String.raw`("(?:\\.|[^"\\])*"|'[^']*'|[A-Za-z0-9_-]+)`;
+const TOML_MCP_TABLE_PATTERN = new RegExp(
+  String.raw`^\[\s*mcp_servers\s*\.\s*${TOML_KEY_SOURCE}(?:\s*\.|\s*\])`,
+  "u",
+);
+const TOML_MCP_DOTTED_ASSIGNMENT_PATTERN = new RegExp(
+  String.raw`^mcp_servers\s*\.\s*${TOML_KEY_SOURCE}(?:\s*\.|\s*=)`,
+  "u",
+);
 
-export type ManagedTargetFormat = "markdown" | "toml" | "json";
+export type ManagedTargetFormat = "toml" | "json";
 
 export interface ProviderOwnershipRecord {
   path: string;
@@ -30,27 +47,28 @@ export interface ProviderOwnershipManifest {
   targets: ProviderOwnershipRecord[];
 }
 
-const getMarkers = (
-  format: Exclude<ManagedTargetFormat, "json">,
-): readonly [string, string] => {
-  return format === "markdown"
-    ? [MARKDOWN_START, MARKDOWN_END]
-    : [TOML_START, TOML_END];
-};
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const MAX_OWNERSHIP_RECORDS = 4_096;
+const MAX_MANAGED_KEYS_PER_RECORD = 4_096;
+const hasAsciiControlCharacter = (value: string): boolean =>
+  [...value].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return (
+      codePoint === undefined || codePoint <= 0x1f || codePoint === 0x7f
+    );
+  });
 
 const findRegion = (
   content: string,
-  format: Exclude<ManagedTargetFormat, "json">,
 ): { start: number; end: number; payload: string } | undefined => {
-  const [startMarker, endMarker] = getMarkers(format);
-  const start = content.indexOf(startMarker);
+  const start = content.indexOf(TOML_START);
   if (start < 0) return undefined;
-  const endMarkerIndex = content.indexOf(endMarker, start + startMarker.length);
+  const endMarkerIndex = content.indexOf(TOML_END, start + TOML_START.length);
   if (endMarkerIndex < 0) return undefined;
-  const payloadStart = start + startMarker.length;
+  const payloadStart = start + TOML_START.length;
   return {
     start,
-    end: endMarkerIndex + endMarker.length,
+    end: endMarkerIndex + TOML_END.length,
     payload: content
       .slice(payloadStart, endMarkerIndex)
       .replace(/^\r?\n|\r?\n$/gu, ""),
@@ -59,12 +77,11 @@ const findRegion = (
 
 const findRegions = (
   content: string,
-  format: Exclude<ManagedTargetFormat, "json">,
 ): Array<{ start: number; end: number; payload: string }> => {
   const regions: Array<{ start: number; end: number; payload: string }> = [];
   let offset = 0;
   while (offset < content.length) {
-    const region = findRegion(content.slice(offset), format);
+    const region = findRegion(content.slice(offset));
     if (!region) break;
     regions.push({
       start: offset + region.start,
@@ -78,19 +95,10 @@ const findRegions = (
 
 const removeTextRegions = (
   content: string,
-  format: Exclude<ManagedTargetFormat, "json">,
 ): string => {
   let result = content;
-  for (const region of findRegions(content, format).reverse()) {
+  for (const region of findRegions(content).reverse()) {
     result = `${result.slice(0, region.start)}${result.slice(region.end)}`;
-  }
-  return result.trim();
-};
-
-export const stripManagedProviderRegions = (content: string): string => {
-  let result = content;
-  for (const format of ["markdown", "toml"] as const) {
-    result = removeTextRegions(result, format);
   }
   return result.trim();
 };
@@ -98,11 +106,9 @@ export const stripManagedProviderRegions = (content: string): string => {
 const mergeTextRegion = (
   existing: string,
   payload: string,
-  format: Exclude<ManagedTargetFormat, "json">,
 ): string => {
-  const [startMarker, endMarker] = getMarkers(format);
-  const regionText = `${startMarker}\n${payload.trim()}\n${endMarker}`;
-  const unmanaged = removeTextRegions(existing, format);
+  const regionText = `${TOML_START}\n${payload.trim()}\n${TOML_END}`;
+  const unmanaged = removeTextRegions(existing);
   return unmanaged.length > 0
     ? `${unmanaged}\n\n${regionText}\n`
     : `${regionText}\n`;
@@ -110,6 +116,136 @@ const mergeTextRegion = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const decodeTomlKey = (raw: string): string | undefined => {
+  if (raw.startsWith('"')) {
+    try {
+      const value = JSON.parse(raw) as unknown;
+      return typeof value === "string" ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return raw.startsWith("'") ? raw.slice(1, -1) : raw;
+};
+
+const inventoryTomlMcpServers = (
+  content: string,
+): { names: Set<string>; ambiguous: boolean } => {
+  const names = new Set<string>();
+  let ambiguous = false;
+  for (const rawLine of content.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const candidatePattern = line.startsWith("[")
+      ? TOML_MCP_TABLE_PATTERN
+      : TOML_MCP_DOTTED_ASSIGNMENT_PATTERN;
+    const match = candidatePattern.exec(line);
+    if (match?.[1]) {
+      const name = decodeTomlKey(match[1]);
+      if (name === undefined) {
+        ambiguous = true;
+      } else {
+        names.add(name);
+      }
+      continue;
+    }
+    if (
+      line.startsWith("mcp_servers") ||
+      (line.startsWith("[") && /\bmcp_servers\b/u.test(line))
+    ) {
+      ambiguous = true;
+    }
+  }
+  return { names, ambiguous };
+};
+
+const parseOwnershipManifest = (
+  value: unknown,
+  path: string,
+): ProviderOwnershipManifest => {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.targets) ||
+    value.targets.length > MAX_OWNERSHIP_RECORDS
+  ) {
+    throw new Error(`${path} is not a valid provider ownership manifest.`);
+  }
+
+  const seenPaths = new Set<string>();
+  const targets = value.targets.map((candidate, index): ProviderOwnershipRecord => {
+    const label = `${path} target ${index}`;
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.path !== "string" ||
+      !isAbsolute(candidate.path) ||
+      candidate.path.length > 32_768 ||
+      typeof candidate.provider !== "string" ||
+      candidate.provider.trim().length === 0 ||
+      candidate.provider.length > 256 ||
+      (candidate.scope !== "user" && candidate.scope !== "workspace") ||
+      (candidate.format !== "toml" &&
+        candidate.format !== "json") ||
+      typeof candidate.managedDigest !== "string" ||
+      !SHA256_PATTERN.test(candidate.managedDigest) ||
+      typeof candidate.installedFileDigest !== "string" ||
+      !SHA256_PATTERN.test(candidate.installedFileDigest) ||
+      typeof candidate.createdFile !== "boolean" ||
+      typeof candidate.installedAt !== "string" ||
+      candidate.installedAt.length > 100 ||
+      !Number.isFinite(Date.parse(candidate.installedAt))
+    ) {
+      throw new Error(`${label} is malformed.`);
+    }
+    if (seenPaths.has(candidate.path)) {
+      throw new Error(`${path} contains duplicate ownership for ${candidate.path}.`);
+    }
+    seenPaths.add(candidate.path);
+
+    let managedKeys: string[] | undefined;
+    if (candidate.managedKeys !== undefined) {
+      if (
+        !Array.isArray(candidate.managedKeys) ||
+        candidate.managedKeys.length > MAX_MANAGED_KEYS_PER_RECORD ||
+        !candidate.managedKeys.every(
+          (key) =>
+            typeof key === "string" &&
+            key.length > 0 &&
+            key.length <= 1_024 &&
+            !hasAsciiControlCharacter(key),
+        )
+      ) {
+        throw new Error(`${label} has invalid managed MCP keys.`);
+      }
+      managedKeys = [...new Set(candidate.managedKeys)].sort(
+        compareCanonicalStrings,
+      );
+      if (managedKeys.length !== candidate.managedKeys.length) {
+        throw new Error(`${label} has duplicate managed MCP keys.`);
+      }
+    }
+
+    return {
+      path: candidate.path,
+      provider: candidate.provider,
+      scope: candidate.scope,
+      format: candidate.format,
+      managedDigest: candidate.managedDigest,
+      installedFileDigest: candidate.installedFileDigest,
+      createdFile: candidate.createdFile,
+      ...(managedKeys ? { managedKeys } : {}),
+      installedAt: candidate.installedAt,
+    };
+  });
+
+  return {
+    schemaVersion: 1,
+    targets: targets.sort((left, right) =>
+      compareCanonicalStrings(left.path, right.path),
+    ),
+  };
 };
 
 const parseJsonRecord = (content: string): Record<string, unknown> => {
@@ -124,20 +260,122 @@ const getManagedMcpServers = (
   value: Record<string, unknown>,
 ): Record<string, unknown> => {
   const raw = value.mcpServers;
-  return isRecord(raw) ? raw : {};
+  if (raw === undefined) return {};
+  if (!isRecord(raw)) {
+    throw new Error(
+      "Managed provider JSON target mcpServers must be an object when present.",
+    );
+  }
+  return raw;
 };
 
-const createBackup = async (path: string): Promise<string> => {
-  const backupPath = `${path}.machdoch-backup-${new Date().toISOString().replace(/[:.]/gu, "-")}`;
-  await copyFile(path, backupPath);
+export interface StableManagedTargetSnapshot {
+  content: string;
+  contentDigest: string;
+}
+
+const isMissingFileError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  error.code === "ENOENT";
+
+const sameFileIdentity = (
+  left: {
+    dev: number | bigint;
+    ino: number | bigint;
+    size: number | bigint;
+    mtimeMs: number;
+  },
+  right: {
+    dev: number | bigint;
+    ino: number | bigint;
+    size: number | bigint;
+    mtimeMs: number;
+  },
+): boolean =>
+  left.dev === right.dev &&
+  left.ino === right.ino &&
+  left.size === right.size &&
+  left.mtimeMs === right.mtimeMs;
+
+export const readStableManagedTarget = async (
+  path: string,
+): Promise<StableManagedTargetSnapshot | undefined> => {
+  let pathState;
+  try {
+    pathState = await lstat(path);
+  } catch (error) {
+    if (isMissingFileError(error)) return undefined;
+    throw error;
+  }
+  if (
+    !pathState.isFile() ||
+    pathState.isSymbolicLink() ||
+    pathState.size > MAX_MANAGED_TARGET_BYTES
+  ) {
+    throw new Error(
+      `${path} must be a regular, unlinked file no larger than ${MAX_MANAGED_TARGET_BYTES} bytes.`,
+    );
+  }
+
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY |
+        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+    );
+    const openedState = await handle.stat();
+    if (!sameFileIdentity(pathState, openedState)) {
+      throw new Error(`${path} changed before it could be opened safely.`);
+    }
+    const bytes = await readOpenedFileExactly(handle, openedState.size);
+    const [finalOpenedState, finalPathState] = await Promise.all([
+      handle.stat(),
+      lstat(path),
+    ]);
+    if (
+      !sameFileIdentity(openedState, finalOpenedState) ||
+      !sameFileIdentity(openedState, finalPathState)
+    ) {
+      throw new Error(`${path} changed while it was being read.`);
+    }
+
+    let content: string;
+    try {
+      content = new TextDecoder("utf-8", {
+        fatal: true,
+        ignoreBOM: true,
+      }).decode(bytes);
+    } catch (error) {
+      throw new Error(`${path} is not valid UTF-8.`, { cause: error });
+    }
+    return { content, contentDigest: sha256(bytes) };
+  } finally {
+    await handle?.close();
+  }
+};
+
+export const assertStableManagedTargetUnchanged = async (
+  path: string,
+  expected: StableManagedTargetSnapshot | undefined,
+): Promise<void> => {
+  const current = await readStableManagedTarget(path);
+  if (current?.contentDigest !== expected?.contentDigest) {
+    throw new Error(
+      `${path} changed externally while Machdoch was preparing its managed update; no stale update was committed.`,
+    );
+  }
+};
+
+const createBackup = async (
+  path: string,
+  reviewedContent: string,
+): Promise<string> => {
+  const backupPath = `${path}.machdoch-backup-${new Date().toISOString().replace(/[:.]/gu, "-")}-${randomUUID()}`;
+  await writeFileAtomically(backupPath, reviewedContent);
   return backupPath;
-};
-
-const pathExists = async (path: string): Promise<boolean> => {
-  return await stat(path).then(
-    () => true,
-    () => false,
-  );
 };
 
 export interface InstallManagedTargetParams {
@@ -147,6 +385,7 @@ export interface InstallManagedTargetParams {
   format: ManagedTargetFormat;
   payload: string | Record<string, unknown>;
   previous?: ProviderOwnershipRecord;
+  beforeTargetCommit?: (record: ProviderOwnershipRecord) => Promise<void>;
 }
 
 export interface InstallManagedTargetResult {
@@ -155,90 +394,158 @@ export interface InstallManagedTargetResult {
   warnings: string[];
 }
 
-export const installManagedTarget = async (
+const installManagedTargetUnlocked = async (
   params: InstallManagedTargetParams,
 ): Promise<InstallManagedTargetResult> => {
-  const existed = await pathExists(params.path);
-  const existing = existed ? await readFile(params.path, "utf8") : "";
+  if (
+    params.previous &&
+    (params.previous.path !== params.path ||
+      params.previous.provider !== params.provider ||
+      params.previous.scope !== params.scope ||
+      params.previous.format !== params.format)
+  ) {
+    throw new Error(
+      `Previous ownership metadata does not describe ${params.provider} ${params.scope} target ${params.path}.`,
+    );
+  }
+  const before = await readStableManagedTarget(params.path);
+  const existed = Boolean(before);
+  const existing = before?.content ?? "";
   const warnings: string[] = [];
   let managedDigest: string;
   let content: string;
   let managedKeys: string[] | undefined;
 
   if (params.format === "json") {
-    const payload = params.payload as Record<string, unknown>;
+    if (!isRecord(params.payload) || !isRecord(params.payload.mcpServers)) {
+      throw new Error(
+        "Managed provider JSON payload must contain an mcpServers object.",
+      );
+    }
+    const payload = params.payload;
     const generatedServers = getManagedMcpServers(payload);
-    managedKeys = Object.keys(generatedServers).sort();
+    managedKeys = Object.keys(generatedServers).sort(compareCanonicalStrings);
     managedDigest = digestJson(generatedServers);
     const current = parseJsonRecord(existing);
     const currentServers = getManagedMcpServers(current);
+    const previouslyOwnedKeys = new Set(params.previous?.managedKeys ?? []);
+    const unmanagedCollisions = managedKeys.filter(
+      (key) =>
+        Object.hasOwn(currentServers, key) && !previouslyOwnedKeys.has(key),
+    );
+    if (unmanagedCollisions.length > 0) {
+      throw new Error(
+        `Refusing to overwrite unmanaged MCP server entr${unmanagedCollisions.length === 1 ? "y" : "ies"} in ${params.path}: ${unmanagedCollisions.join(", ")}.`,
+      );
+    }
     const previousManaged = Object.fromEntries(
       (params.previous?.managedKeys ?? []).flatMap((key) =>
-        key in currentServers ? [[key, currentServers[key]] as const] : [],
+        Object.hasOwn(currentServers, key)
+          ? [[key, currentServers[key]] as const]
+          : [],
       ),
     );
     if (
       params.previous &&
-      Object.keys(previousManaged).length > 0 &&
       digestJson(previousManaged) !== params.previous.managedDigest
     ) {
-      const backupPath = await createBackup(params.path);
+      const backupPath = await createBackup(params.path, existing);
       warnings.push(
         `Externally changed managed MCP entries were backed up to ${backupPath} and reconciled.`,
       );
     }
-    const nextServers = { ...currentServers };
+    const nextServers: Record<string, unknown> = Object.create(null);
+    for (const [key, value] of Object.entries(currentServers)) {
+      nextServers[key] = value;
+    }
     for (const key of params.previous?.managedKeys ?? [])
       delete nextServers[key];
-    Object.assign(nextServers, generatedServers);
+    for (const [key, value] of Object.entries(generatedServers)) {
+      nextServers[key] = value;
+    }
     content = `${JSON.stringify({ ...current, mcpServers: nextServers }, null, 2)}\n`;
   } else {
     const payload = String(params.payload).trim();
     managedDigest = sha256(payload);
-    const currentRegions = findRegions(existing, params.format);
+    const currentRegions = findRegions(existing);
     const currentRegion = currentRegions[0];
+    if (!params.previous && currentRegions.length > 0) {
+      throw new Error(
+        `Refusing to overwrite an unowned Machdoch-managed region in ${params.path}; remove the stale region or restore its ownership metadata first.`,
+      );
+    }
+    const generated = inventoryTomlMcpServers(payload);
+    const unmanaged = inventoryTomlMcpServers(removeTextRegions(existing));
+    const collisions = [...generated.names]
+      .filter((name) => unmanaged.names.has(name))
+      .sort(compareCanonicalStrings);
+    if (collisions.length > 0 || (generated.names.size > 0 && unmanaged.ambiguous)) {
+      throw new Error(
+        collisions.length > 0
+          ? `Refusing to create duplicate unmanaged Codex MCP table${collisions.length === 1 ? "" : "s"} in ${params.path}: ${collisions.join(", ")}.`
+          : `Refusing to merge MCP tables into ambiguous unmanaged mcp_servers TOML in ${params.path}.`,
+      );
+    }
     if (
       params.previous &&
-      currentRegion &&
       (currentRegions.length !== 1 ||
-        sha256(currentRegion.payload) !== params.previous.managedDigest)
+        sha256(currentRegion?.payload ?? "") !== params.previous.managedDigest)
     ) {
-      const backupPath = await createBackup(params.path);
+      const backupPath = await createBackup(params.path, existing);
       warnings.push(
         `An externally changed managed region was backed up to ${backupPath} and reconciled.`,
       );
     }
-    content = mergeTextRegion(existing, payload, params.format);
+    content = mergeTextRegion(existing, payload);
   }
 
-  const changed = content !== existing;
-  if (changed) await writeFileAtomically(params.path, content);
-  const verified = await readFile(params.path, "utf8");
-  const installedFileDigest = sha256(verified);
   const record: ProviderOwnershipRecord = {
     path: params.path,
     provider: params.provider,
     scope: params.scope,
     format: params.format,
     managedDigest,
-    installedFileDigest,
+    installedFileDigest: sha256(content),
     createdFile: params.previous?.createdFile ?? !existed,
     ...(managedKeys ? { managedKeys } : {}),
     installedAt: new Date().toISOString(),
   };
+  const changed = content !== existing;
+  if (changed) {
+    await writeFileAtomically(params.path, content, "utf8", {
+      beforeCommit: async () => {
+        await assertStableManagedTargetUnchanged(params.path, before);
+        await params.beforeTargetCommit?.(record);
+      },
+    });
+  }
+  const verified = await readStableManagedTarget(params.path);
+  if (!verified || verified.content !== content) {
+    throw new Error(
+      `${params.path} changed externally before the managed update could be verified.`,
+    );
+  }
   return { record, changed, warnings };
 };
+
+export const installManagedTarget = async (
+  params: InstallManagedTargetParams,
+): Promise<InstallManagedTargetResult> =>
+  await withCooperativeFileLock(params.path, async () =>
+    installManagedTargetUnlocked(params),
+  );
 
 export interface UninstallManagedTargetOptions {
   force?: boolean;
 }
 
-export const uninstallManagedTarget = async (
+const uninstallManagedTargetUnlocked = async (
   record: ProviderOwnershipRecord,
   options: UninstallManagedTargetOptions = {},
 ): Promise<{ removed: boolean; warning?: string }> => {
-  if (!(await pathExists(record.path))) return { removed: true };
-  const existing = await readFile(record.path, "utf8");
+  const before = await readStableManagedTarget(record.path);
+  if (!before) return { removed: true };
+  const existing = before.content;
   let next: string;
   let warning: string | undefined;
 
@@ -247,7 +554,7 @@ export const uninstallManagedTarget = async (
     const servers = getManagedMcpServers(current);
     const managed = Object.fromEntries(
       (record.managedKeys ?? []).flatMap((key) =>
-        key in servers ? [[key, servers[key]] as const] : [],
+        Object.hasOwn(servers, key) ? [[key, servers[key]] as const] : [],
       ),
     );
     if (
@@ -260,7 +567,7 @@ export const uninstallManagedTarget = async (
           warning: `Skipped ${record.path}: managed MCP entries changed externally.`,
         };
       }
-      const backupPath = await createBackup(record.path);
+      const backupPath = await createBackup(record.path, existing);
       warning = `Externally changed managed MCP entries were backed up to ${backupPath} and removed.`;
     }
     const nextServers = { ...servers };
@@ -275,7 +582,7 @@ export const uninstallManagedTarget = async (
       next = "";
     }
   } else {
-    const regions = findRegions(existing, record.format);
+    const regions = findRegions(existing);
     if (regions.length === 0) return { removed: true };
     const isCurrent =
       regions.length === 1 &&
@@ -287,20 +594,38 @@ export const uninstallManagedTarget = async (
           warning: `Skipped ${record.path}: managed region changed externally.`,
         };
       }
-      const backupPath = await createBackup(record.path);
+      const backupPath = await createBackup(record.path, existing);
       warning = `An externally changed managed region was backed up to ${backupPath} and removed.`;
     }
-    next = removeTextRegions(existing, record.format);
+    next = removeTextRegions(existing);
     if (next) next += "\n";
   }
 
   if (record.createdFile && !next.trim()) {
+    await assertStableManagedTargetUnchanged(record.path, before);
     await rm(record.path, { force: true });
   } else {
-    await writeFileAtomically(record.path, next);
+    await writeFileAtomically(record.path, next, "utf8", {
+      beforeCommit: async () =>
+        assertStableManagedTargetUnchanged(record.path, before),
+    });
+    const verified = await readStableManagedTarget(record.path);
+    if (!verified || verified.content !== next) {
+      throw new Error(
+        `${record.path} changed externally before the managed removal could be verified.`,
+      );
+    }
   }
   return { removed: true, ...(warning ? { warning } : {}) };
 };
+
+export const uninstallManagedTarget = async (
+  record: ProviderOwnershipRecord,
+  options: UninstallManagedTargetOptions = {},
+): Promise<{ removed: boolean; warning?: string }> =>
+  await withCooperativeFileLock(record.path, async () =>
+    uninstallManagedTargetUnlocked(record, options),
+  );
 
 export const inspectManagedTarget = async (
   record: ProviderOwnershipRecord,
@@ -310,17 +635,18 @@ export const inspectManagedTarget = async (
   managedCurrent: boolean;
   error?: string;
 }> => {
-  if (!(await pathExists(record.path))) {
-    return { exists: false, syntaxValid: false, managedCurrent: false };
-  }
   try {
-    const content = await readFile(record.path, "utf8");
+    const snapshot = await readStableManagedTarget(record.path);
+    if (!snapshot) {
+      return { exists: false, syntaxValid: false, managedCurrent: false };
+    }
+    const content = snapshot.content;
     if (record.format === "json") {
       const parsed = parseJsonRecord(content);
       const servers = getManagedMcpServers(parsed);
       const managed = Object.fromEntries(
         (record.managedKeys ?? []).flatMap((key) =>
-          key in servers ? [[key, servers[key]] as const] : [],
+          Object.hasOwn(servers, key) ? [[key, servers[key]] as const] : [],
         ),
       );
       return {
@@ -329,7 +655,7 @@ export const inspectManagedTarget = async (
         managedCurrent: digestJson(managed) === record.managedDigest,
       };
     }
-    const region = findRegion(content, record.format);
+    const region = findRegion(content);
     return {
       exists: true,
       syntaxValid: Boolean(region),
@@ -347,33 +673,53 @@ export const inspectManagedTarget = async (
   }
 };
 
+export interface LoadedOwnershipManifest {
+  manifest: ProviderOwnershipManifest;
+  targetSnapshot: StableManagedTargetSnapshot | undefined;
+}
+
+export const loadOwnershipManifestSnapshot = async (
+  path: string,
+): Promise<LoadedOwnershipManifest> => {
+  const targetSnapshot = await readStableManagedTarget(path);
+  return {
+    manifest: targetSnapshot
+      ? parseOwnershipManifest(JSON.parse(targetSnapshot.content), path)
+      : { schemaVersion: 1, targets: [] },
+    targetSnapshot,
+  };
+};
+
 export const loadOwnershipManifest = async (
   path: string,
-): Promise<ProviderOwnershipManifest> => {
-  try {
-    const parsed = JSON.parse(
-      await readFile(path, "utf8"),
-    ) as ProviderOwnershipManifest;
-    return parsed.schemaVersion === 1 && Array.isArray(parsed.targets)
-      ? parsed
-      : { schemaVersion: 1, targets: [] };
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
-      return { schemaVersion: 1, targets: [] };
-    }
-    throw error;
-  }
-};
+): Promise<ProviderOwnershipManifest> =>
+  (await loadOwnershipManifestSnapshot(path)).manifest;
 
 export const saveOwnershipManifest = async (
   path: string,
   manifest: ProviderOwnershipManifest,
-): Promise<void> => {
+  options: {
+    expectedTargetSnapshot?: StableManagedTargetSnapshot | undefined;
+  } = {},
+): Promise<StableManagedTargetSnapshot> => {
   await mkdir(dirname(path), { recursive: true });
-  await writeJsonAtomically(path, manifest);
+  const normalized = parseOwnershipManifest(manifest, path);
+  await writeJsonAtomically(
+    path,
+    normalized,
+    Object.hasOwn(options, "expectedTargetSnapshot")
+      ? {
+          beforeCommit: async () =>
+            assertStableManagedTargetUnchanged(
+              path,
+              options.expectedTargetSnapshot,
+            ),
+        }
+      : {},
+  );
+  const written = await readStableManagedTarget(path);
+  if (!written) {
+    throw new Error(`${path} disappeared after its ownership update.`);
+  }
+  return written;
 };

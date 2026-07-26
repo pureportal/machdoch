@@ -4,6 +4,7 @@ import type {
   TaskExecutionResult,
 } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
 import {
   createAutopilotMonitorSystemPrompt,
   createAutopilotMonitorUserPrompt,
@@ -44,9 +45,9 @@ const createTaskContext = (
     effectiveTask:
       "Investigate online best practices and improve the autonomous coding agent.",
     taskContextText: "",
-    instructionContextText: "",
     workspacePaths: ["src/core/agent-runtime.ts"],
     suggestedTools: ["filesystem", "network"],
+    executionRole: "executor",
     applicableInstructions: [],
     ...overrides,
   };
@@ -95,26 +96,31 @@ describe("autopilot monitor prompts", () => {
     expect(prompt).toContain("repeated identical failing tool calls");
   });
 
-  it("includes validator-targeted instruction context in the system prompt", () => {
+  it("includes the same frozen canonical envelope in the validator prompt", () => {
+    const instructionResolution = createInstructionResolutionFixture({
+      body: "Reject completion without concrete verification output.",
+      sourceName: "Strict validation",
+    });
     const prompt = createAutopilotMonitorSystemPrompt(
       createRuntimeConfig(),
       createTaskContext({
-        applicableValidatorInstructions: [
-          {
-            kind: "conditional",
-            name: "Strict validation",
-            path: ".machdoch/instructions/strict-validation.instructions.md",
-            priority: 80,
-            reason: "Matched terms: review",
-            body: "Reject completion without concrete verification output.",
-          },
-        ],
+        instructionResolution,
       }),
+      [
+        'MACHDOCH-MCP-INITIALIZATION-INSTRUCTIONS/1 boundary="fixture"',
+        "Use the frozen MCP validation hint.",
+        "--fixture--",
+      ],
     );
 
-    expect(prompt).toContain("<validator_instructions>");
-    expect(prompt).toContain("Strict validation");
+    expect(prompt).toContain("<validator_instructions digest=");
+    expect(prompt).toContain(instructionResolution.canonicalDigest);
+    expect(prompt).toContain("MACHDOCH-INSTRUCTION-ENVELOPE/1");
     expect(prompt).toContain("Reject completion without concrete verification output.");
+    expect(prompt).toContain(
+      "MACHDOCH-MCP-INITIALIZATION-INSTRUCTIONS/1",
+    );
+    expect(prompt).toContain("Use the frozen MCP validation hint.");
   });
 
   it("includes research expectations, verification expectations, and the tool trace in the user prompt", () => {

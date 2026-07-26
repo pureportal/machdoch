@@ -1,15 +1,24 @@
 import { createMediaFlowFingerprint } from "./canonicalize.js";
 import {
+  getMediaNodeDefinition,
   orderMediaFlowNodes,
   validateMediaFlowDocument,
 } from "./node-registry.js";
 import { resolveMediaFlowVariables } from "./variables.js";
 import { inspectMediaModelAddonCompatibility } from "./model-addons.js";
 import {
+  describeMediaModelReadiness,
+  isMediaModelReady,
+} from "./model-readiness.js";
+import {
   DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY,
   readSubjectCutoutModelPriority,
   subjectCutoutModelLabel,
 } from "./subject-cutout-policy.js";
+import type {
+  MediaVideoAspectRatio,
+  MediaVideoLoopMode,
+} from "./video-quality.js";
 import type {
   ImageRecipeSettings,
   MediaImageTransformRequest,
@@ -54,6 +63,25 @@ interface CreateImageEditFlowInput extends CreateImageFlowInputBase {
     role: Exclude<MediaImageReferenceRole, "base">;
     influence?: number;
   }[];
+}
+
+interface CreateImageToVideoFlowInput {
+  id: string;
+  createdAt: string;
+  sourceAssetId?: string;
+  lastFrameAssetId?: string;
+  prompt?: string;
+  aspectRatio?: MediaVideoAspectRatio;
+  loopMode?: MediaVideoLoopMode;
+  transparentBackground?: boolean;
+}
+
+interface CreateGeneratedLoopVideoFlowInput {
+  id: string;
+  createdAt: string;
+  prompt?: string;
+  imageModelId?: string | null;
+  imageModelAddons?: readonly MediaModelAddonSelection[];
 }
 
 interface CompileMediaFlowInput {
@@ -117,6 +145,7 @@ export const createImageRecipeFlow = ({
       svgTextPolicy: settings.svgTextPolicy ?? "avoid",
       svgCandidateCount: settings.svgCandidateCount ?? settings.outputCount,
       svgCriticEnabled: settings.svgCriticEnabled === true,
+      memoryProfile: settings.memoryProfile ?? "auto",
     },
   );
   const nodes: MediaFlowNode[] = isSvgVectorization
@@ -317,7 +346,12 @@ export const createImageEditFlow = ({
     aspectRatio: settings.aspectRatio,
     outputCount: settings.outputCount,
     outputFormat: settings.outputFormat,
-    editStrength,
+    editStrength: settings.editStrength ?? editStrength,
+    referenceBoost: settings.referenceBoost ?? 2,
+    requireChromaBackground: settings.requireChromaBackground === true,
+    referenceFit: settings.referenceFit ?? "fit",
+    groundingPixels: settings.groundingPixels ?? 768,
+    memoryProfile: settings.memoryProfile ?? "auto",
   });
   const nodes: MediaFlowNode[] = [prompt, source, ...additionalSources, edit];
   const edges: MediaFlowEdge[] = [
@@ -421,6 +455,376 @@ export const createImageEditFlow = ({
     id,
     name: "Edit image",
     description: "Text-guided image edit with an explicit immutable source and output lineage.",
+    createdAt,
+    updatedAt: createdAt,
+    variables: [],
+    variableBindings: {},
+    presets: [],
+    activePresetId: null,
+    nodes,
+    edges,
+  };
+};
+
+export const createImageToVideoFlow = ({
+  id,
+  createdAt,
+  sourceAssetId,
+  lastFrameAssetId,
+  prompt: promptText = "",
+  aspectRatio = "1:1",
+  loopMode = "none",
+  transparentBackground = false,
+}: CreateImageToVideoFlowInput): MediaFlow => {
+  if (lastFrameAssetId && !sourceAssetId) {
+    throw new Error("A video last frame requires an explicit first frame.");
+  }
+
+  const prompt = createNode(
+    "video-prompt",
+    "source.prompt",
+    "Motion brief",
+    "source",
+    { prompt: promptText },
+  );
+  const generate = createNode(
+    "generate-video",
+    "task.generate-video",
+    sourceAssetId ? "Animate image" : "Generate video",
+    "task",
+    {
+      providerPolicy: "local",
+      modelPolicy: "quality",
+      modelId: "local:wan2.2-ti2v-5b",
+      aspectRatio,
+      durationSeconds: 2,
+      resolution: "quality-640",
+      generateAudio: false,
+      transparentBackground,
+      loopMode,
+      fps: 16,
+      numFrames: 33,
+      numInferenceSteps: 30,
+      guidanceScale: 5,
+      seed: 0,
+      negativePrompt: "",
+      matteQuality: "production",
+      encodingQuality: "lossless",
+      memoryProfile: "auto",
+      experimentalLowMemory: true,
+    },
+  );
+  const output = createNode(
+    "video-output",
+    "output.video",
+    "Save video",
+    "output",
+    {
+      format: "webm",
+      role: transparentBackground ? "transparent" : "opaque",
+    },
+  );
+  const nodes: MediaFlowNode[] = [prompt];
+  const edges: MediaFlowEdge[] = [
+    createEdge(
+      "prompt-to-video",
+      prompt.id,
+      "prompt",
+      generate.id,
+      "prompt",
+    ),
+  ];
+  let firstFrameNode: MediaFlowNode | null = null;
+
+  if (sourceAssetId) {
+    const firstFrame = createNode(
+      "first-frame",
+      "source.image",
+      "First frame",
+      "source",
+      {
+        assetId: sourceAssetId,
+        referenceRole: "base",
+        influence: 1,
+      },
+    );
+    firstFrameNode = firstFrame;
+    nodes.push(firstFrame);
+    edges.push(
+      createEdge(
+        "first-frame-to-video",
+        firstFrame.id,
+        "image",
+        generate.id,
+        "first-frame",
+      ),
+    );
+  }
+
+  const effectiveLastFrameAssetId = lastFrameAssetId ?? sourceAssetId;
+  if (
+    effectiveLastFrameAssetId &&
+    firstFrameNode &&
+    effectiveLastFrameAssetId === sourceAssetId
+  ) {
+    edges.push(
+      createEdge(
+        "shared-frame-to-video-end",
+        firstFrameNode.id,
+        "image",
+        generate.id,
+        "last-frame",
+      ),
+    );
+  } else if (effectiveLastFrameAssetId) {
+    const lastFrame = createNode(
+      "last-frame",
+      "source.image",
+      "Last frame",
+      "source",
+      {
+        assetId: effectiveLastFrameAssetId,
+        referenceRole: "composition",
+        influence: 1,
+      },
+    );
+    nodes.push(lastFrame);
+    edges.push(
+      createEdge(
+        "last-frame-to-video",
+        lastFrame.id,
+        "image",
+        generate.id,
+        "last-frame",
+      ),
+    );
+  }
+
+  nodes.push(generate, output);
+  edges.push(
+    createEdge(
+      "video-to-output",
+      generate.id,
+      "video",
+      output.id,
+      "video",
+    ),
+  );
+
+  return {
+    schemaVersion: 1,
+    id,
+    name: sourceAssetId ? "Animate image" : "Create video",
+    description:
+      "Typed video recipe with explicit prompt, keyframe, provider, and publication boundaries.",
+    createdAt,
+    updatedAt: createdAt,
+    variables: [],
+    variableBindings: {},
+    presets: [],
+    activePresetId: null,
+    nodes,
+    edges,
+  };
+};
+
+export const createGeneratedLoopVideoFlow = ({
+  id,
+  createdAt,
+  prompt: promptText = [
+    "Full-body game-style fantasy heroine in a relaxed neutral idle pose",
+    "facing the camera with arms naturally at her sides",
+    "detailed adventurer outfit, centered and fully visible",
+    "even studio lighting on a perfectly uniform chroma-green background",
+    "subtle breathing and natural hair movement, fixed camera, seamless loop",
+    "no shadows or background movement",
+  ].join(", "),
+  imageModelId = null,
+  imageModelAddons = [],
+}: CreateGeneratedLoopVideoFlowInput): MediaFlow => {
+  const prompt = createNode(
+    "character-and-motion-brief",
+    "source.prompt",
+    "Character and motion brief",
+    "source",
+    { prompt: promptText },
+  );
+  const generateImage = createNode(
+    "generate-character-frame",
+    "task.generate-image",
+    "Generate first frame",
+    "task",
+    {
+      providerPolicy: "local",
+      modelPolicy: "quality",
+      modelId: imageModelId,
+      modelAddons: [...imageModelAddons],
+      aspectRatio: "1:1",
+      outputCount: 1,
+      outputFormat: "png",
+      transparentBackground: true,
+      svgMode: "generate",
+      svgAutoCrop: true,
+      svgTargetSize: 1024,
+      svgStyle: "illustration",
+      svgTextPolicy: "avoid",
+      svgCandidateCount: 1,
+      svgCriticEnabled: false,
+      memoryProfile: "auto",
+    },
+  );
+  const cutout = createNode(
+    "cutout-character-frame",
+    "operation.subject-cutout",
+    "Remove image background",
+    "operation",
+    {
+      modelPriority: [...DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY],
+      outputMatte: true,
+    },
+  );
+  const generateVideo = createNode(
+    "generate-idle-loop",
+    "task.generate-video",
+    "Animate same first and last frame",
+    "task",
+    {
+      providerPolicy: "local",
+      modelPolicy: "quality",
+      modelId: "local:wan2.2-ti2v-5b",
+      aspectRatio: "1:1",
+      durationSeconds: 2,
+      resolution: "quality-640",
+      generateAudio: false,
+      transparentBackground: true,
+      loopMode: "seamless",
+      fps: 16,
+      numFrames: 33,
+      numInferenceSteps: 30,
+      guidanceScale: 5,
+      seed: 0,
+      negativePrompt: "",
+      matteQuality: "production",
+      encodingQuality: "lossless",
+      memoryProfile: "auto",
+      experimentalLowMemory: true,
+    },
+  );
+  const animatedBackground = createNode(
+    "animated-background",
+    "source.animated-background",
+    "Animated gradient background",
+    "source",
+    {
+      style: "gradient-wave",
+      direction: "diagonal",
+      colorStart: "#172554",
+      colorEnd: "#7c3aed",
+      cycles: 1,
+    },
+  );
+  const compositeVideo = createNode(
+    "composite-idle-loop",
+    "operation.video-composite",
+    "Composite animated version",
+    "operation",
+    { alphaMode: "straight" },
+  );
+  const transparentOutput = createNode(
+    "transparent-video-output",
+    "output.video",
+    "Save transparent master",
+    "output",
+    { format: "webm", role: "transparent" },
+  );
+  const compositeOutput = createNode(
+    "composited-video-output",
+    "output.video",
+    "Save animated-background version",
+    "output",
+    { format: "webm", role: "composited" },
+  );
+  const nodes = [
+    prompt,
+    generateImage,
+    cutout,
+    generateVideo,
+    animatedBackground,
+    compositeVideo,
+    transparentOutput,
+    compositeOutput,
+  ];
+  const edges = [
+    createEdge(
+      "brief-to-image",
+      prompt.id,
+      "prompt",
+      generateImage.id,
+      "prompt",
+    ),
+    createEdge(
+      "brief-to-video",
+      prompt.id,
+      "prompt",
+      generateVideo.id,
+      "prompt",
+    ),
+    createEdge(
+      "image-to-cutout",
+      generateImage.id,
+      "image",
+      cutout.id,
+      "image",
+    ),
+    createEdge(
+      "cutout-to-first-frame",
+      cutout.id,
+      "image",
+      generateVideo.id,
+      "first-frame",
+    ),
+    createEdge(
+      "same-cutout-to-last-frame",
+      cutout.id,
+      "image",
+      generateVideo.id,
+      "last-frame",
+    ),
+    createEdge(
+      "wan-to-transparent-output",
+      generateVideo.id,
+      "video",
+      transparentOutput.id,
+      "video",
+    ),
+    createEdge(
+      "wan-alpha-to-composite",
+      generateVideo.id,
+      "video",
+      compositeVideo.id,
+      "foreground-video",
+    ),
+    createEdge(
+      "background-to-composite",
+      animatedBackground.id,
+      "video",
+      compositeVideo.id,
+      "background-video",
+    ),
+    createEdge(
+      "composite-to-output",
+      compositeVideo.id,
+      "video",
+      compositeOutput.id,
+      "video",
+    ),
+  ];
+  return {
+    schemaVersion: 1,
+    id,
+    name: "Generated character idle loop",
+    description:
+      "Generates one character frame, removes its background, reuses that exact frame at both WAN endpoints, and publishes transparent plus animated-background WebM loops.",
     createdAt,
     updatedAt: createdAt,
     variables: [],
@@ -1184,14 +1588,6 @@ export const removeMediaFlowLayoutComment = (
   comments: layout.comments.filter((comment) => comment.id !== commentId),
 });
 
-const isModelReady = (model: MediaModelDescriptor): boolean => {
-  if (model.target === "remote") return model.configured;
-  if (model.providerId === "local-diffusers") {
-    return model.installed && model.runtimeReadiness === "ready";
-  }
-  return model.installed;
-};
-
 const matchesProviderPolicy = (
   model: MediaModelDescriptor,
   policy: MediaProviderPolicy,
@@ -1209,7 +1605,7 @@ const scoreModel = (
       : settings.modelPolicy === "fast"
         ? model.speedScore
         : (model.qualityScore + model.speedScore) / 2;
-  const readinessBonus = isModelReady(model) ? 1_000 : 0;
+  const readinessBonus = isMediaModelReady(model) ? 1_000 : 0;
   const recommendedBonus = model.recommended ? 20 : 0;
 
   return readinessBonus + recommendedBonus + policyScore;
@@ -1418,6 +1814,27 @@ const readImageTaskNodeSettings = (
       (node) => node.type === "control.quality-gate",
     ),
     referenceImages: [],
+    editStrength:
+      typeof taskNode.config.editStrength === "number"
+        ? taskNode.config.editStrength
+        : 0.65,
+    referenceBoost:
+      typeof taskNode.config.referenceBoost === "number"
+        ? taskNode.config.referenceBoost
+        : 2,
+    requireChromaBackground: taskNode.config.requireChromaBackground === true,
+    referenceFit:
+      taskNode.config.referenceFit === "crop" ? "crop" : "fit",
+    groundingPixels:
+      typeof taskNode.config.groundingPixels === "number"
+        ? taskNode.config.groundingPixels
+        : 768,
+    memoryProfile:
+      ["auto", "memory-saver", "balanced", "maximum-speed"].includes(
+        String(taskNode.config.memoryProfile),
+      )
+        ? taskNode.config.memoryProfile as NonNullable<ImageRecipeSettings["memoryProfile"]>
+        : "auto",
     svgMode: ["generate", "vectorize"].includes(String(taskNode.config.svgMode))
       ? taskNode.config.svgMode as NonNullable<ImageRecipeSettings["svgMode"]>
       : "generate",
@@ -1551,7 +1968,11 @@ export const analyzeMediaFlowCardinality = (
 
   for (const node of orderMediaFlowNodes(effectiveFlow)) {
     const incomingImageBounds = effectiveFlow.edges
-      .filter((edge) => edge.toNodeId === node.id && edge.toPortId === "image")
+      .filter(
+        (edge) =>
+          edge.toNodeId === node.id &&
+          ["image", "video"].includes(edge.toPortId),
+      )
       .map((edge) => outputBounds.get(edge.fromNodeId) ?? null)
       .filter((bound): bound is number => bound !== null);
     const inputBound = incomingImageBounds.length > 0
@@ -1569,6 +1990,9 @@ export const analyzeMediaFlowCardinality = (
     ) {
       outputBound = readBoundedCardinality(node.config.outputCount);
       generatedCandidates = Math.max(generatedCandidates, outputBound ?? 0);
+    } else if (node.type === "task.generate-video") {
+      outputBound = 1;
+      generatedCandidates = Math.max(generatedCandidates, 1);
     } else if (node.type === "control.human-review") {
       requiresHumanReview = true;
       const selectionBound = readBoundedCardinality(node.config.maxSelections);
@@ -1587,7 +2011,9 @@ export const analyzeMediaFlowCardinality = (
   }
 
   const publishedBounds = effectiveFlow.nodes
-    .filter((node) => node.type === "output.asset")
+    .filter(
+      (node) => node.type === "output.asset" || node.type === "output.video",
+    )
     .map((node) => outputBounds.get(node.id) ?? null)
     .filter((bound): bound is number => bound !== null);
 
@@ -1693,25 +2119,14 @@ const createModelDiagnostics = (
     });
   }
 
-  if (!isModelReady(model)) {
-    const localDiffusersNeedsVerification =
-      model.providerId === "local-diffusers" && model.installed;
+  const readinessGuidance = describeMediaModelReadiness(model);
+  if (readinessGuidance) {
     diagnostics.push({
       code: "MODEL_NOT_READY",
       severity: "error",
-      message:
-        model.target === "remote"
-          ? `${model.displayName} requires a configured provider credential.`
-          : localDiffusersNeedsVerification
-            ? `${model.displayName} has not passed a clean offline runtime verification on this device.`
-            : `${model.displayName} is not installed on this device.`,
+      message: readinessGuidance.message,
       nodeId,
-      action:
-        model.target === "remote"
-          ? "Configure the provider in Settings."
-          : localDiffusersNeedsVerification
-            ? "Open Models and run Verify model."
-            : "Review the model license, disk estimate, and install plan.",
+      action: readinessGuidance.action,
     });
   }
 
@@ -1908,7 +2323,8 @@ const resolveModelAddons = (
 
 const createExecutionSteps = (
   flow: MediaFlow,
-  model: MediaModelDescriptor | null,
+  imageModel: MediaModelDescriptor | null,
+  videoModel: MediaModelDescriptor | null,
   models: readonly MediaModelDescriptor[],
   hasModelAddons: boolean,
 ): MediaExecutionStep[] => {
@@ -1948,6 +2364,16 @@ const createExecutionSteps = (
         });
         break;
         }
+      case "source.animated-background":
+        steps.push({
+          id: `${node.id}:resolve-animated-background`,
+          sourceNodeId: node.id,
+          kind: "resolve-animated-background",
+          label: "Render the seamless procedural background frame sequence",
+          target: "local",
+          cacheable: true,
+        });
+        break;
       case "task.generate-image":
         {
         const isSvg = node.config.outputFormat === "svg";
@@ -1969,7 +2395,7 @@ const createExecutionSteps = (
             cacheable: true,
           });
         }
-        if (model) {
+        if (imageModel) {
           const isVectorization =
             isSvg && node.config.svgMode === "vectorize";
           const generationStepKind = isVectorization
@@ -1982,11 +2408,11 @@ const createExecutionSteps = (
             sourceNodeId: node.id,
             kind: generationStepKind,
             label: isVectorization
-              ? `Vectorize one source asset with ${model.displayName}`
-              : `${isSvg ? "Generate SVG candidates" : "Generate"} with ${model.displayName}`,
-            target: model.target,
-            cacheable: model.target === "local",
-            ...(model.target === "remote" ? { sideEffect: "paid-request" } : {}),
+              ? `Vectorize one source asset with ${imageModel.displayName}`
+              : `${isSvg ? "Generate SVG candidates" : "Generate"} with ${imageModel.displayName}`,
+            target: imageModel.target,
+            cacheable: imageModel.target === "local",
+            ...(imageModel.target === "remote" ? { sideEffect: "paid-request" } : {}),
           });
           if (isSvg) {
             steps.push(
@@ -2019,7 +2445,7 @@ const createExecutionSteps = (
               !isVectorization &&
               node.config.svgCriticEnabled === true &&
               node.config.modelPolicy === "quality" &&
-              model.target === "remote"
+              imageModel.target === "remote"
             ) {
               steps.push({
                 id: stepId(node, "generate", "repair-svg"),
@@ -2054,15 +2480,48 @@ const createExecutionSteps = (
             cacheable: true,
           });
         }
-        if (model) {
+        if (imageModel) {
           steps.push({
             id: stepId(node, "edit", "edit-image"),
             sourceNodeId: node.id,
             kind: "edit-image",
-            label: `Edit with ${model.displayName}`,
-            target: model.target,
-            cacheable: model.target === "local",
-            ...(model.target === "remote" ? { sideEffect: "paid-request" } : {}),
+            label: `Edit with ${imageModel.displayName}`,
+            target: imageModel.target,
+            cacheable: imageModel.target === "local",
+            ...(imageModel.target === "remote" ? { sideEffect: "paid-request" } : {}),
+          });
+        }
+        break;
+      case "task.generate-video":
+        steps.push({
+          id: stepId(node, "generate-video", "resolve-video-model"),
+          sourceNodeId: node.id,
+          kind: "resolve-model",
+          label: "Resolve video provider, model, keyframe, and audio capabilities",
+          target: "orchestrator",
+          cacheable: false,
+        });
+        if (videoModel) {
+          const videoDelivery =
+            node.config.transparentBackground === true
+              ? "transparent"
+              : "opaque";
+          const videoAssembly =
+            node.config.loopMode === "seamless"
+              ? "seamless loop"
+              : node.config.loopMode === "ping-pong"
+                ? "ping-pong loop"
+                : "one-way video";
+          steps.push({
+            id: stepId(node, "generate-video", "generate-video"),
+            sourceNodeId: node.id,
+            kind: "generate-video",
+            label: `Generate ${videoDelivery} ${videoAssembly} with ${videoModel.displayName}`,
+            target: videoModel.target,
+            cacheable: videoModel.target === "local",
+            ...(videoModel.target === "remote"
+              ? { sideEffect: "paid-request" as const }
+              : {}),
           });
         }
         break;
@@ -2218,6 +2677,51 @@ const createExecutionSteps = (
           sideEffect: "asset-write",
         });
         break;
+      case "operation.video-composite":
+        steps.push({
+          id: `${node.id}:composite-video`,
+          sourceNodeId: node.id,
+          kind: "composite-video",
+          label:
+            "Decode straight alpha, composite every frame, and encode the opaque VP9 companion",
+          target: "local",
+          cacheable: true,
+        });
+        break;
+      case "output.video": {
+        const inputEdge = flow.edges.find(
+          (edge) => edge.toNodeId === node.id && edge.toPortId === "video",
+        );
+        const sourceNode = inputEdge
+          ? flow.nodes.find((candidate) => candidate.id === inputEdge.fromNodeId)
+          : null;
+        const inferredRole =
+          sourceNode?.type === "operation.video-composite"
+            ? "composited"
+            : sourceNode?.type === "task.generate-video" &&
+                sourceNode.config.transparentBackground !== true
+              ? "opaque"
+              : "transparent";
+        const role =
+          typeof node.config.role === "string"
+            ? node.config.role
+            : inferredRole;
+        steps.push({
+          id: stepId(node, "video-output", "ingest-video"),
+          sourceNodeId: node.id,
+          kind: "ingest-asset",
+          label:
+            role === "composited"
+              ? "Validate, hash, and publish the composited video"
+              : role === "opaque"
+                ? "Validate, hash, and publish the opaque video"
+                : "Validate alpha, hash, and publish the transparent video",
+          target: "orchestrator",
+          cacheable: false,
+          sideEffect: "asset-write",
+        });
+        break;
+      }
     }
   }
   return steps;
@@ -2235,9 +2739,15 @@ export const compileMediaFlow = ({
     (node) =>
       node.type === "task.generate-image" || node.type === "task.edit-image",
   );
+  const videoTaskNodes = effectiveFlow.nodes.filter(
+    (node) => node.type === "task.generate-video",
+  );
+  const videoTaskNode =
+    videoTaskNodes.length === 1 ? videoTaskNodes[0] ?? null : null;
   const imageTask = readMediaImageTaskSettings(effectiveFlow);
   const isLocalUtilityFlow =
     imageTaskNodes.length === 0 &&
+    videoTaskNodes.length === 0 &&
     effectiveFlow.nodes.some((node) => node.type === "source.image") &&
     effectiveFlow.nodes.some((node) => node.type === "output.asset");
   const settings = imageTask?.settings ?? null;
@@ -2282,12 +2792,13 @@ export const compileMediaFlow = ({
     })),
   );
 
-  if (!settings && !isLocalUtilityFlow) {
+  if (!settings && !isLocalUtilityFlow && !videoTaskNode) {
     diagnostics.push({
       code: "MODEL_NOT_FOUND",
       severity: "error",
-      message: "The current flow must contain exactly one supported image generation or edit task.",
-      action: "Recreate the recipe or repair the missing task nodes.",
+      message:
+        "The current flow must contain exactly one supported image or video generation task.",
+      action: "Recreate the recipe or repair the missing task node.",
     });
   }
 
@@ -2305,6 +2816,19 @@ export const compileMediaFlow = ({
           : "Describe the image before compiling this flow.",
       nodeId: promptNode?.id ?? "prompt",
       action: "Add a concrete subject, setting, or visual direction.",
+    });
+  }
+  if (
+    videoTaskNode &&
+    (typeof promptNode?.config.prompt !== "string" ||
+      promptNode.config.prompt.trim().length === 0)
+  ) {
+    diagnostics.push({
+      code: "PROMPT_REQUIRED",
+      severity: "error",
+      message: "Describe the shot, motion, camera behavior, or transition before compiling.",
+      nodeId: promptNode?.id ?? videoTaskNode.id,
+      action: "Add a concise motion brief for the video task.",
     });
   }
 
@@ -2326,6 +2850,43 @@ export const compileMediaFlow = ({
           }))
       : []);
   const normalizedSourceAssetIds = connectedSourceAssets
+    .map((source) => source.assetId.trim())
+    .filter(Boolean);
+  const videoFrameSources = videoTaskNode
+    ? effectiveFlow.edges
+        .filter(
+          (edge) =>
+            edge.toNodeId === videoTaskNode.id &&
+            (edge.toPortId === "first-frame" ||
+              edge.toPortId === "last-frame"),
+        )
+        .flatMap((edge) => {
+          const source = effectiveFlow.nodes.find(
+            (node) => node.id === edge.fromNodeId,
+          );
+          const sourcePort = source
+            ? getMediaNodeDefinition(source.type)?.outputs.find(
+                (port) =>
+                  port.id === edge.fromPortId && port.dataType === "image",
+              )
+            : null;
+          return source && sourcePort
+            ? [
+                {
+                  nodeId: source.id,
+                  portId: edge.toPortId,
+                  generated: source.type !== "source.image",
+                  assetId:
+                    source.type === "source.image" &&
+                    typeof source.config.assetId === "string"
+                      ? source.config.assetId
+                      : "",
+                },
+              ]
+            : [];
+        })
+    : [];
+  const normalizedVideoFrameAssetIds = videoFrameSources
     .map((source) => source.assetId.trim())
     .filter(Boolean);
   const isSvgVectorization =
@@ -2368,6 +2929,17 @@ export const compileMediaFlow = ({
       action: "Connect one raster image or existing vector asset to the SVG task.",
     });
   }
+  for (const source of videoFrameSources.filter(
+    (entry) => !entry.generated && entry.assetId.trim().length === 0,
+  )) {
+    diagnostics.push({
+      code: "SOURCE_ASSET_REQUIRED",
+      severity: "error",
+      message: `The connected ${source.portId.replaceAll("-", " ")} does not identify a stable Media Studio image asset.`,
+      nodeId: source.nodeId,
+      action: "Choose an immutable image asset or disconnect this frame.",
+    });
+  }
 
   if (
     settings &&
@@ -2403,10 +2975,7 @@ export const compileMediaFlow = ({
   const isRunnableSubjectCutoutModel = (
     candidate: MediaModelDescriptor | null,
   ): candidate is MediaModelDescriptor =>
-    candidate !== null &&
-    candidate.configured &&
-    candidate.installed &&
-    candidate.lifecycle !== "removed";
+    candidate !== null && isMediaModelReady(candidate);
   const selectedSubjectCutoutIndex = subjectCutoutCandidates.findIndex((candidate) =>
     isRunnableSubjectCutoutModel(candidate.descriptor),
   );
@@ -2414,13 +2983,39 @@ export const compileMediaFlow = ({
     selectedSubjectCutoutIndex >= 0
       ? subjectCutoutCandidates[selectedSubjectCutoutIndex]?.descriptor ?? null
       : subjectCutoutCandidates.find((candidate) => candidate.descriptor)?.descriptor ?? null;
-  const model = imageTask
+  const videoModel = videoTaskNode
+    ? (() => {
+        const configuredId =
+          typeof videoTaskNode.config.modelId === "string"
+            ? videoTaskNode.config.modelId.trim()
+            : "";
+        const candidates = models.filter(
+          (candidate) =>
+            candidate.capabilities.includes("image-to-video") &&
+            candidate.capabilities.includes("start-end-to-video") &&
+            matchesProviderPolicy(
+              candidate,
+              videoTaskNode.config.providerPolicy === "local" ||
+                videoTaskNode.config.providerPolicy === "remote"
+                ? videoTaskNode.config.providerPolicy
+                : "auto",
+            ),
+        );
+        return configuredId
+          ? candidates.find((candidate) => candidate.id === configuredId) ?? null
+          : candidates.find((candidate) => isMediaModelReady(candidate)) ??
+              candidates[0] ??
+              null;
+      })()
+    : null;
+  const imageModel = imageTask
     ? selectImageModel(
         imageTask.settings,
         models,
         imageTask.requiredCapability,
       )
-    : subjectCutoutModel;
+    : null;
+  const model = imageModel ?? videoModel ?? subjectCutoutModel;
   const svgCriticRequested = Boolean(
     settings?.outputFormat === "svg" && settings.svgCriticEnabled === true,
   );
@@ -2440,6 +3035,195 @@ export const compileMediaFlow = ({
     imageTaskNode?.id ?? "generate",
   );
   diagnostics.push(...resolvedAddons.diagnostics);
+  if (
+    imageTask?.taskType === "edit" &&
+    imageModel?.target === "local" &&
+    imageModel.architecture === "krea-2"
+  ) {
+    const identityAdapters = resolvedAddons.addons.filter((resolved) => {
+      return (
+        resolved.selection.kind === "lora" &&
+        (resolved.descriptor.digest ===
+          "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423" ||
+          resolved.descriptor.relativePath
+            .toLowerCase()
+            .includes("krea2_identity_edit_v1_2") === true)
+      );
+    });
+    if (identityAdapters.length !== 1) {
+      diagnostics.push({
+        code: "ADDON_CONFIG_INVALID",
+        severity: "error",
+        message:
+          "Local KREA reference editing requires exactly one reviewed KREA 2 Identity Edit v1.2 adapter.",
+        nodeId: imageTask.taskNode.id,
+        action:
+          "Import krea2_identity_edit_v1_2_r64.safetensors as a KREA 2 LoRA, enable it, and disable any duplicate identity-edit adapter.",
+      });
+    }
+  }
+
+  if (videoTaskNode) {
+    const firstFrames = videoFrameSources.filter(
+      (source) => source.portId === "first-frame",
+    );
+    const lastFrames = videoFrameSources.filter(
+      (source) => source.portId === "last-frame",
+    );
+    if (
+      firstFrames.length !== 1 ||
+      lastFrames.length !== 1
+    ) {
+      diagnostics.push({
+        code: "SOURCE_ASSET_REQUIRED",
+        severity: "error",
+        message:
+          "WAN generation requires exactly one first-frame and one last-frame image condition.",
+        nodeId: videoTaskNode.id,
+        action:
+          "Connect the same generated or published image to both frame ports for a closed loop, or choose distinct endpoints.",
+      });
+    }
+    if (!videoModel) {
+      diagnostics.push({
+        code: "MODEL_NOT_FOUND",
+        severity: "error",
+        message:
+          "No discovered image-to-video model matches the video node's execution policy.",
+        nodeId: videoTaskNode.id,
+        action: "Scan the workspace models directory and choose Wan2.2 TI2V 5B.",
+      });
+    } else {
+      const readinessGuidance = describeMediaModelReadiness(videoModel);
+      if (readinessGuidance) {
+        diagnostics.push({
+          code: "MODEL_NOT_READY",
+          severity: "error",
+          message: readinessGuidance.message,
+          nodeId: videoTaskNode.id,
+          action: readinessGuidance.action,
+        });
+      }
+    }
+    const config = videoTaskNode.config;
+    const sameEndpointSource =
+      firstFrames[0] !== undefined &&
+      lastFrames[0] !== undefined &&
+      (firstFrames[0].nodeId === lastFrames[0].nodeId ||
+        (
+          firstFrames[0].assetId.trim().length > 0 &&
+          firstFrames[0].assetId === lastFrames[0].assetId
+        ));
+    const hasVideoComposite = effectiveFlow.nodes.some(
+      (node) => node.type === "operation.video-composite",
+    );
+    for (const invalid of [
+      config.generateAudio !== false
+        ? "Wan2.2 TI2V does not generate audio; disable audio."
+        : null,
+      hasVideoComposite && config.transparentBackground !== true
+        ? "Animated background compositing requires transparent foreground extraction."
+        : null,
+      !["none", "ping-pong", "seamless"].includes(String(config.loopMode))
+        ? "Select one-way, ping-pong, or seamless assembly."
+        : null,
+      config.loopMode === "seamless" && !sameEndpointSource
+        ? "Seamless assembly requires the same source on both endpoint ports."
+        : null,
+      typeof config.numFrames !== "number" ||
+      !Number.isInteger(config.numFrames) ||
+      config.numFrames < 17 ||
+      config.numFrames > 33 ||
+      (config.numFrames - 1) % 4 !== 0
+        ? "WAN source frames must be 17–33 in the required 4k+1 form."
+        : null,
+      typeof config.fps !== "number" ||
+      !Number.isInteger(config.fps) ||
+      config.fps < 1 ||
+      config.fps > 60
+        ? "Playback rate must be an integer from 1 through 60 fps."
+        : null,
+      !["preview-512", "quality-640", "quality-768"].includes(
+        String(config.resolution),
+      )
+        ? "Select a supported native WAN resolution profile."
+        : null,
+      typeof config.numInferenceSteps !== "number" ||
+      !Number.isInteger(config.numInferenceSteps) ||
+      config.numInferenceSteps < 4 ||
+      config.numInferenceSteps > 50
+        ? "WAN inference steps must be an integer from 4 through 50."
+        : null,
+      typeof config.guidanceScale !== "number" ||
+      !Number.isFinite(config.guidanceScale) ||
+      config.guidanceScale < 1 ||
+      config.guidanceScale > 10
+        ? "WAN motion guidance must be from 1 through 10."
+        : null,
+      typeof config.seed !== "number" ||
+      !Number.isSafeInteger(config.seed) ||
+      config.seed < 0
+        ? "WAN seed must be a JavaScript-safe non-negative integer."
+        : null,
+      !["fast", "balanced", "production"].includes(String(config.matteQuality))
+        ? "Select a supported transparency quality profile."
+        : null,
+      !["draft", "balanced", "production", "lossless"].includes(
+        String(config.encodingQuality),
+      )
+        ? "Select a supported VP9 encoding quality."
+        : null,
+      !["auto", "memory-saver", "balanced", "maximum-speed"].includes(
+        String(config.memoryProfile),
+      )
+        ? "Select a supported memory profile."
+        : null,
+      config.experimentalLowMemory !== true
+        ? "Acknowledge the experimental low-memory profile."
+        : null,
+    ].filter((message): message is string => message !== null)) {
+      diagnostics.push({
+        code: "NODE_SCHEMA_INVALID",
+        severity: "error",
+        message: invalid,
+        nodeId: videoTaskNode.id,
+        action: "Restore a supported quality profile in the node inspector.",
+      });
+    }
+    for (const outputNode of effectiveFlow.nodes.filter(
+      (node) => node.type === "output.video",
+    )) {
+      const inputEdge = effectiveFlow.edges.find(
+        (edge) =>
+          edge.toNodeId === outputNode.id && edge.toPortId === "video",
+      );
+      const sourceNode = inputEdge
+        ? effectiveFlow.nodes.find((node) => node.id === inputEdge.fromNodeId)
+        : null;
+      const expectedRole =
+        sourceNode?.type === "operation.video-composite"
+          ? "composited"
+          : sourceNode?.type === "task.generate-video"
+            ? sourceNode.config.transparentBackground === true
+              ? "transparent"
+              : "opaque"
+            : null;
+      if (
+        expectedRole &&
+        typeof outputNode.config.role === "string" &&
+        outputNode.config.role !== expectedRole
+      ) {
+        diagnostics.push({
+          code: "NODE_SCHEMA_INVALID",
+          severity: "error",
+          message: `Video output role ${String(outputNode.config.role)} conflicts with its connected ${expectedRole} video.`,
+          nodeId: outputNode.id,
+          action:
+            "Reconnect the output or restore its synchronized publication role.",
+        });
+      }
+    }
+  }
 
   if (subjectCutoutNode) {
     if (subjectCutoutModelPriority.length === 0) {
@@ -2581,9 +3365,42 @@ export const compileMediaFlow = ({
     (diagnostic) => diagnostic.severity === "error",
   );
   const outputCount =
-    settings || isLocalUtilityFlow ? cardinality.maxPublishedOutputs : 0;
+    videoTaskNode
+      ? Math.max(
+          1,
+          effectiveFlow.nodes.filter((node) => node.type === "output.video")
+            .length,
+        )
+      : settings || isLocalUtilityFlow
+        ? cardinality.maxPublishedOutputs
+      : 0;
+  const runtimeBindings = [
+    ...(imageTaskNode && imageModel
+      ? [{
+          nodeId: imageTaskNode.id,
+          modality: "image" as const,
+          requiredCapability: imageTask?.requiredCapability ?? "text-to-image",
+          model: imageModel,
+        }]
+      : []),
+    ...(videoTaskNode && videoModel
+      ? [{
+          nodeId: videoTaskNode.id,
+          modality: "video" as const,
+          requiredCapability: "start-end-to-video" as const,
+          model: videoModel,
+        }]
+      : []),
+  ];
+  const resolvedRuntimeModels = runtimeBindings.map((binding) => binding.model);
   const privacySummary =
-    (isLocalUtilityFlow
+    (videoTaskNode
+      ? normalizedVideoFrameAssetIds.length > 0
+        ? `${normalizedVideoFrameAssetIds.length} selected keyframe asset${normalizedVideoFrameAssetIds.length === 1 ? " remains" : "s remain"} local for WAN generation and verified WebM publication.`
+        : videoFrameSources.some((source) => source.generated)
+          ? "The generated image, alpha cutout, both WAN endpoint conditions, and video frames remain local; only immutable outputs are published."
+          : "The motion brief remains local; execution stays blocked until first and last frames are connected."
+      : isLocalUtilityFlow
       ? `${normalizedSourceAssetIds.length} source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} ${normalizedSourceAssetIds.length === 1 ? "remains" : "remain"} on this device for local image operations.`
       : model && (imageTask?.taskType === "edit" || normalizedSourceAssetIds.length > 0)
         ? model.target === "remote"
@@ -2603,10 +3420,12 @@ export const compileMediaFlow = ({
     status: hasErrors ? "blocked" : "ready",
     compiledAt,
     model,
+    runtimeBindings,
     addons: resolvedAddons.addons,
     steps: createExecutionSteps(
       effectiveFlow,
-      model,
+      imageModel,
+      videoModel,
       models,
       resolvedAddons.addons.length > 0,
     ),
@@ -2615,11 +3434,17 @@ export const compileMediaFlow = ({
       target: model?.target ?? (isLocalUtilityFlow ? "local" : null),
       modelId: model?.id ?? null,
       modelLabel:
-        model?.displayName ??
+        (resolvedRuntimeModels.length > 1
+          ? resolvedRuntimeModels.map((candidate) => candidate.displayName).join(" → ")
+          : model?.displayName) ??
         (isLocalUtilityFlow ? "Built-in media utilities" : "Unresolved model"),
-      requiresRemoteRequest: model?.target === "remote",
+      requiresRemoteRequest: resolvedRuntimeModels.some(
+        (candidate) => candidate.target === "remote",
+      ),
       requiresModelDownload:
-        (model?.target === "local" && !model.installed) ||
+        resolvedRuntimeModels.some(
+          (candidate) => candidate.target === "local" && !candidate.installed,
+        ) ||
         Boolean(subjectCutoutModel && !subjectCutoutModel.installed),
       requiresHumanReview: cardinality.requiresHumanReview,
       remoteUploadAssetIds:
@@ -2628,11 +3453,23 @@ export const compileMediaFlow = ({
           : [],
       generatedCandidates: cardinality.generatedCandidates,
       estimatedOutputs: outputCount,
-      estimatedVramGb: model?.minVramGb ?? null,
+      estimatedVramGb:
+        resolvedRuntimeModels.length > 0
+          ? Math.max(
+              ...resolvedRuntimeModels.map(
+                (candidate) => candidate.minVramGb ?? 0,
+              ),
+            ) || null
+          : null,
       estimatedDownloadGb:
-        (model?.target === "local" && !model.installed
-          ? model.expectedDownloadGb ?? 0
-          : 0) +
+        resolvedRuntimeModels.reduce(
+          (total, candidate) =>
+            total +
+            (candidate.target === "local" && !candidate.installed
+              ? candidate.expectedDownloadGb ?? 0
+              : 0),
+          0,
+        ) +
           (subjectCutoutModel &&
           subjectCutoutModel.id !== model?.id &&
           !subjectCutoutModel.installed

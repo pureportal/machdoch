@@ -2,22 +2,13 @@ import type {
   RalphFlow,
   RalphInputField,
   RalphPromptBlock,
-  RalphRunResult,
 } from "../../../../core/ralph.js";
 import type { RalphGenerationInterviewSession } from "../../../../core/ralph-generation.js";
 import type { ProviderModelCatalogSnapshot } from "../../model-catalog";
-import type { RalphCreateFlowResult } from "../../runtime";
 import {
-  canCopyGenerationError,
   createLocalGenerationInterviewPrompt,
   createPromptBlockGenerationPrompt,
-  formatCreateFlowMessage,
-  formatGenerationErrorClipboardText,
-  formatPromptBlockTargetLabel,
-  formatRunMessage,
   getEffectiveProvider,
-  getGenerationJobStatusLabel,
-  getGenerationPhaseLabel,
   getPreferredModelForProvider,
   getProviderOption,
   getTrimmedGenerationInterviewAnswerComments,
@@ -26,15 +17,6 @@ import {
   parseNumberList,
   parseStringRecordDraft,
 } from "./ralph-generation-formatting.helper";
-
-const validation: RalphCreateFlowResult["validation"] = {
-  valid: false,
-  errors: ["Missing start"],
-  warnings: ["No end block"],
-  errorIssues: [],
-  warningIssues: [],
-  variables: [],
-};
 
 describe("ralph-generation-formatting helper", () => {
   it("parses JSON drafts into unknown values and typed records", () => {
@@ -67,22 +49,7 @@ describe("ralph-generation-formatting helper", () => {
     expect(getPreferredModelForProvider("openai", snapshot)).toBe("gpt-5.5");
   });
 
-  it("formats create-flow validation summaries", () => {
-    const result: RalphCreateFlowResult = {
-      status: "blocked",
-      flowPath: "flow.json",
-      rounds: 1,
-      validation,
-      summary: "Generation blocked.",
-      flow: null,
-    };
-
-    expect(formatCreateFlowMessage(result)).toBe(
-      "Generation blocked. Error: Missing start Warning: No end block",
-    );
-  });
-
-  it("detects prompt blocks and formats prompt block generation prompts", () => {
+  it("detects prompt blocks and creates prompt block generation prompts", () => {
     const block: RalphPromptBlock = {
       id: "prompt-1",
       type: "PROMPT",
@@ -98,7 +65,6 @@ describe("ralph-generation-formatting helper", () => {
     };
 
     expect(isRalphPromptBlock(flow.blocks[0])).toBe(true);
-    expect(formatPromptBlockTargetLabel(block)).toBe("Draft (prompt-1)");
     expect(createPromptBlockGenerationPrompt("Make it shorter.", block)).toContain(
       '"prompt": "Write the response."',
     );
@@ -157,48 +123,4 @@ describe("ralph-generation-formatting helper", () => {
     ).toContain("Comment: keep tests focused");
   });
 
-  it("formats generation status, phase, errors, and run summaries", () => {
-    expect(getGenerationJobStatusLabel("running")).toBe("Generating");
-    expect(
-      getGenerationPhaseLabel({
-        status: "running",
-        summary: "Working.",
-        currentActor: "validator",
-        currentRound: 2,
-        maxRounds: 3,
-      }),
-    ).toBe("Round 2/3 - Validator phase");
-    expect(
-      canCopyGenerationError({ status: "blocked", summary: "Needs changes." }),
-    ).toBe(true);
-    expect(
-      formatGenerationErrorClipboardText({
-        status: "failed",
-        summary: "Crashed.",
-      }),
-    ).toBe("Failed\n\nCrashed.");
-
-    const run: RalphRunResult = {
-      flow: "flow",
-      status: "completed",
-      summary: "Run completed.",
-      events: [],
-      blockResults: [
-        {
-          blockId: "prompt-1",
-          output: "SUCCESS",
-          status: "completed",
-          attempt: 1,
-          summary: "Done.",
-        },
-      ],
-      missingVariables: [],
-      unknownVariables: [],
-      validation: { ...validation, valid: true, errors: [], warnings: [] },
-    };
-
-    expect(formatRunMessage(run)).toBe(
-      "Run completed. Status: completed. 1 block result.",
-    );
-  });
 });

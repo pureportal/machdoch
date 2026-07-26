@@ -17,11 +17,20 @@ Usage:
   machdoch config [--json]
   machdoch config set <setting> <value> [--json]
   machdoch tools [--json]
-  machdoch instructions list|validate [--scope <user|workspace|compatibility|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--json]
-  machdoch instructions show <name-or-path> [--scope <user|workspace|compatibility|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--json]
-  machdoch instructions create [name] --prompt <text> [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
-  machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
-  machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
+  machdoch instructions profiles list|show|create|edit|duplicate|delete [profile] [--include-content] [--json]
+  machdoch instructions assignments list|set-defaults [--profile <uuid>...] [--json]
+  machdoch instructions assignments set|remove <workspace-uuid> --path <relative-folder> [--profile <uuid>...] [--json]
+  machdoch instructions assignments relink <workspace-uuid> <old-folder> --path <new-folder> [--json]
+  machdoch instructions local list|show|create|edit|delete [relative-folder] [--expected-digest <sha256>] [--json]
+  machdoch instructions workspaces list|register|relink|unregister [workspace-or-path] [--json]
+  machdoch instructions resolve [--surface <api|cli>] [--path <relative-path>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--include-content] [--acknowledge-compatible] [--json]
+  machdoch instructions validate [--json]
+  machdoch instructions transfer export [--include-workspaces] [--json]
+  machdoch instructions transfer import --prompt-file <export.json> [--decisions-file <choices.json>] [--include-workspaces] [--json]
+  machdoch instructions recovery status [--json]
+  machdoch instructions recovery restore --expected-digest <validated-backup-sha256> [--json]
+  machdoch instructions recovery export --expected-digest <validated-backup-sha256> --include-content [--json]
+  machdoch instructions recovery reset --expected-digest <reviewed-primary-sha256> [--json]
   machdoch interview --prompt <text> [--input-json <json>] [--max-rounds <n>] [--json]
   machdoch ralph list [--scope <user|workspace>] [--json]
   machdoch ralph show|validate <flow> [--scope <user|workspace>] [--json]
@@ -31,7 +40,7 @@ Usage:
   machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
   machdoch ralph save <flow> --flow-json <json> [--expected-fingerprint <sha256>] [--scope <user|workspace>] [--json]
   machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
-  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>|--retry-current) [--scope <user|workspace>] [--json]
+  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>|--retry-current) [--instruction-boundary-policy <require-match|original-boundary|new-boundary>] [--scope <user|workspace>] [--json]
   machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
   machdoch ralph run-detail <run-id> [--scope <user|workspace>] [--json]
   machdoch ralph log <run-id> [--scope <user|workspace>] [--trace] [--json]
@@ -54,7 +63,7 @@ Usage:
   machdoch mcp cleanup [--unused-days <n>] [--never-used-days <n>] [--apply] [--json]
   machdoch mcp proxy <server-id> [--cwd <path>]
   machdoch mcp broker [--cwd <path>]
-  machdoch provider-sync plan [--provider <codex-cli|claude-cli|copilot-cli>] [--json]
+  machdoch provider-sync plan [--provider <codex-cli|claude-cli|copilot-cli>] [--json]  # persistent MCP only
   machdoch provider-sync enable|status|disable|refresh|doctor [--json]
   machdoch provider-sync daemon
   machdoch scheduler list [--json]
@@ -126,8 +135,8 @@ Options:
   --delay-ms <ms>         Scheduler one-shot delay in milliseconds for \`scheduler create\`.
   --run-at <epoch-ms>     Scheduler one-shot absolute run time in epoch milliseconds.
   --timezone <iana>       IANA timezone for cron schedules.
-  --prompt <text>         Scheduled task prompt text.
-  --prompt-file <path>    Read scheduled task prompt text from a file.
+  --prompt <text>         Task text or instruction-profile/local Markdown.
+  --prompt-file <path>    Read task or instruction Markdown from a file.
   --scheduler-target <prompt|ralph-flow>
                           Choose whether a scheduled job runs a prompt or an existing RALPH-Flow.
   --scheduled-ralph-flow <id>
@@ -154,19 +163,24 @@ Options:
                           Allow network utilities in scheduled RALPH runs.
   --scheduled-ralph-allow-mcp-tools <on|off>
                           Allow MCP tool/resource/prompt blocks in scheduled RALPH runs.
-  --scope <user|workspace|compatibility|ralph-flow>
-                          Instruction or Ralph scope. Compatibility and ralph-flow only apply to instructions.
-  --ralph-flow <flow>     Ralph flow id or alias for --scope ralph-flow instruction commands.
-  --flow-scope <user|workspace>
-                          Ralph flow storage scope for --scope ralph-flow instruction commands.
-  --path <file>           Instruction file path for explicit save or generation updates.
-  --apply-to <glob>       Workspace glob that auto-attaches an instruction. Repeat for multiple globs.
-  --exclude <glob>        Workspace glob that prevents an instruction from attaching. Repeat for multiple globs.
-  --keyword <term>        Keyword that auto-attaches an instruction. Repeat for multiple terms.
-  --instruction-mode <mode>
-                          Instruction activation: always, auto, agent-requested, manual, or disabled.
-  --audience <target>     Instruction audience: executor, validator, generator, or all.
-  --priority <integer>    Instruction ordering priority.
+  --scope <user|workspace>
+                          Ralph flow scope.
+  --path <path>           Workspace-relative instruction scope, relink root, or explicit input path.
+  --profile <uuid>        Ordered profile reference. Repeat to define exact assignment order.
+  --description <text>    Profile description; pass an empty value while editing to clear it.
+  --expected-revision <n> Reject a stale profile, assignment, or workspace mutation.
+  --expected-digest <sha256>
+                          Reject a stale local-file mutation or confirm reviewed recovery bytes.
+  --surface <api|cli>     Provider surface used by instruction resolution.
+  --include-content       Include profile/local bodies in otherwise body-free output; required for recovery export.
+  --include-workspaces    Export unbound workspace mappings or return them for manual relinking on import.
+  --decisions-file <path> Explicit transfer conflict choices.
+  --acknowledge-compatible
+                          Explicitly accept compatible delivery after reviewing its limitations.
+  --acknowledge-instruction-plan <plan-id>
+                          Accept only the exact compatible plan ID shown by instruction resolution.
+  --confirm-assignment-removal
+                          Confirm removal of assignments while unregistering a workspace binding.
   --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.
   --expected-fingerprint <sha256>
                           Reject \`ralph save\` or \`ralph delete\` if the stored flow changed since it was read.
@@ -184,8 +198,10 @@ Options:
   --input-json-file <path>
                           Read interview or Ralph resume answers from a JSON file.
   --retry-current         Resume a recoverable blocked Ralph run by retrying its checkpoint block.
-  --max-rounds <n>        Maximum rounds for \`interview\`, \`ralph create\`, \`ralph interview\`, or \`instructions generate\`.
+  --max-rounds <n>        Maximum rounds for \`interview\`, \`ralph create\`, or \`ralph interview\`.
   --max-transitions <n>   Stop a Ralph run or resume after this many graph transitions.
+  --instruction-boundary-policy <policy>
+                          On resume, require matching instructions, request the retained original, or start an explicit new boundary.
   --trace                 Show the detailed JSONL trace for \`ralph log\`.
   --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
   --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.

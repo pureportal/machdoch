@@ -68,6 +68,14 @@ export const writeFileAtomically = async (
   path: string,
   data: string | NodeJS.ArrayBufferView,
   encoding: BufferEncoding = "utf8",
+  options: {
+    /**
+     * Runs after the complete temporary file is flushed and immediately
+     * before the atomic replace. Callers use this for a final stale-write
+     * check without paying the temporary-file write window.
+     */
+    beforeCommit?: () => void | Promise<void>;
+  } = {},
 ): Promise<void> => {
   const directory = dirname(path);
   const temporaryPath = join(
@@ -91,16 +99,23 @@ export const writeFileAtomically = async (
     } finally {
       await handle.close();
     }
+    await options.beforeCommit?.();
     await replaceFileAtomically(temporaryPath, path);
 
     // Persist the directory entry where the platform supports directory fsync.
     // Windows rejects opening directories; the file itself is still flushed.
     if (process.platform !== "win32") {
-      const directoryHandle = await open(directory, "r");
       try {
-        await directoryHandle.sync();
-      } finally {
-        await directoryHandle.close();
+        const directoryHandle = await open(directory, "r");
+        try {
+          await directoryHandle.sync();
+        } finally {
+          await directoryHandle.close();
+        }
+      } catch {
+        // The file replace is already committed and the file itself was
+        // flushed. Some filesystems do not support directory fsync; surfacing
+        // that as a failed mutation would invite an unsafe duplicate retry.
       }
     }
   } finally {
@@ -111,6 +126,12 @@ export const writeFileAtomically = async (
 export const writeJsonAtomically = async (
   path: string,
   value: unknown,
+  options: Parameters<typeof writeFileAtomically>[3] = {},
 ): Promise<void> => {
-  await writeFileAtomically(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFileAtomically(
+    path,
+    `${JSON.stringify(value, null, 2)}\n`,
+    "utf8",
+    options,
+  );
 };

@@ -19,6 +19,8 @@ pub(crate) const USER_MODEL_ID_PREFIX: &str = "local:user:";
 const IMPORT_CATALOG_REVISION: &str = "user-import-v1";
 const MAX_HEADER_BYTES: u64 = 64 * 1_024 * 1_024;
 const COPY_BUFFER_BYTES: usize = 4 * 1_024 * 1_024;
+const KREA_QWEN3_VL_REVISION: &str = "ebb281ec70b05090aa6165b016eac8ec08e71b17";
+const KREA_QWEN_IMAGE_REVISION: &str = "75e0b4be04f60ec59a75f475837eced720f823b6";
 pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "stable-diffusion-1",
     "stable-diffusion-2",
@@ -26,6 +28,7 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "stable-diffusion-3",
     "flux-1",
     "flux-2",
+    "krea-2",
 ];
 
 pub(super) struct ParsedSafetensorsHeader {
@@ -84,6 +87,12 @@ fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
             min_vram_gb: 13.0,
             speed_score: 58,
             quality_score: 92,
+        }),
+        "krea-2" => Some(ArchitectureProfile {
+            family: "KREA 2",
+            min_vram_gb: 16.0,
+            speed_score: 40,
+            quality_score: 94,
         }),
         _ => None,
     }
@@ -277,6 +286,7 @@ pub(super) fn detect_architecture(
 ) -> (Option<String>, &'static str) {
     let metadata = metadata_text(header);
     let explicit = [
+        ("krea-2", ["krea-2", "krea2", "krea 2"].as_slice()),
         ("flux-2", ["flux.2", "flux_2", "flux 2"].as_slice()),
         ("flux-1", ["flux.1", "flux_1", "flux 1"].as_slice()),
         (
@@ -300,6 +310,18 @@ pub(super) fn detect_architecture(
         if markers.iter().any(|marker| metadata.contains(marker)) {
             return (Some(architecture.to_string()), "high");
         }
+    }
+    if has_tensor_prefix(header, "model.diffusion_model.blocks.0.attn.wq.")
+        && has_tensor_prefix(header, "model.diffusion_model.txtfusion.")
+        && has_tensor_prefix(header, "model.diffusion_model.first.")
+    {
+        return (Some("krea-2".to_string()), "high");
+    }
+    if has_tensor_prefix(header, "transformer.double_stream_modulation_img.linear.")
+        || has_tensor_prefix(header, "transformer.double_stream_modulation_txt.linear.")
+        || has_tensor_prefix(header, "transformer.single_stream_modulation.linear.")
+    {
+        return (Some("flux-2".to_string()), "high");
     }
     if has_tensor_prefix(header, "model.diffusion_model.double_blocks.")
         || has_tensor_prefix(header, "double_blocks.")
@@ -420,6 +442,12 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportIns
                 .to_string(),
         );
     }
+    if detected_architecture.as_deref() == Some("krea-2") {
+        warnings.push(
+            "KREA 2 checkpoints share a Qwen3-VL 4B text encoder and Qwen-Image VAE. Put the pinned runtime bundle in models/krea-2/runtime; it is reused by every imported KREA checkpoint."
+                .to_string(),
+        );
+    }
     let blocking_reason = is_adapter.then(|| {
         "This file appears to be a LoRA or other adapter, not a complete SD/FLUX checkpoint. Adapter import requires a separate base-model compatibility workflow."
             .to_string()
@@ -440,6 +468,66 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportIns
         metadata_summary: metadata_summary(&header),
         warnings,
     })
+}
+
+fn krea_runtime_descriptor(source_path: &str) -> MediaResult<Value> {
+    let checkpoint_directory = Path::new(source_path)
+        .parent()
+        .ok_or_else(|| "the KREA checkpoint has no parent directory".to_string())?;
+    let family_root = checkpoint_directory
+        .parent()
+        .ok_or_else(|| "the KREA checkpoint is not inside models/krea-2/checkpoints".to_string())?;
+    let runtime_root = family_root.join("runtime");
+    let required = [
+        runtime_root.join("qwen3-vl/config.json"),
+        runtime_root.join("qwen3-vl/tokenizer_config.json"),
+        runtime_root.join("qwen3-vl/tokenizer.json"),
+        runtime_root.join("qwen3-vl/model.safetensors.index.json"),
+        runtime_root.join("qwen3-vl/model-00001-of-00002.safetensors"),
+        runtime_root.join("qwen3-vl/model-00002-of-00002.safetensors"),
+        runtime_root.join("qwen-image/vae/config.json"),
+        runtime_root.join("qwen-image/vae/diffusion_pytorch_model.safetensors"),
+    ];
+    let mut total_bytes = 0_u64;
+    for path in &required {
+        let metadata = fs::symlink_metadata(path).map_err(|_| {
+            format!(
+                "KREA runtime is incomplete; missing {}. Install the pinned Qwen3-VL 4B and Qwen-Image VAE bundle in models/krea-2/runtime.",
+                path.strip_prefix(family_root)
+                    .unwrap_or(path)
+                    .display()
+            )
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "KREA runtime component {} must be a non-empty regular file",
+                path.display()
+            ));
+        }
+        total_bytes = total_bytes.saturating_add(metadata.len());
+    }
+    if total_bytes < 8_500_000_000 {
+        return Err(
+            "KREA runtime bundle is incomplete; the verified components total less than 8.5 GB"
+                .to_string(),
+        );
+    }
+    let canonical_root = fs::canonicalize(&runtime_root)
+        .map_err(|error| format!("failed to resolve the KREA runtime bundle: {error}"))?;
+    Ok(serde_json::json!({
+        "schemaVersion": 1,
+        "runtimeRoot": canonical_root,
+        "textEncoder": {
+            "repository": "Qwen/Qwen3-VL-4B-Instruct",
+            "revision": KREA_QWEN3_VL_REVISION,
+            "relativePath": "qwen3-vl"
+        },
+        "vae": {
+            "repository": "Qwen/Qwen-Image",
+            "revision": KREA_QWEN_IMAGE_REVISION,
+            "relativePath": "qwen-image/vae"
+        }
+    }))
 }
 
 pub(super) fn validated_text(
@@ -559,7 +647,7 @@ fn persist_import(
     imported_at: &str,
 ) -> MediaResult<()> {
     let profile = architecture_profile(&request.architecture)
-        .ok_or_else(|| "architecture is not a supported SD or FLUX family".to_string())?;
+        .ok_or_else(|| "architecture is not a supported local image family".to_string())?;
     let source_url = validated_source_url(request.source_url.as_deref())?;
     let license_name = validated_text("licenseName", &request.license_name, 256)?;
     let display_name = validated_text("displayName", &request.display_name, 120)?;
@@ -666,7 +754,7 @@ pub(crate) fn import_reviewed(
         );
     }
     if !SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
-        return Err("architecture is not a supported SD or FLUX family".to_string());
+        return Err("architecture is not a supported local image family".to_string());
     }
     if !matches!(
         request.commercial_use.as_str(),
@@ -689,6 +777,11 @@ pub(crate) fn import_reviewed(
             "the selected model file changed; inspect it again before importing".to_string(),
         );
     }
+    let krea_runtime = if request.architecture == "krea-2" {
+        Some(krea_runtime_descriptor(&inspection.source_path)?)
+    } else {
+        None
+    };
     let required_bytes = inspection.byte_size.saturating_mul(105).div_ceil(100);
     let models_root = paths.models_root()?;
     fs::create_dir_all(&models_root)
@@ -764,6 +857,18 @@ pub(crate) fn import_reviewed(
             .map_err(|error| format!("failed to atomically activate imported model: {error}"))?;
         let _ = fs::remove_dir_all(&stage_root);
     }
+    if let Some(runtime) = &krea_runtime {
+        let config_root = revision_root.join("config");
+        fs::create_dir_all(&config_root)
+            .map_err(|error| format!("failed to prepare the KREA runtime manifest: {error}"))?;
+        crate::atomic_file::write_file_atomic(
+            &config_root.join("krea-runtime.json"),
+            &serde_json::to_vec_pretty(runtime)
+                .map_err(|error| format!("failed to encode the KREA runtime manifest: {error}"))?,
+            crate::atomic_file::AtomicWriteOptions::default(),
+        )
+        .map_err(|error| format!("failed to publish the KREA runtime manifest: {error}"))?;
+    }
 
     let imported_at = database::now();
     let active_pointer = serde_json::json!({
@@ -794,7 +899,7 @@ pub(crate) fn import_reviewed(
         &imported_at,
     )?;
     let profile = architecture_profile(&request.architecture)
-        .ok_or_else(|| "architecture is not a supported SD or FLUX family".to_string())?;
+        .ok_or_else(|| "architecture is not a supported local image family".to_string())?;
     Ok(MediaLocalModelImportResult {
         schema_version: 1,
         model_id,

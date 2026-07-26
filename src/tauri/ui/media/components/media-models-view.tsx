@@ -1,5 +1,7 @@
 import {
+  AudioLines,
   ChevronDown,
+  Clapperboard,
   Cloud,
   Cpu,
   Database,
@@ -15,6 +17,7 @@ import {
   MemoryStick,
   PenTool,
   RefreshCw,
+  Search,
   Scissors,
   ServerCog,
   Shield,
@@ -22,7 +25,7 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type {
   MediaHardwareInspection,
   DownloadMediaCivitaiModelAddonRequest,
@@ -43,11 +46,21 @@ import type {
   MediaModelRemovalPlan,
   MediaModelRemovalResult,
   MediaLocalDiffusersRuntimeStatus,
+  MediaDiscoveredModelArtifact,
   MediaToolProbe,
+  MediaWorkspaceModelDiscovery,
   RemoveMediaModelRequest,
   RemoveMediaModelAddonRequest,
   StartMediaModelInstallRequest,
 } from "../../../../core/media/contracts.js";
+import { matchesMediaDiscoveredModelQuery } from "../../../../core/media/discovered-model-profiles.js";
+import { paginateMediaItems } from "../../../../core/media/gallery.js";
+import { matchesMediaModelAddonQuery } from "../../../../core/media/model-addons.js";
+import {
+  inspectMediaModelReadiness,
+  isMediaModelReady,
+} from "../../../../core/media/model-readiness.js";
+import { matchesMediaModelQuery } from "../../../../core/media/model-library.js";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -59,23 +72,36 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { cn } from "../../lib/utils";
+import { MediaPagination } from "./media-pagination";
+
+const WORKSPACE_MODEL_PAGE_SIZE = 50;
+const MODEL_ADDON_PAGE_SIZE = 24;
+const CATALOG_MODEL_PAGE_SIZE = 16;
 
 const FFMPEG_DOWNLOAD_URL = "https://www.ffmpeg.org/download.html";
 const PYTHON_DOWNLOAD_URL = "https://www.python.org/downloads/";
 const PYTORCH_INSTALL_URL = "https://pytorch.org/get-started/previous-versions/";
+const AMD_PYTORCH_INSTALL_URL =
+  "https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html";
 const LOCAL_DIFFUSERS_PYTHON_REQUIREMENT = "3.10+";
 // Keep these pins aligned with src-tauri/python/media_diffusers_requirements.txt.
 const LOCAL_DIFFUSERS_PACKAGE_REQUIREMENTS = [
-  { id: "torch", name: "PyTorch", version: "2.13.0" },
-  { id: "diffusers", name: "Diffusers", version: "0.39.0" },
-  { id: "transformers", name: "Transformers", version: "5.13.0" },
-  { id: "accelerate", name: "Accelerate", version: "1.14.0" },
-  { id: "peft", name: "PEFT", version: "0.19.1" },
-  { id: "safetensors", name: "Safetensors", version: "0.8.0" },
-  { id: "pillow", name: "Pillow", version: "12.3.0" },
+  {
+    id: "torch",
+    name: "PyTorch",
+    version: "2.13.0 / ROCm 2.12.0",
+    acceptedVersions: ["2.13.0", "2.12.0+rocm7.14.0"],
+  },
+  { id: "diffusers", name: "Diffusers", version: "0.39.0", acceptedVersions: ["0.39.0"] },
+  { id: "transformers", name: "Transformers", version: "5.13.0", acceptedVersions: ["5.13.0"] },
+  { id: "accelerate", name: "Accelerate", version: "1.14.0", acceptedVersions: ["1.14.0"] },
+  { id: "peft", name: "PEFT", version: "0.19.1", acceptedVersions: ["0.19.1"] },
+  { id: "safetensors", name: "Safetensors", version: "0.8.0", acceptedVersions: ["0.8.0"] },
+  { id: "pillow", name: "Pillow", version: "12.3.0", acceptedVersions: ["12.3.0"] },
+  { id: "imageio-ffmpeg", name: "ImageIO FFmpeg", version: "0.6.0", acceptedVersions: ["0.6.0"] },
 ] as const;
 const LOCAL_DIFFUSERS_PACKAGE_INSTALL_COMMAND =
-  "python -m pip install diffusers==0.39.0 transformers==5.13.0 accelerate==1.14.0 peft==0.19.1 safetensors==0.8.0 Pillow==12.3.0";
+  "python -m pip install diffusers==0.39.0 transformers==5.13.0 accelerate==1.14.0 peft==0.19.1 safetensors==0.8.0 Pillow==12.3.0 imageio-ffmpeg==0.6.0";
 
 type RuntimeRequirementState = "ready" | "missing" | "mismatch" | "unknown";
 
@@ -116,6 +142,12 @@ interface MediaModelsViewProps {
   addonRemovalLoading: boolean;
   addonRemovalError: string | null;
   localDiffusers: MediaLocalDiffusersRuntimeStatus | null;
+  workspaceModels: MediaWorkspaceModelDiscovery | null;
+  workspaceModelsLoading: boolean;
+  workspaceModelsError: string | null;
+  localRuntimeLoading: boolean;
+  onRefreshWorkspaceModels: () => void;
+  onRefreshLocalRuntime: () => void;
   onRefreshHardware: () => void;
   onRefreshCatalog: () => void;
   onReviewInstall: (modelId: string) => void;
@@ -126,6 +158,9 @@ interface MediaModelsViewProps {
   onConfirmRemoval: (request: RemoveMediaModelRequest) => void;
   onDismissRemoval: () => void;
   onChooseModelImport: () => void;
+  onInspectWorkspaceArtifact: (
+    artifact: MediaDiscoveredModelArtifact,
+  ) => void;
   onImportModel: (request: ImportMediaLocalModelRequest) => void;
   onDismissModelImport: () => void;
   onProbeModel: (modelId: string) => void;
@@ -143,16 +178,10 @@ interface MediaModelsViewProps {
   onOpenProviderSettings: () => void;
 }
 
-const isReady = (model: MediaModelDescriptor): boolean => {
-  if (model.target === "remote") return model.configured;
-  if (model.providerId === "local-diffusers") {
-    return model.installed && model.runtimeReadiness === "ready";
-  }
-  return model.installed;
-};
-
 type MediaModelPurpose =
   | "image-generation"
+  | "video-generation"
+  | "audio-generation"
   | "vector-graphics"
   | "background-removal"
   | "image-analysis"
@@ -161,6 +190,21 @@ type MediaModelPurpose =
 const getMediaModelPurpose = (model: MediaModelDescriptor): MediaModelPurpose => {
   const hasCapability = (capability: MediaCapability): boolean =>
     model.capabilities.includes(capability);
+
+  if (
+    hasCapability("text-to-video") ||
+    hasCapability("image-to-video") ||
+    hasCapability("start-end-to-video")
+  ) {
+    return "video-generation";
+  }
+
+  if (
+    hasCapability("text-to-audio") ||
+    hasCapability("audio-to-audio")
+  ) {
+    return "audio-generation";
+  }
 
   if (
     hasCapability("text-to-svg") ||
@@ -199,6 +243,21 @@ const MEDIA_MODEL_PURPOSE_GROUPS = [
     iconClassName: "text-fuchsia-300",
   },
   {
+    id: "video-generation",
+    title: "Video generation",
+    description: "Create clips from prompts, first frames, and guided transitions.",
+    icon: Clapperboard,
+    iconClassName: "text-emerald-300",
+  },
+  {
+    id: "audio-generation",
+    title: "Audio generation",
+    description:
+      "Generate or transform audio through capability-compatible providers as they are added.",
+    icon: AudioLines,
+    iconClassName: "text-rose-300",
+  },
+  {
     id: "vector-graphics",
     title: "Vector graphics",
     description: "Create and vectorize scalable SVG artwork.",
@@ -229,11 +288,13 @@ const MEDIA_MODEL_PURPOSE_GROUPS = [
 ] as const;
 
 const readinessLabel = (model: MediaModelDescriptor): string => {
-  if (isReady(model)) return "Ready";
-  if (model.target === "remote") return "Configure";
-  if (!model.installed) return "Not installed";
-  if (model.runtimeReadiness === "failed") return "Verification failed";
-  if (model.runtimeReadiness === "runtime-unavailable") return "Runtime unavailable";
+  const { issue } = inspectMediaModelReadiness(model);
+  if (issue === null) return "Ready";
+  if (issue === "provider-unconfigured") return "Configure";
+  if (issue === "not-installed") return "Not installed";
+  if (issue === "verification-failed") return "Verification failed";
+  if (issue === "runtime-unavailable") return "Runtime unavailable";
+  if (issue === "lifecycle-removed") return "Removed";
   return "Needs verification";
 };
 
@@ -320,7 +381,7 @@ const ModelInstallDialog = ({
     >
       {plan ? (
         <DialogContent
-          className="max-h-[min(860px,calc(100vh-32px))] w-[min(820px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden border-slate-800 bg-slate-950 p-0 text-slate-100 sm:max-w-none"
+          className="max-h-[min(860px,calc(100vh-32px))] w-[min(820px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-800 bg-slate-950 p-0 text-slate-100 sm:max-w-none"
           confirmOnInteractOutside={
             licenseAccepted && !job
               ? {
@@ -344,7 +405,7 @@ const ModelInstallDialog = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto px-6 py-5">
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3.5">
                 <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">Download</div>
@@ -405,7 +466,7 @@ const ModelInstallDialog = ({
                 </div>
                 <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-slate-500">
                   <span>{job.filesCompleted}/{job.filesTotal} files · {formatBytes(job.bytesDownloaded)} verified or downloaded</span>
-                  <span className="max-w-full truncate font-mono">{job.currentFile ?? "Safe checkpoint"}</span>
+                  <span className="max-w-full break-all font-mono">{job.currentFile ?? "Safe checkpoint"}</span>
                 </div>
                 {job.error ? <p className="mt-3 text-xs leading-5 text-rose-200">{job.error}</p> : null}
                 {job.id.startsWith("browser-") ? (
@@ -424,7 +485,7 @@ const ModelInstallDialog = ({
                 {plan.files.map((file) => (
                   <div key={file.path} className="grid grid-cols-[1fr_auto] gap-3 border-b border-slate-800/60 py-2 text-[10px] last:border-b-0">
                     <div className="min-w-0">
-                      <div className="truncate font-mono text-slate-300" title={file.path}>{file.path}</div>
+                      <div className="break-all font-mono text-slate-300">{file.path}</div>
                       <div className="mt-0.5 font-mono text-slate-700" title={file.sha256}>{compactDigest(file.sha256)}</div>
                     </div>
                     <div className="text-slate-500">{formatFileBytes(file.byteSize)}</div>
@@ -532,6 +593,7 @@ const LOCAL_MODEL_ARCHITECTURES = [
   ["stable-diffusion-3", "Stable Diffusion 3"],
   ["flux-1", "FLUX.1"],
   ["flux-2", "FLUX.2"],
+  ["krea-2", "KREA 2"],
 ] as const;
 
 const ModelImportDialog = ({
@@ -582,7 +644,7 @@ const ModelImportDialog = ({
     <Dialog open={inspection !== null} onOpenChange={(open) => !open && onDismiss()}>
       {inspection ? (
         <DialogContent
-          className="max-h-[min(880px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden border-violet-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none"
+          className="max-h-[min(880px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-violet-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none"
           confirmOnInteractOutside={
             confirmRights && !result
               ? {
@@ -605,7 +667,7 @@ const ModelImportDialog = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto px-6 py-5">
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
                 <div className="text-[9px] tracking-wider text-slate-600 uppercase">File size</div>
@@ -793,7 +855,7 @@ const CivitaiAddonImportDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onDismiss()}>
-      <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden border-cyan-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+      <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-cyan-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
         <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
           <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.14em] text-cyan-300 uppercase">
             <Cloud className="h-3.5 w-3.5" /> Reviewed Civitai import
@@ -806,7 +868,7 @@ const CivitaiAddonImportDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-y-auto px-6 py-5">
+        <div className="min-h-0 overflow-y-auto px-6 py-5">
           {!inspection ? (
             <label className="text-[11px] font-medium text-slate-400">
               Civitai URL or AIR
@@ -1010,7 +1072,7 @@ const ModelAddonImportDialog = ({
   return (
     <Dialog open={inspection !== null} onOpenChange={(open) => !open && onDismiss()}>
       {inspection ? (
-        <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden border-violet-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+        <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-violet-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.14em] text-violet-300 uppercase">
               <Layers3 className="h-3.5 w-3.5" /> Import model add-on
@@ -1021,7 +1083,7 @@ const ModelAddonImportDialog = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto px-6 py-5">
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
                 <div className="text-[9px] tracking-wider text-slate-600 uppercase">Detected type</div>
@@ -1198,7 +1260,7 @@ const ModelAddonRemovalDialog = ({
   return (
     <Dialog open={plan !== null} onOpenChange={(open) => !open && onDismiss()}>
       {plan ? (
-        <DialogContent className="w-[min(660px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden border-rose-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+        <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(660px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-rose-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.14em] text-rose-300 uppercase">
               <Trash2 className="h-3.5 w-3.5" /> Reviewed add-on removal
@@ -1208,7 +1270,7 @@ const ModelAddonRemovalDialog = ({
               The immutable {plan.kind === "lora" ? "LoRA" : "embedding"} bytes are detached from the managed library. Historical provenance is preserved.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
+          <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
                 <div className="text-[9px] tracking-wider text-slate-600 uppercase">Installed</div>
@@ -1304,7 +1366,7 @@ const ModelRemovalDialog = ({
   return (
     <Dialog open={plan !== null} onOpenChange={(open) => !open && onDismiss()}>
       {plan ? (
-        <DialogContent className="w-[min(620px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden border-rose-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+        <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(620px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-rose-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.14em] text-rose-300 uppercase">
               <Trash2 className="h-3.5 w-3.5" /> Reviewed destructive action
@@ -1316,7 +1378,7 @@ const ModelRemovalDialog = ({
               The active revision is detached atomically before its bytes are cleaned from the managed model store.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
+          <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
                 <div className="text-[9px] tracking-wider text-slate-600 uppercase">Revision</div>
@@ -1444,7 +1506,7 @@ const CatalogInspection = ({
         <div className="text-[10px] font-semibold tracking-[0.12em] text-slate-600 uppercase">
           Revision
         </div>
-        <div className="mt-2 truncate font-mono text-[11px] text-violet-200">
+        <div className="mt-2 break-all font-mono text-[11px] text-violet-200">
           {catalog.catalogRevision}
         </div>
       </div>
@@ -1500,12 +1562,12 @@ const getPythonRequirementState = (
 
 const getPackageRequirementState = (
   observedVersion: string | null | undefined,
-  expectedVersion: string,
+  acceptedVersions: readonly string[],
   runtimeReady: boolean,
 ): RuntimeRequirementState => {
   if (observedVersion === null) return "missing";
   if (observedVersion === undefined) return runtimeReady ? "unknown" : "missing";
-  return observedVersion === expectedVersion ? "ready" : "mismatch";
+  return acceptedVersions.includes(observedVersion) ? "ready" : "mismatch";
 };
 
 const RuntimeRequirementBadge = ({
@@ -1541,9 +1603,13 @@ const RuntimeRequirementBadge = ({
 
 const LocalDiffusersRequirements = ({
   runtime,
+  refreshing,
+  onRefresh,
   onOpenInstallGuide,
 }: {
   runtime: MediaLocalDiffusersRuntimeStatus;
+  refreshing: boolean;
+  onRefresh: () => void;
   onOpenInstallGuide: () => void;
 }): JSX.Element => {
   const pythonState = getPythonRequirementState(runtime.pythonVersion);
@@ -1580,14 +1646,31 @@ const LocalDiffusersRequirements = ({
             </p>
           ) : null}
         </div>
-        <Badge
-          variant="outline"
-          className={runtime.ready
-            ? "border-emerald-400/25 text-emerald-300"
-            : "border-amber-400/25 text-amber-300"}
-        >
-          {runtime.ready ? "Ready" : "Action required"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className={runtime.ready
+              ? "border-emerald-400/25 text-emerald-300"
+              : "border-amber-400/25 text-amber-300"}
+          >
+            {runtime.ready ? "Ready" : "Action required"}
+          </Badge>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={refreshing}
+            onClick={onRefresh}
+            className="border-slate-700 bg-slate-950/40 text-slate-300 hover:bg-slate-900"
+          >
+            {refreshing ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Re-probe runtime
+          </Button>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -1609,7 +1692,7 @@ const LocalDiffusersRequirements = ({
           const observedVersion = runtime.packages[requirement.id];
           const state = getPackageRequirementState(
             observedVersion,
-            requirement.version,
+            requirement.acceptedVersions,
             runtime.ready,
           );
           return (
@@ -1673,7 +1756,7 @@ const LocalDiffusersInstallGuideDialog = ({
   onOpenChange: (open: boolean) => void;
 }): JSX.Element => (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-h-[calc(100vh-32px)] w-[min(680px,calc(100vw-32px))] max-w-none overflow-y-auto border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none">
+    <DialogContent className="max-h-[calc(100vh-32px)] w-[min(680px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none">
       <DialogHeader className="text-left">
         <DialogTitle className="flex items-center gap-2 text-base text-white">
           <Download className="h-4 w-4 text-amber-300" /> Install Local Diffusers requirements
@@ -1683,49 +1766,61 @@ const LocalDiffusersInstallGuideDialog = ({
         </DialogDescription>
       </DialogHeader>
 
-      <ol className="space-y-4 text-xs leading-5 text-slate-300">
-        <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="font-semibold text-slate-100">1. Install Python {LOCAL_DIFFUSERS_PYTHON_REQUIREMENT}</div>
-          <p className="mt-1 text-slate-500">
-            Ensure <code className="font-mono text-slate-300">python</code> or <code className="font-mono text-slate-300">python3</code> is available on PATH.
-          </p>
-          <a
-            href={PYTHON_DOWNLOAD_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
-          >
-            Open official Python downloads <ExternalLink className="h-3 w-3" />
-          </a>
-        </li>
-        <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="font-semibold text-slate-100">2. Install PyTorch 2.13.0 for your hardware</div>
-          <p className="mt-1 text-slate-500">
-            PyTorch wheels depend on the operating system and CPU, CUDA, or ROCm target. Use the official installation command for version 2.13.0.
-          </p>
-          <a
-            href={PYTORCH_INSTALL_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
-          >
-            Open PyTorch install options <ExternalLink className="h-3 w-3" />
-          </a>
-        </li>
-        <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="font-semibold text-slate-100">3. Install the remaining pinned packages</div>
-          <p className="mt-1 text-slate-500">
-            Run this with the same Python command. Use <code className="font-mono text-slate-300">python3</code> instead when required by your system.
-          </p>
-          <code className="mt-3 block overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[10px] leading-5 text-slate-300 select-all">
-            {LOCAL_DIFFUSERS_PACKAGE_INSTALL_COMMAND}
-          </code>
-        </li>
-      </ol>
+      <div className="min-h-0 overflow-y-auto pr-1">
+        <ol className="space-y-4 text-xs leading-5 text-slate-300">
+          <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="font-semibold text-slate-100">1. Install Python {LOCAL_DIFFUSERS_PYTHON_REQUIREMENT}</div>
+            <p className="mt-1 text-slate-500">
+              Ensure <code className="font-mono text-slate-300">python</code> or <code className="font-mono text-slate-300">python3</code> is available on PATH.
+            </p>
+            <a
+              href={PYTHON_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
+            >
+              Open official Python downloads <ExternalLink className="h-3 w-3" />
+            </a>
+          </li>
+          <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="font-semibold text-slate-100">2. Install PyTorch for your exact accelerator</div>
+            <p className="mt-1 text-slate-500">
+              Generic bundles use PyTorch 2.13.0. AMD Windows uses the official architecture-specific PyTorch 2.12.0 + ROCm 7.14 wheel.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-3">
+              <a
+                href={PYTORCH_INSTALL_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
+              >
+                Generic PyTorch options <ExternalLink className="h-3 w-3" />
+              </a>
+              <a
+                href={AMD_PYTORCH_INSTALL_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
+              >
+                AMD ROCm install selector <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </li>
+          <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="font-semibold text-slate-100">3. Install the remaining pinned packages</div>
+            <p className="mt-1 text-slate-500">
+              Run this with the same Python command. Use <code className="font-mono text-slate-300">python3</code> instead when required by your system.
+            </p>
+            <code className="mt-3 block overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[10px] leading-5 text-slate-300 select-all">
+              {LOCAL_DIFFUSERS_PACKAGE_INSTALL_COMMAND}
+            </code>
+          </li>
+        </ol>
 
-      <p className="text-[10px] leading-4 text-slate-600">
-        Restart the desktop app after installation so the isolated worker can run its readiness probe again.
-      </p>
+        <p className="mt-4 text-[10px] leading-4 text-slate-600">
+          Use Re-probe runtime after installation; restarting the desktop app is not required.
+        </p>
+      </div>
       <DialogFooter>
         <Button type="button" onClick={() => onOpenChange(false)}>
           Done
@@ -1950,6 +2045,12 @@ export const MediaModelsView = ({
   addonRemovalLoading,
   addonRemovalError,
   localDiffusers,
+  workspaceModels,
+  workspaceModelsLoading,
+  workspaceModelsError,
+  localRuntimeLoading,
+  onRefreshWorkspaceModels,
+  onRefreshLocalRuntime,
   onRefreshHardware,
   onRefreshCatalog,
   onReviewInstall,
@@ -1960,6 +2061,7 @@ export const MediaModelsView = ({
   onConfirmRemoval,
   onDismissRemoval,
   onChooseModelImport,
+  onInspectWorkspaceArtifact,
   onImportModel,
   onDismissModelImport,
   onProbeModel,
@@ -1976,13 +2078,102 @@ export const MediaModelsView = ({
 }: MediaModelsViewProps): JSX.Element => {
   const [civitaiDialogOpen, setCivitaiDialogOpen] = useState(false);
   const [localDiffusersGuideOpen, setLocalDiffusersGuideOpen] = useState(false);
+  const [workspaceQuery, setWorkspaceQuery] = useState("");
+  const [workspacePage, setWorkspacePage] = useState(1);
+  const [addonQuery, setAddonQuery] = useState("");
+  const [addonPage, setAddonPage] = useState(1);
+  const [modelQuery, setModelQuery] = useState("");
+  const [modelPage, setModelPage] = useState(1);
+  const workspaceResultsRef = useRef<HTMLElement | null>(null);
+  const addonResultsRef = useRef<HTMLElement | null>(null);
+  const modelResultsRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (addonImportInspection) setCivitaiDialogOpen(false);
   }, [addonImportInspection?.reviewToken]);
+  useEffect(() => {
+    setWorkspacePage(1);
+  }, [workspaceModels?.rootPath, workspaceModels?.scannedAt]);
+
+  const filteredWorkspaceEntries = useMemo(
+    () =>
+      (workspaceModels?.entries ?? []).filter((entry) =>
+        matchesMediaDiscoveredModelQuery(entry, workspaceQuery),
+      ),
+    [workspaceModels, workspaceQuery],
+  );
+  const workspacePagination = useMemo(
+    () =>
+      paginateMediaItems(
+        filteredWorkspaceEntries,
+        workspacePage,
+        WORKSPACE_MODEL_PAGE_SIZE,
+      ),
+    [filteredWorkspaceEntries, workspacePage],
+  );
+  useEffect(() => {
+    const normalizedPage = workspacePagination.page || 1;
+    if (workspacePage !== normalizedPage) {
+      setWorkspacePage(normalizedPage);
+    }
+  }, [workspacePage, workspacePagination.page]);
+  const filteredAddons = useMemo(
+    () =>
+      catalog.addons.filter((addon) =>
+        matchesMediaModelAddonQuery(addon, addonQuery),
+      ),
+    [addonQuery, catalog.addons],
+  );
+  const addonPagination = useMemo(
+    () =>
+      paginateMediaItems(
+        filteredAddons,
+        addonPage,
+        MODEL_ADDON_PAGE_SIZE,
+      ),
+    [addonPage, filteredAddons],
+  );
+  useEffect(() => {
+    const normalizedPage = addonPagination.page || 1;
+    if (addonPage !== normalizedPage) {
+      setAddonPage(normalizedPage);
+    }
+  }, [addonPage, addonPagination.page]);
+  const filteredCatalogModels = useMemo(
+    () =>
+      catalog.models.filter((model) =>
+        matchesMediaModelQuery(model, modelQuery),
+      ),
+    [catalog.models, modelQuery],
+  );
+  const modelPagination = useMemo(
+    () =>
+      paginateMediaItems(
+        filteredCatalogModels,
+        modelPage,
+        CATALOG_MODEL_PAGE_SIZE,
+      ),
+    [filteredCatalogModels, modelPage],
+  );
+  useEffect(() => {
+    const normalizedPage = modelPagination.page || 1;
+    if (modelPage !== normalizedPage) setModelPage(normalizedPage);
+  }, [modelPage, modelPagination.page]);
+
+  const revealPage = (
+    page: number,
+    setPage: (page: number) => void,
+    results: HTMLElement | null,
+  ): void => {
+    setPage(page);
+    window.requestAnimationFrame(() => {
+      results?.focus({ preventScroll: true });
+      results?.scrollIntoView({ block: "start" });
+    });
+  };
 
   const modelGroups = MEDIA_MODEL_PURPOSE_GROUPS.map((group) => ({
     ...group,
-    models: catalog.models.filter(
+    models: modelPagination.items.filter(
       (model) => getMediaModelPurpose(model) === group.id,
     ),
   })).filter((group) => group.models.length > 0);
@@ -2056,7 +2247,12 @@ export const MediaModelsView = ({
             <Button
               type="button"
               variant="outline"
-              disabled={!addonImportSupported || civitaiAddonLoading}
+              disabled={
+                !addonImportSupported ||
+                civitaiAddonLoading ||
+                addonImportLoading ||
+                modelImportLoading
+              }
               title={addonImportSupported ? undefined : "Available in the native desktop app"}
               onClick={() => setCivitaiDialogOpen(true)}
               className="border-cyan-400/25 bg-cyan-950/10 text-cyan-200 hover:bg-cyan-950/30"
@@ -2067,7 +2263,11 @@ export const MediaModelsView = ({
             <Button
               type="button"
               variant="outline"
-              disabled={!addonImportSupported || addonImportLoading}
+              disabled={
+                !addonImportSupported ||
+                addonImportLoading ||
+                modelImportLoading
+              }
               title={addonImportSupported ? undefined : "Available in the native desktop app"}
               onClick={onChooseAddonImport}
               className="border-cyan-400/25 bg-cyan-950/10 text-cyan-200 hover:bg-cyan-950/30"
@@ -2078,7 +2278,11 @@ export const MediaModelsView = ({
             <Button
               type="button"
               variant="outline"
-              disabled={!modelImportSupported || modelImportLoading}
+              disabled={
+                !modelImportSupported ||
+                modelImportLoading ||
+                addonImportLoading
+              }
               title={modelImportSupported ? undefined : "Available in the native desktop app"}
               onClick={onChooseModelImport}
               className="border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
@@ -2109,6 +2313,217 @@ export const MediaModelsView = ({
             {modelProbeError}
           </div>
         ) : null}
+
+        <section
+          ref={workspaceResultsRef}
+          aria-labelledby="workspace-models-heading"
+          tabIndex={-1}
+          className="mt-5 scroll-mt-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/35"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2
+                id="workspace-models-heading"
+                className="flex items-center gap-2 text-sm font-semibold text-slate-100"
+              >
+                <Database className="h-4 w-4 text-emerald-300" />
+                Workspace model discovery
+              </h2>
+              <p className="mt-1 break-all text-[10px] leading-4 text-slate-500">
+                {workspaceModels?.rootPath ??
+                  "Scan the active workspace models directory without loading model code."}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={workspaceModelsLoading}
+              onClick={onRefreshWorkspaceModels}
+              className="border-emerald-400/25 bg-emerald-950/10 text-emerald-200 hover:bg-emerald-950/30"
+            >
+              <RefreshCw
+                className={cn("h-4 w-4", workspaceModelsLoading && "animate-spin")}
+              />
+              {workspaceModelsLoading ? "Scanning…" : "Scan models"}
+            </Button>
+          </div>
+          {workspaceModelsError ? (
+            <p role="alert" className="mt-3 text-[10px] leading-4 text-rose-300">
+              {workspaceModelsError}
+            </p>
+          ) : null}
+          {workspaceModels?.warnings.map((warning) => (
+            <p key={warning} className="mt-3 text-[10px] leading-4 text-amber-200/75">
+              {warning}
+            </p>
+          ))}
+          {workspaceModels?.truncated &&
+          !workspaceModels.warnings.some((warning) =>
+            warning.toLowerCase().includes("discovery stopped"),
+          ) ? (
+            <p
+              role="status"
+              className="mt-3 rounded-lg border border-amber-400/20 bg-amber-950/15 px-3 py-2 text-[10px] leading-4 text-amber-200/80"
+            >
+              These are partial results because the bounded workspace scan
+              reached a safety limit. Narrow the models directory and scan
+              again before assuming a package is absent.
+            </p>
+          ) : null}
+          {workspaceModels && workspaceModels.entries.length > 0 ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <label className="relative min-w-[min(100%,18rem)] flex-1">
+                <span className="sr-only">Filter discovered model artifacts</span>
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
+                />
+                <input
+                  type="search"
+                  value={workspaceQuery}
+                  onChange={(event) => {
+                    setWorkspaceQuery(event.currentTarget.value);
+                    setWorkspacePage(1);
+                  }}
+                  placeholder="Filter by name, family, capability, or path"
+                  className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950/60 pl-9 pr-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-emerald-400/45 focus:ring-2 focus:ring-emerald-400/10"
+                />
+              </label>
+              <span
+                aria-live="polite"
+                className="text-[10px] tabular-nums text-slate-500"
+              >
+                {filteredWorkspaceEntries.length} of{" "}
+                {workspaceModels.entries.length} discovered
+              </span>
+            </div>
+          ) : null}
+          {workspacePagination.pageCount > 1 ? (
+            <MediaPagination
+              page={workspacePagination.page}
+              pageCount={workspacePagination.pageCount}
+              firstItemNumber={workspacePagination.firstItemNumber}
+              lastItemNumber={workspacePagination.lastItemNumber}
+              totalItems={workspacePagination.totalItems}
+              itemLabel="model artifacts"
+              onPageChange={(page) =>
+                revealPage(page, setWorkspacePage, workspaceResultsRef.current)
+              }
+              className="mt-3"
+            />
+          ) : null}
+          {workspaceModels && workspaceModels.entries.length === 0 ? (
+            <p className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-600">
+              No model packages or safetensors artifacts were discovered.
+            </p>
+          ) : null}
+          {workspaceModels &&
+          workspaceModels.entries.length > 0 &&
+          filteredWorkspaceEntries.length === 0 ? (
+            <p className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-500">
+              No discovered artifacts match “{workspaceQuery.trim()}”.
+            </p>
+          ) : null}
+          {workspaceModels && filteredWorkspaceEntries.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              {workspacePagination.items.map((entry) => (
+                <article
+                  key={`${entry.kind}:${entry.path}`}
+                  className="rounded-lg border border-slate-800 bg-slate-950/35 p-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="break-words text-xs font-semibold text-slate-200">
+                        {entry.displayName}
+                      </h3>
+                      <p className="mt-1 break-all font-mono text-[9px] text-slate-600">
+                        {entry.relativePath}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[8px]",
+                          entry.status === "ready" || entry.status === "importable"
+                            ? "border-emerald-400/25 text-emerald-300"
+                            : entry.status === "incompatible" ||
+                                entry.status === "incomplete"
+                              ? "border-amber-400/25 text-amber-300"
+                              : "border-rose-400/25 text-rose-300",
+                        )}
+                      >
+                        {entry.status}
+                      </Badge>
+                      {entry.status === "importable" &&
+                      (entry.kind === "checkpoint" ||
+                        entry.kind === "model-addon") ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={
+                            entry.kind === "model-addon"
+                              ? !addonImportSupported ||
+                                addonImportLoading ||
+                                modelImportLoading
+                              : !modelImportSupported ||
+                                modelImportLoading ||
+                                addonImportLoading
+                          }
+                          onClick={() => onInspectWorkspaceArtifact(entry)}
+                          className="h-7 border-emerald-400/25 bg-emerald-950/15 px-2.5 text-[10px] text-emerald-200 hover:bg-emerald-950/35"
+                        >
+                          <FileCheck2 className="h-3.5 w-3.5" />
+                          Review import
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="mt-2 break-words text-[10px] leading-4 text-slate-400">
+                    {entry.diagnostic}
+                  </p>
+                  {entry.capabilities.length > 0 ? (
+                    <div
+                      aria-label="Detected capabilities"
+                      className="mt-2 flex flex-wrap gap-1"
+                    >
+                      {entry.capabilities.map((capability) => (
+                        <span
+                          key={capability}
+                          className="max-w-full break-words rounded-full border border-slate-800 bg-slate-900/70 px-2 py-0.5 text-[8px] text-slate-400"
+                        >
+                          {capability.replaceAll("-", " ")}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <p className="mt-2 text-[9px] text-slate-600">
+                    {entry.kind.replaceAll("-", " ")}
+                    {entry.architecture
+                      ? ` · ${entry.architecture.replaceAll("-", " ")}`
+                      : ""}
+                    {` · ${formatFileBytes(entry.byteSize)} · ${entry.fileCount} file${entry.fileCount === 1 ? "" : "s"}`}
+                  </p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          {workspacePagination.pageCount > 1 ? (
+            <MediaPagination
+              page={workspacePagination.page}
+              pageCount={workspacePagination.pageCount}
+              firstItemNumber={workspacePagination.firstItemNumber}
+              lastItemNumber={workspacePagination.lastItemNumber}
+              totalItems={workspacePagination.totalItems}
+              itemLabel="model artifacts"
+              onPageChange={(page) =>
+                revealPage(page, setWorkspacePage, workspaceResultsRef.current)
+              }
+              className="mt-3"
+            />
+          ) : null}
+        </section>
 
         <details
           className={cn(
@@ -2144,6 +2559,8 @@ export const MediaModelsView = ({
             {localDiffusers ? (
               <LocalDiffusersRequirements
                 runtime={localDiffusers}
+                refreshing={localRuntimeLoading}
+                onRefresh={onRefreshLocalRuntime}
                 onOpenInstallGuide={() => setLocalDiffusersGuideOpen(true)}
               />
             ) : null}
@@ -2164,9 +2581,14 @@ export const MediaModelsView = ({
           </div>
         </details>
 
-        <section aria-labelledby="media-addons-heading" className="mt-5 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+        <section
+          ref={addonResultsRef}
+          aria-labelledby="media-addons-heading"
+          tabIndex={-1}
+          className="mt-5 scroll-mt-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/35"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
               <h2 id="media-addons-heading" className="flex items-center gap-2 text-sm font-semibold text-slate-100">
                 <Layers3 className="h-4 w-4 text-cyan-300" /> Looks &amp; concepts
               </h2>
@@ -2174,19 +2596,58 @@ export const MediaModelsView = ({
                 Reusable LoRA adapters and textual-inversion embeddings. Compatibility is checked against the chosen provider and model before a run.
               </p>
             </div>
-            <Badge variant="outline" className="border-cyan-400/20 text-[9px] text-cyan-300">{catalog.addons.length}</Badge>
+            <Badge variant="outline" className="border-cyan-400/20 text-[9px] text-cyan-300">
+              {filteredAddons.length === catalog.addons.length
+                ? catalog.addons.length
+                : `${filteredAddons.length} of ${catalog.addons.length}`}
+            </Badge>
           </div>
           {catalog.addons.length === 0 ? (
             <div className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-600">
               No LoRAs or embeddings imported yet.
             </div>
           ) : (
+            <>
+              <label className="relative mt-4 block">
+                <span className="sr-only">Search LoRAs and embeddings</span>
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
+                />
+                <input
+                  type="search"
+                  value={addonQuery}
+                  onChange={(event) => {
+                    setAddonQuery(event.currentTarget.value);
+                    setAddonPage(1);
+                  }}
+                  placeholder="Search name, architecture, trigger, target, license, or path"
+                  className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950/60 pr-3 pl-9 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/45 focus:ring-2 focus:ring-cyan-400/10"
+                />
+              </label>
+              <MediaPagination
+                page={addonPagination.page}
+                pageCount={addonPagination.pageCount}
+                firstItemNumber={addonPagination.firstItemNumber}
+                lastItemNumber={addonPagination.lastItemNumber}
+                totalItems={addonPagination.totalItems}
+                itemLabel="model add-ons"
+                onPageChange={(page) =>
+                  revealPage(page, setAddonPage, addonResultsRef.current)
+                }
+                className="mt-3"
+              />
+              {filteredAddons.length === 0 ? (
+                <div className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-500">
+                  No LoRAs or embeddings match “{addonQuery.trim()}”.
+                </div>
+              ) : (
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {catalog.addons.map((addon) => (
-                <article key={addon.id} className="rounded-lg border border-slate-800 bg-slate-950/35 p-3">
+              {addonPagination.items.map((addon) => (
+                <article key={addon.id} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/35 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h3 className="truncate text-xs font-semibold text-slate-200">{addon.displayName}</h3>
+                      <h3 className="break-words text-xs leading-5 font-semibold text-slate-200">{addon.displayName}</h3>
                       <p className="mt-1 text-[9px] text-slate-600">{addon.architecture.replaceAll("-", " ")} · {formatFileBytes(addon.byteSize)}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
@@ -2206,8 +2667,9 @@ export const MediaModelsView = ({
                       </Button>
                     </div>
                   </div>
-                  <p className="mt-2 text-[9px] text-slate-500">
+                  <p className="mt-2 break-words text-[9px] leading-4 text-slate-500">
                     {addon.targetComponents.map((component) => component.replaceAll("-", " ")).join(" · ")}
+                    {addon.baseModelHint ? ` · ${addon.baseModelHint}` : ""}
                   </p>
                   {addon.embeddingVectors.length > 0 ? (
                     <p className="mt-1 text-[9px] text-violet-300/70">
@@ -2215,20 +2677,99 @@ export const MediaModelsView = ({
                     </p>
                   ) : null}
                   {addon.loraProfile ? (
-                    <p className="mt-1 text-[9px] text-cyan-300/70">
+                    <p className="mt-1 break-words text-[9px] leading-4 text-cyan-300/70">
                       {addon.loraProfile.algorithm === "locon" ? "LoCon" : addon.loraProfile.algorithm === "dora" ? "DoRA" : "LoRA"} · rank {addon.loraProfile.rankMinimum === addon.loraProfile.rankMaximum ? addon.loraProfile.rankMinimum : `${addon.loraProfile.rankMinimum}–${addon.loraProfile.rankMaximum}`} · {addon.loraProfile.targetModuleCount} modules
                     </p>
                   ) : null}
-                  {addon.triggerWords.length > 0 ? <p className="mt-2 truncate font-mono text-[9px] text-cyan-300/70">{addon.triggerWords.join(", ")}</p> : null}
-                  {addon.defaultToken ? <p className="mt-2 truncate font-mono text-[9px] text-cyan-300/70">{addon.defaultToken}</p> : null}
+                  {addon.triggerWords.length > 0 ? <p className="mt-2 break-words font-mono text-[9px] leading-4 text-cyan-300/70">{addon.triggerWords.join(", ")}</p> : null}
+                  {addon.defaultToken ? <p className="mt-2 break-all font-mono text-[9px] leading-4 text-cyan-300/70">{addon.defaultToken}</p> : null}
+                  <details className="group/details mt-3 border-t border-slate-800/70 pt-2">
+                    <summary className="cursor-pointer list-none text-[9px] text-slate-600 outline-none hover:text-slate-300 focus-visible:ring-2 focus-visible:ring-cyan-400/30">
+                      File, license &amp; digest
+                    </summary>
+                    <div className="mt-2 space-y-1.5 text-[9px] leading-4 text-slate-600">
+                      <p className="break-all font-mono">{addon.relativePath}</p>
+                      <p className="break-all font-mono">sha256:{addon.digest}</p>
+                      <p className="break-words">
+                        {addon.license.name} ·{" "}
+                        {addon.license.commercialUse.replaceAll("-", " ")}
+                      </p>
+                    </div>
+                  </details>
                 </article>
               ))}
             </div>
+              )}
+              <MediaPagination
+                page={addonPagination.page}
+                pageCount={addonPagination.pageCount}
+                firstItemNumber={addonPagination.firstItemNumber}
+                lastItemNumber={addonPagination.lastItemNumber}
+                totalItems={addonPagination.totalItems}
+                itemLabel="model add-ons"
+                onPageChange={(page) =>
+                  revealPage(page, setAddonPage, addonResultsRef.current)
+                }
+                className="mt-3"
+              />
+            </>
           )}
         </section>
 
-        <div className="mt-5 space-y-6">
-          {modelGroups.map((group) => {
+        <section
+          ref={modelResultsRef}
+          aria-label="Model catalog"
+          tabIndex={-1}
+          className="mt-5 space-y-6 outline-none focus-visible:ring-2 focus-visible:ring-violet-400/35"
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-100">Model catalog</h2>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Installed, managed, remote, and discovered runtime models.
+                </p>
+              </div>
+              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+                <label className="relative w-full sm:w-80">
+                  <span className="sr-only">Search model catalog</span>
+                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
+                  <input
+                    type="search"
+                    value={modelQuery}
+                    onChange={(event) => {
+                      setModelQuery(event.currentTarget.value);
+                      setModelPage(1);
+                    }}
+                    placeholder="Search family, capability, license, or runtime"
+                    className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950 pr-3 pl-9 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-violet-400/45 focus:ring-2 focus:ring-violet-400/10"
+                  />
+                </label>
+                <span
+                  aria-live="polite"
+                  className="text-[10px] tabular-nums text-slate-600"
+                >
+                  {filteredCatalogModels.length} of {catalog.models.length}
+                </span>
+              </div>
+            </div>
+            <MediaPagination
+              page={modelPagination.page}
+              pageCount={modelPagination.pageCount}
+              firstItemNumber={modelPagination.firstItemNumber}
+              lastItemNumber={modelPagination.lastItemNumber}
+              totalItems={modelPagination.totalItems}
+              itemLabel="models"
+              onPageChange={(page) =>
+                revealPage(page, setModelPage, modelResultsRef.current)
+              }
+            />
+          </div>
+          {filteredCatalogModels.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-xs text-slate-500">
+              No models match “{modelQuery.trim()}”.
+            </div>
+          ) : modelGroups.map((group) => {
             const GroupIcon = group.icon;
 
             return (
@@ -2247,13 +2788,13 @@ export const MediaModelsView = ({
                   </p>
                 </div>
                 <Badge variant="outline" className="border-slate-700 text-[9px] text-slate-400">
-                  {group.models.length}
+                  {group.models.length} on page
                 </Badge>
               </div>
 
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 {group.models.map((model) => {
-                  const ready = isReady(model);
+                  const ready = isMediaModelReady(model);
                   const TargetIcon = model.target === "remote" ? Cloud : Cpu;
                   const modelInstallJob =
                     installJob?.modelId === model.id ? installJob : null;
@@ -2275,10 +2816,10 @@ export const MediaModelsView = ({
                       <TargetIcon className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-slate-100">
+                      <h3 className="break-words text-sm leading-5 font-semibold text-slate-100">
                         {model.displayName}
                       </h3>
-                      <div className="mt-1 text-[10px] text-slate-500">
+                      <div className="mt-1 break-words text-[10px] leading-4 text-slate-500">
                         {model.target === "remote"
                           ? "Remote"
                           : model.bundled
@@ -2328,8 +2869,8 @@ export const MediaModelsView = ({
                     Details
                   </summary>
                   <div className="mt-2 space-y-2 text-[10px] leading-4 text-slate-500">
-                    <p className="font-mono text-slate-600">{model.id}</p>
-                    <p>{model.capabilities.join(" · ")}</p>
+                    <p className="break-all font-mono text-slate-600">{model.id}</p>
+                    <p className="break-words">{model.capabilities.join(" · ")}</p>
                     <p>
                       {model.license.name} · {model.license.commercialUse.replaceAll("-", " ")}
                     </p>
@@ -2347,7 +2888,9 @@ export const MediaModelsView = ({
                   </div>
                 </details>
 
-                {model.target === "remote" && !model.configured ? (
+                {(model.target === "remote" ||
+                  model.management.acquisition === "external-runtime") &&
+                !model.configured ? (
                   <div className="mt-auto pt-4">
                     <Button
                       variant="outline"
@@ -2357,7 +2900,9 @@ export const MediaModelsView = ({
                       Configure provider <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                ) : model.providerId === "local-diffusers" && model.installed && !ready ? (
+                ) : model.management.verification === "model-probe" &&
+                  model.installed &&
+                  !ready ? (
                   <div className="mt-auto pt-4">
                     <Button
                       type="button"
@@ -2383,19 +2928,61 @@ export const MediaModelsView = ({
                       {modelProbeLoadingId === model.id ? "Verifying model…" : "Verify model"}
                     </Button>
                   </div>
-                ) : model.target === "local" && model.userImported && !ready ? (
+                ) : model.management.verification === "runtime-probe" &&
+                  model.installed &&
+                  !ready ? (
                   <div className="mt-auto pt-4">
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={!modelImportSupported || modelImportLoading}
+                      disabled={localRuntimeLoading}
+                      onClick={onRefreshLocalRuntime}
+                      className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                    >
+                      {localRuntimeLoading ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                      {localRuntimeLoading ? "Probing runtime…" : "Re-probe runtime"}
+                    </Button>
+                  </div>
+                ) : model.management.acquisition === "file-import" && !ready ? (
+                  <div className="mt-auto pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        !modelImportSupported ||
+                        modelImportLoading ||
+                        addonImportLoading
+                      }
                       onClick={onChooseModelImport}
                       className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
                     >
                       <Upload className="h-4 w-4" /> Import checkpoint again
                     </Button>
                   </div>
-                ) : model.target === "local" && !model.bundled && !ready ? (
+                ) : model.management.acquisition === "workspace-discovery" &&
+                  !ready ? (
+                  <div className="mt-auto pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={workspaceModelsLoading}
+                      onClick={onRefreshWorkspaceModels}
+                      className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                    >
+                      {workspaceModelsLoading ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                      {workspaceModelsLoading ? "Scanning workspace…" : "Scan workspace models"}
+                    </Button>
+                  </div>
+                ) : model.management.acquisition === "managed-install" &&
+                  !ready ? (
                   <div className="mt-auto space-y-3 pt-4">
                       {modelInstallJob ? (
                         <div className="rounded-lg border border-violet-400/15 bg-violet-950/10 px-3 py-2.5" aria-live="polite">
@@ -2431,7 +3018,9 @@ export const MediaModelsView = ({
                         {modelInstallJob ? "Open installation details" : "Review installation"}
                       </Button>
                   </div>
-                ) : model.target === "local" && !model.bundled && ready ? (
+                ) : ready &&
+                  (model.management.acquisition === "managed-install" ||
+                    model.management.acquisition === "file-import") ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -2450,7 +3039,18 @@ export const MediaModelsView = ({
               </section>
             );
           })}
-        </div>
+          <MediaPagination
+            page={modelPagination.page}
+            pageCount={modelPagination.pageCount}
+            firstItemNumber={modelPagination.firstItemNumber}
+            lastItemNumber={modelPagination.lastItemNumber}
+            totalItems={modelPagination.totalItems}
+            itemLabel="models"
+            onPageChange={(page) =>
+              revealPage(page, setModelPage, modelResultsRef.current)
+            }
+          />
+        </section>
       </div>
     </div>
   );

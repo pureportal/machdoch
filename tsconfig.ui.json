@@ -5,7 +5,7 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node", "vitest/globals"],
+    "types": ["node"],
     "allowImportingTsExtensions": true,
     "exactOptionalPropertyTypes": false,
     "noUncheckedIndexedAccess": false,
@@ -22,9 +22,6 @@
     "src/tauri/ui/**/*.tsx"
   ],
   "exclude": [
-    "src/tauri/ui/**/*.spec.ts",
-    "src/tauri/ui/**/*.spec.tsx",
-    "src/tauri/ui/**/*.test.ts",
-    "src/tauri/ui/**/*.test.tsx"
+    "src/tauri/ui/**/*.spec.ts"
   ]
 }

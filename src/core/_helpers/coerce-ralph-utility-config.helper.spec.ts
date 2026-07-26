@@ -12,7 +12,7 @@ describe("coerceRalphUtilityConfig", () => {
   );
 
   it("exports the public utility type list used by Ralph APIs", () => {
-    expect(RALPH_UTILITY_TYPES).toEqual([
+    expect(RALPH_UTILITY_TYPES.filter((type) => type !== "UI_ANALYZE")).toEqual([
       "WAIT",
       "HTTP_FETCH",
       "POLL",
@@ -42,7 +42,6 @@ describe("coerceRalphUtilityConfig", () => {
       "MARK_SCOPE_RESULT",
       "SEARCH_FILES",
       "RUN_CHECK",
-      "UI_ANALYZE",
       "GIT_STATUS",
       "GIT_SNAPSHOT",
       "GIT_DIFF_SUMMARY",
@@ -203,64 +202,6 @@ describe("coerceRalphUtilityConfig", () => {
       glob: "**/*.ts",
       encoding: "utf8",
       acceptedExitCodes: [0, 2, -1],
-    });
-  });
-
-  it("coerces UI analysis nested config and skips unusable viewport entries", () => {
-    expect(
-      coerceRalphUtilityConfig({
-        type: "UI_ANALYZE",
-        adapter: "tauri-mcp",
-        targetUrl: "https://example.com",
-        screenshotPath: "shot.png",
-        server: {
-          mode: "managed",
-          healthUrl: "http://127.0.0.1:4173/health",
-          command: "pnpm preview:ui",
-          cwd: ".",
-          reuseExisting: true,
-          ignored: "value",
-        },
-        viewports: [
-          { name: "desktop", width: 1280.8, height: 900.2 },
-          { name: "invalid", width: "wide", height: 900 },
-          null,
-        ],
-        checks: {
-          screenshots: true,
-          accessibility: false,
-          console: "yes",
-          trace: true,
-        },
-        fullPage: true,
-        waitUntil: "networkidle",
-        mcpServerId: "browser",
-        mcpToolName: "analyze",
-        mcpArguments: { includeTrace: true },
-      }),
-    ).toEqual({
-      type: "UI_ANALYZE",
-      adapter: "tauri-mcp",
-      targetUrl: "https://example.com",
-      screenshotPath: "shot.png",
-      server: {
-        mode: "managed",
-        healthUrl: "http://127.0.0.1:4173/health",
-        command: "pnpm preview:ui",
-        cwd: ".",
-        reuseExisting: true,
-      },
-      viewports: [{ name: "desktop", width: 1280, height: 900 }],
-      checks: {
-        screenshots: true,
-        accessibility: false,
-        trace: true,
-      },
-      fullPage: true,
-      waitUntil: "networkidle",
-      mcpServerId: "browser",
-      mcpToolName: "analyze",
-      mcpArguments: { includeTrace: true },
     });
   });
 

@@ -5,6 +5,12 @@ import type {
   ToolName,
 } from "./runtime-contract.generated.js";
 import type { AgentToolDefinition } from "./_helpers/agent-tools-shared.js";
+import type {
+  FrozenInstructionSet,
+  InstructionDeliveryPlan,
+  InstructionDeliveryReceipt,
+  InstructionSourceKind,
+} from "./instruction-system/types.js";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
@@ -29,32 +35,7 @@ export interface ParsedMarkdownDocument {
   body: string;
 }
 
-export type InstructionScope = "user" | "workspace" | "compatibility" | "ralph-flow";
-
-export type InstructionMode = "always" | "auto" | "agent-requested" | "manual" | "disabled";
-
-export type InstructionAudience = "executor" | "validator" | "generator" | "all";
-
-export type InstructionTargetAudience = Exclude<InstructionAudience, "all">;
-
-export interface DiscoveredInstruction {
-  kind: "always-on" | "conditional";
-  path: string;
-  name: string;
-  body: string;
-  description?: string;
-  applyTo?: string;
-  applyToPatterns?: string[];
-  excludePatterns?: string[];
-  keywords: string[];
-  priority?: number;
-  mode?: InstructionMode;
-  audience?: InstructionAudience;
-  scope?: InstructionScope;
-  ralphFlowId?: string;
-  ralphFlowScope?: "user" | "workspace";
-  sizeBytes?: number;
-}
+export type CustomizationScope = "user" | "workspace" | "github";
 
 export interface CustomizationDiagnostic {
   level: "warning" | "error";
@@ -66,7 +47,7 @@ export interface CustomizationDiagnostic {
 export interface DiscoveredPrompt {
   path: string;
   name: string;
-  scope?: Extract<InstructionScope, "user" | "workspace" | "compatibility">;
+  scope?: CustomizationScope;
   description?: string;
   agent?: string;
   model?: string;
@@ -79,7 +60,7 @@ export interface DiscoveredPrompt {
 export interface DiscoveredSkill {
   path: string;
   name: string;
-  scope?: Extract<InstructionScope, "user" | "workspace" | "compatibility">;
+  scope?: CustomizationScope;
   description: string;
   argumentHint?: string;
   userInvocable: boolean;
@@ -88,7 +69,6 @@ export interface DiscoveredSkill {
 
 export interface CustomizationDiscoveryResult {
   workspaceRoot: string;
-  instructions: DiscoveredInstruction[];
   prompts: DiscoveredPrompt[];
   skills: DiscoveredSkill[];
   diagnostics?: CustomizationDiagnostic[];
@@ -322,22 +302,23 @@ export interface AgentModelAdapter {
   continueTurn(params: AgentModelContinueParams): Promise<AgentModelTurn>;
 }
 
-export interface TaskCustomizationMatch {
-  id?: string;
-  bodyHash?: string;
-  kind: DiscoveredInstruction["kind"];
+export type TaskExecutionRole = "executor" | "validator" | "generator";
+
+export interface TaskInstructionSource {
+  id: string;
+  digest: string;
+  kind: InstructionSourceKind;
   name: string;
-  path: string;
-  scope?: InstructionScope;
-  priority: number;
   body: string;
-  reason: string;
+  scopePath: string;
+  precedence: number;
+  relativePath?: string;
 }
 
 export interface TaskSuggestion {
   name: string;
   path: string;
-  scope?: Extract<InstructionScope, "user" | "workspace" | "compatibility">;
+  scope?: CustomizationScope;
   score: number;
   reason: string;
 }
@@ -354,13 +335,12 @@ export interface ResolvedTaskContext {
   task: string;
   effectiveTask: string;
   taskContextText: string;
-  instructionContextText: string;
   workspacePaths: string[];
   suggestedTools: ToolName[];
-  instructionAudience?: InstructionTargetAudience;
+  executionRole: TaskExecutionRole;
   invokedPrompt?: ResolvedPromptInvocation;
-  applicableInstructions: TaskCustomizationMatch[];
-  applicableValidatorInstructions?: TaskCustomizationMatch[];
+  applicableInstructions: TaskInstructionSource[];
+  instructionResolution?: FrozenInstructionSet;
 }
 
 export interface TaskRunPreview {
@@ -369,14 +349,12 @@ export interface TaskRunPreview {
   summary: string;
   suggestedTools: ToolName[];
   invokedPrompt?: ResolvedPromptInvocation;
-  applicableInstructions: TaskCustomizationMatch[];
   suggestedPrompts: TaskSuggestion[];
   suggestedSkills: TaskSuggestion[];
   warnings: string[];
   notes: string[];
   steps: TaskPlanStep[];
   customizationCounts: {
-    instructions: number;
     prompts: number;
     skills: number;
   };
@@ -629,7 +607,18 @@ export interface TaskExecutionOptions {
   additionalToolDefinitions?: AgentToolDefinition[];
   systemPromptSections?: string[];
   structuredOutput?: AgentModelStructuredOutput;
-  instructionAudience?: InstructionTargetAudience;
+  executionRole?: TaskExecutionRole;
+  /**
+   * A run/flow-scoped immutable instruction snapshot. When omitted the
+   * execution boundary resolves one before any provider call.
+   */
+  resolvedInstructions?: FrozenInstructionSet;
+  instructionDeliveryPlan?: InstructionDeliveryPlan;
+  instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
+  instructionFlow?: { id: string; guidance?: string };
+  unattendedInstructionDelivery?: boolean;
+  acknowledgeCompatibleInstructionDelivery?: boolean;
+  acknowledgedInstructionDeliveryPlanId?: string;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
   /** Optional absolute execution limit. Omit it or use `null` for no limit. */

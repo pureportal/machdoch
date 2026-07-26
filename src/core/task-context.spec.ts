@@ -5,26 +5,26 @@ describe("tokenizeTaskMatchText", () => {
   it("drops stop words, short tokens, and duplicates", () => {
     expect(
       tokenizeTaskMatchText(
-        "Update the React UI with the react task-context panel",
+        "Update the scheduler core with the scheduler task-context service",
       ),
-    ).toEqual(["react", "task", "context", "panel"]);
+    ).toEqual(["scheduler", "core", "task", "context", "service"]);
   });
 });
 
 describe("rankTaskMatchText", () => {
   it("scores overlapping terms in the original task-token order", () => {
     const taskTokens = tokenizeTaskMatchText(
-      "Review the React task context panel",
+      "Review the scheduler task context service",
     );
 
     expect(
       rankTaskMatchText(
         taskTokens,
-        "Context helpers keep the panel responsive for every React task",
+        "Context helpers keep the service reliable for every scheduler task",
       ),
     ).toEqual({
       score: 4,
-      matchedTerms: ["react", "task", "context", "panel"],
+      matchedTerms: ["scheduler", "task", "context", "service"],
     });
   });
 });

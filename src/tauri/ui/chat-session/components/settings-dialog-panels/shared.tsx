@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   ArrowUpRight,
   Eye,
   EyeOff,
@@ -15,15 +14,6 @@ import {
   type RefObject,
 } from "react";
 import { Button } from "../../../components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { cn } from "../../../lib/utils";
 import {
@@ -178,19 +168,19 @@ export const SettingsCard = ({
     <section
       aria-labelledby={titleId}
       className={cn(
-        "grid content-start rounded-xl border border-slate-800/80 bg-slate-950/40 shadow-sm shadow-black/10",
+        "grid content-start rounded-xl border border-slate-800/80 bg-slate-950/35 shadow-sm shadow-black/10",
         className,
       )}
     >
-      <div className="grid gap-1 border-b border-slate-800/80 bg-slate-900/40 px-4 py-3.5 sm:px-5">
+      <div className="grid gap-1 px-4 pt-4 pb-2 sm:px-5">
         <h3 id={titleId} className="text-sm font-semibold text-slate-100">
           {title}
         </h3>
         {description ? (
-          <p className="text-sm leading-5 text-slate-400">{description}</p>
+          <p className="text-xs leading-5 text-slate-400">{description}</p>
         ) : null}
       </div>
-      <div className="grid gap-3 px-4 pb-4 sm:px-5 sm:pb-5">{children}</div>
+      <div className="grid gap-3 px-4 pb-4 sm:px-5">{children}</div>
     </section>
   );
 };
@@ -214,14 +204,14 @@ export const SettingPanel = ({
     <div
       data-setting-panel
       className={cn(
-        "grid min-w-0 gap-3 border-b border-slate-800/75 py-4 last:border-b-0 md:grid-cols-[12rem_minmax(0,1fr)] md:items-center",
+        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-3.5 last:border-b-0 md:grid-cols-[10rem_minmax(0,1fr)] md:items-center",
         className,
       )}
     >
       <div className="grid gap-1">
         <p className="text-sm font-medium text-slate-300">{label}</p>
         {detail ? (
-          <p className="text-sm leading-5 text-slate-400">{detail}</p>
+          <p className="text-xs leading-4 text-slate-400">{detail}</p>
         ) : null}
       </div>
       <div className={cn("min-w-0", contentClassName)}>{children}</div>
@@ -362,10 +352,8 @@ export const ProviderSyncControl = ({
   showDiagnostics = false,
   className,
 }: ProviderSyncControlProps): JSX.Element => {
-  const warningId = useId();
   const [status, setStatus] = useState<ProviderSyncStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [message, setMessage] = useState<SettingsStatusMessage | null>(null);
 
   useEffect(() => {
@@ -398,8 +386,8 @@ export const ProviderSyncControl = ({
       setMessage({
         tone: "success",
         text: enabled
-          ? "Provider sync enabled. Machdoch now manages provider CLI instructions and MCP."
-          : "Provider sync disabled. Machdoch-owned provider projections were removed.",
+          ? "Provider MCP sync enabled."
+          : "Provider MCP sync disabled and managed entries removed.",
       });
     } catch (error) {
       setMessage({
@@ -467,25 +455,23 @@ export const ProviderSyncControl = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="grid min-w-0 gap-1">
           <p className="text-sm font-semibold text-slate-100">
-            Sync Machdoch to provider CLIs
+            Sync MCP to provider CLIs
           </p>
           <p className="text-xs leading-5 text-slate-400">
-            Keep Machdoch instructions and MCP servers available to Codex,
-            Claude, and Copilot CLI.
+            Keep MCP servers current in Codex, Claude, and Copilot CLI.
           </p>
         </div>
         <Button
           type="button"
           role="switch"
-          aria-label="Sync Machdoch to provider CLIs"
+          aria-label="Sync MCP to provider CLIs"
           aria-checked={enabled}
-          aria-describedby={!enabled ? warningId : undefined}
           disabled={busy || status === null || unavailable}
           onClick={() => {
             if (enabled) {
               void updateEnabled(false);
             } else {
-              setConfirmOpen(true);
+              void updateEnabled(true);
             }
           }}
           className={cn(
@@ -499,16 +485,9 @@ export const ProviderSyncControl = ({
         </Button>
       </div>
 
-      {!enabled ? (
-        <p
-          id={warningId}
-          className="flex items-start gap-2 text-xs leading-5 text-amber-200/80"
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Enabling removes existing provider-native instruction, MCP, and
-          customization files or entries before syncing Machdoch settings.
-        </p>
-      ) : null}
+      <p className="text-xs leading-5 text-slate-500">
+        Only Machdoch-managed MCP entries are changed.
+      </p>
 
       <p className="text-xs text-slate-500">
         {unavailable
@@ -561,40 +540,6 @@ export const ProviderSyncControl = ({
       ) : null}
       <SettingsStatus message={message} />
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent
-          role="alertdialog"
-          aria-describedby={`${warningId}-dialog-description`}
-          className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-md"
-        >
-          <DialogHeader>
-            <DialogTitle>Replace provider-native configuration?</DialogTitle>
-            <DialogDescription id={`${warningId}-dialog-description`}>
-              Machdoch will back up and remove existing Codex, Claude, and
-              Copilot instruction, MCP, and customization files or entries, then
-              sync its own settings.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={busy}>
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setConfirmOpen(false);
-                void updateEnabled(true);
-              }}
-              className="bg-amber-400 text-slate-950 hover:bg-amber-300"
-            >
-              Remove and enable
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
