@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   loadProviderEnrollmentConfig: vi.fn(),
   setPersistentProviderSyncEnabled: vi.fn(),
+  getCompatibleProviderSyncDaemonPid: vi.fn(),
   getProviderSyncDaemonPid: vi.fn(),
   requestProviderSyncRefresh: vi.fn(),
   runProviderSyncDaemon: vi.fn(),
+  stopProviderSyncDaemon: vi.fn(),
   createProviderSyncPlan: vi.fn(),
   doctorProviderSync: vi.fn(),
   loadProviderSyncStatus: vi.fn(),
@@ -23,9 +25,12 @@ vi.mock("../../core/provider-enrollment/config.js", () => ({
 }));
 
 vi.mock("../../core/provider-enrollment/sync-daemon.js", () => ({
+  getCompatibleProviderSyncDaemonPid:
+    mocks.getCompatibleProviderSyncDaemonPid,
   getProviderSyncDaemonPid: mocks.getProviderSyncDaemonPid,
   requestProviderSyncRefresh: mocks.requestProviderSyncRefresh,
   runProviderSyncDaemon: mocks.runProviderSyncDaemon,
+  stopProviderSyncDaemon: mocks.stopProviderSyncDaemon,
 }));
 
 vi.mock("../../core/provider-enrollment/sync-coordinator.js", () => ({
@@ -80,11 +85,14 @@ describe("automatic provider sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isProviderSyncAutostartInstalled.mockResolvedValue(false);
+    mocks.getCompatibleProviderSyncDaemonPid.mockResolvedValue(undefined);
+    mocks.getProviderSyncDaemonPid.mockResolvedValue(undefined);
     mocks.requestProviderSyncRefresh.mockResolvedValue(undefined);
     mocks.reconcileProviderSync.mockResolvedValue({});
     mocks.registerProviderSyncWorkspace.mockResolvedValue(undefined);
     mocks.uninstallProviderSyncTargets.mockResolvedValue([]);
     mocks.removeProviderSyncAutostart.mockResolvedValue(undefined);
+    mocks.stopProviderSyncDaemon.mockResolvedValue(false);
   });
 
   it("does not reconcile or start services while persistent sync is disabled", async () => {
@@ -101,12 +109,32 @@ describe("automatic provider sync", () => {
     expect(mocks.requestProviderSyncRefresh).not.toHaveBeenCalled();
   });
 
-  it("delegates refresh to a running daemon instead of reconciling concurrently", async () => {
-    mocks.loadProviderEnrollmentConfig.mockResolvedValue(createConfig(true));
+  it("stops and cleans up a stale daemon while persistent sync is disabled", async () => {
+    const config = createConfig(true);
+    mocks.loadProviderEnrollmentConfig.mockResolvedValue({
+      ...config,
+      persistentSync: { ...config.persistentSync, enabled: false },
+    });
     mocks.getProviderSyncDaemonPid.mockResolvedValue(4321);
+    mocks.isProviderSyncAutostartInstalled.mockResolvedValue(true);
+    mocks.stopProviderSyncDaemon.mockResolvedValue(true);
 
     await ensureAutomaticProviderSync("C:\\workspace");
 
+    expect(mocks.stopProviderSyncDaemon).toHaveBeenCalledOnce();
+    expect(mocks.removeProviderSyncAutostart).toHaveBeenCalledOnce();
+    expect(mocks.reconcileProviderSync).toHaveBeenCalledWith("C:\\workspace");
+  });
+
+  it("delegates refresh to a running daemon instead of reconciling concurrently", async () => {
+    mocks.loadProviderEnrollmentConfig.mockResolvedValue(createConfig(true));
+    mocks.getCompatibleProviderSyncDaemonPid.mockResolvedValue(4321);
+
+    await ensureAutomaticProviderSync("C:\\workspace");
+
+    expect(mocks.stopProviderSyncDaemon).toHaveBeenCalledWith({
+      onlyIfRuntimeMismatch: true,
+    });
     expect(mocks.requestProviderSyncRefresh).toHaveBeenCalledOnce();
     expect(mocks.registerProviderSyncWorkspace).toHaveBeenCalledWith(
       "C:\\workspace",

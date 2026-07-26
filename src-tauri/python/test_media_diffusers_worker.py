@@ -19,6 +19,52 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_large_image_decode_enables_native_overlapping_vae_tiles(self) -> None:
+        class FakeVae:
+            def __init__(self) -> None:
+                self.enabled = False
+
+            def enable_tiling(self) -> None:
+                self.enabled = True
+
+        small = SimpleNamespace(vae=FakeVae())
+        large = SimpleNamespace(vae=FakeVae())
+        small_evidence = WORKER._configure_large_image_vae_decode(
+            small,
+            "stable-diffusion-xl",
+            SimpleNamespace(version=SimpleNamespace(hip=None)),
+            1_024,
+            1_024,
+        )
+        large_evidence = WORKER._configure_large_image_vae_decode(
+            large,
+            "stable-diffusion-xl",
+            SimpleNamespace(version=SimpleNamespace(hip=None)),
+            1_408,
+            768,
+        )
+        self.assertFalse(small.vae.enabled)
+        self.assertEqual(small_evidence["mode"], "native-full-frame")
+        self.assertTrue(large.vae.enabled)
+        self.assertEqual(large_evidence["mode"], "native-overlap-tiled")
+        self.assertEqual(large_evidence["device"], "pipeline")
+
+    def test_flux2_klein_uses_its_distilled_four_step_trajectory(self) -> None:
+        self.assertEqual(WORKER._steps("flux-2", "fast"), 4)
+        self.assertEqual(WORKER._steps("flux-2", "balanced"), 4)
+        self.assertEqual(WORKER._steps("flux-2", "quality"), 4)
+
+    def test_krea_reference_quality_uses_the_verified_attention_bound(self) -> None:
+        self.assertEqual(WORKER._dimensions("krea-2", "16:9", "fast"), (704, 384))
+        self.assertEqual(
+            WORKER._dimensions("krea-2", "16:9", "quality"),
+            (1_056, 576),
+        )
+        self.assertEqual(
+            WORKER._dimensions("flux-2", "16:9", "quality"),
+            (1_408, 768),
+        )
+
     def test_wan_endpoint_conditioning_uses_one_full_temporal_vae_encode(self) -> None:
         try:
             import torch

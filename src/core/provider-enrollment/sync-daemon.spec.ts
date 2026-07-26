@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  getCompatibleProviderSyncDaemonPid,
+  getProviderSyncDaemonRuntimeId,
   getProviderSyncDaemonDiagnosticPath,
   isProviderSyncUserWatchPath,
   isProviderSyncWorkspaceWatchPath,
@@ -109,6 +111,20 @@ describe("provider sync daemon", () => {
     try {
       const initial = await waitForDiagnostic(
         (diagnostic) => diagnostic.outcome === "success",
+      );
+      const daemonPath = join(
+        userConfigRoot,
+        "provider-enrollment",
+        "daemon.json",
+      );
+      await expect(
+        readFile(daemonPath, "utf8").then((value) => JSON.parse(value)),
+      ).resolves.toMatchObject({
+        pid: process.pid,
+        runtimeId: getProviderSyncDaemonRuntimeId(),
+      });
+      await expect(getCompatibleProviderSyncDaemonPid()).resolves.toBe(
+        process.pid,
       );
       await expect(runProviderSyncDaemon(workspaceRoot)).rejects.toThrow(
         new RegExp(`already running with PID ${process.pid}`, "u"),

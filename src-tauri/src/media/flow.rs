@@ -3944,6 +3944,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     "numFrames",
                     "numInferenceSteps",
                     "guidanceScale",
+                    "seed",
                     "negativePrompt",
                     "matteQuality",
                     "encodingQuality",
@@ -4032,6 +4033,17 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         node.id
                     ));
                 }
+            }
+            let seed = node
+                .config
+                .get("seed")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("flow node {} requires integer seed", node.id))?;
+            if seed > 9_007_199_254_740_991 {
+                return Err(format!(
+                    "flow node {} seed must be a JavaScript-safe non-negative integer",
+                    node.id
+                ));
             }
             if node.config.contains_key("negativePrompt") {
                 config_multiline_string(node, "negativePrompt", 8_000, true)?;
@@ -5377,7 +5389,7 @@ mod tests {
                 {"id":"prompt","type":"source.prompt","version":1,"label":"Motion brief","layer":"source","config":{"prompt":"A slow camera orbit"}},
                 {"id":"first","type":"source.image","version":1,"label":"First frame","layer":"source","config":{"assetId":"asset:first","referenceRole":"base","influence":1.0}},
                 {"id":"last","type":"source.image","version":1,"label":"Last frame","layer":"source","config":{"assetId":"asset:last","referenceRole":"composition","influence":1.0}},
-                {"id":"generate","type":"task.generate-video","version":1,"label":"Animate","layer":"task","config":{"providerPolicy":"local","modelPolicy":"quality","modelId":"local:wan2.2-ti2v-5b","aspectRatio":"21:9","durationSeconds":2,"resolution":"quality-768","generateAudio":false,"transparentBackground":false,"loopMode":"none","fps":24,"numFrames":33,"numInferenceSteps":24,"guidanceScale":5.5,"negativePrompt":"identity drift, texture crawl","matteQuality":"production","encodingQuality":"lossless","memoryProfile":"memory-saver","experimentalLowMemory":true}},
+                {"id":"generate","type":"task.generate-video","version":1,"label":"Animate","layer":"task","config":{"providerPolicy":"local","modelPolicy":"quality","modelId":"local:wan2.2-ti2v-5b","aspectRatio":"21:9","durationSeconds":2,"resolution":"quality-768","generateAudio":false,"transparentBackground":false,"loopMode":"none","fps":24,"numFrames":33,"numInferenceSteps":24,"guidanceScale":5.5,"seed":7,"negativePrompt":"identity drift, texture crawl","matteQuality":"production","encodingQuality":"lossless","memoryProfile":"memory-saver","experimentalLowMemory":true}},
                 {"id":"output","type":"output.video","version":1,"label":"Save video","layer":"output","config":{"format":"webm","role":"opaque"}}
             ],
             "edges": [

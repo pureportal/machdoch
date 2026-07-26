@@ -4,6 +4,28 @@ import { writeStdoutLine } from "./_helpers/cli-io.js";
 export const runCli = async (argv: string[]): Promise<void> => {
   const args = parseCliArgs(argv);
 
+  const isInternalProviderProcess =
+    args.command === "provider-sync" ||
+    (args.command === "mcp" &&
+      (args.mcp?.action === "proxy" || args.mcp?.action === "broker"));
+  const isSideEffectFreeRalphValidation =
+    args.command === "ralph" && args.ralph?.action === "validate-json";
+  if (
+    args.command !== "help" &&
+    !isInternalProviderProcess &&
+    !isSideEffectFreeRalphValidation
+  ) {
+    const { ensureAutomaticProviderSync } = await import(
+      "./_helpers/cli-provider-sync-commands.js"
+    );
+    await ensureAutomaticProviderSync(args.workspaceRoot).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`machdoch provider-sync: ${message}`);
+      },
+    );
+  }
+
   switch (args.command) {
     case "help": {
       writeStdoutLine(getHelpText());

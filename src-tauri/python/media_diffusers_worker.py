@@ -23,7 +23,11 @@ import traceback
 import types
 from typing import Any
 
-WORKER_VERSION = "media-diffusers-worker/1.18.0"
+WORKER_VERSION = "media-diffusers-worker/1.20.0"
+# Disk group files contain only checkpoint/adapter tensors. Keep their
+# compatibility identity independent from response/provenance releases until
+# that serialization contract itself changes.
+OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
 KREA_IDENTITY_EDIT_V1_2_R64_DIGEST = (
     "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423"
 )
@@ -585,7 +589,7 @@ def _krea_disk_cache_directory(
         json.dumps(
             {
                 "schemaVersion": 1,
-                "workerVersion": WORKER_VERSION,
+                "workerVersion": OFFLOAD_CACHE_COMPATIBILITY_VERSION,
                 "torchVersion": __import__("torch").__version__,
                 "diffusersVersion": __import__("diffusers").__version__,
                 "modelDigest": model_digest,
@@ -1817,7 +1821,11 @@ def _dimensions(
 ) -> tuple[int, int]:
     small = architecture in ("stable-diffusion-1", "stable-diffusion-2")
     if architecture in ("flux-2", "krea-2"):
-        scale = {"fast": 512, "balanced": 768, "quality": 1024}[policy]
+        scale = (
+            {"fast": 512, "balanced": 768, "quality": 1_024}[policy]
+            if architecture == "flux-2"
+            else {"fast": 512, "balanced": 768, "quality": 768}[policy]
+        )
         table = {
             "1:1": (scale, scale),
             "4:5": (scale // 8 * 7, scale // 8 * 9),
@@ -1840,10 +1848,105 @@ def _dimensions(
 
 def _steps(architecture: str, policy: str) -> int:
     if architecture == "flux-2":
-        return {"fast": 4, "balanced": 6, "quality": 8}[policy]
+        # FLUX.2 Klein is step-distilled for exactly four production steps.
+        # Extra steps do not turn it into the 50-step Base checkpoint and can
+        # move the sample away from the checkpoint's trained trajectory.
+        return 4
     if architecture == "krea-2":
         return {"fast": 8, "balanced": 10, "quality": 12}[policy]
     return {"fast": 16, "balanced": 24, "quality": 32}[policy]
+
+
+def _configure_large_image_vae_decode(
+    pipeline: Any,
+    architecture: str,
+    torch: Any,
+    width: int,
+    height: int,
+) -> dict[str, Any]:
+    """Use the model's overlapping tiled decoder above a 1024-pixel edge.
+
+    FLUX.2 quality canvases exceed the VAE's native 1024 sample size. On the
+    validated Windows RDNA 4 runtime a monolithic BF16 decode can dispatch an
+    unsupported MIOpen convolution after sampling has already completed.
+    Diffusers' native tiler preserves the generated latent while bounding every
+    decode convolution and blending overlaps.
+    """
+    enabled = max(width, height) > 1_024
+    vae = getattr(pipeline, "vae", None)
+    enable_tiling = getattr(vae, "enable_tiling", None)
+    if enabled and not callable(enable_tiling):
+        raise WorkerError(
+            "The selected model cannot decode its quality canvas with bounded VAE tiles"
+        )
+    if enabled:
+        enable_tiling()
+        if architecture == "flux-2":
+            # The FLUX.2 VAE's default 1024-pixel tile still dispatches a
+            # 128x128 latent convolution. Use its supported configurable tile
+            # contract to keep the CPU fallback bounded.
+            vae.tile_sample_min_size = 512
+            vae.tile_latent_min_size = 64
+    post_quant_backend = "native"
+    post_quant = getattr(vae, "post_quant_conv", None)
+    if (
+        enabled
+        and architecture == "flux-2"
+        and getattr(torch.version, "hip", None) is not None
+        and getattr(post_quant, "kernel_size", None) == (1, 1)
+    ):
+        def linear_1x1_conv(module: Any, inputs: Any) -> Any:
+            channels_last = inputs.permute(0, 2, 3, 1)
+            projected = torch.nn.functional.linear(
+                channels_last,
+                module.weight[:, :, 0, 0],
+                module.bias,
+            )
+            return projected.permute(0, 3, 1, 2).contiguous()
+
+        post_quant.forward = types.MethodType(linear_1x1_conv, post_quant)
+        post_quant_backend = "hip-linear-equivalent-1x1"
+    return {
+        "mode": (
+            "cpu-overlap-tiled"
+            if enabled
+            and architecture == "flux-2"
+            and getattr(torch.version, "hip", None) is not None
+            else "native-overlap-tiled"
+            if enabled
+            else "native-full-frame"
+        ),
+        "enabled": enabled,
+        "thresholdPixels": 1_024,
+        "postQuantBackend": post_quant_backend,
+        "device": (
+            "cpu"
+            if enabled
+            and architecture == "flux-2"
+            and getattr(torch.version, "hip", None) is not None
+            else "pipeline"
+        ),
+    }
+
+
+def _decode_flux2_latents_on_cpu(
+    pipeline: Any,
+    torch: Any,
+    latents: Any,
+) -> Any:
+    """Decode an already-sampled FLUX.2 latent without a Windows HIP conv."""
+    from accelerate.hooks import remove_hook_from_module
+
+    vae = pipeline.vae
+    remove_hook_from_module(vae, recurse=True)
+    vae.to(device=torch.device("cpu"), dtype=torch.float32)
+    host_latents = latents.detach().to(
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    with torch.inference_mode():
+        decoded = vae.decode(host_latents, return_dict=False)[0]
+    return pipeline.image_processor.postprocess(decoded, output_type="pil")[0]
 
 
 def _validate_generated_pixels(
@@ -2310,6 +2413,13 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                 grounding_pixels,
             )
     pipeline = _load_pipeline(diffusers, torch, model)
+    vae_decode_evidence = _configure_large_image_vae_decode(
+        pipeline,
+        architecture,
+        torch,
+        width,
+        height,
+    )
     (
         prompt,
         negative_prompt,
@@ -2388,6 +2498,26 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             "The selected pipeline cannot change LoRA strength during denoising"
         )
     outputs: list[dict[str, Any]] = []
+    pending_cpu_decodes: list[tuple[int, int, Any]] = []
+
+    def publish_image(index: int, image_seed: int, generated_image: Any) -> None:
+        suffix = "jpg" if output_format == "jpeg" else output_format
+        filename = f"output-{index:04d}.{suffix}"
+        destination = output_directory / filename
+        save_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}[output_format]
+        image = generated_image.convert("RGB")
+        _validate_generated_pixels(image, applied, require_chroma_background)
+        image.save(destination, format=save_format, quality=95, exif=b"")
+        outputs.append(
+            {
+                "index": index,
+                "fileName": filename,
+                "seed": image_seed,
+                "width": image.width,
+                "height": image.height,
+            }
+        )
+
     for index in range(output_count):
         if lora_names:
             pipeline.set_adapters(
@@ -2431,25 +2561,35 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             arguments["callback_on_step_end"] = _scheduled_lora_callback(
                 lora_names, lora_weights, lora_schedules, step_count
             )
+        cpu_vae_decode = vae_decode_evidence["device"] == "cpu"
+        if cpu_vae_decode:
+            arguments["output_type"] = "latent"
         result = pipeline(**arguments)
-        if not result.images:
-            raise WorkerError(f"Pipeline returned no image for output {index + 1}")
-        suffix = "jpg" if output_format == "jpeg" else output_format
-        filename = f"output-{index:04d}.{suffix}"
-        destination = output_directory / filename
-        save_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}[output_format]
-        image = result.images[0].convert("RGB")
-        _validate_generated_pixels(image, applied, require_chroma_background)
-        image.save(destination, format=save_format, quality=95, exif=b"")
-        outputs.append(
-            {
-                "index": index,
-                "fileName": filename,
-                "seed": image_seed,
-                "width": image.width,
-                "height": image.height,
-            }
+        if cpu_vae_decode:
+            if result.images is None:
+                raise WorkerError(f"Pipeline returned no latent for output {index + 1}")
+            pending_cpu_decodes.append(
+                (
+                    index,
+                    image_seed,
+                    result.images.detach().to(device=torch.device("cpu")),
+                )
+            )
+            continue
+        else:
+            if not result.images:
+                raise WorkerError(f"Pipeline returned no image for output {index + 1}")
+            generated_image = result.images[0]
+        publish_image(index, image_seed, generated_image)
+
+    for index, image_seed, latents in pending_cpu_decodes:
+        generated_image = _decode_flux2_latents_on_cpu(
+            pipeline,
+            torch,
+            latents,
         )
+        publish_image(index, image_seed, generated_image)
+    outputs.sort(key=lambda output: output["index"])
     return {
         "schemaVersion": SCHEMA_VERSION,
         "workerVersion": WORKER_VERSION,
@@ -2462,6 +2602,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         "modelPolicy": policy,
         "aspectRatio": request.get("aspectRatio"),
         "numInferenceSteps": step_count,
+        "vaeDecode": vae_decode_evidence,
         "addons": applied,
         "performance": krea_performance_evidence,
         "requireChromaBackground": require_chroma_background,
@@ -2562,7 +2703,7 @@ def _wan_disk_cache_directory(
         json.dumps(
             {
                 "schemaVersion": 1,
-                "workerVersion": WORKER_VERSION,
+                "workerVersion": OFFLOAD_CACHE_COMPATIBILITY_VERSION,
                 "torchVersion": __import__("torch").__version__,
                 "diffusersVersion": __import__("diffusers").__version__,
                 "modelDigest": model_digest,

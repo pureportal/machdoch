@@ -5,9 +5,11 @@ import {
   setPersistentProviderSyncEnabled,
 } from "../../core/provider-enrollment/config.js";
 import {
+  getCompatibleProviderSyncDaemonPid,
   getProviderSyncDaemonPid,
   requestProviderSyncRefresh,
   runProviderSyncDaemon,
+  stopProviderSyncDaemon,
 } from "../../core/provider-enrollment/sync-daemon.js";
 import {
   createProviderSyncPlan,
@@ -36,7 +38,8 @@ const printJson = (value: unknown): void => {
 const startDaemon = async (
   workspaceRoot: string,
 ): Promise<number | undefined> => {
-  const existing = await getProviderSyncDaemonPid();
+  await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
+  const existing = await getCompatibleProviderSyncDaemonPid();
   if (existing) return existing;
   const script = process.argv[1];
   if (!script) return undefined;
@@ -59,16 +62,6 @@ const startDaemon = async (
   );
   child.unref();
   return child.pid;
-};
-
-const stopDaemon = async (): Promise<void> => {
-  const pid = await getProviderSyncDaemonPid();
-  if (!pid || pid === process.pid) return;
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch {
-    // A daemon that exited between the status read and signal is already stopped.
-  }
 };
 
 const printStatusLines = (
@@ -98,20 +91,33 @@ export const ensureAutomaticProviderSync = async (
   workspaceRoot: string,
 ): Promise<void> => {
   const config = await loadProviderEnrollmentConfig();
-  if (!config.enabled || !config.persistentSync.enabled) return;
+  if (!config.enabled || !config.persistentSync.enabled) {
+    const [daemonPid, autostartInstalled] = await Promise.all([
+      getProviderSyncDaemonPid(),
+      isProviderSyncAutostartInstalled(),
+    ]);
+    if (!daemonPid && !autostartInstalled) return;
+    if (daemonPid) await stopProviderSyncDaemon();
+    if (autostartInstalled) await removeProviderSyncAutostart();
+    await reconcileProviderSync(workspaceRoot);
+    return;
+  }
   if (
     config.persistentSync.daemonAtLogin &&
     !(await isProviderSyncAutostartInstalled())
   ) {
     await installProviderSyncAutostart(workspaceRoot);
   }
-  if (config.persistentSync.watch && (await getProviderSyncDaemonPid())) {
-    // The daemon owns reconciliation while it is available. Asking it to
-    // refresh avoids making every foreground Machdoch command contend for the
-    // same global provider-enrollment lock.
-    await registerProviderSyncWorkspace(workspaceRoot);
-    await requestProviderSyncRefresh();
-    return;
+  if (config.persistentSync.watch) {
+    await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
+    if (await getCompatibleProviderSyncDaemonPid()) {
+      // The daemon owns reconciliation while it is available. Asking it to
+      // refresh avoids making every foreground Machdoch command contend for the
+      // same global provider-enrollment lock.
+      await registerProviderSyncWorkspace(workspaceRoot);
+      await requestProviderSyncRefresh();
+      return;
+    }
   }
   await reconcileProviderSync(workspaceRoot);
   if (config.persistentSync.watch) {
@@ -146,6 +152,11 @@ export const printProviderSyncSummary = async (
       const existingConfig = await loadProviderEnrollmentConfig();
       const wasEnabled =
         existingConfig.enabled && existingConfig.persistentSync.enabled;
+      if (wasEnabled) {
+        await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
+      } else {
+        await stopProviderSyncDaemon();
+      }
       const uninstallWarnings = wasEnabled
         ? []
         : await uninstallProviderSyncTargets();
@@ -191,7 +202,7 @@ export const printProviderSyncSummary = async (
     }
     case "disable": {
       await setPersistentProviderSyncEnabled(false);
-      await stopDaemon();
+      await stopProviderSyncDaemon();
       await removeProviderSyncAutostart();
       const status = await reconcileProviderSync(args.workspaceRoot);
       const result = { ...status, enabled: false };
@@ -201,6 +212,7 @@ export const printProviderSyncSummary = async (
     }
     case "refresh": {
       const config = await loadProviderEnrollmentConfig();
+      await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
       if (
         config.enabled &&
         config.persistentSync.enabled &&
@@ -208,7 +220,7 @@ export const printProviderSyncSummary = async (
       ) {
         await installProviderSyncAutostart(args.workspaceRoot);
       }
-      if (await getProviderSyncDaemonPid()) {
+      if (await getCompatibleProviderSyncDaemonPid()) {
         await requestProviderSyncRefresh();
       }
       const status = await reconcileProviderSync(args.workspaceRoot);

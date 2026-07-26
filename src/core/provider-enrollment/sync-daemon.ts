@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import { getUserConfigPath } from "../env.js";
@@ -16,12 +16,15 @@ import {
 const DAEMON_PID_FILE_NAME = "daemon.json";
 const DAEMON_DIAGNOSTIC_FILE_NAME = "daemon-diagnostic.json";
 const REFRESH_REQUEST_FILE_NAME = "refresh.request";
+const DAEMON_STOP_TIMEOUT_MS = 10_000;
+const DAEMON_STOP_POLL_MS = 50;
 
 interface DaemonRecord {
   pid: number;
   workspaceRoot: string;
   startedAt: string;
   token?: string;
+  runtimeId?: string;
 }
 
 export interface ProviderSyncDaemonDiagnostic {
@@ -57,6 +60,26 @@ const isProcessAlive = (pid: number): boolean => {
   }
 };
 
+const normalizeRuntimePath = (path: string): string => {
+  const normalized = resolve(path);
+  return process.platform === "win32"
+    ? normalized.toLocaleLowerCase("en-US")
+    : normalized;
+};
+
+export const getProviderSyncDaemonRuntimeId = (): string => {
+  const configuredCli = process.env.MACHDOCH_CLI_PATH?.trim();
+  const cliEntry = configuredCli || process.argv[1]?.trim() || "";
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        executable: normalizeRuntimePath(process.execPath),
+        cliEntry: cliEntry ? normalizeRuntimePath(cliEntry) : "",
+      }),
+    )
+    .digest("hex");
+};
+
 const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
   try {
     const parsed = JSON.parse(
@@ -73,6 +96,9 @@ const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
         workspaceRoot: parsed.workspaceRoot,
         startedAt: parsed.startedAt,
         ...(typeof parsed.token === "string" ? { token: parsed.token } : {}),
+        ...(typeof parsed.runtimeId === "string"
+          ? { runtimeId: parsed.runtimeId }
+          : {}),
       };
     }
   } catch {
@@ -124,6 +150,94 @@ export const getProviderSyncDaemonPid = async (): Promise<
   return undefined;
 };
 
+export const getCompatibleProviderSyncDaemonPid = async (): Promise<
+  number | undefined
+> => {
+  const record = await loadDaemonRecord();
+  if (
+    !record ||
+    record.runtimeId !== getProviderSyncDaemonRuntimeId() ||
+    !isProcessAlive(record.pid)
+  ) {
+    return undefined;
+  }
+  return record.pid;
+};
+
+const waitForProcessExit = async (
+  pid: number,
+  timeoutMs: number,
+): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (isProcessAlive(pid) && Date.now() < deadline) {
+    await new Promise<void>((resolveWait) => {
+      setTimeout(resolveWait, DAEMON_STOP_POLL_MS);
+    });
+  }
+  return !isProcessAlive(pid);
+};
+
+export const stopProviderSyncDaemon = async (
+  options: {
+    onlyIfRuntimeMismatch?: boolean;
+    timeoutMs?: number;
+  } = {},
+): Promise<boolean> => {
+  const record = await loadDaemonRecord();
+  if (!record || !isProcessAlive(record.pid)) return false;
+  if (
+    options.onlyIfRuntimeMismatch &&
+    record.runtimeId === getProviderSyncDaemonRuntimeId()
+  ) {
+    return false;
+  }
+  if (record.pid === process.pid) {
+    throw new Error("The provider sync daemon cannot stop its own process.");
+  }
+
+  try {
+    process.kill(record.pid, "SIGTERM");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw new Error(
+      `Failed to stop provider sync daemon PID ${record.pid}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
+  }
+
+  const stopped = await waitForProcessExit(
+    record.pid,
+    options.timeoutMs ?? DAEMON_STOP_TIMEOUT_MS,
+  );
+  if (!stopped) {
+    throw new Error(
+      `Provider sync daemon PID ${record.pid} did not stop within ${
+        options.timeoutMs ?? DAEMON_STOP_TIMEOUT_MS
+      }ms.`,
+    );
+  }
+
+  await withCooperativeFileLock(
+    getDaemonPath(),
+    async () => {
+      const current = await loadDaemonRecord();
+      if (
+        current?.pid === record.pid &&
+        current.startedAt === record.startedAt &&
+        current.token === record.token
+      ) {
+        await rm(getDaemonPath(), { force: true });
+      }
+    },
+    {
+      ownerDescription: "provider-sync daemon shutdown cleanup",
+    },
+  );
+  return true;
+};
+
 const acquireDaemon = async (
   workspaceRoot: string,
 ): Promise<() => Promise<void>> => {
@@ -150,6 +264,7 @@ const acquireDaemon = async (
               workspaceRoot,
               startedAt: new Date().toISOString(),
               token,
+              runtimeId: getProviderSyncDaemonRuntimeId(),
             } satisfies DaemonRecord,
             null,
             2,
