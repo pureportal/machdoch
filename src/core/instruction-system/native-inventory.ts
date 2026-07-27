@@ -18,6 +18,7 @@ import {
   sha256,
 } from "./normalization.js";
 import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
+import { sameFileSnapshotIdentity } from "../_helpers/same-file-identity.helper.js";
 import type {
   LocalInstructionRecord,
   NativeInstructionRecord,
@@ -59,10 +60,7 @@ const sameFileIdentity = (
 ): boolean =>
   before.isFile() === after.isFile() &&
   before.isSymbolicLink() === after.isSymbolicLink() &&
-  before.dev === after.dev &&
-  before.ino === after.ino &&
-  before.size === after.size &&
-  before.mtimeMs === after.mtimeMs;
+  sameFileSnapshotIdentity(before, after);
 
 const sameDirectoryIdentity = (
   before: Awaited<ReturnType<typeof lstat>>,

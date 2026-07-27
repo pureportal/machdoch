@@ -9,6 +9,10 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { getUserConfigPath } from "../env.js";
+import {
+  sameFileObjectIdentity,
+  sameFileSnapshotIdentity,
+} from "../_helpers/same-file-identity.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import {
   writeFileAtomically,
@@ -436,16 +440,9 @@ const readInstructionLibraryBytes = async (
   if (
     afterPath.isSymbolicLink() ||
     !afterPath.isFile() ||
-    metadata.dev !== opened.dev ||
-    metadata.ino !== opened.ino ||
-    opened.dev !== afterRead.dev ||
-    opened.ino !== afterRead.ino ||
-    opened.size !== afterRead.size ||
-    opened.mtimeMs !== afterRead.mtimeMs ||
-    afterRead.dev !== afterPath.dev ||
-    afterRead.ino !== afterPath.ino ||
-    afterRead.size !== afterPath.size ||
-    afterRead.mtimeMs !== afterPath.mtimeMs
+    !sameFileObjectIdentity(metadata, opened) ||
+    !sameFileSnapshotIdentity(opened, afterRead) ||
+    !sameFileSnapshotIdentity(afterRead, afterPath)
   ) {
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_CHANGED_DURING_READ",

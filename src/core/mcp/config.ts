@@ -1,20 +1,12 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-} from "node:fs";
-import { lstat, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { getUserConfigPath } from "../env.js";
+import {
+  readStableRegularFile,
+  readStableRegularFileSync,
+} from "../_helpers/read-stable-regular-file.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
-import {
-  readOpenedFileExactly,
-  readOpenedFileExactlySync,
-} from "../_helpers/read-opened-file-exactly.helper.js";
 import type { ToolCallEffect, ToolRiskLevel } from "../types.js";
 import { enrichMcpDiscoveryMetadata } from "./discovery-metadata.js";
 import { getMcpPreset, listMcpPresets } from "./presets.js";
@@ -76,31 +68,6 @@ const DEFAULT_MCP_DEFAULTS: McpEffectiveDefaults = {
 };
 const MAX_MCP_CONFIGURATION_FILE_BYTES = 16 * 1024 * 1024;
 
-const isMissingFileError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  error.code === "ENOENT";
-
-const sameMcpFileIdentity = (
-  before: {
-    dev: number | bigint;
-    ino: number | bigint;
-    size: number | bigint;
-    mtimeMs: number;
-  },
-  after: {
-    dev: number | bigint;
-    ino: number | bigint;
-    size: number | bigint;
-    mtimeMs: number;
-  },
-): boolean =>
-  before.dev === after.dev &&
-  before.ino === after.ino &&
-  before.size === after.size &&
-  before.mtimeMs === after.mtimeMs;
-
 const decodeMcpConfigurationBytes = (
   path: string,
   bytes: Uint8Array,
@@ -117,97 +84,23 @@ const decodeMcpConfigurationBytes = (
 const readStableMcpConfigurationFile = async (
   path: string,
 ): Promise<string | undefined> => {
-  let beforePath;
-  try {
-    beforePath = await lstat(path);
-  } catch (error) {
-    if (isMissingFileError(error)) return undefined;
-    throw error;
-  }
-  if (
-    !beforePath.isFile() ||
-    beforePath.isSymbolicLink() ||
-    beforePath.size > MAX_MCP_CONFIGURATION_FILE_BYTES
-  ) {
-    throw new Error(
-      `${path} must be a regular, unlinked file no larger than ${MAX_MCP_CONFIGURATION_FILE_BYTES} bytes.`,
-    );
-  }
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(
-      path,
-      constants.O_RDONLY |
-        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
-    );
-    const beforeOpened = await handle.stat();
-    if (!sameMcpFileIdentity(beforePath, beforeOpened)) {
-      throw new Error(`${path} changed before it could be opened safely.`);
-    }
-    const bytes = await readOpenedFileExactly(handle, beforeOpened.size);
-    const [afterOpened, afterPath] = await Promise.all([
-      handle.stat(),
-      lstat(path),
-    ]);
-    if (
-      !sameMcpFileIdentity(beforeOpened, afterOpened) ||
-      !sameMcpFileIdentity(beforeOpened, afterPath)
-    ) {
-      throw new Error(`${path} changed while it was being read.`);
-    }
-    return decodeMcpConfigurationBytes(path, bytes);
-  } finally {
-    await handle?.close();
-  }
+  const bytes = await readStableRegularFile(path, {
+    maxBytes: MAX_MCP_CONFIGURATION_FILE_BYTES,
+  });
+  return bytes === undefined
+    ? undefined
+    : decodeMcpConfigurationBytes(path, bytes);
 };
 
 const readStableMcpConfigurationFileSync = (
   path: string,
 ): string | undefined => {
-  let beforePath;
-  try {
-    beforePath = lstatSync(path);
-  } catch (error) {
-    if (isMissingFileError(error)) return undefined;
-    throw error;
-  }
-  if (
-    !beforePath.isFile() ||
-    beforePath.isSymbolicLink() ||
-    beforePath.size > MAX_MCP_CONFIGURATION_FILE_BYTES
-  ) {
-    throw new Error(
-      `${path} must be a regular, unlinked file no larger than ${MAX_MCP_CONFIGURATION_FILE_BYTES} bytes.`,
-    );
-  }
-  const descriptor = openSync(
-    path,
-    constants.O_RDONLY |
-      (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
-  );
-  try {
-    const beforeOpened = fstatSync(descriptor);
-    if (!sameMcpFileIdentity(beforePath, beforeOpened)) {
-      throw new Error(`${path} changed before it could be opened safely.`);
-    }
-    const bytes = readOpenedFileExactlySync(
-      descriptor,
-      beforeOpened.size,
-    );
-    const [afterOpened, afterPath] = [
-      fstatSync(descriptor),
-      lstatSync(path),
-    ];
-    if (
-      !sameMcpFileIdentity(beforeOpened, afterOpened) ||
-      !sameMcpFileIdentity(beforeOpened, afterPath)
-    ) {
-      throw new Error(`${path} changed while it was being read.`);
-    }
-    return decodeMcpConfigurationBytes(path, bytes);
-  } finally {
-    closeSync(descriptor);
-  }
+  const bytes = readStableRegularFileSync(path, {
+    maxBytes: MAX_MCP_CONFIGURATION_FILE_BYTES,
+  });
+  return bytes === undefined
+    ? undefined
+    : decodeMcpConfigurationBytes(path, bytes);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {

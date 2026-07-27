@@ -1,5 +1,6 @@
 import { lstat, open, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { sameFileObjectIdentity } from "../_helpers/same-file-identity.helper.js";
 import { writeFileAtomically } from "../_helpers/write-file-atomically.helper.js";
 import {
   assertContainedPath,
@@ -130,8 +131,7 @@ export const createLocalInstruction = async (
       );
       if (
         current &&
-        current.dev === createdIdentity.dev &&
-        current.ino === createdIdentity.ino
+        sameFileObjectIdentity(current, createdIdentity)
       ) {
         await rm(target.path).catch(() => undefined);
       }

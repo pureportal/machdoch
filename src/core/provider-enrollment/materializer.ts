@@ -3,12 +3,10 @@ import {
   lstat,
   mkdir,
   mkdtemp,
-  open,
   readdir,
   realpath,
   rm,
 } from "node:fs/promises";
-import { constants } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import {
   basename,
@@ -36,7 +34,9 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
+import {
+  readStableRegularFile as readStableRegularFileBytes,
+} from "../_helpers/read-stable-regular-file.helper.js";
 import { probeProviderCli } from "./capability-registry.js";
 import {
   claudePlanUsesSubagentEnvelope,
@@ -155,77 +155,22 @@ const isContainedTemporarySession = async (path: string): Promise<boolean> => {
   );
 };
 
-const sameFileIdentity = (
-  before: {
-    dev: number | bigint;
-    ino: number | bigint;
-    size: number | bigint;
-    mtimeMs: number;
-  },
-  after: {
-    dev: number | bigint;
-    ino: number | bigint;
-    size: number | bigint;
-    mtimeMs: number;
-  },
-): boolean =>
-  before.dev === after.dev &&
-  before.ino === after.ino &&
-  before.size === after.size &&
-  before.mtimeMs === after.mtimeMs;
-
 const readStableRegularFile = async (
   path: string,
   maxBytes: number,
   label: string,
-): Promise<Buffer | undefined> => {
-  let beforePath;
-  try {
-    beforePath = await lstat(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-  if (
-    !beforePath.isFile() ||
-    beforePath.isSymbolicLink() ||
-    beforePath.size > maxBytes
-  ) {
-    throw new Error(
-      `${label} must be a regular, unlinked file no larger than ${maxBytes} bytes: ${path}`,
-    );
-  }
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(
-      path,
-      constants.O_RDONLY |
-        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
-    );
-    const beforeOpened = await handle.stat();
-    if (!sameFileIdentity(beforePath, beforeOpened)) {
-      throw new Error(`${label} changed before it could be opened safely: ${path}`);
-    }
-    const content = await readOpenedFileExactly(handle, beforeOpened.size);
-    const [afterOpened, afterPath] = await Promise.all([
-      handle.stat(),
-      lstat(path),
-    ]);
-    if (
-      afterPath.isSymbolicLink() ||
-      !afterPath.isFile() ||
-      !sameFileIdentity(beforeOpened, afterOpened) ||
-      !sameFileIdentity(beforeOpened, afterPath)
-    ) {
-      throw new Error(`${label} changed while it was being read: ${path}`);
-    }
-    return content;
-  } finally {
-    await handle?.close();
-  }
-};
+): Promise<Buffer | undefined> =>
+  readStableRegularFileBytes(path, {
+    maxBytes,
+    messages: {
+      invalid: (targetPath, limit) =>
+        `${label} must be a regular, unlinked file no larger than ${limit} bytes: ${targetPath}`,
+      changedBeforeOpen: (targetPath) =>
+        `${label} changed before it could be opened safely: ${targetPath}`,
+      changedWhileReading: (targetPath) =>
+        `${label} changed while it was being read: ${targetPath}`,
+    },
+  });
 
 const decodeStrictUtf8 = (content: Uint8Array, label: string): string => {
   try {

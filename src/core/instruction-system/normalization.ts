@@ -13,6 +13,10 @@ import {
   stableJson,
 } from "../provider-enrollment/digests.js";
 import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
+import {
+  sameFileObjectIdentity,
+  sameFileSnapshotIdentity,
+} from "../_helpers/same-file-identity.helper.js";
 import { InstructionSystemError } from "./types.js";
 
 export const MAX_INSTRUCTION_SOURCE_BYTES = 128 * 1024;
@@ -169,16 +173,9 @@ export const readNormalizedInstructionFile = async (
     const stable =
       !afterPath.isSymbolicLink() &&
       afterPath.isFile() &&
-      beforePath.dev === before.dev &&
-      beforePath.ino === before.ino &&
-      before.dev === after.dev &&
-      before.ino === after.ino &&
-      before.size === after.size &&
-      before.mtimeMs === after.mtimeMs &&
-      after.dev === afterPath.dev &&
-      after.ino === afterPath.ino &&
-      after.size === afterPath.size &&
-      after.mtimeMs === afterPath.mtimeMs;
+      sameFileObjectIdentity(beforePath, before) &&
+      sameFileSnapshotIdentity(before, after) &&
+      sameFileSnapshotIdentity(after, afterPath);
     if (stable) {
       firstIdentity = `${beforeIdentity}:${afterIdentity}`;
       break;

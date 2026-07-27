@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, mkdir, open, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
-import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
+import { readStableRegularFile } from "../_helpers/read-stable-regular-file.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import {
   writeFileAtomically,
@@ -274,87 +273,24 @@ export interface StableManagedTargetSnapshot {
   contentDigest: string;
 }
 
-const isMissingFileError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  error.code === "ENOENT";
-
-const sameFileIdentity = (
-  left: {
-    dev: number | bigint;
-    ino: number | bigint;
-    size: number | bigint;
-    mtimeMs: number;
-  },
-  right: {
-    dev: number | bigint;
-    ino: number | bigint;
-    size: number | bigint;
-    mtimeMs: number;
-  },
-): boolean =>
-  left.dev === right.dev &&
-  left.ino === right.ino &&
-  left.size === right.size &&
-  left.mtimeMs === right.mtimeMs;
-
 export const readStableManagedTarget = async (
   path: string,
 ): Promise<StableManagedTargetSnapshot | undefined> => {
-  let pathState;
+  const bytes = await readStableRegularFile(path, {
+    maxBytes: MAX_MANAGED_TARGET_BYTES,
+  });
+  if (bytes === undefined) return undefined;
+
+  let content: string;
   try {
-    pathState = await lstat(path);
+    content = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(bytes);
   } catch (error) {
-    if (isMissingFileError(error)) return undefined;
-    throw error;
+    throw new Error(`${path} is not valid UTF-8.`, { cause: error });
   }
-  if (
-    !pathState.isFile() ||
-    pathState.isSymbolicLink() ||
-    pathState.size > MAX_MANAGED_TARGET_BYTES
-  ) {
-    throw new Error(
-      `${path} must be a regular, unlinked file no larger than ${MAX_MANAGED_TARGET_BYTES} bytes.`,
-    );
-  }
-
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(
-      path,
-      constants.O_RDONLY |
-        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
-    );
-    const openedState = await handle.stat();
-    if (!sameFileIdentity(pathState, openedState)) {
-      throw new Error(`${path} changed before it could be opened safely.`);
-    }
-    const bytes = await readOpenedFileExactly(handle, openedState.size);
-    const [finalOpenedState, finalPathState] = await Promise.all([
-      handle.stat(),
-      lstat(path),
-    ]);
-    if (
-      !sameFileIdentity(openedState, finalOpenedState) ||
-      !sameFileIdentity(openedState, finalPathState)
-    ) {
-      throw new Error(`${path} changed while it was being read.`);
-    }
-
-    let content: string;
-    try {
-      content = new TextDecoder("utf-8", {
-        fatal: true,
-        ignoreBOM: true,
-      }).decode(bytes);
-    } catch (error) {
-      throw new Error(`${path} is not valid UTF-8.`, { cause: error });
-    }
-    return { content, contentDigest: sha256(bytes) };
-  } finally {
-    await handle?.close();
-  }
+  return { content, contentDigest: sha256(bytes) };
 };
 
 export const assertStableManagedTargetUnchanged = async (
