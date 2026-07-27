@@ -772,6 +772,11 @@ export interface RemoteShellContextPackSnapshot {
   model?: string;
   mode?: string;
   reasoning?: string;
+  promptEnhancementMode?: string;
+  interviewEnabled?: boolean;
+  sessionMemoryEnabled?: boolean;
+  useGlobalMemory?: boolean;
+  uiControlEnabled?: boolean;
 }
 
 export interface RemoteShellVoiceSnapshot {

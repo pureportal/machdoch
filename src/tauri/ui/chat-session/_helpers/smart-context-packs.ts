@@ -7,9 +7,12 @@ import {
   isPathContextAttachment,
   normalizeShellState,
   type ChatSessionContextAttachment,
+  type ChatSessionMessagePromptEnhancementMode,
   type ChatSessionPathContextAttachment,
+  type ChatSessionRecord,
   type ShellPersistedState,
   type SmartContextPack,
+  type SmartContextPackSettingOverrides,
   type SmartContextPackVariable,
 } from "../../chat-session.model";
 import type {
@@ -17,8 +20,9 @@ import type {
 } from "../../model-catalog";
 import { getProviderLabel } from "../../model-catalog";
 import { mergeContextAttachments } from "./session-context-attachments";
+import { normalizeSessionReasoningOverride } from "./session-reasoning";
 
-export interface SaveSmartContextPackInput {
+export interface SaveSmartContextPackInput extends SmartContextPackSettingOverrides {
   id?: string;
   name: string;
   scope: SmartContextPackScope;
@@ -29,15 +33,21 @@ export interface SaveSmartContextPackInput {
   triggerPhrases: string[];
   triggerPathPatterns: string[];
   autoApply: boolean;
-  provider?: RuntimeProvider;
-  model?: string;
-  mode?: RunMode;
-  reasoning?: ReasoningMode;
 }
 
 export interface SmartContextPackComposerApplication {
   draft: string;
   contextAttachments: ChatSessionContextAttachment[];
+}
+
+export interface SmartContextPackComposerSettingState {
+  promptEnhancementMode: ChatSessionMessagePromptEnhancementMode;
+  interviewEnabled: boolean;
+}
+
+export interface SmartContextPackModelSelection {
+  provider: RuntimeProvider;
+  model: string;
 }
 
 export interface SmartContextPackMatchInput {
@@ -149,6 +159,131 @@ export const getContextPackReasoningLabel = (
   }
 
   return `${reasoning} reasoning`;
+};
+
+export const getSmartContextPackModelSelection = (
+  pack: Pick<SmartContextPack, "model" | "provider">,
+  availableProviders: readonly RuntimeProvider[],
+): SmartContextPackModelSelection | null => {
+  if (
+    !pack.provider ||
+    !pack.model ||
+    !availableProviders.includes(pack.provider)
+  ) {
+    return null;
+  }
+
+  return {
+    provider: pack.provider,
+    model: pack.model,
+  };
+};
+
+export const applySmartContextPackSettingsToSession = (
+  session: ChatSessionRecord,
+  pack: SmartContextPack,
+  modelSelection: SmartContextPackModelSelection | null,
+): ChatSessionRecord => {
+  const nextSession = { ...session };
+
+  if (modelSelection) {
+    nextSession.provider = modelSelection.provider;
+    nextSession.model = modelSelection.model;
+  }
+
+  if (pack.mode) {
+    nextSession.mode = pack.mode;
+  }
+
+  const nextReasoning = normalizeSessionReasoningOverride(
+    pack.reasoning ?? nextSession.reasoning,
+    nextSession.provider,
+    nextSession.model,
+  );
+
+  if (nextReasoning) {
+    nextSession.reasoning = nextReasoning;
+  } else {
+    delete nextSession.reasoning;
+  }
+
+  if (pack.sessionMemoryEnabled !== undefined) {
+    nextSession.sessionMemoryEnabled = pack.sessionMemoryEnabled;
+  }
+
+  if (pack.useGlobalMemory !== undefined) {
+    nextSession.useGlobalMemory = pack.useGlobalMemory;
+  }
+
+  if (pack.uiControlEnabled !== undefined) {
+    nextSession.uiControlEnabled = pack.uiControlEnabled;
+  }
+
+  return nextSession;
+};
+
+export const applySmartContextPackSettingsToShellDefaults = (
+  state: ShellPersistedState,
+  pack: SmartContextPack,
+  modelSelection: SmartContextPackModelSelection | null,
+): ShellPersistedState => {
+  const nextState = { ...state };
+
+  if (modelSelection) {
+    nextState.lastSelectedProvider = modelSelection.provider;
+    nextState.lastSelectedModelByProvider = {
+      ...state.lastSelectedModelByProvider,
+      [modelSelection.provider]: modelSelection.model,
+    };
+  }
+
+  if (pack.mode) {
+    nextState.lastSelectedMode = pack.mode;
+  }
+
+  if (pack.reasoning || modelSelection) {
+    const reasoningProvider =
+      modelSelection?.provider ?? state.lastSelectedProvider;
+    const reasoningModel =
+      modelSelection?.model ??
+      state.lastSelectedModelByProvider[reasoningProvider];
+    const nextReasoning = normalizeSessionReasoningOverride(
+      pack.reasoning ?? state.lastSelectedReasoning,
+      reasoningProvider,
+      reasoningModel,
+    );
+
+    if (nextReasoning) {
+      nextState.lastSelectedReasoning = nextReasoning;
+    } else {
+      delete nextState.lastSelectedReasoning;
+    }
+  }
+
+  if (pack.sessionMemoryEnabled !== undefined) {
+    nextState.lastSelectedSessionMemoryEnabled = pack.sessionMemoryEnabled;
+  }
+
+  if (pack.useGlobalMemory !== undefined) {
+    nextState.lastSelectedUseGlobalMemory = pack.useGlobalMemory;
+  }
+
+  if (pack.uiControlEnabled !== undefined) {
+    nextState.lastSelectedUiControlEnabled = pack.uiControlEnabled;
+  }
+
+  return nextState;
+};
+
+export const applySmartContextPackSettingsToComposer = (
+  settings: SmartContextPackComposerSettingState,
+  pack: Pick<SmartContextPack, "interviewEnabled" | "promptEnhancementMode">,
+): SmartContextPackComposerSettingState => {
+  return {
+    promptEnhancementMode:
+      pack.promptEnhancementMode ?? settings.promptEnhancementMode,
+    interviewEnabled: pack.interviewEnabled ?? settings.interviewEnabled,
+  };
 };
 
 const normalizeVariableName = (value: string): string => {

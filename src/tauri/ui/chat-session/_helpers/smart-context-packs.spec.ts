@@ -5,10 +5,14 @@ import {
 } from "../../chat-session.model";
 import {
   applySmartContextPackToComposer,
+  applySmartContextPackSettingsToComposer,
+  applySmartContextPackSettingsToSession,
+  applySmartContextPackSettingsToShellDefaults,
   createSmartContextPackExportPayload,
   doesSmartContextPackMatchComposer,
   extractSmartContextPackVariables,
   filterSmartContextPacksByScope,
+  getSmartContextPackModelSelection,
   getSmartContextPackMissingVariableNames,
   getSmartContextPacksForWorkspace,
   importSmartContextPacksIntoShellState,
@@ -101,6 +105,151 @@ describe("smart context packs", () => {
         name: "plan.md",
       },
     ]);
+  });
+
+  it("keeps current settings when a pack has no saved overrides", () => {
+    const state = {
+      ...createInitialShellState(),
+      lastSelectedSessionMemoryEnabled: true,
+      lastSelectedUseGlobalMemory: false,
+      lastSelectedUiControlEnabled: true,
+    };
+    const session = {
+      ...state.sessions[0],
+      sessionMemoryEnabled: true,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
+    };
+    const pack = createPack({
+      provider: undefined,
+      model: undefined,
+      mode: undefined,
+      reasoning: undefined,
+    });
+
+    const nextSession = applySmartContextPackSettingsToSession(
+      session,
+      pack,
+      null,
+    );
+    const nextDefaults = applySmartContextPackSettingsToShellDefaults(
+      state,
+      pack,
+      null,
+    );
+    const nextComposer = applySmartContextPackSettingsToComposer(
+      {
+        promptEnhancementMode: "web-search",
+        interviewEnabled: true,
+      },
+      pack,
+    );
+
+    expect(nextSession).toMatchObject({
+      sessionMemoryEnabled: true,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
+    });
+    expect(nextDefaults).toMatchObject({
+      lastSelectedSessionMemoryEnabled: true,
+      lastSelectedUseGlobalMemory: false,
+      lastSelectedUiControlEnabled: true,
+    });
+    expect(nextComposer).toEqual({
+      promptEnhancementMode: "web-search",
+      interviewEnabled: true,
+    });
+  });
+
+  it.each([
+    {
+      label: "enabled",
+      promptEnhancementMode: "simple" as const,
+      interviewEnabled: true,
+    },
+    {
+      label: "disabled",
+      promptEnhancementMode: "off" as const,
+      interviewEnabled: false,
+    },
+  ])(
+    "applies explicitly $label Prompt Enhancer and interview overrides",
+    ({ promptEnhancementMode, interviewEnabled }) => {
+      expect(
+        applySmartContextPackSettingsToComposer(
+          {
+            promptEnhancementMode:
+              promptEnhancementMode === "off" ? "simple" : "off",
+            interviewEnabled: !interviewEnabled,
+          },
+          createPack({
+            promptEnhancementMode,
+            interviewEnabled,
+          }),
+        ),
+      ).toEqual({
+        promptEnhancementMode,
+        interviewEnabled,
+      });
+    },
+  );
+
+  it("applies saved session settings and remembers them for new chats", () => {
+    const state = createInitialShellState();
+    const session = {
+      ...state.sessions[0],
+      provider: "openai" as const,
+      model: "gpt-5.5",
+      mode: "machdoch" as const,
+      reasoning: "high" as const,
+      sessionMemoryEnabled: true,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
+    };
+    const pack = createPack({
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      mode: "ask",
+      reasoning: "default",
+      sessionMemoryEnabled: false,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
+    });
+    const modelSelection = getSmartContextPackModelSelection(pack, [
+      "openai",
+      "anthropic",
+    ]);
+    const nextSession = applySmartContextPackSettingsToSession(
+      session,
+      pack,
+      modelSelection,
+    );
+    const nextDefaults = applySmartContextPackSettingsToShellDefaults(
+      state,
+      pack,
+      modelSelection,
+    );
+
+    expect(nextSession).toMatchObject({
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      mode: "ask",
+      sessionMemoryEnabled: false,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
+    });
+    expect(nextSession.reasoning).toBeUndefined();
+    expect(nextDefaults).toMatchObject({
+      lastSelectedProvider: "anthropic",
+      lastSelectedModelByProvider: {
+        anthropic: "claude-sonnet-4-6",
+      },
+      lastSelectedMode: "ask",
+      lastSelectedSessionMemoryEnabled: false,
+      lastSelectedUseGlobalMemory: true,
+      lastSelectedUiControlEnabled: false,
+    });
+    expect(nextDefaults.lastSelectedReasoning).toBeUndefined();
   });
 
   it("substitutes variables when applying a pack", () => {
@@ -281,6 +430,11 @@ describe("smart context packs", () => {
       workspace: "C:\\Source",
       useCount: 4,
       lastUsedAt: 10,
+      promptEnhancementMode: "simple",
+      interviewEnabled: false,
+      sessionMemoryEnabled: true,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
     });
     const payload = createSmartContextPackExportPayload([exportedPack], 15);
     const state = importSmartContextPacksIntoShellState(
@@ -301,6 +455,11 @@ describe("smart context packs", () => {
       createdAt: 20,
       updatedAt: 20,
       useCount: 0,
+      promptEnhancementMode: "simple",
+      interviewEnabled: false,
+      sessionMemoryEnabled: true,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
     });
     expect(state.contextPacks[0]?.id).not.toBe("pack-1");
     expect(state.contextPacks[1]?.name).toBe("Existing");

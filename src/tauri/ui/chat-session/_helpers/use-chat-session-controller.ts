@@ -177,12 +177,16 @@ import {
 } from "./session-task-continuation";
 import {
   applySmartContextPackToComposer,
+  applySmartContextPackSettingsToComposer,
+  applySmartContextPackSettingsToSession,
+  applySmartContextPackSettingsToShellDefaults,
   cloneContextAttachmentsForPack,
   createSmartContextPackExportPayload,
   createSmartContextPackVariables,
   doesSmartContextPackMatchComposer,
   extractSmartContextPackVariables,
   filterSmartContextPacksByScope,
+  getSmartContextPackModelSelection,
   getSmartContextPacksForWorkspace,
   importSmartContextPacksIntoShellState,
   isSmartContextPackAppliedToDraft,
@@ -3600,6 +3604,17 @@ export const useChatSessionController = (
       const model = provider ? input.model?.trim() : undefined;
       const mode = input.mode;
       const reasoning = input.reasoning;
+      const promptEnhancementMode = input.promptEnhancementMode;
+      const interviewEnabled = input.interviewEnabled;
+      const sessionMemoryEnabled = input.sessionMemoryEnabled;
+      const useGlobalMemory = input.useGlobalMemory;
+      const uiControlEnabled = input.uiControlEnabled;
+      const hasOptionalSettingOverride =
+        promptEnhancementMode !== undefined ||
+        interviewEnabled !== undefined ||
+        sessionMemoryEnabled !== undefined ||
+        useGlobalMemory !== undefined ||
+        uiControlEnabled !== undefined;
 
       if (
         !instructions &&
@@ -3607,7 +3622,8 @@ export const useChatSessionController = (
         contextAttachments.length === 0 &&
         !provider &&
         !mode &&
-        !reasoning
+        !reasoning &&
+        !hasOptionalSettingOverride
       ) {
         return;
       }
@@ -3635,6 +3651,15 @@ export const useChatSessionController = (
           ...(provider && model ? { model } : {}),
           ...(mode ? { mode } : {}),
           ...(reasoning ? { reasoning } : {}),
+          ...(promptEnhancementMode !== undefined
+            ? { promptEnhancementMode }
+            : {}),
+          ...(interviewEnabled !== undefined ? { interviewEnabled } : {}),
+          ...(sessionMemoryEnabled !== undefined
+            ? { sessionMemoryEnabled }
+            : {}),
+          ...(useGlobalMemory !== undefined ? { useGlobalMemory } : {}),
+          ...(uiControlEnabled !== undefined ? { uiControlEnabled } : {}),
           createdAt: existingPack?.createdAt ?? now,
           updatedAt: now,
           ...(existingPack?.lastUsedAt !== undefined
@@ -3717,14 +3742,10 @@ export const useChatSessionController = (
         ...pack,
         contextAttachments,
       };
-      const savedProvider = pack.provider;
-      const savedModel = pack.model;
-      const savedModelSelection =
-        savedProvider !== undefined &&
-        savedModel !== undefined &&
-        providerChooserState.chooserProviders.includes(savedProvider)
-          ? { provider: savedProvider, model: savedModel }
-          : null;
+      const savedModelSelection = getSmartContextPackModelSelection(
+        pack,
+        providerChooserState.chooserProviders,
+      );
 
       if (targetMessageEdit) {
         setMessageEdit((current) => {
@@ -3739,36 +3760,27 @@ export const useChatSessionController = (
             variableValues,
           );
           const now = Date.now();
-          const nextSession: ChatSessionRecord = {
+          const nextSession = applySmartContextPackSettingsToSession(
+            {
             ...current.session,
             draft: application.draft,
             draftContextAttachments: application.contextAttachments,
             updatedAt: now,
-          };
-
-          if (savedModelSelection) {
-            nextSession.provider = savedModelSelection.provider;
-            nextSession.model = savedModelSelection.model;
-          }
-
-          if (pack.mode) {
-            nextSession.mode = pack.mode;
-          }
-
-          const nextReasoning = normalizeSessionReasoningOverride(
-            pack.reasoning ?? nextSession.reasoning,
-            nextSession.provider,
-            nextSession.model,
+            },
+            pack,
+            savedModelSelection,
           );
-
-          if (nextReasoning) {
-            nextSession.reasoning = nextReasoning;
-          } else {
-            delete nextSession.reasoning;
-          }
+          const nextComposerSettings = applySmartContextPackSettingsToComposer(
+            {
+              promptEnhancementMode: current.promptEnhancementMode,
+              interviewEnabled: current.interviewEnabled,
+            },
+            pack,
+          );
 
           return {
             ...current,
+            ...nextComposerSettings,
             session: nextSession,
           };
         });
@@ -3849,80 +3861,46 @@ export const useChatSessionController = (
               packForApplication,
               variableValues,
             );
-            const nextSession: ChatSessionRecord = {
+            return applySmartContextPackSettingsToSession(
+              {
               ...session,
               draft: application.draft,
               draftContextAttachments: application.contextAttachments,
               composerUpdatedAt: now,
               updatedAt: now,
-            };
-
-            if (savedModelSelection) {
-              nextSession.provider = savedModelSelection.provider;
-              nextSession.model = savedModelSelection.model;
-            }
-
-            if (pack.mode) {
-              nextSession.mode = pack.mode;
-            }
-
-            const nextReasoning = normalizeSessionReasoningOverride(
-              pack.reasoning ?? nextSession.reasoning,
-              nextSession.provider,
-              nextSession.model,
+              },
+              pack,
+              savedModelSelection,
             );
-
-            if (nextReasoning) {
-              nextSession.reasoning = nextReasoning;
-            } else {
-              delete nextSession.reasoning;
-            }
-
-            return nextSession;
           }),
         };
 
-        if (savedModelSelection) {
-          nextState.lastSelectedProvider = savedModelSelection.provider;
-          nextState.lastSelectedModelByProvider = {
-            ...prev.lastSelectedModelByProvider,
-            [savedModelSelection.provider]: savedModelSelection.model,
-          };
-        }
-
-        if (pack.mode) {
-          nextState.lastSelectedMode = pack.mode;
-        }
-
-        if (pack.reasoning || savedModelSelection) {
-          const reasoningProvider =
-            savedModelSelection?.provider ?? prev.lastSelectedProvider;
-          const reasoningModel =
-            savedModelSelection?.model ??
-            prev.lastSelectedModelByProvider[reasoningProvider];
-          const nextLastSelectedReasoning = normalizeSessionReasoningOverride(
-            pack.reasoning ?? prev.lastSelectedReasoning,
-            reasoningProvider,
-            reasoningModel,
+        return applySmartContextPackSettingsToShellDefaults(
+          nextState,
+          pack,
+          savedModelSelection,
           );
-
-          if (nextLastSelectedReasoning) {
-            nextState.lastSelectedReasoning = nextLastSelectedReasoning;
-          } else {
-            delete nextState.lastSelectedReasoning;
-          }
-        }
-
-        return nextState;
       });
 
       if (didApplyPack && activeSessionIdRef.current === targetSessionId) {
+        const nextComposerSettings = applySmartContextPackSettingsToComposer(
+          {
+            promptEnhancementMode,
+            interviewEnabled: chatInterviewEnabled,
+          },
+          pack,
+        );
+
+        setPromptEnhancementMode(nextComposerSettings.promptEnhancementMode);
+        setChatInterviewEnabled(nextComposerSettings.interviewEnabled);
         composerState.resetDraftHistoryState();
       }
     },
     [
       composerState.commitHistoryPreview,
       composerState.resetDraftHistoryState,
+      chatInterviewEnabled,
+      promptEnhancementMode,
       providerChooserState.chooserProviders,
       state.activeSession.id,
       state.applyShellState,
@@ -4016,48 +3994,49 @@ export const useChatSessionController = (
           );
       const name =
         prompt.replace(/\s+/gu, " ").slice(0, 48).trim() || "Context pack";
+      const messageSettings = message.settings;
 
-      state.applyShellState((prev) => {
-        const now = Date.now();
-        const pack: SmartContextPack = {
-          id: crypto.randomUUID(),
-          workspace: state.activeSession.workspace,
+      handleSaveContextPack({
           name,
+        scope: state.activeSession.workspace ? "workspace" : "global",
           instructions: "",
           prompt,
-          contextAttachments:
-            cloneContextAttachmentsForPack(contextAttachments),
-          variables: createSmartContextPackVariables(
-            extractSmartContextPackVariables(prompt),
-          ),
-          trigger: {
-            phrases: [],
-            pathPatterns: [],
+        contextAttachments,
+        variables: extractSmartContextPackVariables(prompt),
+        triggerPhrases: [],
+        triggerPathPatterns: [],
             autoApply: false,
-          },
-          provider: state.activeSession.provider,
-          model: state.activeSession.model,
-          mode: activeRunMode,
-          createdAt: now,
-          updatedAt: now,
-          useCount: 0,
-        };
-
-        return {
-          ...prev,
-          contextPacks: [pack, ...prev.contextPacks].slice(
-            0,
-            MAX_SMART_CONTEXT_PACKS,
-          ),
-        };
+        provider: messageSettings?.provider ?? state.activeSession.provider,
+        model: messageSettings?.model ?? state.activeSession.model,
+        mode: messageSettings?.mode ?? activeRunMode,
+        reasoning: messageSettings?.reasoning ?? activeReasoning,
+        promptEnhancementMode:
+          messageSettings?.promptEnhancementMode ?? promptEnhancementMode,
+        interviewEnabled:
+          messageSettings?.interviewEnabled ?? chatInterviewEnabled,
+        sessionMemoryEnabled:
+          messageSettings?.sessionMemoryEnabled ??
+          state.activeSession.sessionMemoryEnabled,
+        useGlobalMemory:
+          messageSettings?.useGlobalMemory ??
+          state.activeSession.useGlobalMemory,
+        uiControlEnabled:
+          messageSettings?.uiControlEnabled ??
+          state.activeSession.uiControlEnabled,
       });
     },
     [
+      activeReasoning,
       activeRunMode,
+      chatInterviewEnabled,
+      handleSaveContextPack,
+      promptEnhancementMode,
       state.activeSession.model,
       state.activeSession.provider,
+      state.activeSession.sessionMemoryEnabled,
+      state.activeSession.uiControlEnabled,
+      state.activeSession.useGlobalMemory,
       state.activeSession.workspace,
-      state.applyShellState,
     ],
   );
 
@@ -5903,6 +5882,8 @@ export const useChatSessionController = (
   const handleRemoteApplyContextPack = useCallback(
     (sessionId: string, packId: string): boolean => {
       let applied = false;
+      let appliedPromptEnhancementMode: PromptEnhancementMode | undefined;
+      let appliedInterviewEnabled: boolean | undefined;
 
       state.applyShellState((prev) => {
         const targetSession = prev.sessions.find(
@@ -5923,16 +5904,22 @@ export const useChatSessionController = (
         }
 
         applied = true;
+        const nextComposerSettings = applySmartContextPackSettingsToComposer(
+          {
+            promptEnhancementMode,
+            interviewEnabled: chatInterviewEnabled,
+          },
+          pack,
+        );
+        appliedPromptEnhancementMode =
+          nextComposerSettings.promptEnhancementMode;
+        appliedInterviewEnabled = nextComposerSettings.interviewEnabled;
 
         const now = Date.now();
-        const savedProvider = pack.provider;
-        const savedModel = pack.model;
-        const savedModelSelection =
-          savedProvider !== undefined &&
-          savedModel !== undefined &&
-          providerChooserState.chooserProviders.includes(savedProvider)
-            ? { provider: savedProvider, model: savedModel }
-            : null;
+        const savedModelSelection = getSmartContextPackModelSelection(
+          pack,
+          providerChooserState.chooserProviders,
+        );
 
         const nextState: ShellPersistedState = {
           ...prev,
@@ -5956,76 +5943,45 @@ export const useChatSessionController = (
               pack,
               {},
             );
-            const nextSession: ChatSessionRecord = {
+            return applySmartContextPackSettingsToSession(
+              {
               ...session,
               draft: application.draft,
               draftContextAttachments: application.contextAttachments,
               composerUpdatedAt: now,
               updatedAt: now,
-            };
-
-            if (savedModelSelection) {
-              nextSession.provider = savedModelSelection.provider;
-              nextSession.model = savedModelSelection.model;
-            }
-
-            if (pack.mode) {
-              nextSession.mode = pack.mode;
-            }
-
-            const nextReasoning = normalizeSessionReasoningOverride(
-              pack.reasoning ?? nextSession.reasoning,
-              nextSession.provider,
-              nextSession.model,
+              },
+              pack,
+              savedModelSelection,
             );
-
-            if (nextReasoning) {
-              nextSession.reasoning = nextReasoning;
-            } else {
-              delete nextSession.reasoning;
-            }
-
-            return nextSession;
           }),
         };
 
-        if (savedModelSelection) {
-          nextState.lastSelectedProvider = savedModelSelection.provider;
-          nextState.lastSelectedModelByProvider = {
-            ...prev.lastSelectedModelByProvider,
-            [savedModelSelection.provider]: savedModelSelection.model,
-          };
-        }
-
-        if (pack.mode) {
-          nextState.lastSelectedMode = pack.mode;
-        }
-
-        if (pack.reasoning || savedModelSelection) {
-          const reasoningProvider =
-            savedModelSelection?.provider ?? prev.lastSelectedProvider;
-          const reasoningModel =
-            savedModelSelection?.model ??
-            prev.lastSelectedModelByProvider[reasoningProvider];
-          const nextLastSelectedReasoning = normalizeSessionReasoningOverride(
-            pack.reasoning ?? prev.lastSelectedReasoning,
-            reasoningProvider,
-            reasoningModel,
+        return applySmartContextPackSettingsToShellDefaults(
+          nextState,
+          pack,
+          savedModelSelection,
           );
+      });
 
-          if (nextLastSelectedReasoning) {
-            nextState.lastSelectedReasoning = nextLastSelectedReasoning;
-          } else {
-            delete nextState.lastSelectedReasoning;
-          }
+      if (applied && activeSessionIdRef.current === sessionId) {
+        if (appliedPromptEnhancementMode !== undefined) {
+          setPromptEnhancementMode(appliedPromptEnhancementMode);
         }
 
-        return nextState;
-      });
+        if (appliedInterviewEnabled !== undefined) {
+          setChatInterviewEnabled(appliedInterviewEnabled);
+        }
+      }
 
       return applied;
     },
-    [providerChooserState.chooserProviders, state.applyShellState],
+    [
+      chatInterviewEnabled,
+      promptEnhancementMode,
+      providerChooserState.chooserProviders,
+      state.applyShellState,
+    ],
   );
 
   const handleQueueRemoteSessionFollowUp = useCallback(

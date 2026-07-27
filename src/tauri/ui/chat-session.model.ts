@@ -184,7 +184,22 @@ export interface SmartContextPackTrigger {
   autoApply: boolean;
 }
 
-export interface SmartContextPack {
+export type SmartContextPackSettingOverrides = Partial<
+  Pick<
+    ChatSessionMessageSettings,
+    | "provider"
+    | "model"
+    | "mode"
+    | "reasoning"
+    | "promptEnhancementMode"
+    | "interviewEnabled"
+    | "sessionMemoryEnabled"
+    | "useGlobalMemory"
+    | "uiControlEnabled"
+  >
+>;
+
+export interface SmartContextPack extends SmartContextPackSettingOverrides {
   id: string;
   workspace: string | null;
   name: string;
@@ -193,10 +208,6 @@ export interface SmartContextPack {
   contextAttachments: ChatSessionContextAttachment[];
   variables: SmartContextPackVariable[];
   trigger: SmartContextPackTrigger;
-  provider?: RuntimeProvider;
-  model?: string;
-  mode?: RunMode;
-  reasoning?: ReasoningMode;
   createdAt: number;
   updatedAt: number;
   lastUsedAt?: number;
@@ -419,6 +430,21 @@ const normalizeOptionalStoredReasoningMode = (
     STORED_REASONING_MODES.includes(value as ReasoningMode)
     ? (value as ReasoningMode)
     : undefined;
+};
+
+const normalizeOptionalPromptEnhancementMode = (
+  value: unknown,
+): ChatSessionMessagePromptEnhancementMode | undefined => {
+  return typeof value === "string" &&
+    MESSAGE_PROMPT_ENHANCEMENT_MODES.includes(
+      value as ChatSessionMessagePromptEnhancementMode,
+    )
+    ? (value as ChatSessionMessagePromptEnhancementMode)
+    : undefined;
+};
+
+const normalizeOptionalBoolean = (value: unknown): boolean | undefined => {
+  return typeof value === "boolean" ? value : undefined;
 };
 
 const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
@@ -985,6 +1011,15 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
         : undefined;
     const mode = normalizeOptionalStoredRunMode(entry.mode);
     const reasoning = normalizeOptionalStoredReasoningMode(entry.reasoning);
+    const promptEnhancementMode = normalizeOptionalPromptEnhancementMode(
+      entry.promptEnhancementMode,
+    );
+    const interviewEnabled = normalizeOptionalBoolean(entry.interviewEnabled);
+    const sessionMemoryEnabled = normalizeOptionalBoolean(
+      entry.sessionMemoryEnabled,
+    );
+    const useGlobalMemory = normalizeOptionalBoolean(entry.useGlobalMemory);
+    const uiControlEnabled = normalizeOptionalBoolean(entry.uiControlEnabled);
     const createdAt = Math.max(0, normalizeFiniteNumber(entry.createdAt, 0));
     const updatedAt = Math.max(
       createdAt,
@@ -1008,6 +1043,11 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
       ...(provider && model ? { model } : {}),
       ...(mode ? { mode } : {}),
       ...(reasoning ? { reasoning } : {}),
+      ...(promptEnhancementMode !== undefined ? { promptEnhancementMode } : {}),
+      ...(interviewEnabled !== undefined ? { interviewEnabled } : {}),
+      ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
+      ...(useGlobalMemory !== undefined ? { useGlobalMemory } : {}),
+      ...(uiControlEnabled !== undefined ? { uiControlEnabled } : {}),
       createdAt,
       updatedAt,
       ...(lastUsedAt !== undefined && lastUsedAt >= 0 ? { lastUsedAt } : {}),

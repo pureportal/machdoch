@@ -8,8 +8,10 @@ import {
   Plus,
   Save,
   Search,
+  SlidersHorizontal,
   Trash2,
   Upload,
+  Zap,
 } from "lucide-react";
 import {
   useMemo,
@@ -55,6 +57,11 @@ import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
+import {
+  PROMPT_ENHANCEMENT_LABELS,
+  PROMPT_ENHANCEMENT_MODES,
+  type PromptEnhancementMode,
+} from "../_helpers/prompt-enhancement";
 import { createContextAttachmentFromReference } from "../_helpers/session-context-attachments";
 import {
   extractSmartContextPackVariables,
@@ -79,6 +86,11 @@ export interface SmartContextPackPickerProps {
   activeModel: string;
   activeRunMode: RunMode;
   activeReasoning: ReasoningMode;
+  activePromptEnhancementMode: PromptEnhancementMode;
+  activeInterviewEnabled: boolean;
+  activeSessionMemoryEnabled: boolean;
+  activeUseGlobalMemory: boolean;
+  activeUiControlEnabled: boolean;
   contextAttachments: ChatSessionContextAttachment[];
   matchedContextPackIds: string[];
   imageInputSupported: boolean;
@@ -120,6 +132,11 @@ interface SmartContextPackEditorInitialValue {
   model?: string;
   runMode?: RunMode;
   reasoning?: ReasoningMode;
+  promptEnhancementMode?: PromptEnhancementMode;
+  interviewEnabled?: boolean;
+  sessionMemoryEnabled?: boolean;
+  useGlobalMemory?: boolean;
+  uiControlEnabled?: boolean;
 }
 
 interface SmartContextPackDialogState {
@@ -428,7 +445,7 @@ const ContextPackPromptEditor = ({
   const [scrollTop, setScrollTop] = useState(0);
 
   return (
-    <div className="group/prompt-editor relative min-h-64 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
+    <div className="group/prompt-editor relative min-h-52 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
       <pre
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-6 text-slate-300 group-focus-within/prompt-editor:invisible"
@@ -447,7 +464,7 @@ const ContextPackPromptEditor = ({
         placeholder="Review {target_file} and summarize release risk."
         onChange={(event) => onChange(event.target.value)}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        className="absolute inset-0 min-h-64 w-full resize-none overflow-auto rounded-xl border-0 bg-transparent px-3 py-2 font-mono text-sm leading-6 text-transparent caret-slate-100 outline-none placeholder:font-sans placeholder:text-slate-600 selection:bg-sky-500/35 selection:text-slate-100 focus:text-slate-300 focus:ring-1 focus:ring-sky-500/30"
+        className="absolute inset-0 min-h-52 w-full resize-none overflow-auto rounded-xl border-0 bg-transparent px-3 py-2 font-mono text-sm leading-6 text-transparent caret-slate-100 outline-none placeholder:font-sans placeholder:text-slate-600 selection:bg-sky-500/35 selection:text-slate-100 focus:text-slate-300 focus:ring-1 focus:ring-sky-500/30"
       />
     </div>
   );
@@ -485,24 +502,57 @@ const collectRalphFlowPackIds = (flow: RalphFlow): Set<string> => {
   return packIds;
 };
 
+const NO_SAVE_VALUE = "no-save" as const;
+
+type PackBooleanOverride = typeof NO_SAVE_VALUE | "enabled" | "disabled";
+
+const PACK_SELECT_CLASS =
+  "h-9 w-full rounded-xl border border-slate-800 bg-slate-950/70 px-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:bg-slate-950/35 disabled:text-slate-600";
+
+const getInitialBooleanOverride = (
+  value: boolean | undefined,
+): PackBooleanOverride => {
+  if (value === undefined) {
+    return NO_SAVE_VALUE;
+  }
+
+  return value === true ? "enabled" : "disabled";
+};
+
+const getBooleanOverrideValue = (
+  value: PackBooleanOverride,
+): boolean | undefined => {
+  if (value === NO_SAVE_VALUE) {
+    return undefined;
+  }
+
+  return value === "enabled";
+};
+
 const PackOption = ({
   label,
+  description,
   checked,
   disabled = false,
+  checkedLabel = "On",
+  uncheckedLabel = "Off",
   onChange,
 }: {
   label: string;
+  description: string;
   checked: boolean;
   disabled?: boolean;
+  checkedLabel?: string;
+  uncheckedLabel?: string;
   onChange: (checked: boolean) => void;
 }): JSX.Element => {
   return (
     <label
       className={cn(
-        "flex h-8 items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-xs font-medium text-slate-300",
+        "flex min-h-12 items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-2 transition-colors",
         disabled
           ? "cursor-not-allowed opacity-45"
-          : "cursor-pointer hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+          : "cursor-pointer hover:border-slate-700 hover:bg-slate-900/80",
       )}
     >
       <input
@@ -510,10 +560,100 @@ const PackOption = ({
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-3.5 w-3.5 rounded border-slate-700 bg-slate-950 text-sky-400 accent-sky-400"
+        className="peer sr-only"
       />
-      <span className="truncate">{label}</span>
+      <span
+        aria-hidden="true"
+        className="relative h-5 w-9 shrink-0 rounded-full border border-slate-700 bg-slate-800 transition-colors after:absolute after:top-0.5 after:left-0.5 after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-400 after:transition-transform peer-checked:border-sky-500/50 peer-checked:bg-sky-500/25 peer-checked:after:translate-x-4 peer-checked:after:bg-sky-200 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-slate-950"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-semibold text-slate-200">
+          {label}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
+          {description}
+        </span>
+      </span>
+      <span
+        className={cn(
+          "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+          checked
+            ? "border-sky-500/25 bg-sky-500/10 text-sky-200"
+            : "border-slate-800 bg-slate-900 text-slate-500",
+        )}
+      >
+        {checked ? checkedLabel : uncheckedLabel}
+      </span>
     </label>
+  );
+};
+
+const PackSectionHeading = ({
+  icon,
+  title,
+  description,
+}: {
+  icon: JSX.Element;
+  title: string;
+  description: string;
+}): JSX.Element => {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/70 text-sky-300">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
+        <p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p>
+      </div>
+    </div>
+  );
+};
+
+const PackSettingField = ({
+  id,
+  label,
+  description,
+  overridden,
+  children,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  overridden: boolean;
+  children: JSX.Element;
+}): JSX.Element => {
+  const descriptionId = `${id}-description`;
+
+  return (
+    <div
+      className={cn(
+        "grid gap-2 rounded-xl border p-3 transition-colors",
+        overridden
+          ? "border-sky-500/20 bg-sky-500/[0.06]"
+          : "border-slate-800 bg-slate-950/45",
+      )}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <label htmlFor={id} className="text-xs font-semibold text-slate-200">
+          {label}
+        </label>
+        <span
+          className={cn(
+            "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+            overridden
+              ? "border-sky-500/25 bg-sky-500/10 text-sky-200"
+              : "border-slate-800 bg-slate-900 text-slate-500",
+          )}
+        >
+          {overridden ? "Override" : "No Save"}
+        </span>
+      </div>
+      <p id={descriptionId} className="text-[11px] leading-4 text-slate-500">
+        {description}
+      </p>
+      <div aria-describedby={descriptionId}>{children}</div>
+    </div>
   );
 };
 
@@ -569,6 +709,29 @@ const SmartContextPackEditorDialog = ({
   const [reasoning, setReasoning] = useState<ReasoningMode>(
     initialValue.reasoning ?? "default",
   );
+  const [promptEnhancementOverride, setPromptEnhancementOverride] = useState<
+    PromptEnhancementMode | typeof NO_SAVE_VALUE
+  >(
+    initialValue.promptEnhancementMode !== undefined
+      ? (initialValue.promptEnhancementMode ?? "off")
+      : NO_SAVE_VALUE,
+  );
+  const [interviewOverride, setInterviewOverride] =
+    useState<PackBooleanOverride>(
+      getInitialBooleanOverride(initialValue.interviewEnabled),
+    );
+  const [sessionMemoryOverride, setSessionMemoryOverride] =
+    useState<PackBooleanOverride>(
+      getInitialBooleanOverride(initialValue.sessionMemoryEnabled),
+    );
+  const [globalMemoryOverride, setGlobalMemoryOverride] =
+    useState<PackBooleanOverride>(
+      getInitialBooleanOverride(initialValue.useGlobalMemory),
+    );
+  const [uiControlOverride, setUiControlOverride] =
+    useState<PackBooleanOverride>(
+      getInitialBooleanOverride(initialValue.uiControlEnabled),
+    );
   const contextAttachments = useMemo(
     () =>
       createContextAttachmentsFromPathInput(
@@ -587,7 +750,12 @@ const SmartContextPackEditorDialog = ({
       contextAttachments.length > 0 ||
       (includeModel && modelValue.length > 0) ||
       includeRunMode ||
-      includeReasoning);
+      includeReasoning ||
+      promptEnhancementOverride !== NO_SAVE_VALUE ||
+      interviewOverride !== NO_SAVE_VALUE ||
+      sessionMemoryOverride !== NO_SAVE_VALUE ||
+      globalMemoryOverride !== NO_SAVE_VALUE ||
+      uiControlOverride !== NO_SAVE_VALUE);
 
   useEffect(() => {
     if (!workspaceRoot && scope === "workspace") {
@@ -601,6 +769,11 @@ const SmartContextPackEditorDialog = ({
     if (!canSave) {
       return;
     }
+
+    const interviewEnabled = getBooleanOverrideValue(interviewOverride);
+    const sessionMemoryEnabled = getBooleanOverrideValue(sessionMemoryOverride);
+    const useGlobalMemory = getBooleanOverrideValue(globalMemoryOverride);
+    const uiControlEnabled = getBooleanOverrideValue(uiControlOverride);
 
     onSubmit({
       ...(initialValue.id ? { id: initialValue.id } : {}),
@@ -625,28 +798,42 @@ const SmartContextPackEditorDialog = ({
         : {}),
       ...(includeRunMode ? { mode: runMode } : {}),
       ...(includeReasoning ? { reasoning } : {}),
+      ...(promptEnhancementOverride !== NO_SAVE_VALUE
+        ? { promptEnhancementMode: promptEnhancementOverride }
+        : {}),
+      ...(interviewEnabled !== undefined ? { interviewEnabled } : {}),
+      ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
+      ...(useGlobalMemory !== undefined ? { useGlobalMemory } : {}),
+      ...(uiControlEnabled !== undefined ? { uiControlEnabled } : {}),
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="app-context-pack-dialog max-h-[min(820px,calc(100vh-28px))] w-[min(1040px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
-      >
-        <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
+      <DialogContent className="app-context-pack-dialog grid max-h-[min(840px,calc(100dvh-24px))] w-[min(1120px,calc(100vw-24px))] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl shadow-black/50 sm:max-w-none">
+        <DialogHeader className="border-b border-slate-800/80 bg-slate-900/35 px-5 py-4 pr-12 text-left sm:px-6">
           <DialogTitle className="text-xl font-semibold text-white">
             {initialValue.mode === "edit"
               ? "Edit context pack"
               : "Create context pack"}
           </DialogTitle>
-          <DialogDescription className="sr-only">
-            Configure saved context pack fields.
+          <DialogDescription className="max-w-2xl text-xs leading-5 text-slate-400">
+            Save reusable context and choose which chat settings this pack
+            should override when applied.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="min-h-0">
-          <div className="grid max-h-[calc(min(820px,100vh-28px)-9rem)] gap-5 overflow-y-auto px-5 py-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-            <div className={PACK_FORM_CLASS}>
+        <form
+          onSubmit={handleSubmit}
+          className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]"
+        >
+          <div className="grid min-h-0 gap-4 overflow-y-auto bg-slate-950/60 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(15rem,0.65fr)_minmax(21rem,0.9fr)] lg:items-start">
+            <section className="grid gap-4 rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4">
+              <PackSectionHeading
+                icon={<Layers className="h-4 w-4" />}
+                title="Pack content"
+                description="The reusable prompt, instructions, and context added to the composer."
+              />
               <label className="grid gap-1.5">
                 <span className="px-1 text-xs font-medium text-slate-400">
                   Name
@@ -666,6 +853,7 @@ const SmartContextPackEditorDialog = ({
                 <ContextPackPromptEditor value={prompt} onChange={setPrompt} />
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <span className="px-1 text-xs font-medium text-slate-400">
                   Instructions
@@ -692,12 +880,18 @@ const SmartContextPackEditorDialog = ({
                 />
               </label>
             </div>
+            </section>
 
-            <div className={PACK_FORM_CLASS}>
-              <div className="grid gap-1.5">
-                <span className="px-1 text-xs font-medium text-slate-400">
+            <section className="grid gap-4 rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4">
+              <PackSectionHeading
+                icon={<Zap className="h-4 w-4" />}
+                title="Scope and behavior"
+                description="Control where this pack appears, how it matches, and what it changes."
+              />
+              <fieldset className="grid gap-1.5">
+                <legend className="px-1 text-xs font-medium text-slate-400">
                   Scope
-                </span>
+                </legend>
                 <div className="flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
                   {(["workspace", "global"] as const).map((scopeOption) => {
                     const disabled =
@@ -708,6 +902,7 @@ const SmartContextPackEditorDialog = ({
                         key={scopeOption}
                         type="button"
                         disabled={disabled}
+                        aria-pressed={scope === scopeOption}
                         onClick={() => setScope(scopeOption)}
                         className={cn(
                           "h-8 flex-1 rounded-full px-3 text-xs font-medium transition-colors",
@@ -723,7 +918,7 @@ const SmartContextPackEditorDialog = ({
                     );
                   })}
                 </div>
-              </div>
+              </fieldset>
 
               <label className="grid gap-1.5">
                 <span className="px-1 text-xs font-medium text-slate-400">
@@ -767,25 +962,49 @@ const SmartContextPackEditorDialog = ({
 
               <PackOption
                 label="Auto-apply matching pack"
+                description="Apply once when a phrase or path pattern matches."
                 checked={autoApply}
+                checkedLabel="Auto"
+                uncheckedLabel="Manual"
                 onChange={setAutoApply}
               />
+            </section>
 
-              <div className="grid gap-3 border-t border-slate-800/80 pt-4">
+            <section className="grid gap-3 rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4">
+              <PackSectionHeading
+                icon={<SlidersHorizontal className="h-4 w-4" />}
+                title="Setting overrides"
+                description="Optionally replace the active chat and execution settings."
+              />
+
+              <div
+                role="note"
+                className="rounded-xl border border-sky-500/15 bg-sky-500/[0.06] px-3 py-2 text-[11px] leading-5 text-slate-400"
+              >
+                <span className="font-semibold text-sky-200">No Save</span>{" "}
+                keeps the current or last-used value. Any other choice is
+                applied every time the pack is used.
+              </div>
+
+              <div className="grid gap-2 rounded-xl border border-slate-800 bg-slate-950/45 p-3">
                 <PackOption
-                  label="Save model"
+                  label="Override model"
+                  description="Store this provider and model in the pack."
                   checked={includeModel}
+                  checkedLabel="Override"
+                  uncheckedLabel="No Save"
                   onChange={setIncludeModel}
                 />
                 <div className="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
                   <select
+                    id="context-pack-provider"
                     aria-label="Model provider"
                     value={provider}
                     disabled={!includeModel}
                     onChange={(event) =>
                       setProvider(event.target.value as RuntimeProvider)
                     }
-                    className="h-9 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+                    className={PACK_SELECT_CLASS}
                   >
                     {VALID_MODEL_PROVIDERS.map((providerOption) => (
                       <option key={providerOption} value={providerOption}>
@@ -794,64 +1013,221 @@ const SmartContextPackEditorDialog = ({
                     ))}
                   </select>
                   <Input
+                    id="context-pack-model"
                     aria-label="Model"
                     value={model}
                     disabled={!includeModel}
                     onChange={(event) => setModel(event.target.value)}
                     placeholder="gpt-5.5"
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30 disabled:opacity-45"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-950/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:border-sky-500/50 focus-visible:ring-2 focus-visible:ring-sky-500/20 disabled:cursor-not-allowed disabled:bg-slate-950/35 disabled:text-slate-600"
                   />
                 </div>
+              </div>
 
-                <PackOption
-                  label="Save mode"
-                  checked={includeRunMode}
-                  onChange={setIncludeRunMode}
-                />
-                <select
-                  aria-label="Execution mode"
-                  value={runMode}
-                  disabled={!includeRunMode}
-                  onChange={(event) => setRunMode(event.target.value as RunMode)}
-                  className="h-9 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+              <div className="grid gap-2 sm:grid-cols-2">
+                <PackSettingField
+                  id="context-pack-mode"
+                  label="Execution mode"
+                  description="Ask or Machdoch."
+                  overridden={includeRunMode}
                 >
+                  <select
+                    id="context-pack-mode"
+                    aria-describedby="context-pack-mode-description"
+                    value={includeRunMode ? runMode : NO_SAVE_VALUE}
+                    onChange={(event) => {
+                      if (event.target.value === NO_SAVE_VALUE) {
+                        setIncludeRunMode(false);
+                        return;
+                      }
+
+                      setIncludeRunMode(true);
+                      setRunMode(event.target.value as RunMode);
+                    }}
+                    className={PACK_SELECT_CLASS}
+                  >
+                    <option value={NO_SAVE_VALUE}>
+                      No Save — keep current
+                    </option>
                   {RUN_MODES.map((modeOption) => (
                     <option key={modeOption} value={modeOption}>
                       {getContextPackModeLabel(modeOption)}
                     </option>
                   ))}
                 </select>
+                </PackSettingField>
 
-                <PackOption
-                  label="Save reasoning"
-                  checked={includeReasoning}
-                  onChange={setIncludeReasoning}
-                />
-                <select
-                  aria-label="Reasoning"
-                  value={reasoning}
-                  disabled={!includeReasoning}
-                  onChange={(event) =>
-                    setReasoning(event.target.value as ReasoningMode)
-                  }
-                  className="h-9 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+                <PackSettingField
+                  id="context-pack-reasoning"
+                  label="Reasoning"
+                  description="Reasoning effort for the model."
+                  overridden={includeReasoning}
                 >
+                  <select
+                    id="context-pack-reasoning"
+                    aria-describedby="context-pack-reasoning-description"
+                    value={includeReasoning ? reasoning : NO_SAVE_VALUE}
+                    onChange={(event) => {
+                      if (event.target.value === NO_SAVE_VALUE) {
+                        setIncludeReasoning(false);
+                        return;
+                      }
+
+                      setIncludeReasoning(true);
+                      setReasoning(event.target.value as ReasoningMode);
+                    }}
+                    className={PACK_SELECT_CLASS}
+                  >
+                    <option value={NO_SAVE_VALUE}>
+                      No Save — keep current
+                    </option>
                   {REASONING_MODES.map((reasoningOption) => (
                     <option key={reasoningOption} value={reasoningOption}>
                       {getContextPackReasoningLabel(reasoningOption)}
                     </option>
                   ))}
                 </select>
-              </div>
-            </div>
+                </PackSettingField>
           </div>
 
-          <DialogFooter className="border-t border-slate-800/80 px-5 py-4">
+              <PackSettingField
+                id="context-pack-prompt-enhancer"
+                label="Prompt Enhancer"
+                description="Keep, disable, or select the enhancement mode."
+                overridden={promptEnhancementOverride !== NO_SAVE_VALUE}
+              >
+                <select
+                  id="context-pack-prompt-enhancer"
+                  aria-describedby="context-pack-prompt-enhancer-description"
+                  value={promptEnhancementOverride}
+                  onChange={(event) =>
+                    setPromptEnhancementOverride(
+                      event.target.value as
+                        | PromptEnhancementMode
+                        | typeof NO_SAVE_VALUE,
+                    )
+                  }
+                  className={PACK_SELECT_CLASS}
+                >
+                  <option value={NO_SAVE_VALUE}>No Save — keep current</option>
+                  {PROMPT_ENHANCEMENT_MODES.map((modeOption) => (
+                    <option key={modeOption} value={modeOption}>
+                      {PROMPT_ENHANCEMENT_LABELS[modeOption]}
+                    </option>
+                  ))}
+                </select>
+              </PackSettingField>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <PackSettingField
+                  id="context-pack-interview"
+                  label="Interview"
+                  description="Pre-task interview flow."
+                  overridden={interviewOverride !== NO_SAVE_VALUE}
+                >
+                  <select
+                    id="context-pack-interview"
+                    aria-describedby="context-pack-interview-description"
+                    value={interviewOverride}
+                    onChange={(event) =>
+                      setInterviewOverride(
+                        event.target.value as PackBooleanOverride,
+                      )
+                    }
+                    className={PACK_SELECT_CLASS}
+                  >
+                    <option value={NO_SAVE_VALUE}>
+                      No Save — keep current
+                    </option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </PackSettingField>
+
+                <PackSettingField
+                  id="context-pack-session-memory"
+                  label="Session memory"
+                  description="Memory within this chat."
+                  overridden={sessionMemoryOverride !== NO_SAVE_VALUE}
+                >
+                  <select
+                    id="context-pack-session-memory"
+                    aria-describedby="context-pack-session-memory-description"
+                    value={sessionMemoryOverride}
+                    onChange={(event) =>
+                      setSessionMemoryOverride(
+                        event.target.value as PackBooleanOverride,
+                      )
+                    }
+                    className={PACK_SELECT_CLASS}
+                  >
+                    <option value={NO_SAVE_VALUE}>
+                      No Save — keep current
+                    </option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </PackSettingField>
+
+                <PackSettingField
+                  id="context-pack-global-memory"
+                  label="Global memory"
+                  description="Memory shared across chats."
+                  overridden={globalMemoryOverride !== NO_SAVE_VALUE}
+                >
+                  <select
+                    id="context-pack-global-memory"
+                    aria-describedby="context-pack-global-memory-description"
+                    value={globalMemoryOverride}
+                    onChange={(event) =>
+                      setGlobalMemoryOverride(
+                        event.target.value as PackBooleanOverride,
+                      )
+                    }
+                    className={PACK_SELECT_CLASS}
+                  >
+                    <option value={NO_SAVE_VALUE}>
+                      No Save — keep current
+                    </option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </PackSettingField>
+
+                <PackSettingField
+                  id="context-pack-ui-control"
+                  label="UI control"
+                  description="Allow desktop UI interaction."
+                  overridden={uiControlOverride !== NO_SAVE_VALUE}
+                >
+                  <select
+                    id="context-pack-ui-control"
+                    aria-describedby="context-pack-ui-control-description"
+                    value={uiControlOverride}
+                    onChange={(event) =>
+                      setUiControlOverride(
+                        event.target.value as PackBooleanOverride,
+                      )
+                    }
+                    className={PACK_SELECT_CLASS}
+                  >
+                    <option value={NO_SAVE_VALUE}>
+                      No Save — keep current
+                    </option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </PackSettingField>
+              </div>
+            </section>
+          </div>
+
+          <DialogFooter className="flex-row items-center justify-end border-t border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-5">
             <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
-              className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+              className="h-9 rounded-full px-4 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
               Cancel
             </Button>
@@ -859,7 +1235,7 @@ const SmartContextPackEditorDialog = ({
               type="submit"
               variant="outline"
               disabled={!canSave}
-              className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+              className="h-9 rounded-full border-sky-500/25 bg-sky-500/10 px-4 text-xs font-semibold text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
             >
               <Save className="h-3.5 w-3.5" />
               {initialValue.mode === "edit" ? "Update pack" : "Save pack"}
@@ -973,6 +1349,11 @@ export const SmartContextPackPicker = ({
   activeModel,
   activeRunMode,
   activeReasoning,
+  activePromptEnhancementMode,
+  activeInterviewEnabled,
+  activeSessionMemoryEnabled,
+  activeUseGlobalMemory,
+  activeUiControlEnabled,
   contextAttachments,
   matchedContextPackIds,
   workspaceLabel,
@@ -1100,6 +1481,11 @@ export const SmartContextPackPicker = ({
         model: activeModel,
         runMode: activeRunMode,
         reasoning: activeReasoning,
+        promptEnhancementMode: activePromptEnhancementMode,
+        interviewEnabled: activeInterviewEnabled,
+        sessionMemoryEnabled: activeSessionMemoryEnabled,
+        useGlobalMemory: activeUseGlobalMemory,
+        uiControlEnabled: activeUiControlEnabled,
       },
     });
     setOpen(false);
@@ -1126,6 +1512,21 @@ export const SmartContextPackPicker = ({
         ...(pack.model ? { model: pack.model } : {}),
         ...(pack.mode ? { runMode: pack.mode } : {}),
         ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
+        ...(pack.promptEnhancementMode !== undefined
+          ? { promptEnhancementMode: pack.promptEnhancementMode }
+          : {}),
+        ...(pack.interviewEnabled !== undefined
+          ? { interviewEnabled: pack.interviewEnabled }
+          : {}),
+        ...(pack.sessionMemoryEnabled !== undefined
+          ? { sessionMemoryEnabled: pack.sessionMemoryEnabled }
+          : {}),
+        ...(pack.useGlobalMemory !== undefined
+          ? { useGlobalMemory: pack.useGlobalMemory }
+          : {}),
+        ...(pack.uiControlEnabled !== undefined
+          ? { uiControlEnabled: pack.uiControlEnabled }
+          : {}),
       },
     });
     setOpen(false);

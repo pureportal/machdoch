@@ -433,6 +433,21 @@ const createContextPackSnapshot = (
     ...(pack.model ? { model: pack.model } : {}),
     ...(pack.mode ? { mode: pack.mode } : {}),
     ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
+    ...(pack.promptEnhancementMode !== undefined
+      ? { promptEnhancementMode: pack.promptEnhancementMode }
+      : {}),
+    ...(pack.interviewEnabled !== undefined
+      ? { interviewEnabled: pack.interviewEnabled }
+      : {}),
+    ...(pack.sessionMemoryEnabled !== undefined
+      ? { sessionMemoryEnabled: pack.sessionMemoryEnabled }
+      : {}),
+    ...(pack.useGlobalMemory !== undefined
+      ? { useGlobalMemory: pack.useGlobalMemory }
+      : {}),
+    ...(pack.uiControlEnabled !== undefined
+      ? { uiControlEnabled: pack.uiControlEnabled }
+      : {}),
   };
 };
 

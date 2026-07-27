@@ -683,6 +683,60 @@ describe("normalizeShellState", () => {
     ]);
     expect(normalized.contextPacks[0]?.provider).toBeUndefined();
     expect(normalized.contextPacks[0]?.model).toBeUndefined();
+    expect(normalized.contextPacks[0]?.promptEnhancementMode).toBeUndefined();
+    expect(normalized.contextPacks[0]?.interviewEnabled).toBeUndefined();
+    expect(normalized.contextPacks[0]?.sessionMemoryEnabled).toBeUndefined();
+    expect(normalized.contextPacks[0]?.useGlobalMemory).toBeUndefined();
+    expect(normalized.contextPacks[0]?.uiControlEnabled).toBeUndefined();
+  });
+
+  it("preserves explicit context pack setting overrides", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "pack-settings-session",
+      sessions: [
+        {
+          id: "pack-settings-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      contextPacks: [
+        {
+          id: "pack-settings-disabled",
+          workspace: null,
+          name: "Disabled settings",
+          promptEnhancementMode: "off",
+          interviewEnabled: false,
+          sessionMemoryEnabled: true,
+          useGlobalMemory: false,
+          uiControlEnabled: true,
+        },
+        {
+          id: "pack-settings-enabled",
+          workspace: null,
+          name: "Enabled settings",
+          promptEnhancementMode: "simple",
+          interviewEnabled: true,
+        },
+      ],
+    });
+
+    expect(normalized.contextPacks).toMatchObject([
+      {
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+        sessionMemoryEnabled: true,
+        useGlobalMemory: false,
+        uiControlEnabled: true,
+      },
+      {
+        promptEnhancementMode: "simple",
+        interviewEnabled: true,
+      },
+    ]);
   });
 
   it("bounds persisted message count, message text, and prompt history", () => {
