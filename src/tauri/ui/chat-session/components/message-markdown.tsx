@@ -50,6 +50,18 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   const components = useMemo<Components>(
     () => ({
       ...markdownComponents,
+      table: ({ children, node: _node, ...props }): JSX.Element => (
+        <div
+          role="region"
+          aria-label="Markdown table"
+          tabIndex={0}
+          className="app-message-table-scroll"
+        >
+          <table {...props} className="app-message-table">
+            {children}
+          </table>
+        </div>
+      ),
       a: ({ children, href, ...props }): JSX.Element => {
         const workspaceTarget = getWorkspaceMarkdownLinkTarget(
           href,
