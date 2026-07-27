@@ -6,14 +6,14 @@ for each run.
 
 ## Choose the right source
 
-| Need | Use |
-| --- | --- |
-| Guidance shared across many repositories | Reusable profile |
-| Guidance for one workspace or folder, stored outside the repository | Profile assignment |
-| Guidance reviewed and versioned with a repository | Root or nested `AGENTS.md` |
-| Guidance for every block in one RALPH flow | The flow's `guidance` field |
-| A reusable task template | Prompt customization |
-| An on-demand workflow with supporting assets | Skill customization |
+| Need                                                                | Use                         |
+| ------------------------------------------------------------------- | --------------------------- |
+| Guidance shared across many repositories                            | Reusable profile            |
+| Guidance for one workspace or folder, stored outside the repository | Profile assignment          |
+| Guidance reviewed and versioned with a repository                   | Root or nested `AGENTS.md`  |
+| Guidance for every block in one RALPH flow                          | The flow's `guidance` field |
+| A reusable task template                                            | Prompt customization        |
+| An on-demand workflow with supporting assets                        | Skill customization         |
 
 Profiles are Markdown documents with stable UUIDs. An assignment references a
 profile; it does not copy its body. Editing a profile updates every assignment
@@ -145,9 +145,8 @@ machdoch instructions resolve \
   --json
 ```
 
-Add `--include-content` only when body disclosure is intentional. A
-`compatible` provider plan must be reviewed and acknowledged by its exact plan
-ID before unattended execution.
+Add `--include-content` only when body disclosure is intentional. Delivery
+grades are telemetry and never require acknowledgement before execution.
 
 Validate all current state:
 
@@ -168,12 +167,14 @@ Delivery is graded:
   authority, isolation, lifecycle, or conformance is weaker or unverified;
 - `unsupported`: complete delivery cannot be guaranteed.
 
-There is no truncation mode. Oversized input and unsupported delivery block
-before the provider starts.
+There is no truncation mode. Provider limitations remain visible as telemetry,
+while the complete canonical envelope is supplied through prompt fallback
+without an approval gate.
 
 Provider-native files such as Claude memory, Gemini context, or GitHub Copilot
-instructions remain provider-owned. Machdoch inventories relevant files so
-extra provider behavior is visible, but it does not import or rewrite them.
+instructions remain provider-owned. Machdoch does not import or rewrite them;
+delegated runs use isolated state and treat Machdoch's canonical envelope as
+the sole instruction source of truth. Invalid files are skipped with warnings.
 
 ## MCP initialization hints
 

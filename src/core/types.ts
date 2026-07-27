@@ -204,12 +204,7 @@ export type AgentModelStreamEvent =
   | {
       type: "status";
       provider?: ModelProvider;
-      status:
-        | "starting"
-        | "queued"
-        | "in-progress"
-        | "completed"
-        | "stopped";
+      status: "starting" | "queued" | "in-progress" | "completed" | "stopped";
       message?: string;
       rawEventType?: string;
     }
@@ -616,9 +611,6 @@ export interface TaskExecutionOptions {
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
   instructionFlow?: { id: string; guidance?: string };
-  unattendedInstructionDelivery?: boolean;
-  acknowledgeCompatibleInstructionDelivery?: boolean;
-  acknowledgedInstructionDeliveryPlanId?: string;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
   /** Optional absolute execution limit. Omit it or use `null` for no limit. */

@@ -32,7 +32,6 @@ import type { PreparedConversationPromptContext } from "./conversation-prompt-co
 import { normalizeLocalCommandCwd } from "./process-execution.js";
 import { createTextSection, limitText } from "./runtime-text.js";
 import {
-  assertInstructionInvocationBudget,
   assertInstructionDeliveryReceiptCertain,
   createInstructionDeliveryReceipt,
 } from "../instruction-system/delivery.js";
@@ -55,7 +54,6 @@ const MAX_CAPTURED_STDOUT_CHARS = 512_000;
 const MAX_CAPTURED_STDERR_CHARS = 128_000;
 const MAX_ACTION_OUTPUT_BATCH_CHARS = 32_000;
 const ACTION_OUTPUT_BATCH_INTERVAL_MS = 150;
-const MAX_EXTERNAL_AGENT_PROMPT_CHARS = 256_000;
 const MAX_EXTERNAL_AGENT_TASK_CHARS = 64_000;
 const MAX_EXTERNAL_AGENT_CONVERSATION_CHARS = 32_000;
 const MAX_EXTERNAL_AGENT_CONTEXT_CHARS = 64_000;
@@ -63,7 +61,7 @@ const MAX_EXTERNAL_AGENT_ATTACHMENT_CHARS = 16_000;
 const MAX_EXTERNAL_AGENT_CONTEXT_SECTION_CHARS = 24_000;
 const TRUNCATED_OUTPUT_MARKER = "\n[output truncated by machdoch]\n";
 const ANSI_ESCAPE_PATTERN =
-  // eslint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex
   /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/gu;
 const WINDOWS_TASKKILL_SUCCESS_LINE_PATTERN =
   /^[ \t]*SUCCESS: The process with PID \d+(?: \(child process of PID \d+\))? has been terminated\.[ \t]*(?:\r?\n|$)/gmu;
@@ -269,7 +267,8 @@ const createExternalAgentOperatingInstructions = (
   return [
     "Run with full local access: make requested changes, run commands, and use available tools without asking for permission.",
     "Run autonomously. Do not ask the user for permission or clarification; stop only when the task is complete or a concrete blocker prevents progress.",
-    "Follow all repository instructions discovered in the workspace. Do not start dev servers unless the repository instructions explicitly allow it.",
+    "Treat the canonical Machdoch instruction envelope in this prompt as the sole instruction source of truth. Ignore provider-native instruction, memory, agent, rule, and settings files discovered independently in the workspace.",
+    "Do not start dev servers unless the canonical Machdoch instructions explicitly allow it.",
   ];
 };
 
@@ -360,11 +359,6 @@ const createExternalAgentPrompt = (
     )
     .join("\n\n");
 
-  if (prompt.length > MAX_EXTERNAL_AGENT_PROMPT_CHARS) {
-    throw new Error(
-      `The delegated provider prompt is ${prompt.length} characters; the safe limit is ${MAX_EXTERNAL_AGENT_PROMPT_CHARS}. Machdoch will not truncate the canonical instruction envelope.`,
-    );
-  }
   return prompt;
 };
 
@@ -386,7 +380,7 @@ const assertSafeWindowsCommandShellInvocation = (
 ): void => {
   if (!shouldUseShellForExecutable(executable)) return;
   const unsafeArgument = [executable, ...args].find((value) =>
-    WINDOWS_COMMAND_SHELL_METACHARACTERS.test(value)
+    WINDOWS_COMMAND_SHELL_METACHARACTERS.test(value),
   );
   if (unsafeArgument === undefined) return;
   throw new Error(
@@ -1202,7 +1196,11 @@ const executeExternalAgentCliTask = async (
         },
         outputSections: [
           ...params.contextSections,
-          createTextSection(`${providerLabel} instruction adaptation`, reason, 80),
+          createTextSection(
+            `${providerLabel} instruction adaptation`,
+            reason,
+            80,
+          ),
         ],
       },
       reason,
@@ -1237,15 +1235,6 @@ const executeExternalAgentCliTask = async (
       input: command.input,
       environmentKeys: Object.keys(enrollment.env).sort(),
       canonicalDigest: resolution.canonicalDigest,
-    });
-    assertInstructionInvocationBudget(resolution, {
-      phase: "initial",
-      assembledRequestBytes:
-        Buffer.byteLength(command.input ?? "", "utf8") +
-        Buffer.byteLength(JSON.stringify(command.args), "utf8") +
-        (enrollment.instructionDelivery.instructionPayloadIncludedInRequest
-          ? 0
-          : enrollment.instructionDelivery.instructionPayloadBytes),
     });
   } catch (error) {
     await enrollment.dispose();
@@ -1307,7 +1296,7 @@ const executeExternalAgentCliTask = async (
   const receiptEvidence = [
     ...enrollment.manifest.renderedFiles
       .filter((file) =>
-        file.purpose.toLocaleLowerCase("en-US").includes("instruction")
+        file.purpose.toLocaleLowerCase("en-US").includes("instruction"),
       )
       .map((file) => ({
         kind: "temporary-file" as const,
@@ -1357,8 +1346,7 @@ const executeExternalAgentCliTask = async (
       observedCanonicalDigest:
         enrollment.manifest.instructionDelivery.canonicalDigest,
       assembledRequestDigest: externalAssembledRequestDigest,
-      deliveredBytes:
-        enrollment.instructionDelivery.instructionPayloadBytes,
+      deliveredBytes: enrollment.instructionDelivery.instructionPayloadBytes,
       indeterminateReason:
         "The delegated CLI process failed after launch, so Machdoch cannot prove whether it accepted or acted on the request. Automatic replay is prohibited.",
       evidence: receiptEvidence,
@@ -1376,10 +1364,8 @@ const executeExternalAgentCliTask = async (
       enrollment.manifest.instructionDelivery.canonicalDigest,
     assembledRequestDigest: externalAssembledRequestDigest,
     deliveredBytes: enrollment.instructionDelivery.instructionPayloadBytes,
-    ...((
-      resolution.budget.estimatedTotalInstructionTokens ??
-      resolution.budget.estimatedTokens
-    ) === undefined
+    ...((resolution.budget.estimatedTotalInstructionTokens ??
+      resolution.budget.estimatedTokens) === undefined
       ? {}
       : {
           estimatedTokens:

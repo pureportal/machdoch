@@ -21,7 +21,10 @@ import {
 const INSTRUCTION_ADAPTER_VERSION = "machdoch-instruction-adapter/1";
 
 const API_CAPABILITIES: Record<
-  Extract<ConfiguredModelProvider, "openai" | "anthropic" | "google" | "langdock">,
+  Extract<
+    ConfiguredModelProvider,
+    "openai" | "anthropic" | "google" | "langdock"
+  >,
   InstructionCapabilityDescriptor
 > = {
   openai: {
@@ -71,7 +74,9 @@ const API_CAPABILITIES: Record<
     },
     mechanism: "Messages API top-level system",
     maxInstructionBytes: MAX_INSTRUCTION_ENVELOPE_BYTES,
-    evidence: ["Machdoch supplies the same top-level system content on every request."],
+    evidence: [
+      "Machdoch supplies the same top-level system content on every request.",
+    ],
   },
   google: {
     adapterVersion: INSTRUCTION_ADAPTER_VERSION,
@@ -94,7 +99,9 @@ const API_CAPABILITIES: Record<
     },
     mechanism: "Gemini systemInstruction",
     maxInstructionBytes: MAX_INSTRUCTION_ENVELOPE_BYTES,
-    evidence: ["Machdoch supplies the same systemInstruction on every request."],
+    evidence: [
+      "Machdoch supplies the same systemInstruction on every request.",
+    ],
   },
   langdock: {
     adapterVersion: INSTRUCTION_ADAPTER_VERSION,
@@ -216,12 +223,8 @@ export const getInstructionCapabilityDescriptor = (
 ): InstructionCapabilityDescriptor => {
   const base =
     surface === "api"
-      ? API_CAPABILITIES[
-          providerId as keyof typeof API_CAPABILITIES
-        ]
-      : CLI_CAPABILITIES[
-          providerId as keyof typeof CLI_CAPABILITIES
-        ];
+      ? API_CAPABILITIES[providerId as keyof typeof API_CAPABILITIES]
+      : CLI_CAPABILITIES[providerId as keyof typeof CLI_CAPABILITIES];
   if (!base || base.surface !== surface) {
     return {
       adapterVersion: INSTRUCTION_ADAPTER_VERSION,
@@ -243,7 +246,9 @@ export const getInstructionCapabilityDescriptor = (
         subagents: "unsupported",
       },
       mechanism: "No supported instruction adapter",
-      evidence: ["Provider and execution surface do not have a supported mapping."],
+      evidence: [
+        "Provider and execution surface do not have a supported mapping.",
+      ],
       ...(probe?.version === undefined ? {} : { version: probe.version }),
       ...(probe?.evidence === undefined
         ? {}
@@ -291,23 +296,19 @@ const nativeRecordAppliesToProvider = (
 export const createInstructionDeliveryPlan = (
   resolution: FrozenInstructionSet,
   input: {
-    unattended?: boolean;
-    acknowledgedCompatible?: boolean;
     capability?: InstructionCapabilityDescriptor;
     now?: Date;
   } = {},
 ): InstructionDeliveryPlan => {
-  const capability =
-    input.capability ??
-    {
-      ...getInstructionCapabilityDescriptor(
-        resolution.providerId,
-        resolution.surface,
-      ),
-      ...(resolution.budget.providerLimitTokens === undefined
-        ? {}
-        : { maxInputTokens: resolution.budget.providerLimitTokens }),
-    };
+  const capability = input.capability ?? {
+    ...getInstructionCapabilityDescriptor(
+      resolution.providerId,
+      resolution.surface,
+    ),
+    ...(resolution.budget.providerLimitTokens === undefined
+      ? {}
+      : { maxInputTokens: resolution.budget.providerLimitTokens }),
+  };
   const dimensions: InstructionDeliveryDimension[] = [];
   const relevantUnreadableNative = resolution.nativeInventory.filter(
     (record) =>
@@ -367,24 +368,24 @@ export const createInstructionDeliveryPlan = (
         ? "unsupported"
         : capability.nativeDiscovery === "isolated" ||
             capability.nativeDiscovery === "suppressed"
-        ? "satisfied"
-        : capability.nativeDiscovery === "accounted-extra" ||
-            capability.nativeDiscovery === "unknown"
-          ? "compatible"
-          : "unsupported",
+          ? "satisfied"
+          : capability.nativeDiscovery === "accounted-extra" ||
+              capability.nativeDiscovery === "unknown"
+            ? "compatible"
+            : "unsupported",
       relevantUnreadableNative.length > 0 &&
         capability.nativeDiscovery !== "isolated" &&
         capability.nativeDiscovery !== "suppressed"
         ? `${relevantUnreadableNative.length} active provider-native instruction path(s) could not be inventoried, and this adapter cannot prove they are suppressed.`
         : capability.nativeDiscovery === "isolated"
-        ? "No independent provider-native repository discovery applies on this surface."
-        : capability.nativeDiscovery === "suppressed"
-          ? "The invocation suppresses documented native instruction discovery."
-          : capability.nativeDiscovery === "accounted-extra"
-            ? "Provider-native extras are inventoried, but exact non-duplicating isolation is not proven."
-            : capability.nativeDiscovery === "unknown"
-              ? "Additional provider-native discovery cannot be proven absent."
-              : "Provider-native discovery is uncontrolled.",
+          ? "No independent provider-native repository discovery applies on this surface."
+          : capability.nativeDiscovery === "suppressed"
+            ? "The invocation suppresses documented native instruction discovery."
+            : capability.nativeDiscovery === "accounted-extra"
+              ? "Provider-native extras are inventoried, but exact non-duplicating isolation is not proven."
+              : capability.nativeDiscovery === "unknown"
+                ? "Additional provider-native discovery cannot be proven absent."
+                : "Provider-native discovery is uncontrolled.",
     ),
   );
   for (const name of [
@@ -439,9 +440,7 @@ export const createInstructionDeliveryPlan = (
     ),
     dimension(
       "conformance",
-      capability.conformance === "protocol-tested"
-        ? "satisfied"
-        : "compatible",
+      capability.conformance === "protocol-tested" ? "satisfied" : "compatible",
       capability.conformance === "protocol-tested"
         ? `Adapter ${capability.adapterVersion} has request/continuation protocol fixture evidence for this route.`
         : capability.conformance === "provisional"
@@ -466,16 +465,7 @@ export const createInstructionDeliveryPlan = (
   const blockingReasons = dimensions
     .filter((entry) => entry.status === "unsupported")
     .map((entry) => entry.detail);
-  const requiresAcknowledgement = grade === "compatible";
-  if (
-    grade === "compatible" &&
-    input.unattended === true &&
-    input.acknowledgedCompatible !== true
-  ) {
-    blockingReasons.push(
-      "Compatible instruction delivery requires explicit acknowledgement for unattended execution.",
-    );
-  }
+  const requiresAcknowledgement = false;
 
   const createdAt = (input.now ?? new Date()).toISOString();
   const planIdentity = {
@@ -508,26 +498,10 @@ export const createInstructionDeliveryPlan = (
 };
 
 export const assertInstructionDeliveryAllowed = (
-  plan: InstructionDeliveryPlan,
-  input: { unattended?: boolean; acknowledgedCompatible?: boolean } = {},
+  _plan: InstructionDeliveryPlan,
 ): void => {
-  if (plan.grade === "unsupported" || plan.blockingReasons.length > 0) {
-    throw new InstructionSystemError(
-      "INSTRUCTION_DELIVERY_UNSUPPORTED",
-      plan.blockingReasons.join(" ") || "Instruction delivery is unsupported.",
-    );
-  }
-  if (
-    plan.grade === "compatible" &&
-    input.acknowledgedCompatible !== true
-  ) {
-    throw new InstructionSystemError(
-      "INSTRUCTION_DELIVERY_ACKNOWLEDGEMENT_REQUIRED",
-      input.unattended === true
-        ? "This provider can only offer compatible instruction delivery. An unattended run requires an explicit acknowledgement."
-        : "This provider can only offer compatible instruction delivery. Review the delivery dimensions and acknowledge them before the provider starts.",
-    );
-  }
+  // Delivery grades are informational. The frozen Machdoch envelope is the
+  // source of truth and never requires user approval before execution.
 };
 
 export const assertInstructionInvocationBudget = (
@@ -548,9 +522,7 @@ export const assertInstructionInvocationBudget = (
   }
   const estimatedEnvelopeTokens =
     resolution.budget.estimatedTokens ??
-    estimateConservativeTokensFromUtf8Bytes(
-      resolution.budget.envelopeBytes,
-    );
+    estimateConservativeTokensFromUtf8Bytes(resolution.budget.envelopeBytes);
   const estimatedRuntimeSupplementTokens =
     resolution.budget.estimatedRuntimeSupplementTokens ??
     estimateConservativeTokensFromUtf8Bytes(
@@ -558,8 +530,9 @@ export const assertInstructionInvocationBudget = (
     );
   const estimatedInstructionTokens =
     estimatedEnvelopeTokens + estimatedRuntimeSupplementTokens;
-  const estimatedAssembledTokens =
-    estimateConservativeTokensFromUtf8Bytes(input.assembledRequestBytes);
+  const estimatedAssembledTokens = estimateConservativeTokensFromUtf8Bytes(
+    input.assembledRequestBytes,
+  );
   const estimatedNonInstructionTokens = Math.max(
     0,
     estimatedAssembledTokens - estimatedInstructionTokens,
@@ -605,8 +578,7 @@ export const assertInstructionInvocationBudget = (
     estimatedEnvelopeTokens,
     estimatedRuntimeSupplementTokens,
     estimatedNonInstructionTokens,
-    minimumReservedNonInstructionTokens:
-      INSTRUCTION_PROVIDER_RESERVE_TOKENS,
+    minimumReservedNonInstructionTokens: INSTRUCTION_PROVIDER_RESERVE_TOKENS,
     estimatedRequiredInputTokens,
     ...(providerLimitTokens === undefined ? {} : { providerLimitTokens }),
   };

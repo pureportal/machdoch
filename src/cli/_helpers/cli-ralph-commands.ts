@@ -8,7 +8,10 @@ import {
   type RalphGenerationEvent,
   type RalphGenerationInterviewSession,
 } from "../../core/ralph-generation.js";
-import { getUserSchedulerStatePath, DurableSmartScheduler } from "../../core/scheduler.js";
+import {
+  getUserSchedulerStatePath,
+  DurableSmartScheduler,
+} from "../../core/scheduler.js";
 import {
   createRalphRunLogger,
   deleteRalphFlow,
@@ -97,7 +100,9 @@ const resolveWorkspaceFile = async (
   const resolvedPath = await realpath(candidatePath);
 
   if (!isPathInside(resolvedWorkspaceRoot, resolvedPath)) {
-    throw new Error("Refusing to read Ralph prompt file outside the workspace.");
+    throw new Error(
+      "Refusing to read Ralph prompt file outside the workspace.",
+    );
   }
 
   const metadata = await stat(resolvedPath);
@@ -150,12 +155,15 @@ const readRalphJsonValidationInput = async (
   args: ParsedCliArgs,
   options: RalphCliOptions,
 ): Promise<string> => {
-  const raw = options.flowJson ??
+  const raw =
+    options.flowJson ??
     (options.flowJsonFile === "-"
       ? await readBoundedStdinText()
       : options.flowJsonFile
         ? await readRalphWorkspaceFile(args.workspaceRoot, options.flowJsonFile)
-        : fail("Expected --flow-json or --flow-json-file for `machdoch ralph validate-json`."));
+        : fail(
+            "Expected --flow-json or --flow-json-file for `machdoch ralph validate-json`.",
+          ));
 
   if (Buffer.byteLength(raw, "utf8") > MAX_RALPH_JSON_BATCH_BYTES) {
     fail("The Ralph JSON validation batch exceeds 32 MiB.");
@@ -203,65 +211,69 @@ export const validateRalphJsonBatch = (
     );
   }
   if (flows.length > MAX_RALPH_JSON_BATCH_FLOWS) {
-    fail(`A Ralph validation batch cannot contain more than ${MAX_RALPH_JSON_BATCH_FLOWS} flows.`);
+    fail(
+      `A Ralph validation batch cannot contain more than ${MAX_RALPH_JSON_BATCH_FLOWS} flows.`,
+    );
   }
 
   const ids = new Set<string>();
-  const results: RalphJsonBatchValidationResult["results"] = flows.map((entry, index) => {
-    if (!isRecord(entry)) {
+  const results: RalphJsonBatchValidationResult["results"] = flows.map(
+    (entry, index) => {
+      if (!isRecord(entry)) {
+        return {
+          index,
+          id: null,
+          valid: false,
+          errors: ["Expected Ralph flow JSON to be an object."],
+          warnings: [],
+        };
+      }
+
+      let flow: RalphFlow;
+      try {
+        flow = parseRalphFlowJson(JSON.stringify(entry));
+      } catch {
+        return {
+          index,
+          id: null,
+          valid: false,
+          errors: ["Ralph flow JSON could not be parsed."],
+          warnings: [],
+        };
+      }
+
+      const validation = validateRalphFlow(flow);
+      const errors = [...validation.errors];
+      if (entry.schemaVersion !== RALPH_FLOW_SCHEMA_VERSION) {
+        errors.unshift(
+          `schemaVersion must be explicitly set to ${RALPH_FLOW_SCHEMA_VERSION}.`,
+        );
+      }
+      if (flow.id && ids.has(flow.id)) {
+        errors.push(`Ralph flow id \`${flow.id}\` is duplicated in the batch.`);
+      }
+      if (flow.id) ids.add(flow.id);
+      if (
+        flow.blocks.some(
+          (block) =>
+            block.settings?.workspace?.mode === "custom" ||
+            Boolean(block.settings?.workspace?.path),
+        )
+      ) {
+        errors.push(
+          "Global Ralph transfer does not accept custom workspace overrides.",
+        );
+      }
+
       return {
         index,
-        id: null,
-        valid: false,
-        errors: ["Expected Ralph flow JSON to be an object."],
-        warnings: [],
+        id: flow.id || null,
+        valid: errors.length === 0,
+        errors,
+        warnings: [...validation.warnings],
       };
-    }
-
-    let flow: RalphFlow;
-    try {
-      flow = parseRalphFlowJson(JSON.stringify(entry));
-    } catch {
-      return {
-        index,
-        id: null,
-        valid: false,
-        errors: ["Ralph flow JSON could not be parsed."],
-        warnings: [],
-      };
-    }
-
-    const validation = validateRalphFlow(flow);
-    const errors = [...validation.errors];
-    if (entry.schemaVersion !== RALPH_FLOW_SCHEMA_VERSION) {
-      errors.unshift(
-        `schemaVersion must be explicitly set to ${RALPH_FLOW_SCHEMA_VERSION}.`,
-      );
-    }
-    if (flow.id && ids.has(flow.id)) {
-      errors.push(`Ralph flow id \`${flow.id}\` is duplicated in the batch.`);
-    }
-    if (flow.id) ids.add(flow.id);
-    if (
-      flow.blocks.some(
-        (block) =>
-          block.settings?.workspace?.mode === "custom" ||
-          Boolean(block.settings?.workspace?.path),
-      )
-    ) {
-      errors.push(
-        "Global Ralph transfer does not accept custom workspace overrides.",
-      );
-    }
-
-    return {
-      index,
-      id: flow.id || null,
-      valid: errors.length === 0,
-      errors,
-      warnings: [...validation.warnings],
-    };
-  });
+    },
+  );
 
   return {
     valid: results.every((result) => result.valid),
@@ -276,8 +288,13 @@ const readRalphParamsFile = async (
   const contents = await readRalphWorkspaceFile(workspaceRoot, path);
   const parsed = JSON.parse(contents) as unknown;
 
-  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
-    throw new Error("Expected --params-file to contain a JSON array of name=value strings.");
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((entry) => typeof entry !== "string")
+  ) {
+    throw new Error(
+      "Expected --params-file to contain a JSON array of name=value strings.",
+    );
   }
 
   return parsed;
@@ -328,7 +345,9 @@ const parseRalphInputValues = (
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => {
       if (!isRalphInputValue(entry)) {
-        throw new Error(`Expected Ralph input value \`${key}\` to be a string, number, boolean, null, or string array.`);
+        throw new Error(
+          `Expected Ralph input value \`${key}\` to be a string, number, boolean, null, or string array.`,
+        );
       }
 
       return [key, entry];
@@ -368,10 +387,13 @@ const readRalphInputResponse = async (
   options: RalphCliOptions,
   pendingInput: RalphInputRequest,
 ): Promise<RalphInputResponse> => {
-  const raw = options.inputJson ??
+  const raw =
+    options.inputJson ??
     (options.inputJsonFile
       ? await readRalphWorkspaceFile(args.workspaceRoot, options.inputJsonFile)
-      : fail("Expected --input-json or --input-json-file for `machdoch ralph resume`."));
+      : fail(
+          "Expected --input-json or --input-json-file for `machdoch ralph resume`.",
+        ));
 
   return parseRalphInputResponse(raw, pendingInput);
 };
@@ -396,7 +418,8 @@ const readRalphGenerationInterviewInput = async (
   args: ParsedCliArgs,
   options: RalphCliOptions,
 ): Promise<RalphGenerationInterviewCliInput> => {
-  const raw = options.inputJson ??
+  const raw =
+    options.inputJson ??
     (options.inputJsonFile
       ? await readRalphWorkspaceFile(args.workspaceRoot, options.inputJsonFile)
       : undefined);
@@ -417,14 +440,14 @@ const readRalphGenerationInterviewInput = async (
 
   return {
     ...(isRecord(parsed.session)
-      ? { session: parsed.session as unknown as RalphGenerationInterviewSession }
+      ? {
+          session: parsed.session as unknown as RalphGenerationInterviewSession,
+        }
       : {}),
     ...(isRecord(parsed.answers)
       ? { answers: parseRalphInputValues(parsed.answers) }
       : {}),
-    ...(Object.keys(answerComments).length > 0
-      ? { answerComments }
-      : {}),
+    ...(Object.keys(answerComments).length > 0 ? { answerComments } : {}),
   };
 };
 
@@ -438,9 +461,12 @@ const createResumeRunLogPaths = (
     id: record.id,
     directory,
     recordPath,
-    simpleJsonlPath: record.logPaths?.simpleJsonlPath ?? join(directory, "simple.jsonl"),
-    simpleMarkdownPath: record.logPaths?.simpleMarkdownPath ?? join(directory, "simple.md"),
-    traceJsonlPath: record.logPaths?.traceJsonlPath ?? join(directory, "trace.jsonl"),
+    simpleJsonlPath:
+      record.logPaths?.simpleJsonlPath ?? join(directory, "simple.jsonl"),
+    simpleMarkdownPath:
+      record.logPaths?.simpleMarkdownPath ?? join(directory, "simple.md"),
+    traceJsonlPath:
+      record.logPaths?.traceJsonlPath ?? join(directory, "trace.jsonl"),
   };
 };
 
@@ -470,7 +496,8 @@ const readRalphWatchInput = async (
   args: ParsedCliArgs,
   options: RalphCliOptions,
 ): Promise<RalphWatchInput> => {
-  const raw = options.watchJson ??
+  const raw =
+    options.watchJson ??
     (options.watchJsonFile
       ? await readRalphWorkspaceFile(args.workspaceRoot, options.watchJsonFile)
       : fail("Expected --watch-json or --watch-json-file."));
@@ -611,7 +638,9 @@ export const createInterruptedRalphRunResult = (
   };
 };
 
-export const summarizeRun = (result: RalphRunResult): Record<string, unknown> => {
+export const summarizeRun = (
+  result: RalphRunResult,
+): Record<string, unknown> => {
   return {
     runId: result.runId ?? null,
     flow: result.flow,
@@ -649,7 +678,6 @@ interface RunRalphFlowForCliOptions {
   checkpoint?: RalphRunCheckpoint;
   inputResponse?: RalphInputResponse;
   maxTransitions?: number;
-  acknowledgeCompatibleInstructionDelivery?: boolean;
   instructionBoundaryPolicy?:
     | "require-match"
     | "original-boundary"
@@ -666,7 +694,6 @@ const runRalphFlowForCli = async ({
   checkpoint,
   inputResponse,
   maxTransitions,
-  acknowledgeCompatibleInstructionDelivery,
   instructionBoundaryPolicy,
 }: RunRalphFlowForCliOptions): Promise<RalphRunResult> => {
   const controller = new AbortController();
@@ -691,9 +718,6 @@ const runRalphFlowForCli = async ({
       ...(checkpoint ? { checkpoint } : {}),
       ...(inputResponse ? { inputResponse } : {}),
       ...(maxTransitions !== undefined ? { maxTransitions } : {}),
-      ...(acknowledgeCompatibleInstructionDelivery === true
-        ? { acknowledgeCompatibleInstructionDelivery: true }
-        : {}),
       ...(instructionBoundaryPolicy === undefined
         ? {}
         : { instructionBoundaryPolicy }),
@@ -760,7 +784,9 @@ const getRalphEventBlockId = (event: RalphRunEvent): string | undefined => {
   }
 };
 
-const getRalphEventActiveBlockId = (event: RalphRunEvent): string | undefined => {
+const getRalphEventActiveBlockId = (
+  event: RalphRunEvent,
+): string | undefined => {
   return event.type === "edge-route" ? event.to : getRalphEventBlockId(event);
 };
 
@@ -769,7 +795,9 @@ const createRalphEventProgressMessage = (
   blockTitleById: Map<string, string>,
 ): string => {
   const blockId = getRalphEventBlockId(event);
-  const title = blockId ? blockTitleById.get(blockId) ?? blockId : "unknown block";
+  const title = blockId
+    ? (blockTitleById.get(blockId) ?? blockId)
+    : "unknown block";
 
   switch (event.type) {
     case "block-start":
@@ -800,7 +828,7 @@ const createRalphEventTimeline = (
   const blockId = getRalphEventBlockId(event);
   const activeBlockId = getRalphEventActiveBlockId(event);
   const activeBlockTitle = activeBlockId
-    ? blockTitleById.get(activeBlockId) ?? activeBlockId
+    ? (blockTitleById.get(activeBlockId) ?? activeBlockId)
     : undefined;
   const metadata: NonNullable<
     NonNullable<TaskExecutionProgress["timelineEvent"]>["metadata"]
@@ -866,7 +894,7 @@ const createRalphEventTimeline = (
           ? "warning"
           : event.type === "input-cancelled"
             ? "warning"
-          : "info",
+            : "info",
     metadata,
   };
 };
@@ -982,7 +1010,8 @@ const createRalphGenerationTimeline = (
   }
 
   if (event.validationWarningCount !== undefined) {
-    metadata.ralphGenerationValidationWarningCount = event.validationWarningCount;
+    metadata.ralphGenerationValidationWarningCount =
+      event.validationWarningCount;
   }
 
   if (event.validatorDecision) {
@@ -1030,38 +1059,41 @@ const createRalphGenerationTimeline = (
           ? "rejected"
           : event.type === "actor-output"
             ? "streaming"
-          : event.type === "retry-feedback"
-            ? "requested-continuation"
-            : event.type.endsWith("-result") || event.type === "generator-file-written"
-              ? "completed"
-              : "started";
+            : event.type === "retry-feedback"
+              ? "requested-continuation"
+              : event.type.endsWith("-result") ||
+                  event.type === "generator-file-written"
+                ? "completed"
+                : "started";
   const kind: NonNullable<TaskExecutionProgress["timelineEvent"]>["kind"] =
     event.type === "actor-output"
       ? "output"
       : event.type === "generator-start" ||
           event.type === "generator-output" ||
           event.type === "actor-progress"
-      ? "model-call"
-      : event.type === "validator-start" ||
-          event.type === "validator-result" ||
-          event.type === "schema-validation-start" ||
-          event.type === "schema-validation-result"
-        ? "validator"
-        : event.type === "retry-feedback"
-          ? "retry"
-          : event.type === "generator-file-written"
-            ? "output"
-            : "state";
+        ? "model-call"
+        : event.type === "validator-start" ||
+            event.type === "validator-result" ||
+            event.type === "schema-validation-start" ||
+            event.type === "schema-validation-result"
+          ? "validator"
+          : event.type === "retry-feedback"
+            ? "retry"
+            : event.type === "generator-file-written"
+              ? "output"
+              : "state";
   const tone: NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"] =
     event.type === "created"
       ? "success"
-      : event.type === "blocked" || event.type === "failed" || event.type === "cancelled"
+      : event.type === "blocked" ||
+          event.type === "failed" ||
+          event.type === "cancelled"
         ? "danger"
         : event.type === "actor-output" && event.actionStream === "stderr"
           ? "warning"
-        : event.type === "retry-feedback"
-          ? "warning"
-          : "info";
+          : event.type === "retry-feedback"
+            ? "warning"
+            : "info";
 
   return {
     kind,
@@ -1094,12 +1126,12 @@ const createRalphGenerationProgressReporter = (
               ? "blocked"
               : event.type === "actor-progress" && event.actorState
                 ? event.actorState
-              : event.type === "schema-validation-start" ||
-                  event.type === "schema-validation-result" ||
-                  event.type === "validator-start" ||
-                  event.type === "validator-result"
-                ? "verifying"
-                : "executing",
+                : event.type === "schema-validation-start" ||
+                    event.type === "schema-validation-result" ||
+                    event.type === "validator-start" ||
+                    event.type === "validator-result"
+                  ? "verifying"
+                  : "executing",
       message: createRalphGenerationProgressMessage(event),
       executedTools: [],
       outputSections: [],
@@ -1161,7 +1193,9 @@ const getPromptText = async (
   options: RalphCliOptions,
 ): Promise<string> => {
   if (options.prompt && options.promptFile) {
-    fail("Use either --prompt or --prompt-file for `machdoch ralph create`, not both.");
+    fail(
+      "Use either --prompt or --prompt-file for `machdoch ralph create`, not both.",
+    );
   }
 
   if (options.promptFile) {
@@ -1171,9 +1205,7 @@ const getPromptText = async (
   return options.prompt ?? "";
 };
 
-export const printRalphSummary = async (
-  args: ParsedCliArgs,
-): Promise<void> => {
+export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
   const options = args.ralph ?? fail("No Ralph action was provided.");
   const scope = getRalphCommandScope(options);
 
@@ -1216,7 +1248,8 @@ export const printRalphSummary = async (
           return;
         }
         case "delete": {
-          const subject = options.subject ??
+          const subject =
+            options.subject ??
             fail("Expected a watch id after `machdoch ralph watches delete`.");
           const watch = await deleteRalphWatch(subject);
           await deleteWatchSchedulerJob(scheduler, watch.id);
@@ -1272,10 +1305,16 @@ export const printRalphSummary = async (
       return;
     }
     case "show": {
-      const subject = options.subject ?? fail("Expected a flow id or alias after `machdoch ralph show`.");
-      const resolution = await resolveRalphFlowReference(args.workspaceRoot, subject, {
-        scope,
-      });
+      const subject =
+        options.subject ??
+        fail("Expected a flow id or alias after `machdoch ralph show`.");
+      const resolution = await resolveRalphFlowReference(
+        args.workspaceRoot,
+        subject,
+        {
+          scope,
+        },
+      );
       const flow = await readRalphFlow(args.workspaceRoot, resolution.id, {
         allowInvalid: true,
         scope,
@@ -1293,11 +1332,16 @@ export const printRalphSummary = async (
       return;
     }
     case "validate": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph validate`.");
-      const resolution = await resolveRalphFlowReference(args.workspaceRoot, subject, {
-        scope,
-      });
+      const resolution = await resolveRalphFlowReference(
+        args.workspaceRoot,
+        subject,
+        {
+          scope,
+        },
+      );
       const path = resolution.path;
       const flow = resolution.flow;
       const validation = validateRalphFlow(flow);
@@ -1341,7 +1385,8 @@ export const printRalphSummary = async (
       return;
     }
     case "delete": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph delete`.");
       const result = await deleteRalphFlow(args.workspaceRoot, subject, {
         scope,
@@ -1363,11 +1408,16 @@ export const printRalphSummary = async (
       return;
     }
     case "revisions": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph revisions`.");
-      const revisions = await listRalphFlowRevisions(args.workspaceRoot, subject, {
-        scope,
-      });
+      const revisions = await listRalphFlowRevisions(
+        args.workspaceRoot,
+        subject,
+        {
+          scope,
+        },
+      );
 
       if (args.json) {
         printJson({ flow: subject, scope, revisions });
@@ -1403,7 +1453,8 @@ export const printRalphSummary = async (
       return;
     }
     case "run-detail": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a run id after `machdoch ralph run-detail`.");
       const detail = await readRalphRunRecord(args.workspaceRoot, subject, {
         scope,
@@ -1415,20 +1466,25 @@ export const printRalphSummary = async (
       }
 
       writeStdoutLine(`ralph run: ${detail.record.id}`);
-      writeStdoutLine(`flow: ${detail.record.flowName} (${detail.record.flowId})`);
+      writeStdoutLine(
+        `flow: ${detail.record.flowName} (${detail.record.flowId})`,
+      );
       writeStdoutLine(`status: ${detail.record.status}`);
       writeStdoutLine(`created: ${detail.record.createdAt}`);
       if (detail.record.finishedAt) {
         writeStdoutLine(`finished: ${detail.record.finishedAt}`);
       }
       writeStdoutLine(`summary: ${detail.record.summary}`);
-      writeStdoutLine(`variables: ${Object.keys(detail.record.variableValues).length}`);
+      writeStdoutLine(
+        `variables: ${Object.keys(detail.record.variableValues).length}`,
+      );
       writeStdoutLine(`blocks: ${detail.record.blockResults.length}`);
       writeStdoutLine(`events: ${detail.record.events.length}`);
       return;
     }
     case "log": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a run id after `machdoch ralph log`.");
       const log = await readRalphRunLog(
         args.workspaceRoot,
@@ -1446,9 +1502,11 @@ export const printRalphSummary = async (
       return;
     }
     case "restore": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph restore`.");
-      const revision = options.revision ??
+      const revision =
+        options.revision ??
         fail("Expected --revision for `machdoch ralph restore`.");
       const result = await restoreRalphFlowRevision(
         args.workspaceRoot,
@@ -1485,12 +1543,19 @@ export const printRalphSummary = async (
       return;
     }
     case "save": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph save`.");
-      const rawFlow = options.flowJson ??
+      const rawFlow =
+        options.flowJson ??
         (options.flowJsonFile
-          ? await readRalphWorkspaceFile(args.workspaceRoot, options.flowJsonFile)
-          : fail("Expected --flow-json or --flow-json-file for `machdoch ralph save`."));
+          ? await readRalphWorkspaceFile(
+              args.workspaceRoot,
+              options.flowJsonFile,
+            )
+          : fail(
+              "Expected --flow-json or --flow-json-file for `machdoch ralph save`.",
+            ));
       const flow = parseRalphFlowJson(rawFlow);
 
       const normalizedSubject = subject.trim().toLowerCase();
@@ -1535,7 +1600,8 @@ export const printRalphSummary = async (
       return;
     }
     case "run": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph run`.");
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
@@ -1572,17 +1638,13 @@ export const printRalphSummary = async (
         customizations,
         variableValues,
         logger,
-        ...(args.acknowledgeCompatibleInstructionDelivery === true
-          ? { acknowledgeCompatibleInstructionDelivery: true }
-          : {}),
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
           : {}),
         ...(options.instructionBoundaryPolicy === undefined
           ? {}
           : {
-              instructionBoundaryPolicy:
-                options.instructionBoundaryPolicy,
+              instructionBoundaryPolicy: options.instructionBoundaryPolicy,
             }),
       });
       if (!logger.paths) {
@@ -1609,19 +1671,25 @@ export const printRalphSummary = async (
         if (event.type === "edge-route") {
           writeStdoutLine(`- ${event.from}.${event.output} -> ${event.to}`);
         } else if (event.type === "crash") {
-          writeStdoutLine(`- crash ${event.blockId}.${event.output}: ${event.reason}`);
+          writeStdoutLine(
+            `- crash ${event.blockId}.${event.output}: ${event.reason}`,
+          );
         }
       }
 
       for (const blockResult of result.blockResults) {
-        if (blockResult.result?.response || blockResult.result?.outputSections.length) {
+        if (
+          blockResult.result?.response ||
+          blockResult.result?.outputSections.length
+        ) {
           printExecutionSummary(blockResult.result);
         }
       }
       return;
     }
     case "resume": {
-      const subject = options.subject ??
+      const subject =
+        options.subject ??
         fail("Expected a run id after `machdoch ralph resume`.");
       const { path: recordPath, record } = await readRalphRunRecord(
         args.workspaceRoot,
@@ -1629,7 +1697,8 @@ export const printRalphSummary = async (
         { scope },
       );
       const retryCurrent = options.retryCurrent === true;
-      const checkpoint = record.checkpoint ??
+      const checkpoint =
+        record.checkpoint ??
         fail(
           retryCurrent
             ? `Ralph run \`${subject}\` does not have a recoverable checkpoint.`
@@ -1667,7 +1736,9 @@ export const printRalphSummary = async (
         args.agentLimits,
         args.reasoning,
       );
-      const flow = await readRalphFlow(args.workspaceRoot, record.flowId, { scope });
+      const flow = await readRalphFlow(args.workspaceRoot, record.flowId, {
+        scope,
+      });
       const customizations = await discoverCustomizations(
         args.workspaceRoot,
         createRalphFlowDiscoveryOptions(
@@ -1691,9 +1762,6 @@ export const printRalphSummary = async (
         customizations,
         variableValues: record.variableValues,
         logger,
-        ...(args.acknowledgeCompatibleInstructionDelivery === true
-          ? { acknowledgeCompatibleInstructionDelivery: true }
-          : {}),
         ...(checkpoint ? { checkpoint } : {}),
         ...(inputResponse ? { inputResponse } : {}),
         ...(options.maxTransitions !== undefined
@@ -1702,8 +1770,7 @@ export const printRalphSummary = async (
         ...(options.instructionBoundaryPolicy === undefined
           ? {}
           : {
-              instructionBoundaryPolicy:
-                options.instructionBoundaryPolicy,
+              instructionBoundaryPolicy: options.instructionBoundaryPolicy,
             }),
       });
       const runRecord = { paths, path: paths.recordPath };
@@ -1727,21 +1794,30 @@ export const printRalphSummary = async (
         if (event.type === "edge-route") {
           writeStdoutLine(`- ${event.from}.${event.output} -> ${event.to}`);
         } else if (event.type === "crash") {
-          writeStdoutLine(`- crash ${event.blockId}.${event.output}: ${event.reason}`);
+          writeStdoutLine(
+            `- crash ${event.blockId}.${event.output}: ${event.reason}`,
+          );
         } else if (event.type === "input-required") {
           writeStdoutLine(`- waiting for input ${event.request.id}`);
         }
       }
 
-      for (const blockResult of result.blockResults.slice(record.blockResults.length)) {
-        if (blockResult.result?.response || blockResult.result?.outputSections.length) {
+      for (const blockResult of result.blockResults.slice(
+        record.blockResults.length,
+      )) {
+        if (
+          blockResult.result?.response ||
+          blockResult.result?.outputSections.length
+        ) {
           printExecutionSummary(blockResult.result);
         }
       }
       return;
     }
     case "create": {
-      const name = options.name ?? options.subject ??
+      const name =
+        options.name ??
+        options.subject ??
         fail("Expected --name or a flow alias for `machdoch ralph create`.");
       const prompt = await getPromptText(args, options);
 
@@ -1749,9 +1825,13 @@ export const printRalphSummary = async (
         fail("Expected --prompt or --prompt-file for `machdoch ralph create`.");
       }
 
-      const existingFlowJson = options.existingFlowJson ??
+      const existingFlowJson =
+        options.existingFlowJson ??
         (options.existingFlowJsonFile
-          ? await readRalphWorkspaceFile(args.workspaceRoot, options.existingFlowJsonFile)
+          ? await readRalphWorkspaceFile(
+              args.workspaceRoot,
+              options.existingFlowJsonFile,
+            )
           : undefined);
       const existingFlow = existingFlowJson
         ? parseRalphFlowJson(existingFlowJson)
@@ -1787,7 +1867,9 @@ export const printRalphSummary = async (
         ...(options.maxRounds ? { maxRounds: options.maxRounds } : {}),
         ...(args.json
           ? {
-              onGenerationEvent: createRalphGenerationProgressReporter(config.mode),
+              onGenerationEvent: createRalphGenerationProgressReporter(
+                config.mode,
+              ),
             }
           : {}),
       });
@@ -1804,8 +1886,12 @@ export const printRalphSummary = async (
           summary: result.summary,
           flow: result.flow ? summarizeFlow(result.flow) : null,
           events: result.events,
-          generatorResults: result.generatorResults.map(summarizeGenerationActorResult),
-          validatorResults: result.validatorResults.map(summarizeGenerationActorResult),
+          generatorResults: result.generatorResults.map(
+            summarizeGenerationActorResult,
+          ),
+          validatorResults: result.validatorResults.map(
+            summarizeGenerationActorResult,
+          ),
         });
         return;
       }
@@ -1833,12 +1919,18 @@ export const printRalphSummary = async (
       const prompt = await getPromptText(args, options);
 
       if (!prompt.trim()) {
-        fail("Expected --prompt or --prompt-file for `machdoch ralph interview`.");
+        fail(
+          "Expected --prompt or --prompt-file for `machdoch ralph interview`.",
+        );
       }
 
-      const existingFlowJson = options.existingFlowJson ??
+      const existingFlowJson =
+        options.existingFlowJson ??
         (options.existingFlowJsonFile
-          ? await readRalphWorkspaceFile(args.workspaceRoot, options.existingFlowJsonFile)
+          ? await readRalphWorkspaceFile(
+              args.workspaceRoot,
+              options.existingFlowJsonFile,
+            )
           : undefined);
       const existingFlow = existingFlowJson
         ? parseRalphFlowJson(existingFlowJson)
@@ -1873,7 +1965,9 @@ export const printRalphSummary = async (
           ...(options.maxRounds ? { maxTurns: options.maxRounds } : {}),
           ...(input.session ? { session: input.session } : {}),
           ...(input.answers ? { answers: input.answers } : {}),
-          ...(input.answerComments ? { answerComments: input.answerComments } : {}),
+          ...(input.answerComments
+            ? { answerComments: input.answerComments }
+            : {}),
         },
       );
 
@@ -1895,7 +1989,9 @@ export const printRalphSummary = async (
 
       writeStdoutLine(`ralph interview: ${result.status}`);
       writeStdoutLine(result.summary);
-      writeStdoutLine(`turn: ${result.session.turn}/${result.session.maxTurns}`);
+      writeStdoutLine(
+        `turn: ${result.session.turn}/${result.session.maxTurns}`,
+      );
       for (const field of result.fields) {
         writeStdoutLine(`- ${field.id} [${field.type}] ${field.label}`);
       }

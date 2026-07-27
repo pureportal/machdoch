@@ -70,10 +70,7 @@ export const discoverLocalInstructions = async (
     }
 
     const beforeResolution = await lstat(directory);
-    if (
-      !beforeResolution.isDirectory() ||
-      beforeResolution.isSymbolicLink()
-    ) {
+    if (!beforeResolution.isDirectory() || beforeResolution.isSymbolicLink()) {
       throw new InstructionSystemError(
         "LOCAL_INSTRUCTION_LINK_SKIPPED",
         `Instruction discovery refused a linked or non-directory path at ${directory}.`,
@@ -81,7 +78,11 @@ export const discoverLocalInstructions = async (
       );
     }
     const directoryRealPath = await realpath(directory);
-    assertContainedPath(canonicalRoot, directoryRealPath, "LOCAL_INSTRUCTION_ESCAPE");
+    assertContainedPath(
+      canonicalRoot,
+      directoryRealPath,
+      "LOCAL_INSTRUCTION_ESCAPE",
+    );
     const [afterResolution, resolvedMetadata] = await Promise.all([
       lstat(directory),
       lstat(directoryRealPath),
@@ -110,7 +111,7 @@ export const discoverLocalInstructions = async (
       },
     );
     entries.sort((left, right) =>
-      compareCanonicalStrings(hostNameKey(left.name), hostNameKey(right.name))
+      compareCanonicalStrings(hostNameKey(left.name), hostNameKey(right.name)),
     );
     const afterRead = await lstat(directory);
     if (!sameDirectoryIdentity(beforeResolution, afterRead)) {
@@ -125,50 +126,76 @@ export const discoverLocalInstructions = async (
       (entry) => hostNameKey(entry.name) === hostNameKey("AGENTS.md"),
     );
     if (agentsMatches.length > 1) {
-      throw new InstructionSystemError(
-        "LOCAL_INSTRUCTION_CASE_COLLISION",
-        `Directory ${directory} contains multiple case variants of AGENTS.md.`,
-        diagnostics,
-      );
+      diagnostics.push({
+        code: "LOCAL_INSTRUCTION_CASE_COLLISION",
+        severity: "warning",
+        message: `Skipped multiple case variants of AGENTS.md in ${toPortableRelativePath(canonicalRoot, directory)}.`,
+        relativePath: toPortableRelativePath(canonicalRoot, directory),
+      });
     }
-    const agentsEntry = agentsMatches[0];
+    const agentsEntry =
+      agentsMatches.length === 1 ? agentsMatches[0] : undefined;
     if (agentsEntry) {
       const path = join(directory, agentsEntry.name);
       const metadata = await lstat(path);
       if (metadata.isSymbolicLink() || !metadata.isFile()) {
-        throw new InstructionSystemError(
-          "LOCAL_INSTRUCTION_NOT_REGULAR_FILE",
-          `${path} must be a regular file and cannot be a link.`,
-          diagnostics,
-        );
-      }
-      const pathReal = await realpath(path);
-      assertContainedPath(canonicalRoot, pathReal, "LOCAL_INSTRUCTION_ESCAPE");
-      const relativePath = toPortableRelativePath(canonicalRoot, pathReal);
-      const normalized = await readNormalizedInstructionFile(
-        pathReal,
-        relativePath,
-      );
-      files.push({
-        id: `local:${relativePath}`,
-        relativePath,
-        scopePath: scopeFromInstructionPath(relativePath),
-        ...normalized,
-      });
-      if (files.length > MAX_DISCOVERED_LOCAL_FILES) {
-        throw new InstructionSystemError(
-          "LOCAL_INSTRUCTION_FILE_LIMIT",
-          `Instruction discovery exceeded ${MAX_DISCOVERED_LOCAL_FILES} AGENTS.md files.`,
-          diagnostics,
-        );
-      }
-      if (agentsEntry.name !== "AGENTS.md") {
         diagnostics.push({
-          code: "LOCAL_INSTRUCTION_CASE_NORMALIZED",
+          code: "LOCAL_INSTRUCTION_NOT_REGULAR_FILE",
           severity: "warning",
-          message: `${relativePath} was matched case-insensitively as AGENTS.md on this host.`,
-          relativePath,
+          message: `Skipped ${toPortableRelativePath(canonicalRoot, path)} because instruction files must be regular, unlinked files.`,
+          relativePath: toPortableRelativePath(canonicalRoot, path),
         });
+      } else {
+        const candidateRelativePath = toPortableRelativePath(
+          canonicalRoot,
+          path,
+        );
+        try {
+          const pathReal = await realpath(path);
+          assertContainedPath(
+            canonicalRoot,
+            pathReal,
+            "LOCAL_INSTRUCTION_ESCAPE",
+          );
+          const relativePath = toPortableRelativePath(canonicalRoot, pathReal);
+          const normalized = await readNormalizedInstructionFile(
+            pathReal,
+            relativePath,
+          );
+          if (files.length < MAX_DISCOVERED_LOCAL_FILES) {
+            files.push({
+              id: `local:${relativePath}`,
+              relativePath,
+              scopePath: scopeFromInstructionPath(relativePath),
+              ...normalized,
+            });
+          } else {
+            diagnostics.push({
+              code: "LOCAL_INSTRUCTION_FILE_LIMIT",
+              severity: "warning",
+              message: `Skipped ${relativePath} because the ${MAX_DISCOVERED_LOCAL_FILES}-file instruction discovery limit was reached.`,
+              relativePath,
+            });
+          }
+          if (agentsEntry.name !== "AGENTS.md") {
+            diagnostics.push({
+              code: "LOCAL_INSTRUCTION_CASE_NORMALIZED",
+              severity: "warning",
+              message: `${relativePath} was matched case-insensitively as AGENTS.md on this host.`,
+              relativePath,
+            });
+          }
+        } catch (error) {
+          diagnostics.push({
+            code:
+              error instanceof InstructionSystemError
+                ? error.code
+                : "LOCAL_INSTRUCTION_INVALID",
+            severity: "warning",
+            message: `Skipped invalid instruction file ${candidateRelativePath}: ${error instanceof Error ? error.message : String(error)}`,
+            relativePath: candidateRelativePath,
+          });
+        }
       }
     }
 
@@ -213,7 +240,8 @@ export const discoverLocalInstructions = async (
 
   await visit(canonicalRoot);
   files.sort((left, right) => {
-    const leftDepth = left.scopePath === "." ? 0 : left.scopePath.split("/").length;
+    const leftDepth =
+      left.scopePath === "." ? 0 : left.scopePath.split("/").length;
     const rightDepth =
       right.scopePath === "." ? 0 : right.scopePath.split("/").length;
     return (

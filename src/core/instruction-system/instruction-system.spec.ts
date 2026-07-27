@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   stat,
   symlink,
@@ -305,7 +306,6 @@ describe("instruction profiles and assignments", () => {
       ),
     ).toMatchObject({
       id: registered.workspace.id,
-      root: nextRoot,
       scopes: [
         expect.objectContaining({
           path: "apps/web",
@@ -313,6 +313,13 @@ describe("instruction profiles and assignments", () => {
         }),
       ],
     });
+    await expect(
+      realpath(
+        relinked.library.workspaces.find(
+          (workspace) => workspace.id === registered.workspace.id,
+        )!.root,
+      ),
+    ).resolves.toBe(await realpath(nextRoot));
   });
 });
 
@@ -353,11 +360,7 @@ describe("deterministic resolution and composition", () => {
       [child.profile.id],
       { path: fixture.libraryPath, expectedRevision: 6 },
     );
-    await createLocalInstruction(
-      fixture.workspace,
-      ".",
-      "Root local policy.",
-    );
+    await createLocalInstruction(fixture.workspace, ".", "Root local policy.");
     await createLocalInstruction(
       fixture.workspace,
       "apps/web",
@@ -388,9 +391,7 @@ describe("deterministic resolution and composition", () => {
     );
     expect(
       resolution.renderedEnvelope.indexOf("Flow guidance."),
-    ).toBeGreaterThan(
-      resolution.renderedEnvelope.indexOf("Web local policy."),
-    );
+    ).toBeGreaterThan(resolution.renderedEnvelope.indexOf("Web local policy."));
     await expect(
       resolve(fixture.workspace, fixture.libraryPath, {
         model: "gpt-5.5",
@@ -612,10 +613,7 @@ describe("deterministic resolution and composition", () => {
 describe("library recovery and import conflicts", () => {
   it("bounds an oversized auxiliary audit log without failing a committed mutation", async () => {
     const fixture = await createTestRoot();
-    const auditPath = join(
-      fixture.root,
-      "instruction-library.audit.jsonl",
-    );
+    const auditPath = join(fixture.root, "instruction-library.audit.jsonl");
     await writeFile(auditPath, `${"x".repeat(2 * 1024 * 1024 + 32)}\n`);
 
     const created = await createInstructionProfile(
@@ -648,8 +646,12 @@ describe("library recovery and import conflicts", () => {
     ).rejects.toMatchObject({
       code: "INSTRUCTION_LIBRARY_REVISION_EXHAUSTED",
     });
-    await expect(loadInstructionLibrary(fixture.libraryPath)).resolves
-      .toMatchObject({ revision: Number.MAX_SAFE_INTEGER, profiles: [] });
+    await expect(
+      loadInstructionLibrary(fixture.libraryPath),
+    ).resolves.toMatchObject({
+      revision: Number.MAX_SAFE_INTEGER,
+      profiles: [],
+    });
   });
 
   it("rejects an out-of-band store edit before the atomic commit", async () => {
@@ -690,13 +692,14 @@ describe("library recovery and import conflicts", () => {
     ).rejects.toMatchObject({
       code: "INSTRUCTION_LIBRARY_CONCURRENT_WRITE",
     });
-    await expect(loadInstructionLibrary(fixture.libraryPath)).resolves
-      .toMatchObject({
-        revision: 1,
-        profiles: [
-          expect.objectContaining({ description: "External editor won." }),
-        ],
-      });
+    await expect(
+      loadInstructionLibrary(fixture.libraryPath),
+    ).resolves.toMatchObject({
+      revision: 1,
+      profiles: [
+        expect.objectContaining({ description: "External editor won." }),
+      ],
+    });
   });
 
   it("blocks a corrupt primary and performs only digest-reviewed backup recovery", async () => {
@@ -712,9 +715,7 @@ describe("library recovery and import conflicts", () => {
     );
     await writeFile(fixture.libraryPath, "{ corrupt", "utf8");
 
-    const status = await inspectInstructionLibraryRecovery(
-      fixture.libraryPath,
-    );
+    const status = await inspectInstructionLibraryRecovery(fixture.libraryPath);
     expect(status).toMatchObject({
       primaryValid: false,
       backupValid: true,
@@ -732,10 +733,7 @@ describe("library recovery and import conflicts", () => {
       ],
     });
     await expect(
-      recoverInstructionLibraryFromBackup(
-        "0".repeat(64),
-        fixture.libraryPath,
-      ),
+      recoverInstructionLibraryFromBackup("0".repeat(64), fixture.libraryPath),
     ).rejects.toMatchObject({
       code: "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
     });
@@ -786,9 +784,7 @@ describe("library recovery and import conflicts", () => {
     );
     await rm(fixture.libraryPath);
 
-    const status = await inspectInstructionLibraryRecovery(
-      fixture.libraryPath,
-    );
+    const status = await inspectInstructionLibraryRecovery(fixture.libraryPath);
     expect(status).toMatchObject({
       primaryValid: false,
       backupValid: true,
@@ -829,15 +825,10 @@ describe("library recovery and import conflicts", () => {
     );
     const corruptBytes = "{ definitely corrupt";
     await writeFile(fixture.libraryPath, corruptBytes, "utf8");
-    const status = await inspectInstructionLibraryRecovery(
-      fixture.libraryPath,
-    );
+    const status = await inspectInstructionLibraryRecovery(fixture.libraryPath);
 
     await expect(
-      resetCorruptInstructionLibrary(
-        "0".repeat(64),
-        fixture.libraryPath,
-      ),
+      resetCorruptInstructionLibrary("0".repeat(64), fixture.libraryPath),
     ).rejects.toMatchObject({
       code: "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
     });
@@ -890,7 +881,9 @@ describe("library recovery and import conflicts", () => {
         includeWorkspaceBindings: true,
       }),
     ).rejects.toMatchObject({ code: "INSTRUCTION_IMPORT_ID_CONFLICT" });
-    await expect(loadInstructionLibrary(fixture.libraryPath)).resolves.toMatchObject({
+    await expect(
+      loadInstructionLibrary(fixture.libraryPath),
+    ).resolves.toMatchObject({
       revision: 4,
       profiles: [
         expect.objectContaining({
@@ -981,8 +974,7 @@ describe("library recovery and import conflicts", () => {
         path: fixture.libraryPath,
         choices: {
           conflicts: {
-            ["00000000-0000-4000-8000-000000000099"]:
-              "keep-existing",
+            ["00000000-0000-4000-8000-000000000099"]: "keep-existing",
           },
         },
       }),
@@ -1055,17 +1047,13 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
         relativePath: "node_modules",
       }),
     );
-    await deleteLocalInstruction(
-      fixture.workspace,
-      ".",
-      updated.digest,
-    );
+    await deleteLocalInstruction(fixture.workspace, ".", updated.digest);
     await expect(
       stat(join(fixture.workspace, "AGENTS.md")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects scope traversal, empty/NUL/invalid UTF-8 sources, and linked discovery", async () => {
+  it("rejects unsafe edits and skips invalid or linked local discovery", async () => {
     const fixture = await createTestRoot();
     expect(() => normalizeScopePath("")).toThrow();
     expect(() => normalizeScopePath("   ")).toThrow();
@@ -1075,9 +1063,18 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       createLocalInstruction(fixture.workspace, ".", "\0bad"),
     ).rejects.toMatchObject({ code: "INSTRUCTION_NUL_BYTE" });
     await writeFile(join(fixture.workspace, "AGENTS.md"), Buffer.from([0xff]));
-    await expect(
-      discoverLocalInstructions(fixture.workspace),
-    ).rejects.toMatchObject({ code: "INSTRUCTION_INVALID_UTF8" });
+    await expect(discoverLocalInstructions(fixture.workspace)).resolves.toEqual(
+      expect.objectContaining({
+        files: [],
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: "INSTRUCTION_INVALID_UTF8",
+            severity: "warning",
+            relativePath: "AGENTS.md",
+          }),
+        ]),
+      }),
+    );
     await rm(join(fixture.workspace, "AGENTS.md"));
 
     const linkedTarget = join(fixture.root, "linked-target");
@@ -1127,13 +1124,7 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
         recursive: true,
       }),
       mkdir(
-        join(
-          fixture.workspace,
-          "packages",
-          "web",
-          ".github",
-          "instructions",
-        ),
+        join(fixture.workspace, "packages", "web", ".github", "instructions"),
         { recursive: true },
       ),
     ]);
@@ -1243,8 +1234,7 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     );
     expect(copilotInventory).toContainEqual(
       expect.objectContaining({
-        path:
-          "packages/web/.github/instructions/typescript.instructions.md",
+        path: "packages/web/.github/instructions/typescript.instructions.md",
         convention: "copilot-path-instructions",
         status: "suppressed",
       }),
@@ -1256,8 +1246,9 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
         status: "native-extra",
       }),
     );
-    expect(copilotInventory.every((entry) => !entry.path.includes(fixture.root)))
-      .toBe(true);
+    expect(
+      copilotInventory.every((entry) => !entry.path.includes(fixture.root)),
+    ).toBe(true);
   });
 
   it("inventories provider ancestors and subagent definitions outside a nested workspace", async () => {
@@ -1296,14 +1287,10 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       ),
     ]);
 
-    const codexBefore = await resolve(
-      nestedWorkspace,
-      fixture.libraryPath,
-      {
-        providerId: "codex-cli",
-        surface: "cli",
-      },
-    );
+    const codexBefore = await resolve(nestedWorkspace, fixture.libraryPath, {
+      providerId: "codex-cli",
+      surface: "cli",
+    });
     expect(codexBefore.nativeInventory).toContainEqual(
       expect.objectContaining({
         convention: "codex-project-agents",
@@ -1375,25 +1362,25 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       join(repository, "AGENTS.md"),
       "Changed repository agent policy.\n",
     );
-    const codexAfter = await resolve(
-      nestedWorkspace,
-      fixture.libraryPath,
-      {
-        providerId: "codex-cli",
-        surface: "cli",
-      },
-    );
+    const codexAfter = await resolve(nestedWorkspace, fixture.libraryPath, {
+      providerId: "codex-cli",
+      surface: "cli",
+    });
     expect(codexAfter.canonicalDigest).toBe(codexBefore.canonicalDigest);
     expect(codexAfter.environmentDigest).not.toBe(
       codexBefore.environmentDigest,
     );
   });
 
-  it("grades adapters, requires compatible acknowledgement, and forbids replay after a digest mismatch", async () => {
+  it("grades adapters without blocking and forbids replay after a digest mismatch", async () => {
     const fixture = await createTestRoot();
-    const apiResolution = await resolve(fixture.workspace, fixture.libraryPath, {
-      model: "gpt-5.5",
-    });
+    const apiResolution = await resolve(
+      fixture.workspace,
+      fixture.libraryPath,
+      {
+        model: "gpt-5.5",
+      },
+    );
     const fullPlan = createInstructionDeliveryPlan(apiResolution);
     expect(fullPlan.grade).toBe("full");
     expect(fullPlan.dimensions).toHaveLength(12);
@@ -1410,13 +1397,9 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     );
     const compatiblePlan = createInstructionDeliveryPlan(cliResolution);
     expect(compatiblePlan.grade).toBe("compatible");
+    expect(compatiblePlan.requiresAcknowledgement).toBe(false);
     expect(() =>
       assertInstructionDeliveryAllowed(compatiblePlan),
-    ).toThrowError(/acknowledge/u);
-    expect(() =>
-      assertInstructionDeliveryAllowed(compatiblePlan, {
-        acknowledgedCompatible: true,
-      }),
     ).not.toThrow();
 
     const receipt = createInstructionDeliveryReceipt({
@@ -1516,8 +1499,11 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     const schemaRoot = join(process.cwd(), "src", "shared");
     const [resolutionSchema, deliverySchema, librarySchema, exportSchema] =
       await Promise.all([
-      readFile(join(schemaRoot, "instruction-resolution.schema.json"), "utf8"),
-      readFile(join(schemaRoot, "instruction-delivery.schema.json"), "utf8"),
+        readFile(
+          join(schemaRoot, "instruction-resolution.schema.json"),
+          "utf8",
+        ),
+        readFile(join(schemaRoot, "instruction-delivery.schema.json"), "utf8"),
         readFile(join(schemaRoot, "instruction-library.schema.json"), "utf8"),
         readFile(
           join(schemaRoot, "instruction-library-export.schema.json"),
@@ -1547,7 +1533,7 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
         dimensions: plan.dimensions.map((dimension, index) =>
           index === plan.dimensions.length - 1
             ? { ...dimension, name: "content" }
-            : dimension
+            : dimension,
         ),
       }),
     ).toBe(false);
@@ -1568,8 +1554,9 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       validateLibrary(library),
       JSON.stringify(validateLibrary.errors ?? []),
     ).toBe(true);
-    expect(validateLibrary({ ...library, revision: 9_007_199_254_740_992 }))
-      .toBe(false);
+    expect(
+      validateLibrary({ ...library, revision: 9_007_199_254_740_992 }),
+    ).toBe(false);
     const portable = exportInstructionLibrary(library, true);
     expect(
       validateExport(portable),

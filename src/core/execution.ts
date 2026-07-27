@@ -103,19 +103,15 @@ const createLiveExecutionUnavailableMessage = (
       const label = getAgentCliProviderLabel(config.provider);
 
       return {
-        summary:
-          `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
-        reason:
-          `Install ${label} so its binary is on PATH, or configure \`agent-cli.${config.provider}.path\` with the CLI binary path.`,
+        summary: `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
+        reason: `Install ${label} so its binary is on PATH, or configure \`agent-cli.${config.provider}.path\` with the CLI binary path.`,
         sectionLines,
       };
     }
 
     return {
-      summary:
-        `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
-      reason:
-        `Configure \`api.${config.provider}.key\`, choose another configured provider, or check the user config path if this command is running with sudo or elevation.`,
+      summary: `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
+      reason: `Configure \`api.${config.provider}.key\`, choose another configured provider, or check the user config path if this command is running with sudo or elevation.`,
       sectionLines,
     };
   }
@@ -187,22 +183,13 @@ const runTaskExecutionStateMachine = async (
       return result;
     }
 
-    const instructionResolution =
-      runtime.taskContext?.instructionResolution;
+    const instructionResolution = runtime.taskContext?.instructionResolution;
     if (!instructionResolution) {
       return result;
     }
 
     instructionDeliveryPlan ??= createInstructionDeliveryPlan(
       instructionResolution,
-      {
-        ...(options.unattendedInstructionDelivery === undefined
-          ? {}
-          : { unattended: options.unattendedInstructionDelivery }),
-        acknowledgedCompatible:
-          options.acknowledgeCompatibleInstructionDelivery === true ||
-          options.acknowledgedInstructionDeliveryPlanId !== undefined,
-      },
     );
 
     return attachInstructionDeliveryMetadata(
@@ -269,9 +256,6 @@ const runTaskExecutionStateMachine = async (
             ...(options.instructionFlow === undefined
               ? {}
               : { flow: options.instructionFlow }),
-            ...(options.unattendedInstructionDelivery === undefined
-              ? {}
-              : { unattended: options.unattendedInstructionDelivery }),
           }));
         runtime.taskContext = resolveTaskContext(task, customizations, {
           ...(options.executionRole
@@ -355,7 +339,8 @@ const runTaskExecutionStateMachine = async (
 
       case "checking-tools": {
         if (runtime.taskContext) {
-          const instructionResolution = runtime.taskContext.instructionResolution;
+          const instructionResolution =
+            runtime.taskContext.instructionResolution;
           if (!instructionResolution) {
             return emitTerminalResultWithInstructions(
               task,
@@ -381,18 +366,8 @@ const runTaskExecutionStateMachine = async (
               await createInstructionDeliveryPlanForRuntime(
                 instructionResolution,
                 {
-                workspaceRoot: config.workspaceRoot,
+                  workspaceRoot: config.workspaceRoot,
                   reasoning: config.reasoning,
-                  ...(options.unattendedInstructionDelivery === undefined
-                    ? {}
-                    : {
-                        unattended:
-                          options.unattendedInstructionDelivery,
-                      }),
-                  acknowledgedCompatible:
-                    options.acknowledgeCompatibleInstructionDelivery === true ||
-                    options.acknowledgedInstructionDeliveryPlanId !==
-                      undefined,
                 },
               );
           }
@@ -406,7 +381,9 @@ const runTaskExecutionStateMachine = async (
             ...(options.conversationContext
               ? { conversationContext: options.conversationContext }
               : {}),
-            ...(options.imageInputs ? { imageInputs: options.imageInputs } : {}),
+            ...(options.imageInputs
+              ? { imageInputs: options.imageInputs }
+              : {}),
             ...(options.modelAdapter
               ? { modelAdapter: options.modelAdapter }
               : {}),
@@ -425,23 +402,6 @@ const runTaskExecutionStateMachine = async (
             ...(instructionDeliveryPlan === undefined
               ? {}
               : { instructionDeliveryPlan }),
-            ...(options.unattendedInstructionDelivery === undefined
-              ? {}
-              : {
-                  unattendedInstructionDelivery:
-                    options.unattendedInstructionDelivery,
-                }),
-            ...(options.acknowledgeCompatibleInstructionDelivery ===
-                undefined &&
-              options.acknowledgedInstructionDeliveryPlanId === undefined
-              ? {}
-              : {
-                  acknowledgeCompatibleInstructionDelivery:
-                    options.acknowledgeCompatibleInstructionDelivery === true ||
-                    (instructionDeliveryPlan !== undefined &&
-                      options.acknowledgedInstructionDeliveryPlanId ===
-                        instructionDeliveryPlan.planId),
-                }),
             instructionDeliveryReceipts,
             ...(options.onStateChange
               ? { onStateChange: options.onStateChange }

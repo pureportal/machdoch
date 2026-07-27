@@ -33,8 +33,9 @@ envelope.
 - Selection is structural. Task words, mentioned paths, frontmatter, glob
   patterns, roles, keywords, and manual references do not select sources.
 - Source order is deterministic and preserved in the envelope.
-- Every selected source is delivered in full or execution is blocked.
-  Truncation and silent omission are forbidden.
+- Every valid selected source is delivered in full. Invalid or unreadable
+  instruction files are skipped with diagnostics and never block execution.
+  Truncation is forbidden.
 - The frozen source set is reused for continuations and retries.
 - A provider switch may recompute provider evidence and budget data, but it
   must not reread or change frozen source bodies.
@@ -203,8 +204,9 @@ The resolver accounts for:
 - verified model context limits; and
 - a reserved non-instruction allowance.
 
-Advisory thresholds produce diagnostics. A hard envelope or model-input limit
-blocks before provider invocation. The resolver never truncates.
+Advisory thresholds and provider-input estimates produce diagnostics. The
+resolver never truncates, and instruction-sharing limits do not become chat
+execution gates.
 
 ## 5. Native provider inventory
 
@@ -215,7 +217,9 @@ context files, and GitHub Copilot instruction files.
 Inventory records are classified as canonical, native-extra, suppressed,
 inactive, unknown, or unreadable. Canonical local `AGENTS.md` entries are
 already represented in the envelope. Other native entries remain external
-provider state and affect the environment digest and delivery grade.
+provider state and affect telemetry only. Delegated runs use isolated provider
+state where supported and treat the canonical Machdoch envelope as the sole
+instruction source of truth.
 
 Inventory is bounded, link-safe, and read-only. Provider-specific instruction
 files are not deleted, rewritten, imported as profiles, or persistently
@@ -250,27 +254,27 @@ Grades:
   isolation, lifecycle, or conformance properties are weaker or unverified;
 - `unsupported`: complete delivery cannot be guaranteed.
 
-Compatible delivery requires review. Unattended execution requires an explicit
-acknowledgement bound to the exact plan ID. Unsupported delivery blocks.
+Grades are informational. Compatible and unsupported plans still execute with
+the canonical prompt fallback; no acknowledgement or approval is required.
 
 ### 7.1 API surfaces
 
-| Provider | Instruction field | Lifecycle |
-| --- | --- | --- |
-| OpenAI | Responses API `instructions` | Reattached on initial, continuation, retry, validator, and generator requests |
-| Anthropic | Messages API top-level `system` | Reattached on every request |
-| Google | Gemini `systemInstruction` | Reattached on every request |
-| Langdock | Adapter system message | Reattached on known request paths; capability remains provisional |
+| Provider  | Instruction field               | Lifecycle                                                                     |
+| --------- | ------------------------------- | ----------------------------------------------------------------------------- |
+| OpenAI    | Responses API `instructions`    | Reattached on initial, continuation, retry, validator, and generator requests |
+| Anthropic | Messages API top-level `system` | Reattached on every request                                                   |
+| Google    | Gemini `systemInstruction`      | Reattached on every request                                                   |
+| Langdock  | Adapter system message          | Reattached on known request paths; capability remains provisional             |
 
 ### 7.2 CLI surfaces
 
 CLI enrollment is run-scoped and owner-restricted. The adapter probes the
 actual executable and refuses to assume missing flags.
 
-| Provider | Run-scoped route |
-| --- | --- |
-| Codex CLI | Isolated `CODEX_HOME` and runtime `developer_instructions` override |
-| Claude CLI | Temporary system-prompt file through the verified CLI flag |
+| Provider    | Run-scoped route                                                    |
+| ----------- | ------------------------------------------------------------------- |
+| Codex CLI   | Isolated `CODEX_HOME` and runtime `developer_instructions` override |
+| Claude CLI  | Temporary system-prompt file through the verified CLI flag          |
 | Copilot CLI | Complete prompt envelope with custom instruction discovery disabled |
 
 Temporary directories contain the envelope, the projected MCP configuration,
@@ -381,20 +385,20 @@ atomic commits, checkpoints, and status records protect provider MCP files.
 
 ## 13. Implementation map
 
-| Area | Implementation |
-| --- | --- |
-| Store and mutations | `src/core/instruction-system/library-store.ts` |
-| Local discovery and writes | `local-discovery.ts`, `local-files.ts` |
-| Resolution and envelope | `resolver.ts`, `normalization.ts` |
-| Delivery plans and receipts | `delivery.ts` |
-| Native inventory | `native-inventory.ts` |
-| API enrollment | `src/core/provider-enrollment/api-enrollment.ts` |
-| CLI materialization | `src/core/provider-enrollment/materializer.ts` |
-| MCP-only persistent sync | `sync-coordinator.ts`, `sync-daemon.ts` |
-| MCP initialization hints | `src/core/mcp/initialization-instructions.ts` |
-| CLI | `src/cli/_helpers/cli-instruction-commands.ts` |
-| Desktop UI | `src/tauri/ui/chat-session/components/settings-dialog-panels/instruction-settings-panel.tsx` |
-| Schemas | `src/shared/instruction-*.schema.json` |
+| Area                        | Implementation                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| Store and mutations         | `src/core/instruction-system/library-store.ts`                                               |
+| Local discovery and writes  | `local-discovery.ts`, `local-files.ts`                                                       |
+| Resolution and envelope     | `resolver.ts`, `normalization.ts`                                                            |
+| Delivery plans and receipts | `delivery.ts`                                                                                |
+| Native inventory            | `native-inventory.ts`                                                                        |
+| API enrollment              | `src/core/provider-enrollment/api-enrollment.ts`                                             |
+| CLI materialization         | `src/core/provider-enrollment/materializer.ts`                                               |
+| MCP-only persistent sync    | `sync-coordinator.ts`, `sync-daemon.ts`                                                      |
+| MCP initialization hints    | `src/core/mcp/initialization-instructions.ts`                                                |
+| CLI                         | `src/cli/_helpers/cli-instruction-commands.ts`                                               |
+| Desktop UI                  | `src/tauri/ui/chat-session/components/settings-dialog-panels/instruction-settings-panel.tsx` |
+| Schemas                     | `src/shared/instruction-*.schema.json`                                                       |
 
 ## 14. Verification contract
 
@@ -410,7 +414,7 @@ Changes to this system must pass:
 - strict UTF-8 and Markdown validation; and
 - `git diff --check`.
 
-Acceptance requires deterministic resolution, full-or-blocked delivery,
+Acceptance requires deterministic resolution, nonblocking canonical delivery,
 current provider integration behavior, MCP-only persistent sync, body-free
 default inspection, safe transfer/recovery, and no alternate instruction
 source pipeline.

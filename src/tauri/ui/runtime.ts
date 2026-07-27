@@ -126,17 +126,15 @@ export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...USER_API_PROVIDERS,
 ];
 
-export const USER_API_KEY_PROVIDER_LABELS: Record<
-  UserApiKeyProvider,
-  string
-> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  google: "Google",
-  langdock: "Langdock",
-  quiver: "Quiver",
-  recraft: "Recraft",
-};
+export const USER_API_KEY_PROVIDER_LABELS: Record<UserApiKeyProvider, string> =
+  {
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    google: "Google",
+    langdock: "Langdock",
+    quiver: "Quiver",
+    recraft: "Recraft",
+  };
 
 export const getUserApiKeyProviderLabel = (
   provider: UserApiKeyProvider,
@@ -300,34 +298,6 @@ export interface InstructionResolutionView {
     capability: Record<string, unknown>;
   };
 }
-
-const pendingInstructionPlanAcknowledgements = new Map<string, string>();
-
-const instructionAcknowledgementKey = (
-  workspaceRoot: string | null | undefined,
-): string => normalizeWorkspaceRoot(workspaceRoot) ?? "";
-
-export const acknowledgeCompatibleInstructionPlanForNextRun = (
-  workspaceRoot: string | null | undefined,
-  planId: string,
-): void => {
-  const key = instructionAcknowledgementKey(workspaceRoot);
-  if (!key || !/^instruction-plan:[0-9a-f]{64}$/u.test(planId)) {
-    throw new Error(
-      "A compatible instruction plan can be acknowledged only for a selected workspace and valid plan ID.",
-    );
-  }
-  pendingInstructionPlanAcknowledgements.set(key, planId);
-};
-
-export const consumeCompatibleInstructionPlanAcknowledgement = (
-  workspaceRoot: string | null | undefined,
-): string | undefined => {
-  const key = instructionAcknowledgementKey(workspaceRoot);
-  const planId = pendingInstructionPlanAcknowledgements.get(key);
-  if (planId !== undefined) pendingInstructionPlanAcknowledgements.delete(key);
-  return planId;
-};
 
 export interface InstructionLibraryRecoveryView {
   libraryPath: string;
@@ -840,11 +810,7 @@ export interface RemoteControlShellSnapshot {
   quickTask?: RemoteShellQuickTaskSnapshot;
 }
 
-export type SchedulerJobStatus =
-  | "active"
-  | "paused"
-  | "completed"
-  | "deleted";
+export type SchedulerJobStatus = "active" | "paused" | "completed" | "deleted";
 
 export type SchedulerRunStatus =
   | "queued"
@@ -1259,8 +1225,12 @@ export interface RalphCreateFlowResult {
   summary: string;
   flow: RalphFlow | null;
   events?: RalphGenerationEvent[];
-  generatorResults?: Array<Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">>;
-  validatorResults?: Array<Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">>;
+  generatorResults?: Array<
+    Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">
+  >;
+  validatorResults?: Array<
+    Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">
+  >;
 }
 
 export interface RalphGenerationInterviewInput {
@@ -1288,7 +1258,10 @@ export interface RalphGenerationInterviewResult {
   finalPrompt?: string | null;
   provider?: string | null;
   model?: string | null;
-  result?: Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools"> | null;
+  result?: Pick<
+    TaskExecutionResult,
+    "status" | "summary" | "reason" | "executedTools"
+  > | null;
 }
 
 export interface TaskInterviewInput {
@@ -1313,7 +1286,10 @@ export interface TaskInterviewResult {
   finalPrompt?: string | null;
   provider?: string | null;
   model?: string | null;
-  result?: Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools"> | null;
+  result?: Pick<
+    TaskExecutionResult,
+    "status" | "summary" | "reason" | "executedTools"
+  > | null;
 }
 
 export interface RalphSaveFlowInput {
@@ -1519,9 +1495,10 @@ const TASK_EXECUTION_SECTION_TONES = [
 ] as const satisfies ReadonlyArray<
   NonNullable<TaskExecutionProgress["outputSections"][number]["tone"]>
 >;
-const TASK_ACTION_OUTPUT_STREAMS = ["stdout", "stderr"] as const satisfies ReadonlyArray<
-  TaskActionOutput["stream"]
->;
+const TASK_ACTION_OUTPUT_STREAMS = [
+  "stdout",
+  "stderr",
+] as const satisfies ReadonlyArray<TaskActionOutput["stream"]>;
 const MODEL_STREAM_KINDS = [
   "assistant",
   "tool-call",
@@ -1618,7 +1595,9 @@ const normalizeLocalFileSourcePath = (path: string): string => {
     return normalizedPath;
   }
 
-  const pathWithoutPrefix = normalizedPath.slice(namespacePrefixMatch[0].length);
+  const pathWithoutPrefix = normalizedPath.slice(
+    namespacePrefixMatch[0].length,
+  );
 
   if (isWindowsDriveAbsolutePath(pathWithoutPrefix)) {
     return pathWithoutPrefix;
@@ -1951,14 +1930,16 @@ const normalizeSchedulerTriggerSummary = (
     ...(value.firingMode === "event" || value.firingMode === "state"
       ? { firingMode: value.firingMode }
       : {}),
-    ...(typeof value.cooldownMs === "number" && Number.isFinite(value.cooldownMs)
+    ...(typeof value.cooldownMs === "number" &&
+    Number.isFinite(value.cooldownMs)
       ? { cooldownMs: value.cooldownMs }
       : {}),
     ...(typeof value.repeatIntervalMs === "number" &&
     Number.isFinite(value.repeatIntervalMs)
       ? { repeatIntervalMs: value.repeatIntervalMs }
       : {}),
-    ...(typeof value.debounceMs === "number" && Number.isFinite(value.debounceMs)
+    ...(typeof value.debounceMs === "number" &&
+    Number.isFinite(value.debounceMs)
       ? { debounceMs: value.debounceMs }
       : {}),
     ...(typeof value.dedupeKeyTemplate === "string"
@@ -1988,8 +1969,8 @@ const normalizeSchedulerTriggerList = (
 
   const triggers = value.map(normalizeSchedulerTriggerSummary);
 
-  return triggers.every(
-    (trigger): trigger is SchedulerTriggerSummary => Boolean(trigger),
+  return triggers.every((trigger): trigger is SchedulerTriggerSummary =>
+    Boolean(trigger),
   )
     ? triggers
     : null;
@@ -2006,7 +1987,9 @@ const isSchedulerQueueSummary = (
   );
 };
 
-const normalizeStringRecord = (value: unknown): Record<string, string> | null => {
+const normalizeStringRecord = (
+  value: unknown,
+): Record<string, string> | null => {
   if (!isRecord(value)) {
     return null;
   }
@@ -2365,13 +2348,15 @@ const normalizeSchedulerFleetRunResult = (
       return [];
     }
 
-    return [{
-      workspaceRoot: entry.workspaceRoot,
-      recovered: entry.recovered,
-      queued: entry.queued,
-      runs: entry.runs,
-      ...(typeof entry.error === "string" ? { error: entry.error } : {}),
-    }];
+    return [
+      {
+        workspaceRoot: entry.workspaceRoot,
+        recovered: entry.recovered,
+        queued: entry.queued,
+        runs: entry.runs,
+        ...(typeof entry.error === "string" ? { error: entry.error } : {}),
+      },
+    ];
   });
 
   if (workspaces.length !== value.workspaces.length) {
@@ -2403,28 +2388,34 @@ const normalizeSchedulerRalphReadinessResult = (
   }
 
   const variables: SchedulerRalphVariableReadinessSummary[] =
-    value.variables.flatMap((entry): SchedulerRalphVariableReadinessSummary[] => {
-    if (
-      !isRecord(entry) ||
-      typeof entry.name !== "string" ||
-      typeof entry.type !== "string" ||
-      typeof entry.required !== "boolean" ||
-      (entry.source !== "parameter" &&
-        entry.source !== "default" &&
-        entry.source !== "missing")
-    ) {
-      return [];
-    }
+    value.variables.flatMap(
+      (entry): SchedulerRalphVariableReadinessSummary[] => {
+        if (
+          !isRecord(entry) ||
+          typeof entry.name !== "string" ||
+          typeof entry.type !== "string" ||
+          typeof entry.required !== "boolean" ||
+          (entry.source !== "parameter" &&
+            entry.source !== "default" &&
+            entry.source !== "missing")
+        ) {
+          return [];
+        }
 
-    return [{
-      name: entry.name,
-      type: entry.type,
-      required: entry.required,
-      ...(typeof entry.default === "string" ? { default: entry.default } : {}),
-      ...(typeof entry.value === "string" ? { value: entry.value } : {}),
-      source: entry.source,
-    }];
-  });
+        return [
+          {
+            name: entry.name,
+            type: entry.type,
+            required: entry.required,
+            ...(typeof entry.default === "string"
+              ? { default: entry.default }
+              : {}),
+            ...(typeof entry.value === "string" ? { value: entry.value } : {}),
+            source: entry.source,
+          },
+        ];
+      },
+    );
   const stringLists = [
     value.autoResolvedHumanBlockIds,
     value.blockingHumanBlockIds,
@@ -2434,7 +2425,9 @@ const normalizeSchedulerRalphReadinessResult = (
 
   if (
     variables.length !== value.variables.length ||
-    stringLists.some((entries) => entries.some((entry) => typeof entry !== "string"))
+    stringLists.some((entries) =>
+      entries.some((entry) => typeof entry !== "string"),
+    )
   ) {
     return null;
   }
@@ -2841,15 +2834,13 @@ const clampNumberSetting = (
   return Math.min(max, Math.max(min, value));
 };
 
-const createDefaultUserAgentLimitsSettings =
-  (): UserAgentLimitsSettings => {
-    return { ...DEFAULT_USER_AGENT_LIMITS_SETTINGS };
-  };
+const createDefaultUserAgentLimitsSettings = (): UserAgentLimitsSettings => {
+  return { ...DEFAULT_USER_AGENT_LIMITS_SETTINGS };
+};
 
-const createDefaultUserReviewModelSettings =
-  (): UserReviewModelSettings => {
-    return { ...DEFAULT_USER_REVIEW_MODEL_SETTINGS };
-  };
+const createDefaultUserReviewModelSettings = (): UserReviewModelSettings => {
+  return { ...DEFAULT_USER_REVIEW_MODEL_SETTINGS };
+};
 
 const normalizeUserAgentLimitsSettings = (
   settings: UserAgentLimitsSettings,
@@ -2880,7 +2871,9 @@ const normalizeUserReviewModelSettings = (
   if (
     settings.mode !== "dedicated" ||
     !provider ||
-    !VALID_MODEL_PROVIDERS.includes(provider as (typeof VALID_MODEL_PROVIDERS)[number]) ||
+    !VALID_MODEL_PROVIDERS.includes(
+      provider as (typeof VALID_MODEL_PROVIDERS)[number],
+    ) ||
     !model
   ) {
     return { mode: "base" };
@@ -2954,7 +2947,10 @@ const getFallbackDroppedPathName = (path: string): string => {
 };
 
 const getFallbackDroppedPathParent = (path: string): string | undefined => {
-  const lastSeparatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const lastSeparatorIndex = Math.max(
+    path.lastIndexOf("/"),
+    path.lastIndexOf("\\"),
+  );
 
   if (lastSeparatorIndex <= 0) {
     return undefined;
@@ -3215,7 +3211,10 @@ export const loadMcpConfigDocument = async (
     }
 
     if (!canInvokeTauriCommands()) {
-      return createFallbackMcpConfigDocument("workspace", normalizedWorkspaceRoot);
+      return createFallbackMcpConfigDocument(
+        "workspace",
+        normalizedWorkspaceRoot,
+      );
     }
 
     try {
@@ -3389,7 +3388,10 @@ export const saveMcpConfigDocument = async (
 
     if (!canInvokeTauriCommands()) {
       return {
-        ...createFallbackMcpConfigDocument("workspace", normalizedWorkspaceRoot),
+        ...createFallbackMcpConfigDocument(
+          "workspace",
+          normalizedWorkspaceRoot,
+        ),
         exists: true,
         raw: normalizedRaw,
       };
@@ -3991,7 +3993,9 @@ const assertSchedulerDesktopAvailable = (): never => {
 };
 
 const assertRalphDesktopAvailable = (): never => {
-  throw new Error("Ralph flow management is only available in the desktop app.");
+  throw new Error(
+    "Ralph flow management is only available in the desktop app.",
+  );
 };
 
 const assertTaskInterviewDesktopAvailable = (): never => {
@@ -4003,7 +4007,9 @@ const assertMcpDesktopAvailable = (): never => {
 };
 
 const assertInstructionDesktopAvailable = (): never => {
-  throw new Error("Instruction management is only available in the desktop app.");
+  throw new Error(
+    "Instruction management is only available in the desktop app.",
+  );
 };
 
 const normalizeSchedulerCommandWorkspace = (
@@ -4175,7 +4181,11 @@ const createInstructionMutationArguments = (
       appendInstructionOption(args, "--name", input.name);
       appendInstructionOption(args, "--description", input.description);
       appendInstructionOption(args, "--prompt", input.body);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "profile-edit":
       args.push("profiles", "edit", input.profileId);
@@ -4184,23 +4194,39 @@ const createInstructionMutationArguments = (
         args.push("--description", input.description);
       }
       appendInstructionOption(args, "--prompt", input.body);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "profile-duplicate":
       args.push("profiles", "duplicate", input.profileId);
       appendInstructionOption(args, "--name", input.name);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "profile-delete":
       args.push("profiles", "delete", input.profileId);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "defaults-set":
       args.push("assignments", "set-defaults");
       for (const profileId of input.profileIds) {
         appendInstructionOption(args, "--profile", profileId);
       }
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "scope-set":
       args.push("assignments", "set", input.workspaceId);
@@ -4208,7 +4234,11 @@ const createInstructionMutationArguments = (
       for (const profileId of input.profileIds) {
         appendInstructionOption(args, "--profile", profileId);
       }
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "scope-relink":
       args.push(
@@ -4218,7 +4248,11 @@ const createInstructionMutationArguments = (
         input.currentScopePath,
       );
       appendInstructionOption(args, "--path", input.nextScopePath);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "local-create":
       args.push("local", "create", input.scopePath);
@@ -4236,19 +4270,31 @@ const createInstructionMutationArguments = (
     case "workspace-register":
       args.push("workspaces", "register", input.root);
       appendInstructionOption(args, "--name", input.displayName);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "workspace-relink":
       args.push("workspaces", "relink", input.workspaceId);
       appendInstructionOption(args, "--path", input.root);
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "workspace-unregister":
       args.push("workspaces", "unregister", input.workspaceId);
       if (input.confirmAssignedRemoval) {
         args.push("--confirm-assignment-removal");
       }
-      appendInstructionOption(args, "--expected-revision", input.expectedRevision);
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
       break;
     case "recovery-restore":
       args.push("recovery", "restore");
@@ -4301,27 +4347,19 @@ export const listMcpServers = async (
     ? ["servers", "--include-disabled"]
     : ["servers"];
 
-  return runMcpCommand(
-    workspaceRoot,
-    argumentsList,
-    () => ({
-      workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
-      servers: [],
-    }),
-  );
+  return runMcpCommand(workspaceRoot, argumentsList, () => ({
+    workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+    servers: [],
+  }));
 };
 
 export const listMcpCachedCapabilities = async (
   workspaceRoot: string | null | undefined,
 ): Promise<McpCommandCacheResult> => {
-  return runMcpCommand(
-    workspaceRoot,
-    ["cache"],
-    () => ({
-      workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
-      servers: {},
-    }),
-  );
+  return runMcpCommand(workspaceRoot, ["cache"], () => ({
+    workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+    servers: {},
+  }));
 };
 
 export const discoverMcpServer = async (
@@ -4487,9 +4525,7 @@ const runTaskInterviewCommand = async <Result>(
   }
 };
 
-const createRalphRunArguments = (
-  input: RalphRunFlowInput,
-): string[] => {
+const createRalphRunArguments = (input: RalphRunFlowInput): string[] => {
   const normalizedName = input.name.trim();
 
   if (!normalizedName) {
@@ -4501,9 +4537,17 @@ const createRalphRunArguments = (
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
-  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(
+    argumentsList,
+    "--model",
+    normalizeSchedulerCliString(input.model),
+  );
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
-  appendSchedulerOption(argumentsList, "--max-transitions", input.maxTransitions);
+  appendSchedulerOption(
+    argumentsList,
+    "--max-transitions",
+    input.maxTransitions,
+  );
 
   for (const [name, value] of Object.entries(input.params ?? {})) {
     const normalizedParamName = name.trim();
@@ -4519,19 +4563,14 @@ const createRalphRunArguments = (
   return argumentsList;
 };
 
-const createRalphResumeArguments = (
-  input: RalphResumeRunInput,
-): string[] => {
+const createRalphResumeArguments = (input: RalphResumeRunInput): string[] => {
   const normalizedRunId = input.runId.trim();
 
   if (!normalizedRunId) {
     throw new Error("Expected a Ralph run id.");
   }
 
-  const argumentsList = [
-    "resume",
-    normalizedRunId,
-  ];
+  const argumentsList = ["resume", normalizedRunId];
 
   if (input.retryCurrent) {
     argumentsList.push("--retry-current");
@@ -4539,22 +4578,30 @@ const createRalphResumeArguments = (
     argumentsList.push("--input-json");
     argumentsList.push(JSON.stringify(input.inputResponse));
   } else {
-    throw new Error("Expected a Ralph input response or retry-current request.");
+    throw new Error(
+      "Expected a Ralph input response or retry-current request.",
+    );
   }
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
-  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(
+    argumentsList,
+    "--model",
+    normalizeSchedulerCliString(input.model),
+  );
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
-  appendSchedulerOption(argumentsList, "--max-transitions", input.maxTransitions);
+  appendSchedulerOption(
+    argumentsList,
+    "--max-transitions",
+    input.maxTransitions,
+  );
 
   return argumentsList;
 };
 
-const createRalphCreateArguments = (
-  input: RalphCreateFlowInput,
-): string[] => {
+const createRalphCreateArguments = (input: RalphCreateFlowInput): string[] => {
   const prompt = input.prompt.trim();
 
   if (!prompt) {
@@ -4566,20 +4613,34 @@ const createRalphCreateArguments = (
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
-  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(
+    argumentsList,
+    "--model",
+    normalizeSchedulerCliString(input.model),
+  );
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
-  appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
+  appendSchedulerOption(
+    argumentsList,
+    "--name",
+    normalizeSchedulerCliString(input.name),
+  );
   appendSchedulerOption(argumentsList, "--prompt", prompt);
-  appendSchedulerOption(argumentsList, "--existing-flow-json", input.existingFlow
-    ? JSON.stringify(input.existingFlow)
-    : undefined);
+  appendSchedulerOption(
+    argumentsList,
+    "--existing-flow-json",
+    input.existingFlow ? JSON.stringify(input.existingFlow) : undefined,
+  );
   appendSchedulerOption(
     argumentsList,
     "--expected-fingerprint",
     input.expectedFingerprint,
   );
   appendSchedulerOption(argumentsList, "--flow-target", input.target);
-  appendSchedulerOption(argumentsList, "--generation-mode", input.generationMode);
+  appendSchedulerOption(
+    argumentsList,
+    "--generation-mode",
+    input.generationMode,
+  );
   appendSchedulerOption(argumentsList, "--max-rounds", input.maxRounds);
 
   return argumentsList;
@@ -4591,7 +4652,9 @@ const createRalphGenerationInterviewArguments = (
   const prompt = input.prompt.trim();
 
   if (!prompt) {
-    throw new Error("Expected a prompt before starting a Ralph generation interview.");
+    throw new Error(
+      "Expected a prompt before starting a Ralph generation interview.",
+    );
   }
 
   const argumentsList = ["interview"];
@@ -4599,13 +4662,23 @@ const createRalphGenerationInterviewArguments = (
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
-  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(
+    argumentsList,
+    "--model",
+    normalizeSchedulerCliString(input.model),
+  );
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
-  appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
+  appendSchedulerOption(
+    argumentsList,
+    "--name",
+    normalizeSchedulerCliString(input.name),
+  );
   appendSchedulerOption(argumentsList, "--prompt", prompt);
-  appendSchedulerOption(argumentsList, "--existing-flow-json", input.existingFlow
-    ? JSON.stringify(input.existingFlow)
-    : undefined);
+  appendSchedulerOption(
+    argumentsList,
+    "--existing-flow-json",
+    input.existingFlow ? JSON.stringify(input.existingFlow) : undefined,
+  );
   appendSchedulerOption(argumentsList, "--flow-target", input.target);
   appendSchedulerOption(argumentsList, "--max-rounds", input.maxTurns);
   const answerComments =
@@ -4614,19 +4687,21 @@ const createRalphGenerationInterviewArguments = (
       : undefined;
 
   if (input.session || input.answers || answerComments) {
-    appendSchedulerOption(argumentsList, "--input-json", JSON.stringify({
-      ...(input.session ? { session: input.session } : {}),
-      ...(input.answers ? { answers: input.answers } : {}),
-      ...(answerComments ? { answerComments } : {}),
-    }));
+    appendSchedulerOption(
+      argumentsList,
+      "--input-json",
+      JSON.stringify({
+        ...(input.session ? { session: input.session } : {}),
+        ...(input.answers ? { answers: input.answers } : {}),
+        ...(answerComments ? { answerComments } : {}),
+      }),
+    );
   }
 
   return argumentsList;
 };
 
-const createTaskInterviewArguments = (
-  input: TaskInterviewInput,
-): string[] => {
+const createTaskInterviewArguments = (input: TaskInterviewInput): string[] => {
   const prompt = input.prompt.trim();
 
   if (!prompt) {
@@ -4637,7 +4712,11 @@ const createTaskInterviewArguments = (
 
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
-  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(
+    argumentsList,
+    "--model",
+    normalizeSchedulerCliString(input.model),
+  );
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
   appendSchedulerOption(argumentsList, "--max-rounds", input.maxTurns);
   const answerComments =
@@ -4649,21 +4728,28 @@ const createTaskInterviewArguments = (
     (note) => note.trim().length > 0,
   );
 
-  if (input.session || contextNotes.length > 0 || input.answers || answerComments) {
-    appendSchedulerOption(argumentsList, "--input-json", JSON.stringify({
-      ...(input.session ? { session: input.session } : {}),
-      ...(contextNotes.length > 0 ? { contextNotes } : {}),
-      ...(input.answers ? { answers: input.answers } : {}),
-      ...(answerComments ? { answerComments } : {}),
-    }));
+  if (
+    input.session ||
+    contextNotes.length > 0 ||
+    input.answers ||
+    answerComments
+  ) {
+    appendSchedulerOption(
+      argumentsList,
+      "--input-json",
+      JSON.stringify({
+        ...(input.session ? { session: input.session } : {}),
+        ...(contextNotes.length > 0 ? { contextNotes } : {}),
+        ...(input.answers ? { answers: input.answers } : {}),
+        ...(answerComments ? { answerComments } : {}),
+      }),
+    );
   }
 
   return argumentsList;
 };
 
-const createRalphSaveArguments = (
-  input: RalphSaveFlowInput,
-): string[] => {
+const createRalphSaveArguments = (input: RalphSaveFlowInput): string[] => {
   const flowId = input.flow.id.trim();
 
   if (!flowId) {
@@ -4849,11 +4935,7 @@ export const showRalphRunDetail = async (
 
   return runRalphCommand(
     workspaceRoot,
-    [
-      "run-detail",
-      normalizedRunId,
-      ...(scope ? ["--scope", scope] : []),
-    ],
+    ["run-detail", normalizedRunId, ...(scope ? ["--scope", scope] : [])],
     assertRalphDesktopAvailable,
   );
 };
@@ -5047,7 +5129,9 @@ const appendSchedulerOption = (
   }
 
   argumentsList.push(flag);
-  argumentsList.push(typeof value === "boolean" ? (value ? "on" : "off") : String(value));
+  argumentsList.push(
+    typeof value === "boolean" ? (value ? "on" : "off") : String(value),
+  );
 };
 
 const appendSchedulerRepeatedOption = (
@@ -5107,7 +5191,11 @@ const appendSchedulerCreateSchedule = (
       );
       return;
     case "interval":
-      appendSchedulerOption(argumentsList, "--interval-ms", schedule.intervalMs);
+      appendSchedulerOption(
+        argumentsList,
+        "--interval-ms",
+        schedule.intervalMs,
+      );
       return;
     case "delay":
       appendSchedulerOption(argumentsList, "--delay-ms", schedule.delayMs);
@@ -5161,14 +5249,26 @@ const appendSchedulerCreateTriggers = (
       );
     }
 
-    appendSchedulerOption(argumentsList, "--trigger-firing-mode", trigger.firingMode);
-    appendSchedulerOption(argumentsList, "--trigger-cooldown-ms", trigger.cooldownMs);
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-firing-mode",
+      trigger.firingMode,
+    );
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-cooldown-ms",
+      trigger.cooldownMs,
+    );
     appendSchedulerOption(
       argumentsList,
       "--trigger-repeat-ms",
       trigger.repeatIntervalMs,
     );
-    appendSchedulerOption(argumentsList, "--trigger-debounce-ms", trigger.debounceMs);
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-debounce-ms",
+      trigger.debounceMs,
+    );
     appendSchedulerOption(
       argumentsList,
       "--trigger-dedupe-key-template",
@@ -5197,7 +5297,11 @@ const appendSchedulerRalphFlowTarget = (
     "--scheduled-ralph-flow",
     normalizeSchedulerCliString(ralphFlow.id),
   );
-  appendSchedulerOption(argumentsList, "--scheduled-ralph-flow-scope", ralphFlow.scope);
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-flow-scope",
+    ralphFlow.scope,
+  );
   appendSchedulerOption(
     argumentsList,
     "--scheduled-ralph-run-log-scope",
@@ -5220,7 +5324,11 @@ const appendSchedulerRalphFlowTarget = (
   );
 
   for (const [name, value] of Object.entries(ralphFlow.params ?? {})) {
-    appendSchedulerOption(argumentsList, "--scheduled-ralph-param", `${name}=${value}`);
+    appendSchedulerOption(
+      argumentsList,
+      "--scheduled-ralph-param",
+      `${name}=${value}`,
+    );
   }
 
   appendSchedulerRepeatedOption(
@@ -5259,11 +5367,15 @@ const createSchedulerCreateArguments = (
   const promptFile = normalizeSchedulerCliString(input.promptFile);
 
   if (targetType === "prompt" && !prompt && !promptFile) {
-    throw new Error("Expected a prompt or prompt file before creating a scheduled job.");
+    throw new Error(
+      "Expected a prompt or prompt file before creating a scheduled job.",
+    );
   }
 
   if (targetType === "ralph-flow" && !input.ralphFlow) {
-    throw new Error("Expected a Ralph flow target before creating a scheduled job.");
+    throw new Error(
+      "Expected a Ralph flow target before creating a scheduled job.",
+    );
   }
 
   appendSchedulerOption(
@@ -5271,7 +5383,11 @@ const createSchedulerCreateArguments = (
     "--request-id",
     normalizeSchedulerCliString(input.requestId),
   );
-  appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
+  appendSchedulerOption(
+    argumentsList,
+    "--name",
+    normalizeSchedulerCliString(input.name),
+  );
   if (input.schedule) {
     appendSchedulerCreateSchedule(argumentsList, input.schedule);
   }
@@ -5281,7 +5397,11 @@ const createSchedulerCreateArguments = (
   } else {
     appendSchedulerOption(argumentsList, "--prompt", prompt);
     appendSchedulerOption(argumentsList, "--prompt-file", promptFile);
-    appendSchedulerRepeatedOption(argumentsList, "--context", input.contextPaths);
+    appendSchedulerRepeatedOption(
+      argumentsList,
+      "--context",
+      input.contextPaths,
+    );
     appendSchedulerRepeatedOption(argumentsList, "--image", input.imagePaths);
     appendSchedulerRepeatedOption(
       argumentsList,
@@ -5290,27 +5410,59 @@ const createSchedulerCreateArguments = (
     );
     appendSchedulerRepeatedOption(argumentsList, "--macro", input.macros);
   }
-  appendSchedulerOption(argumentsList, "--missed-run-policy", input.missedRunPolicy);
-  appendSchedulerOption(argumentsList, "--missed-run-grace-ms", input.missedRunGraceMs);
+  appendSchedulerOption(
+    argumentsList,
+    "--missed-run-policy",
+    input.missedRunPolicy,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--missed-run-grace-ms",
+    input.missedRunGraceMs,
+  );
   appendSchedulerOption(argumentsList, "--retry-attempts", input.retryAttempts);
   appendSchedulerOption(argumentsList, "--retry-min-ms", input.retryMinMs);
   appendSchedulerOption(argumentsList, "--retry-max-ms", input.retryMaxMs);
   appendSchedulerOption(argumentsList, "--retry-factor", input.retryFactor);
-  appendSchedulerOption(argumentsList, "--retry-randomize", input.retryRandomize);
-  appendSchedulerOption(argumentsList, "--dedupe-key", normalizeSchedulerCliString(input.dedupeKey));
+  appendSchedulerOption(
+    argumentsList,
+    "--retry-randomize",
+    input.retryRandomize,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--dedupe-key",
+    normalizeSchedulerCliString(input.dedupeKey),
+  );
   appendSchedulerOption(argumentsList, "--ttl-ms", input.ttlMs);
-  appendSchedulerOption(argumentsList, "--max-duration-ms", input.maxDurationMs);
+  appendSchedulerOption(
+    argumentsList,
+    "--max-duration-ms",
+    input.maxDurationMs,
+  );
   appendSchedulerOption(
     argumentsList,
     "--concurrency-key",
     normalizeSchedulerCliString(input.concurrencyKey),
   );
-  appendSchedulerOption(argumentsList, "--concurrency-limit", input.concurrencyLimit);
+  appendSchedulerOption(
+    argumentsList,
+    "--concurrency-limit",
+    input.concurrencyLimit,
+  );
   appendSchedulerOption(argumentsList, "--history-limit", input.historyLimit);
-  appendSchedulerOption(argumentsList, "--max-catch-up-runs", input.maxCatchUpRuns);
+  appendSchedulerOption(
+    argumentsList,
+    "--max-catch-up-runs",
+    input.maxCatchUpRuns,
+  );
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
-  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(
+    argumentsList,
+    "--model",
+    normalizeSchedulerCliString(input.model),
+  );
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
 
   return argumentsList;
@@ -5351,11 +5503,7 @@ export const pauseSchedulerJob = async (
 ): Promise<SchedulerJobActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    [
-      "pause",
-      jobId,
-      ...(requestId ? ["--request-id", requestId] : []),
-    ],
+    ["pause", jobId, ...(requestId ? ["--request-id", requestId] : [])],
     normalizeSchedulerJobActionResult,
     "The scheduler pause payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -5369,11 +5517,7 @@ export const resumeSchedulerJob = async (
 ): Promise<SchedulerJobActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    [
-      "resume",
-      jobId,
-      ...(requestId ? ["--request-id", requestId] : []),
-    ],
+    ["resume", jobId, ...(requestId ? ["--request-id", requestId] : [])],
     normalizeSchedulerJobActionResult,
     "The scheduler resume payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -5387,11 +5531,7 @@ export const deleteSchedulerJob = async (
 ): Promise<SchedulerJobActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    [
-      "delete",
-      jobId,
-      ...(requestId ? ["--request-id", requestId] : []),
-    ],
+    ["delete", jobId, ...(requestId ? ["--request-id", requestId] : [])],
     normalizeSchedulerJobActionResult,
     "The scheduler delete payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -5494,7 +5634,9 @@ export const inspectSchedulerRalphFlow = async (
       variables: [],
       autoResolvedHumanBlockIds: [],
       blockingHumanBlockIds: [],
-      errors: ["Scheduled Ralph readiness is only available in the desktop app."],
+      errors: [
+        "Scheduled Ralph readiness is only available in the desktop app.",
+      ],
       warnings: [],
     }),
   );
@@ -5513,9 +5655,8 @@ export const ensurePersistentSchedulerService = async (
     return schedulerServiceStartPromise;
   }
 
-  const startPromise = tauriCore.invoke<number>(
-    "start_scheduler_service",
-    {
+  const startPromise = tauriCore
+    .invoke<number>("start_scheduler_service", {
       request: {
         workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
         arguments: [
@@ -5526,10 +5667,10 @@ export const ensurePersistentSchedulerService = async (
           "300000",
         ],
       },
-    },
-  ).catch((error) => {
-    throw error instanceof Error ? error : new Error(String(error));
-  });
+    })
+    .catch((error) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    });
   schedulerServiceStartPromise = startPromise;
 
   try {
@@ -5710,44 +5851,44 @@ const createProviderSyncFallback = (
 
 export const getProviderSyncStatus = async (
   workspaceRoot: string | null | undefined,
-): Promise<ProviderSyncStatus> => runProviderSyncCommand(
-  workspaceRoot,
-  ["status"],
-  () => createProviderSyncFallback(workspaceRoot),
-);
+): Promise<ProviderSyncStatus> =>
+  runProviderSyncCommand(workspaceRoot, ["status"], () =>
+    createProviderSyncFallback(workspaceRoot),
+  );
 
 export const refreshProviderSync = async (
   workspaceRoot: string | null | undefined,
-): Promise<ProviderSyncStatus> => runProviderSyncCommand(
-  workspaceRoot,
-  ["refresh"],
-  () => createProviderSyncFallback(workspaceRoot),
-);
+): Promise<ProviderSyncStatus> =>
+  runProviderSyncCommand(workspaceRoot, ["refresh"], () =>
+    createProviderSyncFallback(workspaceRoot),
+  );
 
 export const setProviderSyncEnabled = async (
   workspaceRoot: string | null | undefined,
   enabled: boolean,
-): Promise<ProviderSyncStatus> => runProviderSyncCommand(
-  workspaceRoot,
-  [enabled ? "enable" : "disable"],
-  () => ({ ...createProviderSyncFallback(workspaceRoot), enabled }),
-);
+): Promise<ProviderSyncStatus> =>
+  runProviderSyncCommand(
+    workspaceRoot,
+    [enabled ? "enable" : "disable"],
+    () => ({ ...createProviderSyncFallback(workspaceRoot), enabled }),
+  );
 
 export const doctorProviderSync = async (
   workspaceRoot: string | null | undefined,
-): Promise<Record<string, unknown>> => runProviderSyncCommand(
-  workspaceRoot,
-  ["doctor"],
-  () => ({ healthy: false, status: createProviderSyncFallback(workspaceRoot) }),
-);
+): Promise<Record<string, unknown>> =>
+  runProviderSyncCommand(workspaceRoot, ["doctor"], () => ({
+    healthy: false,
+    status: createProviderSyncFallback(workspaceRoot),
+  }));
 
 export const planProviderSync = async (
   workspaceRoot: string | null | undefined,
-): Promise<Record<string, unknown>> => runProviderSyncCommand(
-  workspaceRoot,
-  ["plan"],
-  () => ({ enabled: false, workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot), providers: [] }),
-);
+): Promise<Record<string, unknown>> =>
+  runProviderSyncCommand(workspaceRoot, ["plan"], () => ({
+    enabled: false,
+    workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+    providers: [],
+  }));
 
 export const getTaskFileChangeHunks = async (
   changeSetId: string,
@@ -5785,7 +5926,6 @@ export const runDesktopTask = async (
     model?: string;
     provider?: RuntimeProvider;
     reasoning?: RuntimeSnapshot["reasoning"];
-    acknowledgedInstructionDeliveryPlanId?: string;
     sessionId?: string;
     taskId?: string;
   } = {},
@@ -5807,8 +5947,6 @@ export const runDesktopTask = async (
   const normalizedReasoning = context.reasoning;
   const normalizedTaskId = context.taskId?.trim();
   const normalizedSessionId = context.sessionId?.trim();
-  const acknowledgedInstructionDeliveryPlanId =
-    context.acknowledgedInstructionDeliveryPlanId?.trim();
 
   if (!canInvokeTauriCommands()) {
     return {
@@ -5832,15 +5970,10 @@ export const runDesktopTask = async (
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
         ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),
-        ...(acknowledgedInstructionDeliveryPlanId
-          ? { acknowledgedInstructionDeliveryPlanId }
-          : {}),
         ...(normalizedImagePaths.length > 0
           ? { imagePaths: normalizedImagePaths }
           : {}),
-        ...(mediaAssetReferences.length > 0
-          ? { mediaAssetReferences }
-          : {}),
+        ...(mediaAssetReferences.length > 0 ? { mediaAssetReferences } : {}),
         ...(context.conversationContext
           ? { conversationContext: context.conversationContext }
           : {}),
@@ -5859,14 +5992,11 @@ export const subscribeToDesktopTaskProgress = async (
   }
 
   try {
-    return await listen<unknown>(
-      DESKTOP_TASK_PROGRESS_EVENT,
-      (event) => {
-        if (isDesktopTaskProgressEvent(event.payload)) {
-          onProgress(event.payload);
-        }
-      },
-    );
+    return await listen<unknown>(DESKTOP_TASK_PROGRESS_EVENT, (event) => {
+      if (isDesktopTaskProgressEvent(event.payload)) {
+        onProgress(event.payload);
+      }
+    });
   } catch (error) {
     console.error("Failed to subscribe to desktop task progress", error);
     return () => {};
@@ -5979,7 +6109,12 @@ export const readAttachedFilePreview = async (
   }
 };
 
-const ATTACHMENT_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "ftp:"]);
+const ATTACHMENT_LINK_PROTOCOLS = new Set([
+  "http:",
+  "https:",
+  "mailto:",
+  "ftp:",
+]);
 
 export const openExternalUrl = async (url: string): Promise<void> => {
   const normalizedUrl = url.trim();
@@ -6170,9 +6305,12 @@ export const resolveDroppedPaths = async (
   }
 
   try {
-    return await tauriCore.invoke<DroppedPathsResolution>("resolve_dropped_paths", {
-      paths: normalizedPaths,
-    });
+    return await tauriCore.invoke<DroppedPathsResolution>(
+      "resolve_dropped_paths",
+      {
+        paths: normalizedPaths,
+      },
+    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }

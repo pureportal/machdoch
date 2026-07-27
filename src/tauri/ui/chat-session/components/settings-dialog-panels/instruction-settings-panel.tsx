@@ -19,11 +19,7 @@ import type {
   InstructionMutationInput,
   InstructionProfileView,
 } from "../../../runtime";
-import { acknowledgeCompatibleInstructionPlanForNextRun } from "../../../runtime";
-import {
-  SettingsCard,
-  SettingsStatus,
-} from "./shared";
+import { SettingsCard, SettingsStatus } from "./shared";
 import type { InstructionSettingsControls } from "./types";
 
 export interface InstructionSettingsPanelProps {
@@ -94,12 +90,7 @@ const OrderedProfileEditor = ({
           Order is precedence order. Later entries win on conflicts.
         </p>
       </div>
-      <Button
-        size="sm"
-        disabled={disabled}
-        onClick={onSave}
-        className="gap-2"
-      >
+      <Button size="sm" disabled={disabled} onClick={onSave} className="gap-2">
         <Save className="size-3.5" />
         Save order
       </Button>
@@ -184,9 +175,6 @@ export const InstructionSettingsPanel = ({
   const [newScopeProfiles, setNewScopeProfiles] = useState<string[]>([]);
   const [localScope, setLocalScope] = useState(".");
   const [localBody, setLocalBody] = useState("");
-  const [acknowledgedPlanId, setAcknowledgedPlanId] = useState<string | null>(
-    null,
-  );
   const [confirmRecoveryReset, setConfirmRecoveryReset] = useState(false);
 
   useEffect(() => {
@@ -207,9 +195,6 @@ export const InstructionSettingsPanel = ({
     setBody(selectedProfile.body ?? "");
   }, [selectedProfile]);
 
-  useEffect(() => {
-    setAcknowledgedPlanId(null);
-  }, [registry?.resolution?.deliveryPlan.planId, setup.workspaceRoot]);
   useEffect(() => {
     setConfirmRecoveryReset(false);
   }, [registry?.recovery?.primaryDigest]);
@@ -287,21 +272,15 @@ export const InstructionSettingsPanel = ({
         workspace.root.toLocaleLowerCase() ===
           setup.workspaceRoot.toLocaleLowerCase(),
     ) ?? null;
-  const explanationSources = asArray(
-    registry?.resolution?.explanation.sources,
-  );
+  const explanationSources = asArray(registry?.resolution?.explanation.sources);
   const nativeInventory = asArray(
     registry?.resolution?.explanation.nativeInventory,
   );
   const mcpInitializationInstructions = asArray(
     registry?.resolution?.explanation.mcpInitializationInstructions,
   );
-  const diagnostics = asArray(
-    registry?.resolution?.explanation.diagnostics,
-  );
-  const bodyGroups = asArray(
-    registry?.resolution?.explanation.bodyGroups,
-  );
+  const diagnostics = asArray(registry?.resolution?.explanation.diagnostics);
+  const bodyGroups = asArray(registry?.resolution?.explanation.bodyGroups);
   const budget = registry?.resolution?.explanation.budget;
   const dimensions = asArray(registry?.resolution?.deliveryPlan.dimensions);
   const recovery = registry?.recovery;
@@ -424,8 +403,8 @@ export const InstructionSettingsPanel = ({
             <div className="space-y-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-3">
               <p className="text-xs leading-5 text-amber-200">
                 A portable backup export contains full instruction bodies and
-                may contain sensitive information. Run this explicit CLI
-                command only after choosing a secure destination.
+                may contain sensitive information. Run this explicit CLI command
+                only after choosing a secure destination.
               </p>
               <code className="block break-all rounded bg-slate-950 p-2 text-[11px] text-slate-300">
                 {recoveryExportCommand}
@@ -815,9 +794,7 @@ export const InstructionSettingsPanel = ({
             </div>
             <Button
               className="mt-3 gap-2"
-              disabled={
-                setup.saving || !localScope.trim() || !localBody.trim()
-              }
+              disabled={setup.saving || !localScope.trim() || !localBody.trim()}
               onClick={() =>
                 void mutate({
                   operation: "local-create",
@@ -862,46 +839,6 @@ export const InstructionSettingsPanel = ({
               value={`Revision ${registry.resolution.explanation.libraryRevision}`}
             />
           </div>
-          {registry.resolution.deliveryPlan.requiresAcknowledgement ? (
-            <div className="mt-3 rounded-lg border border-amber-900/60 bg-amber-950/20 p-3 text-xs text-amber-200">
-              <p>
-                This compatible plan requires an explicit interactive
-                acknowledgement. Unattended execution blocks by default.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-3"
-                disabled={
-                  setup.workspaceRoot === null ||
-                  setup.workspaceRoot === undefined ||
-                  acknowledgedPlanId ===
-                    registry.resolution.deliveryPlan.planId
-                }
-                onClick={() => {
-                  acknowledgeCompatibleInstructionPlanForNextRun(
-                    setup.workspaceRoot,
-                    registry.resolution?.deliveryPlan.planId ?? "",
-                  );
-                  setAcknowledgedPlanId(
-                    registry.resolution?.deliveryPlan.planId ?? null,
-                  );
-                }}
-              >
-                {acknowledgedPlanId ===
-                registry.resolution.deliveryPlan.planId
-                  ? "Acknowledged for next run"
-                  : "Acknowledge exact plan for next run"}
-              </Button>
-            </div>
-          ) : null}
-          {registry.resolution.deliveryPlan.blockingReasons.length > 0 ? (
-            <div className="mt-3 rounded-lg border border-red-900/60 bg-red-950/20 p-3 text-xs text-red-200">
-              {registry.resolution.deliveryPlan.blockingReasons.map((reason) => (
-                <p key={reason}>{reason}</p>
-              ))}
-            </div>
-          ) : null}
           <details className="mt-3 rounded-lg border border-slate-800 bg-slate-950/30">
             <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-slate-200 hover:text-white">
               Resolution details
@@ -924,267 +861,274 @@ export const InstructionSettingsPanel = ({
                   mono
                 />
               </div>
-          <div className="mt-5">
-            <p className="mb-2 text-sm font-semibold text-slate-200">
-              Effective source/path order
-            </p>
-            <p className="mb-3 text-xs text-slate-500">
-              Selected and skipped records remain visible. Higher precedence is
-              later in the canonical envelope; structural scope—not task
-              wording—determines applicability.
-            </p>
-          </div>
-          <div className="space-y-2">
-            {explanationSources.map((source) => (
-              <div
-                key={asText(source.id)}
-                className="rounded-lg border border-slate-800 px-3 py-2"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">
-                    {asNumber(source.precedence)}
-                  </Badge>
-                  <span className="text-sm text-slate-200">
-                    {asText(source.name) || asText(source.id)}
-                  </span>
-                  <Badge variant="secondary">{asText(source.status)}</Badge>
-                  <Badge variant="outline">{asText(source.kind)}</Badge>
-                  <Badge variant="outline">
-                    {asBoolean(source.trusted)
-                      ? "trusted profile/flow"
-                      : "repository-controlled"}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  Scope <code>{asText(source.scopePath)}</code>
-                  {asText(source.assignmentPath)
-                    ? ` · assignment ${asText(source.assignmentPath)}`
-                    : ""}
-                  {asText(source.relativePath)
-                    ? ` · origin ${asText(source.relativePath)}`
-                    : ""}
-                  {asText(source.reason)
-                    ? ` · reason ${asText(source.reason)}`
-                    : ""}
+              <div className="mt-5">
+                <p className="mb-2 text-sm font-semibold text-slate-200">
+                  Effective source/path order
                 </p>
-                <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
-                  {asText(source.id)} · {asNumber(source.byteLength)} bytes ·{" "}
-                  {asNumber(source.lineCount)} lines · {asText(source.digest)}
+                <p className="mb-3 text-xs text-slate-500">
+                  Selected and skipped records remain visible. Higher precedence
+                  is later in the canonical envelope; structural scope—not task
+                  wording—determines applicability.
                 </p>
               </div>
-            ))}
-          </div>
-          <div className="mt-5">
-            <p className="mb-2 text-sm font-semibold text-slate-200">
-              Final body-group order and exact deduplication
-            </p>
-            {bodyGroups.length > 0 ? (
               <div className="space-y-2">
-                {bodyGroups.map((group, index) => {
-                  const attributions = asArray(group.attributions);
-                  return (
-                    <div
-                      key={`${asText(group.digest)}:${index}`}
-                      className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">{index + 1}</Badge>
-                        <span className="text-xs text-slate-300">
-                          Rendered at precedence{" "}
-                          {asNumber(group.renderedAtPrecedence)}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          {asNumber(group.byteLength)} bytes ·{" "}
-                          {asNumber(group.lineCount)} lines
-                        </span>
-                      </div>
-                      <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
-                        {asText(group.digest)}
-                      </p>
-                      <div className="mt-2 grid gap-1 md:grid-cols-2">
-                        {attributions.map((attribution, attributionIndex) => (
-                          <p
-                            key={`${asText(attribution.sourceId)}:${attributionIndex}`}
-                            className="rounded bg-slate-900 px-2 py-1 text-[11px] text-slate-400"
-                          >
-                            {asText(attribution.sourceId)} · scope{" "}
-                            {asText(attribution.scopePath)} · precedence{" "}
-                            {asNumber(attribution.precedence)}
-                          </p>
-                        ))}
-                      </div>
+                {explanationSources.map((source) => (
+                  <div
+                    key={asText(source.id)}
+                    className="rounded-lg border border-slate-800 px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">
+                        {asNumber(source.precedence)}
+                      </Badge>
+                      <span className="text-sm text-slate-200">
+                        {asText(source.name) || asText(source.id)}
+                      </span>
+                      <Badge variant="secondary">{asText(source.status)}</Badge>
+                      <Badge variant="outline">{asText(source.kind)}</Badge>
+                      <Badge variant="outline">
+                        {asBoolean(source.trusted)
+                          ? "trusted profile/flow"
+                          : "repository-controlled"}
+                      </Badge>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500">
-                No instruction bodies are selected for this workspace.
-              </p>
-            )}
-          </div>
-          {budget ? (
-            <div className="mt-5">
-              <p className="mb-2 text-sm font-semibold text-slate-200">
-                Exact envelope budget
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                <Metric
-                  label="Bodies"
-                  value={`${asNumber(budget.bodyBytes).toLocaleString()} bytes`}
-                />
-                <Metric
-                  label="Envelope + overhead"
-                  value={`${asNumber(budget.envelopeBytes).toLocaleString()} bytes · ${asNumber(budget.lineCount).toLocaleString()} lines`}
-                />
-                <Metric
-                  label="Runtime supplements"
-                  value={`${asNumber(budget.runtimeSupplementBytes).toLocaleString()} bytes`}
-                />
-                <Metric
-                  label="Estimated instruction tokens"
-                  value={asNumber(
-                    budget.estimatedTotalInstructionTokens ??
-                      budget.estimatedTokens,
-                  ).toLocaleString()}
-                />
-                <Metric
-                  label="Provider capacity"
-                  value={
-                    typeof budget.providerLimitTokens === "number"
-                      ? `${asNumber(budget.availableInstructionTokens).toLocaleString()} available after ${asNumber(budget.providerReserveTokens).toLocaleString()} reserve (${asNumber(budget.providerLimitTokens).toLocaleString()} total)`
-                      : "Unknown · conservative compatibility"
-                  }
-                />
-              </div>
-              {asStringArray(budget.advisories).map((advisory) => (
-                <p
-                  key={advisory}
-                  className="mt-2 rounded-lg bg-amber-950/20 p-2 text-xs text-amber-200"
-                >
-                  Advisory: {advisory}
-                </p>
-              ))}
-              {asStringArray(budget.blockingErrors).map((blockingError) => (
-                <p
-                  key={blockingError}
-                  className="mt-2 rounded-lg bg-red-950/30 p-2 text-xs text-red-200"
-                >
-                  Blocked: {blockingError}
-                </p>
-              ))}
-              <p className="mt-2 text-[11px] text-slate-500">
-                Truncation: none. A source or provider shortfall blocks before
-                invocation and never drops content.
-              </p>
-            </div>
-          ) : null}
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            <div>
-              <p className="mb-2 text-sm font-semibold text-slate-200">
-                Delivery dimensions
-              </p>
-              {dimensions.map((dimension) => (
-                <p
-                  key={asText(dimension.name)}
-                  className="mb-2 rounded-lg bg-slate-950 p-2 text-xs text-slate-400"
-                >
-                  <strong className="text-slate-200">
-                    {asText(dimension.name)} · {asText(dimension.status)}
-                  </strong>
-                  <br />
-                  {asText(dimension.detail)}
-                </p>
-              ))}
-              <details className="text-xs text-slate-400">
-                <summary className="cursor-pointer text-slate-300">
-                  Versioned capability evidence
-                </summary>
-                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-2 font-mono text-[11px]">
-                  {JSON.stringify(
-                    registry.resolution.deliveryPlan.capability,
-                    null,
-                    2,
-                  )}
-                </pre>
-              </details>
-            </div>
-            <div>
-              <p className="mb-2 text-sm font-semibold text-slate-200">
-                Native inventory
-              </p>
-              {nativeInventory.length > 0 ? (
-                nativeInventory.map((record) => (
-                  <div
-                    key={`${asText(record.location)}:${asText(record.path)}`}
-                    className="mb-2 rounded-lg bg-slate-950 p-2 text-xs text-slate-400"
-                  >
-                    <strong className="text-slate-200">
-                      {asText(record.status)}
-                    </strong>{" "}
-                    · {asText(record.location)} ·{" "}
-                    {asStringArray(record.recognizingConventions).length > 0
-                      ? asStringArray(record.recognizingConventions).join(", ")
-                      : asText(record.convention)}
-                    <p className="break-all font-mono text-[11px] text-slate-500">
-                      {asText(record.path)}
-                      {asText(record.digest) ? ` · ${asText(record.digest)}` : ""}
+                    <p className="mt-1 text-xs text-slate-400">
+                      Scope <code>{asText(source.scopePath)}</code>
+                      {asText(source.assignmentPath)
+                        ? ` · assignment ${asText(source.assignmentPath)}`
+                        : ""}
+                      {asText(source.relativePath)
+                        ? ` · origin ${asText(source.relativePath)}`
+                        : ""}
+                      {asText(source.reason)
+                        ? ` · reason ${asText(source.reason)}`
+                        : ""}
                     </p>
-                    {asText(record.note) ? (
-                      <p className="mt-1">{asText(record.note)}</p>
-                    ) : null}
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-500">
-                  No provider-native files inventoried.
-                </p>
-              )}
-              <p className="mb-2 mt-4 text-sm font-semibold text-slate-200">
-                MCP initialization hints
-              </p>
-              {mcpInitializationInstructions.length > 0 ? (
-                mcpInitializationInstructions.map((record, index) => (
-                  <div
-                    key={`${asText(record.digest)}:${index}`}
-                    className="mb-2 rounded-lg bg-slate-950 p-2 text-xs text-slate-400"
-                  >
-                    Servers: {asStringArray(record.serverIds).join(", ")}
-                    <p className="break-all font-mono text-[11px] text-slate-500">
-                      {asText(record.byteLength)} bytes ·{" "}
-                      {asText(record.digest)}
+                    <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
+                      {asText(source.id)} · {asNumber(source.byteLength)} bytes
+                      · {asNumber(source.lineCount)} lines ·{" "}
+                      {asText(source.digest)}
                     </p>
                   </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-500">
-                  No enabled MCP server initialization hints are frozen for
-                  this resolution.
+                ))}
+              </div>
+              <div className="mt-5">
+                <p className="mb-2 text-sm font-semibold text-slate-200">
+                  Final body-group order and exact deduplication
                 </p>
-              )}
-            </div>
-          </div>
-          {diagnostics.length > 0 ? (
-            <div className="mt-5">
-              <p className="mb-2 text-sm font-semibold text-slate-200">
-                Diagnostics and structural conflicts
-              </p>
-              {diagnostics.map((diagnostic, index) => (
-                <div
-                  key={`${asText(diagnostic.code)}:${index}`}
-                  className="mb-2 rounded-lg border border-slate-800 p-2 text-xs text-slate-400"
-                >
-                  [{asText(diagnostic.severity)}] {asText(diagnostic.code)}:{" "}
-                  {asText(diagnostic.message)}
-                  {diagnostic.details ? (
-                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-500">
-                      {JSON.stringify(diagnostic.details, null, 2)}
-                    </pre>
-                  ) : null}
+                {bodyGroups.length > 0 ? (
+                  <div className="space-y-2">
+                    {bodyGroups.map((group, index) => {
+                      const attributions = asArray(group.attributions);
+                      return (
+                        <div
+                          key={`${asText(group.digest)}:${index}`}
+                          className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{index + 1}</Badge>
+                            <span className="text-xs text-slate-300">
+                              Rendered at precedence{" "}
+                              {asNumber(group.renderedAtPrecedence)}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {asNumber(group.byteLength)} bytes ·{" "}
+                              {asNumber(group.lineCount)} lines
+                            </span>
+                          </div>
+                          <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
+                            {asText(group.digest)}
+                          </p>
+                          <div className="mt-2 grid gap-1 md:grid-cols-2">
+                            {attributions.map(
+                              (attribution, attributionIndex) => (
+                                <p
+                                  key={`${asText(attribution.sourceId)}:${attributionIndex}`}
+                                  className="rounded bg-slate-900 px-2 py-1 text-[11px] text-slate-400"
+                                >
+                                  {asText(attribution.sourceId)} · scope{" "}
+                                  {asText(attribution.scopePath)} · precedence{" "}
+                                  {asNumber(attribution.precedence)}
+                                </p>
+                              ),
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    No instruction bodies are selected for this workspace.
+                  </p>
+                )}
+              </div>
+              {budget ? (
+                <div className="mt-5">
+                  <p className="mb-2 text-sm font-semibold text-slate-200">
+                    Exact envelope budget
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <Metric
+                      label="Bodies"
+                      value={`${asNumber(budget.bodyBytes).toLocaleString()} bytes`}
+                    />
+                    <Metric
+                      label="Envelope + overhead"
+                      value={`${asNumber(budget.envelopeBytes).toLocaleString()} bytes · ${asNumber(budget.lineCount).toLocaleString()} lines`}
+                    />
+                    <Metric
+                      label="Runtime supplements"
+                      value={`${asNumber(budget.runtimeSupplementBytes).toLocaleString()} bytes`}
+                    />
+                    <Metric
+                      label="Estimated instruction tokens"
+                      value={asNumber(
+                        budget.estimatedTotalInstructionTokens ??
+                          budget.estimatedTokens,
+                      ).toLocaleString()}
+                    />
+                    <Metric
+                      label="Provider capacity"
+                      value={
+                        typeof budget.providerLimitTokens === "number"
+                          ? `${asNumber(budget.availableInstructionTokens).toLocaleString()} available after ${asNumber(budget.providerReserveTokens).toLocaleString()} reserve (${asNumber(budget.providerLimitTokens).toLocaleString()} total)`
+                          : "Unknown · conservative compatibility"
+                      }
+                    />
+                  </div>
+                  {asStringArray(budget.advisories).map((advisory) => (
+                    <p
+                      key={advisory}
+                      className="mt-2 rounded-lg bg-amber-950/20 p-2 text-xs text-amber-200"
+                    >
+                      Advisory: {advisory}
+                    </p>
+                  ))}
+                  {asStringArray(budget.blockingErrors).map((blockingError) => (
+                    <p
+                      key={blockingError}
+                      className="mt-2 rounded-lg bg-red-950/30 p-2 text-xs text-red-200"
+                    >
+                      Blocked: {blockingError}
+                    </p>
+                  ))}
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Truncation: none. A source or provider shortfall blocks
+                    before invocation and never drops content.
+                  </p>
                 </div>
-              ))}
-            </div>
-          ) : null}
+              ) : null}
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-slate-200">
+                    Delivery dimensions
+                  </p>
+                  {dimensions.map((dimension) => (
+                    <p
+                      key={asText(dimension.name)}
+                      className="mb-2 rounded-lg bg-slate-950 p-2 text-xs text-slate-400"
+                    >
+                      <strong className="text-slate-200">
+                        {asText(dimension.name)} · {asText(dimension.status)}
+                      </strong>
+                      <br />
+                      {asText(dimension.detail)}
+                    </p>
+                  ))}
+                  <details className="text-xs text-slate-400">
+                    <summary className="cursor-pointer text-slate-300">
+                      Versioned capability evidence
+                    </summary>
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-2 font-mono text-[11px]">
+                      {JSON.stringify(
+                        registry.resolution.deliveryPlan.capability,
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </details>
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-slate-200">
+                    Native inventory
+                  </p>
+                  {nativeInventory.length > 0 ? (
+                    nativeInventory.map((record) => (
+                      <div
+                        key={`${asText(record.location)}:${asText(record.path)}`}
+                        className="mb-2 rounded-lg bg-slate-950 p-2 text-xs text-slate-400"
+                      >
+                        <strong className="text-slate-200">
+                          {asText(record.status)}
+                        </strong>{" "}
+                        · {asText(record.location)} ·{" "}
+                        {asStringArray(record.recognizingConventions).length > 0
+                          ? asStringArray(record.recognizingConventions).join(
+                              ", ",
+                            )
+                          : asText(record.convention)}
+                        <p className="break-all font-mono text-[11px] text-slate-500">
+                          {asText(record.path)}
+                          {asText(record.digest)
+                            ? ` · ${asText(record.digest)}`
+                            : ""}
+                        </p>
+                        {asText(record.note) ? (
+                          <p className="mt-1">{asText(record.note)}</p>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      No provider-native files inventoried.
+                    </p>
+                  )}
+                  <p className="mb-2 mt-4 text-sm font-semibold text-slate-200">
+                    MCP initialization hints
+                  </p>
+                  {mcpInitializationInstructions.length > 0 ? (
+                    mcpInitializationInstructions.map((record, index) => (
+                      <div
+                        key={`${asText(record.digest)}:${index}`}
+                        className="mb-2 rounded-lg bg-slate-950 p-2 text-xs text-slate-400"
+                      >
+                        Servers: {asStringArray(record.serverIds).join(", ")}
+                        <p className="break-all font-mono text-[11px] text-slate-500">
+                          {asText(record.byteLength)} bytes ·{" "}
+                          {asText(record.digest)}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      No enabled MCP server initialization hints are frozen for
+                      this resolution.
+                    </p>
+                  )}
+                </div>
+              </div>
+              {diagnostics.length > 0 ? (
+                <div className="mt-5">
+                  <p className="mb-2 text-sm font-semibold text-slate-200">
+                    Diagnostics and structural conflicts
+                  </p>
+                  {diagnostics.map((diagnostic, index) => (
+                    <div
+                      key={`${asText(diagnostic.code)}:${index}`}
+                      className="mb-2 rounded-lg border border-slate-800 p-2 text-xs text-slate-400"
+                    >
+                      [{asText(diagnostic.severity)}] {asText(diagnostic.code)}:{" "}
+                      {asText(diagnostic.message)}
+                      {diagnostic.details ? (
+                        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-500">
+                          {JSON.stringify(diagnostic.details, null, 2)}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </details>
         </SettingsCard>
@@ -1238,11 +1182,7 @@ const ScopeAssignmentEditor = ({
   return (
     <div className="space-y-2">
       <OrderedProfileEditor
-        title={
-          path === "."
-            ? "Entire workspace"
-            : `Folder scope: ${path}`
-        }
+        title={path === "." ? "Entire workspace" : `Folder scope: ${path}`}
         profiles={profiles}
         value={value}
         disabled={saving}

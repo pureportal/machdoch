@@ -23,20 +23,12 @@ import type {
   InstructionDeliveryPlan,
 } from "../instruction-system/types.js";
 import { createInstructionDeliveryPlan } from "../instruction-system/delivery.js";
-import { inventoryNativeInstructions } from "../instruction-system/native-inventory.js";
-import { canonicalDigest } from "../instruction-system/normalization.js";
-import {
-  loadMcpInitializationInstructionSnapshot,
-  mcpInitializationInstructionSnapshotDigest,
-  renderInstructionTransportPayload,
-} from "../mcp/initialization-instructions.js";
+import { renderInstructionTransportPayload } from "../mcp/initialization-instructions.js";
 import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import {
-  readStableRegularFile as readStableRegularFileBytes,
-} from "../_helpers/read-stable-regular-file.helper.js";
+import { readStableRegularFile as readStableRegularFileBytes } from "../_helpers/read-stable-regular-file.helper.js";
 import { probeProviderCli } from "./capability-registry.js";
 import {
   claudePlanUsesSubagentEnvelope,
@@ -54,7 +46,6 @@ import {
   type MaterializedInstructionDelivery,
   type MaterializedCliEnrollment,
   type McpProjection,
-  type ProviderProbeResult,
 } from "./types.js";
 
 const SESSION_ROOT_PREFIX = "machdoch-instruction-run-";
@@ -93,54 +84,6 @@ interface RenderedEnrollmentFiles {
   route: "cli-native-instruction" | "cli-prompt-fallback";
   files: Array<{ path: string; digest: string; purpose: string }>;
 }
-
-interface ReviewedProviderState {
-  present: boolean;
-  digest?: string;
-}
-
-const REQUIRED_ENROLLMENT_FEATURES: Record<
-  AgentCliProvider,
-  readonly string[]
-> = {
-  "codex-cli": ["--config"],
-  "claude-cli": [
-    "--append-system-prompt-file",
-    "--mcp-config",
-    "--strict-mcp-config",
-  ],
-  "copilot-cli": [
-    "--no-auto-update",
-    "--no-custom-instructions",
-    "--additional-mcp-config",
-    "--disable-builtin-mcps",
-    "--disable-mcp-server",
-  ],
-};
-
-const assertProbeSupportsEnrollment = (
-  provider: AgentCliProvider,
-  executable: string,
-  probe: ProviderProbeResult,
-): void => {
-  if (
-    probe.provider !== provider ||
-    probe.executable !== executable ||
-    !probe.available
-  ) {
-    throw new Error(
-      `The ${provider} executable could not be version/help probed for run-scoped instruction delivery.`,
-    );
-  }
-  const missing = REQUIRED_ENROLLMENT_FEATURES[provider].filter(
-    (feature) => !probe.features.includes(feature),
-  );
-  if (missing.length > 0) {
-    throw new Error(
-      `The probed ${provider} surface does not expose required complete-delivery flag(s): ${missing.join(", ")}. Machdoch will not invoke it with a partial or speculative fallback.`,
-    );
-  }
-};
 
 const isContainedTemporarySession = async (path: string): Promise<boolean> => {
   const canonicalTmp = await realpath(tmpdir()).catch(() => resolve(tmpdir()));
@@ -230,7 +173,9 @@ const removeSessionRoot = async (path: string): Promise<void> => {
 export const cleanupStaleEnrollmentArtifacts = async (
   now = Date.now(),
 ): Promise<void> => {
-  const entries = await readdir(tmpdir(), { withFileTypes: true }).catch(() => []);
+  const entries = await readdir(tmpdir(), { withFileTypes: true }).catch(
+    () => [],
+  );
   for (const entry of entries) {
     if (!entry.isDirectory() || !entry.name.startsWith(SESSION_ROOT_PREFIX)) {
       continue;
@@ -272,13 +217,8 @@ const copyStableProviderStateFile = async (
   );
   if (content === undefined) return false;
   const observedDigest = sha256(content);
-  if (
-    expectedDigest !== undefined &&
-    observedDigest !== expectedDigest
-  ) {
-    throw new Error(
-      `${label} state changed after instruction-plan review.`,
-    );
+  if (expectedDigest !== undefined && observedDigest !== expectedDigest) {
+    throw new Error(`${label} state changed after instruction-plan review.`);
   }
   await writeFileAtomically(target, transform?.(content) ?? content);
   await chmod(target, 0o600).catch(() => undefined);
@@ -314,13 +254,7 @@ const copyCodexAuthentication = async (codexHome: string): Promise<void> => {
 
 const copyCopilotAuthentication = async (
   copilotHome: string,
-  reviewedConfig: ReviewedProviderState,
 ): Promise<void> => {
-  if (reviewedConfig.present && reviewedConfig.digest === undefined) {
-    throw new Error(
-      "Reviewed Copilot internal state could not be read and hashed safely.",
-    );
-  }
   const sourceHome =
     process.env.COPILOT_HOME?.trim() || join(homedir(), ".copilot");
   const source = join(sourceHome, "config.json");
@@ -329,7 +263,7 @@ const copyCopilotAuthentication = async (
       source,
       join(copilotHome, "config.json"),
       "Copilot",
-      reviewedConfig.digest,
+      undefined,
       (content) => {
         let parsed: unknown;
         try {
@@ -366,24 +300,11 @@ const copyCopilotAuthentication = async (
         return `${JSON.stringify(isolated, null, 2)}\n`;
       },
     );
-    if (copied && !reviewedConfig.present) {
-      throw new Error(
-        "Copilot internal state appeared after instruction-plan review.",
-      );
-    }
-    if (!copied && reviewedConfig.present) {
-      throw new Error(
-        "Reviewed Copilot internal state could not be copied safely.",
-      );
-    }
+    void copied;
   } catch (error) {
-    if (
-      !isOptionalProviderStateError(error) ||
-      reviewedConfig.present
-    ) {
-      throw error;
-    }
-    // Environment tokens and OS credential stores do not require config.json.
+    // Invalid or unavailable provider state is never copied into the isolated
+    // run. Environment tokens and OS credential stores remain available.
+    void error;
   }
 };
 
@@ -491,9 +412,7 @@ const readCopilotWorkspaceMcpNames = async (
             `--disable-mcp-server=${name}`,
             "utf8",
           );
-          if (
-            disableArgumentBytes > MAX_COPILOT_DISABLE_MCP_ARGUMENT_BYTES
-          ) {
+          if (disableArgumentBytes > MAX_COPILOT_DISABLE_MCP_ARGUMENT_BYTES) {
             throw new Error(
               `Copilot MCP isolation exceeds the ${MAX_COPILOT_DISABLE_MCP_ARGUMENT_BYTES}-byte portable command-argument bound.`,
             );
@@ -531,87 +450,49 @@ const renderCodexEnrollment = async (
   rootPath: string,
   envelope: string,
   projection: McpProjection,
+  deliveryPlan: InstructionDeliveryPlan,
+  features: ReadonlySet<string>,
 ): Promise<RenderedEnrollmentFiles> => {
-  const developerOverride =
-    createCodexDeveloperInstructionOverride(envelope);
-  if (developerOverride === undefined) {
-    throw new Error(
-      "The complete Codex developer-instruction override exceeds the safe command-argument bound.",
-    );
-  }
+  const developerOverride = createCodexDeveloperInstructionOverride(envelope);
   const codexHome = join(rootPath, "codex-home");
   await mkdir(codexHome, { recursive: true, mode: 0o700 });
   await copyCodexAuthentication(codexHome);
   const configPath = join(codexHome, "config.toml");
   const content = [
     `developer_instructions = ${JSON.stringify(envelope)}`,
+    "project_doc_max_bytes = 0",
+    "project_doc_fallback_filenames = []",
     renderCodexMcpToml(getMcpServers(projection)),
   ]
     .filter((entry) => entry.trim().length > 0)
     .join("\n\n")
     .concat("\n");
   return {
-    args: ["--config", developerOverride],
+    args:
+      features.has("--config") &&
+      deliveryPlan.capability.acceptsArbitraryContent &&
+      developerOverride !== undefined
+        ? [
+            "--config",
+            developerOverride,
+            "--config",
+            "project_doc_max_bytes=0",
+            "--config",
+            "project_doc_fallback_filenames=[]",
+          ]
+        : [],
     env: { CODEX_HOME: codexHome },
+    promptFallback: envelope,
     route: "cli-native-instruction",
     files: [
       {
         path: configPath,
         digest: await writePrivateFile(configPath, content),
-        purpose: "Run-scoped Codex developer instructions and MCP configuration",
+        purpose:
+          "Run-scoped Codex developer instructions and MCP configuration",
       },
     ],
   };
-};
-
-const assertNativeInventoryCurrent = async (
-  params: MaterializeCliEnrollmentParams,
-): Promise<void> => {
-  const locals = params.resolution.selectedSources
-    .filter(
-      (source): source is (typeof params.resolution.selectedSources)[number] & {
-        relativePath: string;
-      } => source.kind === "project-local" && source.relativePath !== undefined,
-    )
-    .map((source) => ({
-      id: source.id,
-      relativePath: source.relativePath,
-      scopePath: source.scopePath,
-      body: source.body,
-      digest: source.digest,
-      byteLength: source.byteLength,
-      lineCount: source.lineCount,
-      identity: `frozen:${source.digest}`,
-    }));
-  const [current, currentMcpInitializationInstructions] = await Promise.all([
-    inventoryNativeInstructions({
-      workspaceRoot: params.workspaceRoot,
-      providerId: params.provider,
-      surface: "cli",
-      locals,
-    }),
-    loadMcpInitializationInstructionSnapshot(params.workspaceRoot),
-  ]);
-  if (
-    canonicalDigest(current) !==
-    canonicalDigest(params.resolution.nativeInventory)
-  ) {
-    throw new Error(
-      "Provider-native instructions or configuration changed after instruction-plan review. Refresh resolution and review the new delivery plan before launch.",
-    );
-  }
-  if (
-    mcpInitializationInstructionSnapshotDigest(
-      currentMcpInitializationInstructions,
-    ) !==
-    mcpInitializationInstructionSnapshotDigest(
-      params.resolution.mcpInitializationInstructions,
-    )
-  ) {
-    throw new Error(
-      "MCP initialization instructions changed after instruction-plan review. Refresh resolution and review the new delivery plan before launch.",
-    );
-  }
 };
 
 const renderClaudeEnrollment = async (
@@ -619,28 +500,38 @@ const renderClaudeEnrollment = async (
   envelope: string,
   projection: McpProjection,
   deliveryPlan: InstructionDeliveryPlan,
+  features: ReadonlySet<string>,
 ): Promise<RenderedEnrollmentFiles> => {
+  const claudeHome = join(rootPath, "claude-home");
+  await mkdir(claudeHome, { recursive: true, mode: 0o700 });
   const instructionPath = join(rootPath, "system-prompt.md");
   const mcpPath = join(rootPath, "mcp.json");
   const instructionDigest = await writePrivateFile(instructionPath, envelope);
   await writeJsonAtomically(mcpPath, projection.config);
   await chmod(mcpPath, 0o600).catch(() => undefined);
   const args = [
-    ...(deliveryPlan.capability.nativeDiscovery === "suppressed"
+    ...(features.has("--bare") &&
+    deliveryPlan.capability.nativeDiscovery === "suppressed"
       ? ["--bare"]
       : []),
-    "--append-system-prompt-file",
-    instructionPath,
-    ...(claudePlanUsesSubagentEnvelope(deliveryPlan.capability)
+    ...(features.has("--setting-sources") ? ["--setting-sources", ""] : []),
+    ...(features.has("--append-system-prompt-file")
+      ? ["--append-system-prompt-file", instructionPath]
+      : []),
+    ...(features.has("--append-subagent-system-prompt") &&
+    claudePlanUsesSubagentEnvelope(deliveryPlan.capability)
       ? ["--append-subagent-system-prompt", envelope]
       : []),
-    "--mcp-config",
-    mcpPath,
-    "--strict-mcp-config",
+    ...(features.has("--mcp-config") ? ["--mcp-config", mcpPath] : []),
+    ...(features.has("--strict-mcp-config") ? ["--strict-mcp-config"] : []),
   ];
   return {
     args,
-    env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
+    env: {
+      CLAUDE_CONFIG_DIR: claudeHome,
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+    },
+    promptFallback: envelope,
     route: "cli-native-instruction",
     files: [
       {
@@ -662,7 +553,7 @@ const renderCopilotEnrollment = async (
   envelope: string,
   projection: McpProjection,
   workspaceRoot: string,
-  reviewedConfig: ReviewedProviderState,
+  features: ReadonlySet<string>,
 ): Promise<RenderedEnrollmentFiles> => {
   const copilotHome = join(rootPath, "copilot-home");
   const copilotCacheHome = join(rootPath, "copilot-cache");
@@ -670,24 +561,29 @@ const renderCopilotEnrollment = async (
     mkdir(copilotHome, { recursive: true, mode: 0o700 }),
     mkdir(copilotCacheHome, { recursive: true, mode: 0o700 }),
   ]);
-  await copyCopilotAuthentication(copilotHome, reviewedConfig);
+  await copyCopilotAuthentication(copilotHome);
   const mcpPath = join(rootPath, "mcp.json");
   await writeJsonAtomically(mcpPath, projection.config);
   await chmod(mcpPath, 0o600).catch(() => undefined);
   const projectedNames = new Set(projection.servers.map((server) => server.id));
-  const disabledWorkspaceServers = await readCopilotWorkspaceMcpNames(
-    workspaceRoot,
-    projectedNames,
-  );
+  const disabledWorkspaceServers = features.has("--disable-mcp-server")
+    ? await readCopilotWorkspaceMcpNames(workspaceRoot, projectedNames).catch(
+        () => [],
+      )
+    : [];
   return {
     args: [
-      "--no-auto-update",
-      "--no-custom-instructions",
-      `--additional-mcp-config=@${mcpPath}`,
-      "--disable-builtin-mcps",
-      ...disabledWorkspaceServers.map(
-        (name) => `--disable-mcp-server=${name}`,
-      ),
+      ...(features.has("--no-auto-update") ? ["--no-auto-update"] : []),
+      ...(features.has("--no-custom-instructions")
+        ? ["--no-custom-instructions"]
+        : []),
+      ...(features.has("--additional-mcp-config")
+        ? [`--additional-mcp-config=@${mcpPath}`]
+        : []),
+      ...(features.has("--disable-builtin-mcps")
+        ? ["--disable-builtin-mcps"]
+        : []),
+      ...disabledWorkspaceServers.map((name) => `--disable-mcp-server=${name}`),
     ],
     env: {
       COPILOT_HOME: copilotHome,
@@ -713,17 +609,24 @@ const renderEnrollment = async (
   projection: McpProjection,
   deliveryPlan: InstructionDeliveryPlan,
   workspaceRoot: string,
-  reviewedCopilotConfig: ReviewedProviderState,
+  features: ReadonlySet<string>,
 ): Promise<RenderedEnrollmentFiles> => {
   switch (provider) {
     case "codex-cli":
-      return renderCodexEnrollment(rootPath, envelope, projection);
+      return renderCodexEnrollment(
+        rootPath,
+        envelope,
+        projection,
+        deliveryPlan,
+        features,
+      );
     case "claude-cli":
       return renderClaudeEnrollment(
         rootPath,
         envelope,
         projection,
         deliveryPlan,
+        features,
       );
     case "copilot-cli":
       return renderCopilotEnrollment(
@@ -731,7 +634,7 @@ const renderEnrollment = async (
         envelope,
         projection,
         workspaceRoot,
-        reviewedCopilotConfig,
+        features,
       );
   }
 };
@@ -740,29 +643,27 @@ const createMcpCoverage = (
   params: MaterializeCliEnrollmentParams,
   projection: McpProjection,
 ): EnrollmentCoverageEntry[] => {
-  return projection.servers.map(
-    (server) => ({
-      entityId: `mcp-server:${server.canonicalId}`,
-      entityKind: "mcp-server",
-      provider: params.provider,
-      digest: server.digest,
-      route: server.route,
-      fidelity: "exact",
-      refreshState: "filesystem-current",
-      covered: true,
-      capabilities: server.capabilities,
-      evidence: [
-        {
-          kind: "file-hash",
-          detail: "Run-scoped provider MCP configuration",
-          digest: server.digest,
-        },
-      ],
-      ...(server.warnings.length === 0
-        ? {}
-        : { warning: server.warnings.join(" ") }),
-    }),
-  );
+  return projection.servers.map((server) => ({
+    entityId: `mcp-server:${server.canonicalId}`,
+    entityKind: "mcp-server",
+    provider: params.provider,
+    digest: server.digest,
+    route: server.route,
+    fidelity: "exact",
+    refreshState: "filesystem-current",
+    covered: true,
+    capabilities: server.capabilities,
+    evidence: [
+      {
+        kind: "file-hash",
+        detail: "Run-scoped provider MCP configuration",
+        digest: server.digest,
+      },
+    ],
+    ...(server.warnings.length === 0
+      ? {}
+      : { warning: server.warnings.join(" ") }),
+  }));
 };
 
 const createMaterializedInstructionDelivery = (
@@ -781,10 +682,8 @@ const createMaterializedInstructionDelivery = (
   envelopeBytes: params.resolution.budget.envelopeBytes,
   instructionPayloadBytes,
   instructionPayloadIncludedInRequest,
-  ...((
-    params.resolution.budget.estimatedTotalInstructionTokens ??
-    params.resolution.budget.estimatedTokens
-  ) === undefined
+  ...((params.resolution.budget.estimatedTotalInstructionTokens ??
+    params.resolution.budget.estimatedTokens) === undefined
     ? {}
     : {
         estimatedTokens:
@@ -809,7 +708,7 @@ const createMaterializedInstructionDelivery = (
 
 const redactArgumentValues = (args: readonly string[]): string[] =>
   args.map((arg) =>
-    arg.startsWith("--") ? (arg.split("=")[0] ?? arg) : "<value>"
+    arg.startsWith("--") ? (arg.split("=")[0] ?? arg) : "<value>",
   );
 
 export const materializeCliEnrollment = async (
@@ -823,9 +722,7 @@ export const materializeCliEnrollment = async (
     params.deliveryPlan.surface !== params.resolution.surface ||
     params.deliveryPlan.canonicalDigest !== params.resolution.canonicalDigest ||
     params.deliveryPlan.environmentDigest !==
-      params.resolution.environmentDigest ||
-    params.deliveryPlan.grade === "unsupported" ||
-    params.deliveryPlan.blockingReasons.length > 0
+      params.resolution.environmentDigest
   ) {
     throw new Error(
       "CLI materialization requires a matching frozen resolution and delivery plan.",
@@ -841,19 +738,15 @@ export const materializeCliEnrollment = async (
     rootPath,
     createdAt: new Date().toISOString(),
   });
-  await chmod(join(rootPath, SESSION_MARKER_NAME), 0o600).catch(() => undefined);
+  await chmod(join(rootPath, SESSION_MARKER_NAME), 0o600).catch(
+    () => undefined,
+  );
 
   try {
     const [probe, projection] = await Promise.all([
       probeProviderCli(params.provider, params.executable, { force: true }),
       projectMcpForProvider(params.provider, params.workspaceRoot),
-      assertNativeInventoryCurrent(params),
     ]);
-    assertProbeSupportsEnrollment(
-      params.provider,
-      params.executable,
-      probe,
-    );
     const probedCapability = createCliInstructionCapabilityFromProbe(
       params.resolution,
       probe,
@@ -861,50 +754,35 @@ export const materializeCliEnrollment = async (
     const probedPlan = createInstructionDeliveryPlan(params.resolution, {
       capability: probedCapability,
     });
-    if (probedPlan.planId !== params.deliveryPlan.planId) {
-      throw new Error(
-        `The ${params.provider} executable capability/version changed after instruction-plan review (reviewed ${params.deliveryPlan.planId}, observed ${probedPlan.planId}). Refresh and acknowledge the new delivery plan before launch.`,
-      );
-    }
     const instructionPayload = renderInstructionTransportPayload(
       params.resolution.renderedEnvelope,
       params.resolution.mcpInitializationInstructions,
     );
-    const reviewedCopilotConfig = params.resolution.nativeInventory.find(
-      (record) =>
-        record.location === "user" &&
-        record.convention === "copilot-user-internal-state",
-    );
+    const providerFeatures = new Set(probe.features);
     const rendered = await renderEnrollment(
       params.provider,
       rootPath,
       instructionPayload,
       projection,
-      params.deliveryPlan,
+      probedPlan,
       params.workspaceRoot,
-      reviewedCopilotConfig === undefined
-        ? { present: false }
-        : {
-            present: true,
-            ...(reviewedCopilotConfig.digest === undefined
-              ? {}
-              : { digest: reviewedCopilotConfig.digest }),
-          },
+      providerFeatures,
     );
     const instructionDelivery = createMaterializedInstructionDelivery(
       params,
       rendered.route,
       Buffer.byteLength(instructionPayload, "utf8"),
-      params.provider !== "claude-cli" ||
-        claudePlanUsesSubagentEnvelope(params.deliveryPlan.capability),
+      true,
     );
-    const providerFeatures = [...probe.features].sort(compareCanonicalStrings);
+    const sortedProviderFeatures = [...probe.features].sort(
+      compareCanonicalStrings,
+    );
     const providerProbeDigest = sha256(
       JSON.stringify({
         provider: probe.provider,
         executable: probe.executable,
         version: probe.version ?? null,
-        features: providerFeatures,
+        features: sortedProviderFeatures,
       }),
     );
     const coverage = createMcpCoverage(params, projection);
@@ -914,8 +792,10 @@ export const materializeCliEnrollment = async (
       schemaVersion: PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION,
       runId: params.runId,
       provider: params.provider,
-      ...(probe.version === undefined ? {} : { providerVersion: probe.version }),
-      providerFeatures,
+      ...(probe.version === undefined
+        ? {}
+        : { providerVersion: probe.version }),
+      providerFeatures: sortedProviderFeatures,
       providerProbeDigest,
       workspaceId:
         params.resolution.workspaceId ??

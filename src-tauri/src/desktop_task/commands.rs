@@ -137,7 +137,6 @@ pub(super) fn execute_desktop_task(
         provider,
         model,
         reasoning,
-        acknowledged_instruction_delivery_plan_id,
         conversation_context,
         image_paths,
         media_asset_references,
@@ -179,8 +178,6 @@ pub(super) fn execute_desktop_task(
         provider: normalized_provider.as_deref(),
         model: normalized_model.as_deref(),
         reasoning: normalized_reasoning.as_deref(),
-        acknowledged_instruction_delivery_plan_id: acknowledged_instruction_delivery_plan_id
-            .as_deref(),
         conversation_context_file: conversation_context_path.as_deref(),
         image_paths: &resolved_image_paths,
     });

@@ -2,10 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
-import {
-  loadUserMemorySettings,
-  saveUserGlobalMemoryEnabled,
-} from "./env.ts";
+import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
 import { executeTask } from "./execution.ts";
 import { mcpClientManager } from "./mcp/client.ts";
 import type {
@@ -276,9 +273,7 @@ describe("executeTask", () => {
     expect(result.outputSections[1]?.lines).toContain(
       "mode surface: ask exposes only read-only function calls",
     );
-    expect(result.outputSections[1]?.lines).toContain(
-      "shell [high]",
-    );
+    expect(result.outputSections[1]?.lines).toContain("shell [high]");
   });
 
   it("executes prompt-file inspection with customization summary context", async () => {
@@ -754,9 +749,7 @@ describe("executeTask", () => {
     );
     expect(result.response?.markdown).toContain("I need a location");
     expect(
-      result.outputSections.some(
-        (section) => section.title === "Agent answer",
-      ),
+      result.outputSections.some((section) => section.title === "Agent answer"),
     ).toBe(false);
   });
 
@@ -966,7 +959,9 @@ describe("executeTask", () => {
 
   it("uses the dedicated review model for validator passes", async () => {
     const workspaceRoot = await createWorkspace();
-    const executorAdapter = createFinalOnlyAdapter("Completed with base model.");
+    const executorAdapter = createFinalOnlyAdapter(
+      "Completed with base model.",
+    );
     const monitorAdapter: AgentModelAdapter = {
       startTurn: async (params) => {
         expect(params.model).toBe("gpt-5.4-mini");
@@ -1092,9 +1087,7 @@ describe("executeTask", () => {
       continueTurn: async (params) => {
         expect(params.toolResults[0]?.name).toBe("remember_session_memory");
         expect(params.toolResults[0]?.isError).not.toBe(true);
-        expect(params.toolResults[0]?.output).toContain(
-          "Saved session memory",
-        );
+        expect(params.toolResults[0]?.output).toContain("Saved session memory");
 
         return {
           text: "",
@@ -1154,7 +1147,9 @@ describe("executeTask", () => {
           sessionMemoryEnabled: true,
           sessionMemory: [],
         },
-        modelAdapter: createFinalOnlyAdapter("Completed without a memory tool."),
+        modelAdapter: createFinalOnlyAdapter(
+          "Completed without a memory tool.",
+        ),
         monitorModelAdapter: createAcceptingMonitorAdapter(),
       },
     );
@@ -1214,7 +1209,9 @@ describe("executeTask", () => {
           sessionMemory: [],
           globalMemoryEnabled: true,
         },
-        modelAdapter: createFinalOnlyAdapter("Completed without saving secrets."),
+        modelAdapter: createFinalOnlyAdapter(
+          "Completed without saving secrets.",
+        ),
         monitorModelAdapter: createAcceptingMonitorAdapter(),
       },
     );
@@ -1226,10 +1223,7 @@ describe("executeTask", () => {
   it("persists explicit automatic global memory when global memory is enabled", async () => {
     const workspaceRoot = await createWorkspace();
 
-    process.env.MACHDOCH_USER_CONFIG_DIR = join(
-      workspaceRoot,
-      ".user-config",
-    );
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
     await saveUserGlobalMemoryEnabled(true);
 
     const result = await executeTask(
@@ -1340,9 +1334,7 @@ describe("executeTask", () => {
     expect(result.reason).toContain("submit_final_response");
     expect(result.response).toBeUndefined();
     expect(
-      result.outputSections.some(
-        (section) => section.title === "Agent answer",
-      ),
+      result.outputSections.some((section) => section.title === "Agent answer"),
     ).toBe(true);
   });
 
@@ -1672,7 +1664,8 @@ describe("executeTask", () => {
 
   it("repairs Linear issue references before dispatching generic MCP get_issue calls", async () => {
     const workspaceRoot = await createWorkspace();
-    const observedToolResults: Array<{ output: string; isError?: boolean }> = [];
+    const observedToolResults: Array<{ output: string; isError?: boolean }> =
+      [];
     const callToolSpy = vi
       .spyOn(mcpClientManager, "callTool")
       .mockResolvedValue({
@@ -1747,7 +1740,8 @@ describe("executeTask", () => {
 
   it("repairs Linear issue references before dispatching read-only MCP get_issue calls in ask mode", async () => {
     const workspaceRoot = await createWorkspace();
-    const observedToolResults: Array<{ output: string; isError?: boolean }> = [];
+    const observedToolResults: Array<{ output: string; isError?: boolean }> =
+      [];
     const discoverSpy = vi
       .spyOn(mcpClientManager, "discoverServerById")
       .mockResolvedValue({
@@ -1986,7 +1980,6 @@ describe("executeTask", () => {
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: failingAdapter,
-        acknowledgeCompatibleInstructionDelivery: true,
         onStateChange: (nextProgress) => {
           progress.push(nextProgress);
         },
@@ -1994,9 +1987,7 @@ describe("executeTask", () => {
     );
 
     expect(result.status).toBe("blocked");
-    expect(result.summary).toContain(
-      "provider langdock with model gpt-5-mini",
-    );
+    expect(result.summary).toContain("provider langdock with model gpt-5-mini");
     expect(result.summary).toContain("400 No body");
     expect(progress.at(-1)?.message).toBe(result.summary);
     expect(

@@ -23,7 +23,7 @@ Usage:
   machdoch instructions assignments relink <workspace-uuid> <old-folder> --path <new-folder> [--json]
   machdoch instructions local list|show|create|edit|delete [relative-folder] [--expected-digest <sha256>] [--json]
   machdoch instructions workspaces list|register|relink|unregister [workspace-or-path] [--json]
-  machdoch instructions resolve [--surface <api|cli>] [--path <relative-path>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--include-content] [--acknowledge-compatible] [--json]
+  machdoch instructions resolve [--surface <api|cli>] [--path <relative-path>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--include-content] [--json]
   machdoch instructions validate [--json]
   machdoch instructions transfer export [--include-workspaces] [--json]
   machdoch instructions transfer import --prompt-file <export.json> [--decisions-file <choices.json>] [--include-workspaces] [--json]
@@ -175,10 +175,6 @@ Options:
   --include-content       Include profile/local bodies in otherwise body-free output; required for recovery export.
   --include-workspaces    Export unbound workspace mappings or return them for manual relinking on import.
   --decisions-file <path> Explicit transfer conflict choices.
-  --acknowledge-compatible
-                          Explicitly accept compatible delivery after reviewing its limitations.
-  --acknowledge-instruction-plan <plan-id>
-                          Accept only the exact compatible plan ID shown by instruction resolution.
   --confirm-assignment-removal
                           Confirm removal of assignments while unregistering a workspace binding.
   --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.

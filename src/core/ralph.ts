@@ -4,8 +4,30 @@ import * as addFormatsModule from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, lstat, mkdir, open, readdir, readFile, rename, rm, stat, truncate, unlink, utimes, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  appendFile,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  truncate,
+  unlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import {
   FLOW_FILE_EXTENSION,
@@ -216,7 +238,6 @@ import type {
 } from "./runtime-contract.generated.js";
 import {
   adaptFrozenInstructionSet,
-  assertInstructionDeliveryAllowed,
   canonicalDigest,
   resolveInstructionSet,
   type FrozenInstructionSet,
@@ -225,11 +246,9 @@ import {
 } from "./instruction-system/index.js";
 import { createInstructionDeliveryPlanForRuntime } from "./provider-enrollment/instruction-delivery-preflight.js";
 
-const addFormats = (
-  typeof addFormatsModule.default === "function"
-    ? addFormatsModule.default
-    : addFormatsModule
-) as unknown as FormatsPlugin;
+const addFormats = (typeof addFormatsModule.default === "function"
+  ? addFormatsModule.default
+  : addFormatsModule) as unknown as FormatsPlugin;
 
 export { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
 export { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
@@ -257,8 +276,10 @@ const MAX_RALPH_OPERATION_LEDGER_ENTRIES = 2_000;
 const DEFAULT_RALPH_MCP_TIMEOUT_MS = 5 * 60_000;
 const RALPH_MEDIA_BRIDGE_POLL_MS = 250;
 const RALPH_MEDIA_BRIDGE_RESPONSE_TIMEOUT_MS = 30_000;
-const RALPH_MEDIA_BRIDGE_REQUEST_PATH_ENV = "MACHDOCH_MEDIA_BRIDGE_REQUEST_PATH";
-const RALPH_MEDIA_BRIDGE_RESPONSE_PATH_ENV = "MACHDOCH_MEDIA_BRIDGE_RESPONSE_PATH";
+const RALPH_MEDIA_BRIDGE_REQUEST_PATH_ENV =
+  "MACHDOCH_MEDIA_BRIDGE_REQUEST_PATH";
+const RALPH_MEDIA_BRIDGE_RESPONSE_PATH_ENV =
+  "MACHDOCH_MEDIA_BRIDGE_RESPONSE_PATH";
 const RALPH_MEDIA_BRIDGE_TOKEN_ENV = "MACHDOCH_MEDIA_BRIDGE_TOKEN";
 const DEFAULT_RALPH_WORK_ITEM_LEASE_MS = 10 * 60_000;
 const DEFAULT_RALPH_WORK_ITEM_DEFER_MS = 30 * 60_000;
@@ -333,10 +354,17 @@ export const RALPH_VARIABLE_TYPES = [
 export type RalphBlockType = (typeof RALPH_BLOCK_TYPES)[number];
 export type RalphUtilityType = (typeof RALPH_UTILITY_TYPES)[number];
 export type RalphVariableType = (typeof RALPH_VARIABLE_TYPES)[number];
-export type { RalphFlowScope, RalphRunLogPaths } from "./_helpers/create-ralph-storage-paths.helper.js";
+export type {
+  RalphFlowScope,
+  RalphRunLogPaths,
+} from "./_helpers/create-ralph-storage-paths.helper.js";
 export type { RalphScopeSelectionStrategy } from "./_helpers/ralph-scope-registry.helper.js";
 export type RalphValidatorDecision = "DONE" | "CONTINUE" | "RETRY" | "ERROR";
-export type RalphExecutionOutput = "SUCCESS" | "ERROR" | RalphValidatorDecision | string;
+export type RalphExecutionOutput =
+  | "SUCCESS"
+  | "ERROR"
+  | RalphValidatorDecision
+  | string;
 export type RalphInputFieldType =
   | "text"
   | "textarea"
@@ -395,7 +423,11 @@ export type RalphRunStatus =
   | "stopped"
   | "waiting-for-input";
 export type RalphRunSummaryStatus = RalphRunStatus | "partial";
-export type RalphUtilityWaitMode = "delay" | "until-time" | "condition" | "poll";
+export type RalphUtilityWaitMode =
+  | "delay"
+  | "until-time"
+  | "condition"
+  | "poll";
 export type RalphUtilityConditionStyle = "simple" | "json-path" | "javascript";
 export type RalphUiAnalyzeAdapter =
   | "auto"
@@ -1105,7 +1137,10 @@ export interface RalphSimpleLogEntry {
   blockType?: RalphBlockType;
   attempt?: number;
   output?: RalphExecutionOutput | string;
-  status?: RalphRunStatus | RalphBlockExecutionResult["status"] | TaskExecutionResult["status"];
+  status?:
+    | RalphRunStatus
+    | RalphBlockExecutionResult["status"]
+    | TaskExecutionResult["status"];
   durationMs?: number;
   from?: string;
   to?: string;
@@ -1135,8 +1170,12 @@ export interface RalphTraceLogEntry {
 export interface RalphRunLogger {
   runId: string;
   paths?: RalphRunLogPaths;
-  simple(entry: Omit<RalphSimpleLogEntry, "sequence" | "createdAt" | "runId">): void;
-  trace(entry: Omit<RalphTraceLogEntry, "sequence" | "createdAt" | "runId">): void;
+  simple(
+    entry: Omit<RalphSimpleLogEntry, "sequence" | "createdAt" | "runId">,
+  ): void;
+  trace(
+    entry: Omit<RalphTraceLogEntry, "sequence" | "createdAt" | "runId">,
+  ): void;
   flush(): Promise<void>;
 }
 
@@ -1160,7 +1199,6 @@ export interface RalphRunOptions {
   resolvedInstructions?: FrozenInstructionSet;
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
-  acknowledgeCompatibleInstructionDelivery?: boolean;
   instructionBoundaryPolicy?:
     | "require-match"
     | "original-boundary"
@@ -1176,7 +1214,6 @@ export interface RalphExecutionOptionsSource {
   resolvedInstructions?: FrozenInstructionSet;
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
-  acknowledgeCompatibleInstructionDelivery?: boolean;
   instructionBoundaries?: Record<string, RalphInstructionBoundary>;
 }
 
@@ -1447,7 +1484,11 @@ export const resolveRalphFlowReference = async (
     throw new Error("Expected Ralph flow id or alias.");
   }
 
-  const directPath = getRalphFlowPath(workspaceRoot, normalizedReference, scope);
+  const directPath = getRalphFlowPath(
+    workspaceRoot,
+    normalizedReference,
+    scope,
+  );
 
   if (existsSync(directPath)) {
     const flow = await readRalphFlowFile(directPath);
@@ -1486,7 +1527,9 @@ export const resolveRalphFlowReference = async (
 
       if (alias === normalizedReference) {
         matches.push({
-          id: normalizeOptionalString(flow.id) ?? basename(entry.name, FLOW_FILE_EXTENSION),
+          id:
+            normalizeOptionalString(flow.id) ??
+            basename(entry.name, FLOW_FILE_EXTENSION),
           scope,
           path,
           flow,
@@ -1527,7 +1570,9 @@ export const readRalphFlow = async (
   const validation = validateRalphFlow(flow);
 
   if (!options.allowInvalid && !validation.valid) {
-    throw new Error(`Ralph flow \`${id}\` is invalid: ${validation.errors.join(" ")}`);
+    throw new Error(
+      `Ralph flow \`${id}\` is invalid: ${validation.errors.join(" ")}`,
+    );
   }
 
   return flow;
@@ -1566,7 +1611,8 @@ const assertRalphFlowAliasAvailable = async (
     try {
       const existingFlow = await readRalphFlowFile(path);
       const existingId =
-        normalizeOptionalString(existingFlow.id) ?? basename(entry.name, FLOW_FILE_EXTENSION);
+        normalizeOptionalString(existingFlow.id) ??
+        basename(entry.name, FLOW_FILE_EXTENSION);
 
       if (existingId === flow.id) {
         continue;
@@ -1582,7 +1628,10 @@ const assertRalphFlowAliasAvailable = async (
         );
       }
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Ralph flow alias")) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("Ralph flow alias")
+      ) {
         throw error;
       }
     }
@@ -1621,7 +1670,9 @@ export const writeRalphFlow = async (
       try {
         if (options.expectedFingerprint !== undefined) {
           if (!existsSync(flowPath)) {
-            throw new Error("Ralph flow CAS conflict: the expected flow no longer exists.");
+            throw new Error(
+              "Ralph flow CAS conflict: the expected flow no longer exists.",
+            );
           }
           const actualFingerprint = createRalphFlowFingerprint(
             await readRalphFlowFile(flowPath),
@@ -1648,7 +1699,10 @@ export const writeRalphFlow = async (
             scope,
           );
           await mkdir(revisionDirectory, { recursive: true });
-          const revisionPath = createRalphRevisionFilePath(revisionDirectory, now);
+          const revisionPath = createRalphRevisionFilePath(
+            revisionDirectory,
+            now,
+          );
           await writeFileAtomically(
             revisionPath,
             await readFile(flowPath, "utf8"),
@@ -1675,9 +1729,10 @@ export const listRalphFlows = async (
   workspaceRoot: string,
   options: RalphFlowListOptions = {},
 ): Promise<RalphFlowSummary[]> => {
-  const scopes: RalphFlowScope[] = options.scope === "all"
-    ? ["workspace", "user"]
-    : [options.scope ?? "workspace"];
+  const scopes: RalphFlowScope[] =
+    options.scope === "all"
+      ? ["workspace", "user"]
+      : [options.scope ?? "workspace"];
   const summaries: RalphFlowSummary[] = [];
   const includeScope = options.scope !== undefined;
 
@@ -1706,9 +1761,13 @@ export const listRalphFlows = async (
         const variables = discoverRalphFlowVariables(flow);
         const alias = normalizeOptionalString(flow.alias);
         summaries.push({
-          id: normalizeOptionalString(flow.id) ?? basename(entry.name, FLOW_FILE_EXTENSION),
+          id:
+            normalizeOptionalString(flow.id) ??
+            basename(entry.name, FLOW_FILE_EXTENSION),
           ...(alias ? { alias } : {}),
-          name: normalizeOptionalString(flow.name) ?? basename(entry.name, FLOW_FILE_EXTENSION),
+          name:
+            normalizeOptionalString(flow.name) ??
+            basename(entry.name, FLOW_FILE_EXTENSION),
           ...(includeScope ? { scope } : {}),
           path,
           ...(flow.description ? { description: flow.description } : {}),
@@ -1760,7 +1819,11 @@ export const deleteRalphFlow = async (
     );
 
     try {
-      const directPath = getRalphFlowPath(workspaceRoot, normalizedReference, scope);
+      const directPath = getRalphFlowPath(
+        workspaceRoot,
+        normalizedReference,
+        scope,
+      );
       let flowId: string;
       let flowPath: string;
 
@@ -1930,10 +1993,14 @@ export const restoreRalphFlowRevision = async (
       ? { expectedFingerprint: options.expectedFingerprint }
       : {}),
   });
-  const restoredFlow = await readRalphFlow(workspaceRoot, flowReference.flow.id, {
-    allowInvalid: true,
-    scope,
-  });
+  const restoredFlow = await readRalphFlow(
+    workspaceRoot,
+    flowReference.flow.id,
+    {
+      allowInvalid: true,
+      scope,
+    },
+  );
 
   return {
     path: restoredPath,
@@ -1994,7 +2061,11 @@ class RalphFileRunLogger implements RalphRunLogger {
     };
 
     this.enqueue(async () => {
-      await appendFile(this.paths.simpleJsonlPath, createRalphLogLine(completedEntry), "utf8");
+      await appendFile(
+        this.paths.simpleJsonlPath,
+        createRalphLogLine(completedEntry),
+        "utf8",
+      );
       await appendFile(
         this.paths.simpleMarkdownPath,
         `${formatRalphSimpleMarkdownEntry(completedEntry)}\n`,
@@ -2018,7 +2089,11 @@ class RalphFileRunLogger implements RalphRunLogger {
     };
 
     this.enqueue(async () => {
-      await appendFile(this.paths.traceJsonlPath, createRalphLogLine(completedEntry), "utf8");
+      await appendFile(
+        this.paths.traceJsonlPath,
+        createRalphLogLine(completedEntry),
+        "utf8",
+      );
     });
   }
 
@@ -2039,15 +2114,15 @@ class RalphFileRunLogger implements RalphRunLogger {
       return;
     }
 
-    this.pending = this.pending
-      .then(write)
-      .catch((error: unknown) => {
-        this.failure = error;
-      });
+    this.pending = this.pending.then(write).catch((error: unknown) => {
+      this.failure = error;
+    });
   }
 }
 
-const readLastRalphLogSequence = async (paths: RalphRunLogPaths): Promise<number> => {
+const readLastRalphLogSequence = async (
+  paths: RalphRunLogPaths,
+): Promise<number> => {
   const contents = await Promise.all(
     [paths.simpleJsonlPath, paths.traceJsonlPath].map((path) =>
       readFile(path, "utf8").catch(() => ""),
@@ -2083,28 +2158,38 @@ export const pruneRalphRunArtifacts = async (
     preserveRunId?: string;
   } = {},
 ): Promise<{ removed: string[] }> => {
-  const runDirectory = getRalphRunDirectory(workspaceRoot, options.scope ?? "workspace");
-  const entries = await readdir(runDirectory, { withFileTypes: true }).catch(() => []);
-  const candidates = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(
-    async (entry) => {
-      const path = join(runDirectory, entry.name);
-      const metadata = await stat(path).catch(() => undefined);
-      const record = await readRalphRunRecordFile(join(path, "run.json"));
-      return { id: entry.name, path, metadata, record };
-    },
-  ));
-  candidates.sort((left, right) =>
-    (right.metadata?.mtimeMs ?? 0) - (left.metadata?.mtimeMs ?? 0),
+  const runDirectory = getRalphRunDirectory(
+    workspaceRoot,
+    options.scope ?? "workspace",
+  );
+  const entries = await readdir(runDirectory, { withFileTypes: true }).catch(
+    () => [],
+  );
+  const candidates = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const path = join(runDirectory, entry.name);
+        const metadata = await stat(path).catch(() => undefined);
+        const record = await readRalphRunRecordFile(join(path, "run.json"));
+        return { id: entry.name, path, metadata, record };
+      }),
+  );
+  candidates.sort(
+    (left, right) =>
+      (right.metadata?.mtimeMs ?? 0) - (left.metadata?.mtimeMs ?? 0),
   );
   const maxRuns = Math.max(1, options.maxRuns ?? 500);
-  const cutoff = Date.now() - Math.max(1, options.maxAgeDays ?? 90) * 24 * 60 * 60_000;
+  const cutoff =
+    Date.now() - Math.max(1, options.maxAgeDays ?? 90) * 24 * 60 * 60_000;
   const removed: string[] = [];
 
   for (const [index, candidate] of candidates.entries()) {
     if (
       candidate.id === options.preserveRunId ||
       candidate.record?.status === "running" ||
-      (!candidate.metadata || (index < maxRuns && candidate.metadata.mtimeMs >= cutoff))
+      !candidate.metadata ||
+      (index < maxRuns && candidate.metadata.mtimeMs >= cutoff)
     ) {
       continue;
     }
@@ -2182,19 +2267,29 @@ export const readRalphExecutionHistoryResults = async (
     }
     try {
       const entry = JSON.parse(line) as unknown;
-      const result = isRecord(entry) && entry.kind === "block-result" && isRecord(entry.result)
-        ? entry.result as unknown as RalphBlockExecutionResult
-        : undefined;
-      if (!result || typeof result.blockId !== "string" || typeof result.output !== "string") {
+      const result =
+        isRecord(entry) &&
+        entry.kind === "block-result" &&
+        isRecord(entry.result)
+          ? (entry.result as unknown as RalphBlockExecutionResult)
+          : undefined;
+      if (
+        !result ||
+        typeof result.blockId !== "string" ||
+        typeof result.output !== "string"
+      ) {
         throw new Error("entry is not a Ralph block-result record");
       }
-      const key = result.operationId ?? `${results.length}:${result.blockId}:${result.attempt}`;
+      const key =
+        result.operationId ??
+        `${results.length}:${result.blockId}:${result.attempt}`;
       if (!seen.has(key)) {
         seen.add(key);
         results.push(result);
       }
     } catch (error) {
-      const isPartialCrashTail = index === lines.length - 1 && !hasTerminatingNewline;
+      const isPartialCrashTail =
+        index === lines.length - 1 && !hasTerminatingNewline;
       if (isPartialCrashTail) {
         break;
       }
@@ -2263,29 +2358,39 @@ export const acquireRalphFileMutationLock = async (
         const record = await readFile(lockPath, "utf8")
           .then((text) => JSON.parse(text) as { token?: unknown })
           .catch((error: unknown) => {
-            throw new Error(`Ralph mutation lease was lost for ${targetPath}.`, {
-              cause: error,
-            });
+            throw new Error(
+              `Ralph mutation lease was lost for ${targetPath}.`,
+              {
+                cause: error,
+              },
+            );
           });
         if (record.token !== token) {
-          throw new Error(`Ralph mutation lease was replaced for ${targetPath}.`);
+          throw new Error(
+            `Ralph mutation lease was replaced for ${targetPath}.`,
+          );
         }
       };
       await assertOwnership();
-      const heartbeatHandle = setInterval(() => {
-        void readFile(lockPath, "utf8")
-          .then((text) => JSON.parse(text) as { token?: unknown })
-          .then((record) => {
-            if (record.token === token) {
-              const now = new Date();
-              return utimes(lockPath, now, now);
-            }
-            throw new Error(`Ralph mutation lease was replaced for ${targetPath}.`);
-          })
-          .catch((error: unknown) => {
-            compromiseError ??= error;
-          });
-      }, Math.max(1_000, Math.floor(staleAfterMs / 3)));
+      const heartbeatHandle = setInterval(
+        () => {
+          void readFile(lockPath, "utf8")
+            .then((text) => JSON.parse(text) as { token?: unknown })
+            .then((record) => {
+              if (record.token === token) {
+                const now = new Date();
+                return utimes(lockPath, now, now);
+              }
+              throw new Error(
+                `Ralph mutation lease was replaced for ${targetPath}.`,
+              );
+            })
+            .catch((error: unknown) => {
+              compromiseError ??= error;
+            });
+        },
+        Math.max(1_000, Math.floor(staleAfterMs / 3)),
+      );
 
       return {
         path: lockPath,
@@ -2306,12 +2411,21 @@ export const acquireRalphFileMutationLock = async (
       }
 
       const metadata = await stat(lockPath).catch(() => undefined);
-      if (attempt === 0 && metadata && Date.now() - metadata.mtimeMs >= staleAfterMs) {
-        const staleToken = await readFile(lockPath, "utf8").catch(() => undefined);
+      if (
+        attempt === 0 &&
+        metadata &&
+        Date.now() - metadata.mtimeMs >= staleAfterMs
+      ) {
+        const staleToken = await readFile(lockPath, "utf8").catch(
+          () => undefined,
+        );
         if (staleToken !== undefined) {
           const staleOwner = (() => {
             try {
-              return JSON.parse(staleToken) as { pid?: unknown; token?: unknown };
+              return JSON.parse(staleToken) as {
+                pid?: unknown;
+                token?: unknown;
+              };
             } catch {
               return undefined;
             }
@@ -2325,14 +2439,20 @@ export const acquireRalphFileMutationLock = async (
               { cause: error },
             );
           }
-          const confirmedToken = await readFile(lockPath, "utf8").catch(() => undefined);
+          const confirmedToken = await readFile(lockPath, "utf8").catch(
+            () => undefined,
+          );
           if (confirmedToken === staleToken) {
-            const confirmedMetadata = await stat(lockPath).catch(() => undefined);
+            const confirmedMetadata = await stat(lockPath).catch(
+              () => undefined,
+            );
             if (
               confirmedMetadata &&
               Date.now() - confirmedMetadata.mtimeMs >= staleAfterMs
             ) {
-              const finalToken = await readFile(lockPath, "utf8").catch(() => undefined);
+              const finalToken = await readFile(lockPath, "utf8").catch(
+                () => undefined,
+              );
               if (finalToken === staleToken) {
                 await rm(lockPath, { force: true });
                 continue;
@@ -2372,10 +2492,16 @@ export const createRalphRunLogger = async (
       options.runId,
     );
 
-  if (!options.append && !options.forceTakeover && existsSync(paths.recordPath)) {
+  if (
+    !options.append &&
+    !options.forceTakeover &&
+    existsSync(paths.recordPath)
+  ) {
     let existing: unknown;
     try {
-      existing = JSON.parse(await readFile(paths.recordPath, "utf8")) as unknown;
+      existing = JSON.parse(
+        await readFile(paths.recordPath, "utf8"),
+      ) as unknown;
     } catch (error) {
       throw new Error(
         `Ralph logger refused to overwrite unreadable existing run record ${paths.recordPath}.`,
@@ -2389,9 +2515,7 @@ export const createRalphRunLogger = async (
     }
     const lease = existing.checkpoint?.lease;
     const leaseIsLive = Boolean(
-      lease &&
-      !lease.releasedAt &&
-      Date.parse(lease.expiresAt) > Date.now(),
+      lease && !lease.releasedAt && Date.parse(lease.expiresAt) > Date.now(),
     );
     if (existing.status === "running" || leaseIsLive) {
       throw new Error(
@@ -2461,7 +2585,10 @@ export const writeRalphRunRecord = async (
   } = {},
 ): Promise<RalphRunRecordWriteResult> => {
   const createdAt = new Date().toISOString();
-  const runDirectory = getRalphRunDirectory(workspaceRoot, options.scope ?? "workspace");
+  const runDirectory = getRalphRunDirectory(
+    workspaceRoot,
+    options.scope ?? "workspace",
+  );
   await mkdir(runDirectory, { recursive: true });
 
   const paths =
@@ -2498,7 +2625,9 @@ const readRalphRunRecordFile = async (
   }
 };
 
-const isRalphSimpleLogEntry = (value: unknown): value is RalphSimpleLogEntry => {
+const isRalphSimpleLogEntry = (
+  value: unknown,
+): value is RalphSimpleLogEntry => {
   return (
     isRecord(value) &&
     typeof value.sequence === "number" &&
@@ -2581,10 +2710,14 @@ const createPartialRalphRunSummary = async (
   const createdAt =
     firstEntry?.createdAt ??
     (directoryStat
-      ? new Date(directoryStat.birthtimeMs || directoryStat.mtimeMs).toISOString()
+      ? new Date(
+          directoryStat.birthtimeMs || directoryStat.mtimeMs,
+        ).toISOString()
       : createLogTimestamp());
   const flowEntry = entries.find((entry) => entry.flowId || entry.flowName);
-  const blockCount = entries.filter((entry) => entry.kind === "block-output").length;
+  const blockCount = entries.filter(
+    (entry) => entry.kind === "block-output",
+  ).length;
   const lastBlockLabel =
     lastEntry?.blockTitle ?? lastEntry?.blockId ?? lastEntry?.kind;
   const summary = lastEntry
@@ -2660,7 +2793,10 @@ export const listRalphRunRecords = async (
     scope?: RalphFlowScope;
   } = {},
 ): Promise<RalphRunSummary[]> => {
-  const runDirectory = getRalphRunDirectory(workspaceRoot, options.scope ?? "workspace");
+  const runDirectory = getRalphRunDirectory(
+    workspaceRoot,
+    options.scope ?? "workspace",
+  );
 
   if (!existsSync(runDirectory)) {
     return [];
@@ -2713,7 +2849,10 @@ export const listRalphRunRecords = async (
         continue;
       }
 
-      if (normalizedFlowId && normalizeFlowId(record.flowId) !== normalizedFlowId) {
+      if (
+        normalizedFlowId &&
+        normalizeFlowId(record.flowId) !== normalizedFlowId
+      ) {
         continue;
       }
 
@@ -2721,9 +2860,10 @@ export const listRalphRunRecords = async (
       continue;
     }
 
-    const path = entry.isFile() && entry.name.endsWith(".json")
-      ? join(runDirectory, entry.name)
-      : undefined;
+    const path =
+      entry.isFile() && entry.name.endsWith(".json")
+        ? join(runDirectory, entry.name)
+        : undefined;
 
     if (!path || !existsSync(path)) {
       continue;
@@ -2735,7 +2875,10 @@ export const listRalphRunRecords = async (
       continue;
     }
 
-    if (normalizedFlowId && normalizeFlowId(record.flowId) !== normalizedFlowId) {
+    if (
+      normalizedFlowId &&
+      normalizeFlowId(record.flowId) !== normalizedFlowId
+    ) {
       continue;
     }
 
@@ -2756,9 +2899,13 @@ export const readRalphRunLog = async (
   const scope = options.scope ?? "workspace";
 
   try {
-    const { path: recordPath, record } = await readRalphRunRecord(workspaceRoot, runId, {
-      scope,
-    });
+    const { path: recordPath, record } = await readRalphRunRecord(
+      workspaceRoot,
+      runId,
+      {
+        scope,
+      },
+    );
     const logPath =
       kind === "trace"
         ? record.logPaths?.traceJsonlPath
@@ -2803,7 +2950,9 @@ const resolveVariableValues = (
   const values: Record<string, string> = {};
   const variableNames = new Set(variables.map((variable) => variable.name));
   const missing: string[] = [];
-  const unknown = Object.keys(supplied).filter((name) => !variableNames.has(name));
+  const unknown = Object.keys(supplied).filter(
+    (name) => !variableNames.has(name),
+  );
 
   for (const variable of variables) {
     const suppliedValue = supplied[variable.name];
@@ -2841,7 +2990,7 @@ const resolvePlaceholder = (
 
     return value !== undefined && value !== ""
       ? value
-      : placeholder.variable.default ?? "";
+      : (placeholder.variable.default ?? "");
   }
 
   if (placeholder.builtin === "lastResult") {
@@ -2884,7 +3033,9 @@ const resolvePlaceholder = (
   const result = context.resultsByBlock.get(reference.blockId);
   if (!result) {
     if (strict) {
-      throw new Error(`Unresolved Ralph block reference ${placeholder.raw}: block has no result.`);
+      throw new Error(
+        `Unresolved Ralph block reference ${placeholder.raw}: block has no result.`,
+      );
     }
     return "";
   }
@@ -2902,7 +3053,9 @@ const resolvePlaceholder = (
 
     if (value === undefined) {
       if (strict) {
-        throw new Error(`Unresolved Ralph data reference ${placeholder.raw}: path was not found.`);
+        throw new Error(
+          `Unresolved Ralph data reference ${placeholder.raw}: path was not found.`,
+        );
       }
       return "";
     }
@@ -2943,7 +3096,9 @@ const resolveTemplateText = (
 
     if (next === resolved || seen.has(next)) {
       if (strict && containsRalphPlaceholder(next)) {
-        throw new Error(`Ralph template contains an unresolved or cyclic placeholder: ${next}.`);
+        throw new Error(
+          `Ralph template contains an unresolved or cyclic placeholder: ${next}.`,
+        );
       }
       return next;
     }
@@ -2953,7 +3108,9 @@ const resolveTemplateText = (
   }
 
   if (strict && containsRalphPlaceholder(resolved)) {
-    throw new Error(`Ralph template exceeded placeholder resolution depth: ${resolved}.`);
+    throw new Error(
+      `Ralph template exceeded placeholder resolution depth: ${resolved}.`,
+    );
   }
   return resolved;
 };
@@ -2977,7 +3134,7 @@ const resolveAttachmentReference = (
 
   const resolvedValue =
     attachment.source === "variable" && isPlainRalphVariableReference(rawValue)
-      ? context.variables[rawValue] ?? ""
+      ? (context.variables[rawValue] ?? "")
       : resolveTemplateText(rawValue, context);
   const value = resolvedValue.trim();
 
@@ -3121,7 +3278,10 @@ const createImageInputsFromAttachments = async (
   );
 };
 
-const delay = async (seconds: number, signal: AbortSignal | undefined): Promise<void> => {
+const delay = async (
+  seconds: number,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
   if (seconds <= 0) {
     return;
   }
@@ -3322,7 +3482,9 @@ const createRalphBlockProgressEvent = (
       label: progress.timelineEvent.label,
       timelineKind: progress.timelineEvent.kind,
       phase: progress.timelineEvent.phase,
-      ...(progress.timelineEvent.tone ? { tone: progress.timelineEvent.tone } : {}),
+      ...(progress.timelineEvent.tone
+        ? { tone: progress.timelineEvent.tone }
+        : {}),
       ...(progress.timelineEvent.provider
         ? { provider: progress.timelineEvent.provider }
         : {}),
@@ -3334,7 +3496,9 @@ const createRalphBlockProgressEvent = (
         : {}),
       ...(progress.timelineEvent.detail
         ? {
-            detail: truncateRalphBlockProgressText(progress.timelineEvent.detail),
+            detail: truncateRalphBlockProgressText(
+              progress.timelineEvent.detail,
+            ),
           }
         : {}),
       ...(progress.timelineEvent.tokenUsage
@@ -3400,7 +3564,9 @@ const withRalphBlockProgress = (
     : result;
 };
 
-const getRalphBlockMaxDurationMs = (block: RalphFlowBlock | undefined): number | undefined => {
+const getRalphBlockMaxDurationMs = (
+  block: RalphFlowBlock | undefined,
+): number | undefined => {
   if (!block) {
     return undefined;
   }
@@ -3493,21 +3659,13 @@ const preflightRalphInstructionBoundaries = async (
         : await createInstructionDeliveryPlanForRuntime(resolution, {
             workspaceRoot: config.workspaceRoot,
             reasoning: blockConfig.reasoning,
-            unattended: true,
-            acknowledgedCompatible:
-              options.acknowledgeCompatibleInstructionDelivery === true,
           });
-    assertInstructionDeliveryAllowed(plan, {
-      unattended: true,
-      acknowledgedCompatible:
-        options.acknowledgeCompatibleInstructionDelivery === true,
-    });
     boundaries[key] = {
       resolution,
       plan,
       receipts:
         providerId === baseProvider && blockConfig.model === seedConfig.model
-          ? options.instructionDeliveryReceipts ?? []
+          ? (options.instructionDeliveryReceipts ?? [])
           : [],
     };
   }
@@ -3570,53 +3728,57 @@ const createExecutionOptions = async (
   const onActionOutput: TaskExecutionOptions["onActionOutput"] =
     logger || baseOnStateChange
       ? (output: TaskActionOutput): void => {
-        const safeOutput: TaskActionOutput = {
-          ...output,
-          chunk: capLogText(output.chunk, MAX_RALPH_SIMPLE_LOG_CHARS),
-        };
+          const safeOutput: TaskActionOutput = {
+            ...output,
+            chunk: capLogText(output.chunk, MAX_RALPH_SIMPLE_LOG_CHARS),
+          };
 
-        logger?.trace({
-          kind: "action-output",
-          message: `${safeOutput.toolName} ${safeOutput.stream}`,
-          ...(block
-            ? {
-                blockId: block.id,
-                blockTitle: block.title,
-                blockType: block.type,
-              }
-            : {}),
-          provider: config.provider,
-          model: config.model,
-          details: safeOutput,
-        });
-        const progress: TaskExecutionProgress = withRalphProgressBlockMetadata({
-          task: "Ralph agent output",
-          mode: config.mode,
-          state: "executing",
-          message: `${safeOutput.toolName} ${safeOutput.stream}`,
-          executedTools: [],
-          outputSections: [],
-          cancellable: Boolean(options.signal),
-          actionOutput: safeOutput,
-          timelineEvent: {
-            kind: "output",
-            phase: "streaming",
-            label: `${safeOutput.toolName} ${safeOutput.stream}`,
-            tone: safeOutput.stream === "stderr" ? "warning" : "neutral",
+          logger?.trace({
+            kind: "action-output",
+            message: `${safeOutput.toolName} ${safeOutput.stream}`,
+            ...(block
+              ? {
+                  blockId: block.id,
+                  blockTitle: block.title,
+                  blockType: block.type,
+                }
+              : {}),
             provider: config.provider,
             model: config.model,
-            toolName: safeOutput.toolName,
-            stream: safeOutput.stream,
-          },
-        }, block);
+            details: safeOutput,
+          });
+          const progress: TaskExecutionProgress =
+            withRalphProgressBlockMetadata(
+              {
+                task: "Ralph agent output",
+                mode: config.mode,
+                state: "executing",
+                message: `${safeOutput.toolName} ${safeOutput.stream}`,
+                executedTools: [],
+                outputSections: [],
+                cancellable: Boolean(options.signal),
+                actionOutput: safeOutput,
+                timelineEvent: {
+                  kind: "output",
+                  phase: "streaming",
+                  label: `${safeOutput.toolName} ${safeOutput.stream}`,
+                  tone: safeOutput.stream === "stderr" ? "warning" : "neutral",
+                  provider: config.provider,
+                  model: config.model,
+                  toolName: safeOutput.toolName,
+                  stream: safeOutput.stream,
+                },
+              },
+              block,
+            );
 
-        appendRalphBlockProgressEvent(
-          progressEvents,
-          block ? createRalphBlockProgressEvent(progress) : undefined,
-        );
-        void baseOnStateChange?.(progress);
-      }
-    : undefined;
+          appendRalphBlockProgressEvent(
+            progressEvents,
+            block ? createRalphBlockProgressEvent(progress) : undefined,
+          );
+          void baseOnStateChange?.(progress);
+        }
+      : undefined;
   const maxDurationMs = getRalphBlockMaxDurationMs(block);
   const providerId = getConfiguredInstructionProvider(config);
   const instructionBoundary =
@@ -3641,9 +3803,6 @@ const createExecutionOptions = async (
           resolvedInstructions: instructionBoundary.resolution,
           instructionDeliveryPlan: instructionBoundary.plan,
           instructionDeliveryReceipts: instructionBoundary.receipts,
-          unattendedInstructionDelivery: true,
-          acknowledgeCompatibleInstructionDelivery:
-            options.acknowledgeCompatibleInstructionDelivery === true,
         }
       : options.resolvedInstructions
         ? {
@@ -3657,9 +3816,6 @@ const createExecutionOptions = async (
                   instructionDeliveryReceipts:
                     options.instructionDeliveryReceipts,
                 }),
-            unattendedInstructionDelivery: true,
-            acknowledgeCompatibleInstructionDelivery:
-              options.acknowledgeCompatibleInstructionDelivery === true,
           }
         : {}),
     ralphProgressEvents: progressEvents,
@@ -3692,7 +3848,9 @@ interface RalphInputWaitStepResult {
   summary: string;
 }
 
-type RalphExecutionStepResult = RalphBlockExecutionResult | RalphInputWaitStepResult;
+type RalphExecutionStepResult =
+  | RalphBlockExecutionResult
+  | RalphInputWaitStepResult;
 
 const isRalphInputWaitStepResult = (
   result: RalphExecutionStepResult,
@@ -3706,7 +3864,13 @@ const getBlockLogFields = (
   config?: RuntimeConfig,
 ): Pick<
   RalphSimpleLogEntry,
-  "flowId" | "flowName" | "blockId" | "blockTitle" | "blockType" | "provider" | "model"
+  | "flowId"
+  | "flowName"
+  | "blockId"
+  | "blockTitle"
+  | "blockType"
+  | "provider"
+  | "model"
 > => ({
   flowId: flow.id,
   flowName: flow.name,
@@ -3924,7 +4088,9 @@ const parseContextVariableAsInputValue = (
         const parsed = JSON.parse(trimmedValue) as unknown;
 
         if (Array.isArray(parsed)) {
-          return parsed.filter((entry): entry is string => typeof entry === "string");
+          return parsed.filter(
+            (entry): entry is string => typeof entry === "string",
+          );
         }
       } catch {
         return value;
@@ -3941,7 +4107,10 @@ const getInputFieldContextValue = (
 ): RalphInputValue | undefined => {
   for (const variableName of getRalphInputFieldVariableNames(field)) {
     if (Object.hasOwn(context.variables, variableName)) {
-      return parseContextVariableAsInputValue(field, context.variables[variableName]);
+      return parseContextVariableAsInputValue(
+        field,
+        context.variables[variableName],
+      );
     }
   }
 
@@ -3960,34 +4129,45 @@ const createKnownInputValues = (
   );
 };
 
-const createAutonomousInputValue = (field: RalphInputField): RalphInputValue => {
+const createAutonomousInputValue = (
+  field: RalphInputField,
+): RalphInputValue => {
   if (field.defaultValue !== undefined) {
     return field.defaultValue;
   }
   switch (field.type) {
-    case "boolean": return false;
-    case "number": return 0;
+    case "boolean":
+      return false;
+    case "number":
+      return 0;
     case "multiselect":
     case "files":
-    case "images": return [];
-    case "select": return field.options?.[0]?.value ?? field.label;
-    case "url": return "http://127.0.0.1";
+    case "images":
+      return [];
+    case "select":
+      return field.options?.[0]?.value ?? field.label;
+    case "url":
+      return "http://127.0.0.1";
     case "path":
     case "file":
-    case "image": return ".";
-    default: return field.placeholder?.trim() || field.label;
+    case "image":
+      return ".";
+    default:
+      return field.placeholder?.trim() || field.label;
   }
 };
 
 const createAutonomousInputValues = (
   fields: RalphInputField[],
   context: RalphResultContext,
-): Record<string, RalphInputValue> => Object.fromEntries(
-  fields.map((field) => [
-    field.id,
-    getInputFieldContextValue(field, context) ?? createAutonomousInputValue(field),
-  ]),
-);
+): Record<string, RalphInputValue> =>
+  Object.fromEntries(
+    fields.map((field) => [
+      field.id,
+      getInputFieldContextValue(field, context) ??
+        createAutonomousInputValue(field),
+    ]),
+  );
 
 const applyNormalizedInputValuesToContext = (
   context: RalphResultContext,
@@ -4038,7 +4218,11 @@ const executeAskUserBlock = (
         createAutonomousInputValues(request.fields, context),
       );
       if (normalized.errors.length === 0) {
-        applyNormalizedInputValuesToContext(context, request.fields, normalized.values);
+        applyNormalizedInputValuesToContext(
+          context,
+          request.fields,
+          normalized.values,
+        );
         return {
           blockId: block.id,
           output: "SUCCESS",
@@ -4146,7 +4330,11 @@ const executeAskUserBlock = (
     };
   }
 
-  applyNormalizedInputValuesToContext(context, pendingInput.fields, normalized.values);
+  applyNormalizedInputValuesToContext(
+    context,
+    pendingInput.fields,
+    normalized.values,
+  );
 
   return {
     blockId: block.id,
@@ -4330,7 +4518,10 @@ const executeInterviewBlock = async (
     return withRalphBlockProgress(
       createRalphBlockExecutionErrorResult(
         block,
-        new Error(getResultMarkdown(result) || "Interview AI question generation failed."),
+        new Error(
+          getResultMarkdown(result) ||
+            "Interview AI question generation failed.",
+        ),
       ),
       executionOptions.ralphProgressEvents,
     );
@@ -4382,7 +4573,9 @@ const executeInterviewBlock = async (
       fields: [
         {
           id: "clarification",
-          label: generation.summary ?? "What else should be clarified before continuing?",
+          label:
+            generation.summary ??
+            "What else should be clarified before continuing?",
           type: "textarea",
           required: false,
           skippable: true,
@@ -4574,9 +4767,10 @@ const delayWithBackoff = async (
   attempt: number,
   signal: AbortSignal | undefined,
 ): Promise<void> => {
-  const multiplier = backoffMultiplier && backoffMultiplier > 0
-    ? backoffMultiplier ** Math.max(0, attempt - 1)
-    : 1;
+  const multiplier =
+    backoffMultiplier && backoffMultiplier > 0
+      ? backoffMultiplier ** Math.max(0, attempt - 1)
+      : 1;
 
   await delay(intervalSeconds * multiplier, signal);
 };
@@ -4730,26 +4924,41 @@ const executeWaitUtilityBlock = async (
       await delay(delayMs / 1000, options.signal);
     }
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} reached runAt.`, {
-      mode,
-      runAt: utility.runAt,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} reached runAt.`,
+      {
+        mode,
+        runAt: utility.runAt,
+      },
+    );
   }
 
   const condition = utility.condition;
   if (!condition) {
-    return createUtilityResult(block, "SUCCESS", `${block.title} has no condition.`, {
-      mode,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} has no condition.`,
+      {
+        mode,
+      },
+    );
   }
 
   let attempt = 1;
   while (true) {
     if (evaluateRalphUtilityCondition(condition, context)) {
-      return createUtilityResult(block, "SUCCESS", `${block.title} condition matched.`, {
-        mode,
-        attempts: attempt,
-      });
+      return createUtilityResult(
+        block,
+        "SUCCESS",
+        `${block.title} condition matched.`,
+        {
+          mode,
+          attempts: attempt,
+        },
+      );
     }
 
     await delayWithBackoff(
@@ -4787,7 +4996,9 @@ const executeFetchUtilityBlock = async (
     );
   } catch (error) {
     const output =
-      error instanceof Error && error.name === "AbortError" ? "TIMEOUT" : "ERROR";
+      error instanceof Error && error.name === "AbortError"
+        ? "TIMEOUT"
+        : "ERROR";
     const summary = error instanceof Error ? error.message : String(error);
 
     return createUtilityResult(block, output, summary);
@@ -4804,7 +5015,11 @@ const executePollUtilityBlock = async (
   const condition = utility.condition;
 
   if (!condition) {
-    return createUtilityResult(block, "ERROR", "POLL utility requires condition.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "POLL utility requires condition.",
+    );
   }
 
   let attempt = 1;
@@ -4871,16 +5086,20 @@ const resolveWindowsShellExecutable = (): string => {
 
   const result = spawnSync(
     "pwsh.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.Major"],
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$PSVersionTable.PSVersion.Major",
+    ],
     {
       encoding: "utf8",
       windowsHide: true,
     },
   );
 
-  cachedWindowsShellExecutable = result.error || result.status !== 0
-    ? "powershell.exe"
-    : "pwsh.exe";
+  cachedWindowsShellExecutable =
+    result.error || result.status !== 0 ? "powershell.exe" : "pwsh.exe";
 
   return cachedWindowsShellExecutable;
 };
@@ -4952,7 +5171,11 @@ const executeCommandUtilityBlock = async (
   const command = utility.command?.trim() || utility.fallbackCommand?.trim();
 
   if (!command) {
-    return createUtilityResult(block, "ERROR", "Command utility requires command.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Command utility requires command.",
+    );
   }
 
   const invocation = getShellInvocation(command);
@@ -4966,7 +5189,7 @@ const executeCommandUtilityBlock = async (
   );
   const acceptedExitCodes = checkMode
     ? Array.from({ length: 256 }, (_, index) => index)
-    : utility.acceptedExitCodes ?? [0];
+    : (utility.acceptedExitCodes ?? [0]);
 
   try {
     const result = await executeLocalCommand(
@@ -5012,7 +5235,12 @@ const executeCommandUtilityBlock = async (
       );
     }
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} completed.`, data);
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} completed.`,
+      data,
+    );
   } catch (error) {
     return createUtilityResult(
       block,
@@ -5039,7 +5267,11 @@ const executeConditionUtilityBlock = (
   const condition = utility.condition;
 
   if (!condition) {
-    return createUtilityResult(block, "ERROR", "Condition utility requires condition.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Condition utility requires condition.",
+    );
   }
 
   try {
@@ -5069,10 +5301,15 @@ const executeReadFileUtilityBlock = async (
     const path = resolveUtilityPath(utility.path, config.workspaceRoot);
     const content = await readFile(path, utility.encoding ?? "utf8");
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} read ${path}.`, {
-      path,
-      content,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} read ${path}.`,
+      {
+        path,
+        content,
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   }
@@ -5094,11 +5331,16 @@ const executeWriteFileUtilityBlock = async (
       await writeFileAtomically(path, content, encoding);
     }
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} wrote ${path}.`, {
-      path,
-      bytes: Buffer.byteLength(content, encoding),
-      append: utility.append === true,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} wrote ${path}.`,
+      {
+        path,
+        bytes: Buffer.byteLength(content, encoding),
+        append: utility.append === true,
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   }
@@ -5171,7 +5413,11 @@ const executeReadJsonUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Read JSON utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Read JSON utility requires path.",
+    );
   }
 
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
@@ -5222,12 +5468,19 @@ const executeWriteJsonUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Write JSON utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Write JSON utility requires path.",
+    );
   }
 
   let mutationLock: RalphFileMutationLock | undefined;
   try {
-    const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+    const path = resolveWorkspaceContainedUtilityPath(
+      rawPath,
+      config.workspaceRoot,
+    );
     mutationLock = await acquireRalphFileMutationLock(path, context.runId);
     const json = getWritableJsonInput(utility, context);
     const validation = validateUtilityJsonValue(json, utility.schema);
@@ -5243,11 +5496,16 @@ const executeWriteJsonUtilityBlock = async (
 
     await writeUtilityJsonOutput(path, json);
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} wrote ${path}.`, {
-      path,
-      json,
-      validation,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} wrote ${path}.`,
+      {
+        path,
+        json,
+        validation,
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   } finally {
@@ -5264,16 +5522,25 @@ const executePatchJsonUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Patch JSON utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Patch JSON utility requires path.",
+    );
   }
 
-  const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+  const path = resolveWorkspaceContainedUtilityPath(
+    rawPath,
+    config.workspaceRoot,
+  );
 
   try {
     const current = await readJsonFile(path);
     const patch = getWritableJsonInput(utility, context);
     const json =
-      utility.jsonPatchMode === "replace" ? patch : deepMergeJson(current, patch);
+      utility.jsonPatchMode === "replace"
+        ? patch
+        : deepMergeJson(current, patch);
     const validation = validateUtilityJsonValue(json, utility.schema);
 
     if (!validation.valid) {
@@ -5287,13 +5554,18 @@ const executePatchJsonUtilityBlock = async (
 
     await writeUtilityJsonOutput(path, json);
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} patched ${path}.`, {
-      path,
-      mode: utility.jsonPatchMode ?? "merge",
-      patch,
-      json,
-      validation,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} patched ${path}.`,
+      {
+        path,
+        mode: utility.jsonPatchMode ?? "merge",
+        patch,
+        json,
+        validation,
+      },
+    );
   } catch (error) {
     if (isFileNotFoundError(error)) {
       return createUtilityResult(
@@ -5327,12 +5599,19 @@ const executeAppendJsonlUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Append JSONL utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Append JSONL utility requires path.",
+    );
   }
 
   let mutationLock: RalphFileMutationLock | undefined;
   try {
-    const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+    const path = resolveWorkspaceContainedUtilityPath(
+      rawPath,
+      config.workspaceRoot,
+    );
     mutationLock = await acquireRalphFileMutationLock(path, context.runId);
     const json = getWritableJsonInput(utility, context);
     const validation = validateUtilityJsonValue(json, utility.schema);
@@ -5366,11 +5645,15 @@ const executeAppendJsonlUtilityBlock = async (
       }
       if (storedLedger !== undefined) {
         if (!isRecord(storedLedger) || !isRecord(storedLedger.operations)) {
-          throw new Error(`Invalid APPEND_JSONL operation ledger at ${ledgerPath}.`);
+          throw new Error(
+            `Invalid APPEND_JSONL operation ledger at ${ledgerPath}.`,
+          );
         }
         const operationEntries = Object.entries(storedLedger.operations);
         if (operationEntries.some(([, entry]) => !isRecord(entry))) {
-          throw new Error(`Invalid APPEND_JSONL operation entry at ${ledgerPath}.`);
+          throw new Error(
+            `Invalid APPEND_JSONL operation entry at ${ledgerPath}.`,
+          );
         }
         operations = Object.fromEntries(operationEntries) as Record<
           string,
@@ -5379,20 +5662,30 @@ const executeAppendJsonlUtilityBlock = async (
       }
       const prior = operations[operationId];
       if (prior?.state === "completed") {
-        return createUtilityResult(block, "SUCCESS", `${block.title} reconciled ${path}.`, {
-          path,
-          json,
-          validation,
-          operationId,
-          reconciled: true,
-        });
+        return createUtilityResult(
+          block,
+          "SUCCESS",
+          `${block.title} reconciled ${path}.`,
+          {
+            path,
+            json,
+            validation,
+            operationId,
+            reconciled: true,
+          },
+        );
       }
       if (prior && prior.state !== "started" && prior.state !== "completed") {
         return createUtilityResult(
           block,
           "ERROR",
           `${block.title} found an indeterminate operation-ledger state for ${operationId}.`,
-          { path, operationId, reconciliation: "indeterminate", ledgerState: prior.state },
+          {
+            path,
+            operationId,
+            reconciliation: "indeterminate",
+            ledgerState: prior.state,
+          },
         );
       }
       if (prior?.state === "started") {
@@ -5406,8 +5699,10 @@ const executeAppendJsonlUtilityBlock = async (
           );
         }
         if (
-          (typeof prior.lineLength === "number" && prior.lineLength !== lineBytes.length) ||
-          (typeof prior.lineSha256 === "string" && prior.lineSha256 !== lineSha256)
+          (typeof prior.lineLength === "number" &&
+            prior.lineLength !== lineBytes.length) ||
+          (typeof prior.lineSha256 === "string" &&
+            prior.lineSha256 !== lineSha256)
         ) {
           return createUtilityResult(
             block,
@@ -5439,23 +5734,32 @@ const executeAppendJsonlUtilityBlock = async (
           );
         }
         const tail = content.subarray(start as number);
-        if (
-          tail.length === lineBytes.length &&
-          tail.equals(lineBytes)
-        ) {
-          operations[operationId] = { ...prior, state: "completed", completedAt: createLogTimestamp() };
+        if (tail.length === lineBytes.length && tail.equals(lineBytes)) {
+          operations[operationId] = {
+            ...prior,
+            state: "completed",
+            completedAt: createLogTimestamp(),
+          };
           await writeJsonAtomically(ledgerPath, {
-            operations: Object.fromEntries(Object.entries(operations).slice(-2_000)),
+            operations: Object.fromEntries(
+              Object.entries(operations).slice(-2_000),
+            ),
           });
-          return createUtilityResult(block, "SUCCESS", `${block.title} reconciled ${path}.`, {
-            path,
-            json,
-            validation,
-            operationId,
-            reconciled: true,
-          });
+          return createUtilityResult(
+            block,
+            "SUCCESS",
+            `${block.title} reconciled ${path}.`,
+            {
+              path,
+              json,
+              validation,
+              operationId,
+              reconciled: true,
+            },
+          );
         }
-        const isExactPrefix = tail.length < lineBytes.length &&
+        const isExactPrefix =
+          tail.length < lineBytes.length &&
           tail.equals(lineBytes.subarray(0, tail.length));
         if (!isExactPrefix) {
           return createUtilityResult(
@@ -5492,7 +5796,9 @@ const executeAppendJsonlUtilityBlock = async (
           startedAt: createLogTimestamp(),
         };
         await writeJsonAtomically(ledgerPath, {
-          operations: Object.fromEntries(Object.entries(operations).slice(-2_000)),
+          operations: Object.fromEntries(
+            Object.entries(operations).slice(-2_000),
+          ),
         });
       }
     }
@@ -5505,16 +5811,23 @@ const executeAppendJsonlUtilityBlock = async (
         completedAt: createLogTimestamp(),
       };
       await writeJsonAtomically(ledgerPath, {
-        operations: Object.fromEntries(Object.entries(operations).slice(-2_000)),
+        operations: Object.fromEntries(
+          Object.entries(operations).slice(-2_000),
+        ),
       });
     }
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} appended ${path}.`, {
-      path,
-      json,
-      validation,
-      ...(operationId ? { operationId } : {}),
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} appended ${path}.`,
+      {
+        path,
+        json,
+        validation,
+        ...(operationId ? { operationId } : {}),
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   } finally {
@@ -5529,7 +5842,10 @@ interface JsonlEntry {
 
 const readJsonlEntries = async (
   path: string,
-): Promise<{ entries: JsonlEntry[]; invalid: Array<{ line: number; error: string }> }> => {
+): Promise<{
+  entries: JsonlEntry[];
+  invalid: Array<{ line: number; error: string }>;
+}> => {
   const content = await readFile(path, "utf8");
   const entries: JsonlEntry[] = [];
   const invalid: Array<{ line: number; error: string }> = [];
@@ -5575,7 +5891,11 @@ const executeReadJsonlUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Read JSONL utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Read JSONL utility requires path.",
+    );
   }
 
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
@@ -5649,7 +5969,11 @@ const executeQueryJsonlUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Query JSONL utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Query JSONL utility requires path.",
+    );
   }
 
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
@@ -5678,16 +6002,21 @@ const executeQueryJsonlUtilityBlock = async (
 
     const matchedEntries = utility.condition
       ? entries.filter((entry) =>
-          evaluateRalphUtilityCondition(utility.condition!, context, entry.value),
+          evaluateRalphUtilityCondition(
+            utility.condition!,
+            context,
+            entry.value,
+          ),
         )
       : entries;
     const limit =
       typeof utility.maxResults === "number" && utility.maxResults >= 0
         ? utility.maxResults
         : matchedEntries.length;
-    const orderedEntries = utility.order === "newest"
-      ? [...matchedEntries].reverse()
-      : matchedEntries;
+    const orderedEntries =
+      utility.order === "newest"
+        ? [...matchedEntries].reverse()
+        : matchedEntries;
     const selectedEntries = orderedEntries.slice(0, limit);
     const output = selectedEntries.length > 0 ? "SUCCESS" : "EMPTY";
 
@@ -5819,8 +6148,7 @@ const getJsonTaskLikelyFiles = (task: Record<string, unknown>): string[] => {
 };
 
 const isCompletedJsonTask = (task: Record<string, unknown>): boolean => {
-  return ["done", "completed"]
-    .includes(getJsonTaskStatus(task));
+  return ["done", "completed"].includes(getJsonTaskStatus(task));
 };
 
 interface RalphJsonTaskLease {
@@ -5841,7 +6169,7 @@ const readJsonTaskLease = (
     typeof lease.acquiredAt === "string" &&
     typeof lease.heartbeatAt === "string" &&
     typeof lease.expiresAt === "string"
-    ? lease as unknown as RalphJsonTaskLease
+    ? (lease as unknown as RalphJsonTaskLease)
     : undefined;
 };
 
@@ -5856,9 +6184,10 @@ const isJsonTaskEligibleForRun = (
   now = Date.now(),
 ): boolean => {
   const status = getJsonTaskStatus(task);
-  const nextEligibleAt = typeof task.nextEligibleAt === "string"
-    ? Date.parse(task.nextEligibleAt)
-    : Number.NaN;
+  const nextEligibleAt =
+    typeof task.nextEligibleAt === "string"
+      ? Date.parse(task.nextEligibleAt)
+      : Number.NaN;
   if (status === "deferred") {
     if (!Number.isFinite(nextEligibleAt) || nextEligibleAt > now) {
       return false;
@@ -5874,12 +6203,19 @@ const appendJsonTaskStateHistory = (
   entry: Record<string, unknown>,
 ): void => {
   const history = Array.isArray(task.stateHistory) ? task.stateHistory : [];
-  task.stateHistory = [...history, entry].slice(-MAX_RALPH_WORK_ITEM_STATE_HISTORY);
+  task.stateHistory = [...history, entry].slice(
+    -MAX_RALPH_WORK_ITEM_STATE_HISTORY,
+  );
 };
 
 const isInProgressJsonTask = (task: Record<string, unknown>): boolean => {
-  return ["in_progress", "in-progress", "implementing", "verifying", "repairing"]
-    .includes(getJsonTaskStatus(task));
+  return [
+    "in_progress",
+    "in-progress",
+    "implementing",
+    "verifying",
+    "repairing",
+  ].includes(getJsonTaskStatus(task));
 };
 
 const isSelectableJsonTask = (task: Record<string, unknown>): boolean => {
@@ -5980,9 +6316,12 @@ const selectJsonTaskCandidate = (
 
   if (strategy === "random-seeded") {
     return [...candidates].sort((left, right) => {
-      const score = (candidate: JsonTaskCandidate): string => createHash("sha256")
-        .update(`${seed}\0${getJsonTaskId(candidate.task) ?? candidate.index}`)
-        .digest("hex");
+      const score = (candidate: JsonTaskCandidate): string =>
+        createHash("sha256")
+          .update(
+            `${seed}\0${getJsonTaskId(candidate.task) ?? candidate.index}`,
+          )
+          .digest("hex");
       return score(left).localeCompare(score(right));
     })[0];
   }
@@ -6023,7 +6362,9 @@ const isJsonTaskBatchCompatible = (
   const candidateBatchKey = getJsonTaskBatchKey(candidate.task);
 
   if (primaryBatchKey || candidateBatchKey) {
-    return primaryBatchKey !== undefined && primaryBatchKey === candidateBatchKey;
+    return (
+      primaryBatchKey !== undefined && primaryBatchKey === candidateBatchKey
+    );
   }
 
   if (haveSharedJsonTaskFiles(primary.task, candidate.task)) {
@@ -6039,10 +6380,12 @@ const isJsonTaskBatchCompatible = (
     return candidate.index === lastSelected.index + 1;
   }
 
-  return strategy === "priority" ||
+  return (
+    strategy === "priority" ||
     strategy === "risk-first" ||
     strategy === "least-recent" ||
-    strategy === "least-validated";
+    strategy === "least-validated"
+  );
 };
 
 const selectJsonTaskCandidates = (
@@ -6054,9 +6397,10 @@ const selectJsonTaskCandidates = (
 ): JsonTaskCandidate[] => {
   const candidates = tasks
     .map((task, index) => ({ task, index }))
-    .filter((candidate) =>
-      isSelectableJsonTask(candidate.task) &&
-      isJsonTaskEligibleForRun(candidate.task, runId, now),
+    .filter(
+      (candidate) =>
+        isSelectableJsonTask(candidate.task) &&
+        isJsonTaskEligibleForRun(candidate.task, runId, now),
     );
   const doneIds = new Set(
     tasks
@@ -6085,7 +6429,11 @@ const selectJsonTaskCandidates = (
     selectedIds.add(primaryId);
   }
 
-  for (const candidate of getJsonTaskBatchCandidateOrder(candidates, primary, strategy)) {
+  for (const candidate of getJsonTaskBatchCandidateOrder(
+    candidates,
+    primary,
+    strategy,
+  )) {
     if (selected.length >= batchLimit) {
       break;
     }
@@ -6098,7 +6446,9 @@ const selectJsonTaskCandidates = (
       continue;
     }
 
-    if (!areJsonTaskDependenciesSatisfied(candidate.task, doneIds, selectedIds)) {
+    if (
+      !areJsonTaskDependenciesSatisfied(candidate.task, doneIds, selectedIds)
+    ) {
       continue;
     }
 
@@ -6164,37 +6514,45 @@ const createJsonTaskSelectionBlockers = (
   const blockers = tasks.filter(isSelectableJsonTask).map((task, index) => {
     const id = getJsonTaskId(task) ?? String(index);
     const dependencies = getJsonTaskDependencies(task);
-    const missingDependencyIds = dependencies.filter((dependency) => !tasksById.has(dependency));
+    const missingDependencyIds = dependencies.filter(
+      (dependency) => !tasksById.has(dependency),
+    );
     const incompleteDependencyIds = dependencies.filter((dependency) => {
       const dependencyTask = tasksById.get(dependency);
-      return dependencyTask !== undefined && !isCompletedJsonTask(dependencyTask);
+      return (
+        dependencyTask !== undefined && !isCompletedJsonTask(dependencyTask)
+      );
     });
-    const deferredDependencyIds = incompleteDependencyIds.filter((dependency) =>
-      getJsonTaskStatus(tasksById.get(dependency)!) === "deferred",
+    const deferredDependencyIds = incompleteDependencyIds.filter(
+      (dependency) =>
+        getJsonTaskStatus(tasksById.get(dependency)!) === "deferred",
     );
     const lease = readJsonTaskLease(task);
-    const nextEligibleAt = typeof task.nextEligibleAt === "string"
-      ? task.nextEligibleAt
-      : undefined;
+    const nextEligibleAt =
+      typeof task.nextEligibleAt === "string" ? task.nextEligibleAt : undefined;
     const reasons = [
       ...(missingDependencyIds.length > 0 ? ["missing-dependency"] : []),
       ...(incompleteDependencyIds.length > 0 ? ["incomplete-dependency"] : []),
       ...(deferredDependencyIds.length > 0 ? ["deferred-dependency"] : []),
       ...(getJsonTaskStatus(task) === "deferred" &&
-        (!nextEligibleAt || Date.parse(nextEligibleAt) > now)
+      (!nextEligibleAt || Date.parse(nextEligibleAt) > now)
         ? ["deferred"]
         : []),
       ...(isJsonTaskLeaseActive(lease, now) && lease?.ownerId !== runId
         ? ["foreign-lease"]
         : []),
-      ...(dependencyCycles.some((cycle) => cycle.includes(id)) ? ["dependency-cycle"] : []),
+      ...(dependencyCycles.some((cycle) => cycle.includes(id))
+        ? ["dependency-cycle"]
+        : []),
     ];
     return {
       taskId: id,
       status: getJsonTaskStatus(task),
       reasons,
       ...(missingDependencyIds.length > 0 ? { missingDependencyIds } : {}),
-      ...(incompleteDependencyIds.length > 0 ? { incompleteDependencyIds } : {}),
+      ...(incompleteDependencyIds.length > 0
+        ? { incompleteDependencyIds }
+        : {}),
       ...(deferredDependencyIds.length > 0 ? { deferredDependencyIds } : {}),
       ...(nextEligibleAt ? { nextEligibleAt } : {}),
       ...(lease ? { lease } : {}),
@@ -6213,10 +6571,17 @@ const executeSelectJsonTaskUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Select JSON task utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Select JSON task utility requires path.",
+    );
   }
 
-  const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+  const path = resolveWorkspaceContainedUtilityPath(
+    rawPath,
+    config.workspaceRoot,
+  );
   let mutationLock: RalphFileMutationLock | undefined;
 
   try {
@@ -6250,17 +6615,20 @@ const executeSelectJsonTaskUtilityBlock = async (
         : 1;
     const sameRunLeasedTasks = taskArray.tasks
       .map((task, index) => ({ task, index }))
-      .filter(({ task }) =>
-        isSelectableJsonTask(task) && readJsonTaskLease(task)?.ownerId === context.runId,
+      .filter(
+        ({ task }) =>
+          isSelectableJsonTask(task) &&
+          readJsonTaskLease(task)?.ownerId === context.runId,
       );
-    const selectedTasks = sameRunLeasedTasks.length > 0
-      ? sameRunLeasedTasks
-      : selectJsonTaskCandidates(
-          taskArray.tasks,
-          utility.strategy,
-          maxTasks,
-          context.runId,
-        );
+    const selectedTasks =
+      sameRunLeasedTasks.length > 0
+        ? sameRunLeasedTasks
+        : selectJsonTaskCandidates(
+            taskArray.tasks,
+            utility.strategy,
+            maxTasks,
+            context.runId,
+          );
 
     if (selectedTasks.length === 0) {
       const unfinishedTasks = taskArray.tasks.filter(isSelectableJsonTask);
@@ -6307,10 +6675,10 @@ const executeSelectJsonTaskUtilityBlock = async (
         selected.task.status,
         selectedState,
       );
-      const workItemId =
-        getJsonTaskId(selected.task) ?? String(selected.index);
+      const workItemId = getJsonTaskId(selected.task) ?? String(selected.index);
       const priorLease = readJsonTaskLease(selected.task);
-      const isNewClaim = priorLease?.ownerId !== context.runId ||
+      const isNewClaim =
+        priorLease?.ownerId !== context.runId ||
         !isJsonTaskLeaseActive(priorLease);
 
       selected.task.status = transition.to;
@@ -6321,7 +6689,7 @@ const executeSelectJsonTaskUtilityBlock = async (
       selected.task.lease = {
         ownerId: context.runId,
         generation: (priorLease?.generation ?? 0) + (isNewClaim ? 1 : 0),
-        acquiredAt: isNewClaim ? now : priorLease?.acquiredAt ?? now,
+        acquiredAt: isNewClaim ? now : (priorLease?.acquiredAt ?? now),
         heartbeatAt: now,
         expiresAt: leaseExpiresAt,
       } satisfies RalphJsonTaskLease;
@@ -6343,8 +6711,8 @@ const executeSelectJsonTaskUtilityBlock = async (
     await writeUtilityJsonOutput(path, json);
 
     const primary = selectedTasks[0]!;
-    const taskIds = selectedTasks.map((selected) =>
-      getJsonTaskId(selected.task) ?? String(selected.index),
+    const taskIds = selectedTasks.map(
+      (selected) => getJsonTaskId(selected.task) ?? String(selected.index),
     );
 
     return createUtilityResult(
@@ -6367,9 +6735,10 @@ const executeSelectJsonTaskUtilityBlock = async (
           indexes: selectedTasks.map((selected) => selected.index),
           taskIds,
         },
-        remainingCount: taskArray.tasks.filter((task) =>
-          isSelectableJsonTask(task) &&
-          isJsonTaskEligibleForRun(task, context.runId),
+        remainingCount: taskArray.tasks.filter(
+          (task) =>
+            isSelectableJsonTask(task) &&
+            isJsonTaskEligibleForRun(task, context.runId),
         ).length,
         json,
       },
@@ -6437,10 +6806,14 @@ const getJsonTaskIdsFromInput = (
     }
   }
   if (isRecord(input.batch)) {
-    for (const value of Array.isArray(input.batch.taskIds) ? input.batch.taskIds : []) {
+    for (const value of Array.isArray(input.batch.taskIds)
+      ? input.batch.taskIds
+      : []) {
       addId(value);
     }
-    for (const task of Array.isArray(input.batch.tasks) ? input.batch.tasks : []) {
+    for (const task of Array.isArray(input.batch.tasks)
+      ? input.batch.tasks
+      : []) {
       if (isRecord(task)) {
         addId(task.id);
       }
@@ -6459,10 +6832,17 @@ const executeMarkJsonTaskUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Mark JSON task utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Mark JSON task utility requires path.",
+    );
   }
 
-  const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+  const path = resolveWorkspaceContainedUtilityPath(
+    rawPath,
+    config.workspaceRoot,
+  );
   let mutationLock: RalphFileMutationLock | undefined;
 
   try {
@@ -6491,16 +6871,26 @@ const executeMarkJsonTaskUtilityBlock = async (
     }
 
     const requestedTaskIds = getJsonTaskIdsFromInput(utility, context);
-    const candidates = requestedTaskIds.length > 0
-      ? requestedTaskIds.flatMap((taskId) => {
-          const task = taskArray.tasks.find((candidate) => candidate.id === taskId);
-          return task ? [task] : [];
-        })
-      : taskArray.tasks.filter((task) =>
-          isInProgressJsonTask(task) && readJsonTaskLease(task)?.ownerId === context.runId,
-        ).slice(0, 1);
+    const candidates =
+      requestedTaskIds.length > 0
+        ? requestedTaskIds.flatMap((taskId) => {
+            const task = taskArray.tasks.find(
+              (candidate) => candidate.id === taskId,
+            );
+            return task ? [task] : [];
+          })
+        : taskArray.tasks
+            .filter(
+              (task) =>
+                isInProgressJsonTask(task) &&
+                readJsonTaskLease(task)?.ownerId === context.runId,
+            )
+            .slice(0, 1);
 
-    if (candidates.length === 0 || candidates.length !== (requestedTaskIds.length || 1)) {
+    if (
+      candidates.length === 0 ||
+      candidates.length !== (requestedTaskIds.length || 1)
+    ) {
       return createUtilityResult(
         block,
         "NOT_FOUND",
@@ -6509,8 +6899,9 @@ const executeMarkJsonTaskUtilityBlock = async (
           path,
           jsonPath: taskArray.normalizedPath,
           taskIds: requestedTaskIds,
-          missingTaskIds: requestedTaskIds.filter((taskId) =>
-            !candidates.some((candidate) => candidate.id === taskId),
+          missingTaskIds: requestedTaskIds.filter(
+            (taskId) =>
+              !candidates.some((candidate) => candidate.id === taskId),
           ),
         },
         "completed",
@@ -6560,7 +6951,9 @@ const executeMarkJsonTaskUtilityBlock = async (
 
       for (const [index, candidate] of candidates.entries()) {
         const transition = transitions[index]!;
-        const workItemId = getJsonTaskId(candidate) ?? String(taskArray.tasks.indexOf(candidate));
+        const workItemId =
+          getJsonTaskId(candidate) ??
+          String(taskArray.tasks.indexOf(candidate));
         candidate.status = transition.to;
         candidate.workItemId = workItemId;
         candidate.runId = context.runId;
@@ -6588,7 +6981,9 @@ const executeMarkJsonTaskUtilityBlock = async (
               ? Number(utility.delaySeconds) * 1_000
               : DEFAULT_RALPH_WORK_ITEM_DEFER_MS,
           );
-          candidate.nextEligibleAt = new Date(Date.now() + deferMs).toISOString();
+          candidate.nextEligibleAt = new Date(
+            Date.now() + deferMs,
+          ).toISOString();
           delete candidate.lease;
         } else {
           delete candidate.deferredAt;
@@ -6622,7 +7017,9 @@ const executeMarkJsonTaskUtilityBlock = async (
               ? Number(utility.delaySeconds) * 1_000
               : DEFAULT_RALPH_WORK_ITEM_DEFER_MS,
           );
-          candidate.nextEligibleAt = new Date(Date.now() + deferMs).toISOString();
+          candidate.nextEligibleAt = new Date(
+            Date.now() + deferMs,
+          ).toISOString();
           delete candidate.lease;
         }
       }
@@ -6712,9 +7109,10 @@ const collectRalphJsonTaskClaims = (
     ) {
       continue;
     }
-    const jsonPath = typeof result.data.jsonPath === "string"
-      ? result.data.jsonPath
-      : undefined;
+    const jsonPath =
+      typeof result.data.jsonPath === "string"
+        ? result.data.jsonPath
+        : undefined;
     const key = `${result.data.path}\0${jsonPath ?? ""}`;
     const claim = claims.get(key) ?? {
       path: result.data.path,
@@ -6727,7 +7125,9 @@ const collectRalphJsonTaskClaims = (
       }
     };
     addId(result.data.taskId);
-    for (const id of Array.isArray(result.data.taskIds) ? result.data.taskIds : []) {
+    for (const id of Array.isArray(result.data.taskIds)
+      ? result.data.taskIds
+      : []) {
       addId(id);
     }
     if (isRecord(result.data.batch)) {
@@ -6750,7 +7150,10 @@ const refreshRalphJsonTaskLeases = async (
   let refreshed = 0;
 
   for (const claim of collectRalphJsonTaskClaims(flow, context)) {
-    const mutationLock = await acquireRalphFileMutationLock(claim.path, context.runId);
+    const mutationLock = await acquireRalphFileMutationLock(
+      claim.path,
+      context.runId,
+    );
     try {
       const json = await readJsonFile(claim.path);
       const taskArray = getJsonTaskArray(json, claim.jsonPath);
@@ -6803,7 +7206,11 @@ const executeFileExistsUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "File exists utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "File exists utility requires path.",
+    );
   }
 
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
@@ -6851,11 +7258,18 @@ const executeDeleteFileUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Delete file utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Delete file utility requires path.",
+    );
   }
 
   try {
-    const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+    const path = resolveWorkspaceContainedUtilityPath(
+      rawPath,
+      config.workspaceRoot,
+    );
     const fileStat = await lstat(path);
 
     if (fileStat.isDirectory()) {
@@ -6876,7 +7290,10 @@ const executeDeleteFileUtilityBlock = async (
     );
   } catch (error) {
     if (isFileNotFoundError(error)) {
-      const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+      const path = resolveWorkspaceContainedUtilityPath(
+        rawPath,
+        config.workspaceRoot,
+      );
 
       return createUtilityResult(
         block,
@@ -6907,8 +7324,14 @@ const executeMoveFileUtilityBlock = async (
     );
   }
 
-  const from = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
-  const to = resolveWorkspaceContainedUtilityPath(rawOutputPath, config.workspaceRoot);
+  const from = resolveWorkspaceContainedUtilityPath(
+    rawPath,
+    config.workspaceRoot,
+  );
+  const to = resolveWorkspaceContainedUtilityPath(
+    rawOutputPath,
+    config.workspaceRoot,
+  );
 
   try {
     const fileStat = await lstat(from);
@@ -6924,10 +7347,15 @@ const executeMoveFileUtilityBlock = async (
     await mkdir(dirname(to), { recursive: true });
     await rename(from, to);
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} moved ${from}.`, {
-      from,
-      to,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} moved ${from}.`,
+      {
+        from,
+        to,
+      },
+    );
   } catch (error) {
     if (isFileNotFoundError(error)) {
       return createUtilityResult(
@@ -6974,10 +7402,17 @@ const executeArchiveFileUtilityBlock = async (
   const rawPath = utility.path?.trim();
 
   if (!rawPath) {
-    return createUtilityResult(block, "ERROR", "Archive file utility requires path.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Archive file utility requires path.",
+    );
   }
 
-  const from = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+  const from = resolveWorkspaceContainedUtilityPath(
+    rawPath,
+    config.workspaceRoot,
+  );
   const to = createArchiveFilePath(from, utility, config.workspaceRoot);
 
   try {
@@ -6994,10 +7429,15 @@ const executeArchiveFileUtilityBlock = async (
     await mkdir(dirname(to), { recursive: true });
     await rename(from, to);
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} archived ${from}.`, {
-      from,
-      to,
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} archived ${from}.`,
+      {
+        from,
+        to,
+      },
+    );
   } catch (error) {
     if (isFileNotFoundError(error)) {
       return createUtilityResult(
@@ -7060,13 +7500,15 @@ const executeLoopCounterUtilityBlock = async (
         delete counters[name];
         continue;
       }
-      const retainedEntries = Object.entries(rawGroup).filter(([, state]) => {
-        if (!isRecord(state) || typeof state.updatedAt !== "string") {
-          return true;
-        }
-        const updatedAt = Date.parse(state.updatedAt);
-        return !Number.isFinite(updatedAt) || updatedAt >= retentionCutoff;
-      }).slice(-10_000);
+      const retainedEntries = Object.entries(rawGroup)
+        .filter(([, state]) => {
+          if (!isRecord(state) || typeof state.updatedAt !== "string") {
+            return true;
+          }
+          const updatedAt = Date.parse(state.updatedAt);
+          return !Number.isFinite(updatedAt) || updatedAt >= retentionCutoff;
+        })
+        .slice(-10_000);
       counters[name] = Object.fromEntries(retainedEntries);
     }
     const group = isRecord(counters[counterName])
@@ -7076,13 +7518,19 @@ const executeLoopCounterUtilityBlock = async (
       ? group[counterKey]
       : undefined;
     const currentCount =
-      typeof currentState?.count === "number" && Number.isFinite(currentState.count)
+      typeof currentState?.count === "number" &&
+      Number.isFinite(currentState.count)
         ? currentState.count
         : 0;
     const limit =
       typeof utility.maxAttempts === "number" ? utility.maxAttempts : null;
-    const limitReached = !utility.reset && limit !== null && currentCount >= limit;
-    const count = utility.reset ? 0 : limitReached ? currentCount : currentCount + 1;
+    const limitReached =
+      !utility.reset && limit !== null && currentCount >= limit;
+    const count = utility.reset
+      ? 0
+      : limitReached
+        ? currentCount
+        : currentCount + 1;
 
     group[counterKey] = {
       count,
@@ -7121,7 +7569,9 @@ const getScopeRegistryFlowAlias = (utility: RalphUtilityConfig): string => {
 const getScopeRegistryStrategy = (
   utility: RalphUtilityConfig,
 ): RalphScopeSelectionStrategy => {
-  return normalizeRalphScopeSelectionStrategy(utility.strategy) ?? "round-robin";
+  return (
+    normalizeRalphScopeSelectionStrategy(utility.strategy) ?? "round-robin"
+  );
 };
 
 const resolveScopeRegistryUtilityPath = (
@@ -7141,7 +7591,10 @@ const resolveScopeScanRootPath = (
   utility: RalphUtilityConfig,
   workspaceRoot: string,
 ): string => {
-  const path = resolveUtilityPath(utility.rootPath?.trim() || ".", workspaceRoot);
+  const path = resolveUtilityPath(
+    utility.rootPath?.trim() || ".",
+    workspaceRoot,
+  );
 
   if (!isResolvedPathInside(path, workspaceRoot)) {
     throw new Error("Scope scan root must stay inside the workspace.");
@@ -7184,7 +7637,8 @@ const maybeWriteScopeRegistryMarkdown = async (
   }
 
   const markdownPath = resolveWorkspaceContainedUtilityPath(
-    utility.outputPath?.trim() || createRalphScopeRegistryMarkdownPath(registryPath),
+    utility.outputPath?.trim() ||
+      createRalphScopeRegistryMarkdownPath(registryPath),
     workspaceRoot,
   );
 
@@ -7205,16 +7659,20 @@ const executeScanScopeEvidenceUtilityBlock = async (
 ): Promise<RalphBlockExecutionResult> => {
   try {
     const rootPath = resolveScopeScanRootPath(utility, config.workspaceRoot);
-    const resultLimit = typeof utility.maxResults === "number"
-      ? Math.max(1, Math.min(100_000, Math.trunc(utility.maxResults)))
-      : undefined;
+    const resultLimit =
+      typeof utility.maxResults === "number"
+        ? Math.max(1, Math.min(100_000, Math.trunc(utility.maxResults)))
+        : undefined;
     const scanOptions: Parameters<typeof discoverRalphScopeEvidence>[1] = {
       rootPath,
       excludePaths: parseRalphScopeExcludePaths(utility.excludePaths),
     };
 
     if (typeof utility.maxDepth === "number") {
-      scanOptions.maxDepth = Math.max(0, Math.min(64, Math.trunc(utility.maxDepth)));
+      scanOptions.maxDepth = Math.max(
+        0,
+        Math.min(64, Math.trunc(utility.maxDepth)),
+      );
     }
 
     if (resultLimit !== undefined) {
@@ -7225,17 +7683,21 @@ const executeScanScopeEvidenceUtilityBlock = async (
       config.workspaceRoot,
       scanOptions,
     );
-    const truncated = resultLimit !== undefined &&
+    const truncated =
+      resultLimit !== undefined &&
       discoveredEvidence.scopes.length > resultLimit;
     const evidence = {
       ...discoveredEvidence,
-      scopes: resultLimit === undefined
-        ? discoveredEvidence.scopes
-        : discoveredEvidence.scopes.slice(0, resultLimit),
+      scopes:
+        resultLimit === undefined
+          ? discoveredEvidence.scopes
+          : discoveredEvidence.scopes.slice(0, resultLimit),
       truncated,
       ...(resultLimit !== undefined ? { limit: resultLimit } : {}),
       ...(typeof utility.maxDepth === "number"
-        ? { depthLimit: Math.max(0, Math.min(64, Math.trunc(utility.maxDepth))) }
+        ? {
+            depthLimit: Math.max(0, Math.min(64, Math.trunc(utility.maxDepth))),
+          }
         : {}),
     };
     const output = evidence.scopes.length > 0 ? "SUCCESS" : "EMPTY";
@@ -7277,7 +7739,10 @@ const executeUpdateScopeRegistryUtilityBlock = async (
       utility,
       config.workspaceRoot,
     );
-    mutationLock = await acquireRalphFileMutationLock(registryPath, context.runId);
+    mutationLock = await acquireRalphFileMutationLock(
+      registryPath,
+      context.runId,
+    );
     const existingRegistry = await readRalphScopeRegistryFile(registryPath, {
       flowAlias,
       strategy,
@@ -7330,14 +7795,18 @@ const executeSelectScopeUtilityBlock = async (
       utility,
       config.workspaceRoot,
     );
-    mutationLock = await acquireRalphFileMutationLock(registryPath, context.runId);
+    mutationLock = await acquireRalphFileMutationLock(
+      registryPath,
+      context.runId,
+    );
     const registry = await readRalphScopeRegistryFile(registryPath, {
       flowAlias,
       strategy,
     });
-    const selectionOptions: Parameters<typeof selectRalphScopeFromRegistry>[1] = {
-      strategy,
-    };
+    const selectionOptions: Parameters<typeof selectRalphScopeFromRegistry>[1] =
+      {
+        strategy,
+      };
 
     if (utility.forceNew !== undefined) {
       selectionOptions.forceNew = utility.forceNew;
@@ -7364,7 +7833,9 @@ const executeSelectScopeUtilityBlock = async (
       {
         registryPath,
         scope: selection.scope,
-        ...(selection.scopeCluster ? { scopeCluster: selection.scopeCluster } : {}),
+        ...(selection.scopeCluster
+          ? { scopeCluster: selection.scopeCluster }
+          : {}),
         strategy,
         reusedCurrentScope: selection.reusedCurrentScope,
         cycleStarted: selection.cycleStarted,
@@ -7393,7 +7864,10 @@ const executeMarkScopeResultUtilityBlock = async (
       utility,
       config.workspaceRoot,
     );
-    mutationLock = await acquireRalphFileMutationLock(registryPath, context.runId);
+    mutationLock = await acquireRalphFileMutationLock(
+      registryPath,
+      context.runId,
+    );
     const registry = await readRalphScopeRegistryFile(registryPath, {
       flowAlias,
       strategy,
@@ -7533,7 +8007,10 @@ const searchFilesRecursive = async (
       options.normalizedPattern === undefined ||
       entry.name.toLowerCase().includes(options.normalizedPattern) ||
       path.toLowerCase().includes(options.normalizedPattern);
-    const relativeFilePath = relative(options.basePath, path).replace(/\\/gu, "/");
+    const relativeFilePath = relative(options.basePath, path).replace(
+      /\\/gu,
+      "/",
+    );
     const matchesGlob =
       options.glob === undefined ||
       options.glob.test(relativeFilePath) ||
@@ -7558,9 +8035,10 @@ const executeSearchFilesUtilityBlock = async (
   try {
     const rootPath = resolveUtilityPath(utility.rootPath, config.workspaceRoot);
     const results: string[] = [];
-    const limit = typeof utility.maxResults === "number"
-      ? Math.max(1, Math.trunc(utility.maxResults))
-      : DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS;
+    const limit =
+      typeof utility.maxResults === "number"
+        ? Math.max(1, Math.trunc(utility.maxResults))
+        : DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS;
 
     await searchFilesRecursive(
       rootPath,
@@ -7729,12 +8207,14 @@ interface RalphUiAnalyzeData {
 }
 
 const sanitizeArtifactName = (value: string): string => {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80) || "artifact";
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/gu, "-")
+      .replace(/^-+|-+$/gu, "")
+      .slice(0, 80) || "artifact"
+  );
 };
 
 const createUiAnalyzeArtifactDirectory = async (
@@ -7790,16 +8270,20 @@ const resolveUiAnalyzeAdapter = (
   return "browser";
 };
 
-const resolveUiAnalyzeTargetUrl = (utility: RalphUtilityConfig): string | undefined => {
+const resolveUiAnalyzeTargetUrl = (
+  utility: RalphUtilityConfig,
+): string | undefined => {
   return utility.targetUrl?.trim() || utility.url?.trim() || undefined;
 };
 
 const isReadyHttpStatus = (status: number): boolean => {
-  return (status >= 200 && status < 400) ||
+  return (
+    (status >= 200 && status < 400) ||
     status === 400 ||
     status === 401 ||
     status === 402 ||
-    status === 403;
+    status === 403
+  );
 };
 
 const checkUiAnalyzeServerReady = async (
@@ -7898,11 +8382,7 @@ const normalizeUiAnalyzeIssue = (
   const category = value.category;
   const message = value.message;
 
-  if (
-    severity !== "error" &&
-    severity !== "warning" &&
-    severity !== "info"
-  ) {
+  if (severity !== "error" && severity !== "warning" && severity !== "info") {
     return undefined;
   }
 
@@ -8460,7 +8940,8 @@ const evaluateUiHeuristics = async (
     issues,
     ...(isRecord(evaluation.analysis)
       ? {
-          analysis: evaluation.analysis as unknown as RalphUiAnalyzeViewportAnalysis,
+          analysis:
+            evaluation.analysis as unknown as RalphUiAnalyzeViewportAnalysis,
         }
       : {}),
   };
@@ -8538,13 +9019,17 @@ const captureUiAnalyzeViewport = async (
 
     const [title, visibleText, ariaSnapshot, evaluation] = await Promise.all([
       page.title(),
-      page.locator("body").innerText({ timeout: timeoutMs }).catch(() => ""),
+      page
+        .locator("body")
+        .innerText({ timeout: timeoutMs })
+        .catch(() => ""),
       checks.accessibility
         ? page
             .locator("body")
             .ariaSnapshot({ mode: "ai", depth: 8, timeout: timeoutMs })
-            .catch((error: unknown) =>
-              `ARIA snapshot unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            .catch(
+              (error: unknown) =>
+                `ARIA snapshot unavailable: ${error instanceof Error ? error.message : String(error)}`,
             )
         : Promise.resolve(undefined),
       checks.responsive || checks.accessibility
@@ -8655,21 +9140,26 @@ const executeUiAnalyzeMcpUtilityBlock = async (
     const result = await withRalphDeadline(
       getUtilityTimeoutMs(utility, DEFAULT_RALPH_MCP_TIMEOUT_MS),
       options.signal,
-      (signal) => mcpClientManager.callTool(
-        config.workspaceRoot,
-        serverId,
-        toolName,
-        args,
-        {
-          signal,
-          ...(block.settings?.mcp ? { configOverride: block.settings.mcp } : {}),
-        },
-      ),
+      (signal) =>
+        mcpClientManager.callTool(
+          config.workspaceRoot,
+          serverId,
+          toolName,
+          args,
+          {
+            signal,
+            ...(block.settings?.mcp
+              ? { configOverride: block.settings.mcp }
+              : {}),
+          },
+        ),
     );
     const data: RalphUiAnalyzeData = {
       adapter: utility.adapter ?? "playwright-mcp",
       ...(targetUrl ? { targetUrl } : {}),
-      ...(utility.screenshotPath ? { screenshotPath: utility.screenshotPath } : {}),
+      ...(utility.screenshotPath
+        ? { screenshotPath: utility.screenshotPath }
+        : {}),
       server: { mode: "existing", ready: true },
       viewports: [],
       artifacts: { screenshots: [] },
@@ -8697,7 +9187,9 @@ const executeUiAnalyzeMcpUtilityBlock = async (
       {
         adapter: utility.adapter ?? "playwright-mcp",
         ...(targetUrl ? { targetUrl } : {}),
-        ...(utility.screenshotPath ? { screenshotPath: utility.screenshotPath } : {}),
+        ...(utility.screenshotPath
+          ? { screenshotPath: utility.screenshotPath }
+          : {}),
         server: { mode: "existing", ready: false, error: summary },
         viewports: [],
         artifacts: { screenshots: [] },
@@ -8733,7 +9225,9 @@ const executeUiAnalyzeBrowserUtilityBlock = async (
   );
   const overallDeadline = Date.now() + timeoutMs;
   const healthUrl =
-    serverMode === "none" ? undefined : utility.server?.healthUrl ?? targetUrl;
+    serverMode === "none"
+      ? undefined
+      : (utility.server?.healthUrl ?? targetUrl);
   let managedServer: RalphManagedServerHandle | undefined;
   let managedServerReused = false;
   let reusedManagedServerOwnership: RalphManagedServerOwnership | undefined;
@@ -8768,15 +9262,19 @@ const executeUiAnalyzeBrowserUtilityBlock = async (
         ownership &&
         isRalphManagedServerOwnershipAlive(ownership) &&
         ownership?.commandFingerprint ===
-          createRalphManagedServerCommandFingerprint(configuredCommand, configuredCwd),
+          createRalphManagedServerCommandFingerprint(
+            configuredCommand,
+            configuredCwd,
+          ),
       );
-      const existingHealth = reuseExisting && ownershipMatches
-        ? await checkUiAnalyzeServerReady(
-            healthUrl,
-            Math.min(timeoutMs, 1_000),
-            options.signal,
-          )
-        : { ready: false as const };
+      const existingHealth =
+        reuseExisting && ownershipMatches
+          ? await checkUiAnalyzeServerReady(
+              healthUrl,
+              Math.min(timeoutMs, 1_000),
+              options.signal,
+            )
+          : { ready: false as const };
 
       if (existingHealth.ready) {
         managedServerReused = true;
@@ -8873,7 +9371,9 @@ const executeUiAnalyzeBrowserUtilityBlock = async (
     for (const viewport of getUiAnalyzeViewports(utility)) {
       const remainingMs = overallDeadline - Date.now();
       if (remainingMs <= 0) {
-        throw new Error(`${block.title} exceeded its overall UI analysis deadline.`);
+        throw new Error(
+          `${block.title} exceeded its overall UI analysis deadline.`,
+        );
       }
       viewports.push(
         await captureUiAnalyzeViewport(
@@ -8888,7 +9388,10 @@ const executeUiAnalyzeBrowserUtilityBlock = async (
     }
 
     const issues = viewports.flatMap((viewport) => [
-      ...viewport.issues.map((issue) => ({ ...issue, viewport: viewport.name })),
+      ...viewport.issues.map((issue) => ({
+        ...issue,
+        viewport: viewport.name,
+      })),
       ...viewport.consoleErrors.map((message) => ({
         severity: "error" as const,
         category: "console",
@@ -8978,10 +9481,22 @@ const executeUiAnalyzeUtilityBlock = async (
   }
 
   if (adapter === "playwright-mcp" || adapter === "tauri-mcp") {
-    return executeUiAnalyzeMcpUtilityBlock(block, utility, config, context, options);
+    return executeUiAnalyzeMcpUtilityBlock(
+      block,
+      utility,
+      config,
+      context,
+      options,
+    );
   }
 
-  return executeUiAnalyzeBrowserUtilityBlock(block, utility, config, context, options);
+  return executeUiAnalyzeBrowserUtilityBlock(
+    block,
+    utility,
+    config,
+    context,
+    options,
+  );
 };
 
 const executeGitStatusUtilityBlock = async (
@@ -9013,7 +9528,10 @@ const collectUtilityGitChangeSnapshot = async (
   return collectRalphGitChangeSnapshot({
     cwd,
     workspaceRoot: config.workspaceRoot,
-    timeoutMs: getUtilityTimeoutMs(utility, DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS),
+    timeoutMs: getUtilityTimeoutMs(
+      utility,
+      DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+    ),
     maxOutputBytes:
       utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
     ...(signal ? { signal } : {}),
@@ -9029,7 +9547,10 @@ const maybeWriteJsonArtifact = async (
     return undefined;
   }
 
-  const resolvedPath = resolveWorkspaceContainedUtilityPath(path, workspaceRoot);
+  const resolvedPath = resolveWorkspaceContainedUtilityPath(
+    path,
+    workspaceRoot,
+  );
   await writeUtilityJsonOutput(resolvedPath, value);
 
   return resolvedPath;
@@ -9046,17 +9567,27 @@ const executeGitSnapshotUtilityBlock = async (
   );
 
   try {
-    const data = await collectUtilityGitChangeSnapshot(cwd, utility, config, signal);
+    const data = await collectUtilityGitChangeSnapshot(
+      cwd,
+      utility,
+      config,
+      signal,
+    );
     const outputPath = await maybeWriteJsonArtifact(
       utility.outputPath,
       config.workspaceRoot,
       data,
     );
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} captured git snapshot.`, {
-      ...data,
-      ...(outputPath ? { outputPath } : {}),
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} captured git snapshot.`,
+      {
+        ...data,
+        ...(outputPath ? { outputPath } : {}),
+      },
+    );
   } catch (error) {
     return createUtilityResult(
       block,
@@ -9077,7 +9608,12 @@ const executeGitDiffSummaryUtilityBlock = async (
   );
 
   try {
-    const data = await collectUtilityGitChangeSnapshot(cwd, utility, config, signal);
+    const data = await collectUtilityGitChangeSnapshot(
+      cwd,
+      utility,
+      config,
+      signal,
+    );
     const hasChanges =
       data.status.trim().length > 0 ||
       data.diffStat.trim().length > 0 ||
@@ -9128,16 +9664,14 @@ const extractScopeGuardInput = (
   return context.lastResult?.data;
 };
 
-const extractStringListField = (
-  value: unknown,
-  field: string,
-): string[] => {
+const extractStringListField = (value: unknown, field: string): string[] => {
   if (!isRecord(value) || !Array.isArray(value[field])) {
     return [];
   }
 
   return value[field].filter(
-    (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim().length > 0,
   );
 };
 
@@ -9145,7 +9679,8 @@ const extractScopeGuardRules = (
   input: unknown,
 ): { paths: string[]; globs: string[] } => {
   const source = isRecord(input) && isRecord(input.scope) ? input.scope : input;
-  const extraSource = isRecord(input) && isRecord(input.scope) ? input : undefined;
+  const extraSource =
+    isRecord(input) && isRecord(input.scope) ? input : undefined;
 
   return {
     paths: [
@@ -9189,9 +9724,13 @@ const extractGitSummaryFiles = (
       const path = normalizeWorkspaceRelativePath(entry.path, workspaceRoot);
       const status = typeof entry.status === "string" ? entry.status : "??";
       const indexStatus =
-        typeof entry.indexStatus === "string" ? entry.indexStatus : status[0] ?? "?";
+        typeof entry.indexStatus === "string"
+          ? entry.indexStatus
+          : (status[0] ?? "?");
       const worktreeStatus =
-        typeof entry.worktreeStatus === "string" ? entry.worktreeStatus : status[1] ?? "?";
+        typeof entry.worktreeStatus === "string"
+          ? entry.worktreeStatus
+          : (status[1] ?? "?");
       const worktreeHash =
         typeof entry.worktreeHash === "string" ? entry.worktreeHash : undefined;
       const indexOid =
@@ -9264,10 +9803,8 @@ const isGitSnapshotBaselineCandidate = (
   return (
     Array.isArray(result.data.files) &&
     typeof result.data.capturedAt === "string" &&
-    (
-      result.blockId.toLowerCase().includes("snapshot") ||
-      outputPath.includes("snapshot")
-    )
+    (result.blockId.toLowerCase().includes("snapshot") ||
+      outputPath.includes("snapshot"))
   );
 };
 
@@ -9318,29 +9855,36 @@ const doesPathMatchScopeGuard = (
   workspaceRoot: string,
 ): boolean => {
   const normalizedAllowedPaths = allowedPaths.map((allowedPath) =>
-    normalizeWorkspaceRelativePath(allowedPath, workspaceRoot).replace(/\/+$/u, ""),
+    normalizeWorkspaceRelativePath(allowedPath, workspaceRoot).replace(
+      /\/+$/u,
+      "",
+    ),
   );
   const normalizedAllowedGlobs = allowedGlobs.map((allowedGlob) =>
     normalizeWorkspaceRelativePath(allowedGlob, workspaceRoot),
   );
 
-  if (normalizedAllowedPaths.includes(".") || normalizedAllowedPaths.includes("")) {
+  if (
+    normalizedAllowedPaths.includes(".") ||
+    normalizedAllowedPaths.includes("")
+  ) {
     return true;
   }
 
-  const pathMatched = normalizedAllowedPaths.some((normalized) =>
-    (
+  const pathMatched = normalizedAllowedPaths.some(
+    (normalized) =>
       filePath === normalized ||
       filePath.startsWith(`${normalized}/`) ||
-      (normalized.includes("*") && globToRegExp(normalized).test(filePath))
-    )
+      (normalized.includes("*") && globToRegExp(normalized).test(filePath)),
   );
 
   if (pathMatched) {
     return true;
   }
 
-  return normalizedAllowedGlobs.some((glob) => globToRegExp(glob).test(filePath));
+  return normalizedAllowedGlobs.some((glob) =>
+    globToRegExp(glob).test(filePath),
+  );
 };
 
 const executeChangeScopeGuardUtilityBlock = async (
@@ -9358,7 +9902,10 @@ const executeChangeScopeGuardUtilityBlock = async (
     const snapshot = await collectRalphGitChangeSnapshot({
       cwd,
       workspaceRoot: config.workspaceRoot,
-      timeoutMs: getUtilityTimeoutMs(utility, DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS),
+      timeoutMs: getUtilityTimeoutMs(
+        utility,
+        DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+      ),
       maxOutputBytes:
         utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
       includeDiffs: false,
@@ -9427,7 +9974,9 @@ const executeChangeScopeGuardUtilityBlock = async (
       );
     }
 
-    const rules = extractScopeGuardRules(extractScopeGuardInput(utility, context));
+    const rules = extractScopeGuardRules(
+      extractScopeGuardInput(utility, context),
+    );
 
     if (rules.paths.length === 0 && rules.globs.length === 0) {
       return createUtilityResult(
@@ -9509,9 +10058,10 @@ const getPackageManagerCommand = (
   packageJson: Record<string, unknown>,
   workspaceRoot: string,
 ): string => {
-  const packageManager = typeof packageJson.packageManager === "string"
-    ? packageJson.packageManager.split("@")[0]
-    : undefined;
+  const packageManager =
+    typeof packageJson.packageManager === "string"
+      ? packageJson.packageManager.split("@")[0]
+      : undefined;
 
   if (packageManager) {
     return packageManager;
@@ -9622,8 +10172,12 @@ const executeDetectProjectCommandsUtilityBlock = async (
   );
 
   try {
-    if (!isResolvedPathInsideWorkspace(requestedRootPath, config.workspaceRoot)) {
-      throw new Error("Project command detection root must stay inside the workspace.");
+    if (
+      !isResolvedPathInsideWorkspace(requestedRootPath, config.workspaceRoot)
+    ) {
+      throw new Error(
+        "Project command detection root must stay inside the workspace.",
+      );
     }
 
     const rootPath = await findProjectCommandRoot(
@@ -9646,7 +10200,9 @@ const executeDetectProjectCommandsUtilityBlock = async (
       const packageJson = await readJsonFile(packageJsonPath);
       if (isRecord(packageJson)) {
         manifests.push("package.json");
-        const scripts = isRecord(packageJson.scripts) ? packageJson.scripts : {};
+        const scripts = isRecord(packageJson.scripts)
+          ? packageJson.scripts
+          : {};
         const packageManager = getPackageManagerCommand(
           rootPath,
           packageJson,
@@ -9682,19 +10238,22 @@ const executeDetectProjectCommandsUtilityBlock = async (
           "start",
         ].find((candidate) => typeof scripts[candidate] === "string");
         if (serveScriptName) {
-          serveCommand = createPackageScriptCommand(packageManager, serveScriptName);
+          serveCommand = createPackageScriptCommand(
+            packageManager,
+            serveScriptName,
+          );
           serveCommandSource = `package.json#scripts.${serveScriptName}`;
           const script = String(scripts[serveScriptName]);
           const explicitPort = script.match(
             /(?:--port(?:=|\s+)|\bPORT\s*=\s*)(\d{2,5})\b/iu,
           )?.[1];
-          const port = explicitPort ?? (
-            /(?:vite\s+preview|\bpreview\b)/iu.test(script)
+          const port =
+            explicitPort ??
+            (/(?:vite\s+preview|\bpreview\b)/iu.test(script)
               ? "4173"
               : /(?:vite|dev:ui)/iu.test(script)
                 ? "5173"
-                : "3000"
-          );
+                : "3000");
           targetUrl = `http://127.0.0.1:${port}`;
         }
       }
@@ -9703,8 +10262,18 @@ const executeDetectProjectCommandsUtilityBlock = async (
     if (existsSync(join(rootPath, "Cargo.toml"))) {
       manifests.push("Cargo.toml");
       commands.push(
-        { kind: "build", command: "cargo build", source: "Cargo.toml", confidence: "high" },
-        { kind: "test", command: "cargo test", source: "Cargo.toml", confidence: "high" },
+        {
+          kind: "build",
+          command: "cargo build",
+          source: "Cargo.toml",
+          confidence: "high",
+        },
+        {
+          kind: "test",
+          command: "cargo test",
+          source: "Cargo.toml",
+          confidence: "high",
+        },
       );
     }
 
@@ -9721,16 +10290,27 @@ const executeDetectProjectCommandsUtilityBlock = async (
     if (existsSync(join(rootPath, "go.mod"))) {
       manifests.push("go.mod");
       commands.push(
-        { kind: "test", command: "go test ./...", source: "go.mod", confidence: "high" },
-        { kind: "build", command: "go build ./...", source: "go.mod", confidence: "high" },
+        {
+          kind: "test",
+          command: "go test ./...",
+          source: "go.mod",
+          confidence: "high",
+        },
+        {
+          kind: "build",
+          command: "go build ./...",
+          source: "go.mod",
+          confidence: "high",
+        },
       );
     }
 
     const verificationCommands = commands
-      .filter((entry) =>
-        entry.kind === "typecheck" ||
-        entry.kind === "lint" ||
-        entry.kind === "test"
+      .filter(
+        (entry) =>
+          entry.kind === "typecheck" ||
+          entry.kind === "lint" ||
+          entry.kind === "test",
       )
       .map((entry) => entry.command);
     const typecheckCommands = commands
@@ -9870,7 +10450,9 @@ const createBlockPerformanceMetrics = (
   }
 
   const metrics = {
-    ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+    ...(result.durationMs !== undefined
+      ? { durationMs: result.durationMs }
+      : {}),
     ...(isRecord(result.data) && typeof result.data.command === "string"
       ? { commandDurationMs: result.durationMs ?? 0 }
       : {}),
@@ -9946,7 +10528,9 @@ const createFinalReportPerformanceSummary = (
     modelCallCount +=
       typeof metrics.modelCallCount === "number" ? metrics.modelCallCount : 0;
     monitorPassCount +=
-      typeof metrics.monitorPassCount === "number" ? metrics.monitorPassCount : 0;
+      typeof metrics.monitorPassCount === "number"
+        ? metrics.monitorPassCount
+        : 0;
     modelCallDurationMs +=
       typeof metrics.modelCallDurationMs === "number"
         ? metrics.modelCallDurationMs
@@ -10065,7 +10649,9 @@ const assertRalphFinalReportPathAvailable = (
     resolve(dirname(path)) === resolve(context.artifactRoot) &&
     RALPH_RESERVED_RUN_ARTIFACT_NAMES.has(basename(path).toLowerCase())
   ) {
-    throw new Error(`Final report cannot overwrite reserved run artifact ${basename(path)}.`);
+    throw new Error(
+      `Final report cannot overwrite reserved run artifact ${basename(path)}.`,
+    );
   }
 };
 
@@ -10103,7 +10689,9 @@ const restoreRalphFinalReportArtifacts = async (
       block,
       report,
       ...(descriptor.jsonPath ? { jsonPath: descriptor.jsonPath } : {}),
-      ...(descriptor.markdownPath ? { markdownPath: descriptor.markdownPath } : {}),
+      ...(descriptor.markdownPath
+        ? { markdownPath: descriptor.markdownPath }
+        : {}),
     });
   }
 
@@ -10119,7 +10707,9 @@ const createFinalReportExecutionHistory = (
     output: result.output,
     status: result.status,
     attempt: result.attempt,
-    ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+    ...(result.durationMs !== undefined
+      ? { durationMs: result.durationMs }
+      : {}),
     summary: result.summary,
     ...(result.error ? { error: result.error } : {}),
     ...(result.recovery ? { recovery: { ...result.recovery } } : {}),
@@ -10168,9 +10758,7 @@ const createFinalReportMarkdown = (
       }
 
       const duration =
-        typeof entry.durationMs === "number"
-          ? ` (${entry.durationMs} ms)`
-          : "";
+        typeof entry.durationMs === "number" ? ` (${entry.durationMs} ms)` : "";
 
       return `- ${String(entry.blockId ?? "unknown")}: ${String(entry.output ?? "")}${duration} - ${String(entry.summary ?? "")}`;
     }),
@@ -10188,8 +10776,8 @@ const executeFinalReportUtilityBlock = async (
   context: RalphResultContext,
 ): Promise<RalphBlockExecutionResult> => {
   try {
-    const rawBlockResults = context.executionHistory ??
-      Array.from(context.resultsByBlock.values());
+    const rawBlockResults =
+      context.executionHistory ?? Array.from(context.resultsByBlock.values());
     const executionHistory = createFinalReportExecutionHistory(rawBlockResults);
     const report: Record<string, unknown> = {
       flowId: flow.id,
@@ -10213,7 +10801,10 @@ const executeFinalReportUtilityBlock = async (
     };
     if (utility.path?.trim()) {
       assertRalphFinalReportPathAvailable(
-        resolveWorkspaceContainedUtilityPath(utility.path, config.workspaceRoot),
+        resolveWorkspaceContainedUtilityPath(
+          utility.path,
+          config.workspaceRoot,
+        ),
         context,
       );
     }
@@ -10247,11 +10838,16 @@ const executeFinalReportUtilityBlock = async (
       ...(resolvedMarkdownPath ? { markdownPath: resolvedMarkdownPath } : {}),
     });
 
-    return createUtilityResult(block, "SUCCESS", `${block.title} wrote report.`, {
-      ...report,
-      ...(jsonPath ? { jsonPath } : {}),
-      ...(resolvedMarkdownPath ? { markdownPath: resolvedMarkdownPath } : {}),
-    });
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} wrote report.`,
+      {
+        ...report,
+        ...(jsonPath ? { jsonPath } : {}),
+        ...(resolvedMarkdownPath ? { markdownPath: resolvedMarkdownPath } : {}),
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   }
@@ -10298,7 +10894,11 @@ const finalizeRalphFinalReportArtifacts = async (
     if (artifact.markdownPath) {
       await writeFileAtomically(
         artifact.markdownPath,
-        createFinalReportMarkdown(artifact.flow, artifact.block, artifact.report),
+        createFinalReportMarkdown(
+          artifact.flow,
+          artifact.block,
+          artifact.report,
+        ),
         "utf8",
       );
     }
@@ -10322,12 +10922,15 @@ const writeRalphFallbackFinalReportArtifact = async (
     return undefined;
   }
   const reportBlockCount = flow.blocks.filter(
-    (block) => block.type === "UTILITY" && block.utility.type === "FINAL_REPORT",
+    (block) =>
+      block.type === "UTILITY" && block.utility.type === "FINAL_REPORT",
   ).length;
   if (reportBlockCount < 2) {
     return undefined;
   }
-  const executionHistory = createFinalReportExecutionHistory(runResult.blockResults);
+  const executionHistory = createFinalReportExecutionHistory(
+    runResult.blockResults,
+  );
   const path = join(context.artifactRoot, "final-report.json");
   await writeJsonAtomically(path, {
     flowId: flow.id,
@@ -10348,7 +10951,8 @@ const writeRalphFallbackFinalReportArtifact = async (
       ...(runResult.finishedAt ? { finishedAt: runResult.finishedAt } : {}),
     },
     fallback: {
-      reason: "No branch-specific final-report block executed before the run ended.",
+      reason:
+        "No branch-specific final-report block executed before the run ended.",
     },
     ...(runResult.autonomy
       ? { autonomy: cloneRalphRunAutonomyMetadata(runResult.autonomy) }
@@ -10362,7 +10966,9 @@ const ensureRalphFinalReportArtifacts = async (
   config: RuntimeConfig,
   context: RalphResultContext,
 ): Promise<void> => {
-  const existingIds = new Set((context.finalReports ?? []).map((artifact) => artifact.block.id));
+  const existingIds = new Set(
+    (context.finalReports ?? []).map((artifact) => artifact.block.id),
+  );
   const reportBlocks = flow.blocks.filter(
     (block): block is RalphUtilityBlock =>
       block.type === "UTILITY" && block.utility.type === "FINAL_REPORT",
@@ -10394,7 +11000,12 @@ const executeSetVariableUtilityBlock = (
   const name = utility.variableName?.trim();
 
   if (!name) {
-    return createUtilityResult(block, "SUCCESS", `${block.title} had no variable.`, {});
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} had no variable.`,
+      {},
+    );
   }
 
   const value = utility.value ?? "";
@@ -10436,12 +11047,22 @@ const executeTransformJsonUtilityBlock = (
       lastResult: RalphBlockExecutionResult | undefined,
       context: RalphResultContext,
     ) => unknown;
-    const output = evaluator(input, context.variables, context.lastResult, context);
-
-    return createUtilityResult(block, "SUCCESS", `${block.title} transformed JSON.`, {
+    const output = evaluator(
       input,
-      output,
-    });
+      context.variables,
+      context.lastResult,
+      context,
+    );
+
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} transformed JSON.`,
+      {
+        input,
+        output,
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   }
@@ -10463,13 +11084,15 @@ addFormats(ralphJsonSchemaValidator);
 const formatRalphJsonSchemaError = (error: ErrorObject): string => {
   const path = error.instancePath ? `$${error.instancePath}` : "$";
   if (error.keyword === "additionalProperties") {
-    const property = (error.params as { additionalProperty?: unknown }).additionalProperty;
+    const property = (error.params as { additionalProperty?: unknown })
+      .additionalProperty;
     return `${path}.${String(property ?? "unknown")} is not allowed.`;
   }
   if (error.keyword === "type") {
     const expected = (error.params as { type?: unknown }).type;
     const data = (error as ErrorObject & { data?: unknown }).data;
-    const actual = data === null ? "null" : Array.isArray(data) ? "array" : typeof data;
+    const actual =
+      data === null ? "null" : Array.isArray(data) ? "array" : typeof data;
     return `${path} expected ${String(expected ?? "configured type")}, got ${actual}.`;
   }
   return `${path} ${error.message ?? "failed JSON Schema validation"}.`;
@@ -10484,7 +11107,9 @@ export const validateJsonAgainstSchema = (
     return { valid: true, errors: [] };
   }
   try {
-    const validate = ralphJsonSchemaValidator.compile(schema as object | boolean);
+    const validate = ralphJsonSchemaValidator.compile(
+      schema as object | boolean,
+    );
     const valid = validate(value);
     return {
       valid: Boolean(valid),
@@ -10502,8 +11127,9 @@ export const validateJsonAgainstSchema = (
   }
 };
 
-
-export const hasUnsupportedStrictJsonSchemaKeyword = (schema: unknown): boolean => {
+export const hasUnsupportedStrictJsonSchemaKeyword = (
+  schema: unknown,
+): boolean => {
   if (!isRecord(schema)) {
     return false;
   }
@@ -10517,7 +11143,13 @@ export const hasUnsupportedStrictJsonSchemaKeyword = (schema: unknown): boolean 
   }
 
   const nestedSchemas: unknown[] = [];
-  for (const key of ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] as const) {
+  for (const key of [
+    "properties",
+    "patternProperties",
+    "$defs",
+    "definitions",
+    "dependentSchemas",
+  ] as const) {
     if (isRecord(schema[key])) {
       nestedSchemas.push(...Object.values(schema[key]));
     }
@@ -10610,10 +11242,12 @@ const jsonSchemaAllowsNull = (schema: unknown): boolean => {
     return true;
   }
 
-  return schema.type === "null" ||
+  return (
+    schema.type === "null" ||
     (Array.isArray(schema.type) && schema.type.includes("null")) ||
     (Array.isArray(schema.enum) && schema.enum.includes(null)) ||
-    (Array.isArray(schema.anyOf) && schema.anyOf.some(jsonSchemaAllowsNull));
+    (Array.isArray(schema.anyOf) && schema.anyOf.some(jsonSchemaAllowsNull))
+  );
 };
 
 const normalizeStrictStructuredOutputValue = (
@@ -10628,7 +11262,8 @@ const normalizeStrictStructuredOutputValue = (
     return schema.items === undefined
       ? value
       : value.map((entry) =>
-          normalizeStrictStructuredOutputValue(entry, schema.items));
+          normalizeStrictStructuredOutputValue(entry, schema.items),
+        );
   }
 
   const properties = schema.properties;
@@ -10639,7 +11274,9 @@ const normalizeStrictStructuredOutputValue = (
 
   const required = new Set(
     Array.isArray(schema.required)
-      ? schema.required.filter((entry): entry is string => typeof entry === "string")
+      ? schema.required.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
       : [],
   );
 
@@ -10656,10 +11293,9 @@ const normalizeStrictStructuredOutputValue = (
         return [];
       }
 
-      return [[
-        key,
-        normalizeStrictStructuredOutputValue(entry, propertySchema),
-      ]];
+      return [
+        [key, normalizeStrictStructuredOutputValue(entry, propertySchema)],
+      ];
     }),
   );
 };
@@ -10671,9 +11307,10 @@ const createPromptJsonTask = (
   context: RalphResultContext,
   repairFeedback: string | undefined,
 ): string => {
-  const schemaText = utility.schema === undefined
-    ? "No schema was configured. Return a single valid JSON value."
-    : JSON.stringify(utility.schema, null, 2);
+  const schemaText =
+    utility.schema === undefined
+      ? "No schema was configured. Return a single valid JSON value."
+      : JSON.stringify(utility.schema, null, 2);
   const prompt = utility.prompt ?? utility.message ?? utility.input ?? "";
 
   return [
@@ -10683,7 +11320,9 @@ const createPromptJsonTask = (
     "Return only one JSON value. Do not include markdown, code fences, comments, or prose.",
     "The JSON must satisfy this schema when one is configured:",
     schemaText,
-    ...(repairFeedback ? ["", "Previous JSON validation failed:", repairFeedback] : []),
+    ...(repairFeedback
+      ? ["", "Previous JSON validation failed:", repairFeedback]
+      : []),
     "",
     resolveTemplateText(prompt, context),
   ].join("\n");
@@ -10701,7 +11340,11 @@ const executePromptJsonUtilityBlock = async (
   const prompt = utility.prompt ?? utility.message ?? utility.input ?? "";
 
   if (!prompt.trim()) {
-    return createUtilityResult(block, "ERROR", "Prompt JSON utility requires prompt.");
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Prompt JSON utility requires prompt.",
+    );
   }
 
   const maxAttempts =
@@ -10820,7 +11463,10 @@ const executePromptJsonUtilityBlock = async (
       `${block.title} did not produce schema-valid JSON.`,
       {
         raw: lastText,
-        validation: lastValidation ?? { valid: false, errors: ["No JSON parsed."] },
+        validation: lastValidation ?? {
+          valid: false,
+          errors: ["No JSON parsed."],
+        },
       },
     ),
     progressEvents,
@@ -10887,9 +11533,10 @@ const executeValidatorJsonUtilityBlock = async (
 
   const data = isRecord(promptResult.data) ? promptResult.data : {};
   const output = isRecord(data.output) ? data.output : {};
-  const decision = typeof output.decision === "string"
-    ? output.decision.toUpperCase()
-    : undefined;
+  const decision =
+    typeof output.decision === "string"
+      ? output.decision.toUpperCase()
+      : undefined;
 
   if (!isRalphValidatorJsonDecision(decision)) {
     return withRalphBlockProgress(
@@ -10966,9 +11613,21 @@ const executeUtilityBlock = async (
     case "WAIT":
       return executeWaitUtilityBlock(block, utility, context, options);
     case "HTTP_FETCH":
-      return executeFetchUtilityBlock(block, utility, context, blockConfig, options);
+      return executeFetchUtilityBlock(
+        block,
+        utility,
+        context,
+        blockConfig,
+        options,
+      );
     case "POLL":
-      return executePollUtilityBlock(block, utility, context, blockConfig, options);
+      return executePollUtilityBlock(
+        block,
+        utility,
+        context,
+        blockConfig,
+        options,
+      );
     case "CONDITION":
       return executeConditionUtilityBlock(block, utility, context);
     case "RUN_COMMAND":
@@ -10990,7 +11649,13 @@ const executeUtilityBlock = async (
         context.currentOperationId,
       );
     case "UI_ANALYZE":
-      return executeUiAnalyzeUtilityBlock(block, utility, blockConfig, context, options);
+      return executeUiAnalyzeUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+        options,
+      );
     case "READ_FILE":
       return executeReadFileUtilityBlock(block, utility, blockConfig);
     case "WRITE_FILE":
@@ -11002,11 +11667,21 @@ const executeUtilityBlock = async (
     case "PATCH_JSON":
       return executePatchJsonUtilityBlock(block, utility, blockConfig, context);
     case "APPEND_JSONL":
-      return executeAppendJsonlUtilityBlock(block, utility, blockConfig, context);
+      return executeAppendJsonlUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "READ_JSONL":
       return executeReadJsonlUtilityBlock(block, utility, blockConfig);
     case "QUERY_JSONL":
-      return executeQueryJsonlUtilityBlock(block, utility, blockConfig, context);
+      return executeQueryJsonlUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "FILE_EXISTS":
       return executeFileExistsUtilityBlock(block, utility, blockConfig);
     case "DELETE_FILE":
@@ -11016,7 +11691,12 @@ const executeUtilityBlock = async (
     case "ARCHIVE_FILE":
       return executeArchiveFileUtilityBlock(block, utility, blockConfig);
     case "LOOP_COUNTER":
-      return executeLoopCounterUtilityBlock(block, utility, blockConfig, context);
+      return executeLoopCounterUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "PROMPT_JSON":
       return executePromptJsonUtilityBlock(
         flow,
@@ -11045,7 +11725,12 @@ const executeUtilityBlock = async (
         context,
       );
     case "MARK_JSON_TASK":
-      return executeMarkJsonTaskUtilityBlock(block, utility, blockConfig, context);
+      return executeMarkJsonTaskUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "CHANGE_SCOPE_GUARD":
       return executeChangeScopeGuardUtilityBlock(
         block,
@@ -11064,7 +11749,12 @@ const executeUtilityBlock = async (
         context,
       );
     case "SELECT_SCOPE":
-      return executeSelectScopeUtilityBlock(block, utility, blockConfig, context);
+      return executeSelectScopeUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "MARK_SCOPE_RESULT":
       return executeMarkScopeResultUtilityBlock(
         block,
@@ -11073,11 +11763,26 @@ const executeUtilityBlock = async (
         context,
       );
     case "SEARCH_FILES":
-      return executeSearchFilesUtilityBlock(block, utility, blockConfig, options.signal);
+      return executeSearchFilesUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        options.signal,
+      );
     case "GIT_STATUS":
-      return executeGitStatusUtilityBlock(block, utility, blockConfig, options.signal);
+      return executeGitStatusUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        options.signal,
+      );
     case "GIT_SNAPSHOT":
-      return executeGitSnapshotUtilityBlock(block, utility, blockConfig, options.signal);
+      return executeGitSnapshotUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        options.signal,
+      );
     case "GIT_DIFF_SUMMARY":
       return executeGitDiffSummaryUtilityBlock(
         block,
@@ -11086,7 +11791,11 @@ const executeUtilityBlock = async (
         options.signal,
       );
     case "DETECT_PROJECT_COMMANDS":
-      return executeDetectProjectCommandsUtilityBlock(block, utility, blockConfig);
+      return executeDetectProjectCommandsUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+      );
     case "SET_VARIABLE":
       return executeSetVariableUtilityBlock(block, utility, context);
     case "TRANSFORM_JSON":
@@ -11094,11 +11803,22 @@ const executeUtilityBlock = async (
     case "VALIDATE_JSON":
       return executeValidateJsonUtilityBlock(block, utility, context);
     case "FINAL_REPORT":
-      return executeFinalReportUtilityBlock(flow, block, utility, blockConfig, context);
+      return executeFinalReportUtilityBlock(
+        flow,
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "NOTIFY":
-      return createUtilityResult(block, "SUCCESS", utility.message ?? block.title, {
-        message: utility.message ?? block.title,
-      });
+      return createUtilityResult(
+        block,
+        "SUCCESS",
+        utility.message ?? block.title,
+        {
+          message: utility.message ?? block.title,
+        },
+      );
   }
 };
 
@@ -11126,8 +11846,11 @@ const isRalphMcpToolReadOnly = (
       return isReadOnlyMcpToolEffect(overrideEffect);
     }
 
-    const discovery = loadMcpDiscoveryCacheSync(workspaceRoot).servers[server.id];
-    const tool = discovery?.tools.find((candidate) => candidate.name === toolName);
+    const discovery =
+      loadMcpDiscoveryCacheSync(workspaceRoot).servers[server.id];
+    const tool = discovery?.tools.find(
+      (candidate) => candidate.name === toolName,
+    );
 
     return tool?.annotations?.readOnlyHint === true;
   } catch {
@@ -11201,19 +11924,20 @@ const executeMcpToolBlock = async (
     const result = await withRalphDeadline(
       getRalphMcpTimeoutMs(block),
       options.signal,
-      (signal) => mcpClientManager.callTool(
-        blockConfig.workspaceRoot,
-        serverId,
-        toolName,
-        argumentsValue,
-        createRalphMcpOperationOptions(
-          block,
-          context,
-          { ...options, signal },
-          "tool",
-          readOnly,
+      (signal) =>
+        mcpClientManager.callTool(
+          blockConfig.workspaceRoot,
+          serverId,
+          toolName,
+          argumentsValue,
+          createRalphMcpOperationOptions(
+            block,
+            context,
+            { ...options, signal },
+            "tool",
+            readOnly,
+          ),
         ),
-      ),
     );
     const markdown = formatMcpBlockResult(result);
     const failed = isMcpCallError(result);
@@ -11269,17 +11993,18 @@ const executeMcpResourceBlock = async (
     const result = await withRalphDeadline(
       getRalphMcpTimeoutMs(block),
       options.signal,
-      (signal) => mcpClientManager.readResource(
-        blockConfig.workspaceRoot,
-        serverId,
-        uri,
-        createRalphMcpOperationOptions(
-          block,
-          context,
-          { ...options, signal },
-          "resource",
+      (signal) =>
+        mcpClientManager.readResource(
+          blockConfig.workspaceRoot,
+          serverId,
+          uri,
+          createRalphMcpOperationOptions(
+            block,
+            context,
+            { ...options, signal },
+            "resource",
+          ),
         ),
-      ),
     );
     const markdown = formatMcpBlockResult(result);
 
@@ -11333,18 +12058,19 @@ const executeMcpPromptBlock = async (
     const result = await withRalphDeadline(
       getRalphMcpTimeoutMs(block),
       options.signal,
-      (signal) => mcpClientManager.getPrompt(
-        blockConfig.workspaceRoot,
-        serverId,
-        promptName,
-        argumentsValue,
-        createRalphMcpOperationOptions(
-          block,
-          context,
-          { ...options, signal },
-          "prompt",
+      (signal) =>
+        mcpClientManager.getPrompt(
+          blockConfig.workspaceRoot,
+          serverId,
+          promptName,
+          argumentsValue,
+          createRalphMcpOperationOptions(
+            block,
+            context,
+            { ...options, signal },
+            "prompt",
+          ),
         ),
-      ),
     );
     const markdown = formatMcpBlockResult(result);
 
@@ -11450,7 +12176,8 @@ const requestRalphMediaBridge = async (
   signal?: AbortSignal,
 ): Promise<RalphMediaBridgeRunDetail> => {
   const requestPath = process.env[RALPH_MEDIA_BRIDGE_REQUEST_PATH_ENV]?.trim();
-  const responsePath = process.env[RALPH_MEDIA_BRIDGE_RESPONSE_PATH_ENV]?.trim();
+  const responsePath =
+    process.env[RALPH_MEDIA_BRIDGE_RESPONSE_PATH_ENV]?.trim();
   const token = process.env[RALPH_MEDIA_BRIDGE_TOKEN_ENV]?.trim();
   if (!requestPath || !responsePath || !token) {
     throw new Error(
@@ -11476,7 +12203,9 @@ const requestRalphMediaBridge = async (
   const deadline = Date.now() + RALPH_MEDIA_BRIDGE_RESPONSE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (signal?.aborted) {
-      throw signal.reason ?? new Error("Ralph media bridge request was cancelled.");
+      throw (
+        signal.reason ?? new Error("Ralph media bridge request was cancelled.")
+      );
     }
     try {
       const raw = await readFile(responsePath, "utf8");
@@ -11487,7 +12216,9 @@ const requestRalphMediaBridge = async (
       }
       await removeRalphMediaBridgeFile(responsePath);
       if (!response.ok || !response.detail) {
-        throw new Error(response.error || "Media Studio rejected the Ralph bridge request.");
+        throw new Error(
+          response.error || "Media Studio rejected the Ralph bridge request.",
+        );
       }
       return response.detail;
     } catch (error) {
@@ -11498,7 +12229,9 @@ const requestRalphMediaBridge = async (
     await waitForRalphMediaBridgePoll(signal);
   }
 
-  throw new Error("Media Studio did not answer the Ralph bridge request within 30 seconds.");
+  throw new Error(
+    "Media Studio did not answer the Ralph bridge request within 30 seconds.",
+  );
 };
 
 const resolveRalphMediaInputBindings = (
@@ -11559,7 +12292,8 @@ const createRalphMediaInputRequest = (
       ? "Confirm this pinned Media Studio revision before Ralph enqueues a durable run."
       : "The media run released its compute lease and is waiting for a decision in Media Studio. Return here after resolving it.",
   fields: [],
-  submitLabel: stage === "preflight" ? "Approve and run" : "Check review status",
+  submitLabel:
+    stage === "preflight" ? "Approve and run" : "Check review status",
   cancelLabel: stage === "preflight" ? "Cancel" : "Stop waiting",
   createdAt: new Date().toISOString(),
   mediaFlow: {
@@ -11601,7 +12335,7 @@ const applyRalphMediaOutputBindings = (
         : binding.source === "status"
           ? detail.status
           : binding.source === "first-asset-id"
-            ? assetIds[0] ?? ""
+            ? (assetIds[0] ?? "")
             : JSON.stringify(
                 binding.source === "quality-report-ids" ? reportIds : assetIds,
               );
@@ -11617,15 +12351,19 @@ const executeMediaFlowBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphExecutionStepResult> => {
-  const operationKey = context.currentOperationId ?? `${context.runId}:${block.id}`;
+  const operationKey =
+    context.currentOperationId ?? `${context.runId}:${block.id}`;
   const generatedRunId = `ralph-media-${createHash("sha256")
-    .update(`${context.runId}\0${block.id}\0${block.revisionId}\0${operationKey}`)
+    .update(
+      `${context.runId}\0${block.id}\0${block.revisionId}\0${operationKey}`,
+    )
     .digest("hex")
     .slice(0, 48)}`;
   const checkpoint = context.mediaRuns?.get(block.id);
   if (
     checkpoint &&
-    (checkpoint.flowId !== block.flowId || checkpoint.revisionId !== block.revisionId)
+    (checkpoint.flowId !== block.flowId ||
+      checkpoint.revisionId !== block.revisionId)
   ) {
     return {
       blockId: block.id,
@@ -11657,7 +12395,10 @@ const executeMediaFlowBlock = async (
         summary: `${block.title} preflight was cancelled.`,
       };
     }
-  } else if (block.approvalPolicy === "always-review-preflight" && !checkpoint) {
+  } else if (
+    block.approvalPolicy === "always-review-preflight" &&
+    !checkpoint
+  ) {
     return {
       kind: "input-wait",
       request: createRalphMediaInputRequest(block, context, runId, "preflight"),
@@ -11665,7 +12406,8 @@ const executeMediaFlowBlock = async (
     };
   }
 
-  const inputBindings = checkpoint?.inputBindings ??
+  const inputBindings =
+    checkpoint?.inputBindings ??
     resolveRalphMediaInputBindings(block, config, context);
   context.mediaRuns?.set(block.id, {
     blockId: block.id,
@@ -11698,7 +12440,11 @@ const executeMediaFlowBlock = async (
       attempt: 1,
       summary: `${block.title} submitted detached Media Studio run ${runId}.`,
       data: {
-        mediaRun: { source: "media-run", workspaceRoot: config.workspaceRoot, runId },
+        mediaRun: {
+          source: "media-run",
+          workspaceRoot: config.workspaceRoot,
+          runId,
+        },
         detached: true,
       },
     };
@@ -11712,7 +12458,10 @@ const executeMediaFlowBlock = async (
     );
   }
 
-  if (detail.status === "waiting-for-review" || detail.status === "needs-review") {
+  if (
+    detail.status === "waiting-for-review" ||
+    detail.status === "needs-review"
+  ) {
     if (response?.action === "cancel") {
       return {
         blockId: block.id,
@@ -11723,7 +12472,10 @@ const executeMediaFlowBlock = async (
         data: { runId, mediaRunContinues: true },
       };
     }
-    const stage = detail.status === "waiting-for-review" ? "human-review" : "provider-review";
+    const stage =
+      detail.status === "waiting-for-review"
+        ? "human-review"
+        : "provider-review";
     return {
       kind: "input-wait",
       request:
@@ -11760,9 +12512,10 @@ const executeMediaFlowBlock = async (
   const assetIds = getRalphMediaPublishedAssetIds(detail);
   return {
     blockId: block.id,
-    output: assetIds.length > 0 || Object.keys(block.outputBindings).length === 0
-      ? "SUCCESS"
-      : "PARTIAL",
+    output:
+      assetIds.length > 0 || Object.keys(block.outputBindings).length === 0
+        ? "SUCCESS"
+        : "PARTIAL",
     status: "completed",
     attempt: 1,
     summary: `${block.title} completed Media Studio run ${runId} with ${assetIds.length} published asset${assetIds.length === 1 ? "" : "s"}.`,
@@ -11796,11 +12549,32 @@ const executeBlock = async (
         summary: "Start.",
       };
     case "PROMPT":
-      return executePromptBlock(flow, block, config, customizations, context, options);
+      return executePromptBlock(
+        flow,
+        block,
+        config,
+        customizations,
+        context,
+        options,
+      );
     case "VALIDATOR":
-      return executeValidatorBlock(flow, block, config, customizations, context, options);
+      return executeValidatorBlock(
+        flow,
+        block,
+        config,
+        customizations,
+        context,
+        options,
+      );
     case "DECISION":
-      return executeDecisionBlock(flow, block, config, customizations, context, options);
+      return executeDecisionBlock(
+        flow,
+        block,
+        config,
+        customizations,
+        context,
+        options,
+      );
     case "PACK":
       return {
         blockId: block.id,
@@ -11812,9 +12586,23 @@ const executeBlock = async (
     case "ASK_USER":
       return executeAskUserBlock(block, context, options);
     case "INTERVIEW":
-      return executeInterviewBlock(flow, block, config, customizations, context, options);
+      return executeInterviewBlock(
+        flow,
+        block,
+        config,
+        customizations,
+        context,
+        options,
+      );
     case "UTILITY":
-      return executeUtilityBlock(flow, block, config, customizations, context, options);
+      return executeUtilityBlock(
+        flow,
+        block,
+        config,
+        customizations,
+        context,
+        options,
+      );
     case "MCP_TOOL":
       return executeMcpToolBlock(block, config, context, options);
     case "MCP_RESOURCE":
@@ -11833,17 +12621,26 @@ const executeBlock = async (
         summary: `${block.title} is a visual Ralph block and cannot be executed.`,
         error: "Visual Ralph blocks are not executable.",
       };
-    case "END":
-      {
-        const endStatus = getRunStatusForEndBlock(block);
+    case "END": {
+      const endStatus = getRunStatusForEndBlock(block);
       return {
         blockId: block.id,
-        output: endStatus === "completed" ? "SUCCESS" : endStatus === "stopped" ? "CANCELLED" : "ERROR",
-        status: endStatus === "completed" ? "completed" : endStatus === "stopped" ? "skipped" : "error",
+        output:
+          endStatus === "completed"
+            ? "SUCCESS"
+            : endStatus === "stopped"
+              ? "CANCELLED"
+              : "ERROR",
+        status:
+          endStatus === "completed"
+            ? "completed"
+            : endStatus === "stopped"
+              ? "skipped"
+              : "error",
         attempt: 1,
         summary: `Reached ${block.title} with run status ${endStatus}.`,
       };
-      }
+    }
   }
 };
 
@@ -11851,7 +12648,9 @@ const getValidatorGroupStart = (
   flow: RalphFlow,
   validatorBlockId: string,
 ): string | undefined => {
-  const validatorIndex = flow.blocks.findIndex((block) => block.id === validatorBlockId);
+  const validatorIndex = flow.blocks.findIndex(
+    (block) => block.id === validatorBlockId,
+  );
 
   if (validatorIndex <= 0) {
     return undefined;
@@ -11890,7 +12689,9 @@ const updateResultContext = (
 ): void => {
   context.lastResult = result;
   context.resultsByBlock.set(result.blockId, result);
-  context.runLog.push(`${result.blockId}: ${result.output} - ${result.summary}`);
+  context.runLog.push(
+    `${result.blockId}: ${result.output} - ${result.summary}`,
+  );
 };
 
 const getRunStatusForEndBlock = (block: RalphEndBlock): RalphRunStatus => {
@@ -11923,8 +12724,10 @@ const isRecoverableRalphBlockResult = (
   block: RalphFlowBlock,
   result: RalphBlockExecutionResult,
 ): boolean => {
-  return block.type !== "END" &&
-    (result.status === "error" || RECOVERABLE_RALPH_OUTPUTS.has(result.output));
+  return (
+    block.type !== "END" &&
+    (result.status === "error" || RECOVERABLE_RALPH_OUTPUTS.has(result.output))
+  );
 };
 
 const withRalphDeadline = async <Value>(
@@ -11944,11 +12747,16 @@ const withRalphDeadline = async <Value>(
 
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutHandle = setTimeout(() => {
-      const error = new Error(`Ralph operation timed out after ${timeoutMs}ms.`);
-      controller.abort(error);
-      reject(error);
-    }, Math.max(1, timeoutMs));
+    timeoutHandle = setTimeout(
+      () => {
+        const error = new Error(
+          `Ralph operation timed out after ${timeoutMs}ms.`,
+        );
+        controller.abort(error);
+        reject(error);
+      },
+      Math.max(1, timeoutMs),
+    );
   });
 
   try {
@@ -11969,8 +12777,13 @@ const getRalphMcpTimeoutMs = (block: RalphFlowBlock): number => {
 };
 
 const isRalphBlockReplaySafe = (block: RalphFlowBlock): boolean => {
-  if (block.type === "START" || block.type === "END" || block.type === "NOTE" ||
-      block.type === "GROUP" || block.type === "PACK") {
+  if (
+    block.type === "START" ||
+    block.type === "END" ||
+    block.type === "NOTE" ||
+    block.type === "GROUP" ||
+    block.type === "PACK"
+  ) {
     return true;
   }
   if (block.type === "MCP_RESOURCE" || block.type === "MCP_PROMPT") {
@@ -12026,7 +12839,9 @@ const cloneRalphRunAutonomyMetadata = (
     ...metadata.policy,
     backoff: { ...metadata.policy.backoff },
   },
-  recoveryAttempts: metadata.recoveryAttempts.map((attempt) => ({ ...attempt })),
+  recoveryAttempts: metadata.recoveryAttempts.map((attempt) => ({
+    ...attempt,
+  })),
   recovered: metadata.recovered.map((recovered) => ({ ...recovered })),
   deferred: metadata.deferred.map((deferred) => ({ ...deferred })),
   ...(metadata.exhaustion ? { exhaustion: { ...metadata.exhaustion } } : {}),
@@ -12085,7 +12900,9 @@ const getDirectFailedEndBlock = (
   const edge = findOutgoingRalphEdge(flow, block.id, result.output);
   const target = edge ? blockMap.get(edge.to) : undefined;
 
-  return edge && target?.type === "END" && getRunStatusForEndBlock(target) === "blocked"
+  return edge &&
+    target?.type === "END" &&
+    getRunStatusForEndBlock(target) === "blocked"
     ? { edge, block: target }
     : undefined;
 };
@@ -12118,7 +12935,9 @@ const createRalphRunLease = (
   const sameOwner = previous?.ownerId === ownerId;
   return {
     ownerId,
-    generation: sameOwner ? previous.generation : (previous?.generation ?? 0) + 1,
+    generation: sameOwner
+      ? previous.generation
+      : (previous?.generation ?? 0) + 1,
     acquiredAt: sameOwner ? previous.acquiredAt : now.toISOString(),
     heartbeatAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + durationMs).toISOString(),
@@ -12180,12 +12999,13 @@ const createRalphCheckpointFence = (
 const isLiveForeignRalphRunLease = (
   lease: RalphRunLease | undefined,
   ownerId: string,
-): boolean => Boolean(
-  lease &&
-  !lease.releasedAt &&
-  lease.ownerId !== ownerId &&
-  Date.parse(lease.expiresAt) > Date.now(),
-);
+): boolean =>
+  Boolean(
+    lease &&
+    !lease.releasedAt &&
+    lease.ownerId !== ownerId &&
+    Date.parse(lease.expiresAt) > Date.now(),
+  );
 
 export const runRalphFlow = async (
   flow: RalphFlow,
@@ -12196,7 +13016,10 @@ export const runRalphFlow = async (
   options = { ...options };
   const checkpoint = options.checkpoint;
   const logger = options.logger;
-  const runId = logger?.runId ?? options.runId ?? checkpoint?.runId ??
+  const runId =
+    logger?.runId ??
+    options.runId ??
+    checkpoint?.runId ??
     `ralph-${flow.id}-${randomUUID()}`;
   const startedAt = checkpoint?.startedAt ?? createLogTimestamp();
   const flowFingerprint = createRalphFlowFingerprint(flow);
@@ -12251,7 +13074,10 @@ export const runRalphFlow = async (
         }).filter(([name]) => variableNames.has(name)),
       )
     : options.variableValues;
-  const resolvedVariables = resolveVariableValues(variables, suppliedVariableValues);
+  const resolvedVariables = resolveVariableValues(
+    variables,
+    suppliedVariableValues,
+  );
   const validation = validateRalphFlow(flow, {
     config,
     variableValues: resolvedVariables.values,
@@ -12282,14 +13108,11 @@ export const runRalphFlow = async (
   );
   const instructionCanonicalChanged =
     checkpoint !== undefined &&
-    checkpoint.instructionCanonicalDigest !==
-      activeInstructionCanonicalDigest;
+    checkpoint.instructionCanonicalDigest !== activeInstructionCanonicalDigest;
   const instructionEnvironmentChanged =
     checkpoint !== undefined &&
     JSON.stringify(
-      canonicalizeRalphValue(
-        checkpoint.instructionEnvironmentDigests ?? {},
-      ),
+      canonicalizeRalphValue(checkpoint.instructionEnvironmentDigests ?? {}),
     ) !==
       JSON.stringify(
         canonicalizeRalphValue(activeInstructionEnvironmentDigests),
@@ -12316,13 +13139,14 @@ export const runRalphFlow = async (
   let ownershipLost: RalphRunOwnershipLostError | undefined;
   const markOwnershipLost = (error: unknown): RalphRunOwnershipLostError => {
     const message = error instanceof Error ? error.message : String(error);
-    const ownershipError = error instanceof RalphRunOwnershipLostError &&
-        message.startsWith("Ralph durable run ownership lost:")
-      ? error
-      : new RalphRunOwnershipLostError(
-          `Ralph durable run ownership lost: ${message}`,
-          error instanceof Error ? { cause: error } : undefined,
-        );
+    const ownershipError =
+      error instanceof RalphRunOwnershipLostError &&
+      message.startsWith("Ralph durable run ownership lost:")
+        ? error
+        : new RalphRunOwnershipLostError(
+            `Ralph durable run ownership lost: ${message}`,
+            error instanceof Error ? { cause: error } : undefined,
+          );
     ownershipLost ??= ownershipError;
     durability.status = "degraded";
     durability.error = ownershipError.message;
@@ -12331,7 +13155,9 @@ export const runRalphFlow = async (
   const getOwnershipLostMessage = (): string =>
     ownershipLost?.message ??
     "Ralph durable run ownership was lost; the stale owner stopped without finalizing artifacts.";
-  const readCurrentDurableRunRecord = async (): Promise<RalphRunRecord | undefined> => {
+  const readCurrentDurableRunRecord = async (): Promise<
+    RalphRunRecord | undefined
+  > => {
     const recordPath = logger?.paths?.recordPath;
     if (!recordPath) {
       return undefined;
@@ -12477,15 +13303,16 @@ export const runRalphFlow = async (
   };
   const releaseOwnedCheckpoint = (
     value: RalphRunCheckpoint | undefined,
-  ): RalphRunCheckpoint | undefined => value?.lease?.ownerId === leaseOwnerId
-    ? {
-        ...value,
-        lease: {
-          ...value.lease,
-          releasedAt: value.lease.releasedAt ?? createLogTimestamp(),
-        },
-      }
-    : value;
+  ): RalphRunCheckpoint | undefined =>
+    value?.lease?.ownerId === leaseOwnerId
+      ? {
+          ...value,
+          lease: {
+            ...value.lease,
+            releasedAt: value.lease.releasedAt ?? createLogTimestamp(),
+          },
+        }
+      : value;
   const finishRun = async (result: RalphRunResult): Promise<RalphRunResult> => {
     const createOwnershipLostResult = (): RalphRunResult => {
       const unfencedResult = { ...result };
@@ -12507,11 +13334,11 @@ export const runRalphFlow = async (
 
     const finishedAt =
       result.status === "waiting-for-input" ? undefined : createLogTimestamp();
-    let retainedCheckpoint = result.checkpoint ?? (
-      result.status !== "completed"
-        ? runtimeState.latestCheckpoint ?? checkpoint
-        : undefined
-    );
+    let retainedCheckpoint =
+      result.checkpoint ??
+      (result.status !== "completed"
+        ? (runtimeState.latestCheckpoint ?? checkpoint)
+        : undefined);
     retainedCheckpoint = releaseOwnedCheckpoint(retainedCheckpoint);
     let runResult: RalphRunResult = {
       ...result,
@@ -12526,7 +13353,9 @@ export const runRalphFlow = async (
     };
 
     try {
-      const persistedHistory = await readRalphExecutionHistoryResults(logger?.paths);
+      const persistedHistory = await readRalphExecutionHistoryResults(
+        logger?.paths,
+      );
       if (persistedHistory.length > runResult.blockResults.length) {
         runResult.blockResults = persistedHistory;
       }
@@ -12562,7 +13391,10 @@ export const runRalphFlow = async (
       }
       await assertLockOwnership();
 
-      if (durability.status === "degraded" && runResult.status === "completed") {
+      if (
+        durability.status === "degraded" &&
+        runResult.status === "completed"
+      ) {
         runResult = {
           ...runResult,
           status: "crashed",
@@ -12582,7 +13414,10 @@ export const runRalphFlow = async (
             config,
             runtimeState.resultContext,
           );
-          await finalizeRalphFinalReportArtifacts(runtimeState.resultContext, runResult);
+          await finalizeRalphFinalReportArtifacts(
+            runtimeState.resultContext,
+            runResult,
+          );
           await writeRalphFallbackFinalReportArtifact(
             flow,
             runtimeState.resultContext,
@@ -12633,7 +13468,7 @@ export const runRalphFlow = async (
     try {
       if (logger?.paths) {
         await withDurableRunOwnership(async (_current, assertLockOwnership) =>
-          finalizeOwnedRun(assertLockOwnership)
+          finalizeOwnedRun(assertLockOwnership),
         );
       } else {
         await finalizeOwnedRun();
@@ -12650,7 +13485,9 @@ export const runRalphFlow = async (
         runResult.status = "crashed";
         runResult.summary = `${runResult.summary} Final run-record persistence failed: ${durability.error}.`;
         if (runtimeState.latestCheckpoint) {
-          const releasedCheckpoint = releaseOwnedCheckpoint(runtimeState.latestCheckpoint);
+          const releasedCheckpoint = releaseOwnedCheckpoint(
+            runtimeState.latestCheckpoint,
+          );
           if (releasedCheckpoint) {
             runResult.checkpoint = releasedCheckpoint;
           }
@@ -12735,7 +13572,10 @@ export const runRalphFlow = async (
       checkpoint,
     });
   }
-  if (checkpoint?.flowFingerprint && checkpoint.flowFingerprint !== flowFingerprint) {
+  if (
+    checkpoint?.flowFingerprint &&
+    checkpoint.flowFingerprint !== flowFingerprint
+  ) {
     return finishRun({
       ...createBlockedRunResult(
         flow,
@@ -12746,44 +13586,58 @@ export const runRalphFlow = async (
     });
   }
   if (resolvedVariables.unknown.length > 0) {
-    return finishRun(createBlockedRunResult(
-      flow,
-      validation,
-      `Unknown Ralph variable(s): ${resolvedVariables.unknown.join(", ")}.`,
-      [],
-      resolvedVariables.unknown,
-    ));
+    return finishRun(
+      createBlockedRunResult(
+        flow,
+        validation,
+        `Unknown Ralph variable(s): ${resolvedVariables.unknown.join(", ")}.`,
+        [],
+        resolvedVariables.unknown,
+      ),
+    );
   }
 
   if (resolvedVariables.missing.length > 0) {
-    return finishRun(createBlockedRunResult(
-      flow,
-      validation,
-      `Missing Ralph variable(s): ${resolvedVariables.missing.join(", ")}.`,
-      resolvedVariables.missing,
-    ));
+    return finishRun(
+      createBlockedRunResult(
+        flow,
+        validation,
+        `Missing Ralph variable(s): ${resolvedVariables.missing.join(", ")}.`,
+        resolvedVariables.missing,
+      ),
+    );
   }
 
   if (!validation.valid) {
-    return finishRun(createBlockedRunResult(
-      flow,
-      validation,
-      `Ralph flow is invalid: ${validation.errors.join(" ")}`,
-    ));
+    return finishRun(
+      createBlockedRunResult(
+        flow,
+        validation,
+        `Ralph flow is invalid: ${validation.errors.join(" ")}`,
+      ),
+    );
   }
 
   const blockMap = getRalphBlockById(flow);
-  const start = flow.blocks.find((block): block is RalphStartBlock => block.type === "START");
+  const start = flow.blocks.find(
+    (block): block is RalphStartBlock => block.type === "START",
+  );
   if (!start) {
     return finishRun(
-      createBlockedRunResult(flow, validation, "Ralph flow has no START block."),
+      createBlockedRunResult(
+        flow,
+        validation,
+        "Ralph flow has no START block.",
+      ),
     );
   }
 
   const events: RalphRunEvent[] = checkpoint ? [...checkpoint.events] : [];
   let persistedExecutionHistory: RalphBlockExecutionResult[];
   try {
-    persistedExecutionHistory = await readRalphExecutionHistoryResults(logger?.paths);
+    persistedExecutionHistory = await readRalphExecutionHistoryResults(
+      logger?.paths,
+    );
   } catch (error) {
     markDurabilityDegraded(error);
     return finishRun({
@@ -12798,11 +13652,12 @@ export const runRalphFlow = async (
       ...(checkpoint ? { checkpoint } : {}),
     });
   }
-  const blockResults: RalphBlockExecutionResult[] = persistedExecutionHistory.length > 0
-    ? persistedExecutionHistory
-    : checkpoint
-      ? [...checkpoint.blockResults]
-      : [];
+  const blockResults: RalphBlockExecutionResult[] =
+    persistedExecutionHistory.length > 0
+      ? persistedExecutionHistory
+      : checkpoint
+        ? [...checkpoint.blockResults]
+        : [];
   const historyByOperationId = new Map(
     blockResults.flatMap((result) =>
       result.operationId ? [[result.operationId, result] as const] : [],
@@ -12835,11 +13690,15 @@ export const runRalphFlow = async (
   runtimeState.resultContext = resultContext;
   const errorCounts = restoreRalphNumberMap(checkpoint?.errorCounts);
   const attemptCounts = restoreRalphNumberMap(checkpoint?.attemptCounts);
-  const repeatedFailures = restoreRalphRepeatedFailureMap(checkpoint?.repeatedFailures);
+  const repeatedFailures = restoreRalphRepeatedFailureMap(
+    checkpoint?.repeatedFailures,
+  );
   const recoveryCounts = restoreRalphNumberMap(checkpoint?.recoveryCounts);
-  let currentBlockId: string | undefined = checkpoint?.currentBlockId ?? start.id;
+  let currentBlockId: string | undefined =
+    checkpoint?.currentBlockId ?? start.id;
   let transitions = checkpoint?.transitions ?? 0;
-  let transitionBase = checkpoint?.transitionBase ?? checkpoint?.totalTransitions ?? 0;
+  let transitionBase =
+    checkpoint?.transitionBase ?? checkpoint?.totalTransitions ?? 0;
   let segment =
     (checkpoint?.segment ?? 1) +
     (instructionBoundaryChanged &&
@@ -12858,12 +13717,12 @@ export const runRalphFlow = async (
   const maxTransitions =
     options.maxTransitions === null
       ? null
-      : options.maxTransitions ?? flow.settings?.maxTransitions;
+      : (options.maxTransitions ?? flow.settings?.maxTransitions);
   let maxTotalTransitions = options.maxTotalTransitions ?? null;
   const repeatedFailureLimit =
     options.repeatedFailureLimit === null
       ? null
-      : options.repeatedFailureLimit ?? DEFAULT_RALPH_REPEATED_FAILURE_LIMIT;
+      : (options.repeatedFailureLimit ?? DEFAULT_RALPH_REPEATED_FAILURE_LIMIT);
   let lastRecoverableCheckpoint: RalphRunCheckpoint | undefined;
   let nextRetryAt = checkpoint?.nextRetryAt;
   const createCheckpoint = (
@@ -12901,14 +13760,12 @@ export const runRalphFlow = async (
       ...(activeInstructionCanonicalDigest === undefined
         ? {}
         : {
-            instructionCanonicalDigest:
-              activeInstructionCanonicalDigest,
+            instructionCanonicalDigest: activeInstructionCanonicalDigest,
           }),
       ...(Object.keys(activeInstructionEnvironmentDigests).length === 0
         ? {}
         : {
-            instructionEnvironmentDigests:
-              activeInstructionEnvironmentDigests,
+            instructionEnvironmentDigests: activeInstructionEnvironmentDigests,
           }),
       lease: runLease,
       segment,
@@ -12922,7 +13779,9 @@ export const runRalphFlow = async (
       finalReports: (resultContext.finalReports ?? []).map((artifact) => ({
         blockId: artifact.block.id,
         ...(artifact.jsonPath ? { jsonPath: artifact.jsonPath } : {}),
-        ...(artifact.markdownPath ? { markdownPath: artifact.markdownPath } : {}),
+        ...(artifact.markdownPath
+          ? { markdownPath: artifact.markdownPath }
+          : {}),
       })),
       history: {
         ...(logger?.paths?.simpleJsonlPath
@@ -13024,7 +13883,10 @@ export const runRalphFlow = async (
     }
   };
 
-  const markOperationRouted = (operationId: string, toBlockId: string): void => {
+  const markOperationRouted = (
+    operationId: string,
+    toBlockId: string,
+  ): void => {
     const operation = resultContext.operationLedger?.get(operationId);
     if (!operation) {
       return;
@@ -13080,7 +13942,11 @@ export const runRalphFlow = async (
 
     if (options.signal?.aborted) {
       const summary = "Ralph run stopped.";
-      await emitRunEvent(events, { type: "end", blockId: currentBlockId, status: "stopped", summary }, options.onEvent);
+      await emitRunEvent(
+        events,
+        { type: "end", blockId: currentBlockId, status: "stopped", summary },
+        options.onEvent,
+      );
       return finishRun({
         flow: flow.id,
         status: "stopped",
@@ -13126,7 +13992,9 @@ export const runRalphFlow = async (
             };
             autonomyMetadata.exhaustion = exhaustion;
             const deferTargetId = autonomyPolicy.deferToBlockId;
-            const deferTarget = deferTargetId ? blockMap.get(deferTargetId) : undefined;
+            const deferTarget = deferTargetId
+              ? blockMap.get(deferTargetId)
+              : undefined;
             if (deferTarget && isExecutableRalphBlock(deferTarget)) {
               const deferred: RalphAutonomyDeferredWork = {
                 blockId: currentBlockId,
@@ -13136,13 +14004,17 @@ export const runRalphFlow = async (
                 routedToBlockId: deferTarget.id,
               };
               autonomyMetadata.deferred.push(deferred);
-              await emitRunEvent(events, {
-                type: "edge-route",
-                from: currentBlockId,
-                output: "LIMIT",
-                to: deferTarget.id,
-                deferred,
-              }, options.onEvent);
+              await emitRunEvent(
+                events,
+                {
+                  type: "edge-route",
+                  from: currentBlockId,
+                  output: "LIMIT",
+                  to: deferTarget.id,
+                  deferred,
+                },
+                options.onEvent,
+              );
               currentBlockId = deferTarget.id;
             }
 
@@ -13204,7 +14076,12 @@ export const runRalphFlow = async (
 
         await emitRunEvent(
           events,
-          { type: "crash", blockId: currentBlockId, output: "ERROR", reason: summary },
+          {
+            type: "crash",
+            blockId: currentBlockId,
+            output: "ERROR",
+            reason: summary,
+          },
           options.onEvent,
         );
         logger?.simple({
@@ -13256,21 +14133,31 @@ export const runRalphFlow = async (
       });
     }
 
-    const pendingOperation = [...(resultContext.operationLedger?.values() ?? [])]
+    const pendingOperation = [
+      ...(resultContext.operationLedger?.values() ?? []),
+    ]
       .reverse()
       .find((entry) => entry.blockId === block.id && entry.state === "started");
-    const completedUnroutedOperation = [...(resultContext.operationLedger?.values() ?? [])]
+    const completedUnroutedOperation = [
+      ...(resultContext.operationLedger?.values() ?? []),
+    ]
       .reverse()
-      .find((entry) =>
-        entry.blockId === block.id &&
-        (entry.state === "completed" || entry.state === "reconciled") &&
-        historyByOperationId.has(entry.id),
+      .find(
+        (entry) =>
+          entry.blockId === block.id &&
+          (entry.state === "completed" || entry.state === "reconciled") &&
+          historyByOperationId.has(entry.id),
       );
     const resumableOperation = pendingOperation ?? completedUnroutedOperation;
-    const attempt = resumableOperation?.attempt ?? (attemptCounts.get(block.id) ?? 0) + 1;
-    const operationId = resumableOperation?.id ?? createHash("sha256")
-      .update(`${runId}\0${block.id}\0${attempt}\0${syncTotalTransitions()}\0${segment}`)
-      .digest("hex");
+    const attempt =
+      resumableOperation?.attempt ?? (attemptCounts.get(block.id) ?? 0) + 1;
+    const operationId =
+      resumableOperation?.id ??
+      createHash("sha256")
+        .update(
+          `${runId}\0${block.id}\0${attempt}\0${syncTotalTransitions()}\0${segment}`,
+        )
+        .digest("hex");
     const operationWasPending = pendingOperation?.state === "started";
     if (!resumableOperation) {
       attemptCounts.set(block.id, attempt);
@@ -13329,35 +14216,48 @@ export const runRalphFlow = async (
     if (options.signal?.aborted) {
       abortBlockFromOuterSignal();
     } else {
-      options.signal?.addEventListener("abort", abortBlockFromOuterSignal, { once: true });
+      options.signal?.addEventListener("abort", abortBlockFromOuterSignal, {
+        once: true,
+      });
     }
     let heartbeatPending = Promise.resolve();
-    const heartbeatHandle = setInterval(() => {
-      heartbeatPending = heartbeatPending.then(async () => {
-        await persistRunBoundary(
-          block.id,
-          `Heartbeat for operation ${operationId} in \`${block.id}\`.`,
-        );
-        if (durability.status === "degraded" && durability.required) {
-          blockAbortController.abort(
-            new Error(
-              `Ralph aborted ${block.id} because its durable lease heartbeat failed: ${durability.error ?? "unknown persistence error"}.`,
-            ),
-          );
-        }
-      }).catch((error: unknown) => {
-        markDurabilityDegraded(error);
-        if (durability.required) {
-          blockAbortController.abort(error);
-        }
-      });
-    }, Math.max(250, Math.floor(leaseDurationMs / 3)));
+    const heartbeatHandle = setInterval(
+      () => {
+        heartbeatPending = heartbeatPending
+          .then(async () => {
+            await persistRunBoundary(
+              block.id,
+              `Heartbeat for operation ${operationId} in \`${block.id}\`.`,
+            );
+            if (durability.status === "degraded" && durability.required) {
+              blockAbortController.abort(
+                new Error(
+                  `Ralph aborted ${block.id} because its durable lease heartbeat failed: ${durability.error ?? "unknown persistence error"}.`,
+                ),
+              );
+            }
+          })
+          .catch((error: unknown) => {
+            markDurabilityDegraded(error);
+            if (durability.required) {
+              blockAbortController.abort(error);
+            }
+          });
+      },
+      Math.max(250, Math.floor(leaseDurationMs / 3)),
+    );
     let stepResult: RalphExecutionStepResult;
     try {
-      stepResult = reconciledResult ?? (
-        operationWasPending && !isRalphBlockReplaySafe(block)
+      stepResult =
+        reconciledResult ??
+        (operationWasPending && !isRalphBlockReplaySafe(block)
           ? createUtilityResult(
-              { id: block.id, type: "UTILITY", title: block.title, utility: { type: "NOTIFY" } },
+              {
+                id: block.id,
+                type: "UTILITY",
+                title: block.title,
+                utility: { type: "NOTIFY" },
+              },
               "ERROR",
               `${block.title} has an indeterminate prior side effect for operation ${operationId}; routing through recovery instead of replaying it blindly.`,
               { operationId, reconciliation: "indeterminate" },
@@ -13371,8 +14271,7 @@ export const runRalphFlow = async (
               { ...options, signal: blockAbortController.signal },
             ).catch((error: unknown) =>
               createRalphBlockExecutionErrorResult(block, error, attempt),
-            )
-      );
+            ));
     } finally {
       clearInterval(heartbeatHandle);
       await heartbeatPending;
@@ -13557,11 +14456,7 @@ export const runRalphFlow = async (
     let autonomyDeferToBlockId: string | undefined;
     const priorRecoveryCount = recoveryCounts.get(block.id) ?? 0;
 
-    if (
-      autonomyMetadata &&
-      priorRecoveryCount > 0 &&
-      !directFailedEnd
-    ) {
+    if (autonomyMetadata && priorRecoveryCount > 0 && !directFailedEnd) {
       const recovered: RalphAutonomyRecoveredBlock = {
         blockId: block.id,
         attempts: priorRecoveryCount,
@@ -13592,8 +14487,7 @@ export const runRalphFlow = async (
         nextFailureState.count >= repeatedFailureLimit &&
         !directFailedEnd
       ) {
-        const summary =
-          `Ralph flow stopped at \`${block.id}\` after ${nextFailureState.count} identical non-success result(s): ${result.summary}`;
+        const summary = `Ralph flow stopped at \`${block.id}\` after ${nextFailureState.count} identical non-success result(s): ${result.summary}`;
 
         if (
           autonomyMetadata &&
@@ -13664,9 +14558,9 @@ export const runRalphFlow = async (
     if (block.type === "END") {
       const status = getRunStatusForEndBlock(block);
       const summary = `Ralph flow \`${flow.name}\` ended at \`${block.id}\`.`;
-      const deferred = [...(autonomyMetadata?.deferred ?? [])].reverse().find(
-        (entry) => entry.failedEndBlockId === block.id,
-      );
+      const deferred = [...(autonomyMetadata?.deferred ?? [])]
+        .reverse()
+        .find((entry) => entry.failedEndBlockId === block.id);
       await emitRunEvent(
         events,
         {
@@ -13861,7 +14755,9 @@ export const runRalphFlow = async (
             validation,
           });
         }
-        await delay(retryDecision.delaySeconds, options.signal).catch(() => undefined);
+        await delay(retryDecision.delaySeconds, options.signal).catch(
+          () => undefined,
+        );
         if (!options.signal?.aborted) {
           nextRetryAt = undefined;
         }
@@ -13876,7 +14772,11 @@ export const runRalphFlow = async (
       : findOutgoingRalphEdge(flow, block.id, result.output);
     let nextBlockId = autonomyDeferToBlockId ?? edge?.to;
 
-    if (block.type === "VALIDATOR" && result.output === "RETRY" && !nextBlockId) {
+    if (
+      block.type === "VALIDATOR" &&
+      result.output === "RETRY" &&
+      !nextBlockId
+    ) {
       nextBlockId = getValidatorGroupStart(flow, block.id);
     }
 
@@ -13884,7 +14784,12 @@ export const runRalphFlow = async (
       const summary = `Ralph flow crashed at \`${block.id}\`: no edge handles output ${result.output}.`;
       await emitRunEvent(
         events,
-        { type: "crash", blockId: block.id, output: result.output, reason: summary },
+        {
+          type: "crash",
+          blockId: block.id,
+          output: result.output,
+          reason: summary,
+        },
         options.onEvent,
       );
       logger?.simple({

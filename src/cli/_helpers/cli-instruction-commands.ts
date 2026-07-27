@@ -104,7 +104,9 @@ const readBody = async (
     );
   }
   if (options.prompt !== undefined) return options.prompt;
-  return required ? fail("Provide Markdown with --prompt or --prompt-file.") : undefined;
+  return required
+    ? fail("Provide Markdown with --prompt or --prompt-file.")
+    : undefined;
 };
 
 const mutationOptions = (
@@ -198,14 +200,15 @@ const requireProfile = (library: InstructionLibrary, idOrName: string) => {
   const key = profileNameKey(idOrName);
   const matches = library.profiles.filter(
     (profile) =>
-      profile.id === idOrName ||
-      profileNameKey(profile.name) === key,
+      profile.id === idOrName || profileNameKey(profile.name) === key,
   );
   if (matches.length === 0) {
     return fail(`Instruction profile \`${idOrName}\` was not found.`);
   }
   if (matches.length > 1) {
-    return fail(`Instruction profile \`${idOrName}\` is ambiguous; use its UUID.`);
+    return fail(
+      `Instruction profile \`${idOrName}\` is ambiguous; use its UUID.`,
+    );
   }
   return matches[0] as NonNullable<(typeof matches)[number]>;
 };
@@ -242,12 +245,13 @@ const resolveProvider = async (
 const validateInstructionSystem = async (
   args: ParsedCliArgs,
 ): Promise<unknown> => {
-  const [{ providerId, model, reasoning }, library, locals] =
-    await Promise.all([
+  const [{ providerId, model, reasoning }, library, locals] = await Promise.all(
+    [
       resolveProvider(args),
       loadInstructionLibrary(),
       discoverLocalInstructions(args.workspaceRoot),
-    ]);
+    ],
+  );
   const diagnostics: InstructionDiagnostic[] = [...locals.diagnostics];
   let explanation: ReturnType<typeof explainInstructionResolution> | undefined;
   let deliveryPlan:
@@ -286,7 +290,7 @@ const validateInstructionSystem = async (
         code: "INSTRUCTION_DELIVERY_COMPATIBLE",
         severity: "warning",
         message:
-          "The selected provider surface has explicit delivery limitations and requires acknowledgement before execution.",
+          "The selected provider surface has explicit delivery limitations; execution remains available through the canonical Machdoch prompt.",
         details: {
           planId: deliveryPlan.planId,
           providerId,
@@ -325,9 +329,10 @@ export const printInstructionSummary = async (
     case "profile-list": {
       const library = await loadInstructionLibrary();
       if (args.json) {
-        printJson(createLibraryOverview(library, options.includeContent === true));
-      }
-      else printProfileList(library);
+        printJson(
+          createLibraryOverview(library, options.includeContent === true),
+        );
+      } else printProfileList(library);
       return;
     }
     case "profile-show": {
@@ -361,7 +366,10 @@ export const printInstructionSummary = async (
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`created profile ${result.profile.name} (${result.profile.id}), revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `created profile ${result.profile.name} (${result.profile.id}), revision ${result.library.revision}`,
+        );
       return;
     }
     case "profile-edit": {
@@ -376,7 +384,9 @@ export const printInstructionSummary = async (
         options.name === undefined &&
         options.description === undefined
       ) {
-        fail("Profile edit requires --name, --description, --prompt, or --prompt-file.");
+        fail(
+          "Profile edit requires --name, --description, --prompt, or --prompt-file.",
+        );
       }
       const result = await updateInstructionProfile(
         profile.id,
@@ -386,16 +396,17 @@ export const printInstructionSummary = async (
             ? {}
             : {
                 description:
-                  options.description.length === 0
-                    ? null
-                    : options.description,
+                  options.description.length === 0 ? null : options.description,
               }),
           ...(body === undefined ? {} : { body }),
         },
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`updated profile ${profile.id}, revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `updated profile ${profile.id}, revision ${result.library.revision}`,
+        );
       return;
     }
     case "profile-duplicate": {
@@ -410,7 +421,10 @@ export const printInstructionSummary = async (
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`duplicated profile as ${result.profile.name} (${result.profile.id})`);
+      else
+        writeStdoutLine(
+          `duplicated profile as ${result.profile.name} (${result.profile.id})`,
+        );
       return;
     }
     case "profile-delete": {
@@ -424,7 +438,10 @@ export const printInstructionSummary = async (
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`deleted profile ${profile.id}, revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `deleted profile ${profile.id}, revision ${result.library.revision}`,
+        );
       return;
     }
     case "assignment-list": {
@@ -436,7 +453,9 @@ export const printInstructionSummary = async (
       };
       if (args.json) printJson(value);
       else {
-        writeStdoutLine(`defaults: ${library.defaults.profiles.join(", ") || "none"}`);
+        writeStdoutLine(
+          `defaults: ${library.defaults.profiles.join(", ") || "none"}`,
+        );
         for (const workspace of library.workspaces) {
           writeStdoutLine(`${workspace.id}: ${workspace.root}`);
           for (const scope of workspace.scopes) {
@@ -452,7 +471,10 @@ export const printInstructionSummary = async (
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`updated default order, revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `updated default order, revision ${result.library.revision}`,
+        );
       return;
     }
     case "assignment-set":
@@ -466,17 +488,21 @@ export const printInstructionSummary = async (
       const result = await setWorkspaceInstructionScope(
         workspaceId,
         scopePath,
-        options.action === "assignment-remove" ? [] : options.profileIds ?? [],
+        options.action === "assignment-remove"
+          ? []
+          : (options.profileIds ?? []),
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`updated ${workspaceId}:${scopePath}, revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `updated ${workspaceId}:${scopePath}, revision ${result.library.revision}`,
+        );
       return;
     }
     case "assignment-relink": {
       const workspaceId =
-        options.subject ??
-        fail("Assignment relink requires a workspace UUID.");
+        options.subject ?? fail("Assignment relink requires a workspace UUID.");
       const currentPath =
         options.secondarySubject ??
         fail("Assignment relink requires the current relative folder.");
@@ -501,16 +527,20 @@ export const printInstructionSummary = async (
       const discovery = await discoverLocalInstructions(args.workspaceRoot);
       const value = {
         files: discovery.files.map((file) =>
-          createLocalMetadata(file, options.includeContent === true)
+          createLocalMetadata(file, options.includeContent === true),
         ),
         diagnostics: discovery.diagnostics,
         visitedDirectories: discovery.visitedDirectories,
       };
       if (args.json) printJson(value);
       else {
-        writeStdoutLine(`project-local AGENTS.md files: ${discovery.files.length}`);
+        writeStdoutLine(
+          `project-local AGENTS.md files: ${discovery.files.length}`,
+        );
         for (const file of discovery.files) {
-          writeStdoutLine(`  - ${file.relativePath} bytes=${file.byteLength} digest=${file.digest}`);
+          writeStdoutLine(
+            `  - ${file.relativePath} bytes=${file.byteLength} digest=${file.digest}`,
+          );
         }
       }
       return;
@@ -531,7 +561,10 @@ export const printInstructionSummary = async (
         (await readBody(args, options)) as string,
       );
       if (args.json) printJson(record);
-      else writeStdoutLine(`created ${record.relativePath} digest=${record.digest}`);
+      else
+        writeStdoutLine(
+          `created ${record.relativePath} digest=${record.digest}`,
+        );
       return;
     }
     case "local-edit": {
@@ -543,7 +576,10 @@ export const printInstructionSummary = async (
           fail("Local edit requires --expected-digest for compare-and-swap."),
       );
       if (args.json) printJson(record);
-      else writeStdoutLine(`updated ${record.relativePath} digest=${record.digest}`);
+      else
+        writeStdoutLine(
+          `updated ${record.relativePath} digest=${record.digest}`,
+        );
       return;
     }
     case "local-delete": {
@@ -559,7 +595,11 @@ export const printInstructionSummary = async (
     }
     case "workspace-list": {
       const library = await loadInstructionLibrary();
-      if (args.json) printJson({ revision: library.revision, workspaces: library.workspaces });
+      if (args.json)
+        printJson({
+          revision: library.revision,
+          workspaces: library.workspaces,
+        });
       else {
         for (const workspace of library.workspaces) {
           writeStdoutLine(`${workspace.id}: ${workspace.root}`);
@@ -574,7 +614,10 @@ export const printInstructionSummary = async (
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`registered ${result.workspace.id}: ${result.workspace.root}`);
+      else
+        writeStdoutLine(
+          `registered ${result.workspace.id}: ${result.workspace.root}`,
+        );
       return;
     }
     case "workspace-relink": {
@@ -586,20 +629,26 @@ export const printInstructionSummary = async (
         mutationOptions(options),
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`relinked workspace, revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `relinked workspace, revision ${result.library.revision}`,
+        );
       return;
     }
     case "workspace-unregister": {
       const result = await unregisterInstructionWorkspace(
-        options.subject ?? fail("Workspace unregister requires a workspace UUID."),
+        options.subject ??
+          fail("Workspace unregister requires a workspace UUID."),
         {
           ...mutationOptions(options),
-          confirmAssignedRemoval:
-            options.confirmAssignmentRemoval === true,
+          confirmAssignedRemoval: options.confirmAssignmentRemoval === true,
         },
       );
       if (args.json) printJson(result);
-      else writeStdoutLine(`unregistered workspace, revision ${result.library.revision}`);
+      else
+        writeStdoutLine(
+          `unregistered workspace, revision ${result.library.revision}`,
+        );
       return;
     }
     case "recovery-status": {
@@ -636,9 +685,7 @@ export const printInstructionSummary = async (
         fail(
           "Instruction recovery export requires --expected-digest from the validated recovery status.",
         );
-      printJson(
-        await exportInstructionLibraryRecoveryBackup(expectedDigest),
-      );
+      printJson(await exportInstructionLibraryRecoveryBackup(expectedDigest));
       return;
     }
     case "recovery-reset": {
@@ -686,14 +733,11 @@ export const printInstructionSummary = async (
       const plan = await createInstructionDeliveryPlanForRuntime(resolution, {
         workspaceRoot: args.workspaceRoot,
         reasoning,
-        acknowledgedCompatible: options.acknowledgeCompatible === true,
       });
       const value = {
         explanation: explainInstructionResolution(resolution, {
           includeBodies: options.includeContent === true,
-          ...(options.path === undefined
-            ? {}
-            : { previewPath: options.path }),
+          ...(options.path === undefined ? {} : { previewPath: options.path }),
         }),
         deliveryPlan: plan,
       };
@@ -704,7 +748,9 @@ export const printInstructionSummary = async (
         writeStdoutLine(`sources: ${resolution.selectedSources.length}`);
         writeStdoutLine(`delivery: ${plan.grade} via ${plan.route}`);
         for (const source of resolution.selectedSources) {
-          writeStdoutLine(`  ${source.precedence}. ${source.id} (${source.digest})`);
+          writeStdoutLine(
+            `  ${source.precedence}. ${source.id} (${source.digest})`,
+          );
         }
       }
       return;
@@ -717,7 +763,9 @@ export const printInstructionSummary = async (
     }
     case "transfer-export": {
       const library = await loadInstructionLibrary();
-      printJson(exportInstructionLibrary(library, options.includeWorkspaces === true));
+      printJson(
+        exportInstructionLibrary(library, options.includeWorkspaces === true),
+      );
       return;
     }
     case "transfer-import": {

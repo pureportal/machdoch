@@ -232,8 +232,7 @@ const findGitRoot = async (
         location: "workspace",
         convention: `${providerId}-project-root`,
         status: "unknown",
-        note:
-          "A linked or non-regular Git marker prevented exact provider project-root detection.",
+        note: "A linked or non-regular Git marker prevented exact provider project-root detection.",
       });
       return { diagnostics };
     } catch (error) {
@@ -250,8 +249,7 @@ const findGitRoot = async (
         location: "workspace",
         convention: `${providerId}-project-root`,
         status: "unknown",
-        note:
-          "The Git marker could not be inspected, so provider project-root discovery is indeterminate.",
+        note: "The Git marker could not be inspected, so provider project-root discovery is indeterminate.",
       });
       return { diagnostics };
     }
@@ -259,13 +257,10 @@ const findGitRoot = async (
   return { diagnostics };
 };
 
-const directoryChain = (
-  root: string,
-  workspaceRoot: string,
-): string[] => {
+const directoryChain = (root: string, workspaceRoot: string): string[] => {
   const ancestors = ancestorDirectories(workspaceRoot);
   const rootIndex = ancestors.findIndex((directory) =>
-    pathsEqualForHost(directory, root)
+    pathsEqualForHost(directory, root),
   );
   return rootIndex < 0
     ? [resolve(workspaceRoot)]
@@ -374,7 +369,7 @@ const codexFallbackCandidates = async (input: {
   const configPaths = [
     ...new Set(
       (input.projectDirectories ?? [input.workspaceRoot]).map((directory) =>
-        join(directory, ".codex", "config.toml")
+        join(directory, ".codex", "config.toml"),
       ),
     ),
   ];
@@ -412,8 +407,7 @@ const codexFallbackCandidates = async (input: {
           : "user",
         convention: "codex-fallback-configuration",
         status: "unknown",
-        note:
-          "Configured Codex fallback instruction filenames could not be inventoried from this documented configuration path.",
+        note: "Configured Codex fallback instruction filenames could not be inventoried from this documented configuration path.",
       });
     }
   }
@@ -464,8 +458,7 @@ const classifyInventoryDiagnostic = (
   surface: "api" | "cli",
 ): NativeInstructionRecord => {
   const active =
-    surface === "cli" &&
-    providerUsesConvention(providerId, record.convention);
+    surface === "cli" && providerUsesConvention(providerId, record.convention);
   if (!active) {
     return {
       ...record,
@@ -483,8 +476,7 @@ const classifyInventoryDiagnostic = (
     return {
       ...record,
       status: "suppressed",
-      note:
-        "The run-scoped Copilot adapter suppresses or isolates this documented native source.",
+      note: "The run-scoped Copilot adapter suppresses or isolates this documented native source.",
     };
   }
   return record;
@@ -496,7 +488,8 @@ const inspectCandidate = async (
   surface: "api" | "cli",
 ): Promise<NativeInstructionRecord | undefined> => {
   const active =
-    surface === "cli" && providerUsesConvention(providerId, candidate.convention);
+    surface === "cli" &&
+    providerUsesConvention(providerId, candidate.convention);
   const suppressed =
     active &&
     (candidate.suppressible === true ||
@@ -542,8 +535,7 @@ const inspectCandidate = async (
         : "Native instructions must be a regular file, not a link.",
     };
   }
-  const maxBytes =
-    candidate.maxBytes ?? MAX_INSTRUCTION_SOURCE_BYTES;
+  const maxBytes = candidate.maxBytes ?? MAX_INSTRUCTION_SOURCE_BYTES;
   if (metadata.size > maxBytes) {
     return {
       path: candidate.path,
@@ -561,8 +553,7 @@ const inspectCandidate = async (
       convention: candidate.convention,
       status: "suppressed",
       byteLength: metadata.size,
-      note:
-        "The run-scoped adapter suppresses this documented native source; its bytes were not read.",
+      note: "The run-scoped adapter suppresses this documented native source; its bytes were not read.",
     };
   }
   try {
@@ -657,8 +648,7 @@ const discoverMarkdownRules = async (
         location,
         convention,
         status: "unreadable",
-        note:
-          "The native rule directory is not a regular directory or is a link.",
+        note: "The native rule directory is not a regular directory or is a link.",
       });
       return;
     }
@@ -678,15 +668,14 @@ const discoverMarkdownRules = async (
         location,
         convention,
         status: "unreadable",
-        note:
-          "The native rule directory changed or could not be read safely.",
+        note: "The native rule directory changed or could not be read safely.",
       });
       return;
     }
     directory = stableDirectory.canonicalPath;
     const entries = stableDirectory.entries;
     entries.sort((left, right) =>
-      compareCanonicalStrings(left.name, right.name)
+      compareCanonicalStrings(left.name, right.name),
     );
     for (const entry of entries) {
       const path = join(directory, entry.name);
@@ -736,6 +725,9 @@ const discoverNestedAgentInstructionFiles = async (
 ): Promise<NativeDiscoveryBatch> => {
   const candidates: NativeCandidate[] = [];
   const diagnostics: NativeInstructionRecord[] = [];
+  const canonicalWorkspaceRoot = await realpath(workspaceRoot).catch(() =>
+    resolve(workspaceRoot),
+  );
   let directories = 0;
   const visit = async (directory: string): Promise<void> => {
     directories += 1;
@@ -754,8 +746,7 @@ const discoverNestedAgentInstructionFiles = async (
         location: "workspace",
         convention: "claude-or-copilot-nested-instructions",
         status: "unreadable",
-        note:
-          "A workspace directory could not be inspected during native instruction inventory.",
+        note: "A workspace directory could not be inspected during native instruction inventory.",
       });
       return;
     }
@@ -765,8 +756,7 @@ const discoverNestedAgentInstructionFiles = async (
         location: "workspace",
         convention: "claude-or-copilot-nested-instructions",
         status: "unreadable",
-        note:
-          "A workspace directory was linked or not a directory during native instruction inventory.",
+        note: "A workspace directory was linked or not a directory during native instruction inventory.",
       });
       return;
     }
@@ -779,15 +769,14 @@ const discoverNestedAgentInstructionFiles = async (
         location: "workspace",
         convention: "claude-or-copilot-nested-instructions",
         status: "unreadable",
-        note:
-          "A workspace directory changed or could not be read safely during native instruction inventory.",
+        note: "A workspace directory changed or could not be read safely during native instruction inventory.",
       });
       return;
     }
     directory = stableDirectory.canonicalPath;
     const entries = stableDirectory.entries;
     entries.sort((left, right) =>
-      compareCanonicalStrings(left.name, right.name)
+      compareCanonicalStrings(left.name, right.name),
     );
     for (const entry of entries) {
       const path = join(directory, entry.name);
@@ -803,10 +792,10 @@ const discoverNestedAgentInstructionFiles = async (
         continue;
       }
       const upperName = entry.name.toLocaleUpperCase("en-US");
-      const workspaceRelative = relative(workspaceRoot, path).replaceAll(
-        "\\",
-        "/",
-      );
+      const workspaceRelative = relative(
+        canonicalWorkspaceRoot,
+        path,
+      ).replaceAll("\\", "/");
       if (upperName === "CLAUDE.MD" || upperName === "CLAUDE.LOCAL.MD") {
         candidates.push({
           path,
@@ -820,9 +809,7 @@ const discoverNestedAgentInstructionFiles = async (
           convention: "gemini-context-file",
         });
       } else if (
-        /(?:^|\/)\.github\/copilot-instructions\.md$/iu.test(
-          workspaceRelative,
-        )
+        /(?:^|\/)\.github\/copilot-instructions\.md$/iu.test(workspaceRelative)
       ) {
         candidates.push({
           path,
@@ -996,22 +983,12 @@ const discoverProviderAncestorInstructions = async (input: {
     const repositoryRoot = gitChain[0] ?? input.workspaceRoot;
     candidates.push(
       {
-        path: join(
-          repositoryRoot,
-          ".github",
-          "copilot",
-          "settings.json",
-        ),
+        path: join(repositoryRoot, ".github", "copilot", "settings.json"),
         location: "workspace",
         convention: "copilot-repository-settings",
       },
       {
-        path: join(
-          repositoryRoot,
-          ".github",
-          "copilot",
-          "settings.local.json",
-        ),
+        path: join(repositoryRoot, ".github", "copilot", "settings.local.json"),
         location: "workspace",
         convention: "copilot-repository-settings",
       },
@@ -1159,13 +1136,13 @@ const mergeNativeRecords = (
     compareCanonicalStrings(
       `${left.location}:${left.path}`,
       `${right.location}:${right.path}`,
-    )
+    ),
   );
 };
 
 const createPublicNativePath = (
   record: NativeInstructionRecord,
-  workspaceRoot: string,
+  workspaceRoots: readonly string[],
 ): string => {
   if (record.location === "user") {
     return [
@@ -1175,15 +1152,17 @@ const createPublicNativePath = (
       basename(record.path),
     ].join("/");
   }
-  const workspaceRelative = relative(
-    resolve(workspaceRoot),
-    resolve(record.path),
-  );
-  if (
-    workspaceRelative === "" ||
-    (!workspaceRelative.startsWith("..") && !isAbsolute(workspaceRelative))
-  ) {
-    return (workspaceRelative || ".").replaceAll("\\", "/");
+  for (const workspaceRoot of workspaceRoots) {
+    const workspaceRelative = relative(
+      resolve(workspaceRoot),
+      resolve(record.path),
+    );
+    if (
+      workspaceRelative === "" ||
+      (!workspaceRelative.startsWith("..") && !isAbsolute(workspaceRelative))
+    ) {
+      return (workspaceRelative || ".").replaceAll("\\", "/");
+    }
   }
   return [
     "workspace-external:",
@@ -1198,6 +1177,9 @@ export const inventoryNativeInstructions = async (input: {
   surface: "api" | "cli";
   locals: readonly LocalInstructionRecord[];
 }): Promise<NativeInstructionRecord[]> => {
+  const canonicalWorkspaceRoot = await realpath(input.workspaceRoot).catch(() =>
+    resolve(input.workspaceRoot),
+  );
   const gitRootDiscovery =
     input.surface === "cli" &&
     (input.providerId === "codex-cli" ||
@@ -1229,8 +1211,7 @@ export const inventoryNativeInstructions = async (input: {
   );
   const nestedAgentInstructions =
     input.surface === "cli" &&
-    (input.providerId === "claude-cli" ||
-      input.providerId === "copilot-cli")
+    (input.providerId === "claude-cli" || input.providerId === "copilot-cli")
       ? await discoverNestedAgentInstructionFiles(input.workspaceRoot)
       : { candidates: [], diagnostics: [] };
   const providerAncestorInstructions =
@@ -1270,8 +1251,7 @@ export const inventoryNativeInstructions = async (input: {
     input.surface === "cli" && input.providerId === "claude-cli"
       ? await discoverMarkdownRules(
           join(
-            process.env.CLAUDE_CONFIG_DIR?.trim() ||
-              join(homedir(), ".claude"),
+            process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude"),
             "rules",
           ),
           "claude-user-rules",
@@ -1283,8 +1263,7 @@ export const inventoryNativeInstructions = async (input: {
     input.surface === "cli" && input.providerId === "claude-cli"
       ? await discoverMarkdownRules(
           join(
-            process.env.CLAUDE_CONFIG_DIR?.trim() ||
-              join(homedir(), ".claude"),
+            process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude"),
             "agents",
           ),
           "claude-custom-agents",
@@ -1292,29 +1271,30 @@ export const inventoryNativeInstructions = async (input: {
           "user",
         )
       : { candidates: [], diagnostics: [] };
-  const canonicalLocals: NativeInstructionRecord[] = input.locals.map((local) => ({
-    path: join(input.workspaceRoot, local.relativePath),
-    location: "workspace",
-    convention: "agents-md",
-    status: "canonical",
-    digest: local.digest,
-    byteLength: local.byteLength,
-    note: "Loaded by Machdoch as a canonical project-local instruction.",
-  }));
+  const canonicalLocals: NativeInstructionRecord[] = input.locals.map(
+    (local) => ({
+      path: join(input.workspaceRoot, local.relativePath),
+      location: "workspace",
+      convention: "agents-md",
+      status: "canonical",
+      digest: local.digest,
+      byteLength: local.byteLength,
+      note: "Loaded by Machdoch as a canonical project-local instruction.",
+    }),
+  );
   const canonicalNativeDuplicates: NativeInstructionRecord[] =
     input.surface === "cli" && input.providerId === "codex-cli"
       ? input.locals
           .filter((local) => local.relativePath === "AGENTS.md")
           .map((local) => ({
-          path: join(input.workspaceRoot, local.relativePath),
-          location: "workspace",
-          convention: "codex-project-agents",
-          status: "native-extra",
-          digest: local.digest,
-          byteLength: local.byteLength,
-          note:
-            "This canonical AGENTS.md is also discoverable by Codex; suppression or exact partitioning is not proven, so duplicate native loading remains possible.",
-        }))
+            path: join(input.workspaceRoot, local.relativePath),
+            location: "workspace",
+            convention: "codex-project-agents",
+            status: "native-extra",
+            digest: local.digest,
+            byteLength: local.byteLength,
+            note: "This canonical AGENTS.md is also discoverable by Codex; suppression or exact partitioning is not proven, so duplicate native loading remains possible.",
+          }))
       : input.surface === "cli" && input.providerId === "copilot-cli"
         ? input.locals.map((local) => ({
             path: join(input.workspaceRoot, local.relativePath),
@@ -1323,8 +1303,7 @@ export const inventoryNativeInstructions = async (input: {
             status: "suppressed",
             digest: local.digest,
             byteLength: local.byteLength,
-            note:
-              "This canonical AGENTS.md is also recognized by Copilot CLI, and --no-custom-instructions suppresses that native copy.",
+            note: "This canonical AGENTS.md is also recognized by Copilot CLI, and --no-custom-instructions suppresses that native copy.",
           }))
         : [];
   const candidates = [
@@ -1350,7 +1329,7 @@ export const inventoryNativeInstructions = async (input: {
   const inspected = (
     await Promise.all(
       candidates.map((candidate) =>
-        inspectCandidate(candidate, input.providerId, input.surface)
+        inspectCandidate(candidate, input.providerId, input.surface),
       ),
     )
   ).filter((record): record is NativeInstructionRecord => record !== undefined);
@@ -1370,11 +1349,14 @@ export const inventoryNativeInstructions = async (input: {
       ...claudeUserRules.diagnostics,
       ...claudeUserAgents.diagnostics,
     ].map((record) =>
-      classifyInventoryDiagnostic(record, input.providerId, input.surface)
+      classifyInventoryDiagnostic(record, input.providerId, input.surface),
     ),
     ...inspected,
   ]).map((record) => ({
     ...record,
-    path: createPublicNativePath(record, input.workspaceRoot),
+    path: createPublicNativePath(record, [
+      input.workspaceRoot,
+      canonicalWorkspaceRoot,
+    ]),
   }));
 };

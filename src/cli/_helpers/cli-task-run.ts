@@ -165,7 +165,9 @@ export const createImageInputsFromPaths = async (
   }
 
   if (!modelSupportsImageInput(config.provider, config.model)) {
-    fail(createImageInputUnsupportedModelMessage(config.provider, config.model));
+    fail(
+      createImageInputUnsupportedModelMessage(config.provider, config.model),
+    );
   }
 
   return await Promise.all(
@@ -339,24 +341,20 @@ export const printTaskPreview = async (
     createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
   );
   const showActionFeedback =
-    !args.json && (options?.showActionFeedback === true || args.command === "run");
-  const actionFeedbackReporter =
-    showActionFeedback
-      ? createActionFeedbackProgressReporter(
-          options?.showActionFeedback
-            ? writeStdoutLine
-            : (line = ""): void => {
-                writeStderrLine(line);
-              },
-        )
-      : undefined;
+    !args.json &&
+    (options?.showActionFeedback === true || args.command === "run");
+  const actionFeedbackReporter = showActionFeedback
+    ? createActionFeedbackProgressReporter(
+        options?.showActionFeedback
+          ? writeStdoutLine
+          : (line = ""): void => {
+              writeStderrLine(line);
+            },
+      )
+    : undefined;
   const structuredActionOutputReporter =
     args.json && args.verbose
-      ? createStructuredActionOutputReporter(
-          task,
-          config.mode,
-          writeStderrLine,
-        )
+      ? createStructuredActionOutputReporter(task, config.mode, writeStderrLine)
       : undefined;
   const onStateChange = args.verbose
     ? createVerboseProgressReporter(writeStderrLine, {
@@ -373,18 +371,9 @@ export const printTaskPreview = async (
         ? { onActionOutput: actionFeedbackReporter.reportOutput }
         : structuredActionOutputReporter
           ? { onActionOutput: structuredActionOutputReporter }
-        : {}),
+          : {}),
       ...(conversationContext ? { conversationContext } : {}),
       ...(imageInputs.length > 0 ? { imageInputs } : {}),
-      ...(args.acknowledgeCompatibleInstructionDelivery === true
-        ? { acknowledgeCompatibleInstructionDelivery: true }
-        : {}),
-      ...(args.acknowledgedInstructionDeliveryPlanId === undefined
-        ? {}
-        : {
-            acknowledgedInstructionDeliveryPlanId:
-              args.acknowledgedInstructionDeliveryPlanId,
-          }),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {
@@ -438,10 +427,7 @@ const printInteractiveChatHelp = (): void => {
 
 export const PASTE_TERMINATOR = "/end";
 
-const VALID_PASTE_MODES: ReadonlySet<RunMode> = new Set([
-  "ask",
-  "machdoch",
-]);
+const VALID_PASTE_MODES: ReadonlySet<RunMode> = new Set(["ask", "machdoch"]);
 
 export interface ParsedInteractivePasteCommand {
   recognized: boolean;
@@ -452,7 +438,10 @@ export interface ParsedInteractivePasteCommand {
 interface InteractiveQuestionHandle {
   question(query: string): Promise<string>;
   on?(event: "line" | "close", listener: (...args: unknown[]) => void): unknown;
-  off?(event: "line" | "close", listener: (...args: unknown[]) => void): unknown;
+  off?(
+    event: "line" | "close",
+    listener: (...args: unknown[]) => void,
+  ): unknown;
   removeListener?(
     event: "line" | "close",
     listener: (...args: unknown[]) => void,

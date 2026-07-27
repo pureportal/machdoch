@@ -1,5 +1,19 @@
-import type { ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
-import type { InstructionCliOptions, McpCliOptions, ParsedCliArgs, ProviderSyncCliOptions, RalphCliOptions, SchedulerCliOptions, TaskInterviewCliOptions } from "./cli-args-types.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+  RuntimeAgentLimitOverrides,
+  RunMode,
+  UserApiProvider,
+} from "../../core/runtime-contract.generated.js";
+import type {
+  InstructionCliOptions,
+  McpCliOptions,
+  ParsedCliArgs,
+  ProviderSyncCliOptions,
+  RalphCliOptions,
+  SchedulerCliOptions,
+  TaskInterviewCliOptions,
+} from "./cli-args-types.js";
 
 export const createParsedArgs = (
   base: Omit<
@@ -27,8 +41,6 @@ export const createParsedArgs = (
     | "conversationContextFile"
     | "contextPaths"
     | "imagePaths"
-    | "acknowledgeCompatibleInstructionDelivery"
-    | "acknowledgedInstructionDeliveryPlanId"
   >,
   options?: {
     mode?: RunMode;
@@ -47,8 +59,6 @@ export const createParsedArgs = (
     conversationContextFile?: string;
     contextPaths?: string[];
     imagePaths?: string[];
-    acknowledgeCompatibleInstructionDelivery?: boolean;
-    acknowledgedInstructionDeliveryPlanId?: string;
     interview?: TaskInterviewCliOptions;
     ralph?: RalphCliOptions;
     scheduler?: SchedulerCliOptions;
@@ -90,15 +100,6 @@ export const createParsedArgs = (
     ...(options?.imagePaths && options.imagePaths.length > 0
       ? { imagePaths: options.imagePaths }
       : {}),
-    ...(options?.acknowledgeCompatibleInstructionDelivery === true
-      ? { acknowledgeCompatibleInstructionDelivery: true }
-      : {}),
-    ...(options?.acknowledgedInstructionDeliveryPlanId
-      ? {
-          acknowledgedInstructionDeliveryPlanId:
-            options.acknowledgedInstructionDeliveryPlanId,
-        }
-      : {}),
     ...(options?.task ? { task: options.task } : {}),
     ...(options?.interview ? { interview: options.interview } : {}),
     ...(options?.ralph ? { ralph: options.ralph } : {}),
@@ -124,8 +125,6 @@ export const createSharedParsedOptions = (options: {
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
-  acknowledgeCompatibleInstructionDelivery?: boolean;
-  acknowledgedInstructionDeliveryPlanId?: string;
 }): Omit<ParsedCliArgs, "command" | "task"> => {
   return {
     json: options.json,
@@ -153,15 +152,6 @@ export const createSharedParsedOptions = (options: {
       : {}),
     ...(options.imagePaths && options.imagePaths.length > 0
       ? { imagePaths: options.imagePaths }
-      : {}),
-    ...(options.acknowledgeCompatibleInstructionDelivery === true
-      ? { acknowledgeCompatibleInstructionDelivery: true }
-      : {}),
-    ...(options.acknowledgedInstructionDeliveryPlanId
-      ? {
-          acknowledgedInstructionDeliveryPlanId:
-            options.acknowledgedInstructionDeliveryPlanId,
-        }
       : {}),
   };
 };

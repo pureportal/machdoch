@@ -37,24 +37,22 @@ const requiresWindowsCommandShell = (executable: string): boolean =>
   process.platform === "win32" &&
   [".cmd", ".bat"].includes(extname(executable).toLocaleLowerCase("en-US"));
 
-const REQUIRED_DELIVERY_FEATURES: Record<
-  AgentCliProvider,
-  readonly string[]
-> = {
-  "codex-cli": ["--config"],
-  "claude-cli": [
-    "--append-system-prompt-file",
-    "--mcp-config",
-    "--strict-mcp-config",
-  ],
-  "copilot-cli": [
-    "--no-auto-update",
-    "--no-custom-instructions",
-    "--additional-mcp-config",
-    "--disable-builtin-mcps",
-    "--disable-mcp-server",
-  ],
-};
+const REQUIRED_DELIVERY_FEATURES: Record<AgentCliProvider, readonly string[]> =
+  {
+    "codex-cli": ["--config"],
+    "claude-cli": [
+      "--append-system-prompt-file",
+      "--mcp-config",
+      "--strict-mcp-config",
+    ],
+    "copilot-cli": [
+      "--no-auto-update",
+      "--no-custom-instructions",
+      "--additional-mcp-config",
+      "--disable-builtin-mcps",
+      "--disable-mcp-server",
+    ],
+  };
 
 const withProviderLimit = (
   capability: InstructionCapabilityDescriptor,
@@ -149,9 +147,8 @@ export const createCliInstructionCapabilityFromProbe = (
       resolution.renderedEnvelope,
       resolution.mcpInitializationInstructions,
     );
-    const developerOverride = createCodexDeveloperInstructionOverride(
-      transportPayload,
-    );
+    const developerOverride =
+      createCodexDeveloperInstructionOverride(transportPayload);
     if (developerOverride === undefined) {
       return {
         ...base,
@@ -207,8 +204,7 @@ export const createCliInstructionCapabilityFromProbe = (
     features.has("--append-subagent-system-prompt") &&
     !requiresWindowsCommandShell(probe.executable) &&
     !transportPayload.includes("\0") &&
-    transportPayload.length <=
-      CLAUDE_SUBAGENT_ENVELOPE_MAX_CHARS;
+    transportPayload.length <= CLAUDE_SUBAGENT_ENVELOPE_MAX_CHARS;
   return {
     ...base,
     nativeDiscovery: useBareMode ? "suppressed" : "unknown",
@@ -236,8 +232,6 @@ export const createInstructionDeliveryPlanForRuntime = async (
   resolution: FrozenInstructionSet,
   input: {
     workspaceRoot: string;
-    unattended?: boolean;
-    acknowledgedCompatible?: boolean;
     reasoning?: string;
   },
 ): Promise<InstructionDeliveryPlan> => {
@@ -265,12 +259,6 @@ export const createInstructionDeliveryPlanForRuntime = async (
         : baseCapability;
     return createInstructionDeliveryPlan(resolution, {
       capability: withProviderLimit(capability, resolution),
-      ...(input.unattended === undefined
-        ? {}
-        : { unattended: input.unattended }),
-      ...(input.acknowledgedCompatible === undefined
-        ? {}
-        : { acknowledgedCompatible: input.acknowledgedCompatible }),
     });
   }
 
@@ -286,18 +274,9 @@ export const createInstructionDeliveryPlanForRuntime = async (
           features: [],
           warnings: [binary.reason ?? "CLI executable is unavailable."],
         };
-  const capability = createCliInstructionCapabilityFromProbe(
-    resolution,
-    probe,
-  );
+  const capability = createCliInstructionCapabilityFromProbe(resolution, probe);
   return createInstructionDeliveryPlan(resolution, {
     capability,
-    ...(input.unattended === undefined
-      ? {}
-      : { unattended: input.unattended }),
-    ...(input.acknowledgedCompatible === undefined
-      ? {}
-      : { acknowledgedCompatible: input.acknowledgedCompatible }),
   });
 };
 

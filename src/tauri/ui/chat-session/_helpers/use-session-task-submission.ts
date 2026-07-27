@@ -1,8 +1,4 @@
-import {
-  useCallback,
-  useRef,
-  type MutableRefObject,
-} from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
@@ -24,7 +20,6 @@ import type {
   TaskExecutionResult,
 } from "../../../../core/types.js";
 import {
-  consumeCompatibleInstructionPlanAcknowledgement,
   loadUserMemorySettings,
   runDesktopTask,
   type RuntimeSnapshot,
@@ -85,7 +80,10 @@ const TERMINAL_PROGRESS_STATE_BY_STATUS = {
   blocked: "blocked",
   cancelled: "cancelled",
   unsupported: "unsupported",
-} satisfies Record<TaskExecutionResult["status"], TaskExecutionProgress["state"]>;
+} satisfies Record<
+  TaskExecutionResult["status"],
+  TaskExecutionProgress["state"]
+>;
 const TERMINAL_PROGRESS_FALLBACK_DELAY_MS = 1_500;
 const TASK_ALREADY_ACTIVE_ERROR_PREFIX = "MACHDOCH_TASK_ALREADY_ACTIVE:";
 const SESSION_OPERATION_ALREADY_ACTIVE_ERROR_PREFIX =
@@ -389,9 +387,10 @@ export const useSessionTaskSubmission = (options: {
       source?: ChatSessionMessage["source"],
       userAnchor?: ChatSessionMessage,
     ): string => {
-      const messageId = source?.kind === "execution"
-        ? `${taskId}-execution`
-        : `${taskId}-agent`;
+      const messageId =
+        source?.kind === "execution"
+          ? `${taskId}-execution`
+          : `${taskId}-agent`;
       const createdAt = Date.now();
 
       latestOptionsRef.current.state.updateSessionById(sessionId, (session) => {
@@ -410,12 +409,16 @@ export const useSessionTaskSubmission = (options: {
         const existingMessageIndex = session.messages.findIndex(
           (message) => message.id === messageId,
         );
-        const nextMessages = [...session.messages, ...restoredUserAnchorMessages];
+        const nextMessages = [
+          ...session.messages,
+          ...restoredUserAnchorMessages,
+        ];
 
         if (existingMessageIndex >= 0) {
           nextMessages[existingMessageIndex] = {
             ...nextMessage,
-            createdAt: session.messages[existingMessageIndex]?.createdAt ?? createdAt,
+            createdAt:
+              session.messages[existingMessageIndex]?.createdAt ?? createdAt,
           };
         } else {
           nextMessages.push(nextMessage);
@@ -672,7 +675,8 @@ export const useSessionTaskSubmission = (options: {
           normalizedDetail,
         );
         const isCancellation =
-          isTimeout || /\b(?:cancelled|canceled|cancellation)\b/iu.test(normalizedDetail);
+          isTimeout ||
+          /\b(?:cancelled|canceled|cancellation)\b/iu.test(normalizedDetail);
 
         if (!isCancellation) {
           return null;
@@ -707,7 +711,9 @@ export const useSessionTaskSubmission = (options: {
         };
       };
 
-      const appendTerminalExecution = (execution: TaskExecutionResult): void => {
+      const appendTerminalExecution = (
+        execution: TaskExecutionResult,
+      ): void => {
         cleanupTaskTracking();
 
         if (currentOptions.ignoredDesktopTaskIdsRef.current.has(taskId)) {
@@ -787,8 +793,10 @@ export const useSessionTaskSubmission = (options: {
                     ] ?? [],
                 );
 
-              for (const [candidateIndex, candidate] of
-                promptHistory.entries()) {
+              for (const [
+                candidateIndex,
+                candidate,
+              ] of promptHistory.entries()) {
                 if (
                   candidate !== promptHistoryContent ||
                   !areContextAttachmentsEqual(
@@ -844,16 +852,15 @@ export const useSessionTaskSubmission = (options: {
             };
           });
 
-          const queuedPrompt =
-            createQueuedMessagePromptAfterOperationConflict(
-              {
-                task: normalizedTask,
-                visibleMessageContent,
-                promptHistoryContent,
-                ...(promptEnhancement ? { promptEnhancement } : {}),
-              },
-              submitOptions.promptEnhancementRequestOnConflict,
-            );
+          const queuedPrompt = createQueuedMessagePromptAfterOperationConflict(
+            {
+              task: normalizedTask,
+              visibleMessageContent,
+              promptHistoryContent,
+              ...(promptEnhancement ? { promptEnhancement } : {}),
+            },
+            submitOptions.promptEnhancementRequestOnConflict,
+          );
           const queued = currentOptions.onSessionOperationConflict?.({
             sessionId,
             activeTaskId: activeSessionTaskId,
@@ -986,10 +993,10 @@ export const useSessionTaskSubmission = (options: {
           const unarchivedSession = removeSessionArchiveFlag(session);
           const sessionWithoutArchive =
             submitOptions.conversationCutoffMessageId
-              ? createConversationBranch(
+              ? (createConversationBranch(
                   unarchivedSession,
                   submitOptions.conversationCutoffMessageId,
-                ) ?? unarchivedSession
+                ) ?? unarchivedSession)
               : unarchivedSession;
           const shouldClearComposer =
             submitOptions.clearDraft &&
@@ -1010,9 +1017,8 @@ export const useSessionTaskSubmission = (options: {
             appendedPromptHistoryBaseline = {
               promptHistory: [...sessionWithoutArchive.promptHistory],
               promptContextHistory:
-                sessionWithoutArchive.promptContextHistory.map(
-                  (attachments) =>
-                    attachments.map((attachment) => ({ ...attachment })),
+                sessionWithoutArchive.promptContextHistory.map((attachments) =>
+                  attachments.map((attachment) => ({ ...attachment })),
                 ),
             };
           }
@@ -1054,7 +1060,9 @@ export const useSessionTaskSubmission = (options: {
             promptHistoryContent,
             contextAttachments,
           );
-          if (nextPromptHistory.promptHistory !== sessionSnapshot.promptHistory) {
+          if (
+            nextPromptHistory.promptHistory !== sessionSnapshot.promptHistory
+          ) {
             appendedPromptHistoryBaseline = {
               promptHistory: [...sessionSnapshot.promptHistory],
               promptContextHistory: sessionSnapshot.promptContextHistory.map(
@@ -1085,14 +1093,18 @@ export const useSessionTaskSubmission = (options: {
 
           return {
             ...prev,
-            ...(submitOptions.activateSession ? { activeSessionId: sessionId } : {}),
+            ...(submitOptions.activateSession
+              ? { activeSessionId: sessionId }
+              : {}),
             sessions: [insertedSession, ...prev.sessions],
           };
         }
 
         return {
           ...prev,
-          ...(submitOptions.activateSession ? { activeSessionId: sessionId } : {}),
+          ...(submitOptions.activateSession
+            ? { activeSessionId: sessionId }
+            : {}),
           sessions: nextSessions,
           ...(submitOptions.conversationCutoffMessageId
             ? {
@@ -1119,8 +1131,6 @@ export const useSessionTaskSubmission = (options: {
 
       currentOptions.activeDesktopTasksRef.current.set(taskId, sessionId);
 
-      const acknowledgedInstructionDeliveryPlanId =
-        consumeCompatibleInstructionPlanAcknowledgement(sessionWorkspace);
       const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
         conversationContext: taskConversationContext,
         ...(imagePaths.length > 0 ? { imagePaths } : {}),
@@ -1131,9 +1141,6 @@ export const useSessionTaskSubmission = (options: {
           ? { reasoning: sessionSnapshotReasoning }
           : {}),
         ...(sessionMode ? { mode: sessionMode } : {}),
-        ...(acknowledgedInstructionDeliveryPlanId === undefined
-          ? {}
-          : { acknowledgedInstructionDeliveryPlanId }),
         sessionId,
         taskId,
       });
@@ -1206,33 +1213,34 @@ export const useSessionTaskSubmission = (options: {
             )
               ? session.messages
               : [...session.messages, userMessage];
-            const messagesWithoutRecoveredCrash =
-              messagesWithUserAnchor.filter(
-                (message) =>
-                  (message.taskId ?? message.id) !== taskId ||
-                  !isRecoveredTaskCrashMessage(message),
-              );
-            const nextMessages = messagesWithoutRecoveredCrash.map((message) => {
-              if (
-                message.taskId !== taskId ||
-                message.role !== "agent" ||
-                message.source?.kind !== "thinking"
-              ) {
-                return message;
-              }
+            const messagesWithoutRecoveredCrash = messagesWithUserAnchor.filter(
+              (message) =>
+                (message.taskId ?? message.id) !== taskId ||
+                !isRecoveredTaskCrashMessage(message),
+            );
+            const nextMessages = messagesWithoutRecoveredCrash.map(
+              (message) => {
+                if (
+                  message.taskId !== taskId ||
+                  message.role !== "agent" ||
+                  message.source?.kind !== "thinking"
+                ) {
+                  return message;
+                }
 
-              return {
-                ...message,
-                source: {
-                  kind: "thinking" as const,
-                  thinking: appendThinkingProgress(
-                    message.source.thinking,
-                    terminalProgress,
-                    timestamp,
-                  ),
-                },
-              };
-            });
+                return {
+                  ...message,
+                  source: {
+                    kind: "thinking" as const,
+                    thinking: appendThinkingProgress(
+                      message.source.thinking,
+                      terminalProgress,
+                      timestamp,
+                    ),
+                  },
+                };
+              },
+            );
 
             const executionMessageId = `${taskId}-execution`;
             const existingExecutionMessage = session.messages.find(
@@ -1336,9 +1344,8 @@ export const useSessionTaskSubmission = (options: {
         return false;
       }
 
-      const visibleMessageContent = getRenderedMessageContent(
-        sourceUserMessage,
-      ).trim();
+      const visibleMessageContent =
+        getRenderedMessageContent(sourceUserMessage).trim();
       const task =
         sourceUserMessage.intent && message.source?.kind === "execution"
           ? message.source.execution.task.trim()
@@ -1378,7 +1385,10 @@ export const useSessionTaskSubmission = (options: {
     (message: ChatSessionMessage): void => {
       if (isRecoveredTaskCrashMessage(message)) {
         const sourceSession = getMessageSourceSession(message);
-        const recoveredTask = getRecoveredTaskUserPrompt(sourceSession, message);
+        const recoveredTask = getRecoveredTaskUserPrompt(
+          sourceSession,
+          message,
+        );
 
         if (!recoveredTask) {
           return;
@@ -1429,7 +1439,10 @@ export const useSessionTaskSubmission = (options: {
     (message: ChatSessionMessage): void => {
       if (isRecoveredTaskCrashMessage(message)) {
         const sourceSession = getMessageSourceSession(message);
-        const recoveredTask = getRecoveredTaskUserPrompt(sourceSession, message);
+        const recoveredTask = getRecoveredTaskUserPrompt(
+          sourceSession,
+          message,
+        );
 
         if (!recoveredTask) {
           return;

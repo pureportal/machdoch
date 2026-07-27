@@ -270,7 +270,6 @@ export interface InstructionCliOptions {
   includeWorkspaces?: boolean;
   decisionsFile?: string;
   confirmAssignmentRemoval?: boolean;
-  acknowledgeCompatible?: boolean;
   ralphFlow?: string;
   ralphFlowScope?: RalphCliScope;
   prompt?: string;
@@ -303,8 +302,6 @@ export interface ParsedCliArgs {
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
-  acknowledgeCompatibleInstructionDelivery?: boolean;
-  acknowledgedInstructionDeliveryPlanId?: string;
   json: boolean;
   verbose: boolean;
   workspaceRoot: string;

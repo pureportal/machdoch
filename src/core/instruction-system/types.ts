@@ -171,8 +171,8 @@ export interface InstructionResolutionInput {
   model?: string;
   flow?: InstructionFlowInput;
   /**
-   * Unattended execution cannot accept compatible/degraded delivery.
-   * Interactive callers may explicitly acknowledge that plan later.
+    * Retained for serialized-call compatibility. Delivery diagnostics do not
+    * require acknowledgement and never block execution.
    */
   unattended?: boolean;
 }

@@ -45,9 +45,7 @@ interface PendingSource extends ResolvedInstructionSource {
   sequence: number;
 }
 
-const finalizeSource = (
-  source: PendingSource,
-): ResolvedInstructionSource => {
+const finalizeSource = (source: PendingSource): ResolvedInstructionSource => {
   const finalized = { ...source };
   Reflect.deleteProperty(finalized, "sequence");
   return finalized;
@@ -152,7 +150,9 @@ const createProfileSource = (input: {
   sequence: input.sequence,
   trusted: true,
   profileId: input.profileId,
-  ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+  ...(input.workspaceId === undefined
+    ? {}
+    : { workspaceId: input.workspaceId }),
   status: input.status ?? "selected",
   ...(input.reason === undefined ? {} : { reason: input.reason }),
   ...(input.inheritedFrom === undefined
@@ -160,7 +160,9 @@ const createProfileSource = (input: {
     : { inheritedFrom: input.inheritedFrom }),
   ...(input.otherAssignments === undefined
     ? {}
-    : { otherAssignments: input.otherAssignments.map((entry) => ({ ...entry })) }),
+    : {
+        otherAssignments: input.otherAssignments.map((entry) => ({ ...entry })),
+      }),
 });
 
 const createBodyGroups = (
@@ -293,7 +295,11 @@ const structuralDiagnostics = (
   for (let index = 0; index < selected.length; index += 1) {
     const left = selected[index];
     if (!left) continue;
-    for (let otherIndex = index + 1; otherIndex < selected.length; otherIndex += 1) {
+    for (
+      let otherIndex = index + 1;
+      otherIndex < selected.length;
+      otherIndex += 1
+    ) {
       const right = selected[otherIndex];
       if (
         !right ||
@@ -512,11 +518,13 @@ export const resolveInstructionSet = async (
   options: InstructionResolveOptions = {},
 ): Promise<FrozenInstructionSet> => {
   const now = options.now ?? new Date();
-  const workspaceRoot = await canonicalizeExistingWorkspaceRoot(input.workspaceRoot);
+  const workspaceRoot = await canonicalizeExistingWorkspaceRoot(
+    input.workspaceRoot,
+  );
   const library = await loadInstructionLibrary(options.libraryPath);
 
   const workspace = library.workspaces.find((candidate) =>
-    pathsEqualForHost(candidate.root, workspaceRoot)
+    pathsEqualForHost(candidate.root, workspaceRoot),
   );
   const scopeDiagnostics = workspace
     ? await validateConfiguredScopes(
@@ -524,22 +532,40 @@ export const resolveInstructionSet = async (
         workspace.scopes.map((scope) => scope.path),
       )
     : [];
-  const localDiscovery = await discoverLocalInstructions(workspaceRoot);
+  const localDiscovery = await discoverLocalInstructions(workspaceRoot).catch(
+    (error: unknown) => ({
+      files: [],
+      visitedDirectories: 0,
+      diagnostics: [
+        {
+          code:
+            error instanceof InstructionSystemError
+              ? error.code
+              : "LOCAL_INSTRUCTION_DISCOVERY_SKIPPED",
+          severity: "warning" as const,
+          message: `Project instruction discovery was skipped without blocking execution: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+    }),
+  );
   const [nativeInventory, mcpInitializationInstructions] = await Promise.all([
     inventoryNativeInstructions({
       workspaceRoot,
       providerId: input.providerId,
       surface: input.surface,
       locals: localDiscovery.files,
-    }),
-    loadMcpInitializationInstructionSnapshot(workspaceRoot),
+    }).catch(() => []),
+    loadMcpInitializationInstructionSnapshot(workspaceRoot).catch(() => []),
   ]);
   const profileById = new Map(
     library.profiles.map((profile) => [profile.id, profile]),
   );
   const selected: PendingSource[] = [];
   const assignmentEntries: PendingSource[] = [];
-  const selectedProfileScopes = new Map<string, Array<{ path: string; id: string }>>();
+  const selectedProfileScopes = new Map<
+    string,
+    Array<{ path: string; id: string }>
+  >();
   let sequence = 0;
   let precedence = 0;
 
@@ -569,7 +595,7 @@ export const resolveInstructionSet = async (
 
   const workspaceScopes = workspace
     ? [...workspace.scopes].sort((left, right) =>
-        compareScope(left.path, right.path)
+        compareScope(left.path, right.path),
       )
     : [];
   const allScopePaths = new Set<string>([
@@ -623,7 +649,8 @@ export const resolveInstructionSet = async (
     }
 
     for (const local of localDiscovery.files.filter(
-      (candidate) => hostPathKey(candidate.scopePath) === hostPathKey(scopePath),
+      (candidate) =>
+        hostPathKey(candidate.scopePath) === hostPathKey(scopePath),
     )) {
       selected.push({
         id: local.id,
@@ -690,22 +717,27 @@ export const resolveInstructionSet = async (
               scopePath: scope.path,
             })),
         ),
-      })
+      }),
     );
 
-  selected.sort((left, right) => left.precedence - right.precedence || left.sequence - right.sequence);
+  selected.sort(
+    (left, right) =>
+      left.precedence - right.precedence || left.sequence - right.sequence,
+  );
   const bodyGroups = createBodyGroups(selected);
   const manifest = createCanonicalManifest(selected, bodyGroups, workspace?.id);
   const digest = canonicalDigest(manifest);
   const boundary = createEnvelopeBoundary(digest, bodyGroups);
-  const renderedEnvelope = renderInstructionEnvelope(digest, boundary, bodyGroups);
+  const renderedEnvelope = renderInstructionEnvelope(
+    digest,
+    boundary,
+    bodyGroups,
+  );
   const budget = createBudgetReport(
     selected,
     bodyGroups,
     renderedEnvelope,
-    mcpInitializationInstructionSupplementBytes(
-      mcpInitializationInstructions,
-    ),
+    mcpInitializationInstructionSupplementBytes(mcpInitializationInstructions),
     input,
   );
   if (budget.blockingErrors.length > 0) {
@@ -765,12 +797,12 @@ export const resolveInstructionSet = async (
           record.status !== "inactive" && record.status !== "canonical",
       )
       .map((record) => ({
-      location: record.location,
-      convention: record.convention,
-      recognizingConventions: record.recognizingConventions,
-      status: record.status,
-      digest: record.digest,
-      byteLength: record.byteLength,
+        location: record.location,
+        convention: record.convention,
+        recognizingConventions: record.recognizingConventions,
+        status: record.status,
+        digest: record.digest,
+        byteLength: record.byteLength,
       })),
     mcpInitializationInstructions: mcpInitializationInstructions.map(
       ({ serverIds, digest, byteLength }) => ({
@@ -817,10 +849,9 @@ export const resolveInstructionSet = async (
     ...(workspace === undefined ? {} : { workspaceId: workspace.id }),
     libraryRevision: library.revision,
     selectedSources: selected.map(finalizeSource),
-    allProfiles: [
-      ...assignmentEntries,
-      ...unassignedProfileEntries,
-    ].map(finalizeSource),
+    allProfiles: [...assignmentEntries, ...unassignedProfileEntries].map(
+      finalizeSource,
+    ),
     bodyGroups,
     nativeInventory,
     mcpInitializationInstructions,
@@ -848,92 +879,95 @@ export const explainInstructionResolution = (
           .filter((source) => isScopeAncestor(source.scopePath, previewPath))
           .map((source) => source.id);
   return {
-  schemaVersion: resolution.schemaVersion,
-  resolutionId: resolution.resolutionId,
-  canonicalDigest: resolution.canonicalDigest,
-  environmentDigest: resolution.environmentDigest,
-  providerId: resolution.providerId,
-  surface: resolution.surface,
-  ...(resolution.model === undefined ? {} : { model: resolution.model }),
-  libraryRevision: resolution.libraryRevision,
-  workspaceRegistered: resolution.workspaceRegistered,
-  ...(resolution.workspaceId === undefined
-    ? {}
-    : { workspaceId: resolution.workspaceId }),
-  sources: [
-    ...resolution.allProfiles,
-    ...resolution.selectedSources.filter(
-      (source) =>
-        source.kind === "project-local" || source.kind === "flow-guidance",
-    ),
-  ].map((source) => ({
-    id: source.id,
-    name: source.name,
-    kind: source.kind,
-    status: source.status,
-    ...(source.reason === undefined ? {} : { reason: source.reason }),
-    scopePath: source.scopePath,
-    precedence: source.precedence,
-    digest: source.digest,
-    byteLength: source.byteLength,
-    lineCount: source.lineCount,
-    trusted: source.trusted,
-    ...(source.profileId === undefined ? {} : { profileId: source.profileId }),
-    ...(source.workspaceId === undefined
+    schemaVersion: resolution.schemaVersion,
+    resolutionId: resolution.resolutionId,
+    canonicalDigest: resolution.canonicalDigest,
+    environmentDigest: resolution.environmentDigest,
+    providerId: resolution.providerId,
+    surface: resolution.surface,
+    ...(resolution.model === undefined ? {} : { model: resolution.model }),
+    libraryRevision: resolution.libraryRevision,
+    workspaceRegistered: resolution.workspaceRegistered,
+    ...(resolution.workspaceId === undefined
       ? {}
-      : { workspaceId: source.workspaceId }),
-    ...(source.relativePath === undefined
-      ? {}
-      : { relativePath: source.relativePath }),
-    ...(source.assignmentPath === undefined
-      ? {}
-      : { assignmentPath: source.assignmentPath }),
-    ...(source.inheritedFrom === undefined
-      ? {}
-      : { inheritedFrom: source.inheritedFrom }),
-    ...(source.otherAssignments === undefined
-      ? {}
-      : {
-          otherAssignments: source.otherAssignments.map((entry) => ({
-            ...entry,
-          })),
-        }),
-    ...(options.includeBodies === true ? { body: source.body } : {}),
-  })),
-  bodyGroups: resolution.bodyGroups.map(({ body, ...group }) => ({
-    ...group,
-    attributions: group.attributions.map((entry) => ({ ...entry })),
-    ...(options.includeBodies === true ? { body } : {}),
-  })),
-  nativeInventory: resolution.nativeInventory.map((record) => ({ ...record })),
-  mcpInitializationInstructions:
-    resolution.mcpInitializationInstructions.map(
+      : { workspaceId: resolution.workspaceId }),
+    sources: [
+      ...resolution.allProfiles,
+      ...resolution.selectedSources.filter(
+        (source) =>
+          source.kind === "project-local" || source.kind === "flow-guidance",
+      ),
+    ].map((source) => ({
+      id: source.id,
+      name: source.name,
+      kind: source.kind,
+      status: source.status,
+      ...(source.reason === undefined ? {} : { reason: source.reason }),
+      scopePath: source.scopePath,
+      precedence: source.precedence,
+      digest: source.digest,
+      byteLength: source.byteLength,
+      lineCount: source.lineCount,
+      trusted: source.trusted,
+      ...(source.profileId === undefined
+        ? {}
+        : { profileId: source.profileId }),
+      ...(source.workspaceId === undefined
+        ? {}
+        : { workspaceId: source.workspaceId }),
+      ...(source.relativePath === undefined
+        ? {}
+        : { relativePath: source.relativePath }),
+      ...(source.assignmentPath === undefined
+        ? {}
+        : { assignmentPath: source.assignmentPath }),
+      ...(source.inheritedFrom === undefined
+        ? {}
+        : { inheritedFrom: source.inheritedFrom }),
+      ...(source.otherAssignments === undefined
+        ? {}
+        : {
+            otherAssignments: source.otherAssignments.map((entry) => ({
+              ...entry,
+            })),
+          }),
+      ...(options.includeBodies === true ? { body: source.body } : {}),
+    })),
+    bodyGroups: resolution.bodyGroups.map(({ body, ...group }) => ({
+      ...group,
+      attributions: group.attributions.map((entry) => ({ ...entry })),
+      ...(options.includeBodies === true ? { body } : {}),
+    })),
+    nativeInventory: resolution.nativeInventory.map((record) => ({
+      ...record,
+    })),
+    mcpInitializationInstructions: resolution.mcpInitializationInstructions.map(
       ({ serverIds, digest, byteLength }) => ({
         serverIds: [...serverIds],
         digest,
         byteLength,
       }),
     ),
-  diagnostics: resolution.diagnostics.map((diagnostic) => ({
-    ...diagnostic,
-    ...(diagnostic.details === undefined
+    diagnostics: resolution.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.details === undefined
+        ? {}
+        : { details: structuredClone(diagnostic.details) }),
+    })),
+    budget: {
+      ...resolution.budget,
+      advisories: [...resolution.budget.advisories],
+      blockingErrors: [...resolution.budget.blockingErrors],
+    },
+    ...(previewPath === undefined || applicableSourceIds === undefined
       ? {}
-      : { details: structuredClone(diagnostic.details) }),
-  })),
-  budget: {
-    ...resolution.budget,
-    advisories: [...resolution.budget.advisories],
-    blockingErrors: [...resolution.budget.blockingErrors],
-  },
-  ...(previewPath === undefined || applicableSourceIds === undefined
-    ? {}
-    : {
-        pathPreview: {
-          path: previewPath,
-          applicableSourceIds,
-          effectiveOrder: [...applicableSourceIds],
-        },
-      }),
+      : {
+          pathPreview: {
+            path: previewPath,
+            applicableSourceIds,
+            effectiveOrder: [...applicableSourceIds],
+          },
+        }),
   };
 };
 
@@ -953,7 +987,9 @@ export const adaptFrozenInstructionSet = async (
 ): Promise<FrozenInstructionSet> => {
   const locals = resolution.selectedSources
     .filter(
-      (source): source is ResolvedInstructionSource & {
+      (
+        source,
+      ): source is ResolvedInstructionSource & {
         relativePath: string;
       } => source.kind === "project-local" && source.relativePath !== undefined,
     )
@@ -972,7 +1008,7 @@ export const adaptFrozenInstructionSet = async (
     providerId: input.providerId,
     surface: input.surface,
     locals,
-  });
+  }).catch(() => []);
   const capability = getInstructionCapabilityDescriptor(
     input.providerId,
     input.surface,
@@ -1009,14 +1045,13 @@ export const adaptFrozenInstructionSet = async (
         digest: record.digest,
         byteLength: record.byteLength,
       })),
-    mcpInitializationInstructions:
-      resolution.mcpInitializationInstructions.map(
-        ({ serverIds, digest, byteLength }) => ({
-          serverIds,
-          digest,
-          byteLength,
-        }),
-      ),
+    mcpInitializationInstructions: resolution.mcpInitializationInstructions.map(
+      ({ serverIds, digest, byteLength }) => ({
+        serverIds,
+        digest,
+        byteLength,
+      }),
+    ),
   });
   const providerNeutral = { ...resolution };
   Reflect.deleteProperty(providerNeutral, "model");
@@ -1029,11 +1064,7 @@ export const adaptFrozenInstructionSet = async (
     ...resolution.diagnostics.filter(
       (diagnostic) => !budgetDiagnosticCodes.has(diagnostic.code),
     ),
-    ...createBudgetDiagnostics(
-      resolution.selectedSources,
-      budget,
-      input.model,
-    ),
+    ...createBudgetDiagnostics(resolution.selectedSources, budget, input.model),
   ];
   return deepFreeze({
     ...providerNeutral,
@@ -1041,8 +1072,7 @@ export const adaptFrozenInstructionSet = async (
     surface: input.surface,
     ...(input.model === undefined ? {} : { model: input.model }),
     nativeInventory,
-    mcpInitializationInstructions:
-      resolution.mcpInitializationInstructions,
+    mcpInitializationInstructions: resolution.mcpInitializationInstructions,
     budget,
     diagnostics,
     environmentDigest,

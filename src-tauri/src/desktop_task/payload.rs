@@ -23,7 +23,6 @@ pub(super) struct CliCommandOptions<'a> {
     pub(super) provider: Option<&'a str>,
     pub(super) model: Option<&'a str>,
     pub(super) reasoning: Option<&'a str>,
-    pub(super) acknowledged_instruction_delivery_plan_id: Option<&'a str>,
     pub(super) conversation_context_file: Option<&'a Path>,
     pub(super) image_paths: &'a [String],
 }
@@ -57,11 +56,6 @@ pub(super) fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
     if let Some(reasoning) = options.reasoning {
         args.push("--reasoning".to_string());
         args.push(reasoning.to_string());
-    }
-
-    if let Some(plan_id) = options.acknowledged_instruction_delivery_plan_id {
-        args.push("--acknowledge-instruction-plan".to_string());
-        args.push(plan_id.to_string());
     }
 
     if let Some(conversation_context_file) = options.conversation_context_file {
@@ -228,7 +222,6 @@ mod tests {
             provider: Some("openai"),
             model: Some("gpt-5.2"),
             reasoning: Some("high"),
-            acknowledged_instruction_delivery_plan_id: None,
             conversation_context_file: None,
             image_paths: &[],
         });
@@ -254,7 +247,6 @@ mod tests {
             provider: Some("openai"),
             model: Some("gpt-5.5"),
             reasoning: None,
-            acknowledged_instruction_delivery_plan_id: None,
             conversation_context_file: None,
             image_paths: &image_paths,
         });

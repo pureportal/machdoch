@@ -2,10 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://machdoch.local/schemas/instruction-delivery.schema.json",
   "title": "Machdoch instruction delivery plan or receipt",
-  "oneOf": [
-    { "$ref": "#/$defs/plan" },
-    { "$ref": "#/$defs/receipt" }
-  ],
+  "oneOf": [{ "$ref": "#/$defs/plan" }, { "$ref": "#/$defs/receipt" }],
   "$defs": {
     "digest": {
       "type": "string",
@@ -154,7 +151,7 @@
           },
           "then": {
             "properties": {
-              "requiresAcknowledgement": { "const": true }
+              "requiresAcknowledgement": { "const": false }
             }
           }
         },
@@ -334,12 +331,7 @@
       "required": ["kind", "detail"],
       "properties": {
         "kind": {
-          "enum": [
-            "request-field",
-            "argument",
-            "environment",
-            "temporary-file"
-          ]
+          "enum": ["request-field", "argument", "environment", "temporary-file"]
         },
         "detail": { "type": "string", "minLength": 1 },
         "digest": { "$ref": "#/$defs/digest" }
@@ -405,13 +397,7 @@
         "providerId": { "$ref": "#/$defs/provider" },
         "surface": { "enum": ["api", "cli"] },
         "phase": {
-          "enum": [
-            "initial",
-            "continuation",
-            "retry",
-            "validator",
-            "generator"
-          ]
+          "enum": ["initial", "continuation", "retry", "validator", "generator"]
         },
         "route": { "type": "string", "minLength": 1 },
         "deliveredAt": { "type": "string", "format": "date-time" },

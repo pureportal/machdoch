@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   access,
@@ -13,13 +14,8 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "../runtime-contract.generated.ts";
-import type {
-  TaskExecutionRole,
-  TaskExecutionSection,
-} from "../types.ts";
-import {
-  createInstructionResolutionFixture,
-} from "../__test__/instruction-test-helpers.ts";
+import type { TaskExecutionRole, TaskExecutionSection } from "../types.ts";
+import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.ts";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
 import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
@@ -146,11 +142,7 @@ const createWorkspace = async (): Promise<string> => {
     ".provider-state",
     "claude",
   );
-  process.env.COPILOT_HOME = join(
-    workspaceRoot,
-    ".provider-state",
-    "copilot",
-  );
+  process.env.COPILOT_HOME = join(workspaceRoot, ".provider-state", "copilot");
   return workspaceRoot;
 };
 
@@ -304,7 +296,6 @@ const createParams = (
     instructionDeliveryPlan: createExternalInstructionPlan(
       instructionResolution,
     ),
-    acknowledgeCompatibleInstructionDelivery: true,
     ...(overrides.onActionOutput
       ? { onActionOutput: overrides.onActionOutput }
       : {}),
@@ -440,7 +431,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
-  it("removes run-scoped enrollment artifacts when request budget preflight fails", async () => {
+  it("does not block delegated execution on conservative request-budget telemetry", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
     const params = createParams(workspaceRoot);
@@ -453,12 +444,16 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     };
     params.taskContext.instructionResolution = resolution;
     params.instructionDeliveryPlan = createExternalInstructionPlan(resolution);
-    params.runId = "request-preflight-cleanup";
+    const runId = `request-preflight-cleanup-${randomUUID()}`;
+    params.runId = runId;
 
-    const result = await maybeExecuteExternalAgentProviderTask(params);
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    call?.child.stdout.write("Budget telemetry did not block execution.");
+    call?.child.emit("close", 0, null);
 
-    expect(result?.status).toBe("blocked");
-    expect(spawnCalls).toHaveLength(0);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
     const leakedMarkers = await Promise.all(
       (await readdir(tmpdir(), { withFileTypes: true }))
         .filter(
@@ -468,20 +463,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         )
         .map(async (entry) =>
           readFile(
-            join(
-              tmpdir(),
-              entry.name,
-              ".machdoch-instruction-session.json",
-            ),
+            join(tmpdir(), entry.name, ".machdoch-instruction-session.json"),
             "utf8",
           ).catch(() => ""),
         ),
     );
-    expect(
-      leakedMarkers.some((marker) =>
-        marker.includes("request-preflight-cleanup"),
-      ),
-    ).toBe(false);
+    expect(leakedMarkers.some((marker) => marker.includes(runId))).toBe(false);
   });
 
   it("passes GPT-5.6 Ultra through to Codex CLI", async () => {
@@ -881,9 +868,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         "7",
       ]),
     );
-    expect(call?.args.filter((arg) => arg === "--strict-mcp-config")).toHaveLength(
-      1,
-    );
+    expect(
+      call?.args.filter((arg) => arg === "--strict-mcp-config"),
+    ).toHaveLength(1);
     expect(call?.child.stdinText).toContain(
       "You are running as a delegated Claude CLI agent for Machdoch.",
     );
@@ -903,7 +890,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],
     ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
   ] as const)(
-    "enrolls managed instructions exactly once for %s",
+    "delivers the canonical Machdoch prompt for %s",
     async (provider, binaryKey) => {
       const workspaceRoot = await createWorkspace();
       process.env[binaryKey] = process.execPath;
@@ -955,9 +942,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         nativeInstructionText = call.child.stdinText;
       }
 
-      if (provider !== "copilot-cli") {
-        expect(call.child.stdinText).not.toContain(canary);
-      }
+      expect(call.child.stdinText.match(new RegExp(canary, "gu"))).toHaveLength(
+        1,
+      );
       expect(
         nativeInstructionText.match(new RegExp(canary, "gu")),
       ).toHaveLength(1);
@@ -1060,7 +1047,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.ANTHROPIC_API_KEY).toBe("anthropic-process-key");
-    expect(childEnv?.CLAUDE_CONFIG_DIR).toBe(
+    expect(childEnv?.CLAUDE_CONFIG_DIR).toContain("machdoch-instruction-run-");
+    expect(childEnv?.CLAUDE_CONFIG_DIR).not.toBe(
       join(workspaceRoot, ".claude-config"),
     );
     expect(childEnv?.ANTHROPIC_MODEL).toBeUndefined();

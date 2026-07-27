@@ -84,7 +84,10 @@ const probeCache = new Map<
 >();
 
 const shouldUseShell = (executable: string): boolean => {
-  return process.platform === "win32" && [".cmd", ".bat"].includes(extname(executable).toLowerCase());
+  return (
+    process.platform === "win32" &&
+    [".cmd", ".bat"].includes(extname(executable).toLowerCase())
+  );
 };
 
 const captureCommand = (
@@ -104,7 +107,9 @@ const captureCommand = (
     maxBuffer: 64_000,
   });
   return {
-    output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim().slice(-64_000),
+    output: `${result.stdout ?? ""}${result.stderr ?? ""}`
+      .trim()
+      .slice(-64_000),
     exitCode: result.status,
   };
 };
@@ -119,6 +124,7 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
             "--mcp-config",
             "--strict-mcp-config",
             "--bare",
+            "--setting-sources",
             "--append-subagent-system-prompt",
           ]
         : [
@@ -165,8 +171,11 @@ export const probeProviderCli = async (
     return {
       provider,
       executable,
-      available: versionResult.exitCode !== null || helpResult.exitCode !== null,
-      ...(versionResult.output ? { version: versionResult.output.split(/\r?\n/u)[0] } : {}),
+      available:
+        versionResult.exitCode !== null || helpResult.exitCode !== null,
+      ...(versionResult.output
+        ? { version: versionResult.output.split(/\r?\n/u)[0] }
+        : {}),
       features: detectFeatures(provider, helpResult.output),
       warnings,
     };

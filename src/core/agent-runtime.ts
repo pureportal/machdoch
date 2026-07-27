@@ -52,8 +52,6 @@ import { renderMcpInitializationInstructionSections } from "./mcp/initialization
 import { createInstructionDeliveryPlanForRuntime } from "./provider-enrollment/instruction-delivery-preflight.js";
 import {
   adaptFrozenInstructionSet,
-  assertInstructionDeliveryAllowed,
-  assertInstructionInvocationBudget,
   assertInstructionDeliveryReceiptCertain,
   canonicalDigest,
   compareCanonicalStrings,
@@ -106,8 +104,7 @@ const getEstimatedDeliveredInstructionTokens = (
 const getEstimatedDeliveredInstructionTokenField = (
   resolution: FrozenInstructionSet,
 ): { estimatedTokens?: number } => {
-  const estimatedTokens =
-    getEstimatedDeliveredInstructionTokens(resolution);
+  const estimatedTokens = getEstimatedDeliveredInstructionTokens(resolution);
   return estimatedTokens === undefined ? {} : { estimatedTokens };
 };
 
@@ -301,8 +298,7 @@ const createProgressMetadata = (
   values: Record<string, ProgressMetadataValue | undefined>,
 ): Record<string, ProgressMetadataValue> | undefined => {
   const entries = Object.entries(values).filter(
-    (entry): entry is [string, ProgressMetadataValue] =>
-      entry[1] !== undefined,
+    (entry): entry is [string, ProgressMetadataValue] => entry[1] !== undefined,
   );
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
@@ -363,9 +359,7 @@ const createModelRuntimeErrorSection = (
   const deliveryIndeterminate =
     getRuntimeErrorMetadataValue(error, "code") === "DELIVERY_INDETERMINATE";
   const providerError =
-    deliveryIndeterminate &&
-    error instanceof Error &&
-    error.cause !== undefined
+    deliveryIndeterminate && error instanceof Error && error.cause !== undefined
       ? error.cause
       : error;
   const lines = [
@@ -438,14 +432,18 @@ const createModelStreamProgressEmitter = (
   state: TaskExecutionState,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onStreamActivity: (() => void) | undefined,
-  createTimelineMetadata?: () => Record<string, ProgressMetadataValue> | undefined,
+  createTimelineMetadata?: () =>
+    | Record<string, ProgressMetadataValue>
+    | undefined,
 ): {
   handleEvent: (event: AgentModelStreamEvent) => void;
   flush: () => Promise<void>;
 } => {
   let assistantText = loopState.lastAssistantText ?? "";
   let reasoningText = "";
-  let modelStream: NonNullable<TaskExecutionProgress["modelStream"]> | undefined;
+  let modelStream:
+    | NonNullable<TaskExecutionProgress["modelStream"]>
+    | undefined;
   let lastEmitAt = 0;
   let hasPendingEmit = false;
 
@@ -473,7 +471,7 @@ const createModelStreamProgressEmitter = (
             ? "Streaming model reasoning."
             : modelStream?.kind === "status"
               ? modelStream.label
-        : "Streaming model response.";
+              : "Streaming model response.";
 
     void emitAgentProgress(
       task,
@@ -953,8 +951,7 @@ const repairLinearIssueToolCallArguments = (
           },
         },
       },
-      traceLine:
-        `tool_args: populated linear.get_issue arguments.id from current task reference ${issueId}.`,
+      traceLine: `tool_args: populated linear.get_issue arguments.id from current task reference ${issueId}.`,
     };
   }
 
@@ -970,8 +967,7 @@ const repairLinearIssueToolCallArguments = (
         id: issueId,
       },
     },
-    traceLine:
-      `tool_args: populated linear.get_issue id from current task reference ${issueId}.`,
+    traceLine: `tool_args: populated linear.get_issue id from current task reference ${issueId}.`,
   };
 };
 
@@ -1034,9 +1030,7 @@ const createToolTargetPhrase = (call: AgentModelToolCall): string => {
   return "";
 };
 
-const createToolRequestProgressMessage = (
-  call: AgentModelToolCall,
-): string => {
+const createToolRequestProgressMessage = (call: AgentModelToolCall): string => {
   return `Requested ${formatToolName(call.name)}${createToolTargetPhrase(call)}.`;
 };
 
@@ -1075,10 +1069,7 @@ const shouldRejectPrematureBlockedFinalResponse = (
   loopState: AgentLoopState,
   status: string,
 ): boolean => {
-  if (
-    status !== "blocked" ||
-    loopState.executedTools.length > 0
-  ) {
+  if (status !== "blocked" || loopState.executedTools.length > 0) {
     return false;
   }
 
@@ -1260,25 +1251,7 @@ const runExecutorCycle = async (
       })) ?? [],
     structuredOutput,
   };
-  const initialAssembledRequestDigest = canonicalDigest(
-    initialRequestIdentity,
-  );
-  const initialAssembledRequestBytes =
-    Buffer.byteLength(
-      JSON.stringify({
-        ...initialRequestIdentity,
-        imageInputs: undefined,
-      }),
-      "utf8",
-    ) +
-    (imageInputs ?? []).reduce(
-      (total, image) => total + Buffer.byteLength(image.data, "utf8"),
-      0,
-    );
-  assertInstructionInvocationBudget(instructionResolution, {
-    phase: continuationRequest ? "retry" : "initial",
-    assembledRequestBytes: initialAssembledRequestBytes,
-  });
+  const initialAssembledRequestDigest = canonicalDigest(initialRequestIdentity);
   let previousAssembledRequestDigest = initialAssembledRequestDigest;
 
   try {
@@ -1296,20 +1269,20 @@ const runExecutorCycle = async (
         : {}),
     });
     const receipt = createInstructionDeliveryReceipt({
-        plan: instructionPlan,
-        phase: continuationRequest ? "retry" : "initial",
-        observedCanonicalDigest: instructionResolution.canonicalDigest,
-        assembledRequestDigest: initialAssembledRequestDigest,
-        deliveredBytes: getDeliveredInstructionBytes(instructionResolution),
-        ...getEstimatedDeliveredInstructionTokenField(instructionResolution),
-        evidence: [
-          {
-            kind: "request-field",
-            detail: instructionPlan.capability.mechanism,
-            digest: instructionPlan.canonicalDigest,
-          },
-        ],
-      });
+      plan: instructionPlan,
+      phase: continuationRequest ? "retry" : "initial",
+      observedCanonicalDigest: instructionResolution.canonicalDigest,
+      assembledRequestDigest: initialAssembledRequestDigest,
+      deliveredBytes: getDeliveredInstructionBytes(instructionResolution),
+      ...getEstimatedDeliveredInstructionTokenField(instructionResolution),
+      evidence: [
+        {
+          kind: "request-field",
+          detail: instructionPlan.capability.mechanism,
+          digest: instructionPlan.canonicalDigest,
+        },
+      ],
+    });
     instructionReceipts.push(receipt);
     assertInstructionDeliveryReceiptCertain(receipt);
     await modelStreamProgress.flush();
@@ -1401,10 +1374,6 @@ const runExecutorCycle = async (
       },
     );
   }
-  let accumulatedRequestBytes =
-    initialAssembledRequestBytes +
-    Buffer.byteLength(JSON.stringify(turn), "utf8");
-
   const continueTurnWithProgress = async (
     toolResults: AgentModelToolResult[],
   ): Promise<AgentModelTurn> => {
@@ -1440,9 +1409,6 @@ const runExecutorCycle = async (
     );
 
     let nextTurn: AgentModelTurn;
-    const continuationRequestBytes =
-      accumulatedRequestBytes +
-      Buffer.byteLength(JSON.stringify(toolResults), "utf8");
     const assembledRequestDigest = canonicalDigest({
       previousRequestDigest: previousAssembledRequestDigest,
       previousTurn: turn,
@@ -1450,11 +1416,6 @@ const runExecutorCycle = async (
       toolResults,
       canonicalDigest: instructionResolution.canonicalDigest,
     });
-    assertInstructionInvocationBudget(instructionResolution, {
-      phase: "continuation",
-      assembledRequestBytes: continuationRequestBytes,
-    });
-
     try {
       nextTurn = await adapter.continueTurn({
         toolResults,
@@ -1464,30 +1425,23 @@ const runExecutorCycle = async (
           : {}),
       });
       const receipt = createInstructionDeliveryReceipt({
-          plan: instructionPlan,
-          phase: "continuation",
-          observedCanonicalDigest: instructionResolution.canonicalDigest,
-          assembledRequestDigest,
-          deliveredBytes: getDeliveredInstructionBytes(
-            instructionResolution,
-          ),
-          ...getEstimatedDeliveredInstructionTokenField(
-            instructionResolution,
-          ),
-          evidence: [
-            {
-              kind: "request-field",
-              detail: `${instructionPlan.capability.mechanism}; immutable start parameters reattached by the provider adapter`,
-              digest: instructionPlan.canonicalDigest,
-            },
-          ],
-        });
+        plan: instructionPlan,
+        phase: "continuation",
+        observedCanonicalDigest: instructionResolution.canonicalDigest,
+        assembledRequestDigest,
+        deliveredBytes: getDeliveredInstructionBytes(instructionResolution),
+        ...getEstimatedDeliveredInstructionTokenField(instructionResolution),
+        evidence: [
+          {
+            kind: "request-field",
+            detail: `${instructionPlan.capability.mechanism}; immutable start parameters reattached by the provider adapter`,
+            digest: instructionPlan.canonicalDigest,
+          },
+        ],
+      });
       instructionReceipts.push(receipt);
       assertInstructionDeliveryReceiptCertain(receipt);
       previousAssembledRequestDigest = assembledRequestDigest;
-      accumulatedRequestBytes =
-        continuationRequestBytes +
-        Buffer.byteLength(JSON.stringify(nextTurn), "utf8");
 
       await modelStreamProgress.flush();
     } catch (error) {
@@ -1503,9 +1457,7 @@ const runExecutorCycle = async (
         phase: "continuation",
         observedCanonicalDigest: instructionResolution.canonicalDigest,
         assembledRequestDigest,
-        deliveredBytes: getDeliveredInstructionBytes(
-          instructionResolution,
-        ),
+        deliveredBytes: getDeliveredInstructionBytes(instructionResolution),
         indeterminateReason:
           "The continuation failed after request assembly, so Machdoch cannot prove whether the provider accepted it. Automatic replay is prohibited.",
         ...(requestId === undefined ? {} : { requestId: String(requestId) }),
@@ -1632,11 +1584,11 @@ const runExecutorCycle = async (
     if (finalResponseCall) {
       if (turn.toolCalls.length !== 1) {
         turn = await continueTurnWithProgress([
-            createFinalResponseToolResult(
-              finalResponseCall.id,
-              "`submit_final_response` must be the only tool call in its turn.",
-              true,
-            ),
+          createFinalResponseToolResult(
+            finalResponseCall.id,
+            "`submit_final_response` must be the only tool call in its turn.",
+            true,
+          ),
         ]);
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected because additional tool calls were present in the same turn.`,
@@ -1650,11 +1602,11 @@ const runExecutorCycle = async (
         Array.isArray(finalResponseCall.arguments)
       ) {
         turn = await continueTurnWithProgress([
-            createFinalResponseToolResult(
-              finalResponseCall.id,
-              "`submit_final_response` requires an object payload that matches the schema.",
-              true,
-            ),
+          createFinalResponseToolResult(
+            finalResponseCall.id,
+            "`submit_final_response` requires an object payload that matches the schema.",
+            true,
+          ),
         ]);
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected invalid payload shape.`,
@@ -1668,11 +1620,11 @@ const runExecutorCycle = async (
 
       if (!parsedPayload) {
         turn = await continueTurnWithProgress([
-            createFinalResponseToolResult(
-              finalResponseCall.id,
-              "`submit_final_response` payload was missing one or more required fields.",
-              true,
-            ),
+          createFinalResponseToolResult(
+            finalResponseCall.id,
+            "`submit_final_response` payload was missing one or more required fields.",
+            true,
+          ),
         ]);
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected incomplete payload.`,
@@ -1700,11 +1652,11 @@ const runExecutorCycle = async (
           lines: [rejectionMessage],
         });
         turn = await continueTurnWithProgress([
-            createFinalResponseToolResult(
-              finalResponseCall.id,
-              rejectionMessage,
-              true,
-            ),
+          createFinalResponseToolResult(
+            finalResponseCall.id,
+            rejectionMessage,
+            true,
+          ),
         ]);
         continue;
       }
@@ -1964,8 +1916,6 @@ const runAutopilotMonitorPass = async (
   primaryInstructionPlan: InstructionDeliveryPlan,
   instructionPlans: InstructionDeliveryPlan[],
   instructionReceipts: InstructionDeliveryReceipt[],
-  unattendedInstructionDelivery: boolean | undefined,
-  acknowledgeCompatibleInstructionDelivery: boolean | undefined,
 ): Promise<TaskAutopilotDecision> => {
   throwIfExecutionAborted(signal);
 
@@ -1973,9 +1923,7 @@ const runAutopilotMonitorPass = async (
   const monitorTool = createAutopilotMonitorTool();
   const reviewConfig = resolveReviewModelRuntimeConfig(config);
   const reviewProvider =
-    reviewConfig.provider === "unconfigured"
-      ? "openai"
-      : reviewConfig.provider;
+    reviewConfig.provider === "unconfigured" ? "openai" : reviewConfig.provider;
   const reviewSurface = isAgentCliProvider(reviewProvider) ? "cli" : "api";
   const reviewInstructionResolution =
     reviewProvider === baseInstructionResolution.providerId &&
@@ -1996,28 +1944,8 @@ const runAutopilotMonitorPass = async (
           {
             workspaceRoot: config.workspaceRoot,
             reasoning: reviewConfig.reasoning,
-            ...(unattendedInstructionDelivery === undefined
-              ? {}
-              : { unattended: unattendedInstructionDelivery }),
-            ...(acknowledgeCompatibleInstructionDelivery === undefined
-              ? {}
-              : {
-                  acknowledgedCompatible:
-                    acknowledgeCompatibleInstructionDelivery,
-                }),
           },
         );
-  assertInstructionDeliveryAllowed(reviewInstructionPlan, {
-    ...(unattendedInstructionDelivery === undefined
-      ? {}
-      : { unattended: unattendedInstructionDelivery }),
-    ...(acknowledgeCompatibleInstructionDelivery === undefined
-      ? {}
-      : {
-          acknowledgedCompatible:
-            acknowledgeCompatibleInstructionDelivery,
-        }),
-  });
   if (
     !instructionPlans.some(
       (entry) => entry.planId === reviewInstructionPlan.planId,
@@ -2062,8 +1990,9 @@ const runAutopilotMonitorPass = async (
         metadata: {
           validatorPass: monitorPass,
           executorIteration:
-            priorDecisions.filter((decision) => decision.decision === "continue")
-              .length + 1,
+            priorDecisions.filter(
+              (decision) => decision.decision === "continue",
+            ).length + 1,
         },
       },
     },
@@ -2117,21 +2046,6 @@ const runAutopilotMonitorPass = async (
     userPrompt: monitorUserPrompt,
     tools: [monitorTool],
   });
-  assertInstructionInvocationBudget(reviewInstructionResolution, {
-    phase: "validator",
-    assembledRequestBytes: Buffer.byteLength(
-      JSON.stringify({
-        provider: reviewConfig.provider,
-        model: reviewConfig.model,
-        reasoning: reviewConfig.reasoning,
-        systemPrompt: monitorSystemPrompt,
-        userPrompt: monitorUserPrompt,
-        tools: [monitorTool],
-      }),
-      "utf8",
-    ),
-  });
-
   try {
     turn = await adapter.startTurn({
       model: reviewConfig.model,
@@ -2142,24 +2056,22 @@ const runAutopilotMonitorPass = async (
       ...(signal ? { signal } : {}),
     });
     const receipt = createInstructionDeliveryReceipt({
-        plan: reviewInstructionPlan,
-        phase: "validator",
-        observedCanonicalDigest: reviewInstructionResolution.canonicalDigest,
-        assembledRequestDigest: monitorAssembledRequestDigest,
-        deliveredBytes: getDeliveredInstructionBytes(
-          reviewInstructionResolution,
-        ),
-        ...getEstimatedDeliveredInstructionTokenField(
-          reviewInstructionResolution,
-        ),
-        evidence: [
-          {
-            kind: "request-field",
-            detail: `${reviewInstructionPlan.capability.mechanism}; validator role prompt kept separate`,
-            digest: reviewInstructionPlan.canonicalDigest,
-          },
-        ],
-      });
+      plan: reviewInstructionPlan,
+      phase: "validator",
+      observedCanonicalDigest: reviewInstructionResolution.canonicalDigest,
+      assembledRequestDigest: monitorAssembledRequestDigest,
+      deliveredBytes: getDeliveredInstructionBytes(reviewInstructionResolution),
+      ...getEstimatedDeliveredInstructionTokenField(
+        reviewInstructionResolution,
+      ),
+      evidence: [
+        {
+          kind: "request-field",
+          detail: `${reviewInstructionPlan.capability.mechanism}; validator role prompt kept separate`,
+          digest: reviewInstructionPlan.canonicalDigest,
+        },
+      ],
+    });
     instructionReceipts.push(receipt);
     assertInstructionDeliveryReceiptCertain(receipt);
   } catch (error) {
@@ -2175,9 +2087,7 @@ const runAutopilotMonitorPass = async (
       phase: "validator",
       observedCanonicalDigest: reviewInstructionResolution.canonicalDigest,
       assembledRequestDigest: monitorAssembledRequestDigest,
-      deliveredBytes: getDeliveredInstructionBytes(
-        reviewInstructionResolution,
-      ),
+      deliveredBytes: getDeliveredInstructionBytes(reviewInstructionResolution),
       indeterminateReason:
         "The validator call failed after request assembly, so Machdoch cannot prove whether the provider accepted it. Automatic replay is prohibited.",
       ...(requestId === undefined ? {} : { requestId: String(requestId) }),
@@ -2332,8 +2242,6 @@ const runModelDrivenLoop = async (
   runId: string | undefined,
   providedInstructionPlan: InstructionDeliveryPlan | undefined,
   providedInstructionReceipts: InstructionDeliveryReceipt[] | undefined,
-  unattendedInstructionDelivery: boolean | undefined,
-  acknowledgeCompatibleInstructionDelivery: boolean | undefined,
 ): Promise<TaskExecutionResult> => {
   const instructionResolution = taskContext.instructionResolution;
   if (!instructionResolution) {
@@ -2346,27 +2254,7 @@ const runModelDrivenLoop = async (
     (await createInstructionDeliveryPlanForRuntime(instructionResolution, {
       workspaceRoot: config.workspaceRoot,
       reasoning: config.reasoning,
-      ...(unattendedInstructionDelivery === undefined
-        ? {}
-        : { unattended: unattendedInstructionDelivery }),
-      ...(acknowledgeCompatibleInstructionDelivery === undefined
-        ? {}
-        : {
-            acknowledgedCompatible:
-              acknowledgeCompatibleInstructionDelivery,
-          }),
     }));
-  assertInstructionDeliveryAllowed(instructionPlan, {
-    ...(unattendedInstructionDelivery === undefined
-      ? {}
-      : { unattended: unattendedInstructionDelivery }),
-    ...(acknowledgeCompatibleInstructionDelivery === undefined
-      ? {}
-      : {
-          acknowledgedCompatible:
-            acknowledgeCompatibleInstructionDelivery,
-        }),
-  });
   const instructionPlans = [instructionPlan];
   const instructionReceipts = providedInstructionReceipts ?? [];
   const finish = (result: TaskExecutionResult): TaskExecutionResult =>
@@ -2377,10 +2265,9 @@ const runModelDrivenLoop = async (
       instructionPlans,
       instructionReceipts,
     );
-  const mcpInitializationSections =
-    renderMcpInitializationInstructionSections(
-      instructionResolution.mcpInitializationInstructions,
-    );
+  const mcpInitializationSections = renderMcpInitializationInstructionSections(
+    instructionResolution.mcpInitializationInstructions,
+  );
   const apiEnrollment = await createApiEnrollmentSnapshot(
     config.provider === "unconfigured" ? "openai" : config.provider,
     instructionResolution,
@@ -2446,22 +2333,22 @@ const runModelDrivenLoop = async (
         instructionPlan,
         instructionPlans,
         instructionReceipts,
-        unattendedInstructionDelivery,
-        acknowledgeCompatibleInstructionDelivery,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
-      return finish(attachAutopilotReport(
-        finalizeBlockedResult(
-          task,
-          config,
-          cycleResult.loopState,
-          "Machdoch validation could not complete because the monitor step failed.",
-          message,
+      return finish(
+        attachAutopilotReport(
+          finalizeBlockedResult(
+            task,
+            config,
+            cycleResult.loopState,
+            "Machdoch validation could not complete because the monitor step failed.",
+            message,
+          ),
+          buildAutopilotReport(),
         ),
-        buildAutopilotReport(),
-      ));
+      );
     }
 
     decisions.push(decision);
@@ -2475,16 +2362,18 @@ const runModelDrivenLoop = async (
       autopilotExecutorIterationLimit !== null &&
       executorIterations >= autopilotExecutorIterationLimit
     ) {
-      return finish(attachAutopilotReport(
-        finalizeBlockedResult(
-          task,
-          config,
-          cycleResult.loopState,
-          "Machdoch reached its continuation limit before the monitor could verify completion.",
-          `The monitor requested more work after ${executorIterations} executor iteration(s). Last rationale: ${decision.rationale}`,
+      return finish(
+        attachAutopilotReport(
+          finalizeBlockedResult(
+            task,
+            config,
+            cycleResult.loopState,
+            "Machdoch reached its continuation limit before the monitor could verify completion.",
+            `The monitor requested more work after ${executorIterations} executor iteration(s). Last rationale: ${decision.rationale}`,
+          ),
+          autopilotReport,
         ),
-        autopilotReport,
-      ));
+      );
     }
 
     cycleResult = await runExecutorCycle(
@@ -2559,30 +2448,8 @@ export const maybeExecuteModelDrivenTask = async (
         {
           workspaceRoot: params.config.workspaceRoot,
           reasoning: params.config.reasoning,
-          ...(params.unattendedInstructionDelivery === undefined
-            ? {}
-            : { unattended: params.unattendedInstructionDelivery }),
-          ...(params.acknowledgeCompatibleInstructionDelivery === undefined
-            ? {}
-            : {
-                acknowledgedCompatible:
-                  params.acknowledgeCompatibleInstructionDelivery,
-              }),
         },
       );
-    }
-    if (instructionPlan) {
-      assertInstructionDeliveryAllowed(instructionPlan, {
-        ...(params.unattendedInstructionDelivery === undefined
-          ? {}
-          : { unattended: params.unattendedInstructionDelivery }),
-        ...(params.acknowledgeCompatibleInstructionDelivery === undefined
-          ? {}
-          : {
-              acknowledgedCompatible:
-                params.acknowledgeCompatibleInstructionDelivery,
-            }),
-      });
     }
     const preparedConversationContext = await prepareConversationPromptContext(
       params.task,
@@ -2617,8 +2484,6 @@ export const maybeExecuteModelDrivenTask = async (
       params.runId ?? `task-${randomUUID()}`,
       instructionPlan,
       instructionReceipts,
-      params.unattendedInstructionDelivery,
-      params.acknowledgeCompatibleInstructionDelivery,
     );
   } catch (error) {
     const message = getRuntimeErrorMessage(error);

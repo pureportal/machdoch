@@ -124,8 +124,6 @@ export interface ModelDrivenExecutionParams {
   structuredOutput?: AgentModelStructuredOutput;
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
-  unattendedInstructionDelivery?: boolean;
-  acknowledgeCompatibleInstructionDelivery?: boolean;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
   onStreamActivity?: () => void;
