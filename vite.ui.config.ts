@@ -71,7 +71,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(currentDirectory, "dist/ui-preview"),
     emptyOutDir: true,
-    minify: tauriDebug ? false : "esbuild",
+    minify: tauriDebug ? false : "oxc",
     sourcemap: tauriDebug,
     target: tauriBuildTarget,
     chunkSizeWarningLimit: 700,

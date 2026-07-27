@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { build } from "esbuild";
+import { build } from "rolldown";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputFile = resolve(projectRoot, "dist", "machdoch-cli.cjs");
@@ -20,17 +20,21 @@ require.resolve = (request, options) => {
 await mkdir(dirname(outputFile), { recursive: true });
 
 await build({
-  absWorkingDir: projectRoot,
-  banner: {
-    js: requireResolveShim,
-  },
-  bundle: true,
-  entryPoints: ["src/cli/main.ts"],
+  cwd: projectRoot,
   external: ["playwright-core"],
-  format: "cjs",
+  input: "src/cli/main.ts",
   logLevel: "info",
-  outfile: outputFile,
+  output: {
+    banner: requireResolveShim,
+    codeSplitting: false,
+    file: outputFile,
+    format: "cjs",
+    minify: false,
+    sourcemap: true,
+  },
   platform: "node",
-  sourcemap: true,
-  target: "node22.13",
+  transform: {
+    target: "node22.13",
+  },
+  tsconfig: resolve(projectRoot, "tsconfig.json"),
 });

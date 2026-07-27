@@ -144,7 +144,10 @@ const clampMenuCoordinate = (
     viewportSize - menuSize - MESSAGE_CONTEXT_MENU_MARGIN,
   );
 
-  return Math.min(Math.max(coordinate, MESSAGE_CONTEXT_MENU_MARGIN), maxCoordinate);
+  return Math.min(
+    Math.max(coordinate, MESSAGE_CONTEXT_MENU_MARGIN),
+    maxCoordinate,
+  );
 };
 
 const createMessageContextMenuPosition = (
@@ -164,16 +167,13 @@ const createMessageContextMenuPosition = (
       MESSAGE_CONTEXT_MENU_WIDTH,
       window.innerWidth,
     ),
-    top: clampMenuCoordinate(
-      event.clientY,
-      menuHeight,
-      window.innerHeight,
-    ),
+    top: clampMenuCoordinate(event.clientY, menuHeight, window.innerHeight),
   };
 };
 
 const getMessageContextMenuHeight = (itemCount: number): number =>
-  MESSAGE_CONTEXT_MENU_HEADER_HEIGHT + itemCount * MESSAGE_CONTEXT_MENU_ITEM_HEIGHT;
+  MESSAGE_CONTEXT_MENU_HEADER_HEIGHT +
+  itemCount * MESSAGE_CONTEXT_MENU_ITEM_HEIGHT;
 
 const sanitizeMessageFileNamePart = (value: string): string => {
   return value
@@ -341,8 +341,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   const originalPromptPanelId = `original-prompt-${message.id}`;
   const thinkingTrace =
     message.source?.kind === "execution"
-      ? message.source.thinking ??
-        createExecutionThinkingTrace(message.source.execution)
+      ? (message.source.thinking ??
+        createExecutionThinkingTrace(message.source.execution))
       : message.source?.kind === "thinking"
         ? message.source.thinking
         : null;
@@ -497,7 +497,9 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 </Button>
               ) : null}
 
-              {message.role === "user" && originalPromptContent && !isEditing ? (
+              {message.role === "user" &&
+              originalPromptContent &&
+              !isEditing ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -536,7 +538,9 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                     autoFocus
                     aria-label="Edit message"
                     value={editContent}
-                    onChange={(event) => onEditContentChange(event.target.value)}
+                    onChange={(event) =>
+                      onEditContentChange(event.target.value)
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
                         event.preventDefault();
@@ -582,7 +586,9 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   workspaceRoot={workspaceRoot}
                   onOpenWorkspaceFile={onOpenWorkspaceFile}
                   className={
-                    message.role === "user" ? "app-user-message-text" : undefined
+                    message.role === "user"
+                      ? "app-user-message-text"
+                      : undefined
                   }
                 />
               )}
@@ -613,7 +619,10 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
             />
           ) : null}
 
-          {message.role === "user" && !message.intent && onEditMessage && !isEditing ? (
+          {message.role === "user" &&
+          !message.intent &&
+          onEditMessage &&
+          !isEditing ? (
             <div className="app-message-actions flex max-w-[90%] items-center justify-end">
               <Button
                 type="button"
@@ -857,8 +866,9 @@ export const ConversationFeed = ({
       return;
     }
 
-    const targetElement =
-      messageElementsRef.current.get(navigationScrollTargetId);
+    const targetElement = messageElementsRef.current.get(
+      navigationScrollTargetId,
+    );
 
     if (!targetElement) {
       return;
@@ -874,11 +884,7 @@ export const ConversationFeed = ({
       inline: "nearest",
     });
     setNavigationScrollTargetId(null);
-  }, [
-    navigationScrollTargetId,
-    renderedMessageLimit,
-    visibleMessages,
-  ]);
+  }, [navigationScrollTargetId, renderedMessageLimit, visibleMessages]);
 
   useEffect(() => {
     if (!messageContextMenu) {
@@ -1052,9 +1058,7 @@ export const ConversationFeed = ({
             aria-label="Previous message"
             title="Previous message"
             disabled={!navigationState.previousMessage}
-            onClick={() =>
-              navigateToMessage(navigationState.previousMessage)
-            }
+            onClick={() => navigateToMessage(navigationState.previousMessage)}
             className="h-7 rounded-full px-2 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-35"
           >
             <ChevronUp className="h-3.5 w-3.5" />
@@ -1126,9 +1130,7 @@ export const ConversationFeed = ({
           voicePlaybackSupported={voicePlayback.supported}
           workspaceRoot={workspaceRoot}
           onRetryTask={onRetryTask}
-          onRetryMessage={
-            onRetryMessage ? retryConversationMessage : undefined
-          }
+          onRetryMessage={onRetryMessage ? retryConversationMessage : undefined}
           onEditMessage={
             (onEditMessage || onStartEditMessage) &&
             !isSessionRunning &&
@@ -1290,7 +1292,8 @@ export const ConversationFeed = ({
         >
           <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
             <span className="block truncate">
-              {messageContextMenu.role === "agent" ? "Assistant" : "User"} message
+              {messageContextMenu.role === "agent" ? "Assistant" : "User"}{" "}
+              message
             </span>
           </div>
           {messageContextMenu.contextPackMessage ? (

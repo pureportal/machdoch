@@ -2,8 +2,8 @@ import { Play, RotateCcw } from "lucide-react";
 import { type JSX, useMemo } from "react";
 import { StatusBadge } from "../../../../common/_components/status-badge";
 import type { TaskExecutionResult } from "../../../../core/types.js";
-import { Button } from "../../components/ui/button";
 import { normalizeTaskExecutionFileChanges } from "../../chat-session.model";
+import { Button } from "../../components/ui/button";
 import { getRelatedFileButtonLabel } from "../_helpers/execution-message.tsx";
 import { ExecutionFileChanges } from "./execution-file-changes";
 import { InstructionDeliveryInsight } from "./instruction-delivery-insight";
@@ -40,7 +40,7 @@ export const ExecutionInsightRow = ({
   const continuationCount = execution.autopilot?.continuationCount ?? 0;
   const hasInstructionDelivery = Boolean(
     execution.metadata &&
-      typeof execution.metadata.instructionResolutionId === "string",
+    typeof execution.metadata.instructionResolutionId === "string",
   );
   const canRetryTask = Boolean(onRetryTask);
   const canContinueTask =

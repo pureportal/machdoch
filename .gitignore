@@ -43,10 +43,8 @@ src-tauri/target-*/
 # Editor / tool local state
 .cache/
 .parcel-cache/
-.eslintcache
 .idea/
 .vs/
-.vscode/settings.json
 .vscode/tasks.json
 .vscode-test/
 

@@ -29,7 +29,7 @@ pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliComm
     }
 
     // Source execution remains a development fallback for builds that could not
-    // embed the CLI, but normal debug tasks avoid paying the tsx cold-start cost.
+    // embed the CLI, but normal debug tasks avoid paying the transform cold-start cost.
     if let Some(command) = create_source_cli_command(args) {
         return Ok(command);
     }
@@ -139,7 +139,7 @@ fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
     command
         .current_dir(repo_root)
         .arg("--import")
-        .arg("tsx")
+        .arg("@oxc-node/core/register")
         .arg(cli_entry_path)
         .args(args);
     sanitize_node_debug_environment(&mut command);

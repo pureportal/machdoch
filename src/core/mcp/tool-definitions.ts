@@ -328,7 +328,7 @@ const createProgressHandler = (
   context: AgentToolExecutionContext,
 ): ((message: string) => void) => {
   return (message: string): void => {
-    context.onOutput?.({
+    void context.onOutput?.({
       stream: "stdout",
       chunk: `MCP progress: ${message}\n`,
     });

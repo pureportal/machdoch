@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "plugins": ["eslint", "typescript"],
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "node": true
+  },
+  "ignorePatterns": [
+    "coverage/**",
+    "dist/**",
+    "node_modules/**",
+    "src-tauri/target/**"
+  ],
+  "rules": {
+    "typescript/no-base-to-string": "off",
+    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-implied-eval": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/no-redundant-type-constituents": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/unbound-method": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "vitest*.ts"
+      ],
+      "env": {
+        "vitest": true
+      },
+      "rules": {
+        "typescript/no-floating-promises": "off"
+      }
+    }
+  ],
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error",
+    "typeAware": true,
+    "typeCheck": true
+  }
+}

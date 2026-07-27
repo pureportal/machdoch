@@ -75,8 +75,6 @@ const json = (value) => JSON.stringify(value, null, 2);
 
 const tsReadonlyArray = (values) => `[${values.map((value) => json(value)).join(", ")}]`;
 
-const tsStringUnion = (values) => values.map((value) => json(value)).join(" | ");
-
 const rustStringArray = (values) =>
   `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
 

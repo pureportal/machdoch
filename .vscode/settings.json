@@ -1,0 +1,9 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxc": "explicit"
+  },
+  "[css][graphql][html][javascript][javascriptreact][json][jsonc][less][markdown][mdx][scss][toml][typescript][typescriptreact][yaml]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode",
+    "editor.formatOnSave": true
+  }
+}
