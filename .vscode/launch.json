@@ -94,12 +94,7 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["--import", "tsx"],
       "program": "${workspaceFolder}/src/cli/main.ts",
-      "args": [
-        "run",
-        "${input:machdochTask}",
-        "--mode",
-        "safe"
-      ],
+      "args": ["run", "${input:machdochTask}", "--mode", "safe"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],
@@ -268,6 +263,9 @@
       "program": "${workspaceFolder}/node_modules/@tauri-apps/cli/tauri.js",
       "args": ["dev"],
       "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:PATH}"
+      },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],
       "autoAttachChildProcesses": true,
@@ -285,6 +283,9 @@
       "program": "${workspaceFolder}/node_modules/@tauri-apps/cli/tauri.js",
       "args": ["build"],
       "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:PATH}"
+      },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],
       "autoAttachChildProcesses": true,
