@@ -1275,13 +1275,21 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
                 "The desktop stopped during a paid provider request; the request was not retried automatically.",
                 Some("OpenAI request acceptance is unknown after interruption; retry could create a duplicate provider charge."),
             )
-        } else {
+        } else if executor == "deterministic-fixture" {
             (
                 "queued",
                 "Recovered after interruption",
                 "run_recovered",
                 "Interrupted work was returned to the durable queue.",
                 None,
+            )
+        } else {
+            (
+                "failed",
+                "Interrupted; run again",
+                "run_interrupted",
+                "Local generation stopped with the desktop. Run it again to restart from immutable inputs.",
+                Some("Local generation was interrupted before its outputs were published."),
             )
         };
         transaction
@@ -1304,10 +1312,11 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
                    status = CASE
                      WHEN ?2 = 'canceled' THEN 'canceled'
                      WHEN ?2 = 'needs-review' THEN 'blocked'
+                     WHEN ?2 = 'failed' THEN 'failed'
                      ELSE 'queued'
                    END,
                    runtime_phase = 'recovery', message = ?3, updated_at = ?4,
-                   finished_at = CASE WHEN ?2 = 'canceled' THEN ?4 ELSE NULL END,
+                   finished_at = CASE WHEN ?2 IN ('failed', 'canceled') THEN ?4 ELSE NULL END,
                    state_sequence = state_sequence + 1
                  WHERE run_id = ?1
                    AND status IN ('queued', 'running', 'retrying', 'waiting-for-review', 'blocked')",
@@ -3150,21 +3159,21 @@ pub(crate) fn complete_local_diffusers_generation(
         ],
         "skipped",
         Some("connected-stage.deferred"),
-        Some("Deferred to the connected WAN stage after endpoint publication"),
+        Some("Deferred to the connected video stage after endpoint publication"),
         Some(0.96),
     )?;
     complete_run(paths, &request.run_id)?;
     get_run_detail(paths, &request.run_id)
 }
 
-pub(crate) fn begin_local_wan_generation(
+pub(crate) fn begin_local_video_generation(
     paths: &MediaRuntimePaths,
     request: &GenerateMediaVideoRequest,
 ) -> MediaResult<bool> {
     let mut connection = open(paths)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| format!("failed to begin local WAN generation: {error}"))?;
+        .map_err(|error| format!("failed to begin local video generation: {error}"))?;
     validate_run_flow_revision(
         &transaction,
         &request.flow_id,
@@ -3173,7 +3182,7 @@ pub(crate) fn begin_local_wan_generation(
     )?;
     let timestamp = now();
     let plan_snapshot_json = serde_json::to_string(&request.plan_snapshot)
-        .map_err(|error| format!("failed to serialize WAN generation plan: {error}"))?;
+        .map_err(|error| format!("failed to serialize video generation plan: {error}"))?;
     let output_count = if request.animated_background.is_some() {
         2_u32
     } else {
@@ -3202,7 +3211,7 @@ pub(crate) fn begin_local_wan_generation(
                 request.flow_revision_id,
             ],
         )
-        .map_err(|error| format!("failed to register local WAN generation: {error}"))?;
+        .map_err(|error| format!("failed to register local video generation: {error}"))?;
     if inserted == 0 {
         validate_existing_run_identity(
             &transaction,
@@ -3214,7 +3223,7 @@ pub(crate) fn begin_local_wan_generation(
         )?;
         transaction
             .commit()
-            .map_err(|error| format!("failed to commit local WAN replay: {error}"))?;
+            .map_err(|error| format!("failed to commit local video replay: {error}"))?;
         return Ok(false);
     }
     seed_node_executions(
@@ -3229,7 +3238,7 @@ pub(crate) fn begin_local_wan_generation(
              VALUES (?1, ?2, 'running', 1, ?3, ?3)",
             params![format!("job:{}", request.run_id), request.run_id, timestamp],
         )
-        .map_err(|error| format!("failed to register local WAN job: {error}"))?;
+        .map_err(|error| format!("failed to register local video job: {error}"))?;
     let delivery_contract = if request.transparent_background {
         "alpha-plane encoder and decoder verification"
     } else {
@@ -3245,18 +3254,18 @@ pub(crate) fn begin_local_wan_generation(
         &request.run_id,
         "worker_prepared",
         &format!(
-            "The exact workspace video revision, immutable first and last frames, native frame contract, {delivery_contract}, optional animated composite, and {ending_contract} will be verified before publication."
+            "The exact workspace video revision, immutable conditioning frame inputs, native frame contract, {delivery_contract}, optional animated composite, and {ending_contract} will be verified before publication."
         ),
         Some(0.04),
         Some("local-video.prepare"),
     )?;
     transaction
         .commit()
-        .map_err(|error| format!("failed to commit local WAN generation: {error}"))?;
+        .map_err(|error| format!("failed to commit local video generation: {error}"))?;
     Ok(true)
 }
 
-fn verify_local_wan_cas_blob(
+fn verify_local_video_cas_blob(
     paths: &MediaRuntimePaths,
     label: &str,
     digest: &str,
@@ -3278,17 +3287,17 @@ fn verify_local_wan_cas_blob(
     })
 }
 
-fn verify_local_wan_publication(
+fn verify_local_video_publication(
     paths: &MediaRuntimePaths,
     request: &GenerateMediaVideoRequest,
     video: &LocalGeneratedVideo,
 ) -> MediaResult<()> {
-    verify_local_wan_cas_blob(
+    verify_local_video_cas_blob(
         paths,
         if video.transparent_background {
-            "The transparent WAN video"
+            "The transparent local video"
         } else {
-            "The WAN video"
+            "The local video"
         },
         &video.digest,
         &video.relative_path,
@@ -3311,37 +3320,37 @@ fn verify_local_wan_publication(
             }
             _ => {
                 return Err(
-                    "The requested WAN animated composite was not durably produced; no completed output was published"
+                    "The requested animated video composite was not durably produced; no completed output was published"
                         .to_string(),
                 )
             }
         };
-        verify_local_wan_cas_blob(
+        verify_local_video_cas_blob(
             paths,
-            "The composited WAN video",
+            "The composited local video",
             digest,
             relative_path,
             byte_size,
         )?;
     } else if has_any_composite_evidence {
         return Err(
-            "WAN composite publication evidence was returned without an animated-background request"
+            "Video composite publication evidence was returned without an animated-background request"
                 .to_string(),
         );
     }
     Ok(())
 }
 
-pub(crate) fn complete_local_wan_generation(
+pub(crate) fn complete_local_video_generation(
     paths: &MediaRuntimePaths,
     request: &GenerateMediaVideoRequest,
     video: &LocalGeneratedVideo,
 ) -> MediaResult<MediaRunDetail> {
-    verify_local_wan_publication(paths, request, video)?;
+    verify_local_video_publication(paths, request, video)?;
     let mut connection = open(paths)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| format!("failed to begin local WAN publication: {error}"))?;
+        .map_err(|error| format!("failed to begin local video publication: {error}"))?;
     let status = transaction
         .query_row(
             "SELECT status FROM runs WHERE id = ?1",
@@ -3349,24 +3358,24 @@ pub(crate) fn complete_local_wan_generation(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|error| format!("failed to inspect local WAN generation: {error}"))?
+        .map_err(|error| format!("failed to inspect local video generation: {error}"))?
         .ok_or_else(|| format!("media run {} was not found", request.run_id))?;
     if status == "completed" {
         transaction
             .commit()
-            .map_err(|error| format!("failed to commit completed WAN replay: {error}"))?;
+            .map_err(|error| format!("failed to commit completed video replay: {error}"))?;
         return get_run_detail(paths, &request.run_id);
     }
     if status == "canceling" {
         finalize_cancellation(&transaction, &request.run_id)?;
         transaction
             .commit()
-            .map_err(|error| format!("failed to commit WAN cancellation: {error}"))?;
+            .map_err(|error| format!("failed to commit video cancellation: {error}"))?;
         return get_run_detail(paths, &request.run_id);
     }
     if status != "running" {
         return Err(format!(
-            "local WAN generation cannot publish from {status} state"
+            "local video generation cannot publish from {status} state"
         ));
     }
     let timestamp = now();
@@ -3386,7 +3395,7 @@ pub(crate) fn complete_local_wan_generation(
                 timestamp,
             ],
         )
-        .map_err(|error| format!("failed to register WAN video blob: {error}"))?;
+        .map_err(|error| format!("failed to register local video blob: {error}"))?;
     let operation_json = serde_json::json!({
         "kind": "local-video-generation",
         "providerId": "local-video",
@@ -3439,24 +3448,29 @@ pub(crate) fn complete_local_wan_generation(
                 operation_json,
             ],
         )
-        .map_err(|error| format!("failed to register WAN video asset: {error}"))?;
+        .map_err(|error| format!("failed to register local video asset: {error}"))?;
     transaction
         .execute(
             "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, 'first-frame')",
             params![asset_id, request.first_frame_asset_id],
         )
-        .map_err(|error| format!("failed to register WAN first-frame lineage: {error}"))?;
+        .map_err(|error| format!("failed to register video first-frame lineage: {error}"))?;
     transaction
         .execute(
             "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, 'last-frame')",
             params![asset_id, request.last_frame_asset_id],
         )
-        .map_err(|error| format!("failed to register WAN last-frame lineage: {error}"))?;
-    let mut technical_tags = match video.architecture.as_str() {
-        "framepack-i2v" => vec![("framepack-i2v-hy", "FramePack I2V HY")],
-        "ltx-video" => vec![("ltx-video-0-9-8", "LTX-Video 0.9.8")],
-        _ => vec![("wan2-2-ti2v", "Wan2.2 TI2V")],
+        .map_err(|error| format!("failed to register video last-frame lineage: {error}"))?;
+    let architecture_tag = match video.architecture.as_str() {
+        "hunyuan-video-1.5-i2v" => (
+            "hunyuan-video-1-5-i2v",
+            "HunyuanVideo 1.5 I2V Step Distilled",
+        ),
+        "framepack-i2v" => ("framepack-i2v-hy", "FramePack I2V HY"),
+        "ltx-video" => ("ltx-video-0-9-8", "LTX-Video 0.9.8"),
+        _ => ("wan2-2-ti2v", "Wan2.2 TI2V"),
     };
+    let mut technical_tags = vec![architecture_tag];
     if video.transparent_background {
         technical_tags.extend([
             ("transparent-video", "Transparent video"),
@@ -3477,7 +3491,7 @@ pub(crate) fn complete_local_wan_generation(
                  VALUES (?1, ?2, ?3, 'technical', 1.0, ?4)",
                 params![asset_id, tag, label, timestamp],
             )
-            .map_err(|error| format!("failed to tag WAN video asset: {error}"))?;
+            .map_err(|error| format!("failed to tag local video asset: {error}"))?;
     }
     if let (
         Some(composite_digest),
@@ -3507,7 +3521,7 @@ pub(crate) fn complete_local_wan_generation(
                 ],
             )
             .map_err(|error| {
-                format!("failed to register WAN composite video blob: {error}")
+                format!("failed to register local composite video blob: {error}")
             })?;
         let composite_operation_json = serde_json::json!({
             "kind": "local-video-generation",
@@ -3564,7 +3578,7 @@ pub(crate) fn complete_local_wan_generation(
                 ],
             )
             .map_err(|error| {
-                format!("failed to register WAN composite video asset: {error}")
+                format!("failed to register local composite video asset: {error}")
             })?;
         transaction
             .execute(
@@ -3572,11 +3586,11 @@ pub(crate) fn complete_local_wan_generation(
                  VALUES (?1, ?2, 'transparent-foreground-video')",
                 params![composite_asset_id, asset_id],
             )
-            .map_err(|error| format!("failed to register WAN composite lineage: {error}"))?;
+            .map_err(|error| format!("failed to register video composite lineage: {error}"))?;
         let mut composite_tags = vec![
             ("animated-background", "Animated background"),
             ("composited-video", "Composited video"),
-            ("wan2-2-ti2v", "Wan2.2 TI2V"),
+            architecture_tag,
         ];
         composite_tags.push(match request.loop_mode.as_str() {
             "ping-pong" => ("ping-pong-loop", "Ping-pong loop"),
@@ -3591,7 +3605,7 @@ pub(crate) fn complete_local_wan_generation(
                     params![composite_asset_id, tag, label, timestamp],
                 )
                 .map_err(|error| {
-                    format!("failed to tag WAN composite video asset: {error}")
+                    format!("failed to tag local composite video asset: {error}")
                 })?;
         }
     } else if video.composite_digest.is_some()
@@ -3599,7 +3613,7 @@ pub(crate) fn complete_local_wan_generation(
         || video.composite_byte_size.is_some()
         || video.composite_output.is_some()
     {
-        return Err("WAN composite publication evidence is incomplete".to_string());
+        return Err("Video composite publication evidence is incomplete".to_string());
     }
     let delivery_label = if video.transparent_background {
         "alpha"
@@ -3611,12 +3625,17 @@ pub(crate) fn complete_local_wan_generation(
         "ping-pong" => "ping-pong-loop",
         _ => "one-way-shot",
     };
+    let conditioning_label = if video.architecture == "hunyuan-video-1.5-i2v" {
+        "its native immutable first frame"
+    } else {
+        "immutable first and last frames"
+    };
     append_event(
         &transaction,
         &request.run_id,
         "video_generated",
         &format!(
-            "{} conditioned on immutable first and last frames, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps with {:.3} source and {:.3} decoded endpoint MAE.",
+            "{} conditioned on {conditioning_label}, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps with {:.3} source and {:.3} decoded endpoint MAE.",
             video.architecture,
             video.output.source_frame_count,
             video.output.frame_count,
@@ -3651,7 +3670,7 @@ pub(crate) fn complete_local_wan_generation(
     }
     transaction
         .commit()
-        .map_err(|error| format!("failed to commit local WAN publication: {error}"))?;
+        .map_err(|error| format!("failed to commit local video publication: {error}"))?;
     complete_run(paths, &request.run_id)?;
     get_run_detail(paths, &request.run_id)
 }
@@ -4576,7 +4595,7 @@ pub(crate) fn complete_run(paths: &MediaRuntimePaths, run_id: &str) -> MediaResu
                 "All edited OpenAI image outputs passed bounded decode, lineage, and immutable CAS publication checks."
             }
             "local-video" | "local-wan-video" => {
-                "The local video output passed WebM, VP9 alpha-plane, immutable lineage, GPU-lifecycle, and endpoint validation."
+                "The local video output passed WebM, VP9 delivery, immutable lineage, GPU-lifecycle, and endpoint validation."
             }
             "local-diffusers" => {
                 "All local image outputs passed bounded decode, add-on evidence, cutout, and immutable CAS publication checks."
@@ -5047,7 +5066,7 @@ fn finalize_cancellation(transaction: &Transaction<'_>, run_id: &str) -> MediaRe
         transaction,
         run_id,
         "run_canceled",
-        "Fixture execution stopped at a safe checkpoint.",
+        "Media execution stopped at a safe checkpoint.",
         None,
         Some("cancel"),
     )
@@ -5060,7 +5079,7 @@ pub(crate) fn fail_run(paths: &MediaRuntimePaths, run_id: &str, error: &str) -> 
         "failed",
         "Failed",
         "run_failed",
-        "Fixture execution failed. Inspect the persisted error before retrying.",
+        "Media execution failed. Inspect the persisted error before retrying.",
         Some(error),
     )
 }
@@ -7569,7 +7588,7 @@ mod tests {
             run_id: run_id.to_string(),
             flow_id: "flow-1".to_string(),
             flow_revision_id: "revision:openai-test".to_string(),
-            flow_name: "WAN publication fixture".to_string(),
+            flow_name: "Local video publication fixture".to_string(),
             plan_id: "plan-1".to_string(),
             prompt: "Animate the immutable endpoint".to_string(),
             model_id: "local:wan2.2-ti2v-5b".to_string(),
@@ -7596,7 +7615,7 @@ mod tests {
             animated_background,
             plan_snapshot: plan_snapshot(),
         };
-        assert!(begin_local_wan_generation(paths, &request).unwrap());
+        assert!(begin_local_video_generation(paths, &request).unwrap());
         request
     }
 
@@ -7671,7 +7690,7 @@ mod tests {
     }
 
     #[test]
-    fn local_wan_publication_rejects_a_blob_outside_the_canonical_cas_root() {
+    fn local_video_publication_rejects_a_blob_outside_the_canonical_cas_root() {
         let mut paths = test_paths("wan-wrong-cas-root");
         paths.blobs = paths.blobs.join("sha256");
         let request = prepare_wan_publication(&paths, "run:wan-wrong-cas-root", None);
@@ -7687,7 +7706,7 @@ mod tests {
             bytes.len() as u64,
         );
 
-        let error = complete_local_wan_generation(&paths, &request, &video).unwrap_err();
+        let error = complete_local_video_generation(&paths, &request, &video).unwrap_err();
 
         assert!(error.contains("not durably available in the managed CAS"));
         assert!(error.contains("missing from managed content-addressed storage"));
@@ -7702,7 +7721,7 @@ mod tests {
     }
 
     #[test]
-    fn local_wan_publication_requires_the_requested_composite_blob() {
+    fn local_video_publication_requires_the_requested_composite_blob() {
         let mut paths = test_paths("wan-missing-composite");
         paths.blobs = paths.blobs.join("sha256");
         let request = prepare_wan_publication(
@@ -7772,9 +7791,9 @@ mod tests {
             .unwrap(),
         );
 
-        let error = complete_local_wan_generation(&paths, &request, &video).unwrap_err();
+        let error = complete_local_video_generation(&paths, &request, &video).unwrap_err();
 
-        assert!(error.contains("composited WAN video"));
+        assert!(error.contains("composited local video"));
         assert!(error.contains("not durably available in the managed CAS"));
         assert!(error.contains("missing from managed content-addressed storage"));
         assert!(get_asset_blob_source(&paths, "asset:run:wan-missing-composite:0").is_err());
@@ -7788,7 +7807,7 @@ mod tests {
     }
 
     #[test]
-    fn local_wan_publication_repairs_blob_metadata_and_supports_preview_and_export() {
+    fn local_video_publication_repairs_blob_metadata_and_supports_preview_and_export() {
         let mut paths = test_paths("wan-durable-delivery");
         paths.blobs = paths.blobs.join("sha256");
         let request = prepare_wan_publication(&paths, "run:wan-durable-delivery", None);
@@ -7810,7 +7829,7 @@ mod tests {
             bytes.len() as u64,
         );
 
-        let detail = complete_local_wan_generation(&paths, &request, &video).unwrap();
+        let detail = complete_local_video_generation(&paths, &request, &video).unwrap();
 
         assert_eq!(detail.run.status, "completed");
         assert_eq!(detail.assets.len(), 1);
@@ -8668,6 +8687,27 @@ mod tests {
             .events
             .iter()
             .any(|event| event.kind == "run_recovered"));
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn startup_fails_non_resumable_local_generation() {
+        let paths = test_paths("local-recovery");
+        prepare_wan_publication(&paths, "run:interrupted-local-video", None);
+
+        let recovery = initialize(&paths).unwrap();
+        let detail = get_run_detail(&paths, "run:interrupted-local-video").unwrap();
+        assert_eq!(recovery.recovered_runs, 1);
+        assert_eq!(detail.run.status, "failed");
+        assert_eq!(detail.run.current_step, "Interrupted; run again");
+        assert_eq!(
+            detail.run.error.as_deref(),
+            Some("Local generation was interrupted before its outputs were published.")
+        );
+        assert!(detail
+            .events
+            .iter()
+            .any(|event| event.kind == "run_interrupted"));
         cleanup(&paths);
     }
 

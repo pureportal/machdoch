@@ -495,7 +495,7 @@ export const createImageToVideoFlow = ({
     {
       providerPolicy: "local",
       modelPolicy: "quality",
-      modelId: "local:framepack-i2v-hy-13b",
+      modelId: "local:hunyuan-video-1.5-i2v-step-distilled",
       aspectRatio,
       durationSeconds: 2,
       resolution: "quality-640",
@@ -791,14 +791,14 @@ export const createGeneratedLoopVideoFlow = ({
       "last-frame",
     ),
     createEdge(
-      "wan-to-transparent-output",
+      "video-to-transparent-output",
       generateVideo.id,
       "video",
       transparentOutput.id,
       "video",
     ),
     createEdge(
-      "wan-alpha-to-composite",
+      "video-alpha-to-composite",
       generateVideo.id,
       "video",
       compositeVideo.id,
@@ -824,7 +824,7 @@ export const createGeneratedLoopVideoFlow = ({
     id,
     name: "Generated character idle loop",
     description:
-      "Generates one character frame, removes its background, reuses that exact frame at both WAN endpoints, and publishes transparent plus animated-background WebM loops.",
+      "Generates one character frame, removes its background, reuses that exact frame at both video endpoints, and publishes transparent plus animated-background WebM loops.",
     createdAt,
     updatedAt: createdAt,
     variables: [],
@@ -2983,6 +2983,27 @@ export const compileMediaFlow = ({
     selectedSubjectCutoutIndex >= 0
       ? subjectCutoutCandidates[selectedSubjectCutoutIndex]?.descriptor ?? null
       : subjectCutoutCandidates.find((candidate) => candidate.descriptor)?.descriptor ?? null;
+  const videoUsesDistinctEndpoints = (() => {
+    const firstFrames = videoFrameSources.filter(
+      (source) => source.portId === "first-frame",
+    );
+    const lastFrames = videoFrameSources.filter(
+      (source) => source.portId === "last-frame",
+    );
+    return (
+      firstFrames.length === 1 &&
+      lastFrames.length === 1 &&
+      firstFrames[0] !== undefined &&
+      lastFrames[0] !== undefined &&
+      firstFrames[0].nodeId !== lastFrames[0].nodeId &&
+      (
+        firstFrames[0].assetId.trim().length === 0 ||
+        firstFrames[0].assetId !== lastFrames[0].assetId
+      )
+    );
+  })();
+  const videoRequiresTerminalConditioning =
+    videoUsesDistinctEndpoints || videoTaskNode?.config.loopMode === "seamless";
   const videoModel = videoTaskNode
     ? (() => {
         const configuredId =
@@ -2992,7 +3013,10 @@ export const compileMediaFlow = ({
         const candidates = models.filter(
           (candidate) =>
             candidate.capabilities.includes("image-to-video") &&
-            candidate.capabilities.includes("start-end-to-video") &&
+            (
+              !videoRequiresTerminalConditioning ||
+              candidate.capabilities.includes("start-end-to-video")
+            ) &&
             matchesProviderPolicy(
               candidate,
               videoTaskNode.config.providerPolicy === "local" ||
@@ -3110,7 +3134,7 @@ export const compileMediaFlow = ({
           "No discovered image-to-video model matches the video node's execution policy.",
         nodeId: videoTaskNode.id,
         action:
-          "Scan the workspace models directory and choose a ready FramePack or lightweight LTX-Video variant.",
+          "Scan the workspace models directory and choose a ready HunyuanVideo, FramePack, or lightweight LTX-Video variant.",
       });
     } else {
       const readinessGuidance = describeMediaModelReadiness(videoModel);
@@ -3127,6 +3151,8 @@ export const compileMediaFlow = ({
     const config = videoTaskNode.config;
     const ltxVideo = videoModel?.architecture === "ltx-video";
     const framepackVideo = videoModel?.architecture === "framepack-i2v";
+    const hunyuanVideo15 =
+      videoModel?.architecture === "hunyuan-video-1.5-i2v";
     const sameEndpointSource =
       firstFrames[0] !== undefined &&
       lastFrames[0] !== undefined &&
@@ -3154,11 +3180,12 @@ export const compileMediaFlow = ({
       typeof config.numFrames !== "number" ||
       !Number.isInteger(config.numFrames) ||
       config.numFrames < (ltxVideo ? 9 : 17) ||
-      config.numFrames > (ltxVideo ? 257 : framepackVideo ? 129 : 33) ||
+      config.numFrames >
+        (ltxVideo ? 257 : framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33) ||
       (config.numFrames - 1) % (ltxVideo ? 8 : 4) !== 0
         ? ltxVideo
           ? "LTX-Video source frames must be 9–257 in the required 8k+1 form."
-          : `${framepackVideo ? "FramePack" : "WAN"} source frames must be 17–${framepackVideo ? 129 : 33} in the required 4k+1 form.`
+          : `${framepackVideo ? "FramePack" : hunyuanVideo15 ? "HunyuanVideo 1.5" : "WAN"} source frames must be 17–${framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33} in the required 4k+1 form.`
         : null,
       typeof config.fps !== "number" ||
       !Number.isInteger(config.fps) ||
@@ -3411,7 +3438,9 @@ export const compileMediaFlow = ({
       ? [{
           nodeId: videoTaskNode.id,
           modality: "video" as const,
-          requiredCapability: "start-end-to-video" as const,
+          requiredCapability: videoRequiresTerminalConditioning
+            ? "start-end-to-video" as const
+            : "image-to-video" as const,
           model: videoModel,
         }]
       : []),
@@ -3420,9 +3449,9 @@ export const compileMediaFlow = ({
   const privacySummary =
     (videoTaskNode
       ? normalizedVideoFrameAssetIds.length > 0
-        ? `${normalizedVideoFrameAssetIds.length} selected keyframe asset${normalizedVideoFrameAssetIds.length === 1 ? " remains" : "s remain"} local for WAN generation and verified WebM publication.`
+        ? `${normalizedVideoFrameAssetIds.length} selected keyframe asset${normalizedVideoFrameAssetIds.length === 1 ? " remains" : "s remain"} local for video generation and verified WebM publication.`
         : videoFrameSources.some((source) => source.generated)
-          ? "The generated image, alpha cutout, both WAN endpoint conditions, and video frames remain local; only immutable outputs are published."
+          ? "The generated image, alpha cutout, both video endpoint conditions, and generated frames remain local; only immutable outputs are published."
           : "The motion brief remains local; execution stays blocked until first and last frames are connected."
       : isLocalUtilityFlow
       ? `${normalizedSourceAssetIds.length} source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} ${normalizedSourceAssetIds.length === 1 ? "remains" : "remain"} on this device for local image operations.`

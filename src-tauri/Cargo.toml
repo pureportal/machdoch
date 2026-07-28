@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.40.1"
+version = "0.41.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -72,6 +72,7 @@ windows = { version = "0.61", features = [
   "Win32_Security",
   "Win32_System_Console",
   "Win32_System_JobObjects",
+  "Win32_System_Power",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_UI_Shell",

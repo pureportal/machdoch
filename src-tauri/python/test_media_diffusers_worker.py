@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import numpy as np
 from PIL import Image
@@ -194,6 +195,31 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 self.assertEqual(width % 32, 0)
                 self.assertEqual(height % 32, 0)
 
+    def test_hunyuan_video_15_dimensions_follow_official_aspect_buckets(self) -> None:
+        expected = {
+            ("preview-512", "16:9"): (672, 384),
+            ("quality-640", "9:16"): (480, 848),
+            ("quality-768", "21:9"): (1_152, 496),
+        }
+        for (resolution, aspect), dimensions in expected.items():
+            self.assertEqual(
+                WORKER._video_dimensions(
+                    aspect,
+                    resolution,
+                    "hunyuan-video-1.5-i2v",
+                ),
+                dimensions,
+            )
+        for resolution in ("preview-512", "quality-640", "quality-768"):
+            for aspect in ("1:1", "16:9", "9:16", "21:9"):
+                width, height = WORKER._video_dimensions(
+                    aspect,
+                    resolution,
+                    "hunyuan-video-1.5-i2v",
+                )
+                self.assertEqual(width % 16, 0)
+                self.assertEqual(height % 16, 0)
+
     def test_ltx_multiscale_dimensions_follow_official_two_thirds_pass(self) -> None:
         self.assertEqual(
             WORKER._ltx_multiscale_dimensions(640, 352),
@@ -243,6 +269,17 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 "transformer_blocks.0.attn.to_q.weight"
             )
         )
+
+    def test_framepack_full_section_is_sampled_without_synthesizing_frames(self) -> None:
+        frames = list(range(37))
+        selected = WORKER._framepack_requested_frames(frames, 17)
+        self.assertEqual(len(selected), 17)
+        self.assertEqual(selected[0], 0)
+        self.assertEqual(selected[-1], 36)
+        self.assertEqual(selected, sorted(set(selected)))
+        self.assertIs(WORKER._framepack_requested_frames(frames, 37), frames)
+        with self.assertRaisesRegex(WORKER.WorkerError, "fewer decoded frames"):
+            WORKER._framepack_requested_frames(frames[:16], 17)
 
     def test_indexed_checkpoint_files_rejects_parent_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -302,13 +339,265 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             "balanced",
         )
         self.assertEqual(
+            WORKER._select_video_memory_profile("auto", 48 * gib, 16 * gib),
+            "balanced",
+        )
+        self.assertEqual(
+            WORKER._select_video_memory_profile("auto", 32 * gib, 24 * gib),
+            "balanced",
+        )
+        self.assertEqual(
             WORKER._select_video_memory_profile("auto", 64 * gib, 24 * gib),
+            "balanced",
+        )
+        self.assertEqual(
+            WORKER._select_video_memory_profile("auto", 64 * gib, 48 * gib),
             "maximum-speed",
         )
         self.assertEqual(
             WORKER._select_video_memory_profile("memory-saver", 64 * gib, 24 * gib),
             "memory-saver",
         )
+
+    def test_video_offload_group_size_uses_available_vram(self) -> None:
+        gib = 1_024**3
+        self.assertEqual(
+            WORKER._video_offload_group_size(8 * gib),
+            1,
+        )
+        self.assertEqual(
+            WORKER._video_offload_group_size(12 * gib),
+            2,
+        )
+        self.assertEqual(
+            WORKER._video_offload_group_size(15 * gib),
+            4,
+        )
+        self.assertEqual(
+            WORKER._video_offload_group_size(23 * gib),
+            8,
+        )
+        self.assertEqual(
+            WORKER._video_offload_group_size(24 * gib, "memory-saver"),
+            1,
+        )
+        self.assertEqual(
+            WORKER._video_offload_group_size(None),
+            1,
+        )
+
+    def test_framepack_vae_tiles_bound_decode_memory_on_smaller_gpus(self) -> None:
+        gib = 1_024**3
+        bounded = WORKER._framepack_vae_tile_configuration(16 * gib)
+        self.assertEqual(bounded["tile_sample_min_height"], 64)
+        self.assertEqual(bounded["tile_sample_min_width"], 64)
+        self.assertEqual(bounded["tile_sample_min_num_frames"], 8)
+        self.assertLess(
+            bounded["tile_sample_stride_height"],
+            bounded["tile_sample_min_height"],
+        )
+        self.assertEqual(
+            WORKER._framepack_vae_tile_configuration(None),
+            bounded,
+        )
+
+        roomy = WORKER._framepack_vae_tile_configuration(24 * gib)
+        self.assertEqual(roomy["tile_sample_min_height"], 256)
+        self.assertEqual(roomy["tile_sample_min_num_frames"], 16)
+
+    def test_hunyuan_video_15_vae_tiles_adapt_to_vram(self) -> None:
+        gib = 1_024**3
+        bounded = WORKER._hunyuan_video_15_vae_tile_configuration(16 * gib)
+        self.assertEqual(bounded["tile_sample_min_height"], 128)
+        self.assertEqual(bounded["tile_latent_min_height"], 8)
+        roomy = WORKER._hunyuan_video_15_vae_tile_configuration(24 * gib)
+        self.assertEqual(roomy["tile_sample_min_height"], 256)
+        self.assertEqual(roomy["tile_latent_min_height"], 16)
+
+    def test_hunyuan_video_15_storage_adapts_to_host_and_device_memory(
+        self,
+    ) -> None:
+        gib = 1_024**3
+        self.assertTrue(
+            WORKER._hunyuan_video_15_uses_bfloat16_storage(
+                16 * gib,
+                32 * gib,
+            )
+        )
+        self.assertFalse(
+            WORKER._hunyuan_video_15_uses_bfloat16_storage(
+                14 * gib,
+                32 * gib,
+            )
+        )
+        self.assertFalse(
+            WORKER._hunyuan_video_15_uses_bfloat16_storage(
+                16 * gib,
+                32 * gib,
+                "memory-saver",
+            )
+        )
+        self.assertTrue(
+            WORKER._hunyuan_video_15_uses_bfloat16_storage(
+                24 * gib,
+                48 * gib,
+            )
+        )
+        self.assertTrue(
+            WORKER._hunyuan_video_15_parameter_uses_compute_dtype(
+                "transformer_blocks.0.norm1.linear.weight"
+            )
+        )
+        self.assertFalse(
+            WORKER._hunyuan_video_15_parameter_uses_compute_dtype(
+                "transformer_blocks.0.attn.to_q.weight"
+            )
+        )
+
+    def test_framepack_direct_vae_decode_does_not_retain_autograd_tiles(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("FramePack decode test requires the bundled torch runtime")
+
+        class FakeVae:
+            dtype = torch.float32
+            config = SimpleNamespace(scaling_factor=1.0)
+
+            def __init__(self) -> None:
+                self.inference_mode_enabled = False
+
+            def to(self, _device: object) -> "FakeVae":
+                return self
+
+            def decode(
+                self,
+                latents: object,
+                return_dict: bool,
+            ) -> tuple[object]:
+                self.inference_mode_enabled = torch.is_inference_mode_enabled()
+                self.assert_return_dict = return_dict
+                return (latents,)
+
+        class FakeVideoProcessor:
+            def postprocess_video(
+                self,
+                decoded: object,
+                output_type: str,
+            ) -> list[list[object]]:
+                self.decoded = decoded
+                self.output_type = output_type
+                return [["frame-0", "frame-1"]]
+
+        vae = FakeVae()
+        processor = FakeVideoProcessor()
+        frames = WORKER._decode_framepack_video(
+            torch,
+            vae,
+            processor,
+            torch.ones((1, 1, 1, 1, 1)),
+            torch.device("cpu"),
+        )
+
+        self.assertTrue(vae.inference_mode_enabled)
+        self.assertFalse(vae.assert_return_dict)
+        self.assertEqual(processor.output_type, "pil")
+        self.assertEqual(frames, ["frame-0", "frame-1"])
+
+    def test_framepack_prompt_encoding_does_not_retain_autograd_graphs(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("FramePack prompt test requires the bundled torch runtime")
+
+        class FakeEncoder:
+            def __init__(self) -> None:
+                self.inference_mode_enabled = False
+
+            def encode_prompt(self, **_kwargs: object) -> tuple[object, object, object]:
+                self.inference_mode_enabled = torch.is_inference_mode_enabled()
+                value = torch.ones((1, 2), requires_grad=True) * 2
+                return value, value.clone(), value.clone()
+
+        encoder = FakeEncoder()
+        prompt_embeddings, pooled_embeddings, attention_mask = (
+            WORKER._encode_framepack_prompt(
+                encoder,
+                torch,
+                "A useful prompt",
+                torch.device("cpu"),
+                torch.float32,
+            )
+        )
+
+        self.assertTrue(encoder.inference_mode_enabled)
+        self.assertFalse(prompt_embeddings.requires_grad)
+        self.assertFalse(pooled_embeddings.requires_grad)
+        self.assertFalse(attention_mask.requires_grad)
+
+    def test_hunyuan_video_15_prompt_encoding_does_not_retain_autograd_graphs(
+        self,
+    ) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("HunyuanVideo prompt test requires the bundled torch runtime")
+
+        class FakePipeline:
+            inference_mode_enabled = False
+
+            @classmethod
+            def _get_mllm_prompt_embeds(
+                cls,
+                **_kwargs: object,
+            ) -> tuple[object, object]:
+                cls.inference_mode_enabled = torch.is_inference_mode_enabled()
+                value = torch.ones((1, 2), requires_grad=True) * 2
+                return value, value.clone()
+
+            @staticmethod
+            def _get_byt5_prompt_embeds(
+                **_kwargs: object,
+            ) -> tuple[object, object]:
+                value = torch.ones((1, 2), requires_grad=True) * 2
+                return value, value.clone()
+
+        tensors = WORKER._encode_hunyuan_video_15_prompt(
+            FakePipeline,
+            torch,
+            "A useful motion prompt",
+            torch.device("cpu"),
+            None,
+            None,
+            None,
+            None,
+        )
+
+        self.assertTrue(FakePipeline.inference_mode_enabled)
+        self.assertEqual(len(tensors), 4)
+        self.assertTrue(all(not tensor.requires_grad for tensor in tensors))
+
+    def test_hunyuan_video_15_prompt_subprocess_retries_a_native_exit(self) -> None:
+        completed = SimpleNamespace(
+            stdout="",
+            stderr="native process terminated",
+            returncode=-1_073_741_819,
+        )
+        with mock.patch.object(
+            WORKER.subprocess,
+            "run",
+            return_value=completed,
+        ) as run:
+            with self.assertRaisesRegex(
+                WORKER.WorkerError,
+                r"exit code -1073741819.*native process terminated",
+            ):
+                WORKER._encode_hunyuan_video_15_prompt_embeddings(
+                    Path("unused"),
+                    "A useful motion prompt",
+                )
+
+        self.assertEqual(run.call_count, 2)
 
     def test_cpu_video_memory_evidence_is_explicitly_process_isolated(self) -> None:
         evidence = WORKER._start_video_memory_observation(
@@ -444,6 +733,31 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         self.assertGreaterEqual(evidence["bottomMargin"], 12)
         self.assertGreater(evidence["leftMargin"], 200)
         self.assertGreater(evidence["rightMargin"], 200)
+
+    def test_opaque_conditioning_accepts_a_non_green_photo(self) -> None:
+        pixels = np.zeros((96, 96, 3), dtype=np.uint8)
+        pixels[..., 0] = 188
+        pixels[..., 1] = 142
+        pixels[..., 2] = 108
+        pixels[24:80, 30:70] = (220, 185, 140)
+        with tempfile.TemporaryDirectory(prefix="machdoch-opaque-conditioning-") as temporary:
+            source = Path(temporary) / "studio-photo.png"
+            Image.fromarray(pixels).save(source)
+            framed, evidence = WORKER._prepare_video_conditioning_frame(
+                source,
+                160,
+                96,
+                False,
+            )
+
+        self.assertEqual(framed.size, (160, 96))
+        self.assertEqual(evidence["mode"], "background-pad")
+        self.assertFalse(evidence["subjectDetected"])
+        self.assertFalse(evidence["croppedSubject"])
+        self.assertEqual(evidence["placedWidth"], 96)
+        self.assertEqual(evidence["placedHeight"], 96)
+        self.assertEqual(evidence["leftMargin"], 32)
+        self.assertEqual(evidence["rightMargin"], 32)
 
     def test_opaque_webm_round_trip_does_not_index_an_alpha_channel(self) -> None:
         frames = []

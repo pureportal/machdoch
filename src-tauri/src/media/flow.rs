@@ -3961,7 +3961,12 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     | "local:ltx-video-0.9.8-2b-distilled-fp8"
             );
             let framepack_video = model_id == "local:framepack-i2v-hy-13b";
-            if !framepack_video && !ltx_video && model_id != "local:wan2.2-ti2v-5b" {
+            let hunyuan_video = model_id == "local:hunyuan-video-1.5-i2v-step-distilled";
+            if !framepack_video
+                && !hunyuan_video
+                && !ltx_video
+                && model_id != "local:wan2.2-ti2v-5b"
+            {
                 return Err(format!(
                     "flow node {} must pin an executable local video model",
                     node.id
@@ -3995,6 +4000,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             }
             if node.config.get("generateAudio").and_then(Value::as_bool) != Some(false)
                 || (!framepack_video
+                    && !hunyuan_video
                     && !ltx_video
                     && node
                         .config
@@ -4035,7 +4041,13 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     node.id
                 ));
             }
-            let maximum_frames = if framepack_video { 129 } else { 33 };
+            let maximum_frames = if framepack_video {
+                129
+            } else if hunyuan_video {
+                121
+            } else {
+                33
+            };
             if !ltx_video
                 && (!(17..=maximum_frames).contains(&num_frames) || (num_frames - 1) % 4 != 0)
             {
@@ -5433,6 +5445,23 @@ mod tests {
             .config
             .insert("numFrames".to_string(), json!(32));
         assert!(invalid_frame_count.validate().unwrap_err().contains("4k+1"));
+
+        let mut hunyuan_video = flow.clone();
+        let hunyuan_config = &mut hunyuan_video
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "generate")
+            .unwrap()
+            .config;
+        hunyuan_config.insert(
+            "modelId".to_string(),
+            json!("local:hunyuan-video-1.5-i2v-step-distilled"),
+        );
+        hunyuan_config.insert("numFrames".to_string(), json!(121));
+        hunyuan_config.insert("numInferenceSteps".to_string(), json!(12));
+        hunyuan_config.insert("guidanceScale".to_string(), json!(1));
+        hunyuan_config.insert("experimentalLowMemory".to_string(), json!(false));
+        assert!(hunyuan_video.validate().is_ok());
 
         let mut missing_first_frame = flow.clone();
         missing_first_frame

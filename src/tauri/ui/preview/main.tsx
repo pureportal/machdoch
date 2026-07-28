@@ -3,6 +3,23 @@ import { createRoot } from "react-dom/client";
 import "../styles.css";
 import { App } from "./app";
 
+declare const __MACHDOCH_DEVELOPMENT__: boolean;
+
+if (__MACHDOCH_DEVELOPMENT__) {
+  void import("./media-quality-driver").then((driver) => {
+    Object.assign(window, {
+      startWitchFramePackQualityRun:
+        driver.startWitchFramePackQualityRun,
+      startWitchHunyuanQualityRun:
+        driver.startWitchHunyuanQualityRun,
+      startGeneralHunyuanQualityRun:
+        driver.startGeneralHunyuanQualityRun,
+      startDogLoraImageQualityRun:
+        driver.startDogLoraImageQualityRun,
+    });
+  });
+}
+
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {

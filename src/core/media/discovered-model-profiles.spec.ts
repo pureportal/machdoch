@@ -56,6 +56,7 @@ const runtime = (
   device: "cuda:0",
   deviceLabel: "AMD Radeon RX 9070",
   deviceMemoryBytes: 17_094_967_296,
+  physicalMemoryBytes: 32 * 1_024 ** 3,
   architectures: ["wan-2.2-ti2v"],
   capabilities,
   diagnostic: "Ready.",
@@ -104,11 +105,40 @@ const framepackDiscovery = (): MediaWorkspaceModelDiscovery => ({
 const framepackRuntime = (
   device: "cpu" | "cuda:0",
   deviceMemoryBytes: number | null,
+  physicalMemoryBytes = 32 * 1_024 ** 3,
 ): MediaLocalDiffusersRuntimeStatus => ({
   ...runtime(),
   device,
   deviceMemoryBytes,
+  physicalMemoryBytes,
   architectures: ["framepack-i2v"],
+});
+
+const hunyuanDiscovery = (): MediaWorkspaceModelDiscovery => ({
+  ...discovery(),
+  entries: [
+    {
+      ...discovery().entries[0]!,
+      path: "C:/workspace/models/hunyuan-video-1.5-i2v-step-distilled",
+      relativePath: "hunyuan-video-1.5-i2v-step-distilled",
+      displayName: "HunyuanVideo 1.5 I2V 8.3B Step Distilled",
+      architecture: "hunyuan-video-1.5-i2v",
+      byteSize: 32_300_000_000,
+      capabilities: ["image-to-video"],
+    },
+  ],
+});
+
+const hunyuanRuntime = (
+  device: "cpu" | "cuda:0",
+  deviceMemoryBytes: number | null,
+  physicalMemoryBytes = 32 * 1_024 ** 3,
+): MediaLocalDiffusersRuntimeStatus => ({
+  ...runtime(),
+  device,
+  deviceMemoryBytes,
+  physicalMemoryBytes,
+  architectures: ["hunyuan-video-1.5-i2v"],
 });
 
 describe("discovered media runtime profiles", () => {
@@ -217,6 +247,52 @@ describe("discovered media runtime profiles", () => {
     expect(modelFor("cuda:0", 24 * 1_024 ** 3)?.configured).toBe(true);
     expect(modelFor("cuda:0", 8 * 1_024 ** 3)?.configured).toBe(false);
     expect(modelFor("cpu", null)?.configured).toBe(false);
+
+    const lowRam = extendMediaCatalogWithWorkspaceDiscovery({
+      catalog: baseCatalog(),
+      discovery: framepackDiscovery(),
+      runtime: framepackRuntime(
+        "cuda:0",
+        16 * 1_024 ** 3,
+        28 * 1_024 ** 3,
+      ),
+    }).models.find(
+      (model) => model.id === "local:framepack-i2v-hy-13b",
+    );
+    expect(lowRam?.configured).toBe(false);
+    expect(lowRam?.runtimeReadinessDiagnostic).toContain(
+      "30 GiB of physical memory",
+    );
+  });
+
+  it("enables HunyuanVideo 1.5 only on its reviewed GPU and RAM envelope", () => {
+    const modelFor = (
+      device: "cpu" | "cuda:0",
+      deviceMemoryBytes: number | null,
+      physicalMemoryBytes = 32 * 1_024 ** 3,
+    ) =>
+      extendMediaCatalogWithWorkspaceDiscovery({
+        catalog: baseCatalog(),
+        discovery: hunyuanDiscovery(),
+        runtime: hunyuanRuntime(
+          device,
+          deviceMemoryBytes,
+          physicalMemoryBytes,
+        ),
+      }).models.find(
+        (model) =>
+          model.id === "local:hunyuan-video-1.5-i2v-step-distilled",
+      );
+
+    expect(modelFor("cuda:0", 16 * 1_024 ** 3)?.configured).toBe(true);
+    expect(modelFor("cuda:0", 24 * 1_024 ** 3)?.configured).toBe(true);
+    expect(modelFor("cuda:0", 14 * 1_024 ** 3)?.configured).toBe(true);
+    expect(modelFor("cuda:0", 12 * 1_024 ** 3)?.configured).toBe(false);
+    expect(modelFor("cpu", null)?.configured).toBe(false);
+    expect(
+      modelFor("cuda:0", 16 * 1_024 ** 3, 28 * 1_024 ** 3)
+        ?.runtimeReadinessDiagnostic,
+    ).toContain("30 GiB of physical memory");
   });
 
   it("does not claim an incomplete workspace package is installed", () => {

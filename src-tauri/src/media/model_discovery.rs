@@ -38,6 +38,27 @@ const FRAMEPACK_REQUIRED_FILES: &[&str] = &[
     "image_encoder/config.json",
     "image_encoder/model.safetensors",
 ];
+const HUNYUAN_VIDEO_15_ARCHITECTURE: &str = "hunyuan-video-1.5-i2v";
+const HUNYUAN_VIDEO_15_MODEL_REVISION: &str = "854c04a4c8a53d990b418c7478f0802c0fc8c726";
+const HUNYUAN_VIDEO_15_REQUIRED_FILES: &[&str] = &[
+    "model_index.json",
+    "scheduler/scheduler_config.json",
+    "guider/guider_config.json",
+    "text_encoder/config.json",
+    "text_encoder/model.safetensors.index.json",
+    "text_encoder_2/config.json",
+    "text_encoder_2/model.safetensors",
+    "tokenizer/tokenizer.json",
+    "tokenizer/tokenizer_config.json",
+    "tokenizer_2/tokenizer_config.json",
+    "transformer/config.json",
+    "transformer/diffusion_pytorch_model.safetensors.index.json",
+    "vae/config.json",
+    "vae/diffusion_pytorch_model.safetensors",
+    "feature_extractor/preprocessor_config.json",
+    "image_encoder/config.json",
+    "image_encoder/model.safetensors",
+];
 const LTX_ARCHITECTURE: &str = "ltx-video";
 const LTX_MODEL_REVISION: &str = "8984fa25007f376c1a299016d0957a37a2f797bb";
 const LTX_REQUIRED_FILES: &[&str] = &[
@@ -307,6 +328,119 @@ fn is_framepack_transformer(config: &Value) -> bool {
         && config.get("has_clean_x_embedder").and_then(Value::as_bool) == Some(true)
         && config.get("in_channels").and_then(Value::as_u64) == Some(16)
         && config.get("out_channels").and_then(Value::as_u64) == Some(16)
+}
+
+fn is_hunyuan_video_15_i2v_transformer(config: &Value) -> bool {
+    config.get("_class_name").and_then(Value::as_str) == Some("HunyuanVideo15Transformer3DModel")
+        && config.get("task_type").and_then(Value::as_str) == Some("i2v")
+        && config.get("num_layers").and_then(Value::as_u64) == Some(54)
+        && config.get("num_refiner_layers").and_then(Value::as_u64) == Some(2)
+        && config.get("num_attention_heads").and_then(Value::as_u64) == Some(16)
+        && config.get("attention_head_dim").and_then(Value::as_u64) == Some(128)
+        && config.get("text_embed_dim").and_then(Value::as_u64) == Some(3_584)
+        && config.get("text_embed_2_dim").and_then(Value::as_u64) == Some(1_472)
+        && config.get("image_embed_dim").and_then(Value::as_u64) == Some(1_152)
+        && config.get("in_channels").and_then(Value::as_u64) == Some(65)
+        && config.get("out_channels").and_then(Value::as_u64) == Some(32)
+        && config.get("use_meanflow").and_then(Value::as_bool) == Some(true)
+}
+
+fn hunyuan_video_15_artifact(
+    models_root: &Path,
+    directory: &Path,
+    model_index: &Value,
+    inventory: DirectoryInventory,
+) -> MediaResult<MediaDiscoveredModelArtifact> {
+    let DirectoryInventory {
+        byte_size,
+        file_count,
+        truncated,
+    } = inventory;
+    let transformer_config = read_json(
+        &directory.join("transformer").join("config.json"),
+        "HunyuanVideo 1.5 transformer config",
+    );
+    let profile_error = match transformer_config {
+        Ok(config)
+            if model_index.get("_class_name").and_then(Value::as_str)
+                == Some("HunyuanVideo15ImageToVideoPipeline")
+                && is_hunyuan_video_15_i2v_transformer(&config) =>
+        {
+            None
+        }
+        Ok(_) => Some(
+            "The package does not match the reviewed HunyuanVideo 1.5 480p I2V step-distilled profile"
+                .to_string(),
+        ),
+        Err(error) => Some(error),
+    };
+    let mut required = HUNYUAN_VIDEO_15_REQUIRED_FILES
+        .iter()
+        .map(|relative| (*relative).to_string())
+        .collect::<Vec<_>>();
+    let mut package_error = None;
+    for index in [
+        "text_encoder/model.safetensors.index.json",
+        "transformer/diffusion_pytorch_model.safetensors.index.json",
+    ] {
+        match indexed_weight_files(directory, index) {
+            Ok(shards) => required.extend(shards),
+            Err(error) => package_error = Some(error),
+        }
+    }
+    required.sort();
+    required.dedup();
+    let missing = required
+        .iter()
+        .filter(|relative| !regular_nonempty_file(&directory.join(relative)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let revision_error = match huggingface_revision(directory, "model_index.json") {
+        Ok(revision) if revision == HUNYUAN_VIDEO_15_MODEL_REVISION => None,
+        Ok(revision) => Some(format!(
+            "this package contains revision {revision}; the reviewed package requires {HUNYUAN_VIDEO_15_MODEL_REVISION}"
+        )),
+        Err(error) => Some(error),
+    };
+    let ready = !truncated
+        && missing.is_empty()
+        && package_error.is_none()
+        && profile_error.is_none()
+        && revision_error.is_none();
+    let diagnostic = if ready {
+        "Pinned HunyuanVideo 1.5 480p I2V step-distilled weights are present. Machdoch uses native first-frame conditioning, 8- or 12-step mean-flow sampling, and isolated component offload."
+            .to_string()
+    } else if truncated {
+        "HunyuanVideo 1.5 package inventory exceeded the bounded discovery limits.".to_string()
+    } else if let Some(error) = profile_error {
+        format!("HunyuanVideo 1.5 package profile is incompatible: {error}.")
+    } else if let Some(error) = package_error {
+        format!("HunyuanVideo 1.5 package index is incomplete or unsafe: {error}.")
+    } else if !missing.is_empty() {
+        format!(
+            "HunyuanVideo 1.5 download is incomplete; missing {}.",
+            missing.join(", ")
+        )
+    } else {
+        revision_error
+            .unwrap_or_else(|| "HunyuanVideo 1.5 package verification failed.".to_string())
+    };
+    Ok(MediaDiscoveredModelArtifact {
+        path: directory.display().to_string(),
+        relative_path: relative_display(models_root, directory),
+        display_name: "HunyuanVideo 1.5 I2V 8.3B Step Distilled".to_string(),
+        kind: "diffusers-model".to_string(),
+        status: if ready { "ready" } else { "incomplete" }.to_string(),
+        architecture: Some(HUNYUAN_VIDEO_15_ARCHITECTURE.to_string()),
+        byte_size,
+        file_count,
+        capabilities: vec![
+            "image-to-video".to_string(),
+            "alpha-video".to_string(),
+            "video-composite".to_string(),
+        ],
+        diagnostic,
+    })
 }
 
 fn framepack_artifact(
@@ -703,6 +837,9 @@ fn diffusers_artifact(
     }
     if matches!(class_name, "LTXPipeline" | "LTXConditionPipeline") {
         return ltx_artifact(models_root, directory, &model_index, inventory);
+    }
+    if class_name == "HunyuanVideo15ImageToVideoPipeline" {
+        return hunyuan_video_15_artifact(models_root, directory, &model_index, inventory);
     }
     if class_name == "HunyuanVideoPipeline"
         && read_json(
@@ -1241,7 +1378,8 @@ mod tests {
     use super::{
         discover, discover_with_limits, finalize_warnings, push_warning,
         resolve_workspace_diffusers_package, FRAMEPACK_BASE_REVISION, FRAMEPACK_IMAGE_REVISION,
-        FRAMEPACK_MODEL_REVISION, LTX_MODEL_REVISION, MAX_WARNINGS, WAN_MODEL_REVISION,
+        FRAMEPACK_MODEL_REVISION, HUNYUAN_VIDEO_15_MODEL_REVISION, LTX_MODEL_REVISION,
+        MAX_WARNINGS, WAN_MODEL_REVISION,
     };
 
     fn test_workspace() -> PathBuf {
@@ -1419,6 +1557,53 @@ mod tests {
         package
     }
 
+    fn write_hunyuan_video_15_package(root: &Path, directory_name: &str) -> PathBuf {
+        let package = root.join("models").join(directory_name);
+        write_file(
+            &package.join("model_index.json"),
+            br#"{"_class_name":"HunyuanVideo15ImageToVideoPipeline"}"#,
+        );
+        write_file(
+            &package.join("transformer/config.json"),
+            br#"{"_class_name":"HunyuanVideo15Transformer3DModel","task_type":"i2v","num_layers":54,"num_refiner_layers":2,"num_attention_heads":16,"attention_head_dim":128,"text_embed_dim":3584,"text_embed_2_dim":1472,"image_embed_dim":1152,"in_channels":65,"out_channels":32,"use_meanflow":true}"#,
+        );
+        write_file(
+            &package.join("text_encoder/model.safetensors.index.json"),
+            br#"{"weight_map":{"encoder.weight":"model-00001-of-00001.safetensors"}}"#,
+        );
+        write_file(
+            &package.join("transformer/diffusion_pytorch_model.safetensors.index.json"),
+            br#"{"weight_map":{"transformer.weight":"diffusion_pytorch_model-00001-of-00001.safetensors"}}"#,
+        );
+        for relative in [
+            "scheduler/scheduler_config.json",
+            "guider/guider_config.json",
+            "text_encoder/config.json",
+            "text_encoder/model-00001-of-00001.safetensors",
+            "text_encoder_2/config.json",
+            "text_encoder_2/model.safetensors",
+            "tokenizer/tokenizer.json",
+            "tokenizer/tokenizer_config.json",
+            "tokenizer_2/tokenizer_config.json",
+            "transformer/diffusion_pytorch_model-00001-of-00001.safetensors",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+            "feature_extractor/preprocessor_config.json",
+            "image_encoder/config.json",
+            "image_encoder/model.safetensors",
+        ] {
+            write_file(&package.join(relative), b"test");
+        }
+        write_file(
+            &package.join(".cache/huggingface/download/model_index.json.metadata"),
+            format!(
+                "{HUNYUAN_VIDEO_15_MODEL_REVISION}\n0000000000000000000000000000000000000000\n0\n"
+            )
+            .as_bytes(),
+        );
+        package
+    }
+
     #[test]
     fn discovery_uses_tensor_content_and_isolates_malformed_artifacts() {
         let root = test_workspace();
@@ -1545,6 +1730,46 @@ mod tests {
             root.to_string_lossy().as_ref(),
             "framepack-i2v",
             Some("framepack-i2v-hy"),
+        )
+        .expect("the only compatible renamed package should resolve");
+        assert_eq!(
+            resolved,
+            fs::canonicalize(&package).expect("test package should resolve")
+        );
+
+        fs::remove_dir_all(root).expect("test workspace should be removed");
+    }
+
+    #[test]
+    fn renamed_hunyuan_video_15_package_is_identified_by_pipeline_content() {
+        let root = test_workspace();
+        let package = write_hunyuan_video_15_package(&root, "my-mean-flow-i2v-package");
+
+        let result = discover(root.to_string_lossy().as_ref())
+            .expect("HunyuanVideo 1.5 package should be discovered");
+        let artifact = result
+            .entries
+            .iter()
+            .find(|entry| entry.relative_path == "my-mean-flow-i2v-package")
+            .expect("renamed HunyuanVideo 1.5 package should remain visible");
+        assert_eq!(artifact.status, "ready");
+        assert_eq!(
+            artifact.architecture.as_deref(),
+            Some("hunyuan-video-1.5-i2v")
+        );
+        assert!(artifact
+            .capabilities
+            .iter()
+            .any(|capability| capability == "image-to-video"));
+        assert!(!artifact
+            .capabilities
+            .iter()
+            .any(|capability| capability == "start-end-to-video"));
+
+        let resolved = resolve_workspace_diffusers_package(
+            root.to_string_lossy().as_ref(),
+            "hunyuan-video-1.5-i2v",
+            Some("hunyuan-video-1.5-i2v-step-distilled"),
         )
         .expect("the only compatible renamed package should resolve");
         assert_eq!(

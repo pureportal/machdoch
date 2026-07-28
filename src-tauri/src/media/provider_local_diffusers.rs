@@ -14,6 +14,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tauri::{AppHandle, Manager as _};
 
+use crate::child_process::{
+    assign_child_process_to_kill_on_close_job, configure_child_process_group,
+    terminate_child_process_tree,
+};
+
 use super::{
     database, model_addon, model_import,
     provider_openai::{self, GeneratedImageAsset},
@@ -41,6 +46,7 @@ const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
 // display driver reserves VRAM. Keep the bounded CPU-offload profile honest
 // while accepting those adapters instead of requiring a full 16 GiB report.
 const MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES: u64 = 15 * 1_024 * 1_024 * 1_024;
+const MIN_HUNYUAN_VIDEO_15_MEMORY_BYTES: u64 = 14 * 1_024 * 1_024 * 1_024;
 const MIN_FRAMEPACK_MEMORY_BYTES: u64 = 6 * 1_024 * 1_024 * 1_024;
 static RUNTIME_PROBE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PREFERRED_HIP_VISIBLE_DEVICE: OnceLock<String> = OnceLock::new();
@@ -56,6 +62,7 @@ pub(crate) struct LocalDiffusersRuntimeStatus {
     pub(crate) device: Option<String>,
     pub(crate) device_label: Option<String>,
     pub(crate) device_memory_bytes: Option<u64>,
+    pub(crate) physical_memory_bytes: Option<u64>,
     pub(crate) architectures: Vec<String>,
     pub(crate) capabilities: Vec<String>,
     pub(crate) diagnostic: String,
@@ -72,6 +79,7 @@ impl LocalDiffusersRuntimeStatus {
             device: None,
             device_label: None,
             device_memory_bytes: None,
+            physical_memory_bytes: None,
             architectures: Vec::new(),
             capabilities: Vec::new(),
             diagnostic: diagnostic.into(),
@@ -91,6 +99,7 @@ struct WorkerProbe {
     device: Option<String>,
     device_label: Option<String>,
     device_memory_bytes: Option<u64>,
+    physical_memory_bytes: Option<u64>,
     #[serde(default)]
     architectures: Vec<String>,
     #[serde(default)]
@@ -612,6 +621,7 @@ fn run_worker(
             .env("HIP_VISIBLE_DEVICES", index)
             .env("MACHDOCH_MEDIA_CUDA_DEVICE", "0");
     }
+    configure_child_process_group(&mut worker);
     let mut process = worker
         .stdin(if stdin.is_some() {
             Stdio::piped()
@@ -622,6 +632,11 @@ fn run_worker(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("failed to start local Diffusers worker: {error}"))?;
+    let _worker_job = assign_child_process_to_kill_on_close_job(&process).map_err(|error| {
+        terminate_child_process_tree(&mut process);
+        let _ = process.wait();
+        format!("failed to isolate local Diffusers worker: {error}")
+    })?;
     if let Some(input) = stdin {
         process
             .stdin
@@ -636,7 +651,7 @@ fn run_worker(
         if let Some((paths, run_id)) = cancellation {
             if Instant::now() >= next_cancellation_check {
                 if database::is_cancellation_requested(paths, run_id)? {
-                    let _ = process.kill();
+                    terminate_child_process_tree(&mut process);
                     let _ = process.wait();
                     return Err("local Diffusers generation was canceled".to_string());
                 }
@@ -647,12 +662,12 @@ fn run_worker(
             Ok(Some(_)) => break,
             Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(50)),
             Ok(None) => {
-                let _ = process.kill();
+                terminate_child_process_tree(&mut process);
                 let _ = process.wait();
                 return Err("local Diffusers worker exceeded its execution deadline".to_string());
             }
             Err(error) => {
-                let _ = process.kill();
+                terminate_child_process_tree(&mut process);
                 let _ = process.wait();
                 return Err(format!("failed to inspect local Diffusers worker: {error}"));
             }
@@ -696,6 +711,7 @@ fn probe_with_python(
                         device: probe.device,
                         device_label: probe.device_label,
                         device_memory_bytes: probe.device_memory_bytes,
+                        physical_memory_bytes: probe.physical_memory_bytes,
                         architectures: probe.architectures,
                         capabilities: probe.capabilities,
                         diagnostic: probe.diagnostic,
@@ -2159,6 +2175,8 @@ const FRAMEPACK_MODEL_REVISION: &str = "86cef4396041b6002c957852daac4c91aaa47c79
 const FRAMEPACK_BASE_REVISION: &str = "e8c2aaa66fe3742a32c11a6766aecbf07c56e773";
 const FRAMEPACK_IMAGE_REVISION: &str = "45b801affc54ff2af4e5daf1b282e0921901db87";
 const FRAMEPACK_MODEL_ID: &str = "local:framepack-i2v-hy-13b";
+const HUNYUAN_VIDEO_15_MODEL_REVISION: &str = "854c04a4c8a53d990b418c7478f0802c0fc8c726";
+const HUNYUAN_VIDEO_15_MODEL_ID: &str = "local:hunyuan-video-1.5-i2v-step-distilled";
 const WAN_MODEL_REVISION: &str = "b8fff7315c768468a5333511427288870b2e9635";
 
 fn framepack_download_identity(
@@ -2335,6 +2353,179 @@ fn framepack_index_shards(model_root: &Path, relative_index: &str) -> MediaResul
         ));
     }
     Ok(shards)
+}
+
+fn hunyuan_video_15_download_identity(model_root: &Path, relative: &Path) -> MediaResult<String> {
+    let relative = relative
+        .to_str()
+        .ok_or_else(|| "HunyuanVideo 1.5 component path is not valid Unicode".to_string())?
+        .replace('\\', "/");
+    let metadata_relative = format!(".cache/huggingface/download/{relative}.metadata");
+    let metadata_path = safe_managed_path(model_root, &metadata_relative).map_err(|_| {
+        format!("HunyuanVideo 1.5 component {relative} has no pinned Hugging Face metadata")
+    })?;
+    let metadata = fs::symlink_metadata(&metadata_path).map_err(|error| {
+        format!("failed to inspect HunyuanVideo 1.5 metadata for {relative}: {error}")
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 4_096 {
+        return Err(format!(
+            "HunyuanVideo 1.5 download metadata for {relative} is unsafe or invalid"
+        ));
+    }
+    let encoded = fs::read_to_string(&metadata_path).map_err(|error| {
+        format!("failed to read HunyuanVideo 1.5 metadata for {relative}: {error}")
+    })?;
+    let mut lines = encoded.lines().map(str::trim);
+    let revision = lines.next().unwrap_or("");
+    let content_identity = lines.next().unwrap_or("");
+    if revision != HUNYUAN_VIDEO_15_MODEL_REVISION {
+        return Err(format!(
+            "HunyuanVideo 1.5 component {relative} came from revision {revision}; expected {HUNYUAN_VIDEO_15_MODEL_REVISION}"
+        ));
+    }
+    if !matches!(content_identity.len(), 40 | 64)
+        || !content_identity
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "HunyuanVideo 1.5 component {relative} has invalid download content identity"
+        ));
+    }
+    Ok(content_identity.to_ascii_lowercase())
+}
+
+fn hunyuan_video_15_index_shards(
+    model_root: &Path,
+    relative_index: &str,
+) -> MediaResult<Vec<PathBuf>> {
+    let index_path = safe_managed_path(model_root, relative_index)?;
+    let encoded = fs::read(&index_path).map_err(|error| {
+        format!("failed to read HunyuanVideo 1.5 model index {relative_index}: {error}")
+    })?;
+    let index = serde_json::from_slice::<serde_json::Value>(&encoded).map_err(|error| {
+        format!("HunyuanVideo 1.5 model index {relative_index} is invalid: {error}")
+    })?;
+    let weight_map = index
+        .get("weight_map")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            format!("HunyuanVideo 1.5 model index {relative_index} has no weight_map")
+        })?;
+    let parent = Path::new(relative_index)
+        .parent()
+        .ok_or_else(|| format!("HunyuanVideo 1.5 model index {relative_index} has no parent"))?;
+    let mut shards = weight_map
+        .values()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| {
+                    format!("HunyuanVideo 1.5 model index {relative_index} has an invalid shard")
+                })
+                .and_then(|name| {
+                    safe_managed_path(model_root, parent.join(name).to_string_lossy().as_ref())
+                })
+        })
+        .collect::<MediaResult<Vec<_>>>()?;
+    shards.sort();
+    shards.dedup();
+    if shards.is_empty() || shards.len() > 64 {
+        return Err(format!(
+            "HunyuanVideo 1.5 model index {relative_index} has an invalid shard inventory"
+        ));
+    }
+    Ok(shards)
+}
+
+fn resolve_hunyuan_video_15_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
+    let workspace = crate::runtime_snapshot::resolve_workspace_root_path(workspace_root)?;
+    let models_root = fs::canonicalize(workspace.join("models"))
+        .map_err(|error| format!("failed to resolve workspace models directory: {error}"))?;
+    let model_root = super::model_discovery::resolve_workspace_diffusers_package(
+        workspace_root,
+        "hunyuan-video-1.5-i2v",
+        Some("hunyuan-video-1.5-i2v-step-distilled"),
+    )?;
+    if !model_root.starts_with(&models_root) {
+        return Err(
+            "HunyuanVideo 1.5 model path escapes the workspace models directory".to_string(),
+        );
+    }
+    let model_index_path = safe_managed_path(&model_root, "model_index.json")?;
+    let model_index = fs::read(&model_index_path)
+        .map_err(|error| format!("failed to read HunyuanVideo 1.5 model_index.json: {error}"))?;
+    let model_index_value = serde_json::from_slice::<serde_json::Value>(&model_index)
+        .map_err(|error| format!("HunyuanVideo 1.5 model_index.json is invalid: {error}"))?;
+    if model_index_value
+        .get("_class_name")
+        .and_then(serde_json::Value::as_str)
+        != Some("HunyuanVideo15ImageToVideoPipeline")
+    {
+        return Err(
+            "HunyuanVideo 1.5 package does not declare the expected I2V pipeline".to_string(),
+        );
+    }
+    let mut files = vec![
+        model_index_path,
+        safe_managed_path(&model_root, "scheduler/scheduler_config.json")?,
+        safe_managed_path(&model_root, "guider/guider_config.json")?,
+        safe_managed_path(&model_root, "text_encoder/config.json")?,
+        safe_managed_path(&model_root, "text_encoder/model.safetensors.index.json")?,
+        safe_managed_path(&model_root, "text_encoder_2/config.json")?,
+        safe_managed_path(&model_root, "text_encoder_2/model.safetensors")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer.json")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer_config.json")?,
+        safe_managed_path(&model_root, "tokenizer_2/tokenizer_config.json")?,
+        safe_managed_path(&model_root, "transformer/config.json")?,
+        safe_managed_path(
+            &model_root,
+            "transformer/diffusion_pytorch_model.safetensors.index.json",
+        )?,
+        safe_managed_path(&model_root, "vae/config.json")?,
+        safe_managed_path(&model_root, "vae/diffusion_pytorch_model.safetensors")?,
+        safe_managed_path(&model_root, "feature_extractor/preprocessor_config.json")?,
+        safe_managed_path(&model_root, "image_encoder/config.json")?,
+        safe_managed_path(&model_root, "image_encoder/model.safetensors")?,
+    ];
+    files.extend(hunyuan_video_15_index_shards(
+        &model_root,
+        "text_encoder/model.safetensors.index.json",
+    )?);
+    files.extend(hunyuan_video_15_index_shards(
+        &model_root,
+        "transformer/diffusion_pytorch_model.safetensors.index.json",
+    )?);
+    files.sort();
+    files.dedup();
+    let mut hasher = Sha256::new();
+    hasher.update(b"machdoch-hunyuan-video-1.5-i2v-step-distilled-inventory-v1\0");
+    let mut verified_bytes = 0_u64;
+    for path in files {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("HunyuanVideo 1.5 package is incomplete: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "HunyuanVideo 1.5 package contains an unsafe or empty component: {}",
+                path.display()
+            ));
+        }
+        let relative = path
+            .strip_prefix(&model_root)
+            .map_err(|_| "HunyuanVideo 1.5 component escaped its model package".to_string())?;
+        let identity = hunyuan_video_15_download_identity(&model_root, relative)?;
+        verified_bytes = verified_bytes.saturating_add(metadata.len());
+        hasher.update(relative.to_string_lossy().replace('\\', "/").as_bytes());
+        hasher.update(metadata.len().to_le_bytes());
+        hasher.update(identity.as_bytes());
+    }
+    if verified_bytes < 29 * 1_024 * 1_024 * 1_024 {
+        return Err(format!(
+            "HunyuanVideo 1.5 package is incomplete: verified components total only {:.2} GiB",
+            verified_bytes as f64 / 1_024_f64.powi(3)
+        ));
+    }
+    Ok((model_root, format!("sha256:{:x}", hasher.finalize())))
 }
 
 fn resolve_framepack_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
@@ -2772,6 +2963,15 @@ pub(crate) fn generate_video(
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
     let (architecture, model_revision, model_path, model_digest) = match request.model_id.as_str() {
+        HUNYUAN_VIDEO_15_MODEL_ID => {
+            let (path, digest) = resolve_hunyuan_video_15_model(&request.workspace_root)?;
+            (
+                "hunyuan-video-1.5-i2v",
+                HUNYUAN_VIDEO_15_MODEL_REVISION,
+                path,
+                digest,
+            )
+        }
         FRAMEPACK_MODEL_ID => {
             let (path, digest) = resolve_framepack_model(&request.workspace_root)?;
             ("framepack-i2v", FRAMEPACK_MODEL_REVISION, path, digest)
@@ -2789,9 +2989,10 @@ pub(crate) fn generate_video(
     if !runtime.ready
         || !runtime.architectures.contains(&architecture.to_string())
         || !runtime.capabilities.contains(&"image-to-video".to_string())
-        || !runtime
-            .capabilities
-            .contains(&"start-end-to-video".to_string())
+        || (architecture != "hunyuan-video-1.5-i2v"
+            && !runtime
+                .capabilities
+                .contains(&"start-end-to-video".to_string()))
         || !runtime.capabilities.contains(&"vp9-alpha".to_string())
         || (request.animated_background.is_some()
             && !runtime
@@ -2818,10 +3019,27 @@ pub(crate) fn generate_video(
         && (runtime.device.as_deref() == Some("cpu")
             || runtime
                 .device_memory_bytes
-                .is_some_and(|bytes| bytes < MIN_FRAMEPACK_MEMORY_BYTES))
+                .is_some_and(|bytes| bytes < MIN_FRAMEPACK_MEMORY_BYTES)
+            || runtime
+                .physical_memory_bytes
+                .is_some_and(|bytes| bytes < 30 * 1_024 * 1_024 * 1_024))
     {
         return Err(
-            "FramePack 13B requires a bfloat16 GPU with at least 6 GiB usable memory; select LTX-Video 2B on this hardware."
+            "FramePack 13B requires a bfloat16 GPU with at least 6 GiB usable VRAM and 30 GiB physical RAM; select LTX-Video 2B on this hardware."
+                .to_string(),
+        );
+    }
+    if request.model_id == HUNYUAN_VIDEO_15_MODEL_ID
+        && (runtime.device.as_deref() == Some("cpu")
+            || runtime
+                .device_memory_bytes
+                .is_some_and(|bytes| bytes < MIN_HUNYUAN_VIDEO_15_MEMORY_BYTES)
+            || runtime
+                .physical_memory_bytes
+                .is_some_and(|bytes| bytes < 30 * 1_024 * 1_024 * 1_024))
+    {
+        return Err(
+            "HunyuanVideo 1.5 I2V requires a bfloat16 GPU with at least 14 GiB usable VRAM and 30 GiB physical RAM; select FramePack or LTX-Video 2B on this hardware."
                 .to_string(),
         );
     }
@@ -2844,6 +3062,12 @@ pub(crate) fn generate_video(
         &request.last_frame_asset_id,
         "last",
     )?;
+    if architecture == "hunyuan-video-1.5-i2v" && first_source.digest != last_source.digest {
+        return Err(
+            "HunyuanVideo 1.5 I2V supports one native first-frame reference. Use FramePack or LTX-Video when the first and last references differ."
+                .to_string(),
+        );
+    }
     let worker_request = WorkerVideoGenerationRequest {
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
@@ -2886,22 +3110,39 @@ pub(crate) fn generate_video(
         Some((paths, &request.run_id)),
     )?;
     let response = decode_video_generation_response(&output)?;
-    let expected_dimensions = match (request.resolution.as_str(), request.aspect_ratio.as_str()) {
-        ("preview-512", "1:1") => (512, 512),
-        ("preview-512", "16:9") => (512, 288),
-        ("preview-512", "9:16") => (288, 512),
-        ("preview-512", "21:9") => (512, 224),
-        ("quality-640", "1:1") => (576, 576),
-        ("quality-640", "16:9") => (640, 352),
-        ("quality-640", "9:16") => (352, 640),
-        ("quality-640", "21:9") => (640, 288),
-        ("quality-768", "1:1") => (640, 640),
-        ("quality-768", "16:9") if architecture == "ltx-video" => (768, 448),
-        ("quality-768", "9:16") if architecture == "ltx-video" => (448, 768),
-        ("quality-768", "21:9") if architecture == "ltx-video" => (768, 320),
-        ("quality-768", "16:9") => (768, 432),
-        ("quality-768", "9:16") => (432, 768),
-        ("quality-768", "21:9") => (768, 336),
+    let expected_dimensions = match (
+        architecture,
+        request.resolution.as_str(),
+        request.aspect_ratio.as_str(),
+    ) {
+        ("hunyuan-video-1.5-i2v", "preview-512", "1:1") => (512, 512),
+        ("hunyuan-video-1.5-i2v", "preview-512", "16:9") => (672, 384),
+        ("hunyuan-video-1.5-i2v", "preview-512", "9:16") => (384, 672),
+        ("hunyuan-video-1.5-i2v", "preview-512", "21:9") => (768, 336),
+        ("hunyuan-video-1.5-i2v", "quality-640", "1:1") => (640, 640),
+        ("hunyuan-video-1.5-i2v", "quality-640", "16:9") => (848, 480),
+        ("hunyuan-video-1.5-i2v", "quality-640", "9:16") => (480, 848),
+        ("hunyuan-video-1.5-i2v", "quality-640", "21:9") => (960, 416),
+        ("hunyuan-video-1.5-i2v", "quality-768", "1:1") => (768, 768),
+        ("hunyuan-video-1.5-i2v", "quality-768", "16:9") => (1_024, 576),
+        ("hunyuan-video-1.5-i2v", "quality-768", "9:16") => (576, 1_024),
+        ("hunyuan-video-1.5-i2v", "quality-768", "21:9") => (1_152, 496),
+        (_, "preview-512", "1:1") => (512, 512),
+        (_, "preview-512", "16:9") => (512, 288),
+        (_, "preview-512", "9:16") => (288, 512),
+        (_, "preview-512", "21:9") => (512, 224),
+        (_, "quality-640", "1:1") => (576, 576),
+        (_, "quality-640", "16:9") => (640, 352),
+        (_, "quality-640", "9:16") => (352, 640),
+        (_, "quality-640", "21:9") => (640, 288),
+        ("ltx-video", "quality-768", "1:1") => (640, 640),
+        ("ltx-video", "quality-768", "16:9") => (768, 448),
+        ("ltx-video", "quality-768", "9:16") => (448, 768),
+        ("ltx-video", "quality-768", "21:9") => (768, 320),
+        (_, "quality-768", "1:1") => (640, 640),
+        (_, "quality-768", "16:9") => (768, 432),
+        (_, "quality-768", "9:16") => (432, 768),
+        (_, "quality-768", "21:9") => (768, 336),
         _ => unreachable!("validated video resolution and aspect ratio"),
     };
     let expected_frame_count = if request.loop_mode == "ping-pong" {
@@ -2910,6 +3151,7 @@ pub(crate) fn generate_video(
         request.num_frames
     };
     let expected_conditioning_mode = match architecture {
+        "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
         "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
         "ltx-video"
             if request.model_id == LTX_13B_MODEL_ID && request.resolution != "preview-512" =>
@@ -2933,17 +3175,18 @@ pub(crate) fn generate_video(
         || response.resolution != request.resolution
         || response.requested_guidance_scale != Some(request.guidance_scale)
         || response.guidance_scale
-            != if architecture == "ltx-video" {
+            != if matches!(architecture, "ltx-video" | "hunyuan-video-1.5-i2v") {
                 1.0
             } else {
                 request.guidance_scale
             }
         || response.requested_num_inference_steps != Some(request.num_inference_steps)
         || response.num_inference_steps
-            != if architecture == "ltx-video" {
-                8
-            } else {
-                request.num_inference_steps
+            != match architecture {
+                "ltx-video" => 8,
+                "hunyuan-video-1.5-i2v" if request.num_inference_steps <= 8 => 8,
+                "hunyuan-video-1.5-i2v" => 12,
+                _ => request.num_inference_steps,
             }
         || response.transparent_background != request.transparent_background
         || response.model_revision != model_revision
@@ -3228,10 +3471,66 @@ mod tests {
             device: Some("cuda".to_string()),
             device_label: Some("Test GPU".to_string()),
             device_memory_bytes: Some(16 * 1_024 * 1_024 * 1_024),
+            physical_memory_bytes: Some(32 * 1_024 * 1_024 * 1_024),
             architectures: vec!["stable-diffusion-xl".to_string()],
             capabilities: vec!["lora".to_string(), "textual-inversion".to_string()],
             diagnostic: "ready".to_string(),
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn worker_timeout_terminates_descendant_processes() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-media-worker-tree-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let marker = root.join("orphaned-child.txt");
+        let script = root.join("worker.py");
+        fs::write(
+            &script,
+            r#"import pathlib
+import subprocess
+import sys
+import time
+
+marker = sys.stdin.read()
+subprocess.Popen([
+    sys.executable,
+    "-I",
+    "-c",
+    "import pathlib,sys,time; time.sleep(1.5); pathlib.Path(sys.argv[1]).write_text('orphaned', encoding='utf-8')",
+    marker,
+])
+time.sleep(60)
+"#,
+        )
+        .unwrap();
+
+        let marker_text = marker.to_string_lossy().into_owned();
+        let error = run_worker(
+            Path::new("python"),
+            &script,
+            "test-timeout",
+            Some(marker_text.as_bytes()),
+            Duration::from_millis(500),
+            None,
+        )
+        .unwrap_err();
+        assert!(error.contains("execution deadline"), "{error}");
+
+        thread::sleep(Duration::from_secs(2));
+        let descendant_survived = marker.exists();
+        let _ = fs::remove_dir_all(root);
+        assert!(
+            !descendant_survived,
+            "the worker's descendant survived its process-tree timeout"
+        );
     }
 
     #[test]

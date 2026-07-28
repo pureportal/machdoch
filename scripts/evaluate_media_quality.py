@@ -270,10 +270,16 @@ def _contact_sheet(
     destination: Path,
     title: str,
     columns: int = 4,
-    sample_count: int = 12,
+    frame_indices: Iterable[int] | None = None,
 ) -> None:
-    count = min(sample_count, len(frames))
-    indices = np.linspace(0, len(frames) - 1, count).round().astype(int)
+    indices = (
+        list(range(len(frames)))
+        if frame_indices is None
+        else list(frame_indices)
+    )
+    if not indices:
+        raise ValueError("A contact sheet requires at least one frame")
+    count = len(indices)
     thumb_width = min(384, frames.shape[2])
     thumb_height = max(1, round(frames.shape[1] * thumb_width / frames.shape[2]))
     label_height = 24
@@ -305,6 +311,35 @@ def _contact_sheet(
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(destination, format="PNG", compress_level=5)
+
+
+def _contact_sheet_pages(
+    frames: np.ndarray,
+    background: np.ndarray,
+    clip_directory: Path,
+    stem: str,
+    title: str,
+    frames_per_page: int = 24,
+) -> list[str]:
+    pages: list[str] = []
+    page_count = math.ceil(len(frames) / frames_per_page)
+    for page_index, start in enumerate(range(0, len(frames), frames_per_page)):
+        end = min(start + frames_per_page, len(frames))
+        suffix = "" if page_count == 1 else f"-page-{page_index + 1:03d}"
+        destination = clip_directory / f"{stem}{suffix}.png"
+        _contact_sheet(
+            frames,
+            background,
+            destination,
+            (
+                title
+                if page_count == 1
+                else f"{title} | frames {start}-{end - 1}"
+            ),
+            frame_indices=range(start, end),
+        )
+        pages.append(str(destination.resolve()))
+    return pages
 
 
 def _alpha_components(alpha: np.ndarray) -> tuple[int, int]:
@@ -608,28 +643,34 @@ def _write_evidence(
     clip_directory.mkdir(parents=True, exist_ok=True)
     diagnostics = _backgrounds(info.height, info.width)
     contact_sheets: dict[str, str] = {}
+    all_frame_contact_sheets: dict[str, list[str]] = {}
     for background_name, background in diagnostics.items():
-        destination = clip_directory / f"contact-{background_name}.png"
-        _contact_sheet(
+        pages = _contact_sheet_pages(
             frames,
             background,
-            destination,
+            clip_directory,
+            f"contact-{background_name}",
             f"{name} | {background_name} | true decoded RGBA",
         )
-        contact_sheets[background_name] = str(destination.resolve())
-    alpha_destination = clip_directory / "contact-alpha.png"
+        contact_sheets[background_name] = pages[0]
+        all_frame_contact_sheets[background_name] = pages
     alpha_rgba = np.empty_like(frames)
     alpha_rgba[..., :3] = frames[..., 3:4]
     alpha_rgba[..., 3] = 255
-    _contact_sheet(
+    alpha_pages = _contact_sheet_pages(
         alpha_rgba,
         np.zeros((info.height, info.width, 3), dtype=np.uint8),
-        alpha_destination,
+        clip_directory,
+        "contact-alpha",
         f"{name} | decoded alpha plane",
     )
-    contact_sheets["alpha"] = str(alpha_destination.resolve())
+    contact_sheets["alpha"] = alpha_pages[0]
+    all_frame_contact_sheets["alpha"] = alpha_pages
     metrics = _evaluate(frames, info)
-    metrics["evidence"] = {"contactSheets": contact_sheets}
+    metrics["evidence"] = {
+        "contactSheets": contact_sheets,
+        "allFrameContactSheets": all_frame_contact_sheets,
+    }
     metrics_path = clip_directory / "metrics.json"
     metrics_path.write_text(
         json.dumps(metrics, indent=2, ensure_ascii=False) + "\n",

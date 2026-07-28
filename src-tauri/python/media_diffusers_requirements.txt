@@ -1,4 +1,4 @@
-# Runtime contract: media-diffusers-worker/1.16.0 (Python >=3.10)
+# Runtime contract: media-diffusers-worker/1.28.0 (Python >=3.10)
 # Torch wheels are platform/accelerator specific. The generic tested runtime is
 # torch 2.13.0; AMD Windows uses the official torch 2.12.0+rocm7.14.0 wheel.
 # Runtime assembly must install the matching official wheel before this file.

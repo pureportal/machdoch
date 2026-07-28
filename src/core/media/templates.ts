@@ -216,19 +216,19 @@ const createCharacterLoopTemplate = (): MediaFlowTemplateDescriptor => {
     id: "generated-character-idle-loop",
     name: flow.name,
     description:
-      "Generate one character frame, reuse its transparent cutout as both WAN endpoints, and publish transparent plus animated-background loops.",
+      "Generate one character frame, reuse its transparent cutout as both video endpoints, and publish transparent plus animated-background loops.",
     category: "Animation",
     tags: [
       "character",
       "image-to-video",
-      "WAN",
+      "video",
       "transparency",
       "animated-background",
     ],
     workflowSummary:
-      "Character brief → image model + optional LoRA → subject cutout → same first/last WAN endpoints → VP9 alpha master + animated composite",
+      "Character brief → image model + optional LoRA → subject cutout → same first/last video endpoints → VP9 alpha master + animated composite",
     privacySummary:
-      "The image model, matting, WAN inference, alpha encoding, and animated compositing are pinned to local runtimes.",
+      "The image model, matting, video inference, alpha encoding, and animated compositing are pinned to local runtimes.",
     remoteCapable: false,
     flow,
     layout: createMediaFlowLayout(flow),

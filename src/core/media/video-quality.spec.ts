@@ -1,10 +1,16 @@
 import type { MediaAssetRecord } from "./contracts.js";
 import {
+  formatMediaAssetAspectRatio,
   identifyMediaVideoQualityPreset,
   inferMediaVideoAspectRatio,
+  isMediaVideoFrameCountValid,
   isMediaAssetKnownTransparent,
+  MEDIA_VIDEO_QUALITY_PRESETS,
   resolveMediaAssetVideoFrameRate,
   resolveMediaVideoDimensions,
+  resolveMediaVideoExecutionSettings,
+  resolveMediaVideoFrameContract,
+  resolveMediaVideoQualityPresetSettings,
   summarizeMediaVideoDelivery,
 } from "./video-quality.js";
 
@@ -51,6 +57,68 @@ describe("media video quality helpers", () => {
       512,
       224,
     ]);
+    expect(
+      resolveMediaVideoDimensions("16:9", "quality-768", "ltx-video"),
+    ).toEqual([768, 448]);
+    expect(
+      resolveMediaVideoDimensions("21:9", "quality-768", "ltx-video"),
+    ).toEqual([768, 320]);
+    expect(
+      resolveMediaVideoDimensions(
+        "16:9",
+        "quality-640",
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual([848, 480]);
+    expect(
+      resolveMediaVideoDimensions(
+        "21:9",
+        "quality-768",
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual([1152, 496]);
+  });
+
+  it("resolves model-native sampling without hidden runtime overrides", () => {
+    const qualityPreset = MEDIA_VIDEO_QUALITY_PRESETS.find(
+      (preset) => preset.id === "quality",
+    )!;
+    expect(
+      resolveMediaVideoQualityPresetSettings(qualityPreset, "framepack-i2v"),
+    ).toMatchObject({ numInferenceSteps: 30, guidanceScale: 9 });
+    expect(
+      resolveMediaVideoQualityPresetSettings(qualityPreset, "ltx-video"),
+    ).toMatchObject({ numInferenceSteps: 8, guidanceScale: 1 });
+    expect(
+      resolveMediaVideoExecutionSettings(
+        { numInferenceSteps: 23, guidanceScale: 7 },
+        "ltx-video",
+      ),
+    ).toEqual({
+      numInferenceSteps: 8,
+      guidanceScale: 1,
+      modelManaged: true,
+    });
+    expect(
+      resolveMediaVideoExecutionSettings(
+        { numInferenceSteps: 8, guidanceScale: 9 },
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual({
+      numInferenceSteps: 8,
+      guidanceScale: 1,
+      modelManaged: true,
+    });
+    expect(
+      resolveMediaVideoExecutionSettings(
+        { numInferenceSteps: 30, guidanceScale: 9 },
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual({
+      numInferenceSteps: 12,
+      guidanceScale: 1,
+      modelManaged: true,
+    });
   });
 
   it("selects the nearest native aspect for source-aware animation drafts", () => {
@@ -59,6 +127,78 @@ describe("media video quality helpers", () => {
     expect(inferMediaVideoAspectRatio(900, 1_600)).toBe("9:16");
     expect(inferMediaVideoAspectRatio(2_560, 1_080)).toBe("21:9");
     expect(inferMediaVideoAspectRatio(0, 0)).toBe("1:1");
+  });
+
+  it("reports model-native frame contracts before an expensive render", () => {
+    expect(resolveMediaVideoFrameContract("hunyuan-video-1.5-i2v")).toEqual({
+      minimum: 17,
+      maximum: 121,
+      stride: 4,
+    });
+    expect(resolveMediaVideoFrameContract("framepack-i2v")).toEqual({
+      minimum: 17,
+      maximum: 129,
+      stride: 4,
+    });
+    expect(resolveMediaVideoFrameContract("ltx-video")).toEqual({
+      minimum: 9,
+      maximum: 257,
+      stride: 8,
+    });
+    expect(isMediaVideoFrameCountValid(33, "hunyuan-video-1.5-i2v")).toBe(
+      true,
+    );
+    expect(isMediaVideoFrameCountValid(129, "hunyuan-video-1.5-i2v")).toBe(
+      false,
+    );
+    expect(isMediaVideoFrameCountValid(129, "framepack-i2v")).toBe(true);
+    expect(isMediaVideoFrameCountValid(25, "ltx-video")).toBe(true);
+  });
+
+  it("labels latent-aligned video canvases by their requested aspect", () => {
+    const hunyuanAsset: MediaAssetRecord = {
+      ...videoAsset(false),
+      width: 672,
+      height: 384,
+      operation: {
+        ...videoAsset(false).operation,
+        kind: "local-video-generation",
+        modelId: "local:hunyuan-video-1.5-i2v-step-distilled",
+        architecture: "hunyuan-video-1.5-i2v",
+        conditioningMode: "hunyuan-video-1.5-native-first-frame",
+        resolution: "preview-512",
+      } as MediaAssetRecord["operation"],
+    };
+    expect(formatMediaAssetAspectRatio(hunyuanAsset)).toBe(
+      "16:9 model-aligned",
+    );
+    expect(
+      formatMediaAssetAspectRatio({
+        ...asset(null),
+        width: 1_920,
+        height: 1_080,
+      }),
+    ).toBe("16:9");
+    expect(
+      formatMediaAssetAspectRatio({
+        ...asset(null),
+        width: 672,
+        height: 384,
+      }),
+    ).toBe("7:4");
+    const legacyVideo = videoAsset(false);
+    const legacyOperation = {
+      ...legacyVideo.operation,
+      resolution: undefined,
+    } as unknown as MediaAssetRecord["operation"];
+    expect(
+      formatMediaAssetAspectRatio({
+        ...legacyVideo,
+        width: 672,
+        height: 384,
+        operation: legacyOperation,
+      }),
+    ).toBe("7:4");
   });
 
   it("treats only provenance-backed cutouts as known transparent", () => {
@@ -159,5 +299,32 @@ describe("media video quality helpers", () => {
         numInferenceSteps: 23,
       }),
     ).toBeNull();
+    const framePackConfig = {
+      ...qualityConfig,
+      guidanceScale: 9,
+    };
+    expect(
+      identifyMediaVideoQualityPreset(framePackConfig, "framepack-i2v"),
+    ).toBe("quality");
+    expect(
+      identifyMediaVideoQualityPreset(
+        {
+          ...qualityConfig,
+          numInferenceSteps: 30,
+          guidanceScale: 9,
+        },
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toBe("quality");
+    expect(
+      summarizeMediaVideoDelivery(
+        {
+          ...qualityConfig,
+          resolution: "quality-768",
+          loopMode: "none",
+        },
+        "ltx-video",
+      ),
+    ).toMatchObject({ width: 768, height: 448 });
   });
 });

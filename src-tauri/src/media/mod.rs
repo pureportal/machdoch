@@ -150,6 +150,13 @@ impl MediaRuntimeState {
     }
 }
 
+fn inhibit_system_sleep_for_media_work(
+    app: &AppHandle,
+) -> MediaResult<crate::sleep_inhibition::SystemSleepInhibitionGuard> {
+    app.state::<crate::sleep_inhibition::SystemSleepInhibitor>()
+        .acquire()
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MediaRuntimeStatus {
@@ -1685,7 +1692,12 @@ impl GenerateMediaVideoRequest {
             "local:ltx-video-0.9.8-13b-distilled-fp8" | "local:ltx-video-0.9.8-2b-distilled-fp8"
         );
         let framepack_video = self.model_id == "local:framepack-i2v-hy-13b";
-        if !framepack_video && !ltx_video && self.model_id != "local:wan2.2-ti2v-5b" {
+        let hunyuan_video = self.model_id == "local:hunyuan-video-1.5-i2v-step-distilled";
+        if !framepack_video
+            && !hunyuan_video
+            && !ltx_video
+            && self.model_id != "local:wan2.2-ti2v-5b"
+        {
             return Err("selected model is not an executable local video adapter".to_string());
         }
         if !matches!(self.aspect_ratio.as_str(), "1:1" | "16:9" | "9:16" | "21:9") {
@@ -1702,6 +1714,12 @@ impl GenerateMediaVideoRequest {
         }
         if !matches!(self.loop_mode.as_str(), "none" | "ping-pong" | "seamless") {
             return Err("loopMode must be none, ping-pong, or seamless".to_string());
+        }
+        if hunyuan_video && self.first_frame_asset_id != self.last_frame_asset_id {
+            return Err(
+                "HunyuanVideo 1.5 requires the same immutable asset on both frame ports because it uses native first-frame conditioning"
+                    .to_string(),
+            );
         }
         if self.loop_mode == "seamless" && self.first_frame_asset_id != self.last_frame_asset_id {
             return Err(
@@ -1724,7 +1742,13 @@ impl GenerateMediaVideoRequest {
         {
             return Err(format!(
                 "{} numFrames must be from 17 through {maximum_frames} in the required 4k+1 form",
-                if framepack_video { "FramePack" } else { "WAN" }
+                if framepack_video {
+                    "FramePack"
+                } else if hunyuan_video {
+                    "HunyuanVideo 1.5"
+                } else {
+                    "WAN"
+                }
             ));
         }
         let maximum_steps = if ltx_video { 10 } else { 50 };
@@ -1766,7 +1790,7 @@ impl GenerateMediaVideoRequest {
                 "memoryProfile must be auto, memory-saver, balanced, or maximum-speed".to_string(),
             );
         }
-        if !framepack_video && !ltx_video && !self.experimental_low_memory {
+        if !framepack_video && !hunyuan_video && !ltx_video && !self.experimental_low_memory {
             return Err(
                 "experimentalLowMemory must be acknowledged on GPUs below the official 24 GiB profile"
                     .to_string(),
@@ -2509,6 +2533,13 @@ fn spawn_provider_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
     if !app.state::<MediaRuntimeState>().begin_run(&run_id)? {
         return Ok(());
     }
+    let sleep_inhibition = match inhibit_system_sleep_for_media_work(&app) {
+        Ok(guard) => guard,
+        Err(error) => {
+            app.state::<MediaRuntimeState>().finish_run(&run_id);
+            return Err(error);
+        }
+    };
 
     let worker_app = app.clone();
     let worker_run_id = run_id.clone();
@@ -2518,6 +2549,7 @@ fn spawn_provider_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
             &run_id.chars().take(24).collect::<String>()
         ))
         .spawn(move || {
+            let _sleep_inhibition = sleep_inhibition;
             let result = MediaRuntimePaths::resolve(&worker_app)
                 .and_then(|paths| provider_mock::execute(&paths, &worker_run_id));
             if let Err(error) = result {
@@ -2541,6 +2573,13 @@ fn spawn_fixture_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
     if !app.state::<MediaRuntimeState>().begin_run(&run_id)? {
         return Ok(());
     }
+    let sleep_inhibition = match inhibit_system_sleep_for_media_work(&app) {
+        Ok(guard) => guard,
+        Err(error) => {
+            app.state::<MediaRuntimeState>().finish_run(&run_id);
+            return Err(error);
+        }
+    };
 
     let worker_app = app.clone();
     let worker_run_id = run_id.clone();
@@ -2550,6 +2589,7 @@ fn spawn_fixture_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
             &run_id.chars().take(24).collect::<String>()
         ))
         .spawn(move || {
+            let _sleep_inhibition = sleep_inhibition;
             let result = MediaRuntimePaths::resolve(&worker_app)
                 .and_then(|paths| executor::execute_fixture_run(&paths, &worker_run_id));
             if let Err(error) = result {
@@ -3078,6 +3118,7 @@ pub(crate) async fn media_generate_images(
 ) -> MediaCommandResult<MediaRunDetail> {
     let result = async {
         request.validate()?;
+        let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
         if request.model_id != "openai:gpt-image-2" {
@@ -3327,12 +3368,13 @@ pub(crate) async fn media_generate_video(
 ) -> MediaCommandResult<MediaRunDetail> {
     let result = async {
         request.validate()?;
+        let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
         let begin_paths = paths.clone();
         let begin_request = request.clone();
         let claimed = tauri::async_runtime::spawn_blocking(move || {
-            database::begin_local_wan_generation(&begin_paths, &begin_request)
+            database::begin_local_video_generation(&begin_paths, &begin_request)
         })
         .await
         .map_err(|error| format!("local video generation worker could not be joined: {error}"))??;
@@ -3363,7 +3405,13 @@ pub(crate) async fn media_generate_video(
             &["task.generate-video"],
             "running",
             Some("local-video.generate"),
-            Some("Generating native first/last-conditioned video with adaptive model offload"),
+            Some(
+                if request.model_id == "local:hunyuan-video-1.5-i2v-step-distilled" {
+                    "Generating native first-frame-conditioned video with adaptive component offload"
+                } else {
+                    "Generating native first/last-conditioned video with adaptive model offload"
+                },
+            ),
             Some(0.1),
         )?;
         let generation_app = app.clone();
@@ -3449,7 +3497,7 @@ pub(crate) async fn media_generate_video(
         let complete_paths = paths.clone();
         let complete_request = request.clone();
         match tauri::async_runtime::spawn_blocking(move || {
-            database::complete_local_wan_generation(&complete_paths, &complete_request, &video)
+            database::complete_local_video_generation(&complete_paths, &complete_request, &video)
         })
         .await
         .map_err(|error| format!("local video publisher could not be joined: {error}"))?
@@ -3486,6 +3534,7 @@ pub(crate) async fn media_generate_svg(
                     .to_string(),
             );
         }
+        let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
 
@@ -3646,6 +3695,7 @@ pub(crate) async fn media_execute_remote_image_edit_flow(
                 "OpenAI provider is not configured. Save an API key first.".to_string()
             })?
             .to_string();
+        let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
 
@@ -4253,6 +4303,7 @@ pub(crate) async fn media_transform_image(
 ) -> MediaCommandResult<MediaRunDetail> {
     let result: MediaResult<_> = async {
         request.source_asset_id = required_text("sourceAssetId", &request.source_asset_id, 256)?;
+        let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
         tauri::async_runtime::spawn_blocking(move || transform::transform_image(&paths, &request))
@@ -4270,6 +4321,7 @@ pub(crate) async fn media_execute_local_image_flow(
 ) -> MediaCommandResult<MediaRunDetail> {
     let result: MediaResult<_> = async {
         request.validate()?;
+        let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
         tauri::async_runtime::spawn_blocking(move || {

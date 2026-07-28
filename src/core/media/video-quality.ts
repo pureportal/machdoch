@@ -1,4 +1,7 @@
-import type { MediaAssetRecord } from "./contracts.js";
+import type {
+  MediaAssetRecord,
+  MediaLocalModelArchitecture,
+} from "./contracts.js";
 
 export type MediaVideoAspectRatio = "1:1" | "16:9" | "9:16" | "21:9";
 export type MediaVideoResolution =
@@ -7,6 +10,12 @@ export type MediaVideoResolution =
   | "quality-768";
 export type MediaVideoLoopMode = "none" | "ping-pong" | "seamless";
 export type MediaVideoQualityPresetId = "draft" | "quality" | "maximum";
+
+export interface MediaVideoFrameContract {
+  minimum: number;
+  maximum: number;
+  stride: number;
+}
 
 export interface MediaVideoQualityPreset {
   id: MediaVideoQualityPresetId;
@@ -45,7 +54,7 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
     id: "quality",
     label: "Quality",
     description:
-      "Temporally dense 640-class render with 33 source frames, 30-step sampling, production alpha, and lossless delivery.",
+      "Temporally dense 640-class render with 33 source frames, model-native quality sampling, production alpha, and lossless delivery.",
     settings: {
       resolution: "quality-640",
       numFrames: 33,
@@ -61,7 +70,7 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
     id: "maximum",
     label: "Maximum",
     description:
-      "Slow 768-class, 33-frame refinement for capable systems; use only after motion and framing are approved.",
+      "Slow 768-class, 33-frame model-native refinement for capable systems; use only after motion and framing are approved.",
     settings: {
       resolution: "quality-768",
       numFrames: 33,
@@ -98,10 +107,138 @@ const VIDEO_DIMENSIONS: Readonly<
   },
 };
 
+const LTX_VIDEO_768_DIMENSIONS: Readonly<
+  Record<MediaVideoAspectRatio, readonly [number, number]>
+> = {
+  "1:1": [640, 640],
+  "16:9": [768, 448],
+  "9:16": [448, 768],
+  "21:9": [768, 320],
+};
+
+const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
+  Record<MediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
+> = {
+  "preview-512": {
+    "1:1": [512, 512],
+    "16:9": [672, 384],
+    "9:16": [384, 672],
+    "21:9": [768, 336],
+  },
+  "quality-640": {
+    "1:1": [640, 640],
+    "16:9": [848, 480],
+    "9:16": [480, 848],
+    "21:9": [960, 416],
+  },
+  "quality-768": {
+    "1:1": [768, 768],
+    "16:9": [1_024, 576],
+    "9:16": [576, 1_024],
+    "21:9": [1_152, 496],
+  },
+};
+
 export const resolveMediaVideoDimensions = (
   aspectRatio: MediaVideoAspectRatio,
   resolution: MediaVideoResolution,
-): readonly [number, number] => VIDEO_DIMENSIONS[resolution][aspectRatio];
+  architecture?: MediaLocalModelArchitecture | null,
+): readonly [number, number] =>
+  architecture === "hunyuan-video-1.5-i2v"
+    ? HUNYUAN_VIDEO_15_DIMENSIONS[resolution][aspectRatio]
+    : architecture === "ltx-video" && resolution === "quality-768"
+      ? LTX_VIDEO_768_DIMENSIONS[aspectRatio]
+      : VIDEO_DIMENSIONS[resolution][aspectRatio];
+
+export const resolveMediaVideoFrameContract = (
+  architecture?: MediaLocalModelArchitecture | null,
+): MediaVideoFrameContract =>
+  architecture === "ltx-video"
+    ? { minimum: 9, maximum: 257, stride: 8 }
+    : {
+        minimum: 17,
+        maximum:
+          architecture === "framepack-i2v"
+            ? 129
+            : architecture === "hunyuan-video-1.5-i2v"
+              ? 121
+              : 33,
+        stride: 4,
+      };
+
+export const isMediaVideoFrameCountValid = (
+  numFrames: unknown,
+  architecture?: MediaLocalModelArchitecture | null,
+): boolean => {
+  if (typeof numFrames !== "number" || !Number.isInteger(numFrames)) {
+    return false;
+  }
+  const contract = resolveMediaVideoFrameContract(architecture);
+  return (
+    numFrames >= contract.minimum &&
+    numFrames <= contract.maximum &&
+    (numFrames - 1) % contract.stride === 0
+  );
+};
+
+export interface MediaVideoExecutionSettings {
+  numInferenceSteps: number;
+  guidanceScale: number;
+  modelManaged: boolean;
+}
+
+export const resolveMediaVideoExecutionSettings = (
+  config: Record<string, unknown>,
+  architecture?: MediaLocalModelArchitecture | null,
+): MediaVideoExecutionSettings => {
+  if (architecture === "ltx-video") {
+    return {
+      numInferenceSteps: 8,
+      guidanceScale: 1,
+      modelManaged: true,
+    };
+  }
+  if (architecture === "hunyuan-video-1.5-i2v") {
+    return {
+      numInferenceSteps:
+        typeof config.numInferenceSteps === "number" &&
+        config.numInferenceSteps <= 8
+          ? 8
+          : 12,
+      guidanceScale: 1,
+      modelManaged: true,
+    };
+  }
+  return {
+    numInferenceSteps:
+      typeof config.numInferenceSteps === "number"
+        ? config.numInferenceSteps
+        : 30,
+    guidanceScale:
+      typeof config.guidanceScale === "number"
+        ? config.guidanceScale
+        : architecture === "framepack-i2v"
+          ? 9
+          : 5,
+    modelManaged: false,
+  };
+};
+
+export const resolveMediaVideoQualityPresetSettings = (
+  preset: MediaVideoQualityPreset,
+  architecture?: MediaLocalModelArchitecture | null,
+): MediaVideoQualityPreset["settings"] => {
+  const execution = resolveMediaVideoExecutionSettings(
+    preset.settings,
+    architecture,
+  );
+  return {
+    ...preset.settings,
+    numInferenceSteps: execution.numInferenceSteps,
+    guidanceScale:
+      architecture === "framepack-i2v" ? 9 : execution.guidanceScale,
+  };
+};
 
 export const inferMediaVideoAspectRatio = (
   width: number,
@@ -128,6 +265,91 @@ export const inferMediaVideoAspectRatio = (
       ? candidate
       : best,
   )[0];
+};
+
+const greatestCommonDivisor = (left: number, right: number): number => {
+  let currentLeft = Math.abs(left);
+  let currentRight = Math.abs(right);
+  while (currentRight !== 0) {
+    [currentLeft, currentRight] = [currentRight, currentLeft % currentRight];
+  }
+  return currentLeft;
+};
+
+const formatPixelAspectRatio = (width: number, height: number): string => {
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return "Unknown";
+  }
+  const divisor = greatestCommonDivisor(width, height);
+  return `${width / divisor}:${height / divisor}`;
+};
+
+export const formatMediaAssetAspectRatio = (
+  asset: Pick<MediaAssetRecord, "width" | "height" | "operation">,
+): string => {
+  const operation = asset.operation;
+  if (
+    operation?.kind === "local-video-generation" ||
+    operation?.kind === "local-wan-video-generation"
+  ) {
+    const resolution = operation.resolution;
+    if (
+      resolution === "preview-512" ||
+      resolution === "quality-640" ||
+      resolution === "quality-768"
+    ) {
+      const architecture =
+        operation.kind === "local-video-generation"
+          ? operation.architecture
+          : "wan-2.2-ti2v";
+      const intended = (
+        ["1:1", "16:9", "9:16", "21:9"] as const
+      ).find((aspectRatio) => {
+        const [width, height] = resolveMediaVideoDimensions(
+          aspectRatio,
+          resolution,
+          architecture,
+        );
+        return width === asset.width && height === asset.height;
+      });
+      if (intended) {
+        const pixelRatio = formatPixelAspectRatio(asset.width, asset.height);
+        return pixelRatio === intended
+          ? intended
+          : `${intended} model-aligned`;
+      }
+    }
+  }
+
+  const pixelRatio = formatPixelAspectRatio(asset.width, asset.height);
+  if (pixelRatio === "Unknown") return pixelRatio;
+  const ratio = asset.width / asset.height;
+  const commonRatios = [
+    ["9:16", 9 / 16],
+    ["2:3", 2 / 3],
+    ["3:4", 3 / 4],
+    ["4:5", 4 / 5],
+    ["1:1", 1],
+    ["5:4", 5 / 4],
+    ["4:3", 4 / 3],
+    ["3:2", 3 / 2],
+    ["16:10", 16 / 10],
+    ["16:9", 16 / 9],
+    ["21:9", 21 / 9],
+  ] as const;
+  const closest = commonRatios.reduce((best, candidate) =>
+    Math.abs(candidate[1] - ratio) < Math.abs(best[1] - ratio)
+      ? candidate
+      : best,
+  );
+  return Math.abs(closest[1] - ratio) / closest[1] <= 0.01
+    ? closest[0]
+    : pixelRatio;
 };
 
 export const isMediaAssetKnownTransparent = (
@@ -189,12 +411,22 @@ export const resolveMediaAssetVideoFrameRate = (
 
 export const identifyMediaVideoQualityPreset = (
   config: Record<string, unknown>,
-): MediaVideoQualityPresetId | null =>
-  MEDIA_VIDEO_QUALITY_PRESETS.find((preset) =>
-    Object.entries(preset.settings).every(
-      ([fieldId, value]) => config[fieldId] === value,
-    ),
-  )?.id ?? null;
+  architecture?: MediaLocalModelArchitecture | null,
+): MediaVideoQualityPresetId | null => {
+  const execution = resolveMediaVideoExecutionSettings(config, architecture);
+  const effectiveConfig: Record<string, unknown> = {
+    ...config,
+    numInferenceSteps: execution.numInferenceSteps,
+    guidanceScale: execution.guidanceScale,
+  };
+  return (
+    MEDIA_VIDEO_QUALITY_PRESETS.find((preset) =>
+      Object.entries(
+        resolveMediaVideoQualityPresetSettings(preset, architecture),
+      ).every(([fieldId, value]) => effectiveConfig[fieldId] === value),
+    )?.id ?? null
+  );
+};
 
 export interface MediaVideoDeliverySummary {
   width: number;
@@ -210,6 +442,7 @@ export interface MediaVideoDeliverySummary {
 
 export const summarizeMediaVideoDelivery = (
   config: Record<string, unknown>,
+  architecture?: MediaLocalModelArchitecture | null,
 ): MediaVideoDeliverySummary | null => {
   const aspectRatio = config.aspectRatio;
   const resolution = config.resolution;
@@ -237,6 +470,7 @@ export const summarizeMediaVideoDelivery = (
   const [width, height] = resolveMediaVideoDimensions(
     aspectRatio as MediaVideoAspectRatio,
     resolution as MediaVideoResolution,
+    architecture,
   );
   const outputFrameCount =
     loopMode === "ping-pong"

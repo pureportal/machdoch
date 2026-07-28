@@ -33,6 +33,7 @@ import {
   FileDown,
   FileDiff,
   FileUp,
+  FolderGit2,
   GitBranch,
   Group,
   History,
@@ -69,6 +70,7 @@ import type {
   MediaCompiledPlan,
   MediaAssetRecord,
   MediaFlow,
+  MediaFlowHead,
   MediaFlowGroupColor,
   MediaFlowHistory,
   MediaFlowImportInspection,
@@ -112,7 +114,11 @@ import {
 } from "../../../../core/media/subject-cutout-policy.js";
 import {
   identifyMediaVideoQualityPreset,
+  isMediaVideoFrameCountValid,
   MEDIA_VIDEO_QUALITY_PRESETS,
+  resolveMediaVideoExecutionSettings,
+  resolveMediaVideoFrameContract,
+  resolveMediaVideoQualityPresetSettings,
   summarizeMediaVideoDelivery,
 } from "../../../../core/media/video-quality.js";
 import { MediaFlowVariablesPanel } from "./media-flow-variables-panel";
@@ -171,10 +177,14 @@ interface MediaFlowViewProps {
   canPasteNode?: boolean;
   pasteBlockedReason?: string | null;
   history: MediaFlowHistory | null;
+  savedFlows: readonly MediaFlowHead[];
+  savedFlowsLoading: boolean;
   revisionLoading: boolean;
   revisionNotice: string | null;
   hasUnsavedChanges: boolean;
   onRefreshHistory: () => void;
+  onRefreshSavedFlows: () => void;
+  onOpenSavedFlow: (flowId: string) => void;
   onSaveRevision: () => void;
   onRestoreRevision: (revision: MediaFlowRevision) => void;
   portabilitySupported: boolean;
@@ -456,6 +466,7 @@ const MediaFlowNodeCard = ({
           <MediaAssetThumbnail
             asset={data.asset}
             alt={`${data.assetLabel ?? data.label} preview`}
+            className="object-contain"
           />
         </div>
       ) : data.assetId ? (
@@ -1842,17 +1853,26 @@ const NodeSelectionPanel = ({
 
 const VideoQualityPresetPanel = ({
   config,
+  model,
   onApply,
 }: {
   config: Record<string, unknown>;
+  model: MediaModelDescriptor | null;
   onApply: (values: Readonly<Record<string, unknown>>) => void;
 }): JSX.Element => {
-  const activePreset = identifyMediaVideoQualityPreset(config);
+  const architecture = model?.architecture;
+  const activePreset = identifyMediaVideoQualityPreset(config, architecture);
   const activeDescription =
     MEDIA_VIDEO_QUALITY_PRESETS.find((preset) => preset.id === activePreset)
       ?.description ??
     "Custom settings preserve deliberate overrides. Choose a preset to replace temporal density, sampling, matte, encoding, and memory controls together.";
-  const delivery = summarizeMediaVideoDelivery(config);
+  const delivery = summarizeMediaVideoDelivery(config, architecture);
+  const execution = resolveMediaVideoExecutionSettings(config, architecture);
+  const frameContract = resolveMediaVideoFrameContract(architecture);
+  const frameCountValid = isMediaVideoFrameCountValid(
+    config.numFrames,
+    architecture,
+  );
   return (
     <section
       aria-labelledby="video-quality-preset-heading"
@@ -1877,7 +1897,11 @@ const VideoQualityPresetPanel = ({
             type="button"
             aria-pressed={activePreset === preset.id}
             title={preset.description}
-            onClick={() => onApply(preset.settings)}
+            onClick={() =>
+              onApply(
+                resolveMediaVideoQualityPresetSettings(preset, architecture),
+              )
+            }
             className={cn(
               "rounded-lg border px-2 py-1.5 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
               activePreset === preset.id
@@ -1892,6 +1916,26 @@ const VideoQualityPresetPanel = ({
       <p className="mt-2 text-[9px] leading-4 text-slate-500">
         {activeDescription}
       </p>
+      {model ? (
+        <>
+          <p className="mt-2 text-[9px] leading-4 text-violet-200/70">
+            {model.displayName}: {execution.numInferenceSteps} sampling steps,{" "}
+            {execution.guidanceScale} guidance
+            {execution.modelManaged ? " (fixed distilled trajectory)" : ""}.
+          </p>
+          <p
+            className={cn(
+              "mt-1 text-[9px] leading-4",
+              frameCountValid ? "text-emerald-300/70" : "text-amber-300/80",
+            )}
+          >
+            {String(config.numFrames)} source frames{" "}
+            {frameCountValid ? "fit" : "do not fit"} the native{" "}
+            {frameContract.minimum}–{frameContract.maximum},{" "}
+            {frameContract.stride}k+1 contract.
+          </p>
+        </>
+      ) : null}
       {delivery ? (
         <p className="mt-2 rounded-lg border border-slate-800/80 bg-slate-950/55 px-2.5 py-2 text-[9px] leading-4 text-slate-400">
           {delivery.width} x {delivery.height} / {delivery.outputFrameCount}{" "}
@@ -1908,6 +1952,7 @@ const VideoQualityPresetPanel = ({
 const VideoKeyframeReviewPanel = ({
   firstFrame,
   lastFrame,
+  model,
 }: {
   firstFrame: {
     connected: boolean;
@@ -1917,7 +1962,10 @@ const VideoKeyframeReviewPanel = ({
     connected: boolean;
     asset: MediaAssetRecord | null;
   };
+  model: MediaModelDescriptor | null;
 }): JSX.Element => {
+  const nativeFirstFrameOnly =
+    model?.architecture === "hunyuan-video-1.5-i2v";
   const reviewedAssetCount = new Set(
     [firstFrame.asset?.id, lastFrame.asset?.id].filter(
       (assetId): assetId is string => assetId !== undefined,
@@ -1978,15 +2026,19 @@ const VideoKeyframeReviewPanel = ({
       ))}
     </div>
     <p className="mt-2 text-[9px] leading-4 text-slate-500">
-      WAN follows both keys closely and restores the final key exactly. Inspect
-      face, hands, limb count, costume, and framing at full size before a quality
-      run; defects in either key become animation defects.
+      {nativeFirstFrameOnly
+        ? "Hunyuan uses the first image as its native reference; the last port must mirror it for the single-reference flow contract."
+        : "Both keys condition the generated motion."}{" "}
+      Inspect face, hands, limb count, costume, and framing at full size before a
+      quality run.
     </p>
     {firstFrame.asset &&
     lastFrame.asset &&
     firstFrame.asset.digest === lastFrame.asset.digest ? (
       <p className="mt-1.5 text-[9px] leading-4 text-emerald-300/75">
-        Matching endpoint pixels are suitable for a seamless loop.
+        {nativeFirstFrameOnly
+          ? "Matching inputs satisfy the native first-frame contract; the ending remains model-authored."
+          : "Matching endpoint pixels are suitable for a seamless loop."}
       </p>
     ) : null}
     </section>
@@ -2076,6 +2128,13 @@ const NodeInspector = ({
               : null,
           };
         })
+      : null;
+  const videoModel =
+    node.type === "task.generate-video"
+      ? (plan.runtimeBindings.find(
+          (binding) =>
+            binding.nodeId === node.id && binding.modality === "video",
+        )?.model ?? null)
       : null;
   const validationIssues = validateMediaFlowNode(resolvedNode);
   const visibleFields = definition
@@ -2173,9 +2232,11 @@ const NodeInspector = ({
                   lastFrame={
                     videoKeyframes?.[1] ?? { connected: false, asset: null }
                   }
+                  model={videoModel}
                 />
                 <VideoQualityPresetPanel
                   config={node.config}
+                  model={videoModel}
                   onApply={(values) => onNodeConfigPatch(node.id, values)}
                 />
               </>
@@ -2909,10 +2970,14 @@ export const MediaFlowView = ({
   canPasteNode = false,
   pasteBlockedReason = null,
   history,
+  savedFlows,
+  savedFlowsLoading,
   revisionLoading,
   revisionNotice,
   hasUnsavedChanges,
   onRefreshHistory,
+  onRefreshSavedFlows,
+  onOpenSavedFlow,
   onSaveRevision,
   onRestoreRevision,
   portabilitySupported,
@@ -3759,6 +3824,56 @@ export const MediaFlowView = ({
               className="text-slate-400 hover:bg-slate-800 hover:text-slate-100"
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex h-8 items-center rounded-md border border-slate-800 bg-slate-950/60">
+            <FolderGit2 className="ml-2 h-3.5 w-3.5 shrink-0 text-slate-500" />
+            <select
+              aria-label="Open saved workflow"
+              value={
+                savedFlows.some((savedFlow) => savedFlow.flowId === flow.id)
+                  ? flow.id
+                  : ""
+              }
+              disabled={savedFlowsLoading}
+              title={
+                hasUnsavedChanges
+                  ? "Open a saved workflow and choose whether to discard this draft"
+                  : "Open any saved workflow"
+              }
+              onChange={(event) => {
+                if (event.target.value && event.target.value !== flow.id) {
+                  onOpenSavedFlow(event.target.value);
+                }
+              }}
+              className="h-full max-w-48 min-w-0 bg-transparent px-2 text-xs text-slate-300 outline-none disabled:cursor-not-allowed disabled:text-slate-600"
+            >
+              <option value="">
+                {savedFlowsLoading
+                  ? "Loading workflows..."
+                  : `Saved workflows - ${savedFlows.length}`}
+              </option>
+              {savedFlows.map((savedFlow) => (
+                <option key={savedFlow.flowId} value={savedFlow.flowId}>
+                  {savedFlow.name} - r{savedFlow.headRevisionNumber}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Refresh saved workflows"
+              disabled={savedFlowsLoading}
+              onClick={onRefreshSavedFlows}
+              className="mr-0.5 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+            >
+              <RefreshCw
+                className={cn(
+                  "h-3.5 w-3.5",
+                  savedFlowsLoading && "animate-spin",
+                )}
+              />
             </Button>
           </div>
           <Button

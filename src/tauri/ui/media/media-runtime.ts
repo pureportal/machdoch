@@ -1346,6 +1346,7 @@ export const initializeMediaRuntime = async (): Promise<MediaRuntimeStatus> => {
       device: null,
       deviceLabel: null,
       deviceMemoryBytes: null,
+      physicalMemoryBytes: null,
       architectures: [],
       capabilities: [],
       diagnostic: "Local Diffusers execution is available in the native desktop app only.",
@@ -2043,7 +2044,9 @@ export const generateMediaVideo = async (
   request: GenerateMediaVideoRequest,
 ): Promise<MediaRunDetail> => {
   if (!canInvokeNativeRuntime()) {
-    throw new Error("Native WAN video generation is available in the desktop runtime only.");
+    throw new Error(
+      "Native local video generation is available in the desktop runtime only.",
+    );
   }
   return invoke<MediaRunDetail>("media_generate_video", { request });
 };

@@ -98,6 +98,25 @@ const createFramepackVideoModel = (): MediaModelDescriptor => ({
   qualityScore: 98,
 });
 
+const createHunyuanVideoModel = (): MediaModelDescriptor => ({
+  ...createLtxVideoModel(),
+  id: "local:hunyuan-video-1.5-i2v-step-distilled",
+  displayName: "HunyuanVideo 1.5 I2V 8.3B Step Distilled",
+  family: "HunyuanVideo 1.5",
+  capabilities: [
+    "image-to-video",
+    "transparent-output",
+    "alpha-video",
+    "video-composite",
+  ],
+  installedRevision: "854c04a4c8a53d990b418c7478f0802c0fc8c726",
+  architecture: "hunyuan-video-1.5-i2v",
+  minVramGb: 14,
+  expectedDownloadGb: 32.3,
+  speedScore: 92,
+  qualityScore: 99,
+});
+
 const FLUX_LORA = {
   id: "addon:lora:flux-detail",
   kind: "lora",
@@ -163,6 +182,85 @@ const SDXL_EMBEDDING = {
 } as const satisfies MediaModelAddonDescriptor;
 
 describe("media flow compiler", () => {
+  it("uses HunyuanVideo for native first-frame motion and model-native sampling", () => {
+    const flow = createImageToVideoFlow({
+      id: "flow:hunyuan-image-to-video",
+      createdAt: "2026-07-28T00:00:00.000Z",
+      sourceAssetId: "asset:opening-frame",
+      prompt: "Wind sweeps through the meadow as the camera tracks forward",
+    });
+    const plan = compileMediaFlow({
+      flow,
+      models: [
+        createHunyuanVideoModel(),
+        createFramepackVideoModel(),
+        createLtxVideoModel(),
+      ],
+      compiledAt: "2026-07-28T00:01:00.000Z",
+    });
+
+    expect(plan.status).toBe("ready");
+    expect(plan.model?.id).toBe(
+      "local:hunyuan-video-1.5-i2v-step-distilled",
+    );
+    expect(
+      flow.nodes.find((node) => node.id === "generate-video")?.config,
+    ).toMatchObject({
+      numInferenceSteps: 30,
+      guidanceScale: 9,
+      loopMode: "none",
+    });
+    expect(plan.runtimeBindings).toContainEqual(
+      expect.objectContaining({
+        requiredCapability: "image-to-video",
+      }),
+    );
+  });
+
+  it("requires terminal conditioning for distinct endpoints and seamless loops", () => {
+    const models = [
+      createHunyuanVideoModel(),
+      createFramepackVideoModel(),
+      createLtxVideoModel(),
+    ];
+    const compile = (
+      lastFrameAssetId: string | undefined,
+      loopMode: "none" | "seamless",
+    ) => {
+      const flow = createImageToVideoFlow({
+        id: `flow:terminal-${lastFrameAssetId ?? "shared"}-${loopMode}`,
+        createdAt: "2026-07-28T00:00:00.000Z",
+        sourceAssetId: "asset:opening-frame",
+        ...(lastFrameAssetId ? { lastFrameAssetId } : {}),
+        loopMode,
+        prompt: "A controlled forward action with a locked camera",
+      });
+      return compileMediaFlow({
+        flow,
+        models,
+        compiledAt: "2026-07-28T00:01:00.000Z",
+      });
+    };
+
+    for (const plan of [
+      compile("asset:closing-frame", "none"),
+      compile(undefined, "seamless"),
+    ]) {
+      expect(
+        plan.status,
+        plan.diagnostics
+          .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`)
+          .join("\n"),
+      ).toBe("ready");
+      expect(plan.model?.id).toBe("local:framepack-i2v-hy-13b");
+      expect(plan.runtimeBindings).toContainEqual(
+        expect.objectContaining({
+          requiredCapability: "start-end-to-video",
+        }),
+      );
+    }
+  });
+
   it("creates an executable hardware-adaptive FramePack image-to-video flow", () => {
     const flow = createImageToVideoFlow({
       id: "flow:image-to-video",

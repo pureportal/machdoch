@@ -61,6 +61,7 @@ import {
   stepMediaGalleryAssetId,
 } from "../../../../core/media/gallery.js";
 import {
+  formatMediaAssetAspectRatio,
   isMediaAssetKnownTransparent,
   resolveMediaAssetVideoFrameRate,
 } from "../../../../core/media/video-quality.js";
@@ -156,48 +157,6 @@ const formatMediaType = (mimeType: MediaAssetRecord["mimeType"]): string => {
     case "video/webm":
       return "WebM";
   }
-};
-
-const COMMON_ASPECT_RATIOS = [
-  ["9:16", 9 / 16],
-  ["2:3", 2 / 3],
-  ["3:4", 3 / 4],
-  ["4:5", 4 / 5],
-  ["1:1", 1],
-  ["5:4", 5 / 4],
-  ["4:3", 4 / 3],
-  ["3:2", 3 / 2],
-  ["16:10", 16 / 10],
-  ["16:9", 16 / 9],
-  ["21:9", 21 / 9],
-] as const;
-
-const greatestCommonDivisor = (left: number, right: number): number => {
-  let currentLeft = Math.abs(left);
-  let currentRight = Math.abs(right);
-  while (currentRight !== 0) {
-    [currentLeft, currentRight] = [currentRight, currentLeft % currentRight];
-  }
-  return currentLeft;
-};
-
-const formatAspectRatio = (width: number, height: number): string => {
-  if (width <= 0 || height <= 0) {
-    return "Unknown";
-  }
-
-  const ratio = width / height;
-  const closestCommonRatio = COMMON_ASPECT_RATIOS.reduce((closest, candidate) =>
-    Math.abs(candidate[1] - ratio) < Math.abs(closest[1] - ratio)
-      ? candidate
-      : closest,
-  );
-  if (Math.abs(closestCommonRatio[1] - ratio) / closestCommonRatio[1] <= 0.01) {
-    return closestCommonRatio[0];
-  }
-
-  const divisor = greatestCommonDivisor(width, height);
-  return `${width / divisor}:${height / divisor}`;
 };
 
 const outputFormatForAsset = (
@@ -764,7 +723,7 @@ const AssetPreviewDialog = ({
             </span>
           </div>
           <DialogDescription className="text-xs text-slate-500">
-            {asset.width} × {asset.height} · {formatAspectRatio(asset.width, asset.height)} · {formatBytes(asset.byteSize)} · {formatMediaType(asset.mimeType)}
+            {asset.width} × {asset.height} · {formatMediaAssetAspectRatio(asset)} · {formatBytes(asset.byteSize)} · {formatMediaType(asset.mimeType)}
           </DialogDescription>
         </DialogHeader>
         <div
@@ -2762,7 +2721,7 @@ export const MediaLibraryView = ({
                             <div className="min-w-0">
                               <dt className="text-slate-600">Aspect ratio</dt>
                               <dd className="mt-0.5 truncate text-slate-400">
-                                {formatAspectRatio(asset.width, asset.height)}
+                                {formatMediaAssetAspectRatio(asset)}
                               </dd>
                             </div>
                           ) : null}

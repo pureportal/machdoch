@@ -18,7 +18,9 @@ import os
 from pathlib import Path
 import platform
 import re
+import subprocess
 import sys
+import tempfile
 import time
 import traceback
 import types
@@ -26,7 +28,7 @@ from typing import Any
 
 from PIL import Image
 
-WORKER_VERSION = "media-diffusers-worker/1.23.0"
+WORKER_VERSION = "media-diffusers-worker/1.31.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -38,7 +40,10 @@ SCHEMA_VERSION = 4
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
 LTX_13B_MIN_MEMORY_BYTES = 15 * 1024**3
 FRAMEPACK_MIN_MEMORY_BYTES = 6 * 1024**3
+FRAMEPACK_MIN_PHYSICAL_MEMORY_BYTES = 30 * 1024**3
 FRAMEPACK_BFLOAT16_MEMORY_BYTES = 32 * 1024**3
+HUNYUAN_VIDEO_15_MIN_MEMORY_BYTES = 14 * 1024**3
+HUNYUAN_VIDEO_15_MIN_PHYSICAL_MEMORY_BYTES = 30 * 1024**3
 LTX_DISTILLED_TIMESTEPS = (1000, 993, 987, 981, 975, 909, 725, 0.03)
 LTX_REFINEMENT_TIMESTEPS = (1000, 909, 725, 421, 0)
 LORA_TENSOR_PAIRS = (
@@ -62,6 +67,7 @@ SUPPORTED_ARCHITECTURES = (
     "flux-1",
     "flux-2",
     "framepack-i2v",
+    "hunyuan-video-1.5-i2v",
     "krea-2",
     "ltx-video",
     "wan-2.2-ti2v",
@@ -166,6 +172,7 @@ def _device(torch: Any) -> tuple[str, str, int | None]:
 
 def probe() -> dict[str, Any]:
     versions = _package_versions()
+    physical_memory = _physical_memory_bytes()
     missing = [name for name, version in versions.items() if version is None]
     mismatched = [
         f"{name}={version} (expected one of {', '.join(ACCEPTED_PACKAGE_VERSIONS[name])})"
@@ -187,6 +194,7 @@ def probe() -> dict[str, Any]:
             "device": None,
             "deviceLabel": None,
             "deviceMemoryBytes": None,
+            "physicalMemoryBytes": physical_memory,
             "architectures": list(SUPPORTED_ARCHITECTURES),
             "capabilities": [
                 "lora",
@@ -219,6 +227,7 @@ def probe() -> dict[str, Any]:
             "device": None,
             "deviceLabel": None,
             "deviceMemoryBytes": None,
+            "physicalMemoryBytes": physical_memory,
             "architectures": list(SUPPORTED_ARCHITECTURES),
             "capabilities": [
                 "lora",
@@ -247,6 +256,7 @@ def probe() -> dict[str, Any]:
         "device": device,
         "deviceLabel": label,
         "deviceMemoryBytes": memory,
+        "physicalMemoryBytes": physical_memory,
         "architectures": list(SUPPORTED_ARCHITECTURES),
         "capabilities": [
             "lora",
@@ -1127,6 +1137,9 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         raise WorkerError("model is required")
     torch, diffusers = _runtime()
     architecture = _required_text(model, "architecture", 64)
+    pipeline_class_name = None
+    component_names = None
+    probe_diagnostic = None
     if architecture == "framepack-i2v":
         pipeline, _, _, _, _ = _load_framepack_pipeline(
             diffusers,
@@ -1139,6 +1152,42 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         capabilities = [
             "image-to-video",
             "start-end-to-video",
+            "vp9-alpha",
+            "alpha-video",
+            "video-composite",
+        ]
+    elif architecture == "hunyuan-video-1.5-i2v":
+        _validate_hunyuan_video_15_package(model, torch)
+        for class_name in (
+            "HunyuanVideo15ImageToVideoPipeline",
+            "HunyuanVideo15Transformer3DModel",
+            "AutoencoderKLHunyuanVideo15",
+        ):
+            if getattr(diffusers, class_name, None) is None:
+                raise WorkerError(
+                    f"The pinned Diffusers runtime does not expose {class_name}"
+                )
+        pipeline = None
+        pipeline_class_name = "HunyuanVideo15ImageToVideoPipeline"
+        component_names = [
+            "feature_extractor",
+            "guider",
+            "image_encoder",
+            "scheduler",
+            "text_encoder",
+            "text_encoder_2",
+            "tokenizer",
+            "tokenizer_2",
+            "transformer",
+            "vae",
+        ]
+        probe_diagnostic = (
+            "HunyuanVideo15ImageToVideoPipeline and the complete pinned offline "
+            "component inventory were validated without retaining model weights."
+        )
+        required_methods = []
+        capabilities = [
+            "image-to-video",
             "vp9-alpha",
             "alpha-video",
             "video-composite",
@@ -1194,16 +1243,23 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
             "Loaded pipeline is missing required add-on methods: "
             + ", ".join(missing_methods)
         )
-    components = getattr(pipeline, "components", {})
-    component_names = (
-        sorted(
-            name
-            for name, component in components.items()
-            if isinstance(name, str) and component is not None
+    if component_names is None:
+        components = getattr(pipeline, "components", {})
+        component_names = (
+            sorted(
+                name
+                for name, component in components.items()
+                if isinstance(name, str) and component is not None
+            )
+            if isinstance(components, dict)
+            else []
         )
-        if isinstance(components, dict)
-        else []
-    )
+    if pipeline_class_name is None:
+        pipeline_class_name = type(pipeline).__name__
+    if probe_diagnostic is None:
+        probe_diagnostic = (
+            f"{pipeline_class_name} loaded successfully with offline components."
+        )
     device, device_label, device_memory = _device(torch)
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -1211,13 +1267,13 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         "packages": _package_versions(),
         "ready": True,
         "architecture": architecture,
-        "pipelineClass": type(pipeline).__name__,
+        "pipelineClass": pipeline_class_name,
         "components": component_names[:64],
         "capabilities": capabilities,
         "device": device,
         "deviceLabel": device_label,
         "deviceMemoryBytes": device_memory,
-        "diagnostic": f"{type(pipeline).__name__} loaded successfully with offline components.",
+        "diagnostic": probe_diagnostic,
     }
 
 
@@ -2740,51 +2796,9 @@ def _encode_video_prompt_embeddings(
     return prompt_embeddings, negative_prompt_embeddings
 
 
-def _video_disk_cache_directory(
-    model: dict[str, Any],
-) -> tuple[Path, str]:
-    model_path = _absolute_existing_path(model.get("path"), file=False)
-    model_digest = _required_text(model, "digest", 160)
-    signature = hashlib.sha256(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "workerVersion": OFFLOAD_CACHE_COMPATIBILITY_VERSION,
-                "torchVersion": __import__("torch").__version__,
-                "diffusersVersion": __import__("diffusers").__version__,
-                "modelDigest": model_digest,
-                "component": "transformer",
-                "groupSize": 1,
-            },
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()
-    return model_path / "runtime" / "transformer-offload" / signature, signature
-
-
-def _remove_incomplete_video_disk_cache(
-    cache_directory: Path, model_path: Path
-) -> None:
-    import shutil
-
-    expected_parent = (
-        model_path.resolve(strict=True) / "runtime" / "transformer-offload"
-    ).resolve(strict=False)
-    resolved_cache = cache_directory.resolve(strict=False)
-    if (
-        resolved_cache.parent != expected_parent
-        or not re.fullmatch(r"[0-9a-f]{64}", resolved_cache.name)
-    ):
-        raise WorkerError("Refusing to replace an unsafe video offload cache path")
-    if resolved_cache.exists():
-        shutil.rmtree(resolved_cache)
-
-
 def _configure_video_offload(
     transformer: Any,
     torch: Any,
-    model: dict[str, Any],
     requested_profile: Any,
 ) -> dict[str, Any]:
     if requested_profile is None:
@@ -2807,62 +2821,32 @@ def _configure_video_offload(
         physical_memory,
         device_memory,
     )
-    group_size = 1 if effective_profile != "maximum-speed" else 4
-    cache_directory: Path | None = None
-    disk_cache_hit = False
-    windows_disk_fixes = False
-    arguments: dict[str, Any] = {
-        "onload_device": torch.device(f"cuda:{torch.cuda.current_device()}"),
-        "offload_device": torch.device("cpu"),
-        "offload_type": "block_level",
-        "num_blocks_per_group": group_size,
-        "use_stream": False,
-    }
-    if effective_profile == "memory-saver":
-        cache_directory, signature = _video_disk_cache_directory(model)
-        model_path = _absolute_existing_path(model.get("path"), file=False)
-        disk_cache_hit = _validated_krea_disk_cache(cache_directory, signature)
-        if cache_directory.exists() and not disk_cache_hit:
-            _remove_incomplete_video_disk_cache(cache_directory, model_path)
-        cache_directory.mkdir(parents=True, exist_ok=True)
-        windows_disk_fixes = _install_windows_krea_disk_offload_fixes(torch)
-        arguments["offload_to_disk_path"] = str(cache_directory)
-    transformer.enable_group_offload(**arguments)
-    cache_size = None
-    cache_files = None
-    if cache_directory is not None:
-        group_files = sorted(cache_directory.glob("group_*.safetensors"))
-        cache_size = sum(path.stat().st_size for path in group_files)
-        cache_files = len(group_files)
-        if not disk_cache_hit:
-            manifest = {
-                "schemaVersion": 1,
-                "signature": signature,
-                "files": [
-                    {"name": path.name, "sizeBytes": path.stat().st_size}
-                    for path in group_files
-                ],
-            }
-            temporary_manifest = cache_directory / f".complete.{os.getpid()}.tmp"
-            temporary_manifest.write_text(
-                json.dumps(manifest, separators=(",", ":"), sort_keys=True),
-                encoding="utf-8",
-            )
-            os.replace(temporary_manifest, cache_directory / "complete.json")
+    group_size = _video_offload_group_size(device_memory, effective_profile)
+    if effective_profile == "maximum-speed" and device_memory >= 48 * 1024**3:
+        transformer.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+        offload_type = "none"
+        group_size = None
+    else:
+        transformer.enable_group_offload(
+            onload_device=torch.device(f"cuda:{torch.cuda.current_device()}"),
+            offload_device=torch.device("cpu"),
+            offload_type="block_level",
+            num_blocks_per_group=group_size,
+            use_stream=False,
+        )
+        offload_type = "block-level-cpu"
     return {
         "requestedMemoryProfile": requested_profile,
         "effectiveMemoryProfile": effective_profile,
         "physicalMemoryBytes": physical_memory,
         "deviceMemoryBytes": device_memory,
-        "offloadType": "block-level-disk"
-        if cache_directory is not None
-        else "block-level-cpu",
+        "offloadType": offload_type,
         "blocksPerGroup": group_size,
-        "diskCacheHit": disk_cache_hit if cache_directory is not None else None,
-        "diskCachePath": str(cache_directory) if cache_directory is not None else None,
-        "diskCacheFiles": cache_files,
-        "diskCacheBytes": cache_size,
-        "windowsDiskOffloadCompatibility": windows_disk_fixes,
+        "diskCacheHit": None,
+        "diskCachePath": None,
+        "diskCacheFiles": None,
+        "diskCacheBytes": None,
+        "windowsDiskOffloadCompatibility": False,
     }
 
 
@@ -2873,11 +2857,51 @@ def _select_video_memory_profile(
 ) -> str:
     if requested_profile != "auto":
         return requested_profile
-    if physical_memory is None or physical_memory < 30 * 1024**3:
+    if (
+        physical_memory is None
+        or device_memory is None
+        or physical_memory < 16 * 1024**3
+        or device_memory < 12 * 1024**3
+    ):
         return "memory-saver"
-    if device_memory is not None and device_memory >= 24 * 1024**3:
+    if physical_memory >= 48 * 1024**3 and device_memory >= 48 * 1024**3:
         return "maximum-speed"
     return "balanced"
+
+
+def _video_offload_group_size(
+    device_memory: int | None,
+    memory_profile: str = "balanced",
+) -> int:
+    if memory_profile == "memory-saver":
+        return 1
+    if device_memory is not None and device_memory >= 23 * 1024**3:
+        return 8
+    if device_memory is not None and device_memory >= 15 * 1024**3:
+        return 4
+    if device_memory is not None and device_memory >= 11 * 1024**3:
+        return 2
+    return 1
+
+
+def _framepack_vae_tile_configuration(device_memory: int | None) -> dict[str, int]:
+    if device_memory is not None and device_memory >= 24 * 1024**3:
+        return {
+            "tile_sample_min_height": 256,
+            "tile_sample_min_width": 256,
+            "tile_sample_min_num_frames": 16,
+            "tile_sample_stride_height": 192,
+            "tile_sample_stride_width": 192,
+            "tile_sample_stride_num_frames": 12,
+        }
+    return {
+        "tile_sample_min_height": 64,
+        "tile_sample_min_width": 64,
+        "tile_sample_min_num_frames": 8,
+        "tile_sample_stride_height": 48,
+        "tile_sample_stride_width": 48,
+        "tile_sample_stride_num_frames": 6,
+    }
 
 
 def _indexed_checkpoint_files(model_path: Path, relative_index: str) -> list[Path]:
@@ -2897,6 +2921,414 @@ def _indexed_checkpoint_files(model_path: Path, relative_index: str) -> list[Pat
     return files
 
 
+def _validate_hunyuan_video_15_package(
+    model: dict[str, Any],
+    torch: Any,
+) -> tuple[Path, int]:
+    if _required_text(model, "packageKind", 64) != "diffusers-directory":
+        raise WorkerError("HunyuanVideo 1.5 generation requires a Diffusers directory")
+    model_path = _absolute_existing_path(model.get("path"), file=False)
+    required = [
+        model_path / "model_index.json",
+        model_path / "scheduler" / "scheduler_config.json",
+        model_path / "guider" / "guider_config.json",
+        model_path / "text_encoder" / "config.json",
+        model_path / "text_encoder" / "model.safetensors.index.json",
+        model_path / "text_encoder_2" / "config.json",
+        model_path / "text_encoder_2" / "model.safetensors",
+        model_path / "tokenizer" / "tokenizer.json",
+        model_path / "tokenizer" / "tokenizer_config.json",
+        model_path / "tokenizer_2" / "tokenizer_config.json",
+        model_path / "transformer" / "config.json",
+        model_path
+        / "transformer"
+        / "diffusion_pytorch_model.safetensors.index.json",
+        model_path / "vae" / "config.json",
+        model_path / "vae" / "diffusion_pytorch_model.safetensors",
+        model_path / "feature_extractor" / "preprocessor_config.json",
+        model_path / "image_encoder" / "config.json",
+        model_path / "image_encoder" / "model.safetensors",
+    ]
+    required.extend(
+        _indexed_checkpoint_files(
+            model_path,
+            "text_encoder/model.safetensors.index.json",
+        )
+    )
+    required.extend(
+        _indexed_checkpoint_files(
+            model_path,
+            "transformer/diffusion_pytorch_model.safetensors.index.json",
+        )
+    )
+    missing = [
+        path.relative_to(model_path).as_posix()
+        for path in required
+        if not path.is_file() or path.stat().st_size == 0
+    ]
+    if missing:
+        raise WorkerError(
+            "HunyuanVideo 1.5 model package is incomplete; missing "
+            + ", ".join(missing)
+        )
+    model_index = json.loads(
+        (model_path / "model_index.json").read_text(encoding="utf-8")
+    )
+    transformer_config = json.loads(
+        (model_path / "transformer" / "config.json").read_text(encoding="utf-8")
+    )
+    if model_index.get("_class_name") != "HunyuanVideo15ImageToVideoPipeline":
+        raise WorkerError(
+            "HunyuanVideo 1.5 package does not declare the reviewed I2V pipeline"
+        )
+    reviewed_transformer = {
+        "_class_name": "HunyuanVideo15Transformer3DModel",
+        "task_type": "i2v",
+        "num_layers": 54,
+        "num_refiner_layers": 2,
+        "num_attention_heads": 16,
+        "attention_head_dim": 128,
+        "text_embed_dim": 3584,
+        "text_embed_2_dim": 1472,
+        "image_embed_dim": 1152,
+        "in_channels": 65,
+        "out_channels": 32,
+        "use_meanflow": True,
+    }
+    mismatched = [
+        key
+        for key, expected in reviewed_transformer.items()
+        if transformer_config.get(key) != expected
+    ]
+    if mismatched:
+        raise WorkerError(
+            "HunyuanVideo 1.5 transformer does not match the reviewed "
+            "step-distilled I2V profile: "
+            + ", ".join(mismatched)
+        )
+    device, _, device_memory = _device(torch)
+    if device != "cuda":
+        raise WorkerError(
+            "HunyuanVideo 1.5 I2V requires a supported GPU; use LTX-Video 2B "
+            "on CPU-only systems"
+        )
+    if (
+        device_memory is None
+        or device_memory < HUNYUAN_VIDEO_15_MIN_MEMORY_BYTES
+    ):
+        raise WorkerError(
+            "HunyuanVideo 1.5 I2V requires at least 14 GiB of usable GPU memory"
+        )
+    physical_memory = _physical_memory_bytes()
+    if (
+        physical_memory is not None
+        and physical_memory < HUNYUAN_VIDEO_15_MIN_PHYSICAL_MEMORY_BYTES
+    ):
+        raise WorkerError(
+            "HunyuanVideo 1.5 I2V requires at least 30 GiB of physical memory; "
+            "use FramePack or LTX-Video 2B on this system"
+        )
+    if not torch.cuda.is_bf16_supported():
+        raise WorkerError("HunyuanVideo 1.5 generation requires bfloat16 support")
+    return model_path, device_memory
+
+
+def _hunyuan_video_15_vae_tile_configuration(
+    device_memory: int | None,
+) -> dict[str, int]:
+    sample_size = 256 if device_memory is not None and device_memory >= 24 * 1024**3 else 128
+    latent_size = sample_size // 16
+    return {
+        "tile_sample_min_height": sample_size,
+        "tile_sample_min_width": sample_size,
+        "tile_latent_min_height": latent_size,
+        "tile_latent_min_width": latent_size,
+    }
+
+
+def _encode_hunyuan_video_15_prompt(
+    pipeline_class: Any,
+    torch: Any,
+    prompt: str,
+    execution_device: Any,
+    tokenizer: Any,
+    text_encoder: Any,
+    tokenizer_2: Any,
+    text_encoder_2: Any,
+) -> tuple[Any, Any, Any, Any]:
+    with torch.inference_mode():
+        prompt_embeddings, prompt_attention_mask = (
+            pipeline_class._get_mllm_prompt_embeds(
+                tokenizer=tokenizer,
+                text_encoder=text_encoder,
+                prompt=prompt,
+                device=execution_device,
+                tokenizer_max_length=1000,
+            )
+        )
+        prompt_embeddings_2, prompt_attention_mask_2 = (
+            pipeline_class._get_byt5_prompt_embeds(
+                tokenizer=tokenizer_2,
+                text_encoder=text_encoder_2,
+                prompt=prompt,
+                device=execution_device,
+                tokenizer_max_length=256,
+            )
+        )
+        tensors = tuple(
+            tensor.to(
+                device="cpu",
+                dtype=torch.bfloat16,
+            ).contiguous()
+            for tensor in (
+                prompt_embeddings,
+                prompt_attention_mask,
+                prompt_embeddings_2,
+                prompt_attention_mask_2,
+            )
+        )
+    return tensors
+
+
+def _encode_hunyuan_video_15_prompt_embeddings_in_process(
+    diffusers: Any,
+    torch: Any,
+    model_path: Path,
+    prompt: str,
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+    from diffusers.hooks import apply_group_offloading
+    from transformers import (
+        ByT5Tokenizer,
+        Qwen2_5_VLTextModel,
+        Qwen2TokenizerFast,
+        T5EncoderModel,
+    )
+
+    execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    device_memory = int(
+        torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory
+    )
+    prompt_group_size = _video_offload_group_size(device_memory)
+    torch.cuda.reset_peak_memory_stats()
+    initial_free_bytes = int(torch.cuda.mem_get_info()[0])
+    tokenizer = Qwen2TokenizerFast.from_pretrained(
+        str(model_path),
+        subfolder="tokenizer",
+        local_files_only=True,
+        trust_remote_code=False,
+    )
+    text_encoder = Qwen2_5_VLTextModel.from_pretrained(
+        str(model_path),
+        subfolder="text_encoder",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        trust_remote_code=False,
+        low_cpu_mem_usage=True,
+    )
+    tokenizer_2 = ByT5Tokenizer.from_pretrained(
+        str(model_path),
+        subfolder="tokenizer_2",
+        local_files_only=True,
+        trust_remote_code=False,
+    )
+    text_encoder_2 = T5EncoderModel.from_pretrained(
+        str(model_path),
+        subfolder="text_encoder_2",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        trust_remote_code=False,
+        low_cpu_mem_usage=True,
+    )
+    text_encoder.eval()
+    text_encoder_2.eval()
+    apply_group_offloading(
+        text_encoder,
+        onload_device=execution_device,
+        offload_device=torch.device("cpu"),
+        offload_type="block_level",
+        num_blocks_per_group=prompt_group_size,
+        use_stream=False,
+    )
+    text_encoder_2.to(execution_device)
+    (
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+    ) = _encode_hunyuan_video_15_prompt(
+        diffusers.HunyuanVideo15ImageToVideoPipeline,
+        torch,
+        prompt,
+        execution_device,
+        tokenizer,
+        text_encoder,
+        tokenizer_2,
+        text_encoder_2,
+    )
+    del text_encoder, text_encoder_2, tokenizer, tokenizer_2
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.synchronize()
+    return (
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+        {
+            "processIsolation": "prompt-encoder-subprocess",
+            "blocksPerGroup": prompt_group_size,
+            "initialFreeBytes": initial_free_bytes,
+            "peakAllocatedBytes": int(torch.cuda.max_memory_allocated()),
+            "postReleaseAllocatedBytes": int(torch.cuda.memory_allocated()),
+            "postReleaseReservedBytes": int(torch.cuda.memory_reserved()),
+        },
+    )
+
+
+def _encode_hunyuan_video_15_prompt_subprocess(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    model_path = _absolute_existing_path(request.get("modelPath"), file=False)
+    prompt = request.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8_000:
+        raise WorkerError(
+            "HunyuanVideo 1.5 prompt must be a string from 1 to 8000 characters"
+        )
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    torch, diffusers = _runtime()
+    device, _, _ = _device(torch)
+    if device != "cuda" or not torch.cuda.is_bf16_supported():
+        raise WorkerError(
+            "HunyuanVideo 1.5 prompt encoding requires a bfloat16 GPU"
+        )
+    (
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+        memory_evidence,
+    ) = _encode_hunyuan_video_15_prompt_embeddings_in_process(
+        diffusers,
+        torch,
+        model_path,
+        prompt,
+    )
+    from safetensors.torch import save_file
+
+    destination = output_directory / "hunyuan-video-1.5-prompt-embeddings.safetensors"
+    save_file(
+        {
+            "prompt_embeddings": prompt_embeddings,
+            "prompt_attention_mask": prompt_attention_mask,
+            "prompt_embeddings_2": prompt_embeddings_2,
+            "prompt_attention_mask_2": prompt_attention_mask_2,
+        },
+        destination,
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "fileName": destination.name,
+        "gpuMemory": memory_evidence,
+    }
+
+
+def _encode_hunyuan_video_15_prompt_embeddings(
+    model_path: Path,
+    prompt: str,
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+    with tempfile.TemporaryDirectory(
+        prefix="machdoch-hunyuan-video-1.5-prompt-"
+    ) as temporary:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_HUB_DISABLE_TELEMETRY": "1",
+                "DO_NOT_TRACK": "1",
+            }
+        )
+        environment.pop("HF_TOKEN", None)
+        environment.pop("HUGGING_FACE_HUB_TOKEN", None)
+        for attempt in range(2):
+            output_directory = Path(temporary) / f"attempt-{attempt + 1}"
+            output_directory.mkdir()
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    str(Path(__file__).resolve()),
+                    "_encode-hunyuan-video-1.5-prompt",
+                ],
+                input=json.dumps(
+                    {
+                        "modelPath": str(model_path),
+                        "prompt": prompt,
+                        "outputDirectory": str(output_directory),
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                timeout=20 * 60,
+                check=False,
+                env=environment,
+            )
+            try:
+                response = json.loads(completed.stdout)
+                break
+            except json.JSONDecodeError as error:
+                if attempt == 0:
+                    gc.collect()
+                    continue
+                diagnostic = (
+                    completed.stderr.strip()[-2_000:]
+                    or completed.stdout.strip()[-1_000:]
+                )
+                raise WorkerError(
+                    "HunyuanVideo 1.5 prompt encoder returned an invalid "
+                    f"response (exit code {completed.returncode})"
+                    f"{f': {diagnostic}' if diagnostic else ''}"
+                ) from error
+        if completed.returncode != 0 or response.get("error"):
+            diagnostic = completed.stderr.strip()[-2_000:]
+            message = (
+                response.get("error")
+                or "HunyuanVideo 1.5 prompt encoding failed"
+            )
+            raise WorkerError(
+                f"{message}{f': {diagnostic}' if diagnostic else ''}"
+            )
+        destination = output_directory / str(response.get("fileName"))
+        if (
+            destination.parent != output_directory
+            or destination.name
+            != "hunyuan-video-1.5-prompt-embeddings.safetensors"
+            or not destination.is_file()
+        ):
+            raise WorkerError(
+                "HunyuanVideo 1.5 prompt encoder returned an unsafe output"
+            )
+        from safetensors.torch import load_file
+
+        tensors = load_file(destination, device="cpu")
+        memory_evidence = response.get("gpuMemory")
+        if not isinstance(memory_evidence, dict):
+            raise WorkerError(
+                "HunyuanVideo 1.5 prompt encoder omitted GPU memory evidence"
+            )
+        return (
+            tensors["prompt_embeddings"].clone(),
+            tensors["prompt_attention_mask"].clone(),
+            tensors["prompt_embeddings_2"].clone(),
+            tensors["prompt_attention_mask_2"].clone(),
+            memory_evidence,
+        )
+
+
 def _framepack_parameter_uses_compute_dtype(name: str) -> bool:
     return any(
         pattern in name
@@ -2910,6 +3342,24 @@ def _framepack_parameter_uses_compute_dtype(name: str) -> bool:
             "proj_out",
         )
     )
+
+
+def _framepack_requested_frames(frames: list[Any], num_frames: int) -> list[Any]:
+    if len(frames) < num_frames:
+        raise WorkerError(
+            "FramePack returned fewer decoded frames than the requested video"
+        )
+    if len(frames) == num_frames:
+        return frames
+    if num_frames == 1:
+        return [frames[0]]
+    denominator = num_frames - 1
+    last_index = len(frames) - 1
+    indices = [
+        (index * last_index + denominator // 2) // denominator
+        for index in range(num_frames)
+    ]
+    return [frames[index] for index in indices]
 
 
 def _validated_framepack_fp8_cache(model_path: Path) -> tuple[Path, list[Path]] | None:
@@ -2960,13 +3410,45 @@ def _validated_framepack_fp8_cache(model_path: Path) -> tuple[Path, list[Path]] 
     return cache_root, files
 
 
-def _encode_framepack_prompt_embeddings(
+def _encode_framepack_prompt(
+    encoder: Any,
+    torch: Any,
+    prompt: str,
+    execution_device: Any,
+    compute_dtype: Any,
+) -> tuple[Any, Any, Any]:
+    with torch.inference_mode():
+        prompt_embeddings, pooled_prompt_embeddings, prompt_attention_mask = (
+            encoder.encode_prompt(
+                prompt=prompt,
+                device=execution_device,
+                dtype=compute_dtype,
+                max_sequence_length=256,
+            )
+        )
+        prompt_embeddings = prompt_embeddings.to(
+            device="cpu", dtype=compute_dtype
+        ).contiguous()
+        pooled_prompt_embeddings = pooled_prompt_embeddings.to(
+            device="cpu", dtype=compute_dtype
+        ).contiguous()
+        prompt_attention_mask = prompt_attention_mask.to(
+            device="cpu", dtype=compute_dtype
+        ).contiguous()
+    return (
+        prompt_embeddings,
+        pooled_prompt_embeddings,
+        prompt_attention_mask,
+    )
+
+
+def _encode_framepack_prompt_embeddings_in_process(
     diffusers: Any,
     torch: Any,
     model_path: Path,
     prompt: str,
     compute_dtype: Any,
-) -> tuple[Any, Any, Any]:
+) -> tuple[Any, Any, Any, dict[str, Any]]:
     from diffusers.hooks import apply_group_offloading
     from transformers import (
         CLIPTextModel,
@@ -2976,6 +3458,8 @@ def _encode_framepack_prompt_embeddings(
     )
 
     execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    torch.cuda.reset_peak_memory_stats()
+    initial_free_bytes = int(torch.cuda.mem_get_info()[0])
     tokenizer = LlamaTokenizerFast.from_pretrained(
         str(model_path),
         subfolder="tokenizer",
@@ -3025,26 +3509,145 @@ def _encode_framepack_prompt_embeddings(
         feature_extractor=None,
     )
     prompt_embeddings, pooled_prompt_embeddings, prompt_attention_mask = (
-        encoder.encode_prompt(
-            prompt=prompt,
-            device=execution_device,
-            dtype=compute_dtype,
-            max_sequence_length=256,
+        _encode_framepack_prompt(
+            encoder,
+            torch,
+            prompt,
+            execution_device,
+            compute_dtype,
         )
     )
-    prompt_embeddings = prompt_embeddings.to(
-        device="cpu", dtype=compute_dtype
-    ).contiguous()
-    pooled_prompt_embeddings = pooled_prompt_embeddings.to(
-        device="cpu", dtype=compute_dtype
-    ).contiguous()
-    prompt_attention_mask = prompt_attention_mask.to(
-        device="cpu", dtype=compute_dtype
-    ).contiguous()
     del encoder, text_encoder, text_encoder_2, tokenizer, tokenizer_2
     gc.collect()
     torch.cuda.empty_cache()
-    return prompt_embeddings, pooled_prompt_embeddings, prompt_attention_mask
+    torch.cuda.synchronize()
+    return (
+        prompt_embeddings,
+        pooled_prompt_embeddings,
+        prompt_attention_mask,
+        {
+            "processIsolation": "prompt-encoder-subprocess",
+            "initialFreeBytes": initial_free_bytes,
+            "peakAllocatedBytes": int(torch.cuda.max_memory_allocated()),
+            "postReleaseAllocatedBytes": int(torch.cuda.memory_allocated()),
+            "postReleaseReservedBytes": int(torch.cuda.memory_reserved()),
+        },
+    )
+
+
+def _encode_framepack_prompt_subprocess(request: dict[str, Any]) -> dict[str, Any]:
+    model_path = _absolute_existing_path(request.get("modelPath"), file=False)
+    prompt = request.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8_000:
+        raise WorkerError("FramePack prompt must be a string from 1 to 8000 characters")
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    torch, diffusers = _runtime()
+    device, _, _ = _device(torch)
+    if device != "cuda" or not torch.cuda.is_bf16_supported():
+        raise WorkerError("FramePack prompt encoding requires a bfloat16 GPU")
+    (
+        prompt_embeddings,
+        pooled_prompt_embeddings,
+        prompt_attention_mask,
+        memory_evidence,
+    ) = _encode_framepack_prompt_embeddings_in_process(
+        diffusers,
+        torch,
+        model_path,
+        prompt,
+        torch.bfloat16,
+    )
+    from safetensors.torch import save_file
+
+    destination = output_directory / "prompt-embeddings.safetensors"
+    save_file(
+        {
+            "prompt_embeddings": prompt_embeddings,
+            "pooled_prompt_embeddings": pooled_prompt_embeddings,
+            "prompt_attention_mask": prompt_attention_mask,
+        },
+        destination,
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "fileName": destination.name,
+        "gpuMemory": memory_evidence,
+    }
+
+
+def _encode_framepack_prompt_embeddings(
+    torch: Any,
+    model_path: Path,
+    prompt: str,
+    compute_dtype: Any,
+) -> tuple[Any, Any, Any, dict[str, Any]]:
+    with tempfile.TemporaryDirectory(
+        prefix="machdoch-framepack-prompt-"
+    ) as temporary:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_HUB_DISABLE_TELEMETRY": "1",
+                "DO_NOT_TRACK": "1",
+            }
+        )
+        environment.pop("HF_TOKEN", None)
+        environment.pop("HUGGING_FACE_HUB_TOKEN", None)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(Path(__file__).resolve()),
+                "_encode-framepack-prompt",
+            ],
+            input=json.dumps(
+                {
+                    "modelPath": str(model_path),
+                    "prompt": prompt,
+                    "outputDirectory": temporary,
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=20 * 60,
+            check=False,
+            env=environment,
+        )
+        try:
+            response = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise WorkerError(
+                "FramePack prompt encoder returned an invalid response"
+            ) from error
+        if completed.returncode != 0 or response.get("error"):
+            diagnostic = completed.stderr.strip()[-2_000:]
+            message = response.get("error") or "FramePack prompt encoding failed"
+            raise WorkerError(
+                f"{message}{f': {diagnostic}' if diagnostic else ''}"
+            )
+        destination = Path(temporary) / str(response.get("fileName"))
+        if (
+            destination.parent != Path(temporary)
+            or destination.name != "prompt-embeddings.safetensors"
+            or not destination.is_file()
+        ):
+            raise WorkerError("FramePack prompt encoder returned an unsafe output")
+        from safetensors.torch import load_file
+
+        tensors = load_file(destination, device="cpu")
+        memory_evidence = response.get("gpuMemory")
+        if not isinstance(memory_evidence, dict):
+            raise WorkerError("FramePack prompt encoder omitted GPU memory evidence")
+        return (
+            tensors["prompt_embeddings"].to(dtype=compute_dtype).clone(),
+            tensors["pooled_prompt_embeddings"].to(dtype=compute_dtype).clone(),
+            tensors["prompt_attention_mask"].to(dtype=compute_dtype).clone(),
+            memory_evidence,
+        )
 
 
 def _load_framepack_transformer(
@@ -3200,6 +3803,14 @@ def _load_framepack_pipeline(
         raise WorkerError(
             "FramePack 13B requires a supported GPU; use LTX-Video 2B on CPU-only systems"
         )
+    physical_memory = _physical_memory_bytes()
+    if (
+        physical_memory is not None
+        and physical_memory < FRAMEPACK_MIN_PHYSICAL_MEMORY_BYTES
+    ):
+        raise WorkerError(
+            "FramePack 13B requires at least 30 GiB of physical memory for prompt encoding; use LTX-Video 2B on this system"
+        )
     if device_memory is None or device_memory < FRAMEPACK_MIN_MEMORY_BYTES:
         raise WorkerError(
             "FramePack requires at least 6 GiB of usable GPU memory"
@@ -3207,9 +3818,13 @@ def _load_framepack_pipeline(
     if not torch.cuda.is_bf16_supported():
         raise WorkerError("FramePack generation requires bfloat16 support")
     compute_dtype = torch.bfloat16
-    prompt_embeddings, pooled_prompt_embeddings, prompt_attention_mask = (
+    (
+        prompt_embeddings,
+        pooled_prompt_embeddings,
+        prompt_attention_mask,
+        prompt_encoder_memory,
+    ) = (
         _encode_framepack_prompt_embeddings(
-            diffusers,
             torch,
             model_path,
             prompt,
@@ -3226,9 +3841,9 @@ def _load_framepack_pipeline(
     performance = _configure_video_offload(
         transformer,
         torch,
-        model,
         memory_profile,
     )
+    performance["promptEncoderGpuMemory"] = prompt_encoder_memory
     gc.collect()
     torch.cuda.empty_cache()
     vae = diffusers.AutoencoderKLHunyuanVideo.from_pretrained(
@@ -3238,17 +3853,7 @@ def _load_framepack_pipeline(
         local_files_only=True,
         use_safetensors=True,
     )
-    if device_memory < 24 * 1024**3:
-        vae.enable_tiling(
-            tile_sample_min_height=128,
-            tile_sample_min_width=128,
-            tile_sample_min_num_frames=8,
-            tile_sample_stride_height=96,
-            tile_sample_stride_width=96,
-            tile_sample_stride_num_frames=6,
-        )
-    else:
-        vae.enable_tiling()
+    vae.enable_tiling(**_framepack_vae_tile_configuration(device_memory))
     image_encoder = SiglipVisionModel.from_pretrained(
         str(model_path),
         subfolder="image_encoder",
@@ -3310,7 +3915,7 @@ def _load_framepack_pipeline(
     performance["weightStorageDtype"] = storage_dtype
     performance["fp8CacheHit"] = fp8_cache_hit
     performance["computeDtype"] = "bfloat16"
-    performance["textEncoderDevice"] = "sequential-gpu-offload"
+    performance["textEncoderDevice"] = "isolated-block-level-gpu-offload"
     performance["imageEncoderDevice"] = "sequential-gpu-offload"
     performance["vaeDevice"] = "stage-sequential-gpu"
     performance["renderStrategy"] = "inverted-anti-drifting-single-window"
@@ -3321,6 +3926,840 @@ def _load_framepack_pipeline(
         prompt_attention_mask,
         performance,
     )
+
+
+def _generate_framepack_latents_subprocess(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    model = request.get("model")
+    if not isinstance(model, dict):
+        raise WorkerError("FramePack denoising requires a model")
+    prompt = request.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8_000:
+        raise WorkerError("FramePack prompt must be a string from 1 to 8000 characters")
+    first_frame_path = _absolute_existing_path(
+        request.get("firstFramePath"), file=True
+    )
+    last_frame_path = _absolute_existing_path(
+        request.get("lastFramePath"), file=True
+    )
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    width = request.get("width")
+    height = request.get("height")
+    num_frames = request.get("numFrames")
+    steps = request.get("numInferenceSteps")
+    guidance_scale = request.get("guidanceScale")
+    seed = request.get("seed")
+    transparent_background = request.get("transparentBackground")
+    if (
+        not isinstance(width, int)
+        or isinstance(width, bool)
+        or width < 64
+        or not isinstance(height, int)
+        or isinstance(height, bool)
+        or height < 64
+    ):
+        raise WorkerError("FramePack denoising dimensions are invalid")
+    if (
+        not isinstance(num_frames, int)
+        or isinstance(num_frames, bool)
+        or not 17 <= num_frames <= 129
+        or (num_frames - 1) % 4 != 0
+    ):
+        raise WorkerError("FramePack denoising frame count is invalid")
+    if (
+        not isinstance(steps, int)
+        or isinstance(steps, bool)
+        or not 4 <= steps <= 50
+    ):
+        raise WorkerError("FramePack denoising step count is invalid")
+    if (
+        not isinstance(guidance_scale, (int, float))
+        or isinstance(guidance_scale, bool)
+        or not math.isfinite(float(guidance_scale))
+        or not 1.0 <= float(guidance_scale) <= 10.0
+    ):
+        raise WorkerError("FramePack denoising guidance is invalid")
+    if not isinstance(seed, int) or not 0 <= seed < 2**63:
+        raise WorkerError("FramePack denoising seed is invalid")
+    if not isinstance(transparent_background, bool):
+        raise WorkerError("FramePack denoising transparency flag is invalid")
+
+    torch, diffusers = _runtime()
+    device, _, _ = _device(torch)
+    if device != "cuda":
+        raise WorkerError("FramePack denoising requires a supported GPU")
+    source, _ = _prepare_video_conditioning_frame(
+        first_frame_path,
+        width,
+        height,
+        transparent_background,
+    )
+    last_source, _ = _prepare_video_conditioning_frame(
+        last_frame_path,
+        width,
+        height,
+        transparent_background,
+    )
+    memory_evidence = _start_video_memory_observation(torch, device)
+    started_at = time.perf_counter()
+    (
+        pipeline,
+        prompt_embeddings,
+        pooled_prompt_embeddings,
+        prompt_attention_mask,
+        performance,
+    ) = _load_framepack_pipeline(
+        diffusers,
+        torch,
+        model,
+        prompt,
+        request.get("memoryProfile"),
+    )
+    model_ready_at = time.perf_counter()
+    execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    prompt_embeddings = prompt_embeddings.to(execution_device)
+    pooled_prompt_embeddings = pooled_prompt_embeddings.to(execution_device)
+    prompt_attention_mask = prompt_attention_mask.to(execution_device)
+    generator = torch.Generator(device=execution_device).manual_seed(seed)
+    result = pipeline(
+        image=source,
+        last_image=last_source,
+        prompt=None,
+        prompt_embeds=prompt_embeddings,
+        pooled_prompt_embeds=pooled_prompt_embeddings,
+        prompt_attention_mask=prompt_attention_mask,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        num_inference_steps=steps,
+        guidance_scale=float(guidance_scale),
+        true_cfg_scale=1.0,
+        generator=generator,
+        sampling_type="inverted_anti_drifting",
+        output_type="latent",
+    )
+    if not result.frames:
+        raise WorkerError("FramePack returned no latent video")
+    latents = result.frames[-1].detach().to("cpu").contiguous()
+    denoised_at = time.perf_counter()
+    from safetensors.torch import save_file
+
+    destination = output_directory / "framepack-latents.safetensors"
+    save_file({"latents": latents}, destination)
+    del (
+        result,
+        pipeline,
+        generator,
+        prompt_embeddings,
+        pooled_prompt_embeddings,
+        prompt_attention_mask,
+        latents,
+    )
+    gc.collect()
+    torch.cuda.empty_cache()
+    memory_evidence = _finish_video_memory_observation(
+        torch,
+        device,
+        memory_evidence,
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "fileName": destination.name,
+        "performance": performance,
+        "gpuMemory": memory_evidence,
+        "timingSeconds": {
+            "modelLoadAndPrompt": round(model_ready_at - started_at, 3),
+            "denoise": round(denoised_at - model_ready_at, 3),
+            "saveAndRelease": round(time.perf_counter() - denoised_at, 3),
+        },
+    }
+
+
+def _generate_framepack_latents(
+    torch: Any,
+    model: dict[str, Any],
+    prompt: str,
+    first_frame_path: Path,
+    last_frame_path: Path,
+    width: int,
+    height: int,
+    num_frames: int,
+    steps: int,
+    guidance_scale: float,
+    seed: int,
+    transparent_background: bool,
+    memory_profile: Any,
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
+    with tempfile.TemporaryDirectory(
+        prefix="machdoch-framepack-denoise-"
+    ) as temporary:
+        output_directory = Path(temporary) / "output"
+        output_directory.mkdir()
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_HUB_DISABLE_TELEMETRY": "1",
+                "DO_NOT_TRACK": "1",
+            }
+        )
+        environment.pop("HF_TOKEN", None)
+        environment.pop("HUGGING_FACE_HUB_TOKEN", None)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(Path(__file__).resolve()),
+                "_generate-framepack-latents",
+            ],
+            input=json.dumps(
+                {
+                    "model": model,
+                    "prompt": prompt,
+                    "firstFramePath": str(first_frame_path),
+                    "lastFramePath": str(last_frame_path),
+                    "outputDirectory": str(output_directory),
+                    "width": width,
+                    "height": height,
+                    "numFrames": num_frames,
+                    "numInferenceSteps": steps,
+                    "guidanceScale": guidance_scale,
+                    "seed": seed,
+                    "transparentBackground": transparent_background,
+                    "memoryProfile": memory_profile,
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=2 * 60 * 60,
+            check=False,
+            env=environment,
+        )
+        try:
+            response = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise WorkerError(
+                "FramePack denoiser returned an invalid response"
+            ) from error
+        if completed.returncode != 0 or response.get("error"):
+            diagnostic = completed.stderr.strip()[-4_000:]
+            message = response.get("error") or "FramePack denoising failed"
+            raise WorkerError(
+                f"{message}{f': {diagnostic}' if diagnostic else ''}"
+            )
+        destination = output_directory / str(response.get("fileName"))
+        if (
+            destination.parent != output_directory
+            or destination.name != "framepack-latents.safetensors"
+            or not destination.is_file()
+        ):
+            raise WorkerError("FramePack denoiser returned an unsafe output")
+        performance = response.get("performance")
+        gpu_memory = response.get("gpuMemory")
+        timing = response.get("timingSeconds")
+        if (
+            not isinstance(performance, dict)
+            or not isinstance(gpu_memory, dict)
+            or not isinstance(timing, dict)
+        ):
+            raise WorkerError("FramePack denoiser omitted performance evidence")
+        from safetensors.torch import load_file
+
+        latents = load_file(destination, device="cpu").get("latents")
+        if latents is None or latents.ndim != 5:
+            raise WorkerError("FramePack denoiser returned invalid latents")
+        performance["denoiserGpuMemory"] = gpu_memory
+        performance["componentIsolation"] = (
+            "prompt-encoder-subprocess->denoiser-subprocess->vae-parent"
+        )
+        return latents.clone(), performance, timing
+
+
+def _load_framepack_vae(
+    diffusers: Any,
+    torch: Any,
+    model_path: Path,
+    device_memory: int | None,
+) -> tuple[Any, Any, dict[str, int]]:
+    vae = diffusers.AutoencoderKLHunyuanVideo.from_pretrained(
+        str(model_path),
+        subfolder="vae",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+    )
+    tile_configuration = _framepack_vae_tile_configuration(device_memory)
+    vae.enable_tiling(**tile_configuration)
+    from diffusers.video_processor import VideoProcessor
+
+    return (
+        vae,
+        VideoProcessor(vae_scale_factor=vae.spatial_compression_ratio),
+        tile_configuration,
+    )
+
+
+def _decode_framepack_video(
+    torch: Any,
+    vae: Any,
+    video_processor: Any,
+    framepack_latents: Any,
+    execution_device: Any,
+) -> list[Any]:
+    current_latents = framepack_latents.to(
+        execution_device,
+        dtype=vae.dtype,
+    )
+    current_latents = current_latents / vae.config.scaling_factor
+    vae.to(execution_device)
+    with torch.inference_mode():
+        decoded_video = vae.decode(current_latents, return_dict=False)[0]
+        return list(
+            video_processor.postprocess_video(
+                decoded_video, output_type="pil"
+            )[0]
+        )
+
+
+def _load_hunyuan_video_15_pipeline(
+    diffusers: Any,
+    torch: Any,
+    model: dict[str, Any],
+    prompt: str,
+    memory_profile: Any,
+) -> tuple[Any, Any, Any, Any, Any, dict[str, Any]]:
+    from transformers import SiglipImageProcessor, SiglipVisionModel
+
+    model_path, device_memory = _validate_hunyuan_video_15_package(model, torch)
+    (
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+        prompt_encoder_memory,
+    ) = _encode_hunyuan_video_15_prompt_embeddings(model_path, prompt)
+    transformer, storage_dtype = _load_hunyuan_video_15_transformer(
+        diffusers,
+        torch,
+        model_path,
+        device_memory,
+        memory_profile,
+    )
+    transformer.eval()
+    performance = _configure_video_offload(
+        transformer,
+        torch,
+        memory_profile,
+    )
+    performance["promptEncoderGpuMemory"] = prompt_encoder_memory
+    gc.collect()
+    torch.cuda.empty_cache()
+    vae = diffusers.AutoencoderKLHunyuanVideo15.from_pretrained(
+        str(model_path),
+        subfolder="vae",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        low_cpu_mem_usage=True,
+    )
+    vae.eval()
+    vae_tiles = _hunyuan_video_15_vae_tile_configuration(device_memory)
+    vae.enable_tiling(**vae_tiles)
+    image_encoder = SiglipVisionModel.from_pretrained(
+        str(model_path),
+        subfolder="image_encoder",
+        torch_dtype=torch.float16,
+        local_files_only=True,
+        use_safetensors=True,
+        low_cpu_mem_usage=True,
+    )
+    image_encoder.eval()
+    feature_extractor = SiglipImageProcessor.from_pretrained(
+        str(model_path),
+        subfolder="feature_extractor",
+        local_files_only=True,
+    )
+    scheduler = diffusers.FlowMatchEulerDiscreteScheduler.from_pretrained(
+        str(model_path),
+        subfolder="scheduler",
+        local_files_only=True,
+    )
+    guider = diffusers.ClassifierFreeGuidance.from_pretrained(
+        str(model_path),
+        subfolder="guider",
+        local_files_only=True,
+    )
+    pipeline = diffusers.HunyuanVideo15ImageToVideoPipeline(
+        text_encoder=None,
+        tokenizer=None,
+        transformer=transformer,
+        vae=vae,
+        scheduler=scheduler,
+        text_encoder_2=None,
+        tokenizer_2=None,
+        guider=guider,
+        image_encoder=image_encoder,
+        feature_extractor=feature_extractor,
+    )
+    execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    original_vae_encode = pipeline.vae.encode
+    original_encode_image = pipeline.encode_image
+
+    def vae_encode_with_release(sample: Any, *args: Any, **kwargs: Any) -> Any:
+        pipeline.vae.to(execution_device)
+        try:
+            return original_vae_encode(sample, *args, **kwargs)
+        finally:
+            pipeline.vae.to("cpu")
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    def encode_image_with_release(*args: Any, **kwargs: Any) -> Any:
+        pipeline.image_encoder.to(execution_device)
+        try:
+            return original_encode_image(*args, **kwargs)
+        finally:
+            pipeline.image_encoder.to("cpu")
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    pipeline.vae.encode = vae_encode_with_release
+    pipeline.encode_image = encode_image_with_release
+    if hasattr(pipeline, "set_progress_bar_config"):
+        pipeline.set_progress_bar_config(
+            disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
+        )
+    performance["variant"] = "hunyuan-video-1.5-i2v-8.3b-step-distilled"
+    performance["weightStorageDtype"] = storage_dtype
+    performance["computeDtype"] = "bfloat16"
+    performance["textEncoderDevice"] = "isolated-block-level-gpu-offload"
+    performance["imageEncoderDevice"] = "stage-sequential-gpu"
+    performance["vaeDevice"] = "stage-sequential-gpu"
+    performance["vaeTileConfiguration"] = vae_tiles
+    performance["renderStrategy"] = "native-first-frame-mean-flow-step-distilled"
+    return (
+        pipeline,
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+        performance,
+    )
+
+
+def _generate_hunyuan_video_15_latents_subprocess(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    model = request.get("model")
+    if not isinstance(model, dict):
+        raise WorkerError("HunyuanVideo 1.5 denoising requires a model")
+    prompt = request.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8_000:
+        raise WorkerError(
+            "HunyuanVideo 1.5 prompt must be a string from 1 to 8000 characters"
+        )
+    first_frame_path = _absolute_existing_path(
+        request.get("firstFramePath"), file=True
+    )
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    width = request.get("width")
+    height = request.get("height")
+    target_size = request.get("targetSize")
+    num_frames = request.get("numFrames")
+    steps = request.get("numInferenceSteps")
+    seed = request.get("seed")
+    transparent_background = request.get("transparentBackground")
+    if (
+        not isinstance(width, int)
+        or isinstance(width, bool)
+        or width < 64
+        or not isinstance(height, int)
+        or isinstance(height, bool)
+        or height < 64
+        or target_size not in (512, 640, 768)
+    ):
+        raise WorkerError("HunyuanVideo 1.5 denoising dimensions are invalid")
+    if (
+        not isinstance(num_frames, int)
+        or isinstance(num_frames, bool)
+        or not 17 <= num_frames <= 121
+        or (num_frames - 1) % 4 != 0
+    ):
+        raise WorkerError("HunyuanVideo 1.5 denoising frame count is invalid")
+    if steps not in (8, 12):
+        raise WorkerError(
+            "HunyuanVideo 1.5 step-distilled denoising requires 8 or 12 steps"
+        )
+    if not isinstance(seed, int) or not 0 <= seed < 2**63:
+        raise WorkerError("HunyuanVideo 1.5 denoising seed is invalid")
+    if not isinstance(transparent_background, bool):
+        raise WorkerError(
+            "HunyuanVideo 1.5 denoising transparency flag is invalid"
+        )
+
+    torch, diffusers = _runtime()
+    device, _, _ = _device(torch)
+    if device != "cuda":
+        raise WorkerError("HunyuanVideo 1.5 denoising requires a supported GPU")
+    source, _ = _prepare_video_conditioning_frame(
+        first_frame_path,
+        width,
+        height,
+        transparent_background,
+    )
+    memory_evidence = _start_video_memory_observation(torch, device)
+    started_at = time.perf_counter()
+    (
+        pipeline,
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+        performance,
+    ) = _load_hunyuan_video_15_pipeline(
+        diffusers,
+        torch,
+        model,
+        prompt,
+        request.get("memoryProfile"),
+    )
+    pipeline.target_size = target_size
+    model_ready_at = time.perf_counter()
+    execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+    generator = torch.Generator(device=execution_device).manual_seed(seed)
+    result = pipeline(
+        image=source,
+        prompt=None,
+        prompt_embeds=prompt_embeddings,
+        prompt_embeds_mask=prompt_attention_mask,
+        prompt_embeds_2=prompt_embeddings_2,
+        prompt_embeds_mask_2=prompt_attention_mask_2,
+        num_frames=num_frames,
+        num_inference_steps=steps,
+        generator=generator,
+        output_type="latent",
+    )
+    latents = result.frames
+    if latents is None or latents.ndim != 5:
+        raise WorkerError("HunyuanVideo 1.5 returned no latent video")
+    latents = latents.detach().to("cpu").contiguous()
+    denoised_at = time.perf_counter()
+    from safetensors.torch import save_file
+
+    destination = output_directory / "hunyuan-video-1.5-latents.safetensors"
+    save_file({"latents": latents}, destination)
+    del (
+        result,
+        pipeline,
+        generator,
+        prompt_embeddings,
+        prompt_attention_mask,
+        prompt_embeddings_2,
+        prompt_attention_mask_2,
+        latents,
+    )
+    gc.collect()
+    torch.cuda.empty_cache()
+    memory_evidence = _finish_video_memory_observation(
+        torch,
+        device,
+        memory_evidence,
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "fileName": destination.name,
+        "performance": performance,
+        "gpuMemory": memory_evidence,
+        "timingSeconds": {
+            "modelLoadAndPrompt": round(model_ready_at - started_at, 3),
+            "denoise": round(denoised_at - model_ready_at, 3),
+            "saveAndRelease": round(time.perf_counter() - denoised_at, 3),
+        },
+    }
+
+
+def _generate_hunyuan_video_15_latents(
+    model: dict[str, Any],
+    prompt: str,
+    first_frame_path: Path,
+    width: int,
+    height: int,
+    target_size: int,
+    num_frames: int,
+    steps: int,
+    seed: int,
+    transparent_background: bool,
+    memory_profile: Any,
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
+    with tempfile.TemporaryDirectory(
+        prefix="machdoch-hunyuan-video-1.5-denoise-"
+    ) as temporary:
+        output_directory = Path(temporary) / "output"
+        output_directory.mkdir()
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_HUB_DISABLE_TELEMETRY": "1",
+                "DO_NOT_TRACK": "1",
+            }
+        )
+        environment.pop("HF_TOKEN", None)
+        environment.pop("HUGGING_FACE_HUB_TOKEN", None)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                str(Path(__file__).resolve()),
+                "_generate-hunyuan-video-1.5-latents",
+            ],
+            input=json.dumps(
+                {
+                    "model": model,
+                    "prompt": prompt,
+                    "firstFramePath": str(first_frame_path),
+                    "outputDirectory": str(output_directory),
+                    "width": width,
+                    "height": height,
+                    "targetSize": target_size,
+                    "numFrames": num_frames,
+                    "numInferenceSteps": steps,
+                    "seed": seed,
+                    "transparentBackground": transparent_background,
+                    "memoryProfile": memory_profile,
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=2 * 60 * 60,
+            check=False,
+            env=environment,
+        )
+        try:
+            response = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise WorkerError(
+                "HunyuanVideo 1.5 denoiser returned an invalid response"
+            ) from error
+        if completed.returncode != 0 or response.get("error"):
+            diagnostic = completed.stderr.strip()[-4_000:]
+            message = (
+                response.get("error") or "HunyuanVideo 1.5 denoising failed"
+            )
+            raise WorkerError(
+                f"{message}{f': {diagnostic}' if diagnostic else ''}"
+            )
+        destination = output_directory / str(response.get("fileName"))
+        if (
+            destination.parent != output_directory
+            or destination.name != "hunyuan-video-1.5-latents.safetensors"
+            or not destination.is_file()
+        ):
+            raise WorkerError(
+                "HunyuanVideo 1.5 denoiser returned an unsafe output"
+            )
+        performance = response.get("performance")
+        gpu_memory = response.get("gpuMemory")
+        timing = response.get("timingSeconds")
+        if (
+            not isinstance(performance, dict)
+            or not isinstance(gpu_memory, dict)
+            or not isinstance(timing, dict)
+        ):
+            raise WorkerError(
+                "HunyuanVideo 1.5 denoiser omitted performance evidence"
+            )
+        from safetensors.torch import load_file
+
+        latents = load_file(destination, device="cpu").get("latents")
+        if latents is None or latents.ndim != 5:
+            raise WorkerError("HunyuanVideo 1.5 denoiser returned invalid latents")
+        performance["denoiserGpuMemory"] = gpu_memory
+        performance["componentIsolation"] = (
+            "prompt-encoder-subprocess->denoiser-subprocess->vae-parent"
+        )
+        return latents.clone(), performance, timing
+
+
+def _hunyuan_video_15_uses_bfloat16_storage(
+    device_memory: int | None,
+    physical_memory: int | None,
+    memory_profile: Any = "auto",
+) -> bool:
+    return (
+        memory_profile != "memory-saver"
+        and device_memory is not None
+        and physical_memory is not None
+        and device_memory >= 15 * 1024**3
+        and physical_memory >= 30 * 1024**3
+    )
+
+
+def _hunyuan_video_15_parameter_uses_compute_dtype(name: str) -> bool:
+    return any(
+        pattern in name
+        for pattern in (
+            "cond_type_embed",
+            "context_embedder",
+            "image_embedder",
+            "norm",
+            "proj_out",
+            "time_embed",
+            "x_embedder",
+        )
+    )
+
+
+def _load_hunyuan_video_15_transformer(
+    diffusers: Any,
+    torch: Any,
+    model_path: Path,
+    device_memory: int,
+    memory_profile: Any,
+) -> tuple[Any, str]:
+    from accelerate import init_empty_weights
+    from accelerate.utils import set_module_tensor_to_device
+    from safetensors import safe_open
+
+    compute_dtype = torch.bfloat16
+    transformer_root = model_path / "transformer"
+    index_path = (
+        transformer_root / "diffusion_pytorch_model.safetensors.index.json"
+    )
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    weight_map = index["weight_map"]
+    config = diffusers.HunyuanVideo15Transformer3DModel.load_config(
+        str(model_path),
+        subfolder="transformer",
+        local_files_only=True,
+    )
+    with init_empty_weights():
+        transformer = diffusers.HunyuanVideo15Transformer3DModel.from_config(
+            config
+        )
+    expected = set(transformer.state_dict())
+    if expected != set(weight_map):
+        missing = sorted(expected - set(weight_map))
+        unexpected = sorted(set(weight_map) - expected)
+        raise WorkerError(
+            "HunyuanVideo 1.5 transformer index does not match the model: "
+            + ", ".join((missing + unexpected)[:8])
+        )
+    use_bfloat16_storage = _hunyuan_video_15_uses_bfloat16_storage(
+        device_memory,
+        _physical_memory_bytes(),
+        memory_profile,
+    )
+    storage_dtype = (
+        compute_dtype if use_bfloat16_storage else torch.float8_e4m3fn
+    )
+    loaded: set[str] = set()
+    for shard in _indexed_checkpoint_files(
+        model_path,
+        "transformer/diffusion_pytorch_model.safetensors.index.json",
+    ):
+        with safe_open(shard, framework="pt", device="cpu") as weights:
+            for name in weights.keys():
+                tensor = weights.get_tensor(name)
+                target_dtype = (
+                    compute_dtype
+                    if use_bfloat16_storage
+                    or _hunyuan_video_15_parameter_uses_compute_dtype(name)
+                    or not tensor.is_floating_point()
+                    else storage_dtype
+                )
+                set_module_tensor_to_device(
+                    transformer,
+                    name,
+                    "cpu",
+                    value=tensor,
+                    dtype=target_dtype,
+                    clear_cache=False,
+                )
+                loaded.add(name)
+    missing = sorted(expected - loaded)
+    if missing:
+        raise WorkerError(
+            "HunyuanVideo 1.5 checkpoint is missing transformer tensors: "
+            + ", ".join(missing[:8])
+        )
+    transformer.eval()
+    if not use_bfloat16_storage:
+        transformer.enable_layerwise_casting(
+            storage_dtype=storage_dtype,
+            compute_dtype=compute_dtype,
+            skip_modules_pattern=(
+                "cond_type_embed",
+                "context_embedder",
+                "image_embedder",
+                "norm",
+                "proj_out",
+                "time_embed",
+                "x_embedder",
+            ),
+        )
+    return transformer, (
+        "bfloat16" if use_bfloat16_storage else "float8_e4m3fn"
+    )
+
+
+def _load_hunyuan_video_15_vae(
+    diffusers: Any,
+    torch: Any,
+    model_path: Path,
+    device_memory: int | None,
+) -> tuple[Any, Any, dict[str, int]]:
+    vae = diffusers.AutoencoderKLHunyuanVideo15.from_pretrained(
+        str(model_path),
+        subfolder="vae",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
+        low_cpu_mem_usage=True,
+    )
+    vae.eval()
+    tile_configuration = _hunyuan_video_15_vae_tile_configuration(device_memory)
+    vae.enable_tiling(**tile_configuration)
+    from diffusers.pipelines.hunyuan_video1_5.image_processor import (
+        HunyuanVideo15ImageProcessor,
+    )
+
+    return (
+        vae,
+        HunyuanVideo15ImageProcessor(
+            vae_scale_factor=vae.spatial_compression_ratio,
+            do_resize=False,
+            do_convert_rgb=True,
+        ),
+        tile_configuration,
+    )
+
+
+def _decode_hunyuan_video_15(
+    torch: Any,
+    vae: Any,
+    video_processor: Any,
+    latents: Any,
+    execution_device: Any,
+) -> list[Any]:
+    current_latents = latents.to(execution_device, dtype=vae.dtype)
+    current_latents = current_latents / vae.config.scaling_factor
+    vae.to(execution_device)
+    with torch.inference_mode():
+        decoded_video = vae.decode(current_latents, return_dict=False)[0]
+        return list(
+            video_processor.postprocess_video(
+                decoded_video,
+                output_type="pil",
+            )[0]
+        )
 
 
 def _ltx_checkpoint(
@@ -3556,7 +4995,6 @@ def _load_ltx_video_pipeline(
         performance = _configure_video_offload(
             transformer,
             torch,
-            model,
             memory_profile,
         )
         gc.collect()
@@ -3681,7 +5119,6 @@ def _load_video_pipeline(
     performance = _configure_video_offload(
         transformer,
         torch,
-        model,
         memory_profile,
     )
     gc.collect()
@@ -3969,6 +5406,27 @@ def _video_dimensions(
             "21:9": (768, 336),
         },
     }
+    if architecture == "hunyuan-video-1.5-i2v":
+        profiles = {
+            "preview-512": {
+                "1:1": (512, 512),
+                "16:9": (672, 384),
+                "9:16": (384, 672),
+                "21:9": (768, 336),
+            },
+            "quality-640": {
+                "1:1": (640, 640),
+                "16:9": (848, 480),
+                "9:16": (480, 848),
+                "21:9": (960, 416),
+            },
+            "quality-768": {
+                "1:1": (768, 768),
+                "16:9": (1024, 576),
+                "9:16": (576, 1024),
+                "21:9": (1152, 496),
+            },
+        }
     if architecture == "ltx-video" and resolution == "quality-768":
         profiles["quality-768"] = {
             "1:1": (640, 640),
@@ -5644,7 +7102,7 @@ def _prepare_video_conditioning_frame(
             else np.asarray((18, 20, 26), dtype=np.uint8)
         )
         alpha, _ = _cleanup_alpha_components(original_alpha)
-    else:
+    elif transparent_background:
         rgb = rgba_pixels[..., :3]
         key_color, keyed_border_ratio, transparent_threshold = _frame_green_key(rgb)
         detected_plate = keyed_border_ratio >= 0.80
@@ -5661,6 +7119,19 @@ def _prepare_video_conditioning_frame(
         else:
             plate_color = np.asarray((18, 20, 26), dtype=np.uint8)
             alpha = np.full((source_height, source_width), 255, dtype=np.uint8)
+    else:
+        border_width = max(1, round(min(source_width, source_height) * 0.025))
+        border = np.concatenate(
+            (
+                rgba_pixels[:border_width, :, :3].reshape(-1, 3),
+                rgba_pixels[-border_width:, :, :3].reshape(-1, 3),
+                rgba_pixels[:, :border_width, :3].reshape(-1, 3),
+                rgba_pixels[:, -border_width:, :3].reshape(-1, 3),
+            ),
+            axis=0,
+        )
+        plate_color = np.median(border, axis=0).astype(np.uint8)
+        alpha = np.full((source_height, source_width), 255, dtype=np.uint8)
 
     background = Image.new(
         "RGBA",
@@ -5682,19 +7153,34 @@ def _prepare_video_conditioning_frame(
         and primary_component is not None
     )
     if not subject_detected:
-        fitted = ImageOps.fit(
+        contained = ImageOps.contain(
             composite,
             (width, height),
             method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.5),
         )
-        return fitted, {
-            "mode": "center-crop",
+        target = Image.new(
+            "RGB",
+            (width, height),
+            tuple(int(value) for value in plate_color),
+        )
+        paste_x = (width - contained.width) // 2
+        paste_y = (height - contained.height) // 2
+        target.paste(contained, (paste_x, paste_y))
+        return target, {
+            "mode": "background-pad",
             "sourceWidth": source_width,
             "sourceHeight": source_height,
             "targetWidth": width,
             "targetHeight": height,
             "subjectDetected": False,
+            "placedWidth": contained.width,
+            "placedHeight": contained.height,
+            "leftMargin": paste_x,
+            "rightMargin": width - contained.width - paste_x,
+            "topMargin": paste_y,
+            "bottomMargin": height - contained.height - paste_y,
+            "stretched": False,
+            "croppedSubject": False,
         }
 
     assert primary_component is not None
@@ -5821,9 +7307,15 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(model, dict):
         raise WorkerError("model is required")
     architecture = _required_text(model, "architecture", 64)
-    if architecture not in ("framepack-i2v", "ltx-video", "wan-2.2-ti2v"):
+    if architecture not in (
+        "framepack-i2v",
+        "hunyuan-video-1.5-i2v",
+        "ltx-video",
+        "wan-2.2-ti2v",
+    ):
         raise WorkerError(
-            "The local video adapter supports FramePack, LTX-Video, and Wan2.2 TI2V packages"
+            "The local video adapter supports FramePack, HunyuanVideo 1.5, "
+            "LTX-Video, and Wan2.2 TI2V packages"
         )
     if (
         architecture == "wan-2.2-ti2v"
@@ -5872,7 +7364,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             or (num_frames - 1) % 4 != 0
         ):
             raise WorkerError(
-                f"{'FramePack' if architecture == 'framepack-i2v' else 'Wan'} "
+                f"{'FramePack' if architecture == 'framepack-i2v' else 'HunyuanVideo 1.5' if architecture == 'hunyuan-video-1.5-i2v' else 'Wan'} "
                 f"numFrames must be from 17 through {maximum_frames} in the required 4k+1 form"
             )
     steps = request.get("numInferenceSteps")
@@ -5928,6 +7420,18 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             "(at least 15 GiB reported usable)"
         )
     if (
+        architecture == "hunyuan-video-1.5-i2v"
+        and (
+            device == "cpu"
+            or device_memory is None
+            or device_memory < HUNYUAN_VIDEO_15_MIN_MEMORY_BYTES
+        )
+    ):
+        raise WorkerError(
+            "HunyuanVideo 1.5 I2V requires a bfloat16 GPU with at least "
+            "14 GiB of usable memory"
+        )
+    if (
         architecture == "wan-2.2-ti2v"
         and device_memory is not None
         and device_memory < 23 * 1024**3
@@ -5951,6 +7455,11 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         transparent_background,
     )
     same_endpoint = _sha256_file(first_frame_path) == _sha256_file(last_frame_path)
+    if architecture == "hunyuan-video-1.5-i2v" and not same_endpoint:
+        raise WorkerError(
+            "HunyuanVideo 1.5 supports one native first-frame reference; "
+            "use FramePack or LTX-Video for distinct first and last references"
+        )
     if loop_mode == "seamless" and not same_endpoint:
         raise WorkerError(
             "seamless loopMode requires the same first and last source asset; "
@@ -5981,62 +7490,39 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
     )
     endpoint_restoration = None
     loop_endpoint_restoration = None
+    pipeline = None
+    result = None
+    generator = None
+    prompt_embeddings = None
     pooled_prompt_embeddings = None
     prompt_attention_mask = None
     negative_prompt_embeddings = None
     model_load_started_at = time.perf_counter()
-    if architecture == "framepack-i2v":
-        (
-            pipeline,
-            prompt_embeddings,
-            pooled_prompt_embeddings,
-            prompt_attention_mask,
-            performance,
-        ) = _load_framepack_pipeline(
-            diffusers,
-            torch,
-            model,
-            prompt,
-            request.get("memoryProfile"),
+    if architecture == "hunyuan-video-1.5-i2v":
+        effective_hunyuan_steps = 8 if steps <= 8 else 12
+        target_size = {
+            "preview-512": 512,
+            "quality-640": 640,
+            "quality-768": 768,
+        }[resolution]
+        hunyuan_latents, performance, denoiser_timing = (
+            _generate_hunyuan_video_15_latents(
+                model,
+                prompt,
+                first_frame_path,
+                width,
+                height,
+                target_size,
+                num_frames,
+                effective_hunyuan_steps,
+                seed,
+                transparent_background,
+                request.get("memoryProfile"),
+            )
         )
-        execution_device = torch.device(
-            f"cuda:{torch.cuda.current_device()}"
+        model_ready_at = model_load_started_at + float(
+            denoiser_timing["modelLoadAndPrompt"]
         )
-        prompt_embeddings = prompt_embeddings.to(execution_device)
-        pooled_prompt_embeddings = pooled_prompt_embeddings.to(execution_device)
-        prompt_attention_mask = prompt_attention_mask.to(execution_device)
-        generator = torch.Generator(device=execution_device).manual_seed(seed)
-        model_ready_at = time.perf_counter()
-        result = pipeline(
-            image=source,
-            last_image=last_source,
-            prompt=None,
-            prompt_embeds=prompt_embeddings,
-            pooled_prompt_embeds=pooled_prompt_embeddings,
-            prompt_attention_mask=prompt_attention_mask,
-            width=width,
-            height=height,
-            num_frames=num_frames,
-            num_inference_steps=steps,
-            guidance_scale=float(guidance_scale),
-            true_cfg_scale=1.0,
-            generator=generator,
-            sampling_type="inverted_anti_drifting",
-            output_type="latent",
-        )
-        if not result.frames:
-            raise WorkerError("FramePack returned no latent video")
-        framepack_latents = result.frames[-1].detach().to("cpu").contiguous()
-        transformer = pipeline.transformer
-        image_encoder = pipeline.image_encoder
-        pipeline.transformer = None
-        pipeline.image_encoder = None
-        prompt_embeddings = None
-        pooled_prompt_embeddings = None
-        prompt_attention_mask = None
-        del transformer, image_encoder, result
-        gc.collect()
-        torch.cuda.empty_cache()
         torch.cuda.synchronize()
         performance["postDenoiserReleaseAllocatedBytes"] = int(
             torch.cuda.memory_allocated()
@@ -6044,30 +7530,97 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         performance["postDenoiserReleaseReservedBytes"] = int(
             torch.cuda.memory_reserved()
         )
-        current_latents = framepack_latents.to(
-            execution_device, dtype=pipeline.vae.dtype
+        post_denoiser_free, _ = torch.cuda.mem_get_info()
+        performance["postDenoiserProcessExitDeviceFreeBytes"] = int(
+            post_denoiser_free
         )
-        current_latents = (
-            current_latents / pipeline.vae.config.scaling_factor
+        model_path = _absolute_existing_path(model.get("path"), file=False)
+        vae, video_processor, vae_tiles = _load_hunyuan_video_15_vae(
+            diffusers,
+            torch,
+            model_path,
+            device_memory,
         )
-        pipeline.vae.to(execution_device)
-        decoded_video = pipeline.vae.decode(current_latents, return_dict=False)[0]
-        generated_frame_count = (
-            (decoded_video.size(2) - 1)
-            // pipeline.vae_scale_factor_temporal
-            * pipeline.vae_scale_factor_temporal
-            + 1
+        performance["vaeTileConfiguration"] = vae_tiles
+        generated_frames = _decode_hunyuan_video_15(
+            torch,
+            vae,
+            video_processor,
+            hunyuan_latents,
+            torch.device(f"cuda:{torch.cuda.current_device()}"),
         )
-        decoded_video = decoded_video[:, :, :generated_frame_count]
-        generated_frames = list(
-            pipeline.video_processor.postprocess_video(
-                decoded_video, output_type="pil"
-            )[0]
-        )
-        pipeline.vae.to("cpu")
+        if len(generated_frames) != num_frames:
+            raise WorkerError(
+                "HunyuanVideo 1.5 decoded a different frame count than requested"
+            )
+        vae.to("cpu")
         torch.cuda.empty_cache()
-        result = None
-        del framepack_latents, current_latents, decoded_video
+        del hunyuan_latents, vae
+        conditioning_mode = "hunyuan-video-1.5-native-first-frame"
+        effective_guidance_scale = 1.0
+        effective_steps = effective_hunyuan_steps
+        negative_prompt_applied = False
+    elif architecture == "framepack-i2v":
+        framepack_latents, performance, denoiser_timing = _generate_framepack_latents(
+            torch,
+            model,
+            prompt,
+            first_frame_path,
+            last_frame_path,
+            width,
+            height,
+            num_frames,
+            steps,
+            float(guidance_scale),
+            seed,
+            transparent_background,
+            request.get("memoryProfile"),
+        )
+        model_ready_at = model_load_started_at + float(
+            denoiser_timing["modelLoadAndPrompt"]
+        )
+        torch.cuda.synchronize()
+        performance["postDenoiserReleaseAllocatedBytes"] = int(
+            torch.cuda.memory_allocated()
+        )
+        performance["postDenoiserReleaseReservedBytes"] = int(
+            torch.cuda.memory_reserved()
+        )
+        post_denoiser_free, _ = torch.cuda.mem_get_info()
+        performance["postDenoiserProcessExitDeviceFreeBytes"] = int(
+            post_denoiser_free
+        )
+        model_path = _absolute_existing_path(model.get("path"), file=False)
+        vae, video_processor, vae_tiles = _load_framepack_vae(
+            diffusers,
+            torch,
+            model_path,
+            device_memory,
+        )
+        performance["vaeTileConfiguration"] = vae_tiles
+        generated_frames = _decode_framepack_video(
+            torch,
+            vae,
+            video_processor,
+            framepack_latents,
+            torch.device(f"cuda:{torch.cuda.current_device()}"),
+        )
+        decoded_section_frame_count = len(generated_frames)
+        generated_frames = _framepack_requested_frames(
+            generated_frames,
+            num_frames,
+        )
+        performance["temporalSelection"] = {
+            "engine": "framepack-full-section-nearest-v1",
+            "decodedSectionFrameCount": decoded_section_frame_count,
+            "selectedFrameCount": len(generated_frames),
+            "preservesFirstFrame": True,
+            "preservesLastFrame": True,
+            "synthesizesFrames": False,
+        }
+        vae.to("cpu")
+        torch.cuda.empty_cache()
+        del framepack_latents, vae
         conditioning_mode = "framepack-inverted-anti-drifting-first-last"
         effective_guidance_scale = float(guidance_scale)
         effective_steps = steps
@@ -6296,6 +7849,30 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         device,
         memory_evidence,
     )
+    denoiser_memory = performance.get("denoiserGpuMemory")
+    prompt_encoder_memory = performance.get("promptEncoderGpuMemory")
+    if device == "cuda":
+        stage_peaks = {
+            "vaeAndPostprocess": memory_evidence.get("peakAllocatedBytes"),
+        }
+        if isinstance(prompt_encoder_memory, dict):
+            stage_peaks["promptEncoder"] = prompt_encoder_memory.get(
+                "peakAllocatedBytes"
+            )
+        if isinstance(denoiser_memory, dict):
+            stage_peaks["denoiser"] = denoiser_memory.get("peakAllocatedBytes")
+        measured_peaks = [
+            peak for peak in stage_peaks.values() if isinstance(peak, int)
+        ]
+        if measured_peaks:
+            memory_evidence["stagePeakAllocatedBytes"] = stage_peaks
+            memory_evidence["peakAllocatedBytes"] = max(measured_peaks)
+        if architecture in ("framepack-i2v", "hunyuan-video-1.5-i2v"):
+            memory_evidence["componentIsolation"] = performance.get(
+                "componentIsolation"
+            )
+        elif isinstance(prompt_encoder_memory, dict):
+            memory_evidence["componentIsolation"] = "prompt-encoder-subprocess"
     finished_at = time.perf_counter()
     performance = {
         **performance,
@@ -6383,6 +7960,30 @@ def main() -> int:
             if not isinstance(request, dict):
                 raise WorkerError("Worker request must be a JSON object")
             _emit(generate_video(request))
+            return 0
+        if command == "_encode-framepack-prompt":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(_encode_framepack_prompt_subprocess(request))
+            return 0
+        if command == "_generate-framepack-latents":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(_generate_framepack_latents_subprocess(request))
+            return 0
+        if command == "_encode-hunyuan-video-1.5-prompt":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(_encode_hunyuan_video_15_prompt_subprocess(request))
+            return 0
+        if command == "_generate-hunyuan-video-1.5-latents":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(_generate_hunyuan_video_15_latents_subprocess(request))
             return 0
         raise WorkerError(
             "Expected exactly one command: probe, probe-model, generate, or generate-video"

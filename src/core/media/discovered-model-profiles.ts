@@ -16,6 +16,7 @@ export interface MediaDiscoveredRuntimeProfile {
   capabilities: readonly MediaCapability[];
   requiredRuntimeCapabilities: readonly string[];
   minimumDeviceMemoryBytes?: number;
+  minimumPhysicalMemoryBytes?: number;
   allowCpu?: boolean;
   provider: Omit<
     MediaProviderCatalogEntry,
@@ -67,6 +68,8 @@ const WAN_SOURCE_URL =
   "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers";
 const FRAMEPACK_SOURCE_URL =
   "https://huggingface.co/lllyasviel/FramePackI2V_HY";
+const HUNYUAN_VIDEO_15_SOURCE_URL =
+  "https://huggingface.co/hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v_step_distilled";
 const LTX_SOURCE_URL = "https://huggingface.co/Lightricks/LTX-Video";
 const LTX_LICENSE_URL =
   "https://huggingface.co/Lightricks/LTX-Video/blob/main/LTX-Video-Open-Weights-License-0.X.txt";
@@ -78,6 +81,76 @@ const LTX_LICENSE_URL =
  */
 export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeProfile[] =
   [
+    {
+      id: "hunyuan-video-1.5-i2v-step-distilled",
+      architecture: "hunyuan-video-1.5-i2v",
+      artifactKind: "diffusers-model",
+      preferredRelativePath: "hunyuan-video-1.5-i2v-step-distilled",
+      capabilities: [
+        "image-to-video",
+        "transparent-output",
+        "alpha-video",
+        "video-composite",
+      ],
+      requiredRuntimeCapabilities: [
+        "image-to-video",
+        "vp9-alpha",
+        "alpha-video",
+        "video-composite",
+      ],
+      minimumDeviceMemoryBytes: 14 * 1_024 ** 3,
+      minimumPhysicalMemoryBytes: 30 * 1_024 ** 3,
+      allowCpu: false,
+      provider: {
+        id: "local-video",
+        displayName: "Local Video Diffusers",
+        target: "local",
+        lifecycle: "active",
+        privacySummary: "Prompt text and the opening reference frame remain on this device.",
+        staleAfterSeconds: 2_592_000,
+        sourceUrl: HUNYUAN_VIDEO_15_SOURCE_URL,
+        catalogRevision: "hunyuan-video-1-5-i2v-854c04a",
+      },
+      model: {
+        id: "local:hunyuan-video-1.5-i2v-step-distilled",
+        providerId: "local-video",
+        displayName: "HunyuanVideo 1.5 I2V 8.3B Step Distilled",
+        family: "HunyuanVideo 1.5",
+        target: "local",
+        lifecycle: "active",
+        lifecycleStaleAfterSeconds: 2_592_000,
+        lifecycleSourceUrl: HUNYUAN_VIDEO_15_SOURCE_URL,
+        catalogRevision: "hunyuan-video-1-5-i2v-854c04a",
+        bundled: false,
+        installedRevision:
+          "854c04a4c8a53d990b418c7478f0802c0fc8c726",
+        packageType: "diffusers",
+        architecture: "hunyuan-video-1.5-i2v",
+        addonCapabilities: [],
+        management: {
+          acquisition: "workspace-discovery",
+          verification: "runtime-probe",
+        },
+        license: {
+          name: "Tencent Hunyuan Community License",
+          spdxId: null,
+          sourceUrl: HUNYUAN_VIDEO_15_SOURCE_URL,
+          commercialUse: "review-required",
+          requiresAcceptance: true,
+        },
+        recommended: true,
+        speedScore: 92,
+        qualityScore: 99,
+        minVramGb: 14,
+        expectedDownloadGb: 32.3,
+        costHint: "No provider charge; substantial local GPU, RAM, and disk use.",
+        privacySummary:
+          "Prompt text and the opening reference frame remain on this device.",
+        limitation:
+          "This first-frame I2V model does not condition on a terminal frame. Distinct start/end workflows use FramePack instead.",
+        userImported: false,
+      },
+    },
     {
       id: "framepack-i2v-hy-13b",
       architecture: "framepack-i2v",
@@ -98,6 +171,7 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         "video-composite",
       ],
       minimumDeviceMemoryBytes: 15 * 1_024 ** 3,
+      minimumPhysicalMemoryBytes: 30 * 1_024 ** 3,
       allowCpu: false,
       provider: {
         id: "local-video",
@@ -472,12 +546,17 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
         ? profile.minimumDeviceMemoryBytes === undefined ||
           (runtime?.deviceMemoryBytes ?? 0) >= profile.minimumDeviceMemoryBytes
         : profile.allowCpu === true;
+    const memoryCompatible =
+      profile.minimumPhysicalMemoryBytes === undefined ||
+      (runtime?.physicalMemoryBytes ?? 0) >=
+        profile.minimumPhysicalMemoryBytes;
     const runtimeReady =
       installed &&
       runtime?.ready === true &&
       missingArchitectures.length === 0 &&
       missingCapabilities.length === 0 &&
-      deviceCompatible;
+      deviceCompatible &&
+      memoryCompatible;
     const configured = installed && runtimeReady;
     const diagnostic =
       ambiguousReadyPaths.length > 0
@@ -490,6 +569,8 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
               ? profile.allowCpu === false && runtime?.device === "cpu"
                 ? `${profile.model.displayName} requires a supported GPU; the 2B variant remains available on CPU.`
                 : `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumDeviceMemoryBytes ?? 0) / 1_024 ** 3)} GiB of reported device memory; choose the 2B variant on this adapter.`
+              : !memoryCompatible
+                ? `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumPhysicalMemoryBytes ?? 0) / 1_024 ** 3)} GiB of physical memory; choose the 2B variant on this host.`
             : runtimeDiagnostic(
                 runtime,
                 missingArchitectures,

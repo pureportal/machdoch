@@ -14,7 +14,10 @@ use std::os::unix::process::CommandExt;
 
 use serde_json::Value;
 
-use crate::runtime_snapshot::{get_user_config_directory, resolve_workspace_root_path};
+use crate::{
+    child_process::terminate_child_process_tree,
+    runtime_snapshot::{get_user_config_directory, resolve_workspace_root_path},
+};
 
 use super::{
     diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
@@ -24,7 +27,7 @@ use super::{
     },
     process::{
         create_desktop_task_activity, hide_child_process_window, read_bounded_stream_text,
-        read_stderr, terminate_child_process_tree,
+        read_stderr,
     },
     registry::normalize_task_id,
     InstructionCommandRequest, McpCommandRequest, ProviderSyncCommandRequest,

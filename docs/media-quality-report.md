@@ -1,6 +1,401 @@
 # Machdoch media quality investigation and delivery
 
-Date: 2026-07-27
+Date: 2026-07-28
+
+## 2026-07-28 accepted HunyuanVideo 1.5 delivery
+
+This section supersedes the earlier FramePack-driver blocker and the WAN 2.2
+TI2V 5B acceptance below. The best verified local path on the reference
+16 GiB AMD GPU is now the pinned HunyuanVideo 1.5 480p I2V step-distilled
+model. The accepted result has visibly continuous body, arm, robe, hair, and
+spell motion without the WAN clip's prolonged holds and endpoint snap, and
+without the optical-flow prototype's ghost limbs.
+
+The selection follows the current official
+[Wan research index](https://wan.video/research-and-open-source),
+[Wan2.2 repository](https://github.com/Wan-Video/Wan2.2),
+[HunyuanVideo 1.5 repository](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5),
+[HunyuanVideo prompt guide](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md),
+[HunyuanVideo 1.5 Diffusers model collection](https://huggingface.co/collections/hunyuanvideo-community/hunyuanvideo-15),
+[FramePack repository](https://github.com/lllyasviel/FramePack),
+[Diffusers memory guide](https://huggingface.co/docs/diffusers/optimization/memory),
+[LTX-Video repository](https://github.com/Lightricks/LTX-Video), and
+[LTX-2 repository](https://github.com/Lightricks/LTX-2). Hunyuan's official
+step-distilled profile specifies guidance 1 and 8 or 12 sampling steps. Its
+8.3B I2V model is the strongest open path tested here that both improved the
+actual frames and completed reliably on this 16 GiB/32 GiB host. FramePack is
+retained for genuinely distinct first and last references. LTX-Video 2B remains
+the CPU and low-VRAM path, while LTX-Video 13B remains available for
+text-to-video and multi-keyframe work. LTX-2.3 is the preferred future
+audio/video, lip-sync, IC-LoRA, pose, camera-control, and two-stage-upscale
+integration boundary, but its 22B model plus required upscalers was not a
+defensible download for this 16 GiB/32 GiB validation host.
+
+Wan Animate 14B was not substituted for the general I2V path: its official
+contract requires a character reference plus a preprocessed pose or facial
+motion video, making it an appropriate explicit motion-control stage rather
+than a transparent replacement for start-image animation. The official
+Hunyuan 720p and 1080p super-resolution transformers are about 33.3 GB each
+before the base I2V package. Adding either would exceed the useful storage and
+host-memory envelope of this machine without addressing the primary motion
+defect, so neither was downloaded. Native 848x480 generation followed by
+lossless delivery remains the defensible 16 GiB quality path; super-resolution
+stays an optional, separately reviewed stage for larger hosts.
+
+### Accepted witch comparison
+
+The accepted live desktop run is
+`run:hunyuanvideo-1-5-quality-3ea9c2bc-a9f9-49a0-8f2c-4352e76526da`
+from immutable flow revision `mfr-8d5925e65b6cd855d16d86bed8dca727`.
+It used model revision
+`854c04a4c8a53d990b418c7478f0802c0fc8c726`, BF16 checkpoint storage
+and compute, four-block CPU offload, 848x480, 33 source frames, 16 fps,
+12 distilled steps, guidance 1, and seed `72526022`. Total worker time was
+1264.13 seconds with no out-of-memory failure.
+
+Retained outputs:
+
+- transparent master:
+  `tmp/quality-evidence/2026-07-28-hunyuan-quality-33f-12step/witch-hunyuan-33f-transparent.webm`,
+  SHA-256
+  `bcd6067c1808d8c1cf4f88a4945ec13c75868be9d47c3b9c0ffafbaa3af47386`;
+- opaque animated-background companion:
+  `tmp/quality-evidence/2026-07-28-hunyuan-quality-33f-12step/witch-hunyuan-33f-composite.webm`,
+  SHA-256
+  `bb6342bea8d8c596e5b1ddfd18be879d81836ebb62e5ef9f0ff64510b1c98587`;
+- decoded metrics and every-frame plates:
+  `tmp/quality-evidence/2026-07-28-hunyuan-quality-33f-12step/evaluation/report.json`;
+- companion decode evidence:
+  `tmp/quality-evidence/2026-07-28-hunyuan-quality-33f-12step/composite-evaluation/report.json`.
+
+Every one of the 33 frames was reviewed at full contact-sheet scale on alpha,
+checker, white, black, cyan, and magenta plates. The casting arm progresses
+continuously from the resting pose to full extension; the supporting arm and
+torso counterbalance it; hair and robe react without becoming extra limbs; the
+spell grows coherently; and the face, two arms, two legs, costume, framing,
+first frame, and transparent subject remain valid. There is no ghost-limb
+transition or abrupt final-pose replacement. The prompt's requested two planted
+steps are not fully realized, and the result is softer than WAN, so this is a
+strong consumer-GPU result rather than studio-grade animation.
+
+| Measurement | WAN 2.2 5B accepted baseline | HunyuanVideo 1.5 accepted | Interpretation |
+| --- | ---: | ---: | --- |
+| Foreground optical flow | 0.643356 | 1.311776 | 104% more meaningful motion |
+| Motion-compensated RGB residual | 4.738 | 3.876 | More motion with less residual error |
+| High-frequency residual | 3.382 | 3.214 | Slightly less texture crawl |
+| Alpha instability | 5.208 | 3.692 | 29% lower |
+| Alpha coverage standard deviation | 0.003594 | 0.000727 | 80% lower |
+| Subject sharpness | 4315 | 2353 | Softer; retained limitation |
+
+The metric table is supporting evidence, not the acceptance decision. The
+decision came from complete-frame visual review of anatomy, action continuity,
+identity, endpoints, background, and transparency.
+
+### General image, LoRA, and non-character validation
+
+The existing saved FLUX dog-LoRA flow was upgraded to the current memory
+contract and executed through the Tauri application:
+
+- run
+  `run:flux-dog-lora-quality-7ea3d052-2c9e-45e8-907e-f56244aeca3a`;
+- exact LoRA digest
+  `438618...`, strength 0.8, four FLUX distilled steps;
+- retained 512x512 PNG:
+  `tmp/quality-evidence/2026-07-28-flux-dog-lora-live/flux-dog-lora.png`,
+  SHA-256
+  `6ec8f651ea44c2398566bbb9cf4f958a30fd0010c0fe4037c1217ad087fb906d`.
+
+The result is a clean golden-retriever studio image with stable eyes, muzzle,
+ears, body, paws, and fur. The exact add-on identity and effective strength are
+persisted in asset provenance, exercising the ordinary image and LoRA path
+rather than only the witch fixture.
+
+Opaque I2V initially exposed a general framing bug: square photography was
+blindly center-cropped into 16:9, cutting off the head and lower body. The
+conditioning boundary now preserves opaque photographs with aspect-safe
+`contain` placement over a border-median background.
+
+The final exact-chain validation uses the newly generated FLUX LoRA asset above,
+not a previously saved substitute:
+
+- run
+  `run:hunyuanvideo-1-5-general-motion-b0816d70-fe5e-4833-8c4d-d6749f41fb3c`;
+- immutable flow revision `mfr-cb2b1c7783d969854b0b768e0457dfa7`;
+- exact source asset
+  `asset:run:flux-dog-lora-quality-7ea3d052-2c9e-45e8-907e-f56244aeca3a:0`,
+  SHA-256
+  `6ec8f651ea44c2398566bbb9cf4f958a30fd0010c0fe4037c1217ad087fb906d`;
+- HunyuanVideo 1.5, 672x384, 17 frames, 16 fps, 8 distilled steps,
+  guidance 1, and seed `72526025`;
+- 598.591 seconds total, no out-of-memory failure.
+
+The persisted framing contract records a 384x384 placement, 144-pixel
+left/right margins, no stretch, and `croppedSubject=false`.
+
+Retained comparison:
+
+- exact FLUX-LoRA-to-Hunyuan clip:
+  `tmp/quality-evidence/2026-07-28-flux-lora-to-hunyuan-exact/dog-motion.webm`,
+  SHA-256
+  `d31c793bd37d40e1782b3c56d711197f7c7d0b1f360eaa3f8796e797b38fb09a`;
+- all-frame exact-versus-prior-padded evidence:
+  `tmp/quality-evidence/2026-07-28-flux-lora-to-hunyuan-exact/evaluation/report.json`;
+- real Tauri library screenshot:
+  `tmp/quality-evidence/2026-07-28-flux-lora-to-hunyuan-exact/tauri-library.png`;
+- real Tauri model inventory after cleanup:
+  `tmp/quality-evidence/2026-07-28-flux-lora-to-hunyuan-exact/tauri-model-discovery.json`.
+
+All 17 exact-chain frames retain the complete animal. The tail swings while the
+left forepaw rises progressively in frames 12-16; eyes, muzzle, ears, torso,
+four-leg structure, and studio composition remain coherent without duplication,
+fused joints, ghosting, or cropped anatomy. Its mean sharpness is 33.195,
+motion-compensated residual is 0.938, and high-frequency residual is 0.451.
+Motion is conservative and weighted toward the final third, so this validates
+the general image/LoRA/I2V composition and lifecycle rather than superseding
+the accepted witch clip as the motion-quality result. The earlier aspect-safe
+run remains in
+`tmp/quality-evidence/2026-07-28-hunyuan-general-dog-17f-padded/` for the
+original padded-versus-cropped comparison.
+
+### Hardware-aware execution and observed lifecycle
+
+The model selector and worker use capabilities, available model artifacts,
+usable device memory, physical RAM, task type, requested quality, and endpoint
+requirements:
+
+| Hardware/task envelope | Selected path |
+| --- | --- |
+| CPU only or approximately 6-13 GiB VRAM | LTX-Video 2B distilled FP8, 8 steps, conservative dimensions; CPU execution allowed |
+| 14-15 GiB BF16-capable GPU plus at least 30 GiB RAM | HunyuanVideo 1.5 with FP8 storage, BF16 layerwise compute, aggressive offload |
+| Reference nominal 16 GiB GPU / 32 GiB RAM | HunyuanVideo 1.5 BF16 storage and compute, four-block CPU offload, 8-step preview or 12-step 640-class quality |
+| Distinct first and last references on a capable GPU | FramePack with endpoint-preserving temporal selection |
+| Text-to-video or multi-keyframe fallback | LTX-Video 2B/13B according to available hardware |
+| 24 GiB or larger GPU | Less aggressive offload, 768-class dimensions and/or longer 4k+1 frame contracts remain available |
+
+Only the 16 GiB RX 9070 / 32 GiB RAM row was physically exercised. CPU,
+8 GiB, 14 GiB, and 24+ GiB choices are covered by selection/configuration tests,
+not physical machines.
+
+Hunyuan prompt encoding, denoising, and VAE decoding have separate ownership
+and lifetimes. The prompt encoder writes CPU safetensors and exits before the
+transformer loads. The denoiser streams signed shards into its model rather
+than first materializing a duplicate state dictionary, writes CPU latents, and
+exits before the parent loads the VAE. During the accepted witch run:
+
+- peak allocated GPU memory was 7,159,916,032 bytes and peak reserved memory
+  was 9,604,956,160 bytes;
+- post-release allocation was 79,691,776 bytes and post-release device free
+  memory was 16,743,792,640 bytes;
+- the observed process order was
+  `prompt-encoder-subprocess -> denoiser-subprocess -> vae-parent`.
+
+The exact-chain dog rerun independently repeated the transition. Its denoiser
+process reached 33,558,454,272 bytes private host memory, exited completely,
+and the parent then entered VAE decoding. Persisted Torch evidence reports
+4,933,580,800 bytes peak allocated, 6,228,541,440 peak reserved,
+79,691,776 bytes after release, and 16,743,792,640 bytes free after release.
+The per-stage peaks are 3,952,685,568 bytes for the prompt encoder,
+2,683,149,312 bytes for the denoiser, and 4,933,580,800 bytes for VAE and
+post-processing. A transient native prompt-child exit on an immediate repeat
+also exposed a diagnostic gap; the worker now retries one empty/native exit in
+a fresh directory and reports the bounded stderr plus native exit code if the
+retry fails.
+
+This process isolation also applies between image and video nodes: the live
+FLUX process exited before the Hunyuan generation was launched, so image model
+weights could not remain resident and block the video stage. Sleep inhibition
+is reference-counted across long media and desktop tasks and releases on
+success, failure, cancellation, and application shutdown.
+
+### Integrated behavior and remaining limits
+
+The compiler now chooses Hunyuan for one-reference I2V, FramePack for genuinely
+different start/end references, and LTX on unsupported or lower-resource
+hardware. Model-native dimensions, frame forms, distilled sampling, guidance,
+memory policy, VAE tiling, provenance, negative-prompt applicability, and
+endpoint semantics are normalized at their integration boundaries. The normal
+Flow UI exposes model-aware presets, effective steps/guidance, complete saved
+workflow selection, and an accurate Hunyuan first-frame gate. The Library keeps
+Slideshow at the top, shows all records through explicit pagination, and
+retains full-frame alpha/player review controls.
+
+The post-acceptance UI pass makes the native frame envelope visible before a
+long render (`17–121, 4k+1` for Hunyuan, `17–129, 4k+1` for FramePack, and
+`9–257, 8k+1` for LTX). Persisted Hunyuan operations now have a complete
+TypeScript provenance contract. Model-aligned canvases are labeled by the
+requested aspect (`16:9 model-aligned`) instead of exposing implementation
+fractions such as `7:4`, while unrecognized and legacy assets still report
+their exact pixel ratio. Live Tauri validation found one legacy record without
+a resolution field; the display helper now falls back safely instead of
+crashing the Library, with a focused regression test for that case.
+
+Hunyuan step-distilled I2V does not apply a separate negative-prompt branch;
+provenance records `negativePromptApplied=false` instead of pretending
+otherwise. It also does not natively condition on a terminal frame. FramePack
+remains the correct distinct-endpoint path, while its current witch result was
+rejected for insufficient motion. The installed LTX 13B candidate was rejected
+for severe dissolution, identity loss, and malformed anatomy. The accepted
+Hunyuan output is softer than WAN and does not provide explicit pose, planted
+foot, contact, camera-path, audio, voice, or lip-sync control. Those remain
+future model/stage integrations rather than hidden post-processing claims.
+
+The model artifact added for the accepted replacement is
+`models/hunyuan-video-1.5-i2v-step-distilled`, revision
+`854c04a4c8a53d990b418c7478f0802c0fc8c726`, occupying 34,637,007,471 bytes.
+No Wan Animate, Hunyuan super-resolution, or LTX-2.3 artifacts were downloaded.
+
+The superseded `models/wan-2.2-ti2v-5b` package was permanently removed after
+the Hunyuan character and general-video replacements passed. It occupied
+64,270,950,708 bytes (59.857 GiB). Two stale Hunyuan `.incomplete` downloads
+totaling 9,125,870,066 bytes were also removed. A superseded LTX
+`runtime/transformer-offload` cache (13,045,700,552 bytes) and the non-executable
+`models/Wan-Alpha` source clone (164,570,552 bytes) were then removed after
+confirming that neither was referenced by the current worker. Total permanent
+cleanup was 86,607,091,878 bytes. The executable LTX package
+(41,892,975,285 bytes after cleanup), FramePack package, and active FramePack
+FP8 cache were retained because they still own low-resource/text-to-video,
+distinct-endpoint, and executable runtime capabilities respectively.
+
+### Current verification and final Tauri state
+
+The exact post-change source state passed:
+
+- Python worker suite: 33 passed;
+- Rust library suite: 401 passed, zero failed, one pre-existing reviewed-model
+  test ignored;
+- Vitest: 223 files passed, 1,988 tests passed, one skipped, zero failed;
+- TypeScript core, UI, test, and logic-test typechecks;
+- Oxlint, `cargo fmt --check`, and `git diff --check`;
+- production core TypeScript build and production Vite UI build;
+- Tauri debug production-path build with `--no-bundle`;
+- optimized Tauri release build with `--no-bundle`
+  (`src-tauri/target/release/machdoch.exe`).
+
+The production Vite build also verifies that the MCP quality driver is absent
+from release chunks. It remains available only in the explicit debug build
+used for the live application checks.
+
+The final rebuilt desktop binary was opened through Tauri MCP and the saved
+`Animate image - r8` flow was selected through its normal Workflows UI. The
+selected video node showed:
+
+- HunyuanVideo 1.5 as the effective executable model;
+- eight sampling steps and guidance 1;
+- complete, uncropped source thumbnails on the canvas and in the keyframe gate;
+- the native-first-frame explanation and model-authored-ending limitation;
+- a valid `17 source frames fit the native 17–121, 4k+1 contract` indicator;
+- 672x384, 17 delivered frames, 16 fps, opaque lossless delivery;
+- an enabled local run action.
+
+The final Library showed `34 visual · 34 of 34 records`, `Showing 1-24 of 34
+assets`, explicit page 1 of 2 navigation, and Slideshow at the top without
+requiring a scroll to the bottom. Retained final-state evidence:
+
+- normal Hunyuan inspector:
+  `tmp/quality-evidence/2026-07-28-final-verification/tauri-final-hunyuan-inspector-contained.png`;
+- Library:
+  `tmp/quality-evidence/2026-07-28-final-verification/tauri-final-library-contained.png`;
+- persisted exact-chain run detail:
+  `tmp/quality-evidence/2026-07-28-final-verification/tauri-final-run-detail.json`;
+- verification logs:
+  `tmp/quality-evidence/2026-07-28-final-verification/`.
+
+The final post-cleanup developer binary bound its debug-only MCP automation
+bridge to `127.0.0.1`, not all network interfaces. A fresh live model scan
+returned ten entries with no warnings or truncation: Hunyuan and FramePack
+remained ready, LTX remained ready at its reduced size, and neither the WAN
+package, Wan source clone, nor stale LTX cache reappeared. The Library opened
+all 34 records, showed `16:9 model-aligned` on Hunyuan output cards, and the
+accepted 848x480 transparent witch clip was stepped to frames 17 and 33 on a
+magenta plate. Both frames retained a clean silhouette, two arms, two legs,
+face, costume, and coherent spell action. The MCP console contained no
+application errors after this pass.
+
+Additional retained evidence:
+
+- post-cleanup Library:
+  `tmp/quality-evidence/2026-07-28-post-cleanup-verification/tauri-post-cleanup-library.png`;
+- Hunyuan frame-contract inspector:
+  `tmp/quality-evidence/2026-07-28-post-cleanup-verification/tauri-post-cleanup-hunyuan-inspector.png`;
+- post-cleanup Models UI and exact MCP inventory:
+  `tmp/quality-evidence/2026-07-28-post-cleanup-verification/tauri-post-cleanup-models.png`
+  and
+  `tmp/quality-evidence/2026-07-28-post-cleanup-verification/tauri-post-cleanup-model-discovery.json`;
+- accepted witch frame 17 and frame 33 live magenta review:
+  `tmp/quality-evidence/2026-07-28-post-cleanup-verification/tauri-accepted-witch-mid-magenta.png`
+  and
+  `tmp/quality-evidence/2026-07-28-post-cleanup-verification/tauri-accepted-witch-end-magenta.png`.
+
+## Earlier 2026-07-28 FramePack investigation (superseded)
+
+At that point, the WAN 2.2 TI2V 5B result below remained the accepted visual
+baseline. That continuation integrated the installed FramePack I2V HY 13B
+package, but did not promote an incomplete candidate or claim a visual
+improvement without reviewing every output frame.
+
+Official research and implementation references were the
+[Wan research index](https://wan.video/research-and-open-source),
+[Wan2.2 repository](https://github.com/Wan-Video/Wan2.2),
+[FramePack repository](https://github.com/lllyasviel/FramePack),
+[Diffusers FramePack documentation](https://huggingface.co/docs/diffusers/api/pipelines/framepack),
+[Diffusers memory guide](https://huggingface.co/docs/diffusers/optimization/memory),
+[LTX-Video repository](https://github.com/Lightricks/LTX-Video), and
+[LTX-2 repository](https://github.com/Lightricks/LTX-2). FramePack's inverted
+anti-drifting first/last-frame mode was selected because it directly addresses
+the current endpoint-conditioned workflow without synthetic optical-flow
+retiming.
+
+Implemented changes:
+
+- FramePack prompt encoders run in a short-lived subprocess. Prompt embeddings
+  are transferred through a temporary safetensors file, then the process exits
+  before the transformer loads. On the reference host the prompt child reached
+  about 32.6 GiB committed memory while the video parent remained near
+  1.2 GiB; the child released completely before generation.
+- FramePack now decodes the complete 37-frame temporal section and selects the
+  requested 17 or 33 frames by endpoint-preserving nearest sampling. The former
+  prefix crop could discard the end-conditioned half. The new path preserves
+  both endpoints and creates no interpolated ghost frames.
+- Model-aware presets expose FramePack's guidance 9 and LTX distilled
+  8-step/guidance-1 trajectory in both the inspector and execution request.
+  LTX 768-class dimensions are aligned to its supported multiples instead of
+  being silently changed in the worker.
+- The Flow run action accepts any executable discovered local video model
+  rather than searching only for the WAN model id. WAN-specific keyframe and
+  completion wording was removed from the general UI.
+- Offload group size is capped by reported VRAM: one block at 8 GiB, two at
+  12 GiB, and four at nominal 16 GiB or more. Cache identity includes the group
+  size. Auto uses RAM-backed offload on a nominal 16 GiB GPU with at least
+  30 GiB physical RAM, and FramePack rejects hosts below 30 GiB physical RAM
+  before loading its prompt encoders.
+
+Measured rejected candidates:
+
+| Candidate | Outcome |
+| --- | --- |
+| LTX-Video 0.9.8 13B distilled FP8, multiscale | Completed in 556.9 seconds with 9.62 GiB peak allocation and 33.7 MiB after release, but every-frame review showed severe green/brown dissolution, identity loss, and malformed anatomy. |
+| FramePack, RAM-backed block offload | Reached about 14.2 GiB dedicated GPU memory and roughly 32–34 GiB host commit. Earlier diagnostic attempts were stopped after invalid temporal prefix cropping was identified; no result from that invalid crop was accepted. |
+| FramePack, one-block disk offload | Built 61 groups / 17.23 GiB, then starved GPU compute and made ordinary shell probes take 14–60 seconds. Rejected as non-interactive. |
+| FramePack, four-block disk offload | Built a signed 31-group / 17.23 GiB cache for inventory digest `sha256:e182a7bb6f96f02f8035210602ff4016dfee4741fa2fccb10884b75f5ea0b363`; conditioning sampled 22% average / 35% peak compute versus about 7.6% for one-block groups. The first transformer pass then entered a driver/storage wait. PowerShell termination, `taskkill /F`, and the Windows process API could not reap PID 20932. |
+
+The final driver wait is a concrete live-validation blocker. It prevented a
+completed FramePack candidate, a rebuilt Tauri run, model deletion, and final
+post-change test/build execution in this session. Clearing it requires a GPU
+device reset or host restart, neither of which was performed because it could
+disrupt unrelated user work. The automatic policy was changed away from this
+disk path before stopping so the next normal run will not reproduce it by
+default.
+
+Before the driver wait, focused verification completed successfully:
+
+- 24 Python worker tests, including temporal selection and 8/12/16/24 GiB
+  memory-profile selection;
+- 49 Vitest compiler, template, and quality-helper tests;
+- all core, UI, test, and logic-test TypeScript typechecks.
+
+The visual acceptance criteria remain open. In particular, the existing witch
+baseline has not yet been replaced by a fully decoded, all-frame-reviewed
+FramePack result.
 
 ## 2026-07-27 continuation, correction, and current outcome
 
@@ -417,7 +812,7 @@ no result is stretched or produced by cropping the same delivered frame.
   missing planted-foot mechanics; generative upscale can also invent unstable
   detail.
 
-## Reproduction settings and hardware trade-offs
+## Historical 2026-07-27 reproduction settings and hardware trade-offs
 
 Verified machine:
 
@@ -496,7 +891,7 @@ offload and the quality-768 tier. A 14B pose-controlled pipeline on this device
 would require much larger downloads, heavier offload, and substantially longer
 iteration; it was not represented as a practical default.
 
-## Verification and delivery
+## Historical 2026-07-27 verification and delivery
 
 Completed evidence:
 
@@ -536,7 +931,7 @@ Final automated and delivery results:
   1,124,438 bytes and SHA-256
   `35d72b11e6c8b59963d9f92116f875a4a9ed930cfcd92ba28bdfb6a065c268b7`.
 
-## Remaining limitations
+## Historical 2026-07-27 limitations (superseded)
 
 1. The selected witch still has a short early casting-arm ghost and limited
    weight transfer. Its score is 76.8, not studio quality.

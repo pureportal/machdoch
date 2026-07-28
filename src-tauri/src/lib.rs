@@ -1,4 +1,5 @@
 mod atomic_file;
+mod child_process;
 mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
@@ -10,11 +11,11 @@ mod runtime_snapshot;
 mod settings_transfer;
 mod shared_cli;
 mod shell_state;
+mod sleep_inhibition;
 mod ui_control;
 mod ui_operation;
 mod voice;
 
-#[cfg(desktop)]
 use tauri::Manager as _;
 #[cfg(desktop)]
 use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags as WindowStateFlags};
@@ -90,7 +91,11 @@ pub fn run() {
     }));
 
     #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    let builder = builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .build(),
+    );
 
     #[cfg(desktop)]
     let builder = builder.plugin(
@@ -143,6 +148,7 @@ pub fn run() {
         .manage(media::MediaRuntimeState::default())
         .manage(remote_control::RemoteControlState::default())
         .manage(shell_state::ShellStateStoreLock::default())
+        .manage(sleep_inhibition::SystemSleepInhibitor::default())
         .manage(settings_transfer::SettingsFileTransferState::default())
         .manage(settings_transfer::SettingsTransferState::default())
         .manage(ui_operation::CrossWindowOperationState::default())
@@ -334,8 +340,14 @@ pub fn run() {
             voice::synthesize_user_voice_audio,
             voice::transcribe_user_speech_audio
         ])
-        .run(context)
-        .expect("error while running machdoch desktop shell");
+        .build(context)
+        .expect("error while building machdoch desktop shell")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<sleep_inhibition::SystemSleepInhibitor>()
+                    .shutdown();
+            }
+        });
 }
 
 #[cfg(test)]

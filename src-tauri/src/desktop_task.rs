@@ -8,6 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tauri::Manager as _;
 
 mod attachment_paths;
 mod attachments;
@@ -296,7 +297,18 @@ pub async fn run_desktop_task(
         }
     }
 
+    let sleep_inhibition = match app_handle
+        .state::<crate::sleep_inhibition::SystemSleepInhibitor>()
+        .acquire()
+    {
+        Ok(guard) => guard,
+        Err(error) => {
+            finish_active_task(&state, task_id.as_deref());
+            return Err(error);
+        }
+    };
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let _sleep_inhibition = sleep_inhibition;
         execute_desktop_task(app_handle, window_label, request, cancel_flag)
     })
     .await
@@ -575,7 +587,18 @@ pub async fn run_ralph_command(
         }
     }
 
+    let sleep_inhibition = match app_handle
+        .state::<crate::sleep_inhibition::SystemSleepInhibitor>()
+        .acquire()
+    {
+        Ok(guard) => guard,
+        Err(error) => {
+            finish_active_task(&state, task_id.as_deref());
+            return Err(error);
+        }
+    };
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let _sleep_inhibition = sleep_inhibition;
         execute_ralph_command(app_handle, window_label, request, cancel_flag)
     })
     .await
@@ -618,8 +641,12 @@ pub async fn run_task_interview_command(
     request: TaskInterviewCommandRequest,
 ) -> Result<Value, String> {
     let window_label = window.label().to_string();
+    let sleep_inhibition = app_handle
+        .state::<crate::sleep_inhibition::SystemSleepInhibitor>()
+        .acquire()?;
 
     tauri::async_runtime::spawn_blocking(move || {
+        let _sleep_inhibition = sleep_inhibition;
         execute_task_interview_command(app_handle, window_label, request)
     })
     .await

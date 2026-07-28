@@ -102,6 +102,7 @@ export type MediaBuiltinLocalModelArchitecture =
   | "flux-1"
   | "flux-2"
   | "framepack-i2v"
+  | "hunyuan-video-1.5-i2v"
   | "krea-2"
   | "ltx-video"
   | "wan-2.2-ti2v";
@@ -1743,9 +1744,10 @@ export interface MediaLocalVideoGenerationOperation
   providerId: "local-video";
   modelId:
     | "local:framepack-i2v-hy-13b"
+    | "local:hunyuan-video-1.5-i2v-step-distilled"
     | "local:ltx-video-0.9.8-13b-distilled-fp8"
     | "local:ltx-video-0.9.8-2b-distilled-fp8";
-  architecture: "framepack-i2v" | "ltx-video";
+  architecture: "framepack-i2v" | "hunyuan-video-1.5-i2v" | "ltx-video";
   conv3dBackend:
     | "aten-native-hip"
     | "cudnn"
@@ -1753,6 +1755,7 @@ export interface MediaLocalVideoGenerationOperation
     | "mps-native";
   conditioningMode:
     | "framepack-inverted-anti-drifting-first-last"
+    | "hunyuan-video-1.5-native-first-frame"
     | "ltx-native-first-last-keyframes"
     | "ltx-native-first-last-keyframes-multiscale";
   negativePromptApplied: boolean;
@@ -2139,6 +2142,7 @@ export interface MediaLocalDiffusersRuntimeStatus {
   device: string | null;
   deviceLabel: string | null;
   deviceMemoryBytes: number | null;
+  physicalMemoryBytes: number | null;
   architectures: string[];
   capabilities: string[];
   diagnostic: string;
@@ -2262,6 +2266,7 @@ export interface GenerateMediaVideoRequest {
   prompt: string;
   modelId:
     | "local:framepack-i2v-hy-13b"
+    | "local:hunyuan-video-1.5-i2v-step-distilled"
     | "local:ltx-video-0.9.8-13b-distilled-fp8"
     | "local:ltx-video-0.9.8-2b-distilled-fp8"
     | "local:wan2.2-ti2v-5b";

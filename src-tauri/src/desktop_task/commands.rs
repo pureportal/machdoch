@@ -16,7 +16,10 @@ use std::os::windows::process::CommandExt;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
+use crate::{
+    child_process::{assign_child_process_to_kill_on_close_job, terminate_child_process_tree},
+    runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path},
+};
 
 use super::{
     diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
@@ -25,9 +28,8 @@ use super::{
         write_conversation_context_file, CliCommandOptions,
     },
     process::{
-        assign_child_process_to_kill_on_close_job, create_desktop_task_activity,
-        desktop_task_activity_elapsed, join_cli_output_and_cleanup, read_stderr, read_stdout,
-        terminate_child_process_tree,
+        create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
+        read_stderr, read_stdout,
     },
     progress::{create_bridge_progress, emit_progress_event},
     DesktopMediaAssetReference, DesktopTaskRunRequest, DesktopTaskRunResponse,

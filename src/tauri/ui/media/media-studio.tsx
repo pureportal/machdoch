@@ -60,6 +60,7 @@ import { readFlowSubjectCutoutModelPriority } from "../../../core/media/subject-
 import {
   inferMediaVideoAspectRatio,
   isMediaAssetKnownTransparent,
+  resolveMediaVideoExecutionSettings,
   type MediaVideoAspectRatio,
   type MediaVideoLoopMode,
 } from "../../../core/media/video-quality.js";
@@ -83,6 +84,7 @@ import type {
   MediaErrorAction,
   MediaErrorDetail,
   MediaFlow,
+  MediaFlowHead,
   MediaFlowHistory,
   MediaFlowImportInspection,
   InstantiateMediaFlowTemplateResult,
@@ -172,6 +174,7 @@ import {
   probeMediaLocalModel,
   refreshMediaLocalDiffusersRuntime,
   inspectMediaFlowImport,
+  listMediaFlows,
   listMediaAssets,
   listMediaRuns,
   planMediaAssetDeletion,
@@ -202,6 +205,19 @@ const MEDIA_RECIPE_PROMPT_FLOW_IDS = new Set([
   "media-image-recipe-draft",
   "media-image-review-draft",
 ]);
+
+const EXECUTABLE_LOCAL_VIDEO_MODEL_IDS: ReadonlySet<string> = new Set([
+  "local:framepack-i2v-hy-13b",
+  "local:hunyuan-video-1.5-i2v-step-distilled",
+  "local:ltx-video-0.9.8-13b-distilled-fp8",
+  "local:ltx-video-0.9.8-2b-distilled-fp8",
+  "local:wan2.2-ti2v-5b",
+]);
+
+const isExecutableLocalVideoModelId = (
+  modelId: string,
+): modelId is GenerateMediaVideoRequest["modelId"] =>
+  EXECUTABLE_LOCAL_VIDEO_MODEL_IDS.has(modelId);
 
 interface MediaStudioProps {
   providerStatuses: readonly RuntimeProviderAvailability[];
@@ -473,6 +489,8 @@ export const MediaStudio = ({
   const [tagLoadingAssetId, setTagLoadingAssetId] = useState<string | null>(null);
   const [draftCreatedAt] = useState(() => new Date().toISOString());
   const [flowHistory, setFlowHistory] = useState<MediaFlowHistory | null>(null);
+  const [savedFlows, setSavedFlows] = useState<MediaFlowHead[]>([]);
+  const [savedFlowsLoading, setSavedFlowsLoading] = useState(false);
   const [flowRevisionLoading, setFlowRevisionLoading] = useState(false);
   const [flowRevisionNotice, setFlowRevisionNotice] = useState<string | null>(null);
   const [flowPortabilityLoading, setFlowPortabilityLoading] = useState(false);
@@ -1541,10 +1559,11 @@ export const MediaStudio = ({
     const videoBinding = plan.runtimeBindings.find(
       (binding) =>
         binding.nodeId === videoNodes[0]?.id &&
-        binding.model.id === "local:wan2.2-ti2v-5b",
+        binding.modality === "video" &&
+        isExecutableLocalVideoModelId(binding.model.id),
     );
     if (plan.status !== "ready" || !videoBinding) {
-      return unavailable("Resolve the WAN model, runtime, and node contract diagnostics first.");
+      return unavailable("Resolve the local video model, runtime, and node contract diagnostics first.");
     }
     const videoNode = videoNodes[0];
     if (!videoNode) {
@@ -1643,7 +1662,7 @@ export const MediaStudio = ({
           (asset) => asset.id === firstFrameAssetId && asset.kind === "image",
         )
       ) {
-        return unavailable("Choose an available Library image for the WAN first frame.");
+        return unavailable("Choose an available Library image for the first video frame.");
       }
       if (
         !lastFrameAssetId ||
@@ -1652,7 +1671,7 @@ export const MediaStudio = ({
         )
       ) {
         return unavailable(
-          "Connect an available Library image to the WAN last-frame port. Reuse the first frame for a closed loop.",
+          "Connect an available Library image to the last-frame port. Reuse the first frame for a closed loop.",
         );
       }
     }
@@ -1699,7 +1718,7 @@ export const MediaStudio = ({
       videoNode.config.transparentBackground !== true
     ) {
       return unavailable(
-        "Animated background compositing requires Transparent background on the WAN node.",
+        "Animated background compositing requires Transparent background on the video node.",
       );
     }
     if (!workspaceRoot?.trim()) {
@@ -1709,8 +1728,8 @@ export const MediaStudio = ({
       supported: true as const,
       reason:
         animatedBackground
-          ? "Runs the selected WAN quality profile, verifies temporally stabilized VP9 alpha, and publishes an animated-background companion."
-          : "Runs the selected WAN quality, shot/loop, transparency, memory, and encoding profiles locally with decoded-output verification.",
+          ? "Runs the selected local video quality profile, verifies temporally stabilized VP9 alpha, and publishes an animated-background companion."
+          : "Runs the selected local video quality, shot/loop, transparency, memory, and encoding profiles with decoded-output verification.",
       firstFrameAssetId,
       lastFrameAssetId,
       videoNode,
@@ -1895,7 +1914,7 @@ export const MediaStudio = ({
         setFlowHistory(null);
         setFlowRunOverlayId(null);
         setFlowRevisionNotice(
-          "Created a connected local character loop: image generation → subject cutout → the same first/last WAN frame → transparent master and animated-background companion.",
+          "Created a connected local character loop: image generation → subject cutout → the same first/last video frame → transparent master and animated-background companion.",
         );
         setState((current) => ({ ...current, activeSection: "flow" }));
         return;
@@ -2275,6 +2294,76 @@ export const MediaStudio = ({
       .finally(() => setFlowRevisionLoading(false));
   }, [flow.id]);
 
+  const refreshSavedFlows = useCallback((): void => {
+    setSavedFlowsLoading(true);
+    void listMediaFlows()
+      .then((heads) => {
+        setSavedFlows(heads);
+        setRuntimeError(null);
+      })
+      .catch((error: unknown) => {
+        setRuntimeError(normalizeMediaError(error, "media_list_flows"));
+      })
+      .finally(() => setSavedFlowsLoading(false));
+  }, []);
+
+  const openSavedFlow = useCallback(
+    (flowId: string): void => {
+      if (flowId === flow.id || savedFlowsLoading) {
+        return;
+      }
+      if (
+        hasUnsavedFlowChanges &&
+        !window.confirm(`Discard unsaved workflow "${flow.name}"?`)
+      ) {
+        return;
+      }
+      setSavedFlowsLoading(true);
+      setFlowRevisionNotice(null);
+      void getMediaFlow(flowId)
+        .then((history) => {
+          const head = history.revisions.find((revision) => revision.isHead);
+          if (!head) {
+            throw new Error("The saved workflow has no head revision.");
+          }
+          const openedFlow = upgradeMediaFlowQualityDefaults({
+            flow: head.flow,
+            updatedAt: new Date().toISOString(),
+          });
+          const upgraded =
+            createMediaFlowDocumentDigest(openedFlow) !== head.documentDigest;
+          const recipe = readImageRecipeSettings(openedFlow);
+          clearSemanticHistory();
+          setFlowHistory(history);
+          setFlowRunOverlayId(null);
+          setState((current) => ({
+            ...current,
+            activeSection: "flow",
+            recipe: recipe ?? current.recipe,
+            flow: openedFlow,
+            flowLayout: head.layout,
+          }));
+          setFlowRevisionNotice(
+            upgraded
+              ? `Opened ${openedFlow.name}. New quality defaults are an unsaved draft.`
+              : `Opened ${openedFlow.name} at revision ${head.revisionNumber}.`,
+          );
+          setRuntimeError(null);
+        })
+        .catch((error: unknown) => {
+          setRuntimeError(normalizeMediaError(error, "media_get_flow"));
+        })
+        .finally(() => setSavedFlowsLoading(false));
+    },
+    [
+      clearSemanticHistory,
+      flow.id,
+      flow.name,
+      hasUnsavedFlowChanges,
+      savedFlowsLoading,
+    ],
+  );
+
   const persistFlowRevision = useCallback(
     async (
       sourceFlow: MediaFlow,
@@ -2301,6 +2390,10 @@ export const MediaStudio = ({
         });
         const history = await getMediaFlow(sourceFlow.id);
         setFlowHistory(history);
+        setSavedFlows((current) => [
+          result.head,
+          ...current.filter((head) => head.flowId !== result.head.flowId),
+        ]);
         setFlowRevisionNotice(
           result.created
             ? `Saved immutable revision ${result.head.headRevisionNumber}.`
@@ -2429,6 +2522,13 @@ export const MediaStudio = ({
         const upgraded = importedFlow !== result.revision.flow;
         clearSemanticHistory();
         setFlowHistory(history);
+        const importedHead = history.head;
+        if (importedHead) {
+          setSavedFlows((current) => [
+            importedHead,
+            ...current.filter((head) => head.flowId !== history.flowId),
+          ]);
+        }
         setFlowRunOverlayId(null);
         setFlowImportInspection(null);
         setFlowImportSourcePath(null);
@@ -2518,8 +2618,9 @@ export const MediaStudio = ({
   useEffect(() => {
     if (runtimeStatus?.storageReady) {
       refreshFlowHistory();
+      refreshSavedFlows();
     }
-  }, [refreshFlowHistory, runtimeStatus?.storageReady]);
+  }, [refreshFlowHistory, refreshSavedFlows, runtimeStatus?.storageReady]);
   const runLocalFlow = useCallback((): void => {
     if (!localFlowExecution.supported || localFlowPending) {
       return;
@@ -2650,23 +2751,15 @@ export const MediaStudio = ({
             ? videoConfig.memoryProfile
             : "auto";
         const selectedVideoModelId = videoFlowExecution.videoModel.id;
-        if (
-          selectedVideoModelId !== "local:framepack-i2v-hy-13b" &&
-          selectedVideoModelId !==
-            "local:ltx-video-0.9.8-13b-distilled-fp8" &&
-          selectedVideoModelId !==
-            "local:ltx-video-0.9.8-2b-distilled-fp8" &&
-          selectedVideoModelId !== "local:wan2.2-ti2v-5b"
-        ) {
+        if (!isExecutableLocalVideoModelId(selectedVideoModelId)) {
           throw new Error(
             "The resolved video model does not have an executable local adapter.",
           );
         }
-        const lightweightLtx =
-          selectedVideoModelId ===
-          "local:ltx-video-0.9.8-2b-distilled-fp8" ||
-          selectedVideoModelId ===
-          "local:ltx-video-0.9.8-13b-distilled-fp8";
+        const videoExecutionSettings = resolveMediaVideoExecutionSettings(
+          videoConfig,
+          videoFlowExecution.videoModel.architecture,
+        );
         const runVideo = (
           firstFrameAssetId: string,
           lastFrameAssetId: string,
@@ -2699,18 +2792,8 @@ export const MediaStudio = ({
               typeof videoConfig.numFrames === "number"
                 ? videoConfig.numFrames
                 : 33,
-            numInferenceSteps:
-              lightweightLtx
-                ? 8
-                : typeof videoConfig.numInferenceSteps === "number"
-                ? videoConfig.numInferenceSteps
-                : 30,
-            guidanceScale:
-              lightweightLtx
-                ? 1
-                : typeof videoConfig.guidanceScale === "number"
-                ? videoConfig.guidanceScale
-                : 9,
+            numInferenceSteps: videoExecutionSettings.numInferenceSteps,
+            guidanceScale: videoExecutionSettings.guidanceScale,
             seed:
               typeof videoConfig.seed === "number"
                 ? videoConfig.seed
@@ -2825,12 +2908,12 @@ export const MediaStudio = ({
             ? outputs.length > 1
               ? `Published the verified VP9 alpha master and animated-background companion ${ending}, with immutable endpoint lineage.`
               : `Published a verified ${transparent ? "transparent" : "opaque"} VP9 WebM ${ending}, with immutable first/last-frame lineage.`
-            : "WAN execution completed without a published video; inspect the run evidence.",
+            : "Local video execution completed without a published video; inspect the run evidence.",
         );
         return refreshRuntime();
       })
       .catch((error: unknown) => {
-        setRuntimeError(normalizeMediaError(error, "generate_wan_video"));
+        setRuntimeError(normalizeMediaError(error, "generate_local_video"));
       })
       .finally(() => setLocalFlowPending(false));
   }, [
@@ -3828,10 +3911,14 @@ export const MediaStudio = ({
             canPasteNode={pasteInspection.valid}
             pasteBlockedReason={pasteInspection.reason}
             history={flowHistory}
+            savedFlows={savedFlows}
+            savedFlowsLoading={savedFlowsLoading}
             revisionLoading={flowRevisionLoading}
             revisionNotice={flowRevisionNotice}
             hasUnsavedChanges={hasUnsavedFlowChanges}
             onRefreshHistory={refreshFlowHistory}
+            onRefreshSavedFlows={refreshSavedFlows}
+            onOpenSavedFlow={openSavedFlow}
             onSaveRevision={saveCurrentFlowRevision}
             onRestoreRevision={restoreFlowRevision}
             portabilitySupported={supportsNativeMediaFlowPortability()}

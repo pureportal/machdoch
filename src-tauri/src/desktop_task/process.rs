@@ -1,33 +1,14 @@
 use std::{
     io::{BufReader, Read},
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
 #[cfg(target_os = "windows")]
-use std::os::windows::io::AsRawHandle;
-
-#[cfg(target_os = "windows")]
-use windows::{
-    core::PCWSTR,
-    Win32::{
-        Foundation::{CloseHandle, HANDLE},
-        System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        },
-    },
-};
-
-#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 
 use super::{payload::cleanup_temporary_file, progress::emit_progress_from_stderr_line};
 
@@ -43,60 +24,6 @@ pub(super) const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub(super) const SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
 pub(super) const SUBPROCESS_OUTPUT_TRUNCATED_MARKER: &str =
     "[output truncated after capture limit]";
-
-pub(super) struct ChildProcessJob {
-    #[cfg(target_os = "windows")]
-    handle: HANDLE,
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for ChildProcessJob {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
-pub(super) fn assign_child_process_to_kill_on_close_job(
-    child: &std::process::Child,
-) -> Result<ChildProcessJob, String> {
-    #[cfg(target_os = "windows")]
-    unsafe {
-        let handle = CreateJobObjectW(None, PCWSTR::null())
-            .map_err(|error| format!("Failed to create the desktop task job object: {error}"))?;
-        let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-
-        if let Err(error) = SetInformationJobObject(
-            handle,
-            JobObjectExtendedLimitInformation,
-            (&information as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        ) {
-            let _ = CloseHandle(handle);
-            return Err(format!(
-                "Failed to configure the desktop task job object: {error}"
-            ));
-        }
-
-        let process_handle = HANDLE(child.as_raw_handle());
-        if let Err(error) = AssignProcessToJobObject(handle, process_handle) {
-            let _ = CloseHandle(handle);
-            return Err(format!(
-                "Failed to assign the shared CLI to its desktop task job object: {error}"
-            ));
-        }
-
-        return Ok(ChildProcessJob { handle });
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = child;
-        Ok(ChildProcessJob {})
-    }
-}
 
 pub(super) fn read_stdout(stdout: impl Read) -> Result<String, String> {
     read_bounded_stream_text(stdout, "stdout")
@@ -348,45 +275,6 @@ pub(super) fn join_cli_output_and_cleanup(
     cleanup_temporary_file(conversation_context_path);
 
     Ok((stdout_result?, stderr_result?))
-}
-
-pub(super) fn terminate_child_process_tree(child: &mut Child) {
-    #[cfg(target_os = "windows")]
-    {
-        let pid = child.id().to_string();
-        let mut command = Command::new("taskkill");
-        hide_child_process_window(&mut command);
-        let taskkill_result = command
-            .args(["/PID", pid.as_str(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        if taskkill_result
-            .map(|status| status.success())
-            .unwrap_or(false)
-        {
-            return;
-        }
-    }
-
-    #[cfg(unix)]
-    {
-        let process_group_id = format!("-{}", child.id());
-        let kill_result = Command::new("kill")
-            .args(["-TERM", process_group_id.as_str()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        if kill_result.map(|status| status.success()).unwrap_or(false) {
-            return;
-        }
-    }
-
-    let _ = child.kill();
 }
 
 pub(super) fn hide_child_process_window(command: &mut Command) {
