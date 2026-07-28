@@ -166,9 +166,25 @@ export const isMediaAssetKnownTransparent = (
     case "remote-image-generation":
     case "remote-image-edit":
       return hasExtractedTransparency(operation.subjectCutout);
+    case "local-video-generation":
+    case "local-wan-video-generation":
+      return operation.output.hasAlpha;
     default:
       return false;
   }
+};
+
+export const resolveMediaAssetVideoFrameRate = (
+  asset: MediaAssetRecord,
+): number | null => {
+  if (
+    asset.kind !== "video" ||
+    (asset.operation?.kind !== "local-video-generation" &&
+      asset.operation?.kind !== "local-wan-video-generation")
+  ) {
+    return null;
+  }
+  return asset.operation.output.fps;
 };
 
 export const identifyMediaVideoQualityPreset = (

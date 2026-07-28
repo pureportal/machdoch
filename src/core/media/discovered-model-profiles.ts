@@ -15,6 +15,8 @@ export interface MediaDiscoveredRuntimeProfile {
   preferredRelativePath?: string;
   capabilities: readonly MediaCapability[];
   requiredRuntimeCapabilities: readonly string[];
+  minimumDeviceMemoryBytes?: number;
+  allowCpu?: boolean;
   provider: Omit<
     MediaProviderCatalogEntry,
     "configured" | "checkedAt" | "capabilities"
@@ -63,6 +65,11 @@ export const matchesMediaDiscoveredModelQuery = (
 
 const WAN_SOURCE_URL =
   "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers";
+const FRAMEPACK_SOURCE_URL =
+  "https://huggingface.co/lllyasviel/FramePackI2V_HY";
+const LTX_SOURCE_URL = "https://huggingface.co/Lightricks/LTX-Video";
+const LTX_LICENSE_URL =
+  "https://huggingface.co/Lightricks/LTX-Video/blob/main/LTX-Video-Open-Weights-License-0.X.txt";
 
 /**
  * Executable packages discovered outside the managed catalog register here.
@@ -71,6 +78,220 @@ const WAN_SOURCE_URL =
  */
 export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeProfile[] =
   [
+    {
+      id: "framepack-i2v-hy-13b",
+      architecture: "framepack-i2v",
+      artifactKind: "diffusers-model",
+      preferredRelativePath: "framepack-i2v-hy",
+      capabilities: [
+        "image-to-video",
+        "start-end-to-video",
+        "transparent-output",
+        "alpha-video",
+        "video-composite",
+      ],
+      requiredRuntimeCapabilities: [
+        "image-to-video",
+        "start-end-to-video",
+        "vp9-alpha",
+        "alpha-video",
+        "video-composite",
+      ],
+      minimumDeviceMemoryBytes: 15 * 1_024 ** 3,
+      allowCpu: false,
+      provider: {
+        id: "local-video",
+        displayName: "Local Video Diffusers",
+        target: "local",
+        lifecycle: "active",
+        privacySummary: "Prompt text and reference media remain on this device.",
+        staleAfterSeconds: 2_592_000,
+        sourceUrl: FRAMEPACK_SOURCE_URL,
+        catalogRevision: "framepack-i2v-hy-86cef43",
+      },
+      model: {
+        id: "local:framepack-i2v-hy-13b",
+        providerId: "local-video",
+        displayName: "FramePack I2V HY 13B",
+        family: "FramePack",
+        target: "local",
+        lifecycle: "active",
+        lifecycleStaleAfterSeconds: 2_592_000,
+        lifecycleSourceUrl: FRAMEPACK_SOURCE_URL,
+        catalogRevision: "framepack-i2v-hy-86cef43",
+        bundled: false,
+        installedRevision:
+          "86cef4396041b6002c957852daac4c91aaa47c79",
+        packageType: "diffusers",
+        architecture: "framepack-i2v",
+        addonCapabilities: [],
+        management: {
+          acquisition: "workspace-discovery",
+          verification: "runtime-probe",
+        },
+        license: {
+          name: "FramePack / HunyuanVideo model terms",
+          spdxId: null,
+          sourceUrl: FRAMEPACK_SOURCE_URL,
+          commercialUse: "review-required",
+          requiresAcceptance: true,
+        },
+        recommended: true,
+        speedScore: 58,
+        qualityScore: 98,
+        minVramGb: 16,
+        expectedDownloadGb: 43,
+        costHint: "No provider charge; substantial local GPU, RAM, and disk use.",
+        privacySummary:
+          "Prompt text and both conditioning frames remain on this device.",
+        limitation:
+          "The reviewed quality profile uses FP8 storage below 32 GiB VRAM and BF16 compute with block offload; 8 GiB and CPU hosts use the lightweight LTX profile.",
+        userImported: false,
+      },
+    },
+    {
+      id: "ltx-video-0.9.8-13b-distilled-fp8",
+      architecture: "ltx-video",
+      artifactKind: "diffusers-model",
+      preferredRelativePath: "ltx-video-0.9.8",
+      capabilities: [
+        "text-to-video",
+        "image-to-video",
+        "start-end-to-video",
+        "transparent-output",
+        "alpha-video",
+        "video-composite",
+      ],
+      requiredRuntimeCapabilities: [
+        "image-to-video",
+        "start-end-to-video",
+        "vp9-alpha",
+        "alpha-video",
+        "video-composite",
+      ],
+      minimumDeviceMemoryBytes: 15 * 1_024 ** 3,
+      allowCpu: false,
+      provider: {
+        id: "local-video",
+        displayName: "Local Video Diffusers",
+        target: "local",
+        lifecycle: "active",
+        privacySummary: "Prompt text and reference media remain on this device.",
+        staleAfterSeconds: 2_592_000,
+        sourceUrl: LTX_SOURCE_URL,
+        catalogRevision: "ltx-video-0.9.8-8984fa2",
+      },
+      model: {
+        id: "local:ltx-video-0.9.8-13b-distilled-fp8",
+        providerId: "local-video",
+        displayName: "LTX-Video 0.9.8 13B Distilled FP8",
+        family: "LTX-Video 0.9.8",
+        target: "local",
+        lifecycle: "active",
+        lifecycleStaleAfterSeconds: 2_592_000,
+        lifecycleSourceUrl: LTX_SOURCE_URL,
+        catalogRevision: "ltx-video-0.9.8-8984fa2",
+        bundled: false,
+        installedRevision:
+          "8984fa25007f376c1a299016d0957a37a2f797bb",
+        packageType: "diffusers",
+        architecture: "ltx-video",
+        addonCapabilities: [],
+        management: {
+          acquisition: "workspace-discovery",
+          verification: "runtime-probe",
+        },
+        license: {
+          name: "LTX-Video Open Weights License 0.X",
+          spdxId: null,
+          sourceUrl: LTX_LICENSE_URL,
+          commercialUse: "review-required",
+          requiresAcceptance: true,
+        },
+        recommended: true,
+        speedScore: 82,
+        qualityScore: 94,
+        minVramGb: 16,
+        expectedDownloadGb: 38.8,
+        costHint: "No provider charge; substantial local GPU, RAM, and disk use.",
+        privacySummary:
+          "Prompt text and all conditioning frames remain on this device.",
+        limitation:
+          "The 13B FP8 quality path requires a nominal 16 GB GPU and uses block offload on constrained hosts.",
+        userImported: false,
+      },
+    },
+    {
+      id: "ltx-video-0.9.8-2b-distilled-fp8",
+      architecture: "ltx-video",
+      artifactKind: "diffusers-model",
+      preferredRelativePath: "ltx-video-0.9.8",
+      capabilities: [
+        "text-to-video",
+        "image-to-video",
+        "start-end-to-video",
+        "transparent-output",
+        "alpha-video",
+        "video-composite",
+      ],
+      requiredRuntimeCapabilities: [
+        "image-to-video",
+        "start-end-to-video",
+        "vp9-alpha",
+        "alpha-video",
+        "video-composite",
+      ],
+      allowCpu: true,
+      provider: {
+        id: "local-video",
+        displayName: "Local Video Diffusers",
+        target: "local",
+        lifecycle: "active",
+        privacySummary: "Prompt text and reference media remain on this device.",
+        staleAfterSeconds: 2_592_000,
+        sourceUrl: LTX_SOURCE_URL,
+        catalogRevision: "ltx-video-0.9.8-8984fa2",
+      },
+      model: {
+        id: "local:ltx-video-0.9.8-2b-distilled-fp8",
+        providerId: "local-video",
+        displayName: "LTX-Video 0.9.8 2B Distilled FP8",
+        family: "LTX-Video 0.9.8",
+        target: "local",
+        lifecycle: "active",
+        lifecycleStaleAfterSeconds: 2_592_000,
+        lifecycleSourceUrl: LTX_SOURCE_URL,
+        catalogRevision: "ltx-video-0.9.8-8984fa2",
+        bundled: false,
+        installedRevision:
+          "8984fa25007f376c1a299016d0957a37a2f797bb",
+        packageType: "diffusers",
+        architecture: "ltx-video",
+        addonCapabilities: [],
+        management: {
+          acquisition: "workspace-discovery",
+          verification: "runtime-probe",
+        },
+        license: {
+          name: "LTX-Video Open Weights License 0.X",
+          spdxId: null,
+          sourceUrl: LTX_LICENSE_URL,
+          commercialUse: "review-required",
+          requiresAcceptance: true,
+        },
+        recommended: false,
+        speedScore: 96,
+        qualityScore: 81,
+        minVramGb: 6,
+        expectedDownloadGb: 38.8,
+        costHint: "No provider charge; reduced local GPU and CPU cost.",
+        privacySummary:
+          "Prompt text and all conditioning frames remain on this device.",
+        limitation:
+          "The lightweight path trades fine anatomy and texture detail for broad hardware support.",
+        userImported: false,
+      },
+    },
     {
       id: "wan2.2-ti2v-5b",
       architecture: "wan-2.2-ti2v",
@@ -91,6 +312,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         "alpha-video",
         "video-composite",
       ],
+      minimumDeviceMemoryBytes: 15 * 1_024 ** 3,
+      allowCpu: false,
       provider: {
         id: "local-wan",
         displayName: "Local WAN Diffusers",
@@ -244,11 +467,17 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
     const missingCapabilities = profile.requiredRuntimeCapabilities.filter(
       (capability) => !runtime?.capabilities.includes(capability),
     );
+    const deviceCompatible =
+      runtime?.device !== "cpu"
+        ? profile.minimumDeviceMemoryBytes === undefined ||
+          (runtime?.deviceMemoryBytes ?? 0) >= profile.minimumDeviceMemoryBytes
+        : profile.allowCpu === true;
     const runtimeReady =
       installed &&
       runtime?.ready === true &&
       missingArchitectures.length === 0 &&
-      missingCapabilities.length === 0;
+      missingCapabilities.length === 0 &&
+      deviceCompatible;
     const configured = installed && runtimeReady;
     const diagnostic =
       ambiguousReadyPaths.length > 0
@@ -257,6 +486,10 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
           ? artifact.diagnostic
           : runtimeReady
             ? `The ${artifact.displayName} package and local runtime are ready.`
+            : !deviceCompatible
+              ? profile.allowCpu === false && runtime?.device === "cpu"
+                ? `${profile.model.displayName} requires a supported GPU; the 2B variant remains available on CPU.`
+                : `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumDeviceMemoryBytes ?? 0) / 1_024 ** 3)} GiB of reported device memory; choose the 2B variant on this adapter.`
             : runtimeDiagnostic(
                 runtime,
                 missingArchitectures,

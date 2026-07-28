@@ -61,6 +61,56 @@ const runtime = (
   diagnostic: "Ready.",
 });
 
+const ltxDiscovery = (): MediaWorkspaceModelDiscovery => ({
+  ...discovery(),
+  entries: [
+    {
+      ...discovery().entries[0]!,
+      path: "C:/workspace/models/ltx-video-0.9.8",
+      relativePath: "ltx-video-0.9.8",
+      displayName: "LTX-Video 0.9.8 FP8 (2B + 13B)",
+      architecture: "ltx-video",
+      byteSize: 38_800_000_000,
+      capabilities: ["image-to-video", "start-end-to-video"],
+    },
+  ],
+});
+
+const ltxRuntime = (
+  device: "cpu" | "cuda:0",
+  deviceMemoryBytes: number | null,
+): MediaLocalDiffusersRuntimeStatus => ({
+  ...runtime(),
+  device,
+  deviceMemoryBytes,
+  architectures: ["ltx-video"],
+});
+
+const framepackDiscovery = (): MediaWorkspaceModelDiscovery => ({
+  ...discovery(),
+  entries: [
+    {
+      ...discovery().entries[0]!,
+      path: "C:/workspace/models/framepack-i2v-hy",
+      relativePath: "framepack-i2v-hy",
+      displayName: "FramePack I2V HY 13B",
+      architecture: "framepack-i2v",
+      byteSize: 43_000_000_000,
+      capabilities: ["image-to-video", "start-end-to-video"],
+    },
+  ],
+});
+
+const framepackRuntime = (
+  device: "cpu" | "cuda:0",
+  deviceMemoryBytes: number | null,
+): MediaLocalDiffusersRuntimeStatus => ({
+  ...runtime(),
+  device,
+  deviceMemoryBytes,
+  architectures: ["framepack-i2v"],
+});
+
 describe("discovered media runtime profiles", () => {
   it("matches every workspace search term across rich artifact metadata", () => {
     const artifact = discovery().entries[0]!;
@@ -120,6 +170,55 @@ describe("discovered media runtime profiles", () => {
     expect(model?.runtimeReadinessDiagnostic).toContain("vp9-alpha");
   });
 
+  it("selects 13B on 16 GiB and degrades to 2B on 8 GiB or CPU", () => {
+    const modelsFor = (
+      device: "cpu" | "cuda:0",
+      deviceMemoryBytes: number | null,
+    ) =>
+      extendMediaCatalogWithWorkspaceDiscovery({
+        catalog: baseCatalog(),
+        discovery: ltxDiscovery(),
+        runtime: ltxRuntime(device, deviceMemoryBytes),
+      }).models.filter((model) => model.architecture === "ltx-video");
+
+    const currentGpu = modelsFor("cuda:0", 16 * 1_024 ** 3);
+    expect(
+      currentGpu.find((model) => model.id.includes("13b"))?.configured,
+    ).toBe(true);
+    expect(
+      currentGpu.find((model) => model.id.includes("2b"))?.configured,
+    ).toBe(true);
+
+    for (const constrained of [
+      modelsFor("cuda:0", 8 * 1_024 ** 3),
+      modelsFor("cpu", null),
+    ]) {
+      expect(
+        constrained.find((model) => model.id.includes("13b"))?.configured,
+      ).toBe(false);
+      expect(
+        constrained.find((model) => model.id.includes("2b"))?.configured,
+      ).toBe(true);
+    }
+  });
+
+  it("enables FramePack at 16 GiB but leaves lower-resource hosts on the lightweight path", () => {
+    const modelFor = (
+      device: "cpu" | "cuda:0",
+      deviceMemoryBytes: number | null,
+    ) =>
+      extendMediaCatalogWithWorkspaceDiscovery({
+        catalog: baseCatalog(),
+        discovery: framepackDiscovery(),
+        runtime: framepackRuntime(device, deviceMemoryBytes),
+      }).models.find((model) => model.id === "local:framepack-i2v-hy-13b");
+
+    expect(modelFor("cuda:0", 16 * 1_024 ** 3)?.configured).toBe(true);
+    expect(modelFor("cuda:0", 24 * 1_024 ** 3)?.configured).toBe(true);
+    expect(modelFor("cuda:0", 8 * 1_024 ** 3)?.configured).toBe(false);
+    expect(modelFor("cpu", null)?.configured).toBe(false);
+  });
+
   it("does not claim an incomplete workspace package is installed", () => {
     const catalog = extendMediaCatalogWithWorkspaceDiscovery({
       catalog: baseCatalog(),
@@ -153,7 +252,9 @@ describe("discovered media runtime profiles", () => {
         relativePath: "video-b",
       },
     ];
-    const profile = MEDIA_DISCOVERED_RUNTIME_PROFILES[0]!;
+    const profile = MEDIA_DISCOVERED_RUNTIME_PROFILES.find(
+      (candidate) => candidate.architecture === "wan-2.2-ti2v",
+    )!;
     const profileWithoutPreferredPath = { ...profile };
     delete profileWithoutPreferredPath.preferredRelativePath;
     const catalog = extendMediaCatalogWithWorkspaceDiscovery({
@@ -177,14 +278,16 @@ describe("discovered media runtime profiles", () => {
   });
 
   it("aggregates multiple model profiles behind one provider entry", () => {
-    const profile = MEDIA_DISCOVERED_RUNTIME_PROFILES[0]!;
+    const profile = MEDIA_DISCOVERED_RUNTIME_PROFILES.find(
+      (candidate) => candidate.architecture === "wan-2.2-ti2v",
+    )!;
     const secondProfile = {
       ...profile,
-      id: "wan2.2-ti2v-5b-secondary-profile",
+      id: `${profile.id}-secondary-profile`,
       model: {
         ...profile.model,
-        id: "local:wan2.2-ti2v-5b-secondary",
-        displayName: "Wan2.2 TI2V 5B secondary profile",
+        id: `${profile.model.id}-secondary`,
+        displayName: `${profile.model.displayName} secondary profile`,
       },
     };
     const catalog = extendMediaCatalogWithWorkspaceDiscovery({
@@ -195,10 +298,14 @@ describe("discovered media runtime profiles", () => {
     });
 
     expect(
-      catalog.providers.filter((provider) => provider.id === "local-wan"),
+      catalog.providers.filter(
+        (provider) => provider.id === profile.provider.id,
+      ),
     ).toHaveLength(1);
     expect(
-      catalog.models.filter((model) => model.providerId === "local-wan"),
+      catalog.models.filter(
+        (model) => model.providerId === profile.provider.id,
+      ),
     ).toHaveLength(2);
   });
 });

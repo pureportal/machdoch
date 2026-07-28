@@ -1204,7 +1204,7 @@ pub(crate) fn merge_instruction_library_transfer(
     Ok(library)
 }
 
-fn snapshot_instruction_profiles() -> Result<CategorySnapshot, String> {
+fn snapshot_instruction_profiles(exported_at: &str) -> Result<CategorySnapshot, String> {
     let root = get_user_config_directory()?;
     let path = root.join("instruction-library.json");
     let portable = if path_entry_exists(&path)? {
@@ -1213,11 +1213,11 @@ fn snapshot_instruction_profiles() -> Result<CategorySnapshot, String> {
             .map_err(|_| "The instruction library could not be read.".to_string())?;
         let value = serde_json::from_slice::<Value>(&bytes)
             .map_err(|_| "The instruction library contains invalid JSON.".to_string())?;
-        portable_instruction_library(&value, Utc::now().to_rfc3339())?
+        portable_instruction_library(&value, exported_at.to_string())?
     } else {
         json!({
             "schemaVersion": 1,
-            "exportedAt": Utc::now().to_rfc3339(),
+            "exportedAt": exported_at,
             "profiles": [],
             "defaults": { "profiles": [] },
         })
@@ -1505,9 +1505,10 @@ fn snapshot_global_ralph() -> Result<CategorySnapshot, String> {
     create_file_snapshot(SettingsCategoryId::GlobalRalphFlows, entries)
 }
 
-pub(crate) fn snapshot_category<R: Runtime>(
+fn snapshot_category_with_exported_at<R: Runtime>(
     app: &AppHandle<R>,
     id: SettingsCategoryId,
+    exported_at: &str,
 ) -> SnapshotAvailability {
     let result = match id {
         SettingsCategoryId::ApiKeys => snapshot_api_keys(),
@@ -1515,7 +1516,7 @@ pub(crate) fn snapshot_category<R: Runtime>(
         SettingsCategoryId::DesktopAppearance => snapshot_desktop_appearance(app),
         SettingsCategoryId::ChatVoicePreferences => snapshot_chat_voice_preferences(app),
         SettingsCategoryId::GlobalMemory => snapshot_global_memory(),
-        SettingsCategoryId::InstructionProfiles => snapshot_instruction_profiles(),
+        SettingsCategoryId::InstructionProfiles => snapshot_instruction_profiles(exported_at),
         SettingsCategoryId::GlobalPrompts => snapshot_global_prompts(),
         SettingsCategoryId::GlobalContextPacks => snapshot_global_context_packs(app),
         SettingsCategoryId::GlobalMcp => snapshot_global_mcp(app),
@@ -1533,6 +1534,13 @@ pub(crate) fn snapshot_category<R: Runtime>(
         },
         Err(reason) => SnapshotAvailability::Unavailable(reason),
     }
+}
+
+pub(crate) fn snapshot_category<R: Runtime>(
+    app: &AppHandle<R>,
+    id: SettingsCategoryId,
+) -> SnapshotAvailability {
+    snapshot_category_with_exported_at(app, id, &Utc::now().to_rfc3339())
 }
 
 pub(crate) fn category_resource_lock_paths(
@@ -1610,18 +1618,16 @@ fn acquire_snapshot_locks(
     Ok(locks)
 }
 
-pub(crate) fn snapshot_selected<R: Runtime>(
-    app: &AppHandle<R>,
+fn capture_consistent_snapshots(
     selected: &BTreeSet<SettingsCategoryId>,
+    snapshot: impl Fn(SettingsCategoryId, &str) -> SnapshotAvailability,
 ) -> Result<BTreeMap<SettingsCategoryId, SnapshotAvailability>, String> {
-    let root = get_user_config_directory()?;
-    let _ = verify_unlinked_directory_chain(&root, &root)?;
-    let _locks = acquire_snapshot_locks(&root, selected)?;
+    let exported_at = Utc::now().to_rfc3339();
     let capture = || {
         selected
             .iter()
             .copied()
-            .map(|id| (id, snapshot_category(app, id)))
+            .map(|id| (id, snapshot(id, &exported_at)))
             .collect::<BTreeMap<_, _>>()
     };
     let mut first = capture();
@@ -1633,6 +1639,18 @@ pub(crate) fn snapshot_selected<R: Runtime>(
     }
     zeroize_snapshots(&mut second);
     Ok(first)
+}
+
+pub(crate) fn snapshot_selected<R: Runtime>(
+    app: &AppHandle<R>,
+    selected: &BTreeSet<SettingsCategoryId>,
+) -> Result<BTreeMap<SettingsCategoryId, SnapshotAvailability>, String> {
+    let root = get_user_config_directory()?;
+    let _ = verify_unlinked_directory_chain(&root, &root)?;
+    let _locks = acquire_snapshot_locks(&root, selected)?;
+    capture_consistent_snapshots(selected, |id, exported_at| {
+        snapshot_category_with_exported_at(app, id, exported_at)
+    })
 }
 
 pub(crate) fn create_category_statuses(
@@ -3371,7 +3389,82 @@ pub(crate) fn zeroize_envelope(envelope: &mut super::contract::TransferEnvelope)
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+
     use super::*;
+
+    #[test]
+    fn repeated_snapshot_inspections_reuse_one_export_timestamp() {
+        let selected = BTreeSet::from([SettingsCategoryId::InstructionProfiles]);
+
+        for _ in 0..3 {
+            let timestamps = RefCell::new(Vec::new());
+            let snapshots = capture_consistent_snapshots(&selected, |id, exported_at| {
+                timestamps.borrow_mut().push(exported_at.to_string());
+                SnapshotAvailability::Available(
+                    create_json_snapshot(
+                        id,
+                        json!({
+                            "schemaVersion": 1,
+                            "exportedAt": exported_at,
+                            "profiles": [],
+                            "defaults": { "profiles": [] },
+                        }),
+                        0,
+                        true,
+                    )
+                    .expect("the instruction profile snapshot should serialize"),
+                )
+            })
+            .expect("generated export metadata must remain stable during one inspection");
+
+            assert_eq!(snapshots.len(), 1);
+            let timestamps = timestamps.into_inner();
+            assert_eq!(timestamps.len(), 2);
+            assert_eq!(timestamps[0], timestamps[1]);
+        }
+    }
+
+    #[test]
+    fn snapshot_inspection_still_rejects_a_genuine_setting_change() {
+        let selected = BTreeSet::from([SettingsCategoryId::InstructionProfiles]);
+        let captures = Cell::new(0);
+
+        let error = capture_consistent_snapshots(&selected, |id, exported_at| {
+            let capture = captures.get();
+            captures.set(capture + 1);
+            let profiles = if capture == 0 {
+                Vec::new()
+            } else {
+                vec![json!({
+                    "id": "8a48df44-d609-4ba9-9c86-6639618d4424",
+                    "name": "Changed during inspection",
+                    "body": "Detect this change.\n",
+                    "createdAt": exported_at,
+                    "updatedAt": exported_at,
+                })]
+            };
+            let count = profiles.len() as u32;
+            SnapshotAvailability::Available(
+                create_json_snapshot(
+                    id,
+                    json!({
+                        "schemaVersion": 1,
+                        "exportedAt": exported_at,
+                        "profiles": profiles,
+                        "defaults": { "profiles": [] },
+                    }),
+                    count,
+                    count == 0,
+                )
+                .expect("the instruction profile snapshot should serialize"),
+            )
+        })
+        .expect_err("a real setting change between inspection passes must still fail");
+
+        assert_eq!(captures.get(), 2);
+        assert_eq!(error, "SETTINGS_CHANGED_DURING_INSPECTION");
+    }
 
     #[test]
     fn wire_paths_reject_traversal_aliases_and_non_normalized_unicode() {

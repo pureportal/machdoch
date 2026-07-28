@@ -1,8 +1,121 @@
 # Machdoch media quality investigation and delivery
 
-Date: 2026-07-26
+Date: 2026-07-27
 
-## Outcome
+## 2026-07-27 continuation, correction, and current outcome
+
+The previous **76.8/100** witch acceptance is withdrawn. Full-size endpoint
+review found that `tmp/witch-krea-identity-end-v2/output-0000.png` has a third
+arm/hand. The earlier semantic score therefore accepted an invalid keyframe,
+and the resulting video cannot be a flagship result regardless of its measured
+sharpness or clean alpha. This continuation uses
+`tmp/witch-krea-two-arm-endpoint-v2/output-0003.png` instead: it has exactly two
+arms and two legs, is 704x384, and has SHA-256
+`e4d4b8115c893765e37a8b167633f2db23aa2a84f2432838a67b5e2c394e118f`.
+
+The strongest **workflow and transparency** result produced through the actual
+Tauri application is:
+
+- run `fabcfd3c-b8ed-45fa-8788-b46f5de5bd49`;
+- catalog asset `asset:fabcfd3c-b8ed-45fa-8788-b46f5de5bd49:0`;
+- `tmp/quality-evidence/2026-07-27-tauri-final-alpha.webm`, 640x352,
+  33 frames at 16 fps, 2.0625 seconds, lossless VP9 alpha;
+- SHA-256
+  `e2d7592043afb6a4bf93232a6b015471c7e8fcc065060173db00971dd07caaeb`;
+- independent decode and comparison:
+  `tmp/quality-evidence/2026-07-27-tauri-final-comparison/report.json`;
+- all-frame transparency plates:
+  `tmp/quality-evidence/2026-07-27-tauri-all-frames-magenta.png` and
+  `tmp/quality-evidence/2026-07-27-tauri-all-frames-alpha.png`.
+
+This clip preserves exactly two arms and two legs in all 33 reviewed frames,
+retains the whole subject in alpha, and plays/steps reliably in the Tauri
+reviewer. It is **not** accepted as first-class character animation. Frames
+0-8 and 14-28 are long near-static holds, with visible pose changes around
+frames 9-14 and an endpoint correction at frames 29-32. Its foreground optical
+flow is only 0.643 pixels versus 1.640 for the superseded 17-frame master.
+Normal playback therefore reads as a small number of pose changes rather than
+continuous hand-drawn motion.
+
+Two further attempts were rejected instead of being promoted:
+
+- Motion-compensated retiming reduced transition outliers but created visible
+  ghost arms and cut sharpness from 4315 to 2967. Evidence is in
+  `tmp/quality-evidence/2026-07-27-retime-prototype-eval/`.
+- A 512-class seed screen produced giant duplicated limb/garment structures
+  through frames 3-12. A subsequent full 640/30-step reroll remained nearly
+  static in a different intermediate pose through frames 2-29 and then snapped
+  to the endpoint. The all-frame plates are
+  `tmp/quality-evidence/2026-07-27-motion-screen-seed9137-all.png` and
+  `tmp/quality-evidence/2026-07-27-quality-reroll-all-magenta.png`.
+
+The current local blocker is the installed WAN 2.2 TI2V 5B first/last-frame
+model on the 16 GiB AMD device. Prompt/seed tuning can trade static topology
+for malformed dynamic anatomy, but it did not produce continuous valid motion.
+The proper next model path is explicit pose/motion conditioning (WAN Animate or
+VACE) or a stronger connected video provider. Neither is installed or
+configured in this workspace, so this report does not claim commercial-model
+or major-studio output quality.
+
+### Implemented continuation changes
+
+- Production primary-subject isolation is now fail-safe. If an opaque-core
+  candidate would discard more than 65 percent of existing foreground, the
+  worker preserves the original matte instead of deleting the character.
+- Component cleanup now chooses the component with the strongest opaque
+  evidence before considering border contact or raw area. A faint screen-spill
+  bridge can no longer make a tiny detached hand highlight replace the actual
+  subject.
+- Generated WAN provenance now drives exact video FPS and alpha capability in
+  the UI.
+- The video node has a direct first/last keyframe gate with both previews,
+  dimensions, unique reviewed-asset count, runtime-source status, and an
+  explicit face/hands/limbs/costume/framing warning.
+- The library preview now has frame stepping, an exact generated frame/time
+  readout, a timeline, 0.25x/0.5x/1x/2x playback, keyboard controls, and
+  checker/white/black/magenta/green/alpha review modes. Library cards do not
+  autoplay videos.
+- The actual application showed all 19 of 19 catalog records without hiding
+  entries, published the new video into durable CAS, played the original WebM,
+  stepped to frame 29, and rendered its decoded alpha plane.
+
+These decisions align with current commercial workflow patterns without
+pretending the local model matches their generators. Adobe Firefly exposes
+first/last frames plus transparent-background preview on multiple solid plates
+and an alpha-only view
+([Adobe documentation](https://helpx.adobe.com/firefly/web/work-with-audio-and-video/work-with-video/generate-videos-with-transparent-backgrounds.html)).
+Google Flow emphasizes reusable visual ingredients, frame-based shot control,
+asset management, camera control, and scene extension
+([Flow overview](https://blog.google/innovation-and-ai/products/google-flow-veo-ai-filmmaking-tool/),
+[workflow guidance](https://blog.google/innovation-and-ai/products/flow-video-tips/)).
+Runway Gen-4 similarly treats visual references and consistent subjects,
+objects, locations, and styles as core production controls
+([Runway research](https://runwayml.com/research/introducing-runway-gen-4)).
+Machdoch's review and keyframe changes implement the locally supportable parts
+of those patterns; multi-shot pose control remains the documented gap.
+
+### Measured continuation evidence
+
+| Measurement | Superseded 17-frame master | Valid Tauri result | Interpretation |
+| --- | ---: | ---: | --- |
+| Subject sharpness | 5921.409 | 4315.462 | Lower; valid result is softer |
+| Foreground optical flow | 1.640 | 0.643 | Too little continuous motion |
+| Motion-compensated RGB residual | 7.963 | 4.738 | Less flicker, partly because of holds |
+| High-frequency residual | 5.874 | 3.382 | Less texture crawl, partly because of holds |
+| Alpha instability | 5.589 | 5.208 | 6.8% lower |
+| Alpha coverage standard deviation | 0.009125 | 0.003594 | 60.6% lower |
+| Meaningful components/frame | 1.529 | 1.182 | Cleaner connected matte |
+| Positive green spill at edge | 2.090 | 3.219 | Worse; visible plates remain acceptable |
+
+The alpha fail-safe was driven by two identical-generation repair iterations.
+Before the opaque-evidence selection fix, the v4 matte had alpha instability
+78.283 and coverage standard deviation 0.071966. Component selection reduced
+those to 34.072 and 0.046610 in v5, but three frames were still almost entirely
+deleted by primary isolation. The new v2 guard retained all 33 subject mattes
+in the app render, with coverage standard deviation 0.003594. This is a real
+transparency fix; it does not solve the generator's motion model.
+
+## Superseded 2026-07-26 outcome
 
 The selected witch release is a substantial, measured improvement over the
 recovered baseline, but it is not major-studio animation. It reaches Machdoch's

@@ -3954,9 +3954,16 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             )?;
             config_enum(node, "providerPolicy", &["local"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
-            if config_string(node, "modelId", 256, false)? != "local:wan2.2-ti2v-5b" {
+            let model_id = config_string(node, "modelId", 256, false)?;
+            let ltx_video = matches!(
+                model_id,
+                "local:ltx-video-0.9.8-13b-distilled-fp8"
+                    | "local:ltx-video-0.9.8-2b-distilled-fp8"
+            );
+            let framepack_video = model_id == "local:framepack-i2v-hy-13b";
+            if !framepack_video && !ltx_video && model_id != "local:wan2.2-ti2v-5b" {
                 return Err(format!(
-                    "flow node {} must pin local:wan2.2-ti2v-5b",
+                    "flow node {} must pin an executable local video model",
                     node.id
                 ));
             }
@@ -3987,19 +3994,24 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 config_bool(node, key)?;
             }
             if node.config.get("generateAudio").and_then(Value::as_bool) != Some(false)
-                || node
-                    .config
-                    .get("experimentalLowMemory")
-                    .and_then(Value::as_bool)
-                    != Some(true)
+                || (!framepack_video
+                    && !ltx_video
+                    && node
+                        .config
+                        .get("experimentalLowMemory")
+                        .and_then(Value::as_bool)
+                        != Some(true))
             {
                 return Err(format!(
-                    "flow node {} requires audio=false and explicit experimental low-memory acknowledgement",
+                    "flow node {} requires audio=false and any model-specific low-memory acknowledgement",
                     node.id
                 ));
             }
             config_enum(node, "loopMode", &["none", "ping-pong", "seamless"])?;
-            for (key, minimum, maximum) in [("fps", 1_u64, 60_u64), ("numInferenceSteps", 4, 50)] {
+            for (key, minimum, maximum) in [
+                ("fps", 1_u64, 60_u64),
+                ("numInferenceSteps", 4, if ltx_video { 10 } else { 50 }),
+            ] {
                 let value = node
                     .config
                     .get(key)
@@ -4017,10 +4029,19 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 .get("numFrames")
                 .and_then(Value::as_u64)
                 .ok_or_else(|| format!("flow node {} requires integer numFrames", node.id))?;
-            if !(17..=33).contains(&num_frames) || (num_frames - 1) % 4 != 0 {
+            if ltx_video && (!(9..=257).contains(&num_frames) || (num_frames - 1) % 8 != 0) {
                 return Err(format!(
-                    "flow node {} numFrames must be between 17 and 33 in 4k+1 form",
+                    "flow node {} numFrames must be between 9 and 257 in 8k+1 form",
                     node.id
+                ));
+            }
+            let maximum_frames = if framepack_video { 129 } else { 33 };
+            if !ltx_video
+                && (!(17..=maximum_frames).contains(&num_frames) || (num_frames - 1) % 4 != 0)
+            {
+                return Err(format!(
+                    "flow node {} numFrames must be between 17 and {maximum_frames} in 4k+1 form",
+                    node.id,
                 ));
             }
             if let Some(guidance_scale) = node.config.get("guidanceScale") {

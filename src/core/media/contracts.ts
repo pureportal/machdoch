@@ -101,7 +101,9 @@ export type MediaBuiltinLocalModelArchitecture =
   | "stable-diffusion-3"
   | "flux-1"
   | "flux-2"
+  | "framepack-i2v"
   | "krea-2"
+  | "ltx-video"
   | "wan-2.2-ti2v";
 
 /**
@@ -1331,6 +1333,7 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
     | "local-transform"
     | "local-image-flow"
     | "local-analysis"
+    | "local-video"
     | "local-wan-video"
     | "mock-remote-provider"
     | "svg-ai-pipeline";
@@ -1727,6 +1730,34 @@ export interface MediaLocalWanVideoGenerationOperation {
   sourceTransparentVideoDigest?: string;
 }
 
+export interface MediaLocalVideoGenerationOperation
+  extends Omit<
+    MediaLocalWanVideoGenerationOperation,
+    | "kind"
+    | "providerId"
+    | "modelId"
+    | "conv3dBackend"
+    | "conditioningMode"
+  > {
+  kind: "local-video-generation";
+  providerId: "local-video";
+  modelId:
+    | "local:framepack-i2v-hy-13b"
+    | "local:ltx-video-0.9.8-13b-distilled-fp8"
+    | "local:ltx-video-0.9.8-2b-distilled-fp8";
+  architecture: "framepack-i2v" | "ltx-video";
+  conv3dBackend:
+    | "aten-native-hip"
+    | "cudnn"
+    | "cpu-native"
+    | "mps-native";
+  conditioningMode:
+    | "framepack-inverted-anti-drifting-first-last"
+    | "ltx-native-first-last-keyframes"
+    | "ltx-native-first-last-keyframes-multiscale";
+  negativePromptApplied: boolean;
+}
+
 export interface MediaSubjectCutoutSummary {
   engine: "birefnet-matting-onnx-v1" | "border-matte-v1";
   modelId: "local:birefnet-matting" | "local:border-matte-v1";
@@ -1850,6 +1881,7 @@ export type MediaAssetOperation =
   | MediaLocalImageFlowOperation
   | MediaRemoteImageGenerationOperation
   | MediaLocalDiffusionGenerationOperation
+  | MediaLocalVideoGenerationOperation
   | MediaLocalWanVideoGenerationOperation
   | MediaRemoteImageEditOperation
   | MediaRemoteSvgGenerationOperation;
@@ -2228,7 +2260,11 @@ export interface GenerateMediaVideoRequest {
   flowName: string;
   planId: string;
   prompt: string;
-  modelId: "local:wan2.2-ti2v-5b";
+  modelId:
+    | "local:framepack-i2v-hy-13b"
+    | "local:ltx-video-0.9.8-13b-distilled-fp8"
+    | "local:ltx-video-0.9.8-2b-distilled-fp8"
+    | "local:wan2.2-ti2v-5b";
   modelLabel: string;
   diagnosticCount: number;
   workspaceRoot: string;

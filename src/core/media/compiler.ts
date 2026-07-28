@@ -495,7 +495,7 @@ export const createImageToVideoFlow = ({
     {
       providerPolicy: "local",
       modelPolicy: "quality",
-      modelId: "local:wan2.2-ti2v-5b",
+      modelId: "local:framepack-i2v-hy-13b",
       aspectRatio,
       durationSeconds: 2,
       resolution: "quality-640",
@@ -505,7 +505,7 @@ export const createImageToVideoFlow = ({
       fps: 16,
       numFrames: 33,
       numInferenceSteps: 30,
-      guidanceScale: 5,
+      guidanceScale: 9,
       seed: 0,
       negativePrompt: "",
       matteQuality: "production",
@@ -691,7 +691,7 @@ export const createGeneratedLoopVideoFlow = ({
     {
       providerPolicy: "local",
       modelPolicy: "quality",
-      modelId: "local:wan2.2-ti2v-5b",
+      modelId: "local:framepack-i2v-hy-13b",
       aspectRatio: "1:1",
       durationSeconds: 2,
       resolution: "quality-640",
@@ -701,7 +701,7 @@ export const createGeneratedLoopVideoFlow = ({
       fps: 16,
       numFrames: 33,
       numInferenceSteps: 30,
-      guidanceScale: 5,
+      guidanceScale: 9,
       seed: 0,
       negativePrompt: "",
       matteQuality: "production",
@@ -3001,10 +3001,28 @@ export const compileMediaFlow = ({
                 : "auto",
             ),
         );
-        return configuredId
-          ? candidates.find((candidate) => candidate.id === configuredId) ?? null
-          : candidates.find((candidate) => isMediaModelReady(candidate)) ??
-              candidates[0] ??
+        const modelPolicy =
+          videoTaskNode.config.modelPolicy === "fast" ||
+          videoTaskNode.config.modelPolicy === "balanced"
+            ? videoTaskNode.config.modelPolicy
+            : "quality";
+        const ranked = [...candidates].sort((left, right) => {
+          const score = (candidate: MediaModelDescriptor): number =>
+            modelPolicy === "fast"
+              ? candidate.speedScore
+              : modelPolicy === "balanced"
+                ? candidate.qualityScore + candidate.speedScore
+                : candidate.qualityScore;
+          return score(right) - score(left);
+        });
+        const configured = configuredId
+          ? ranked.find((candidate) => candidate.id === configuredId)
+          : null;
+        return configured && isMediaModelReady(configured)
+          ? configured
+          : ranked.find((candidate) => isMediaModelReady(candidate)) ??
+              configured ??
+              ranked[0] ??
               null;
       })()
     : null;
@@ -3078,7 +3096,7 @@ export const compileMediaFlow = ({
         code: "SOURCE_ASSET_REQUIRED",
         severity: "error",
         message:
-          "WAN generation requires exactly one first-frame and one last-frame image condition.",
+          "Video generation requires exactly one first-frame and one last-frame image condition.",
         nodeId: videoTaskNode.id,
         action:
           "Connect the same generated or published image to both frame ports for a closed loop, or choose distinct endpoints.",
@@ -3091,7 +3109,8 @@ export const compileMediaFlow = ({
         message:
           "No discovered image-to-video model matches the video node's execution policy.",
         nodeId: videoTaskNode.id,
-        action: "Scan the workspace models directory and choose Wan2.2 TI2V 5B.",
+        action:
+          "Scan the workspace models directory and choose a ready FramePack or lightweight LTX-Video variant.",
       });
     } else {
       const readinessGuidance = describeMediaModelReadiness(videoModel);
@@ -3106,6 +3125,8 @@ export const compileMediaFlow = ({
       }
     }
     const config = videoTaskNode.config;
+    const ltxVideo = videoModel?.architecture === "ltx-video";
+    const framepackVideo = videoModel?.architecture === "framepack-i2v";
     const sameEndpointSource =
       firstFrames[0] !== undefined &&
       lastFrames[0] !== undefined &&
@@ -3119,7 +3140,7 @@ export const compileMediaFlow = ({
     );
     for (const invalid of [
       config.generateAudio !== false
-        ? "Wan2.2 TI2V does not generate audio; disable audio."
+        ? "The local video adapter does not generate synchronized audio; disable audio."
         : null,
       hasVideoComposite && config.transparentBackground !== true
         ? "Animated background compositing requires transparent foreground extraction."
@@ -3132,10 +3153,12 @@ export const compileMediaFlow = ({
         : null,
       typeof config.numFrames !== "number" ||
       !Number.isInteger(config.numFrames) ||
-      config.numFrames < 17 ||
-      config.numFrames > 33 ||
-      (config.numFrames - 1) % 4 !== 0
-        ? "WAN source frames must be 17–33 in the required 4k+1 form."
+      config.numFrames < (ltxVideo ? 9 : 17) ||
+      config.numFrames > (ltxVideo ? 257 : framepackVideo ? 129 : 33) ||
+      (config.numFrames - 1) % (ltxVideo ? 8 : 4) !== 0
+        ? ltxVideo
+          ? "LTX-Video source frames must be 9–257 in the required 8k+1 form."
+          : `${framepackVideo ? "FramePack" : "WAN"} source frames must be 17–${framepackVideo ? 129 : 33} in the required 4k+1 form.`
         : null,
       typeof config.fps !== "number" ||
       !Number.isInteger(config.fps) ||
@@ -3146,24 +3169,24 @@ export const compileMediaFlow = ({
       !["preview-512", "quality-640", "quality-768"].includes(
         String(config.resolution),
       )
-        ? "Select a supported native WAN resolution profile."
+        ? "Select a supported native video resolution profile."
         : null,
       typeof config.numInferenceSteps !== "number" ||
       !Number.isInteger(config.numInferenceSteps) ||
       config.numInferenceSteps < 4 ||
       config.numInferenceSteps > 50
-        ? "WAN inference steps must be an integer from 4 through 50."
+        ? "Inference steps must be an integer from 4 through 50."
         : null,
       typeof config.guidanceScale !== "number" ||
       !Number.isFinite(config.guidanceScale) ||
       config.guidanceScale < 1 ||
       config.guidanceScale > 10
-        ? "WAN motion guidance must be from 1 through 10."
+        ? "Video motion guidance must be from 1 through 10."
         : null,
       typeof config.seed !== "number" ||
       !Number.isSafeInteger(config.seed) ||
       config.seed < 0
-        ? "WAN seed must be a JavaScript-safe non-negative integer."
+        ? "Video seed must be a JavaScript-safe non-negative integer."
         : null,
       !["fast", "balanced", "production"].includes(String(config.matteQuality))
         ? "Select a supported transparency quality profile."
@@ -3178,6 +3201,7 @@ export const compileMediaFlow = ({
       )
         ? "Select a supported memory profile."
         : null,
+      videoModel?.architecture === "wan-2.2-ti2v" &&
       config.experimentalLowMemory !== true
         ? "Acknowledge the experimental low-memory profile."
         : null,

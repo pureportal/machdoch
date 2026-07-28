@@ -1548,7 +1548,7 @@ export const MediaStudio = ({
     }
     const videoNode = videoNodes[0];
     if (!videoNode) {
-      return unavailable("The WAN video node is unavailable.");
+      return unavailable("The local video node is unavailable.");
     }
     const firstFrameEdge = resolvedFlow.edges.find(
       (edge) =>
@@ -1590,7 +1590,7 @@ export const MediaStudio = ({
         firstFrameNode.id !== lastFrameNode.id
       ) {
         return unavailable(
-          "Connected generation currently requires the same generated image output on both WAN endpoint ports.",
+          "Connected generation currently requires the same generated image output on both video endpoint ports.",
         );
       }
       const imageNode = resolvedFlow.nodes.find(
@@ -1632,7 +1632,7 @@ export const MediaStudio = ({
         )
       ) {
         return unavailable(
-          "Resolve a ready local image model and one PNG/WebP output upstream of both WAN endpoints.",
+          "Resolve a ready local image model and one PNG/WebP output upstream of both video endpoints.",
         );
       }
       imageModel = imageBinding.model;
@@ -1869,7 +1869,7 @@ export const MediaStudio = ({
       setFlowRunOverlayId(null);
       setFlowRevisionNotice(
         sourceAssetId
-          ? `Connected this image to both WAN endpoints as a ${aspectRatio} ${loopMode === "seamless" ? "closed seamless loop" : "one-way delivery that returns to the source pose; connect a distinct Last frame for progressive action"}. ${transparentBackground ? "Production alpha extraction is enabled because the source has verified cutout provenance." : "Opaque delivery is selected because the source does not have verified transparent-cutout provenance."}`
+          ? `Connected this image to both video endpoints as a ${aspectRatio} ${loopMode === "seamless" ? "closed seamless loop" : "one-way delivery that returns to the source pose; connect a distinct Last frame for progressive action"}. ${transparentBackground ? "Production alpha extraction is enabled because the source has verified cutout provenance." : "Opaque delivery is selected because the source does not have verified transparent-cutout provenance."}`
           : "Created a typed video draft. Connect reviewed first and last frames, then review motion, framing, and delivery settings before running.",
       );
       setState((current) => ({ ...current, activeSection: "flow" }));
@@ -2594,7 +2594,7 @@ export const MediaStudio = ({
     void persistFlowRevision(
       flow,
       layout,
-      "Pinned automatically for local WAN video execution",
+      "Pinned automatically for local video execution",
     )
       .then(async (revisionResult) => {
         if (
@@ -2649,7 +2649,25 @@ export const MediaStudio = ({
           videoConfig.memoryProfile === "maximum-speed"
             ? videoConfig.memoryProfile
             : "auto";
-        const runWan = (
+        const selectedVideoModelId = videoFlowExecution.videoModel.id;
+        if (
+          selectedVideoModelId !== "local:framepack-i2v-hy-13b" &&
+          selectedVideoModelId !==
+            "local:ltx-video-0.9.8-13b-distilled-fp8" &&
+          selectedVideoModelId !==
+            "local:ltx-video-0.9.8-2b-distilled-fp8" &&
+          selectedVideoModelId !== "local:wan2.2-ti2v-5b"
+        ) {
+          throw new Error(
+            "The resolved video model does not have an executable local adapter.",
+          );
+        }
+        const lightweightLtx =
+          selectedVideoModelId ===
+          "local:ltx-video-0.9.8-2b-distilled-fp8" ||
+          selectedVideoModelId ===
+          "local:ltx-video-0.9.8-13b-distilled-fp8";
+        const runVideo = (
           firstFrameAssetId: string,
           lastFrameAssetId: string,
         ) => {
@@ -2661,7 +2679,7 @@ export const MediaStudio = ({
             flowName: flow.name,
             planId: plan.id,
             prompt,
-            modelId: "local:wan2.2-ti2v-5b",
+            modelId: selectedVideoModelId,
             modelLabel: videoFlowExecution.videoModel.displayName,
             diagnosticCount: plan.diagnostics.length,
             workspaceRoot: normalizedWorkspaceRoot,
@@ -2680,15 +2698,19 @@ export const MediaStudio = ({
             numFrames:
               typeof videoConfig.numFrames === "number"
                 ? videoConfig.numFrames
-                : 17,
+                : 33,
             numInferenceSteps:
-              typeof videoConfig.numInferenceSteps === "number"
+              lightweightLtx
+                ? 8
+                : typeof videoConfig.numInferenceSteps === "number"
                 ? videoConfig.numInferenceSteps
-                : 20,
+                : 30,
             guidanceScale:
-              typeof videoConfig.guidanceScale === "number"
+              lightweightLtx
+                ? 1
+                : typeof videoConfig.guidanceScale === "number"
                 ? videoConfig.guidanceScale
-                : 5,
+                : 9,
             seed:
               typeof videoConfig.seed === "number"
                 ? videoConfig.seed
@@ -2749,7 +2771,7 @@ export const MediaStudio = ({
           setSelectedRun(null);
           setFlowRunOverlayId(imageRequest.runId);
           setFlowRevisionNotice(
-            `Generating the shared WAN endpoint with ${videoFlowExecution.imageModel.displayName}…`,
+            `Generating the shared video endpoint with ${videoFlowExecution.imageModel.displayName}…`,
           );
           const imageDetail = await generateMediaImages(imageRequest);
           const endpoint = imageDetail.assets.find(
@@ -2762,17 +2784,17 @@ export const MediaStudio = ({
             );
           }
           setFlowRevisionNotice(
-            "Endpoint frame published with alpha. Reusing its exact immutable asset id for both WAN conditions…",
+            "Endpoint frame published with alpha. Reusing its exact immutable asset id for both video conditions…",
           );
-          return runWan(endpoint.id, endpoint.id);
+          return runVideo(endpoint.id, endpoint.id);
         }
         if (
           !videoFlowExecution.firstFrameAssetId ||
           !videoFlowExecution.lastFrameAssetId
         ) {
-          throw new Error("The WAN endpoint assets are no longer available.");
+          throw new Error("The video endpoint assets are no longer available.");
         }
-        return runWan(
+        return runVideo(
           videoFlowExecution.firstFrameAssetId,
           videoFlowExecution.lastFrameAssetId,
         );

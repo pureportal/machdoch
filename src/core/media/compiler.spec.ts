@@ -56,7 +56,7 @@ const createFlow = (
   });
 };
 
-const createWanModel = (): MediaModelDescriptor => {
+const createLtxVideoModel = (): MediaModelDescriptor => {
   const localFlux = createMediaModelCatalog({
     isOpenAiConfigured: false,
     isLocalFluxInstalled: true,
@@ -66,10 +66,10 @@ const createWanModel = (): MediaModelDescriptor => {
   }
   return {
     ...localFlux,
-    id: "local:wan2.2-ti2v-5b",
-    providerId: "local-wan",
-    displayName: "Wan2.2 TI2V 5B",
-    family: "Wan2.2",
+    id: "local:ltx-video-0.9.8-13b-distilled-fp8",
+    providerId: "local-video",
+    displayName: "LTX-Video 0.9.8 13B Distilled FP8",
+    family: "LTX-Video 0.9.8",
     capabilities: [
       "text-to-video",
       "image-to-video",
@@ -78,13 +78,25 @@ const createWanModel = (): MediaModelDescriptor => {
       "alpha-video",
       "video-composite",
     ],
-    installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
-    architecture: "wan-2.2-ti2v",
+    installedRevision: "8984fa25007f376c1a299016d0957a37a2f797bb",
+    architecture: "ltx-video",
     addonCapabilities: [],
-    minVramGb: 24,
-    expectedDownloadGb: 33.9,
+    minVramGb: 16,
+    expectedDownloadGb: 38.8,
   };
 };
+
+const createFramepackVideoModel = (): MediaModelDescriptor => ({
+  ...createLtxVideoModel(),
+  id: "local:framepack-i2v-hy-13b",
+  displayName: "FramePack I2V HY 13B",
+  family: "FramePack",
+  installedRevision: "86cef4396041b6002c957852daac4c91aaa47c79",
+  architecture: "framepack-i2v",
+  minVramGb: 16,
+  expectedDownloadGb: 43,
+  qualityScore: 98,
+});
 
 const FLUX_LORA = {
   id: "addon:lora:flux-detail",
@@ -151,7 +163,7 @@ const SDXL_EMBEDDING = {
 } as const satisfies MediaModelAddonDescriptor;
 
 describe("media flow compiler", () => {
-  it("creates an executable protected WAN image-to-video flow", () => {
+  it("creates an executable hardware-adaptive FramePack image-to-video flow", () => {
     const flow = createImageToVideoFlow({
       id: "flow:image-to-video",
       createdAt: "2026-07-24T00:00:00.000Z",
@@ -160,7 +172,7 @@ describe("media flow compiler", () => {
     });
     const plan = compileMediaFlow({
       flow,
-      models: [createWanModel()],
+      models: [createFramepackVideoModel(), createLtxVideoModel()],
       compiledAt: "2026-07-24T00:01:00.000Z",
     });
 
@@ -181,7 +193,7 @@ describe("media flow compiler", () => {
       ]),
     );
     expect(plan.status).toBe("ready");
-    expect(plan.model?.id).toBe("local:wan2.2-ti2v-5b");
+    expect(plan.model?.id).toBe("local:framepack-i2v-hy-13b");
     expect(plan.steps).toContainEqual(
       expect.objectContaining({
         kind: "generate-video",
@@ -208,7 +220,7 @@ describe("media flow compiler", () => {
       transparentBackground: false,
       numFrames: 33,
       numInferenceSteps: 30,
-      guidanceScale: 5,
+      guidanceScale: 9,
       seed: 0,
       matteQuality: "production",
       encodingQuality: "lossless",
@@ -248,8 +260,8 @@ describe("media flow compiler", () => {
                 loopMode: "none",
                 fps: 24,
                 numFrames: 33,
-                numInferenceSteps: 24,
-                guidanceScale: 5.5,
+                numInferenceSteps: 10,
+                guidanceScale: 1,
                 seed: 7,
                 matteQuality: "production",
                 encodingQuality: "lossless",
@@ -269,7 +281,7 @@ describe("media flow compiler", () => {
     } satisfies MediaFlow;
     const qualityPlan = compileMediaFlow({
       flow: qualityFlow,
-      models: [createWanModel()],
+      models: [createLtxVideoModel()],
       compiledAt: "2026-07-24T00:01:00.000Z",
     });
     expect(qualityPlan.status).toBe("ready");
@@ -294,7 +306,7 @@ describe("media flow compiler", () => {
     expect(
       compileMediaFlow({
         flow: mismatchedOutput,
-        models: [createWanModel()],
+        models: [createLtxVideoModel()],
         compiledAt: "2026-07-24T00:01:30.000Z",
       }).diagnostics,
     ).toContainEqual(
@@ -330,7 +342,7 @@ describe("media flow compiler", () => {
     } satisfies MediaFlow;
     const invalidPlan = compileMediaFlow({
       flow: invalidSeamless,
-      models: [createWanModel()],
+      models: [createLtxVideoModel()],
       compiledAt: "2026-07-24T00:02:00.000Z",
     });
     expect(invalidPlan.status).toBe("blocked");

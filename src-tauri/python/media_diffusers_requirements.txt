@@ -4,6 +4,8 @@
 # Runtime assembly must install the matching official wheel before this file.
 diffusers==0.39.0
 transformers==5.13.0
+sentencepiece==0.2.2
+protobuf==7.35.1
 accelerate==1.14.0
 peft==0.19.1
 safetensors==0.8.0

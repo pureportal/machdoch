@@ -1905,6 +1905,94 @@ const VideoQualityPresetPanel = ({
   );
 };
 
+const VideoKeyframeReviewPanel = ({
+  firstFrame,
+  lastFrame,
+}: {
+  firstFrame: {
+    connected: boolean;
+    asset: MediaAssetRecord | null;
+  };
+  lastFrame: {
+    connected: boolean;
+    asset: MediaAssetRecord | null;
+  };
+}): JSX.Element => {
+  const reviewedAssetCount = new Set(
+    [firstFrame.asset?.id, lastFrame.asset?.id].filter(
+      (assetId): assetId is string => assetId !== undefined,
+    ),
+  ).size;
+  return (
+    <section
+    aria-labelledby="video-keyframe-review-heading"
+    className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3"
+  >
+    <div className="flex items-center justify-between gap-3">
+      <h3
+        id="video-keyframe-review-heading"
+        className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-100"
+      >
+        <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
+        Keyframe gate
+      </h3>
+      <span className="text-[9px] font-medium text-amber-300/70">
+        {firstFrame.connected && lastFrame.connected
+          ? firstFrame.asset && lastFrame.asset
+            ? `${reviewedAssetCount} reviewed asset${reviewedAssetCount === 1 ? "" : "s"}`
+            : "runtime sources"
+          : "incomplete"}
+      </span>
+    </div>
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      {[
+        { label: "First frame", frame: firstFrame },
+        { label: "Last frame", frame: lastFrame },
+      ].map(({ label, frame }) => (
+        <div
+          key={label}
+          className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/55"
+        >
+          <div className="aspect-video bg-black/30">
+            {frame.asset ? (
+              <MediaAssetThumbnail
+                asset={frame.asset}
+                alt={`${label} quality review`}
+                className="object-contain"
+              />
+            ) : (
+              <span className="flex h-full items-center justify-center px-2 text-center text-[9px] text-slate-600">
+                {frame.connected ? "Generated at run time" : "Not connected"}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-800 px-2 py-1.5">
+            <span className="text-[9px] font-medium text-slate-400">{label}</span>
+            {frame.asset ? (
+              <span className="text-[8px] tabular-nums text-slate-600">
+                {frame.asset.width} x {frame.asset.height}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+    <p className="mt-2 text-[9px] leading-4 text-slate-500">
+      WAN follows both keys closely and restores the final key exactly. Inspect
+      face, hands, limb count, costume, and framing at full size before a quality
+      run; defects in either key become animation defects.
+    </p>
+    {firstFrame.asset &&
+    lastFrame.asset &&
+    firstFrame.asset.digest === lastFrame.asset.digest ? (
+      <p className="mt-1.5 text-[9px] leading-4 text-emerald-300/75">
+        Matching endpoint pixels are suitable for a seamless loop.
+      </p>
+    ) : null}
+    </section>
+  );
+};
+
 const NodeInspector = ({
   node,
   flow,
@@ -1961,10 +2049,34 @@ const NodeInspector = ({
     (diagnostic) =>
       diagnostic.nodeId === node.id && diagnostic.severity !== "info",
   );
-  const resolvedNode = useMemo(
-    () => resolveMediaFlowVariables(flow).flow.nodes.find((entry) => entry.id === node.id) ?? node,
-    [flow, node],
+  const resolvedFlow = useMemo(
+    () => resolveMediaFlowVariables(flow).flow,
+    [flow],
   );
+  const resolvedNode = useMemo(
+    () => resolvedFlow.nodes.find((entry) => entry.id === node.id) ?? node,
+    [node, resolvedFlow.nodes],
+  );
+  const videoKeyframes =
+    node.type === "task.generate-video"
+      ? (["first-frame", "last-frame"] as const).map((portId) => {
+          const edge = incoming.find((entry) => entry.toPortId === portId);
+          const source = edge
+            ? resolvedFlow.nodes.find((entry) => entry.id === edge.fromNodeId)
+            : null;
+          const assetId =
+            source?.type === "source.image" &&
+            typeof source.config.assetId === "string"
+              ? source.config.assetId
+              : null;
+          return {
+            connected: edge !== undefined,
+            asset: assetId
+              ? (assets.find((asset) => asset.id === assetId) ?? null)
+              : null,
+          };
+        })
+      : null;
   const validationIssues = validateMediaFlowNode(resolvedNode);
   const visibleFields = definition
     ? listVisibleMediaNodeFields(definition, node.config, activeGroup)
@@ -2053,10 +2165,20 @@ const NodeInspector = ({
         {definition ? (
           <>
             {node.type === "task.generate-video" && onNodeConfigPatch ? (
-              <VideoQualityPresetPanel
-                config={node.config}
-                onApply={(values) => onNodeConfigPatch(node.id, values)}
-              />
+              <>
+                <VideoKeyframeReviewPanel
+                  firstFrame={
+                    videoKeyframes?.[0] ?? { connected: false, asset: null }
+                  }
+                  lastFrame={
+                    videoKeyframes?.[1] ?? { connected: false, asset: null }
+                  }
+                />
+                <VideoQualityPresetPanel
+                  config={node.config}
+                  onApply={(values) => onNodeConfigPatch(node.id, values)}
+                />
+              </>
             ) : null}
             {groups.length > 1 ? (
               <div

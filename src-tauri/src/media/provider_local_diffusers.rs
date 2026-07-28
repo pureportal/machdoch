@@ -41,6 +41,7 @@ const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
 // display driver reserves VRAM. Keep the bounded CPU-offload profile honest
 // while accepting those adapters instead of requiring a full 16 GiB report.
 const MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES: u64 = 15 * 1_024 * 1_024 * 1_024;
+const MIN_FRAMEPACK_MEMORY_BYTES: u64 = 6 * 1_024 * 1_024 * 1_024;
 static RUNTIME_PROBE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PREFERRED_HIP_VISIBLE_DEVICE: OnceLock<String> = OnceLock::new();
 
@@ -319,6 +320,7 @@ struct WorkerVideoGenerationResponse {
     device: String,
     device_label: String,
     device_memory_bytes: Option<u64>,
+    architecture: String,
     #[serde(default)]
     performance: Option<serde_json::Value>,
     conv3d_backend: String,
@@ -331,8 +333,14 @@ struct WorkerVideoGenerationResponse {
     loop_endpoint_restoration: Option<serde_json::Value>,
     prompt: String,
     negative_prompt: String,
+    #[serde(default)]
+    negative_prompt_applied: bool,
     resolution: String,
+    #[serde(default)]
+    requested_guidance_scale: Option<f64>,
     guidance_scale: f64,
+    #[serde(default)]
+    requested_num_inference_steps: Option<u32>,
     num_inference_steps: u32,
     transparent_background: bool,
     model_revision: String,
@@ -443,6 +451,7 @@ pub(crate) struct LocalGeneratedVideo {
     pub(crate) device: String,
     pub(crate) device_label: String,
     pub(crate) device_memory_bytes: Option<u64>,
+    pub(crate) architecture: String,
     pub(crate) performance: Option<serde_json::Value>,
     pub(crate) conv3d_backend: String,
     pub(crate) conditioning_mode: String,
@@ -453,6 +462,7 @@ pub(crate) struct LocalGeneratedVideo {
     pub(crate) model_digest: String,
     pub(crate) prompt: String,
     pub(crate) negative_prompt: String,
+    pub(crate) negative_prompt_applied: bool,
     pub(crate) resolution: String,
     pub(crate) guidance_scale: f64,
     pub(crate) num_inference_steps: u32,
@@ -2140,7 +2150,383 @@ pub(crate) fn generate(
     })
 }
 
+const LTX_MODEL_REVISION: &str = "8984fa25007f376c1a299016d0957a37a2f797bb";
+const LTX_13B_CONFIG_REVISION: &str = "7c64400e1861cc0d7b98d570a1926d5408ec60cd";
+const LTX_UPSCALER_REVISION: &str = "c96c168c2bd8bbc82c9fe8259e5f89f8b2ea293f";
+const LTX_13B_MODEL_ID: &str = "local:ltx-video-0.9.8-13b-distilled-fp8";
+const LTX_2B_MODEL_ID: &str = "local:ltx-video-0.9.8-2b-distilled-fp8";
+const FRAMEPACK_MODEL_REVISION: &str = "86cef4396041b6002c957852daac4c91aaa47c79";
+const FRAMEPACK_BASE_REVISION: &str = "e8c2aaa66fe3742a32c11a6766aecbf07c56e773";
+const FRAMEPACK_IMAGE_REVISION: &str = "45b801affc54ff2af4e5daf1b282e0921901db87";
+const FRAMEPACK_MODEL_ID: &str = "local:framepack-i2v-hy-13b";
 const WAN_MODEL_REVISION: &str = "b8fff7315c768468a5333511427288870b2e9635";
+
+fn framepack_download_identity(
+    model_root: &Path,
+    relative: &Path,
+    expected_revision: &str,
+) -> MediaResult<String> {
+    let relative = relative
+        .to_str()
+        .ok_or_else(|| "FramePack component path is not valid Unicode".to_string())?
+        .replace('\\', "/");
+    let (metadata_root, metadata_component) =
+        if let Some(transformer_relative) = relative.strip_prefix("transformer/") {
+            (
+                safe_managed_path(model_root, "transformer")?,
+                transformer_relative,
+            )
+        } else {
+            (model_root.to_path_buf(), relative.as_str())
+        };
+    let metadata_relative = format!(".cache/huggingface/download/{metadata_component}.metadata");
+    let metadata_path = safe_managed_path(&metadata_root, &metadata_relative).map_err(|_| {
+        format!("FramePack component {relative} has no pinned Hugging Face download metadata")
+    })?;
+    let metadata = fs::symlink_metadata(&metadata_path)
+        .map_err(|error| format!("failed to inspect FramePack metadata for {relative}: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 4_096 {
+        return Err(format!(
+            "FramePack download metadata for {relative} is unsafe or invalid"
+        ));
+    }
+    let encoded = fs::read_to_string(&metadata_path)
+        .map_err(|error| format!("failed to read FramePack metadata for {relative}: {error}"))?;
+    let mut lines = encoded.lines().map(str::trim);
+    let revision = lines.next().unwrap_or("");
+    let content_identity = lines.next().unwrap_or("");
+    if revision != expected_revision {
+        return Err(format!(
+            "FramePack component {relative} came from revision {revision}; expected {expected_revision}"
+        ));
+    }
+    if !matches!(content_identity.len(), 40 | 64)
+        || !content_identity
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "FramePack component {relative} has invalid download content identity"
+        ));
+    }
+    Ok(content_identity.to_ascii_lowercase())
+}
+
+fn ltx_download_identity(
+    model_root: &Path,
+    relative: &Path,
+    expected_revision: &str,
+) -> MediaResult<String> {
+    let relative = relative
+        .to_str()
+        .ok_or_else(|| "LTX-Video component path is not valid Unicode".to_string())?
+        .replace('\\', "/");
+    let (metadata_root, metadata_component) =
+        if let Some(upscaler_relative) = relative.strip_prefix("spatial_upscaler/") {
+            (
+                safe_managed_path(model_root, "spatial_upscaler")?,
+                upscaler_relative,
+            )
+        } else {
+            (model_root.to_path_buf(), relative.as_str())
+        };
+    let metadata_relative = format!(".cache/huggingface/download/{metadata_component}.metadata");
+    let metadata_path = safe_managed_path(&metadata_root, &metadata_relative).map_err(|_| {
+        format!("LTX-Video component {relative} has no pinned Hugging Face download metadata")
+    })?;
+    let metadata = fs::symlink_metadata(&metadata_path)
+        .map_err(|error| format!("failed to inspect LTX-Video metadata for {relative}: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 4_096 {
+        return Err(format!(
+            "LTX-Video download metadata for {relative} is unsafe or invalid"
+        ));
+    }
+    let encoded = fs::read_to_string(&metadata_path)
+        .map_err(|error| format!("failed to read LTX-Video metadata for {relative}: {error}"))?;
+    let mut lines = encoded.lines().map(str::trim);
+    let revision = lines.next().unwrap_or("");
+    let content_identity = lines.next().unwrap_or("");
+    if revision != expected_revision {
+        return Err(format!(
+            "LTX-Video component {relative} came from revision {revision}; expected {expected_revision}"
+        ));
+    }
+    if !matches!(content_identity.len(), 40 | 64)
+        || !content_identity
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "LTX-Video component {relative} has invalid download content identity"
+        ));
+    }
+    Ok(content_identity.to_ascii_lowercase())
+}
+
+fn ltx_index_shards(model_root: &Path, relative_index: &str) -> MediaResult<Vec<PathBuf>> {
+    let index_path = safe_managed_path(model_root, relative_index)?;
+    let encoded = fs::read(&index_path).map_err(|error| {
+        format!("failed to read LTX-Video model index {relative_index}: {error}")
+    })?;
+    let index = serde_json::from_slice::<serde_json::Value>(&encoded)
+        .map_err(|error| format!("LTX-Video model index {relative_index} is invalid: {error}"))?;
+    let weight_map = index
+        .get("weight_map")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| format!("LTX-Video model index {relative_index} has no weight_map"))?;
+    let parent = Path::new(relative_index)
+        .parent()
+        .ok_or_else(|| format!("LTX-Video model index {relative_index} has no parent"))?;
+    let mut shards = weight_map
+        .values()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| {
+                    format!("LTX-Video model index {relative_index} has an invalid shard")
+                })
+                .and_then(|name| {
+                    safe_managed_path(model_root, parent.join(name).to_string_lossy().as_ref())
+                })
+        })
+        .collect::<MediaResult<Vec<_>>>()?;
+    shards.sort();
+    shards.dedup();
+    if shards.is_empty() || shards.len() > 64 {
+        return Err(format!(
+            "LTX-Video model index {relative_index} has an invalid shard inventory"
+        ));
+    }
+    Ok(shards)
+}
+
+fn framepack_index_shards(model_root: &Path, relative_index: &str) -> MediaResult<Vec<PathBuf>> {
+    let index_path = safe_managed_path(model_root, relative_index)?;
+    let encoded = fs::read(&index_path).map_err(|error| {
+        format!("failed to read FramePack model index {relative_index}: {error}")
+    })?;
+    let index = serde_json::from_slice::<serde_json::Value>(&encoded)
+        .map_err(|error| format!("FramePack model index {relative_index} is invalid: {error}"))?;
+    let weight_map = index
+        .get("weight_map")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| format!("FramePack model index {relative_index} has no weight_map"))?;
+    let parent = Path::new(relative_index)
+        .parent()
+        .ok_or_else(|| format!("FramePack model index {relative_index} has no parent"))?;
+    let mut shards = weight_map
+        .values()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| {
+                    format!("FramePack model index {relative_index} has an invalid shard")
+                })
+                .and_then(|name| {
+                    safe_managed_path(model_root, parent.join(name).to_string_lossy().as_ref())
+                })
+        })
+        .collect::<MediaResult<Vec<_>>>()?;
+    shards.sort();
+    shards.dedup();
+    if shards.is_empty() || shards.len() > 64 {
+        return Err(format!(
+            "FramePack model index {relative_index} has an invalid shard inventory"
+        ));
+    }
+    Ok(shards)
+}
+
+fn resolve_framepack_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
+    let workspace = crate::runtime_snapshot::resolve_workspace_root_path(workspace_root)?;
+    let models_root = fs::canonicalize(workspace.join("models"))
+        .map_err(|error| format!("failed to resolve workspace models directory: {error}"))?;
+    let model_root = super::model_discovery::resolve_workspace_diffusers_package(
+        workspace_root,
+        "framepack-i2v",
+        Some("framepack-i2v-hy"),
+    )?;
+    if !model_root.starts_with(&models_root) {
+        return Err("FramePack model path escapes the workspace models directory".to_string());
+    }
+    let model_index_path = safe_managed_path(&model_root, "model_index.json")?;
+    let model_index = fs::read(&model_index_path)
+        .map_err(|error| format!("failed to read FramePack model_index.json: {error}"))?;
+    let model_index_value = serde_json::from_slice::<serde_json::Value>(&model_index)
+        .map_err(|error| format!("FramePack model_index.json is invalid: {error}"))?;
+    if model_index_value
+        .get("_class_name")
+        .and_then(serde_json::Value::as_str)
+        != Some("HunyuanVideoPipeline")
+    {
+        return Err(
+            "FramePack package does not declare the expected HunyuanVideoPipeline base".to_string(),
+        );
+    }
+    let mut files = vec![
+        model_index_path,
+        safe_managed_path(&model_root, "scheduler/scheduler_config.json")?,
+        safe_managed_path(&model_root, "text_encoder/config.json")?,
+        safe_managed_path(&model_root, "text_encoder/model.safetensors.index.json")?,
+        safe_managed_path(&model_root, "text_encoder_2/config.json")?,
+        safe_managed_path(&model_root, "text_encoder_2/model.safetensors")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer.json")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer_config.json")?,
+        safe_managed_path(&model_root, "tokenizer_2/merges.txt")?,
+        safe_managed_path(&model_root, "tokenizer_2/tokenizer_config.json")?,
+        safe_managed_path(&model_root, "tokenizer_2/vocab.json")?,
+        safe_managed_path(&model_root, "transformer/config.json")?,
+        safe_managed_path(
+            &model_root,
+            "transformer/diffusion_pytorch_model.safetensors.index.json",
+        )?,
+        safe_managed_path(&model_root, "vae/config.json")?,
+        safe_managed_path(&model_root, "vae/diffusion_pytorch_model.safetensors")?,
+        safe_managed_path(&model_root, "feature_extractor/preprocessor_config.json")?,
+        safe_managed_path(&model_root, "image_encoder/config.json")?,
+        safe_managed_path(&model_root, "image_encoder/model.safetensors")?,
+    ];
+    files.extend(framepack_index_shards(
+        &model_root,
+        "text_encoder/model.safetensors.index.json",
+    )?);
+    files.extend(framepack_index_shards(
+        &model_root,
+        "transformer/diffusion_pytorch_model.safetensors.index.json",
+    )?);
+    files.sort();
+    files.dedup();
+    let mut hasher = Sha256::new();
+    hasher.update(b"machdoch-framepack-i2v-hy-inventory-v1\0");
+    let mut verified_bytes = 0_u64;
+    for path in files {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("FramePack model package is incomplete: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "FramePack package contains an unsafe or empty component: {}",
+                path.display()
+            ));
+        }
+        let relative = path
+            .strip_prefix(&model_root)
+            .map_err(|_| "FramePack component escaped its model package".to_string())?;
+        let expected_revision = if relative.starts_with("transformer") {
+            FRAMEPACK_MODEL_REVISION
+        } else if relative.starts_with("feature_extractor") || relative.starts_with("image_encoder")
+        {
+            FRAMEPACK_IMAGE_REVISION
+        } else {
+            FRAMEPACK_BASE_REVISION
+        };
+        let identity = framepack_download_identity(&model_root, relative, expected_revision)?;
+        verified_bytes = verified_bytes.saturating_add(metadata.len());
+        hasher.update(relative.to_string_lossy().replace('\\', "/").as_bytes());
+        hasher.update(metadata.len().to_le_bytes());
+        hasher.update(identity.as_bytes());
+    }
+    if verified_bytes < 38 * 1_024 * 1_024 * 1_024 {
+        return Err(format!(
+            "FramePack package is incomplete: verified components total only {:.2} GiB",
+            verified_bytes as f64 / 1_024_f64.powi(3)
+        ));
+    }
+    Ok((model_root, format!("sha256:{:x}", hasher.finalize())))
+}
+
+fn resolve_ltx_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
+    let workspace = crate::runtime_snapshot::resolve_workspace_root_path(workspace_root)?;
+    let models_root = fs::canonicalize(workspace.join("models"))
+        .map_err(|error| format!("failed to resolve workspace models directory: {error}"))?;
+    let model_root = super::model_discovery::resolve_workspace_diffusers_package(
+        workspace_root,
+        "ltx-video",
+        Some("ltx-video-0.9.8"),
+    )?;
+    if !model_root.starts_with(&models_root) {
+        return Err("LTX-Video model path escapes the workspace models directory".to_string());
+    }
+    let model_index_path = safe_managed_path(&model_root, "model_index.json")?;
+    let model_index = fs::read(&model_index_path)
+        .map_err(|error| format!("failed to read LTX-Video model_index.json: {error}"))?;
+    let model_index_value = serde_json::from_slice::<serde_json::Value>(&model_index)
+        .map_err(|error| format!("LTX-Video model_index.json is invalid: {error}"))?;
+    if !matches!(
+        model_index_value
+            .get("_class_name")
+            .and_then(serde_json::Value::as_str),
+        Some("LTXPipeline") | Some("LTXConditionPipeline")
+    ) {
+        return Err("LTX-Video package does not declare an expected pipeline class".to_string());
+    }
+    let mut files = vec![
+        model_index_path,
+        safe_managed_path(&model_root, "scheduler/scheduler_config.json")?,
+        safe_managed_path(&model_root, "spatial_upscaler/model_index.json")?,
+        safe_managed_path(&model_root, "spatial_upscaler/latent_upsampler/config.json")?,
+        safe_managed_path(
+            &model_root,
+            "spatial_upscaler/latent_upsampler/diffusion_pytorch_model.safetensors",
+        )?,
+        safe_managed_path(&model_root, "text_encoder/config.json")?,
+        safe_managed_path(&model_root, "text_encoder/model.safetensors.index.json")?,
+        safe_managed_path(&model_root, "tokenizer/added_tokens.json")?,
+        safe_managed_path(&model_root, "tokenizer/special_tokens_map.json")?,
+        safe_managed_path(&model_root, "tokenizer/spiece.model")?,
+        safe_managed_path(&model_root, "tokenizer/tokenizer_config.json")?,
+        safe_managed_path(&model_root, "transformer/config.json")?,
+        safe_managed_path(&model_root, "transformer-13b/config.json")?,
+        safe_managed_path(&model_root, "vae/config.json")?,
+        safe_managed_path(&model_root, "vae/diffusion_pytorch_model.safetensors")?,
+        safe_managed_path(&model_root, "ltxv-2b-0.9.8-distilled-fp8.safetensors")?,
+        safe_managed_path(&model_root, "ltxv-13b-0.9.8-distilled-fp8.safetensors")?,
+        safe_managed_path(&model_root, "LTX-Video-Open-Weights-License-0.X.txt")?,
+    ];
+    files.extend(ltx_index_shards(
+        &model_root,
+        "text_encoder/model.safetensors.index.json",
+    )?);
+    files.sort();
+    files.dedup();
+    let mut hasher = Sha256::new();
+    hasher.update(LTX_MODEL_REVISION.as_bytes());
+    let mut verified_bytes = 0_u64;
+    for path in files {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("LTX-Video model package is incomplete: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "LTX-Video package contains an unsafe or empty component: {}",
+                path.display()
+            ));
+        }
+        let relative = path
+            .strip_prefix(&model_root)
+            .map_err(|_| "LTX-Video component escaped its model package".to_string())?;
+        let expected_revision = if relative.starts_with("spatial_upscaler") {
+            LTX_UPSCALER_REVISION
+        } else if matches!(
+            relative.to_str(),
+            Some("transformer-13b/config.json") | Some("scheduler/scheduler_config.json")
+        ) {
+            LTX_13B_CONFIG_REVISION
+        } else {
+            LTX_MODEL_REVISION
+        };
+        let identity = ltx_download_identity(&model_root, relative, expected_revision)?;
+        verified_bytes = verified_bytes.saturating_add(metadata.len());
+        hasher.update(relative.to_string_lossy().replace('\\', "/").as_bytes());
+        hasher.update(metadata.len().to_le_bytes());
+        hasher.update(identity.as_bytes());
+    }
+    if verified_bytes < 35 * 1_024 * 1_024 * 1_024 {
+        return Err(format!(
+            "LTX-Video package is incomplete: verified components total only {:.2} GiB",
+            verified_bytes as f64 / 1_024_f64.powi(3)
+        ));
+    }
+    Ok((model_root, format!("sha256:{:x}", hasher.finalize())))
+}
 
 fn wan_download_identity(model_root: &Path, relative: &Path) -> MediaResult<String> {
     let relative = relative
@@ -2385,8 +2771,23 @@ pub(crate) fn generate_video(
 ) -> MediaResult<LocalGeneratedVideo> {
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
+    let (architecture, model_revision, model_path, model_digest) = match request.model_id.as_str() {
+        FRAMEPACK_MODEL_ID => {
+            let (path, digest) = resolve_framepack_model(&request.workspace_root)?;
+            ("framepack-i2v", FRAMEPACK_MODEL_REVISION, path, digest)
+        }
+        LTX_13B_MODEL_ID | LTX_2B_MODEL_ID => {
+            let (path, digest) = resolve_ltx_model(&request.workspace_root)?;
+            ("ltx-video", LTX_MODEL_REVISION, path, digest)
+        }
+        "local:wan2.2-ti2v-5b" => {
+            let (path, digest) = resolve_wan_model(&request.workspace_root)?;
+            ("wan-2.2-ti2v", WAN_MODEL_REVISION, path, digest)
+        }
+        _ => return Err("The selected model is not an executable local video variant".to_string()),
+    };
     if !runtime.ready
-        || !runtime.architectures.contains(&"wan-2.2-ti2v".to_string())
+        || !runtime.architectures.contains(&architecture.to_string())
         || !runtime.capabilities.contains(&"image-to-video".to_string())
         || !runtime
             .capabilities
@@ -2398,27 +2799,39 @@ pub(crate) fn generate_video(
                 .contains(&"video-composite".to_string()))
     {
         return Err(format!(
-            "The local WAN runtime is not ready: {}",
+            "The local video runtime is not ready: {}",
             runtime.diagnostic
         ));
     }
-    if runtime
-        .device_memory_bytes
-        .is_some_and(|bytes| bytes < MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES)
+    if request.model_id == LTX_13B_MODEL_ID
+        && (runtime.device.as_deref() == Some("cpu")
+            || runtime
+                .device_memory_bytes
+                .is_some_and(|bytes| bytes < MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES))
     {
         return Err(
-            "The bounded experimental WAN preview requires a nominal 16 GB adapter (at least 15 GiB reported usable); the official profile requires 24 GiB."
+            "LTX-Video 13B requires a nominal 16 GB GPU; select the 2B variant on this hardware."
                 .to_string(),
         );
     }
-    let (model_path, model_digest) = resolve_wan_model(&request.workspace_root)?;
+    if request.model_id == FRAMEPACK_MODEL_ID
+        && (runtime.device.as_deref() == Some("cpu")
+            || runtime
+                .device_memory_bytes
+                .is_some_and(|bytes| bytes < MIN_FRAMEPACK_MEMORY_BYTES))
+    {
+        return Err(
+            "FramePack 13B requires a bfloat16 GPU with at least 6 GiB usable memory; select LTX-Video 2B on this hardware."
+                .to_string(),
+        );
+    }
     let staging = create_staging_directory(paths)?;
     let input_directory = staging.0.join("input");
     let output_directory = staging.0.join("output");
     fs::create_dir(&input_directory)
-        .map_err(|error| format!("failed to prepare WAN input staging: {error}"))?;
+        .map_err(|error| format!("failed to prepare video input staging: {error}"))?;
     fs::create_dir(&output_directory)
-        .map_err(|error| format!("failed to prepare WAN output staging: {error}"))?;
+        .map_err(|error| format!("failed to prepare video output staging: {error}"))?;
     let (first_source, first_frame_path) = stage_wan_frame(
         paths,
         &input_directory,
@@ -2435,11 +2848,11 @@ pub(crate) fn generate_video(
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
             id: &request.model_id,
-            architecture: "wan-2.2-ti2v",
+            architecture,
             package_kind: "diffusers-directory",
             path: &model_path,
             config_path: None,
-            revision: WAN_MODEL_REVISION,
+            revision: model_revision,
             digest: &model_digest,
         },
         prompt: &request.prompt,
@@ -2463,7 +2876,7 @@ pub(crate) fn generate_video(
         output_directory: &output_directory,
     };
     let encoded = serde_json::to_vec(&worker_request)
-        .map_err(|error| format!("failed to encode the local WAN request: {error}"))?;
+        .map_err(|error| format!("failed to encode the local video request: {error}"))?;
     let output = run_worker(
         &python,
         &script,
@@ -2483,15 +2896,28 @@ pub(crate) fn generate_video(
         ("quality-640", "9:16") => (352, 640),
         ("quality-640", "21:9") => (640, 288),
         ("quality-768", "1:1") => (640, 640),
+        ("quality-768", "16:9") if architecture == "ltx-video" => (768, 448),
+        ("quality-768", "9:16") if architecture == "ltx-video" => (448, 768),
+        ("quality-768", "21:9") if architecture == "ltx-video" => (768, 320),
         ("quality-768", "16:9") => (768, 432),
         ("quality-768", "9:16") => (432, 768),
         ("quality-768", "21:9") => (768, 336),
-        _ => unreachable!("validated WAN resolution and aspect ratio"),
+        _ => unreachable!("validated video resolution and aspect ratio"),
     };
     let expected_frame_count = if request.loop_mode == "ping-pong" {
         request.num_frames * 2 - 1
     } else {
         request.num_frames
+    };
+    let expected_conditioning_mode = match architecture {
+        "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
+        "ltx-video"
+            if request.model_id == LTX_13B_MODEL_ID && request.resolution != "preview-512" =>
+        {
+            "ltx-native-first-last-keyframes-multiscale"
+        }
+        "ltx-video" => "ltx-native-first-last-keyframes",
+        _ => "first-last-temporal-context-lock-v3",
     };
     let expects_loop_seam = request.loop_mode != "none";
     if response.worker_version != runtime.worker_version.as_deref().unwrap_or("")
@@ -2499,15 +2925,28 @@ pub(crate) fn generate_video(
         || response.device != runtime.device.as_deref().unwrap_or("")
         || response.device_label != runtime.device_label.as_deref().unwrap_or("")
         || response.device_memory_bytes != runtime.device_memory_bytes
+        || response.architecture != architecture
         || response.performance.is_none()
         || response.prompt != request.prompt
         || (!request.negative_prompt.is_empty()
             && response.negative_prompt != request.negative_prompt)
         || response.resolution != request.resolution
-        || response.guidance_scale != request.guidance_scale
-        || response.num_inference_steps != request.num_inference_steps
+        || response.requested_guidance_scale != Some(request.guidance_scale)
+        || response.guidance_scale
+            != if architecture == "ltx-video" {
+                1.0
+            } else {
+                request.guidance_scale
+            }
+        || response.requested_num_inference_steps != Some(request.num_inference_steps)
+        || response.num_inference_steps
+            != if architecture == "ltx-video" {
+                8
+            } else {
+                request.num_inference_steps
+            }
         || response.transparent_background != request.transparent_background
-        || response.model_revision != WAN_MODEL_REVISION
+        || response.model_revision != model_revision
         || response.model_digest != model_digest
         || response.output.index != 0
         || response.output.file_name != "output-0000.webm"
@@ -2536,17 +2975,67 @@ pub(crate) fn generate_video(
         || response.output.container != "webm"
         || !matches!(
             response.conv3d_backend.as_str(),
-            "aten-native-hip" | "cudnn"
+            "aten-native-hip" | "cudnn" | "cpu-native" | "mps-native"
         )
-        || response.conditioning_mode != "first-last-temporal-context-lock-v3"
+        || response.conditioning_mode != expected_conditioning_mode
+        || response.negative_prompt_applied != (architecture == "wan-2.2-ti2v")
         || !response.output.duration_seconds.is_finite()
     {
         return Err(
-            "local WAN generation returned inconsistent alpha, loop, model, or runtime evidence"
+            "local video generation returned inconsistent alpha, loop, model, or runtime evidence"
                 .to_string(),
         );
     }
-    if first_source.digest == last_source.digest {
+    let memory_evidence = response
+        .performance
+        .as_ref()
+        .and_then(|performance| performance.get("gpuMemory"))
+        .ok_or_else(|| "local video generation omitted GPU lifecycle evidence".to_string())?;
+    let timing_seconds = response
+        .performance
+        .as_ref()
+        .and_then(|performance| performance.get("timingSeconds"))
+        .and_then(|timing| timing.get("total"))
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| "local video generation omitted runtime timing evidence".to_string())?;
+    if !timing_seconds.is_finite() || timing_seconds <= 0.0 {
+        return Err("local video generation returned invalid runtime timing evidence".to_string());
+    }
+    if memory_evidence
+        .get("processIsolation")
+        .and_then(serde_json::Value::as_str)
+        != Some("one-generation-per-process")
+    {
+        return Err(
+            "local video generation did not prove one-generation-per-process isolation".to_string(),
+        );
+    }
+    if response.device == "cuda" {
+        let peak = memory_evidence
+            .get("peakAllocatedBytes")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| "local video generation omitted peak GPU allocation".to_string())?;
+        let released = memory_evidence
+            .get("postReleaseAllocatedBytes")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| {
+                "local video generation omitted post-release GPU allocation".to_string()
+            })?;
+        if peak == 0 || released >= peak || released > 1_024 * 1_024 * 1_024 {
+            return Err(
+                "local video generation did not release model allocations before returning"
+                    .to_string(),
+            );
+        }
+    }
+    if architecture != "wan-2.2-ti2v" {
+        if response.endpoint_restoration.is_some() || response.loop_endpoint_restoration.is_some() {
+            return Err(
+                "native video conditioning returned legacy endpoint-restoration evidence"
+                    .to_string(),
+            );
+        }
+    } else if first_source.digest == last_source.digest {
         if response.endpoint_restoration.is_some()
             || (request.loop_mode == "seamless") != response.loop_endpoint_restoration.is_some()
         {
@@ -2700,6 +3189,7 @@ pub(crate) fn generate_video(
         device: response.device,
         device_label: response.device_label,
         device_memory_bytes: response.device_memory_bytes,
+        architecture: response.architecture,
         performance: response.performance,
         conv3d_backend: response.conv3d_backend,
         conditioning_mode: response.conditioning_mode,
@@ -2710,6 +3200,7 @@ pub(crate) fn generate_video(
         model_digest: response.model_digest,
         prompt: response.prompt,
         negative_prompt: response.negative_prompt,
+        negative_prompt_applied: response.negative_prompt_applied,
         resolution: response.resolution,
         guidance_scale: response.guidance_scale,
         num_inference_steps: response.num_inference_steps,

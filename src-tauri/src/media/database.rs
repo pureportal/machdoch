@@ -3186,7 +3186,7 @@ pub(crate) fn begin_local_wan_generation(
                output_count, diagnostic_count, progress, current_step, executor, aspect_ratio,
                plan_snapshot_json, flow_revision_id
              ) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?5, ?6, ?7, 'local',
-               ?8, ?9, 0.04, 'Validating WAN model and endpoint frames', 'local-wan-video', ?10, ?11, ?12)",
+               ?8, ?9, 0.04, 'Validating local video model and endpoint frames', 'local-video', ?10, ?11, ?12)",
             params![
                 request.run_id,
                 request.flow_id,
@@ -3210,7 +3210,7 @@ pub(crate) fn begin_local_wan_generation(
             &request.flow_id,
             Some(&request.flow_revision_id),
             &request.plan_id,
-            "local-wan-video",
+            "local-video",
         )?;
         transaction
             .commit()
@@ -3245,10 +3245,10 @@ pub(crate) fn begin_local_wan_generation(
         &request.run_id,
         "worker_prepared",
         &format!(
-            "The exact workspace WAN revision, immutable first and last frames, bounded 4k+1 frame contract, {delivery_contract}, optional animated composite, and {ending_contract} will be verified before publication."
+            "The exact workspace video revision, immutable first and last frames, native frame contract, {delivery_contract}, optional animated composite, and {ending_contract} will be verified before publication."
         ),
         Some(0.04),
-        Some("local-wan.prepare"),
+        Some("local-video.prepare"),
     )?;
     transaction
         .commit()
@@ -3388,9 +3388,10 @@ pub(crate) fn complete_local_wan_generation(
         )
         .map_err(|error| format!("failed to register WAN video blob: {error}"))?;
     let operation_json = serde_json::json!({
-        "kind": "local-wan-video-generation",
-        "providerId": "local-wan",
+        "kind": "local-video-generation",
+        "providerId": "local-video",
         "modelId": request.model_id,
+        "architecture": video.architecture,
         "flowRevisionId": request.flow_revision_id,
         "modelRevision": video.model_revision,
         "modelDigest": video.model_digest,
@@ -3407,6 +3408,7 @@ pub(crate) fn complete_local_wan_generation(
         "loopEndpointRestoration": video.loop_endpoint_restoration,
         "prompt": video.prompt,
         "negativePrompt": video.negative_prompt,
+        "negativePromptApplied": video.negative_prompt_applied,
         "resolution": video.resolution,
         "guidanceScale": video.guidance_scale,
         "numInferenceSteps": video.num_inference_steps,
@@ -3450,7 +3452,11 @@ pub(crate) fn complete_local_wan_generation(
             params![asset_id, request.last_frame_asset_id],
         )
         .map_err(|error| format!("failed to register WAN last-frame lineage: {error}"))?;
-    let mut technical_tags = vec![("wan2-2-ti2v", "Wan2.2 TI2V")];
+    let mut technical_tags = match video.architecture.as_str() {
+        "framepack-i2v" => vec![("framepack-i2v-hy", "FramePack I2V HY")],
+        "ltx-video" => vec![("ltx-video-0-9-8", "LTX-Video 0.9.8")],
+        _ => vec![("wan2-2-ti2v", "Wan2.2 TI2V")],
+    };
     if video.transparent_background {
         technical_tags.extend([
             ("transparent-video", "Transparent video"),
@@ -3504,9 +3510,10 @@ pub(crate) fn complete_local_wan_generation(
                 format!("failed to register WAN composite video blob: {error}")
             })?;
         let composite_operation_json = serde_json::json!({
-            "kind": "local-wan-video-generation",
-            "providerId": "local-wan",
+            "kind": "local-video-generation",
+            "providerId": "local-video",
             "modelId": request.model_id,
+            "architecture": video.architecture,
             "flowRevisionId": request.flow_revision_id,
             "modelRevision": video.model_revision,
             "modelDigest": video.model_digest,
@@ -3523,6 +3530,7 @@ pub(crate) fn complete_local_wan_generation(
             "loopEndpointRestoration": video.loop_endpoint_restoration,
             "prompt": video.prompt,
             "negativePrompt": video.negative_prompt,
+            "negativePromptApplied": video.negative_prompt_applied,
             "resolution": video.resolution,
             "guidanceScale": video.guidance_scale,
             "numInferenceSteps": video.num_inference_steps,
@@ -3608,7 +3616,8 @@ pub(crate) fn complete_local_wan_generation(
         &request.run_id,
         "video_generated",
         &format!(
-            "WAN conditioned on immutable first and last frames, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps with {:.3} source and {:.3} decoded endpoint MAE.",
+            "{} conditioned on immutable first and last frames, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps with {:.3} source and {:.3} decoded endpoint MAE.",
+            video.architecture,
             video.output.source_frame_count,
             video.output.frame_count,
             video.output.fps,
@@ -3616,7 +3625,7 @@ pub(crate) fn complete_local_wan_generation(
             video.output.decoded_loop_endpoint_mae,
         ),
         Some(0.92),
-        Some("local-wan.generate"),
+        Some("local-video.generate"),
     )?;
     append_event(
         &transaction,
@@ -4566,8 +4575,8 @@ pub(crate) fn complete_run(paths: &MediaRuntimePaths, run_id: &str) -> MediaResu
             "openai-image-edit-api" => {
                 "All edited OpenAI image outputs passed bounded decode, lineage, and immutable CAS publication checks."
             }
-            "local-wan-video" => {
-                "The WAN output passed WebM, VP9 alpha-plane, immutable lineage, and loop-endpoint validation."
+            "local-video" | "local-wan-video" => {
+                "The local video output passed WebM, VP9 alpha-plane, immutable lineage, GPU-lifecycle, and endpoint validation."
             }
             "local-diffusers" => {
                 "All local image outputs passed bounded decode, add-on evidence, cutout, and immutable CAS publication checks."
@@ -7635,6 +7644,7 @@ mod tests {
             device: "test".to_string(),
             device_label: "Test device".to_string(),
             device_memory_bytes: None,
+            architecture: "wan-2.2-ti2v".to_string(),
             performance: Some(serde_json::json!({"profile": "test"})),
             conv3d_backend: "test".to_string(),
             conditioning_mode: "first-last-temporal-context-lock-v3".to_string(),
@@ -7646,6 +7656,7 @@ mod tests {
                 .to_string(),
             prompt: "Animate the immutable endpoint".to_string(),
             negative_prompt: "test negative prompt".to_string(),
+            negative_prompt_applied: true,
             resolution: "preview-512".to_string(),
             guidance_scale: 5.0,
             num_inference_steps: 4,

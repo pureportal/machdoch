@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -174,6 +175,160 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 self.assertEqual(width % 16, 0)
                 self.assertEqual(height % 16, 0)
 
+    def test_ltx_video_dimensions_avoid_implicit_padding(self) -> None:
+        self.assertEqual(
+            WORKER._video_dimensions("16:9", "quality-768", "ltx-video"),
+            (768, 448),
+        )
+        self.assertEqual(
+            WORKER._video_dimensions("9:16", "quality-768", "ltx-video"),
+            (448, 768),
+        )
+        for resolution in ("preview-512", "quality-640", "quality-768"):
+            for aspect in ("1:1", "16:9", "9:16", "21:9"):
+                width, height = WORKER._video_dimensions(
+                    aspect,
+                    resolution,
+                    "ltx-video",
+                )
+                self.assertEqual(width % 32, 0)
+                self.assertEqual(height % 32, 0)
+
+    def test_ltx_multiscale_dimensions_follow_official_two_thirds_pass(self) -> None:
+        self.assertEqual(
+            WORKER._ltx_multiscale_dimensions(640, 352),
+            (416, 224, 832, 448),
+        )
+        self.assertEqual(
+            WORKER._ltx_multiscale_dimensions(768, 448),
+            (512, 288, 1_024, 576),
+        )
+
+    def test_ltx_variant_selects_only_packaged_fp8_checkpoints(self) -> None:
+        root = Path("C:/models/ltx-video-0.9.8")
+        checkpoint, config, variant = WORKER._ltx_checkpoint(
+            {"id": "local:ltx-video-0.9.8-13b-distilled-fp8"},
+            root,
+        )
+        self.assertEqual(
+            checkpoint.name,
+            "ltxv-13b-0.9.8-distilled-fp8.safetensors",
+        )
+        self.assertEqual(config, "transformer-13b")
+        self.assertEqual(variant, "13b-distilled-fp8")
+        checkpoint, config, variant = WORKER._ltx_checkpoint(
+            {"id": "local:ltx-video-0.9.8-2b-distilled-fp8"},
+            root,
+        )
+        self.assertEqual(
+            checkpoint.name,
+            "ltxv-2b-0.9.8-distilled-fp8.safetensors",
+        )
+        self.assertEqual(config, "transformer")
+        self.assertEqual(variant, "2b-distilled-fp8")
+        with self.assertRaisesRegex(WORKER.WorkerError, "2B or 13B"):
+            WORKER._ltx_checkpoint({"id": "local:ltx-video-auto"}, root)
+
+    def test_framepack_fp8_keeps_precision_critical_parameters_in_bfloat16(self) -> None:
+        for name in (
+            "x_embedder.proj.weight",
+            "clean_x_embedder.proj_2x.weight",
+            "context_embedder.proj_in.weight",
+            "transformer_blocks.0.norm1.weight",
+            "proj_out.weight",
+        ):
+            self.assertTrue(WORKER._framepack_parameter_uses_compute_dtype(name))
+        self.assertFalse(
+            WORKER._framepack_parameter_uses_compute_dtype(
+                "transformer_blocks.0.attn.to_q.weight"
+            )
+        )
+
+    def test_indexed_checkpoint_files_rejects_parent_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            index = root / "transformer" / "model.index.json"
+            index.parent.mkdir()
+            index.write_text(
+                '{"weight_map":{"weight":"../outside.safetensors"}}',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(WORKER.WorkerError, "unsafe"):
+                WORKER._indexed_checkpoint_files(
+                    root,
+                    "transformer/model.index.json",
+                )
+
+    def test_framepack_fp8_cache_requires_complete_source_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "transformer"
+            cache = root / "runtime" / "framepack-transformer-fp8-v1"
+            source.mkdir()
+            cache.mkdir(parents=True)
+            index = {"weight_map": {"weight": "model.safetensors"}}
+            source_index = source / "diffusion_pytorch_model.safetensors.index.json"
+            source_index.write_text(json.dumps(index), encoding="utf-8")
+            (cache / "diffusion_pytorch_model.safetensors.index.json").write_text(
+                json.dumps(index),
+                encoding="utf-8",
+            )
+            checkpoint = cache / "model.safetensors"
+            checkpoint.write_bytes(b"verified-cache")
+            (cache / "complete.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "sourceIndexSha256": WORKER._sha256_file(source_index),
+                        "files": {"model.safetensors": checkpoint.stat().st_size},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            validated = WORKER._validated_framepack_fp8_cache(root)
+            self.assertIsNotNone(validated)
+            self.assertEqual(validated[1], [checkpoint])
+            source_index.write_text('{"weight_map":{}}', encoding="utf-8")
+            self.assertIsNone(WORKER._validated_framepack_fp8_cache(root))
+
+    def test_video_auto_memory_profile_adapts_to_ram_and_vram(self) -> None:
+        gib = 1_024**3
+        self.assertEqual(
+            WORKER._select_video_memory_profile("auto", 16 * gib, 8 * gib),
+            "memory-saver",
+        )
+        self.assertEqual(
+            WORKER._select_video_memory_profile("auto", 32 * gib, 16 * gib),
+            "balanced",
+        )
+        self.assertEqual(
+            WORKER._select_video_memory_profile("auto", 64 * gib, 24 * gib),
+            "maximum-speed",
+        )
+        self.assertEqual(
+            WORKER._select_video_memory_profile("memory-saver", 64 * gib, 24 * gib),
+            "memory-saver",
+        )
+
+    def test_cpu_video_memory_evidence_is_explicitly_process_isolated(self) -> None:
+        evidence = WORKER._start_video_memory_observation(
+            SimpleNamespace(),
+            "cpu",
+        )
+        self.assertEqual(
+            evidence["processIsolation"],
+            "one-generation-per-process",
+        )
+        self.assertIsNone(evidence["peakAllocatedBytes"])
+        self.assertEqual(
+            WORKER._finish_video_memory_observation(
+                SimpleNamespace(),
+                "cpu",
+                evidence,
+            ),
+            evidence,
+        )
+
     def test_loop_assembly_preserves_one_way_and_exact_ping_pong(self) -> None:
         frames = [np.full((4, 4, 4), index, dtype=np.uint8) for index in range(3)]
         one_way = WORKER._assemble_video_frames(frames, "none")
@@ -236,6 +391,32 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         self.assertEqual(int(cleaned[32:80, 40:57].min()), 255)
         self.assertGreater(evidence["removedPixels"], 500)
         self.assertGreaterEqual(cleanup["removedComponents"], 0)
+
+    def test_component_cleanup_keeps_subject_with_faint_border_bridge(self) -> None:
+        alpha = np.zeros((64, 64), dtype=np.uint8)
+        alpha[12:52, 26:39] = 255
+        alpha[51:64, 31:34] = 20
+        alpha[6:9, 6:9] = 255
+
+        cleaned, evidence = WORKER._cleanup_alpha_components(alpha)
+
+        self.assertEqual(int(cleaned[16:48, 28:37].min()), 255)
+        self.assertEqual(int(cleaned[6:9, 6:9].max()), 0)
+        self.assertEqual(evidence["removedComponents"], 1)
+
+    def test_primary_isolation_rejects_catastrophic_subject_crop(self) -> None:
+        alpha = np.zeros((64, 64), dtype=np.uint8)
+        alpha[12:58, 24:42] = 255
+        alpha[57:64, 31:34] = 255
+        alpha[4:14, 4:14] = 255
+
+        isolated, isolation = WORKER._isolate_primary_alpha_subject(alpha)
+        self.assertFalse(isolation["applied"])
+        self.assertEqual(
+            isolation["reason"],
+            "candidate-retained-too-little-foreground",
+        )
+        self.assertTrue(np.array_equal(isolated, alpha))
 
     def test_conditioning_framing_preserves_subject_across_ultrawide_ratio(self) -> None:
         pixels = np.zeros((400, 240, 4), dtype=np.uint8)

@@ -8,6 +8,14 @@ export interface ConversationMessageNavigationState {
   previousMessage: ChatSessionMessage | null;
 }
 
+export interface ConversationMessageViewportBounds {
+  bottom: number;
+  id: string;
+  top: number;
+}
+
+export type ConversationMessageViewportEdge = "start" | "end" | null;
+
 const isNavigableConversationMessage = (
   message: ChatSessionMessage,
 ): boolean => {
@@ -65,4 +73,50 @@ export const getRenderedMessageLimitForTarget = (
   }
 
   return Math.max(currentLimit, messages.length - targetIndex);
+};
+
+export const getVisibleConversationMessageId = (
+  messageBounds: readonly ConversationMessageViewportBounds[],
+  viewportTop: number,
+  viewportBottom: number,
+  viewportEdge: ConversationMessageViewportEdge = null,
+): string | null => {
+  const visibleMessageBounds = messageBounds.filter(
+    (bounds) =>
+      bounds.bottom > bounds.top &&
+      bounds.bottom > viewportTop &&
+      bounds.top < viewportBottom,
+  );
+
+  if (visibleMessageBounds.length === 0) {
+    return null;
+  }
+
+  if (viewportEdge === "start") {
+    return visibleMessageBounds[0]?.id ?? null;
+  }
+
+  if (viewportEdge === "end") {
+    return visibleMessageBounds.at(-1)?.id ?? null;
+  }
+
+  const viewportCenter = viewportTop + (viewportBottom - viewportTop) / 2;
+  let currentMessageId = visibleMessageBounds[0]?.id ?? null;
+  let currentDistance = Number.POSITIVE_INFINITY;
+
+  for (const bounds of visibleMessageBounds) {
+    const distance =
+      viewportCenter < bounds.top
+        ? bounds.top - viewportCenter
+        : viewportCenter > bounds.bottom
+          ? viewportCenter - bounds.bottom
+          : 0;
+
+    if (distance < currentDistance) {
+      currentMessageId = bounds.id;
+      currentDistance = distance;
+    }
+  }
+
+  return currentMessageId;
 };

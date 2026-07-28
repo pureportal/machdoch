@@ -1680,13 +1680,16 @@ impl GenerateMediaVideoRequest {
             required_text("firstFrameAssetId", &self.first_frame_asset_id, 256)?;
         self.last_frame_asset_id =
             required_text("lastFrameAssetId", &self.last_frame_asset_id, 256)?;
-        if self.model_id != "local:wan2.2-ti2v-5b" {
-            return Err(
-                "selected model is not the executable Wan2.2 TI2V video adapter".to_string(),
-            );
+        let ltx_video = matches!(
+            self.model_id.as_str(),
+            "local:ltx-video-0.9.8-13b-distilled-fp8" | "local:ltx-video-0.9.8-2b-distilled-fp8"
+        );
+        let framepack_video = self.model_id == "local:framepack-i2v-hy-13b";
+        if !framepack_video && !ltx_video && self.model_id != "local:wan2.2-ti2v-5b" {
+            return Err("selected model is not an executable local video adapter".to_string());
         }
         if !matches!(self.aspect_ratio.as_str(), "1:1" | "16:9" | "9:16" | "21:9") {
-            return Err("Wan aspectRatio must be 1:1, 16:9, 9:16, or 21:9".to_string());
+            return Err("video aspectRatio must be 1:1, 16:9, 9:16, or 21:9".to_string());
         }
         if !matches!(
             self.resolution.as_str(),
@@ -1695,7 +1698,7 @@ impl GenerateMediaVideoRequest {
             return Err("resolution must be preview-512, quality-640, or quality-768".to_string());
         }
         if self.output_format != "webm" {
-            return Err("WAN output requires the verified WebM container".to_string());
+            return Err("local video output requires the verified WebM container".to_string());
         }
         if !matches!(self.loop_mode.as_str(), "none" | "ping-pong" | "seamless") {
             return Err("loopMode must be none, ping-pong, or seamless".to_string());
@@ -1709,13 +1712,27 @@ impl GenerateMediaVideoRequest {
         if self.fps == 0 || self.fps > 60 {
             return Err("fps must be between 1 and 60".to_string());
         }
-        if !(17..=121).contains(&self.num_frames) || (self.num_frames - 1) % 4 != 0 {
+        if ltx_video && (!(9..=257).contains(&self.num_frames) || (self.num_frames - 1) % 8 != 0) {
             return Err(
-                "WAN numFrames must be from 17 through 121 in the required 4k+1 form".to_string(),
+                "LTX-Video numFrames must be from 9 through 257 in the required 8k+1 form"
+                    .to_string(),
             );
         }
-        if !(4..=50).contains(&self.num_inference_steps) {
-            return Err("numInferenceSteps must be between 4 and 50".to_string());
+        let maximum_frames = if framepack_video { 129 } else { 121 };
+        if !ltx_video
+            && (!(17..=maximum_frames).contains(&self.num_frames) || (self.num_frames - 1) % 4 != 0)
+        {
+            return Err(format!(
+                "{} numFrames must be from 17 through {maximum_frames} in the required 4k+1 form",
+                if framepack_video { "FramePack" } else { "WAN" }
+            ));
+        }
+        let maximum_steps = if ltx_video { 10 } else { 50 };
+        if !(4..=maximum_steps).contains(&self.num_inference_steps) {
+            return Err(format!(
+                "numInferenceSteps must be between 4 and {}",
+                if ltx_video { 10 } else { 50 }
+            ));
         }
         if !self.guidance_scale.is_finite() || !(1.0..=10.0).contains(&self.guidance_scale) {
             return Err("guidanceScale must be between 1 and 10".to_string());
@@ -1749,7 +1766,7 @@ impl GenerateMediaVideoRequest {
                 "memoryProfile must be auto, memory-saver, balanced, or maximum-speed".to_string(),
             );
         }
-        if !self.experimental_low_memory {
+        if !framepack_video && !ltx_video && !self.experimental_low_memory {
             return Err(
                 "experimentalLowMemory must be acknowledged on GPUs below the official 24 GiB profile"
                     .to_string(),
@@ -3318,7 +3335,7 @@ pub(crate) async fn media_generate_video(
             database::begin_local_wan_generation(&begin_paths, &begin_request)
         })
         .await
-        .map_err(|error| format!("local WAN generation worker could not be joined: {error}"))??;
+        .map_err(|error| format!("local video generation worker could not be joined: {error}"))??;
         if !claimed {
             return database::get_run_detail(&paths, &request.run_id);
         }
@@ -3336,7 +3353,7 @@ pub(crate) async fn media_generate_video(
             &request.run_id,
             &["source.prompt", "source.image"],
             "completed",
-            Some("local-wan.resolve-inputs"),
+            Some("local-video.resolve-inputs"),
             Some("Immutable prompt, first frame, last frame, and workspace model inputs resolved"),
             Some(0.08),
         )?;
@@ -3345,8 +3362,8 @@ pub(crate) async fn media_generate_video(
             &request.run_id,
             &["task.generate-video"],
             "running",
-            Some("local-wan.generate"),
-            Some("Generating bounded first/last-conditioned WAN frames with AMD CPU offload"),
+            Some("local-video.generate"),
+            Some("Generating native first/last-conditioned video with adaptive model offload"),
             Some(0.1),
         )?;
         let generation_app = app.clone();
@@ -3360,7 +3377,7 @@ pub(crate) async fn media_generate_video(
             )
         })
         .await
-        .map_err(|error| format!("local WAN worker could not be joined: {error}"))?;
+        .map_err(|error| format!("local video worker could not be joined: {error}"))?;
         let video = match video {
             Ok(video) => video,
             Err(diagnostic) => {
@@ -3383,14 +3400,14 @@ pub(crate) async fn media_generate_video(
             "opaque"
         };
         let generation_complete_message = format!(
-            "WAN generation and verified {delivery_label} {ending_label} encoding completed"
+            "Local video generation and verified {delivery_label} {ending_label} encoding completed"
         );
         database::transition_nodes_by_type(
             &paths,
             &request.run_id,
             &["task.generate-video"],
             "completed",
-            Some("local-wan.generate"),
+            Some("local-video.generate"),
             Some(&generation_complete_message),
             Some(0.92),
         )?;
@@ -3435,7 +3452,7 @@ pub(crate) async fn media_generate_video(
             database::complete_local_wan_generation(&complete_paths, &complete_request, &video)
         })
         .await
-        .map_err(|error| format!("local WAN publisher could not be joined: {error}"))?
+        .map_err(|error| format!("local video publisher could not be joined: {error}"))?
         {
             Ok(detail) => Ok(detail),
             Err(diagnostic) => {

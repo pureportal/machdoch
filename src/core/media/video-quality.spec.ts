@@ -3,6 +3,7 @@ import {
   identifyMediaVideoQualityPreset,
   inferMediaVideoAspectRatio,
   isMediaAssetKnownTransparent,
+  resolveMediaAssetVideoFrameRate,
   resolveMediaVideoDimensions,
   summarizeMediaVideoDelivery,
 } from "./video-quality.js";
@@ -25,6 +26,15 @@ const asset = (
   operation,
   sourceAssetIds: [],
   tags,
+});
+
+const videoAsset = (hasAlpha: boolean, fps = 16): MediaAssetRecord => ({
+  ...asset({
+    kind: "local-wan-video-generation",
+    output: { hasAlpha, fps },
+  } as MediaAssetRecord["operation"]),
+  kind: "video",
+  mimeType: "video/webm",
 });
 
 describe("media video quality helpers", () => {
@@ -81,6 +91,13 @@ describe("media video quality helpers", () => {
         ]),
       ),
     ).toBe(true);
+    expect(isMediaAssetKnownTransparent(videoAsset(true))).toBe(true);
+    expect(isMediaAssetKnownTransparent(videoAsset(false))).toBe(false);
+  });
+
+  it("reads exact frame rates from generated video provenance", () => {
+    expect(resolveMediaAssetVideoFrameRate(videoAsset(true, 24))).toBe(24);
+    expect(resolveMediaAssetVideoFrameRate(asset(null))).toBeNull();
   });
 
   it("does not enable alpha extraction for a fully opaque cutout summary", () => {

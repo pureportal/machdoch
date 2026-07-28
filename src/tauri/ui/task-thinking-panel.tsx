@@ -49,7 +49,7 @@ const outputLineClasses = {
 
 type VisibleModelStreamKind = Exclude<
   TaskThinkingModelStream["kind"],
-  "assistant"
+  "assistant" | "status"
 >;
 type VisibleModelStream = TaskThinkingModelStream & {
   kind: VisibleModelStreamKind;
@@ -67,10 +67,6 @@ const modelStreamPanelCopy: Record<
   },
   reasoning: {
     title: "Live reasoning",
-    badge: "done",
-  },
-  status: {
-    title: "Provider status",
     badge: "done",
   },
   "tool-result": {
@@ -267,7 +263,9 @@ export const TaskThinkingPanel = ({
   );
   const latestTimelineEvent = timelineEvents.at(-1);
   const visibleModelStream: VisibleModelStream | undefined =
-    modelStream && modelStream.kind !== "assistant"
+    modelStream &&
+    modelStream.kind !== "assistant" &&
+    modelStream.kind !== "status"
       ? (modelStream as VisibleModelStream)
       : undefined;
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
@@ -645,24 +643,24 @@ export const TaskThinkingPanel = ({
                     </div>
                   ) : null}
 
-                  {modelStream && modelStream.kind !== "assistant" ? (
+                  {visibleModelStream ? (
                     <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2">
                       <div className="flex min-w-0 items-center justify-between gap-3">
                         <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-violet-200 uppercase">
-                          {modelStreamPanelCopy[modelStream.kind].title}
+                          {modelStreamPanelCopy[visibleModelStream.kind].title}
                         </p>
                         <span className="shrink-0 rounded-full border border-violet-400/20 px-2 py-0.5 text-[10px] text-violet-100">
-                          {modelStream.complete
-                            ? modelStreamPanelCopy[modelStream.kind].badge
+                          {visibleModelStream.complete
+                            ? modelStreamPanelCopy[visibleModelStream.kind].badge
                             : "streaming"}
                         </span>
                       </div>
                       <p className="mt-1 text-xs font-medium text-violet-100 wrap-break-word">
-                        {modelStream.label}
+                        {visibleModelStream.label}
                       </p>
-                      {modelStream.content.trim() ? (
+                      {visibleModelStream.content.trim() ? (
                         <pre className="app-thinking-code mt-2 max-h-24 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
-                          {modelStream.content}
+                          {visibleModelStream.content}
                         </pre>
                       ) : null}
                     </div>
@@ -695,7 +693,7 @@ export const TaskThinkingPanel = ({
                   ) : null}
 
                   {!assistantText &&
-                  (!modelStream || modelStream.kind === "assistant") &&
+                  !visibleModelStream &&
                   actionOutputLines.length === 0 ? (
                     <p className="m-0 text-sm text-slate-400">
                       No stream output yet.

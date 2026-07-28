@@ -14,6 +14,52 @@ const MAX_FILES: usize = 50_000;
 const MAX_DEPTH: usize = 12;
 const MAX_WARNINGS: usize = 100;
 const MAX_JSON_BYTES: u64 = 16 * 1024 * 1024;
+const FRAMEPACK_ARCHITECTURE: &str = "framepack-i2v";
+const FRAMEPACK_MODEL_REVISION: &str = "86cef4396041b6002c957852daac4c91aaa47c79";
+const FRAMEPACK_BASE_REVISION: &str = "e8c2aaa66fe3742a32c11a6766aecbf07c56e773";
+const FRAMEPACK_IMAGE_REVISION: &str = "45b801affc54ff2af4e5daf1b282e0921901db87";
+const FRAMEPACK_REQUIRED_FILES: &[&str] = &[
+    "model_index.json",
+    "scheduler/scheduler_config.json",
+    "text_encoder/config.json",
+    "text_encoder/model.safetensors.index.json",
+    "text_encoder_2/config.json",
+    "text_encoder_2/model.safetensors",
+    "tokenizer/tokenizer.json",
+    "tokenizer/tokenizer_config.json",
+    "tokenizer_2/merges.txt",
+    "tokenizer_2/tokenizer_config.json",
+    "tokenizer_2/vocab.json",
+    "transformer/config.json",
+    "transformer/diffusion_pytorch_model.safetensors.index.json",
+    "vae/config.json",
+    "vae/diffusion_pytorch_model.safetensors",
+    "feature_extractor/preprocessor_config.json",
+    "image_encoder/config.json",
+    "image_encoder/model.safetensors",
+];
+const LTX_ARCHITECTURE: &str = "ltx-video";
+const LTX_MODEL_REVISION: &str = "8984fa25007f376c1a299016d0957a37a2f797bb";
+const LTX_REQUIRED_FILES: &[&str] = &[
+    "model_index.json",
+    "scheduler/scheduler_config.json",
+    "spatial_upscaler/model_index.json",
+    "spatial_upscaler/latent_upsampler/config.json",
+    "spatial_upscaler/latent_upsampler/diffusion_pytorch_model.safetensors",
+    "text_encoder/config.json",
+    "text_encoder/model.safetensors.index.json",
+    "tokenizer/added_tokens.json",
+    "tokenizer/special_tokens_map.json",
+    "tokenizer/spiece.model",
+    "tokenizer/tokenizer_config.json",
+    "transformer/config.json",
+    "transformer-13b/config.json",
+    "vae/config.json",
+    "vae/diffusion_pytorch_model.safetensors",
+    "ltxv-2b-0.9.8-distilled-fp8.safetensors",
+    "ltxv-13b-0.9.8-distilled-fp8.safetensors",
+    "LTX-Video-Open-Weights-License-0.X.txt",
+];
 const WAN_ARCHITECTURE: &str = "wan-2.2-ti2v";
 const WAN_MODEL_REVISION: &str = "b8fff7315c768468a5333511427288870b2e9635";
 const WAN_REQUIRED_FILES: &[&str] = &[
@@ -231,6 +277,260 @@ fn is_wan_22_ti2v_5b(model_index: &Value, transformer_config: &Value) -> bool {
         && transformer_config.get("text_dim").and_then(Value::as_u64) == Some(4_096)
 }
 
+fn is_ltx_transformer(
+    config: &Value,
+    layers: u64,
+    attention_head_dim: u64,
+    cross_attention_dim: u64,
+) -> bool {
+    config.get("_class_name").and_then(Value::as_str) == Some("LTXVideoTransformer3DModel")
+        && config.get("num_layers").and_then(Value::as_u64) == Some(layers)
+        && config.get("attention_head_dim").and_then(Value::as_u64) == Some(attention_head_dim)
+        && config.get("cross_attention_dim").and_then(Value::as_u64) == Some(cross_attention_dim)
+        && config.get("caption_channels").and_then(Value::as_u64) == Some(4_096)
+        && config.get("in_channels").and_then(Value::as_u64) == Some(128)
+        && config.get("out_channels").and_then(Value::as_u64) == Some(128)
+}
+
+fn is_framepack_transformer(config: &Value) -> bool {
+    matches!(
+        config.get("_class_name").and_then(Value::as_str),
+        Some("HunyuanVideoTransformer3DModelPacked")
+            | Some("HunyuanVideoFramepackTransformer3DModel")
+    ) && config.get("num_layers").and_then(Value::as_u64) == Some(20)
+        && config.get("num_single_layers").and_then(Value::as_u64) == Some(40)
+        && config.get("num_refiner_layers").and_then(Value::as_u64) == Some(2)
+        && config.get("num_attention_heads").and_then(Value::as_u64) == Some(24)
+        && config.get("attention_head_dim").and_then(Value::as_u64) == Some(128)
+        && config.get("text_embed_dim").and_then(Value::as_u64) == Some(4_096)
+        && config.get("image_proj_dim").and_then(Value::as_u64) == Some(1_152)
+        && config.get("has_clean_x_embedder").and_then(Value::as_bool) == Some(true)
+        && config.get("in_channels").and_then(Value::as_u64) == Some(16)
+        && config.get("out_channels").and_then(Value::as_u64) == Some(16)
+}
+
+fn framepack_artifact(
+    models_root: &Path,
+    directory: &Path,
+    model_index: &Value,
+    inventory: DirectoryInventory,
+) -> MediaResult<MediaDiscoveredModelArtifact> {
+    let DirectoryInventory {
+        byte_size,
+        file_count,
+        truncated,
+    } = inventory;
+    let transformer_config = read_json(
+        &directory.join("transformer").join("config.json"),
+        "FramePack transformer config",
+    );
+    let profile_error = match transformer_config {
+        Ok(config)
+            if model_index.get("_class_name").and_then(Value::as_str)
+                == Some("HunyuanVideoPipeline")
+                && is_framepack_transformer(&config) =>
+        {
+            None
+        }
+        Ok(_) => {
+            Some("The package does not match the reviewed FramePack I2V HY 13B profile".to_string())
+        }
+        Err(error) => Some(error),
+    };
+    let mut required = FRAMEPACK_REQUIRED_FILES
+        .iter()
+        .map(|relative| (*relative).to_string())
+        .collect::<Vec<_>>();
+    let mut package_error = None;
+    for index in [
+        "text_encoder/model.safetensors.index.json",
+        "transformer/diffusion_pytorch_model.safetensors.index.json",
+    ] {
+        match indexed_weight_files(directory, index) {
+            Ok(shards) => required.extend(shards),
+            Err(error) => package_error = Some(error),
+        }
+    }
+    required.sort();
+    required.dedup();
+    let missing = required
+        .iter()
+        .filter(|relative| !regular_nonempty_file(&directory.join(relative)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let revision_error = [
+        (
+            huggingface_revision(directory, "model_index.json"),
+            FRAMEPACK_BASE_REVISION,
+        ),
+        (
+            huggingface_revision(&directory.join("transformer"), "config.json"),
+            FRAMEPACK_MODEL_REVISION,
+        ),
+        (
+            huggingface_revision(directory, "image_encoder/config.json"),
+            FRAMEPACK_IMAGE_REVISION,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(revision, expected)| match revision {
+        Ok(revision) if revision == expected => None,
+        Ok(revision) => Some(format!(
+            "this package contains revision {revision}; the reviewed component requires {expected}"
+        )),
+        Err(error) => Some(error),
+    });
+    let ready = !truncated
+        && missing.is_empty()
+        && package_error.is_none()
+        && profile_error.is_none()
+        && revision_error.is_none();
+    let diagnostic = if ready {
+        "Pinned FramePack I2V HY 13B components are present. Machdoch uses inverted anti-drifting start/end conditioning with hardware-selected FP8 or BF16 storage and block offload.".to_string()
+    } else if truncated {
+        "FramePack package inventory exceeded the bounded discovery limits.".to_string()
+    } else if let Some(error) = profile_error {
+        format!("FramePack package profile is incompatible: {error}.")
+    } else if let Some(error) = package_error {
+        format!("FramePack package index is incomplete or unsafe: {error}.")
+    } else if !missing.is_empty() {
+        format!(
+            "FramePack download is incomplete; missing {}.",
+            missing.join(", ")
+        )
+    } else {
+        revision_error.unwrap_or_else(|| "FramePack package verification failed.".to_string())
+    };
+    Ok(MediaDiscoveredModelArtifact {
+        path: directory.display().to_string(),
+        relative_path: relative_display(models_root, directory),
+        display_name: "FramePack I2V HY 13B".to_string(),
+        kind: "diffusers-model".to_string(),
+        status: if ready { "ready" } else { "incomplete" }.to_string(),
+        architecture: Some(FRAMEPACK_ARCHITECTURE.to_string()),
+        byte_size,
+        file_count,
+        capabilities: vec![
+            "image-to-video".to_string(),
+            "start-end-to-video".to_string(),
+            "alpha-video".to_string(),
+            "video-composite".to_string(),
+        ],
+        diagnostic,
+    })
+}
+
+fn ltx_artifact(
+    models_root: &Path,
+    directory: &Path,
+    model_index: &Value,
+    inventory: DirectoryInventory,
+) -> MediaResult<MediaDiscoveredModelArtifact> {
+    let DirectoryInventory {
+        byte_size,
+        file_count,
+        truncated,
+    } = inventory;
+    let class_name = model_index.get("_class_name").and_then(Value::as_str);
+    let two_b_config = read_json(
+        &directory.join("transformer").join("config.json"),
+        "LTX-Video 2B transformer config",
+    );
+    let thirteen_b_config = read_json(
+        &directory.join("transformer-13b").join("config.json"),
+        "LTX-Video 13B transformer config",
+    );
+    let profile_error = match (two_b_config, thirteen_b_config) {
+        (Ok(two_b), Ok(thirteen_b))
+            if matches!(
+                class_name,
+                Some("LTXPipeline") | Some("LTXConditionPipeline")
+            ) && is_ltx_transformer(&two_b, 28, 64, 2_048)
+                && is_ltx_transformer(&thirteen_b, 48, 128, 4_096) =>
+        {
+            None
+        }
+        (Err(error), _) | (_, Err(error)) => Some(error),
+        _ => Some(
+            "The package does not match the reviewed LTX-Video 0.9.8 2B/13B FP8 profiles"
+                .to_string(),
+        ),
+    };
+    let mut required = LTX_REQUIRED_FILES
+        .iter()
+        .map(|relative| (*relative).to_string())
+        .collect::<Vec<_>>();
+    let package_error =
+        match indexed_weight_files(directory, "text_encoder/model.safetensors.index.json") {
+            Ok(shards) => {
+                required.extend(shards);
+                None
+            }
+            Err(error) => Some(error),
+        };
+    required.sort();
+    required.dedup();
+    let missing = required
+        .iter()
+        .filter(|relative| !regular_nonempty_file(&directory.join(relative)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let revision_error = huggingface_revision(directory, "model_index.json")
+        .and_then(|revision| {
+            if revision == LTX_MODEL_REVISION {
+                Ok(())
+            } else {
+                Err(format!(
+                    "this package was downloaded from revision {revision}; the reviewed runtime profile requires {LTX_MODEL_REVISION}"
+                ))
+            }
+        })
+        .err();
+    let ready = !truncated
+        && missing.is_empty()
+        && package_error.is_none()
+        && profile_error.is_none()
+        && revision_error.is_none();
+    let diagnostic = if ready {
+        "Pinned LTX-Video 0.9.8 2B and 13B distilled FP8 components are present. Machdoch selects the variant and offload policy from the requested quality and available hardware.".to_string()
+    } else if truncated {
+        "LTX-Video package inventory exceeded the bounded discovery limits.".to_string()
+    } else if let Some(error) = profile_error {
+        format!("LTX-Video package profile is incompatible: {error}.")
+    } else if let Some(error) = package_error {
+        format!("LTX-Video package index is incomplete or unsafe: {error}.")
+    } else if !missing.is_empty() {
+        format!(
+            "LTX-Video download is incomplete; missing {}.",
+            missing.join(", ")
+        )
+    } else {
+        revision_error.unwrap_or_else(|| "LTX-Video package verification failed.".to_string())
+    };
+    Ok(MediaDiscoveredModelArtifact {
+        path: directory.display().to_string(),
+        relative_path: relative_display(models_root, directory),
+        display_name: "LTX-Video 0.9.8 FP8 (2B + 13B)".to_string(),
+        kind: "diffusers-model".to_string(),
+        status: if ready { "ready" } else { "incomplete" }.to_string(),
+        architecture: Some(LTX_ARCHITECTURE.to_string()),
+        byte_size,
+        file_count,
+        capabilities: vec![
+            "text-to-video".to_string(),
+            "image-to-video".to_string(),
+            "start-end-to-video".to_string(),
+            "reference-media-to-video".to_string(),
+            "transparent-output".to_string(),
+            "alpha-video".to_string(),
+            "video-composite".to_string(),
+            "lora".to_string(),
+            "multi-lora".to_string(),
+        ],
+        diagnostic,
+    })
+}
+
 fn wan_artifact(
     models_root: &Path,
     directory: &Path,
@@ -400,6 +700,18 @@ fn diffusers_artifact(
         .unwrap_or("");
     if class_name == "WanPipeline" {
         return wan_artifact(models_root, directory, &model_index, inventory);
+    }
+    if matches!(class_name, "LTXPipeline" | "LTXConditionPipeline") {
+        return ltx_artifact(models_root, directory, &model_index, inventory);
+    }
+    if class_name == "HunyuanVideoPipeline"
+        && read_json(
+            &directory.join("transformer").join("config.json"),
+            "FramePack transformer config",
+        )
+        .is_ok_and(|config| is_framepack_transformer(&config))
+    {
+        return framepack_artifact(models_root, directory, &model_index, inventory);
     }
 
     Ok(MediaDiscoveredModelArtifact {
@@ -928,7 +1240,8 @@ mod tests {
 
     use super::{
         discover, discover_with_limits, finalize_warnings, push_warning,
-        resolve_workspace_diffusers_package, MAX_WARNINGS, WAN_MODEL_REVISION,
+        resolve_workspace_diffusers_package, FRAMEPACK_BASE_REVISION, FRAMEPACK_IMAGE_REVISION,
+        FRAMEPACK_MODEL_REVISION, LTX_MODEL_REVISION, MAX_WARNINGS, WAN_MODEL_REVISION,
     };
 
     fn test_workspace() -> PathBuf {
@@ -1003,6 +1316,109 @@ mod tests {
         package
     }
 
+    fn write_ltx_package(root: &Path, directory_name: &str) -> PathBuf {
+        let package = root.join("models").join(directory_name);
+        write_file(
+            &package.join("model_index.json"),
+            br#"{"_class_name":"LTXConditionPipeline"}"#,
+        );
+        for (relative, layers, head_dim, cross_dim) in [
+            ("transformer/config.json", 28, 64, 2_048),
+            ("transformer-13b/config.json", 48, 128, 4_096),
+        ] {
+            write_file(
+                &package.join(relative),
+                format!(
+                    r#"{{"_class_name":"LTXVideoTransformer3DModel","num_layers":{layers},"attention_head_dim":{head_dim},"cross_attention_dim":{cross_dim},"caption_channels":4096,"in_channels":128,"out_channels":128}}"#
+                )
+                .as_bytes(),
+            );
+        }
+        write_file(
+            &package.join("text_encoder/model.safetensors.index.json"),
+            br#"{"weight_map":{"encoder.weight":"model-00001-of-00001.safetensors"}}"#,
+        );
+        for relative in [
+            "scheduler/scheduler_config.json",
+            "spatial_upscaler/model_index.json",
+            "spatial_upscaler/latent_upsampler/config.json",
+            "spatial_upscaler/latent_upsampler/diffusion_pytorch_model.safetensors",
+            "text_encoder/config.json",
+            "text_encoder/model-00001-of-00001.safetensors",
+            "tokenizer/added_tokens.json",
+            "tokenizer/special_tokens_map.json",
+            "tokenizer/spiece.model",
+            "tokenizer/tokenizer_config.json",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+            "ltxv-2b-0.9.8-distilled-fp8.safetensors",
+            "ltxv-13b-0.9.8-distilled-fp8.safetensors",
+            "LTX-Video-Open-Weights-License-0.X.txt",
+        ] {
+            write_file(&package.join(relative), b"test");
+        }
+        write_file(
+            &package.join(".cache/huggingface/download/model_index.json.metadata"),
+            format!("{LTX_MODEL_REVISION}\n0000000000000000000000000000000000000000\n0\n")
+                .as_bytes(),
+        );
+        package
+    }
+
+    fn write_framepack_package(root: &Path, directory_name: &str) -> PathBuf {
+        let package = root.join("models").join(directory_name);
+        write_file(
+            &package.join("model_index.json"),
+            br#"{"_class_name":"HunyuanVideoPipeline"}"#,
+        );
+        write_file(
+            &package.join("transformer/config.json"),
+            br#"{"_class_name":"HunyuanVideoTransformer3DModelPacked","num_layers":20,"num_single_layers":40,"num_refiner_layers":2,"num_attention_heads":24,"attention_head_dim":128,"text_embed_dim":4096,"image_proj_dim":1152,"has_clean_x_embedder":true,"in_channels":16,"out_channels":16}"#,
+        );
+        write_file(
+            &package.join("text_encoder/model.safetensors.index.json"),
+            br#"{"weight_map":{"encoder.weight":"model-00001-of-00001.safetensors"}}"#,
+        );
+        write_file(
+            &package.join("transformer/diffusion_pytorch_model.safetensors.index.json"),
+            br#"{"weight_map":{"transformer.weight":"diffusion_pytorch_model-00001-of-00001.safetensors"}}"#,
+        );
+        for relative in [
+            "scheduler/scheduler_config.json",
+            "text_encoder/config.json",
+            "text_encoder/model-00001-of-00001.safetensors",
+            "text_encoder_2/config.json",
+            "text_encoder_2/model.safetensors",
+            "tokenizer/tokenizer.json",
+            "tokenizer/tokenizer_config.json",
+            "tokenizer_2/merges.txt",
+            "tokenizer_2/tokenizer_config.json",
+            "tokenizer_2/vocab.json",
+            "transformer/diffusion_pytorch_model-00001-of-00001.safetensors",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+            "feature_extractor/preprocessor_config.json",
+            "image_encoder/config.json",
+            "image_encoder/model.safetensors",
+        ] {
+            write_file(&package.join(relative), b"test");
+        }
+        for (root_relative, metadata_relative, revision) in [
+            ("", "model_index.json", FRAMEPACK_BASE_REVISION),
+            ("transformer", "config.json", FRAMEPACK_MODEL_REVISION),
+            ("", "image_encoder/config.json", FRAMEPACK_IMAGE_REVISION),
+        ] {
+            write_file(
+                &package
+                    .join(root_relative)
+                    .join(".cache/huggingface/download")
+                    .join(format!("{metadata_relative}.metadata")),
+                format!("{revision}\n0000000000000000000000000000000000000000\n0\n").as_bytes(),
+            );
+        }
+        package
+    }
+
     #[test]
     fn discovery_uses_tensor_content_and_isolates_malformed_artifacts() {
         let root = test_workspace();
@@ -1063,6 +1479,72 @@ mod tests {
             root.to_string_lossy().as_ref(),
             "wan-2.2-ti2v",
             Some("wan-2.2-ti2v-5b"),
+        )
+        .expect("the only compatible renamed package should resolve");
+        assert_eq!(
+            resolved,
+            fs::canonicalize(&package).expect("test package should resolve")
+        );
+
+        fs::remove_dir_all(root).expect("test workspace should be removed");
+    }
+
+    #[test]
+    fn renamed_ltx_package_is_identified_by_both_reviewed_fp8_profiles() {
+        let root = test_workspace();
+        let package = write_ltx_package(&root, "my-start-end-video-package");
+
+        let result =
+            discover(root.to_string_lossy().as_ref()).expect("LTX package should be discovered");
+        let artifact = result
+            .entries
+            .iter()
+            .find(|entry| entry.relative_path == "my-start-end-video-package")
+            .expect("renamed LTX package should remain visible");
+        assert_eq!(artifact.status, "ready");
+        assert_eq!(artifact.architecture.as_deref(), Some("ltx-video"));
+        assert!(artifact
+            .capabilities
+            .iter()
+            .any(|capability| capability == "start-end-to-video"));
+
+        let resolved = resolve_workspace_diffusers_package(
+            root.to_string_lossy().as_ref(),
+            "ltx-video",
+            Some("ltx-video-0.9.8"),
+        )
+        .expect("the only compatible renamed package should resolve");
+        assert_eq!(
+            resolved,
+            fs::canonicalize(&package).expect("test package should resolve")
+        );
+
+        fs::remove_dir_all(root).expect("test workspace should be removed");
+    }
+
+    #[test]
+    fn renamed_framepack_package_is_identified_by_transformer_content() {
+        let root = test_workspace();
+        let package = write_framepack_package(&root, "my-anti-drift-video-package");
+
+        let result = discover(root.to_string_lossy().as_ref())
+            .expect("FramePack package should be discovered");
+        let artifact = result
+            .entries
+            .iter()
+            .find(|entry| entry.relative_path == "my-anti-drift-video-package")
+            .expect("renamed FramePack package should remain visible");
+        assert_eq!(artifact.status, "ready");
+        assert_eq!(artifact.architecture.as_deref(), Some("framepack-i2v"));
+        assert!(artifact
+            .capabilities
+            .iter()
+            .any(|capability| capability == "start-end-to-video"));
+
+        let resolved = resolve_workspace_diffusers_package(
+            root.to_string_lossy().as_ref(),
+            "framepack-i2v",
+            Some("framepack-i2v-hy"),
         )
         .expect("the only compatible renamed package should resolve");
         assert_eq!(

@@ -49,7 +49,9 @@ import {
 } from "../_helpers/execution-message.tsx";
 import {
   getConversationMessageNavigationState,
+  getNavigableConversationMessages,
   getRenderedMessageLimitForTarget,
+  getVisibleConversationMessageId,
 } from "../_helpers/message-navigation";
 import { createContextAttachmentsFromTaskBlock } from "../_helpers/session-context-attachments";
 import { MessageAttachmentsList } from "./context-attachments";
@@ -99,6 +101,7 @@ const MESSAGE_CONTEXT_MENU_MARGIN = 8;
 const INITIAL_RENDERED_MESSAGE_LIMIT = 80;
 const RENDERED_MESSAGE_PAGE_SIZE = 80;
 const MESSAGE_NAVIGATION_HIGHLIGHT_DURATION_MS = 1_800;
+const MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX = 8;
 
 interface MessageContextMenuState {
   role: ChatSessionMessage["role"];
@@ -732,6 +735,13 @@ export const ConversationFeed = ({
     string | null
   >(null);
   const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const navigationMessageIds = useMemo(
+    () =>
+      getNavigableConversationMessages(visibleMessages).map(
+        (message) => message.id,
+      ),
+    [visibleMessages],
+  );
   const navigationState = useMemo(
     () =>
       getConversationMessageNavigationState(
@@ -885,6 +895,88 @@ export const ConversationFeed = ({
     });
     setNavigationScrollTargetId(null);
   }, [navigationScrollTargetId, renderedMessageLimit, visibleMessages]);
+
+  useLayoutEffect(() => {
+    const bottomElement = bottomRef.current;
+    const scrollViewport = bottomElement?.closest<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+
+    if (!scrollViewport || navigationMessageIds.length === 0) {
+      return;
+    }
+
+    let animationFrameId: number | null = null;
+    let previousScrollTop: number | null = null;
+    const updateActiveMessage = (): void => {
+      animationFrameId = null;
+
+      const viewportBounds = scrollViewport.getBoundingClientRect();
+      const messageBounds = navigationMessageIds.flatMap((messageId) => {
+        const element = messageElementsRef.current.get(messageId);
+
+        if (!element) {
+          return [];
+        }
+
+        const bounds = element.getBoundingClientRect();
+        return [{ bottom: bounds.bottom, id: messageId, top: bounds.top }];
+      });
+      const distanceToBottom =
+        scrollViewport.scrollHeight -
+        scrollViewport.scrollTop -
+        scrollViewport.clientHeight;
+      const scrollingUp =
+        previousScrollTop !== null &&
+        scrollViewport.scrollTop < previousScrollTop;
+      const scrollingDown =
+        previousScrollTop !== null &&
+        scrollViewport.scrollTop > previousScrollTop;
+      previousScrollTop = scrollViewport.scrollTop;
+      const viewportEdge =
+        distanceToBottom <= MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX &&
+        !scrollingUp
+          ? "end"
+          : scrollViewport.scrollTop <=
+                MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX && !scrollingDown
+            ? "start"
+            : null;
+      const visibleMessageId = getVisibleConversationMessageId(
+        messageBounds,
+        viewportBounds.top,
+        viewportBounds.bottom,
+        viewportEdge,
+      );
+
+      if (visibleMessageId) {
+        setSelectedNavigationMessageId((currentMessageId) =>
+          currentMessageId === visibleMessageId
+            ? currentMessageId
+            : visibleMessageId,
+        );
+      }
+    };
+    const scheduleActiveMessageUpdate = (): void => {
+      if (animationFrameId !== null) {
+        return;
+      }
+
+      animationFrameId = window.requestAnimationFrame(updateActiveMessage);
+    };
+
+    scrollViewport.addEventListener("scroll", scheduleActiveMessageUpdate, {
+      passive: true,
+    });
+    scheduleActiveMessageUpdate();
+
+    return () => {
+      scrollViewport.removeEventListener("scroll", scheduleActiveMessageUpdate);
+
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [bottomRef, navigationMessageIds, renderedMessageLimit]);
 
   useEffect(() => {
     if (!messageContextMenu) {

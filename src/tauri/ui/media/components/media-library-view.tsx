@@ -60,6 +60,10 @@ import {
   paginateMediaItems,
   stepMediaGalleryAssetId,
 } from "../../../../core/media/gallery.js";
+import {
+  isMediaAssetKnownTransparent,
+  resolveMediaAssetVideoFrameRate,
+} from "../../../../core/media/video-quality.js";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -289,6 +293,350 @@ const formatObservationValue = (
   return String(value);
 };
 
+type VideoReviewMode =
+  | "checker"
+  | "white"
+  | "black"
+  | "magenta"
+  | "green"
+  | "alpha";
+
+const VIDEO_REVIEW_MODES: ReadonlyArray<{
+  id: VideoReviewMode;
+  label: string;
+}> = [
+  { id: "checker", label: "Checker" },
+  { id: "white", label: "White" },
+  { id: "black", label: "Black" },
+  { id: "magenta", label: "Magenta" },
+  { id: "green", label: "Green" },
+  { id: "alpha", label: "Alpha" },
+];
+
+const videoReviewBackdropClassName = (mode: VideoReviewMode): string => {
+  switch (mode) {
+    case "white":
+      return "bg-white";
+    case "black":
+      return "bg-black";
+    case "magenta":
+      return "bg-[#ff00ff]";
+    case "green":
+      return "bg-[#00ff00]";
+    case "alpha":
+      return "bg-slate-900";
+    default:
+      return "bg-[repeating-conic-gradient(#4b5563_0_25%,#1f2937_0_50%)] bg-[length:24px_24px]";
+  }
+};
+
+const formatVideoReviewTime = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "0:00.000";
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds - minutes * 60;
+  return `${minutes}:${remainder.toFixed(3).padStart(6, "0")}`;
+};
+
+const VideoReview = ({
+  asset,
+  url,
+}: {
+  asset: MediaAssetRecord;
+  url: string;
+}): JSX.Element => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const alphaCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [mode, setMode] = useState<VideoReviewMode>("checker");
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const frameRate = resolveMediaAssetVideoFrameRate(asset) ?? 30;
+  const generatedOutput =
+    asset.operation?.kind === "local-video-generation" ||
+    asset.operation?.kind === "local-wan-video-generation"
+      ? asset.operation.output
+      : null;
+  const frameCount =
+    generatedOutput?.frameCount ??
+    (duration > 0 ? Math.max(1, Math.round(duration * frameRate)) : null);
+  const frameIndex = frameCount
+    ? Math.min(frameCount - 1, Math.max(0, Math.floor(currentTime * frameRate)))
+    : 0;
+  const transparent = isMediaAssetKnownTransparent(asset);
+
+  useEffect(() => {
+    if (!transparent && mode !== "checker") {
+      setMode("checker");
+    }
+  }, [mode, transparent]);
+
+  useEffect(() => {
+    if (mode !== "alpha") return;
+    const video = videoRef.current;
+    const canvas = alphaCanvasRef.current;
+    if (!video || !canvas) return;
+    let cancelled = false;
+    let callbackId: number | null = null;
+
+    const drawAlpha = (): void => {
+      if (
+        cancelled ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        video.videoWidth === 0 ||
+        video.videoHeight === 0
+      ) {
+        return;
+      }
+      if (
+        canvas.width !== video.videoWidth ||
+        canvas.height !== video.videoHeight
+      ) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let index = 0; index < pixels.data.length; index += 4) {
+        const alpha = pixels.data[index + 3];
+        pixels.data[index] = alpha;
+        pixels.data[index + 1] = alpha;
+        pixels.data[index + 2] = alpha;
+        pixels.data[index + 3] = 255;
+      }
+      context.putImageData(pixels, 0, 0);
+    };
+
+    const requestFrame = (): void => {
+      callbackId = null;
+      drawAlpha();
+      if (!cancelled && !video.paused) {
+        callbackId = video.requestVideoFrameCallback(requestFrame);
+      }
+    };
+    const handleFrameChange = (): void => drawAlpha();
+    const handlePlay = (): void => {
+      if (!cancelled && callbackId === null) {
+        callbackId = video.requestVideoFrameCallback(requestFrame);
+      }
+    };
+    video.addEventListener("loadeddata", handleFrameChange);
+    video.addEventListener("play", handlePlay);
+    video.addEventListener("seeked", handleFrameChange);
+    video.addEventListener("timeupdate", handleFrameChange);
+    callbackId = video.requestVideoFrameCallback(requestFrame);
+    drawAlpha();
+    return () => {
+      cancelled = true;
+      video.removeEventListener("loadeddata", handleFrameChange);
+      video.removeEventListener("play", handlePlay);
+      video.removeEventListener("seeked", handleFrameChange);
+      video.removeEventListener("timeupdate", handleFrameChange);
+      if (callbackId !== null) {
+        video.cancelVideoFrameCallback(callbackId);
+      }
+    };
+  }, [mode, url]);
+
+  const togglePlayback = (): void => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      void video.play();
+    } else {
+      video.pause();
+    }
+  };
+
+  const stepFrame = (direction: -1 | 1): void => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    const availableFrameCount =
+      frameCount ?? Math.max(1, Math.round(video.duration * frameRate));
+    const targetFrame = Math.min(
+      availableFrameCount - 1,
+      Math.max(0, frameIndex + direction),
+    );
+    const targetTime = targetFrame / frameRate + 0.0001;
+    video.currentTime = Math.min(
+      Number.isFinite(video.duration)
+        ? Math.max(0, video.duration - 0.0001)
+        : targetTime,
+      targetTime,
+    );
+    setCurrentTime(video.currentTime);
+  };
+
+  return (
+    <div
+      tabIndex={0}
+      aria-label="Frame-accurate video review"
+      onKeyDown={(event) => {
+        if (event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          togglePlayback();
+        } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault();
+          event.stopPropagation();
+          stepFrame(event.key === "ArrowLeft" ? -1 : 1);
+        }
+      }}
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+    >
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 items-center justify-center overflow-hidden",
+          videoReviewBackdropClassName(mode),
+        )}
+      >
+        <video
+          ref={videoRef}
+          src={url}
+          aria-label={`Reviewing ${asset.width} by ${asset.height} video asset`}
+          muted
+          playsInline
+          preload="auto"
+          onClick={togglePlayback}
+          onLoadedMetadata={(event) => {
+            setDuration(event.currentTarget.duration);
+            setCurrentTime(event.currentTarget.currentTime);
+            event.currentTarget.playbackRate = playbackRate;
+          }}
+          onDurationChange={(event) => setDuration(event.currentTarget.duration)}
+          onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          className={cn(
+            "h-full w-full cursor-pointer object-contain",
+            mode === "alpha" && "opacity-0",
+          )}
+        />
+        <canvas
+          ref={alphaCanvasRef}
+          aria-label="Decoded alpha mask"
+          className={cn(
+            "pointer-events-none absolute left-1/2 top-1/2 h-auto w-auto max-h-full max-w-full -translate-x-1/2 -translate-y-1/2",
+            mode === "alpha" ? "block" : "hidden",
+          )}
+        />
+      </div>
+      <div className="space-y-2 border-t border-slate-800 bg-slate-950/95 px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={playing ? "Pause video" : "Play video"}
+            onClick={togglePlayback}
+            className="shrink-0 text-slate-200 hover:bg-slate-800"
+          >
+            {playing ? <Pause /> : <Play />}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Previous video frame"
+            disabled={frameIndex <= 0}
+            onClick={() => stepFrame(-1)}
+            className="shrink-0 text-slate-300 hover:bg-slate-800"
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Next video frame"
+            disabled={frameCount !== null && frameIndex >= frameCount - 1}
+            onClick={() => stepFrame(1)}
+            className="shrink-0 text-slate-300 hover:bg-slate-800"
+          >
+            <ChevronRight />
+          </Button>
+          <input
+            type="range"
+            aria-label="Video timeline"
+            min={0}
+            max={duration > 0 ? duration : 0}
+            step={1 / frameRate}
+            value={Math.min(currentTime, duration > 0 ? duration : currentTime)}
+            onChange={(event) => {
+              const video = videoRef.current;
+              if (!video) return;
+              video.pause();
+              video.currentTime = Number(event.currentTarget.value);
+              setCurrentTime(video.currentTime);
+            }}
+            className="h-1.5 min-w-24 flex-1 cursor-pointer accent-sky-400"
+          />
+          <span className="shrink-0 text-[10px] tabular-nums text-slate-400">
+            Frame {frameIndex + 1}
+            {frameCount ? ` / ${frameCount}` : ""} /{" "}
+            {formatVideoReviewTime(currentTime)} / {formatVideoReviewTime(duration)}
+          </span>
+          <select
+            aria-label="Video playback speed"
+            value={playbackRate}
+            onChange={(event) => {
+              const rate = Number(event.currentTarget.value);
+              setPlaybackRate(rate);
+              if (videoRef.current) {
+                videoRef.current.playbackRate = rate;
+              }
+            }}
+            className="h-8 rounded-md border border-slate-700 bg-slate-900 px-2 text-[10px] text-slate-300"
+          >
+            {[0.25, 0.5, 1, 2].map((rate) => (
+              <option key={rate} value={rate}>
+                {rate}x
+              </option>
+            ))}
+          </select>
+        </div>
+        {transparent ? (
+          <div
+            role="group"
+            aria-label="Transparency review background"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <span className="mr-1 text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">
+              Transparency
+            </span>
+            {VIDEO_REVIEW_MODES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={mode === option.id}
+                onClick={() => setMode(option.id)}
+                className={cn(
+                  "h-7 rounded-md border px-2 text-[9px] font-medium transition-colors",
+                  mode === option.id
+                    ? "border-sky-400/45 bg-sky-400/12 text-sky-200"
+                    : "border-slate-800 bg-slate-900/70 text-slate-500 hover:text-slate-300",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+            <span className="ml-auto text-[9px] text-slate-600">
+              Space play/pause / Left and Right frame step
+            </span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
 const AssetPreview = ({
   asset,
   maxEdge = 512,
@@ -336,13 +684,16 @@ const AssetPreview = ({
 
   if (url) {
     if (asset.kind === "video") {
+      if (interactiveVideo) {
+        return <VideoReview asset={asset} url={url} />;
+      }
       return (
         <video
           src={url}
           aria-label={`${interactiveVideo ? "Playing" : "Preview of"} ${asset.width} by ${asset.height} video asset`}
-          autoPlay={interactiveVideo}
-          controls={interactiveVideo}
-          loop={interactiveVideo}
+          autoPlay={false}
+          controls={false}
+          loop={false}
           muted
           playsInline
           preload="metadata"
@@ -496,7 +847,9 @@ const AssetPreviewDialog = ({
             ))}
           </select>
           <span className="text-[9px] text-slate-600">
-            ← → navigate · Space play/pause
+            {asset.kind === "video"
+              ? "Video controls review frames / gallery buttons change assets"
+              : "Left and Right navigate / Space plays the slideshow"}
           </span>
         </div>
       </DialogContent>
