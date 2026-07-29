@@ -31,8 +31,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 import {
   SETTINGS_SECTIONS,
@@ -621,20 +621,14 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
             aria-label="Settings sections"
             className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
           >
-            <div className="relative mb-3">
-              <SearchIcon
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-500"
-              />
-              <Input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                aria-label="Find settings"
-                placeholder="Find settings"
-                className="h-9 rounded-lg border-slate-800 bg-slate-950 pl-9 text-sm text-slate-100"
-              />
-            </div>
+            <SearchField
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              aria-label="Find settings"
+              placeholder="Find settings"
+              containerClassName="mb-3"
+              className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+            />
 
             {visibleSections.length === 0 ? (
               <div className="grid justify-items-start gap-2 px-2 py-3">

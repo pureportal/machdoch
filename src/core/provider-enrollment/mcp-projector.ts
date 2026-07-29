@@ -3,6 +3,8 @@ import {
   listEnabledMcpServers,
   loadMcpConfig,
   loadMcpDiscoveryCacheSync,
+  loadUserMcpConfig,
+  loadUserMcpDiscoveryCacheSync,
 } from "../mcp/config.js";
 import type {
   McpEffectiveServerConfig,
@@ -252,8 +254,14 @@ export const projectMcpForProvider = async (
   workspaceRoot: string,
   options: McpProjectionOptions = {},
 ): Promise<McpProjection> => {
-  const effectiveConfig = await loadMcpConfig(workspaceRoot);
-  const discovery = loadMcpDiscoveryCacheSync(workspaceRoot).servers;
+  const effectiveConfig =
+    options.scope === "user"
+      ? await loadUserMcpConfig()
+      : await loadMcpConfig(workspaceRoot);
+  const discovery =
+    options.scope === "user"
+      ? loadUserMcpDiscoveryCacheSync().servers
+      : loadMcpDiscoveryCacheSync(workspaceRoot).servers;
   const enabledServers = listEnabledMcpServers(effectiveConfig).filter((server) => {
     if (!options.scope) return true;
     const isWorkspaceServer = server.sources.includes("workspace");

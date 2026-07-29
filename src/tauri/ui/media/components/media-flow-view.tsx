@@ -131,7 +131,9 @@ import {
 import { readMediaAssetPreview } from "../media-runtime";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
+import { SearchField } from "../../components/ui/search-field";
 import { Textarea } from "../../components/ui/textarea";
 import {
   Dialog,
@@ -743,19 +745,15 @@ const MediaAssetPicker = ({
             Select an image from the Media Studio library.
           </DialogDescription>
         </DialogHeader>
-        <div className="relative mx-5 mt-4">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
-          />
-          <Input
-            value={query}
-            aria-label={`Search ${fieldLabel} assets`}
-            placeholder="Search images…"
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-9 border-slate-700 bg-slate-900/70 pl-9 text-xs text-slate-100 placeholder:text-slate-600"
-          />
-        </div>
+        <SearchField
+          value={query}
+          aria-label={`Search ${fieldLabel} assets`}
+          placeholder="Search images…"
+          onChange={(event) => setQuery(event.target.value)}
+          containerClassName="mx-5 mt-4"
+          iconClassName="size-3.5 text-slate-600"
+          className="h-9 border-slate-700 bg-slate-900/70 text-xs text-slate-100 placeholder:text-slate-600"
+        />
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {filteredAssets.length > 0 ? (
             <div
@@ -802,19 +800,20 @@ const MediaAssetPicker = ({
               })}
             </div>
           ) : (
-            <div className="grid min-h-44 place-items-center rounded-xl border border-dashed border-slate-800 bg-slate-900/25 px-6 text-center">
-              <div>
-                <ImageIcon aria-hidden="true" className="mx-auto h-7 w-7 text-slate-700" />
-                <p className="mt-3 text-xs font-medium text-slate-400">
-                  {imageAssets.length === 0 ? "No image assets yet" : "No matching images"}
-                </p>
-                <p className="mt-1 text-[10px] text-slate-600">
-                  {imageAssets.length === 0
-                    ? "Import or generate an image in Media Studio first."
-                    : "Try a different name, tag, id, or size."}
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              icon={ImageIcon}
+              title={
+                imageAssets.length === 0
+                  ? "No image assets yet"
+                  : "No matching images"
+              }
+              description={
+                imageAssets.length === 0
+                  ? "Import or generate an image in Media Studio first."
+                  : "Try a different name, tag, id, or size."
+              }
+              role="status"
+            />
           )}
         </div>
         {currentAssetId ? (
@@ -1328,30 +1327,26 @@ const NodePalettePanel = ({
         </Button>
       </div>
 
-      <div className="relative mt-4">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute top-2.5 left-3 h-3.5 w-3.5 text-slate-600"
-        />
-        <Input
-          autoFocus
-          type="search"
-          value={query}
-          aria-label="Search node palette"
-          placeholder="Search nodes, ports, or types"
-          onChange={(event) => setQuery(event.target.value)}
-          className="border-slate-700 bg-slate-900/60 pl-9 text-xs text-slate-100 placeholder:text-slate-600"
-        />
-      </div>
+      <SearchField
+        autoFocus
+        value={query}
+        aria-label="Search node palette"
+        placeholder="Search nodes, ports, or types"
+        onChange={(event) => setQuery(event.target.value)}
+        containerClassName="mt-4"
+        iconClassName="size-3.5 text-slate-600"
+        className="border-slate-700 bg-slate-900/60 text-xs text-slate-100 placeholder:text-slate-600"
+      />
 
       {definitions.length === 0 ? (
-        <div className="mt-5 rounded-xl border border-dashed border-slate-800 p-5 text-center">
-          <Search className="mx-auto h-5 w-5 text-slate-700" />
-          <p className="mt-2 text-xs text-slate-400">No installed node matches.</p>
-          <p className="mt-1 text-[10px] text-slate-600">
-            Search uses names, stable types, categories, and typed ports.
-          </p>
-        </div>
+        <EmptyState
+          icon={Search}
+          title="No installed node matches."
+          description="Search uses names, stable types, categories, and typed ports."
+          size="compact"
+          role="status"
+          className="mt-5"
+        />
       ) : (
         <div className="mt-5 space-y-5">
           {NODE_CATEGORIES.map((category) => {

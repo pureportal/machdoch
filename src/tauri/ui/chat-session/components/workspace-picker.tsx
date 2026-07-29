@@ -14,12 +14,13 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { EmptyState } from "../../components/ui/empty-state";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { SearchField } from "../../components/ui/search-field";
 import {
   Tooltip,
   TooltipContent,
@@ -390,27 +391,27 @@ export const WorkspacePicker = ({
             </p>
           </div>
 
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <Input
-              ref={searchInputRef}
-              type="search"
-              value={workspaceSearchText}
-              onChange={(event) => setWorkspaceSearchText(event.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              aria-label="Search workspaces"
-              placeholder="Search workspaces"
-              autoComplete="off"
-              spellCheck={false}
-              className="h-10 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 pl-9 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
-            />
-          </div>
+          <SearchField
+            ref={searchInputRef}
+            value={workspaceSearchText}
+            onChange={(event) => setWorkspaceSearchText(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            aria-label="Search workspaces"
+            placeholder="Search workspaces"
+            autoComplete="off"
+            spellCheck={false}
+            className="h-10 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
+          />
 
           <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
             {rankedWorkspaceSearchEntries.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-500">
-                No matching workspaces
-              </div>
+              <EmptyState
+                icon={Search}
+                title="No matching workspaces"
+                size="compact"
+                role="status"
+                className="rounded-2xl bg-slate-900/60"
+              />
             ) : null}
 
             {rankedWorkspaceSearchEntries.map((entry) => {

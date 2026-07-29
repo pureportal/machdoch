@@ -28,6 +28,7 @@ import { compareCanonicalStrings, sha256 } from "./digests.js";
 import { projectMcpForProvider } from "./mcp-projector.js";
 import {
   assertStableManagedTargetUnchanged,
+  getManagedTargetPathIdentity,
   inspectManagedTarget,
   installManagedTarget,
   loadOwnershipManifest,
@@ -432,8 +433,23 @@ const createCoverageEntries = (
 const findPrevious = (
   manifest: ProviderOwnershipManifest,
   path: string,
-): ProviderOwnershipRecord | undefined =>
-  manifest.targets.find((target) => target.path === path);
+): ProviderOwnershipRecord | undefined => {
+  const pathIdentity = getManagedTargetPathIdentity(path);
+  const matches = manifest.targets.filter(
+    (target) => getManagedTargetPathIdentity(target.path) === pathIdentity,
+  );
+  const selected = matches.sort(
+    (left, right) =>
+      Date.parse(right.installedAt) - Date.parse(left.installedAt) ||
+      compareCanonicalStrings(left.path, right.path),
+  )[0];
+  return selected && matches.length > 1
+    ? {
+        ...selected,
+        createdFile: matches.every((target) => target.createdFile),
+      }
+    : selected;
+};
 
 const reconcileProviderScope = async (
   provider: AgentCliProvider,
@@ -452,7 +468,7 @@ const reconcileProviderScope = async (
   const recordsByPath = new Map(
     [previousMcp]
       .filter((record): record is ProviderOwnershipRecord => Boolean(record))
-      .map((record) => [record.path, record]),
+      .map((record) => [getManagedTargetPathIdentity(record.path), record]),
   );
   let ownershipCheckpointCommitted = false;
   try {
@@ -465,7 +481,7 @@ const reconcileProviderScope = async (
       | undefined;
     if (projection.servers.length > 0) {
       mcpInstall = await installManagedTarget({
-        path: paths.mcpPath,
+        path: previousMcp?.path ?? paths.mcpPath,
         provider,
         scope,
         format: paths.mcpFormat,
@@ -476,14 +492,19 @@ const reconcileProviderScope = async (
           ownershipCheckpointCommitted = true;
         },
       });
-      recordsByPath.set(paths.mcpPath, mcpInstall.record);
+      recordsByPath.set(
+        getManagedTargetPathIdentity(paths.mcpPath),
+        mcpInstall.record,
+      );
       warnings.push(...mcpInstall.warnings);
     } else if (previousMcp) {
       const removal = await uninstallManagedTarget(previousMcp, {
         force: true,
       });
       if (removal.warning) warnings.push(removal.warning);
-      if (removal.removed) recordsByPath.delete(paths.mcpPath);
+      if (removal.removed) {
+        recordsByPath.delete(getManagedTargetPathIdentity(paths.mcpPath));
+      }
     }
     warnings.push(...projection.warnings);
     if (scope === "workspace") {
@@ -582,7 +603,9 @@ const reconcileOnce = async (
       schemaVersion: 1,
       targets: [
         ...checkpointManifest.targets.filter(
-          (candidate) => candidate.path !== record.path,
+          (candidate) =>
+            getManagedTargetPathIdentity(candidate.path) !==
+            getManagedTargetPathIdentity(record.path),
         ),
         record,
       ].sort((left, right) => compareCanonicalStrings(left.path, right.path)),
@@ -597,6 +620,9 @@ const reconcileOnce = async (
   const daemon = await buildDaemonStatus();
   if (!config.enabled || !config.persistentSync.enabled) {
     const cleanup = await uninstallOwnedRecords(ownership.targets);
+    if (cleanup.retained.length > 0) {
+      throw new Error(cleanup.warnings.join(" "));
+    }
     return {
       status: {
         schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
@@ -618,14 +644,21 @@ const reconcileOnce = async (
   const statuses: ProviderSyncTargetStatus[] = [];
   const records: ProviderOwnershipRecord[] = [];
   const coverage: EnrollmentCoverageEntry[] = [];
-  const managedPaths = new Set<string>();
+  const managedPathIdentities = new Set<string>();
+  const reconciledUserProviders = new Set<string>();
+  const disabledUserProviders = new Set<string>();
 
   for (const provider of getAgentCliProviders()) {
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
-      managedPaths.add(paths.mcpPath);
+      managedPathIdentities.add(
+        getManagedTargetPathIdentity(paths.mcpPath),
+      );
     }
-    if (!config.providers[provider].enabled) continue;
+    if (!config.providers[provider].enabled) {
+      disabledUserProviders.add(provider);
+      continue;
+    }
     const binary = resolveAgentCliProviderBinary(provider, env);
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
@@ -661,20 +694,36 @@ const reconcileOnce = async (
           ],
         };
       }
+      if (scope === "user" && result.status.state !== "degraded") {
+        reconciledUserProviders.add(provider);
+      }
       statuses.push(result.status);
       records.push(...result.records);
       coverage.push(...result.coverage);
     }
   }
 
-  const currentPaths = new Set(records.map((record) => record.path));
+  const currentPathIdentities = new Set(
+    records.map((record) => getManagedTargetPathIdentity(record.path)),
+  );
+  const isManagedByThisReconciliation = (
+    record: ProviderOwnershipRecord,
+  ): boolean =>
+    managedPathIdentities.has(getManagedTargetPathIdentity(record.path)) ||
+    (record.scope === "user" &&
+      (reconciledUserProviders.has(record.provider) ||
+        disabledUserProviders.has(record.provider)));
   const obsoleteRecords = ownership.targets.filter(
     (record) =>
-      managedPaths.has(record.path) && !currentPaths.has(record.path),
+      isManagedByThisReconciliation(record) &&
+      !currentPathIdentities.has(getManagedTargetPathIdentity(record.path)),
   );
   const cleanup = await uninstallOwnedRecords(obsoleteRecords);
+  if (cleanup.retained.length > 0) {
+    throw new Error(cleanup.warnings.join(" "));
+  }
   const retainedRecords = ownership.targets.filter(
-    (record) => !managedPaths.has(record.path),
+    (record) => !isManagedByThisReconciliation(record),
   );
   const nextOwnership: ProviderOwnershipManifest = {
     schemaVersion: 1,

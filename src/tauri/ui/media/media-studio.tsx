@@ -484,6 +484,8 @@ export const MediaStudio = ({
   const [exportLoading, setExportLoading] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [deletionNotice, setDeletionNotice] = useState<string | null>(null);
+  const dismissExportNotice = useCallback(() => setExportNotice(null), []);
+  const dismissDeletionNotice = useCallback(() => setDeletionNotice(null), []);
   const [qualityLoadingAssetId, setQualityLoadingAssetId] = useState<string | null>(null);
   const [qualityReports, setQualityReports] = useState<Record<string, MediaQualityReport>>({});
   const [tagLoadingAssetId, setTagLoadingAssetId] = useState<string | null>(null);
@@ -3956,7 +3958,6 @@ export const MediaStudio = ({
           <MediaLibraryView
             assets={runtimeAssets}
             runtimeStatus={runtimeStatus}
-            runtimeError={null}
             importSupported={supportsNativeMediaImport()}
             importLoading={importLoading}
             transformLoading={transformLoading}
@@ -3976,6 +3977,8 @@ export const MediaStudio = ({
             onImport={importImages}
             onTransform={transformImage}
             onExport={exportAsset}
+            onDismissExportNotice={dismissExportNotice}
+            onDismissDeletionNotice={dismissDeletionNotice}
             onAnalyzeQuality={analyzeQuality}
             onLoadQualityReport={loadQualityReport}
             onUpdateTags={updateAssetTags}
@@ -4008,8 +4011,6 @@ export const MediaStudio = ({
           <MediaRunsView
             runs={combinedRuns}
             selectedRun={selectedRun}
-            runtimeStatus={runtimeStatus}
-            runtimeError={null}
             onCreate={() => selectSection("generate")}
             onSelect={selectRun}
             onCancel={cancelRun}

@@ -19,6 +19,7 @@ import type {
   TaskExecutionProgress,
   TaskExecutionResult,
 } from "../../../../core/types.js";
+import { scheduleAppNotificationDismiss } from "../../components/ui/notification-lifecycle";
 import {
   applySessionRetentionPolicy,
   canDeleteSession,
@@ -710,6 +711,9 @@ export const useChatSessionController = (
   );
   const [promptEnhancementStatus, setPromptEnhancementStatus] =
     useState<ComposerStatusMessage | null>(null);
+  const dismissPromptEnhancementStatus = useCallback((): void => {
+    setPromptEnhancementStatus(null);
+  }, []);
   const [promptEnhancementPendingTasks, setPromptEnhancementPendingTasks] =
     useState<PromptEnhancementPendingState[]>([]);
   const [promptEnhancementPreview, setPromptEnhancementPreview] =
@@ -723,13 +727,11 @@ export const useChatSessionController = (
     }
 
     const status = promptEnhancementStatus;
-    const timeoutId = window.setTimeout(() => {
+    return scheduleAppNotificationDismiss(() => {
       setPromptEnhancementStatus((current) =>
         current === status ? null : current,
       );
     }, COMPOSER_STATUS_TIMEOUT_MS);
-
-    return () => window.clearTimeout(timeoutId);
   }, [promptEnhancementStatus]);
 
   useEffect(
@@ -7314,7 +7316,7 @@ export const useChatSessionController = (
         promptEnhancementStatus?.sessionId === activeComposerSession.id
           ? promptEnhancementStatus
           : null,
-      onStatusMessageDismiss: () => setPromptEnhancementStatus(null),
+      onStatusMessageDismiss: dismissPromptEnhancementStatus,
       contextAttachments: activeComposerSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
       matchedContextPackIds,
@@ -7333,6 +7335,7 @@ export const useChatSessionController = (
         statusText: speechInput.statusText,
         statusTone: speechInput.statusTone,
         onAction: handleSpeechInputAction,
+        onStatusDismiss: speechInput.dismissStatus,
       },
       canSendMessage: canComposeMessage,
       sendDisabledReason: activeSessionSendDisabledReason,

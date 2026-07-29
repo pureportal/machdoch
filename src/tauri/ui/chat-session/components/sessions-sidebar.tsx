@@ -40,8 +40,9 @@ import {
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { EmptyState } from "../../components/ui/empty-state";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { SearchField } from "../../components/ui/search-field";
 import {
   Tooltip,
   TooltipContent,
@@ -574,18 +575,15 @@ export const SessionsSidebar = ({
       >
         <div className="app-sessions-scroll-content grid gap-4 px-5 py-5 pr-6">
           <div className="app-sessions-filter-stack grid gap-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <Input
-                value={sessionSearchQuery}
-                aria-label="Search sessions"
-                placeholder="Search sessions"
-                onChange={(event) =>
-                  onSessionSearchQueryChange(event.target.value)
-                }
-                className="app-sessions-filter-input h-9 rounded-xl border-slate-800 bg-slate-950/80 pl-9 text-sm text-slate-100 placeholder:text-slate-600"
-              />
-            </div>
+            <SearchField
+              value={sessionSearchQuery}
+              aria-label="Search sessions"
+              placeholder="Search sessions"
+              onChange={(event) =>
+                onSessionSearchQueryChange(event.target.value)
+              }
+              className="app-sessions-filter-input h-9 rounded-xl border-slate-800 bg-slate-950/80 text-sm text-slate-100 placeholder:text-slate-600"
+            />
 
             {showSessionProjectFilter ? (
               <div className="relative">
@@ -711,9 +709,13 @@ export const SessionsSidebar = ({
           </div>
 
           {filteredSessions.length === 0 ? (
-            <div className="app-sessions-empty rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-6 text-center text-sm leading-6 text-slate-500">
-              No sessions match the current filters.
-            </div>
+            <EmptyState
+              icon={Search}
+              title="No sessions match the current filters."
+              size="compact"
+              role="status"
+              className="app-sessions-empty rounded-2xl bg-slate-950/60"
+            />
           ) : (
             <>
             {renderedSessions.map((session, index) => {

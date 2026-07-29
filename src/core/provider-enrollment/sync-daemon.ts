@@ -416,6 +416,8 @@ export const runProviderSyncDaemon = async (
   let rerun = false;
   let watchers: FSWatcher[] = [];
   let fullScan: ReturnType<typeof setInterval> | undefined;
+  let stopping = false;
+  let activeReconcile: Promise<void> | undefined;
 
   try {
     let config = await loadProviderEnrollmentConfig();
@@ -482,25 +484,44 @@ export const runProviderSyncDaemon = async (
         console.error(`machdoch provider-sync: ${message}`);
       } finally {
         running = false;
-        if (rerun) {
+        if (rerun && !stopping) {
           rerun = false;
-          void reconcile();
+          startReconcile();
         }
       }
     };
+
+    function startReconcile(): void {
+      if (stopping) return;
+      if (running) {
+        rerun = true;
+        return;
+      }
+      const pending = reconcile();
+      activeReconcile = pending;
+      void pending.then(
+        () => {
+          if (activeReconcile === pending) activeReconcile = undefined;
+        },
+        () => {
+          if (activeReconcile === pending) activeReconcile = undefined;
+        },
+      );
+    }
 
     function schedule(): void {
       // Coalesce changes that arrive during reconciliation into one follow-up
       // pass. The narrowed input-only watchers prevent unrelated workspace
       // churn from feeding the daemon, while this preserves a refresh request
       // or genuine source edit that races with an in-flight pass.
+      if (stopping) return;
       if (running) {
         rerun = true;
         return;
       }
       if (timer) clearTimeout(timer);
       timer = setTimeout(
-        () => void reconcile(),
+        startReconcile,
         config.persistentSync.debounceMs,
       );
       timer.unref?.();
@@ -508,12 +529,13 @@ export const runProviderSyncDaemon = async (
 
     await reconcile();
     fullScan = setInterval(
-      () => void reconcile(),
+      startReconcile,
       config.persistentSync.fullRescanIntervalMs,
     );
 
     await new Promise<void>((resolve) => {
       const stop = (): void => {
+        stopping = true;
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
         options.signal?.removeEventListener("abort", stop);
@@ -525,6 +547,8 @@ export const runProviderSyncDaemon = async (
       if (options.signal?.aborted) stop();
     });
   } finally {
+    stopping = true;
+    await activeReconcile;
     if (timer) clearTimeout(timer);
     if (fullScan) clearInterval(fullScan);
     for (const watcher of watchers) watcher.close();

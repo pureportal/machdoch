@@ -15,6 +15,7 @@ import {
 } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { AppNotification } from "../../../components/ui/notification";
 import { cn } from "../../../lib/utils";
 import {
   doctorProviderSync,
@@ -325,20 +326,7 @@ export const SettingsStatus = ({
     return null;
   }
 
-  return (
-    <p
-      role={message.tone === "error" ? "alert" : "status"}
-      aria-live={message.tone === "error" ? "assertive" : "polite"}
-      className={cn(
-        "rounded-lg border px-3 py-2 text-sm leading-5",
-        message.tone === "error"
-          ? "border-rose-500/20 bg-rose-500/10 text-rose-200"
-          : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-      )}
-    >
-      {message.text}
-    </p>
-  );
+  return <AppNotification tone={message.tone}>{message.text}</AppNotification>;
 };
 
 export interface ProviderSyncControlProps {

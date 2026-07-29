@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
-import { dirname, isAbsolute } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { readStableRegularFile } from "../_helpers/read-stable-regular-file.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import {
@@ -16,6 +16,16 @@ import {
 const TOML_START = "# machdoch-managed:provider-enrollment:start";
 const TOML_END = "# machdoch-managed:provider-enrollment:end";
 const MAX_MANAGED_TARGET_BYTES = 16 * 1024 * 1024;
+const LEGACY_OWNERSHIP_FORMAT = "markdown";
+const OWNERSHIP_FORMAT_BY_PROVIDER = {
+  "codex-cli": "toml",
+  "claude-cli": "json",
+  "copilot-cli": "json",
+} as const;
+type OwnershipProvider = keyof typeof OWNERSHIP_FORMAT_BY_PROVIDER;
+const isOwnershipProvider = (value: unknown): value is OwnershipProvider =>
+  typeof value === "string" &&
+  Object.hasOwn(OWNERSHIP_FORMAT_BY_PROVIDER, value);
 const TOML_KEY_SOURCE =
   String.raw`("(?:\\.|[^"\\])*"|'[^']*'|[A-Za-z0-9_-]+)`;
 const TOML_MCP_TABLE_PATTERN = new RegExp(
@@ -49,6 +59,22 @@ export interface ProviderOwnershipManifest {
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const MAX_OWNERSHIP_RECORDS = 4_096;
 const MAX_MANAGED_KEYS_PER_RECORD = 4_096;
+const OWNERSHIP_MANIFEST_KEYS = new Set(["schemaVersion", "targets"]);
+const OWNERSHIP_TARGET_KEYS = new Set([
+  "path",
+  "provider",
+  "scope",
+  "format",
+  "managedDigest",
+  "installedFileDigest",
+  "createdFile",
+  "managedKeys",
+  "installedAt",
+]);
+const hasOnlyKeys = (
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+): boolean => Object.keys(value).every((key) => allowed.has(key));
 const hasAsciiControlCharacter = (value: string): boolean =>
   [...value].some((character) => {
     const codePoint = character.codePointAt(0);
@@ -57,9 +83,27 @@ const hasAsciiControlCharacter = (value: string): boolean =>
     );
   });
 
+export const getManagedTargetPathIdentity = (path: string): string => {
+  let normalized = resolve(path);
+  if (process.platform !== "win32") return normalized;
+  const lower = normalized.toLocaleLowerCase("en-US");
+  if (lower.startsWith("\\\\?\\unc\\")) {
+    normalized = `\\\\${normalized.slice(8)}`;
+  } else if (lower.startsWith("\\\\?\\")) {
+    normalized = normalized.slice(4);
+  }
+  return normalized.toLocaleLowerCase("en-US");
+};
+
+interface ManagedTextRegion {
+  start: number;
+  end: number;
+  payload: string;
+}
+
 const findRegion = (
   content: string,
-): { start: number; end: number; payload: string } | undefined => {
+): ManagedTextRegion | undefined => {
   const start = content.indexOf(TOML_START);
   if (start < 0) return undefined;
   const endMarkerIndex = content.indexOf(TOML_END, start + TOML_START.length);
@@ -76,8 +120,8 @@ const findRegion = (
 
 const findRegions = (
   content: string,
-): Array<{ start: number; end: number; payload: string }> => {
-  const regions: Array<{ start: number; end: number; payload: string }> = [];
+): ManagedTextRegion[] => {
+  const regions: ManagedTextRegion[] = [];
   let offset = 0;
   while (offset < content.length) {
     const region = findRegion(content.slice(offset));
@@ -92,22 +136,60 @@ const findRegions = (
   return regions;
 };
 
-const removeTextRegions = (
-  content: string,
-): string => {
-  let result = content;
-  for (const region of findRegions(content).reverse()) {
-    result = `${result.slice(0, region.start)}${result.slice(region.end)}`;
+const countOccurrences = (content: string, marker: string): number => {
+  let count = 0;
+  let offset = 0;
+  while ((offset = content.indexOf(marker, offset)) >= 0) {
+    count += 1;
+    offset += marker.length;
   }
-  return result.trim();
+  return count;
 };
+
+const assertWellFormedTextRegions = (
+  content: string,
+  regions: readonly ManagedTextRegion[],
+  path: string,
+): void => {
+  if (
+    countOccurrences(content, TOML_START) !== regions.length ||
+    countOccurrences(content, TOML_END) !== regions.length
+  ) {
+    throw new Error(
+      `Machdoch-managed region markers are malformed or ambiguous in ${path}.`,
+    );
+  }
+};
+
+const selectOwnedTextRegion = (
+  regions: readonly ManagedTextRegion[],
+  record: ProviderOwnershipRecord,
+): ManagedTextRegion | undefined => {
+  if (regions.length <= 1) return regions[0];
+  const matches = regions.filter(
+    (region) => sha256(region.payload) === record.managedDigest,
+  );
+  if (matches.length === 1) return matches[0];
+  throw new Error(
+    `Could not identify the owned Machdoch-managed region in ${record.path}.`,
+  );
+};
+
+const removeTextRegion = (
+  content: string,
+  region: ManagedTextRegion,
+): string => `${content.slice(0, region.start)}${content.slice(region.end)}`;
 
 const mergeTextRegion = (
   existing: string,
   payload: string,
+  current: ManagedTextRegion | undefined,
 ): string => {
   const regionText = `${TOML_START}\n${payload.trim()}\n${TOML_END}`;
-  const unmanaged = removeTextRegions(existing);
+  if (current) {
+    return `${existing.slice(0, current.start)}${regionText}${existing.slice(current.end)}`;
+  }
+  const unmanaged = existing.trimEnd();
   return unmanaged.length > 0
     ? `${unmanaged}\n\n${regionText}\n`
     : `${regionText}\n`;
@@ -166,6 +248,7 @@ const parseOwnershipManifest = (
 ): ProviderOwnershipManifest => {
   if (
     !isRecord(value) ||
+    !hasOnlyKeys(value, OWNERSHIP_MANIFEST_KEYS) ||
     value.schemaVersion !== 1 ||
     !Array.isArray(value.targets) ||
     value.targets.length > MAX_OWNERSHIP_RECORDS
@@ -174,19 +257,23 @@ const parseOwnershipManifest = (
   }
 
   const seenPaths = new Set<string>();
-  const targets = value.targets.map((candidate, index): ProviderOwnershipRecord => {
+  const seenPathAuthorities = new Map<
+    string,
+    { provider: string; scope: "user" | "workspace"; format: string }
+  >();
+  const targets = value.targets.map((candidate, index): ProviderOwnershipRecord | undefined => {
     const label = `${path} target ${index}`;
+    const format = isRecord(candidate) ? candidate.format : undefined;
     if (
       !isRecord(candidate) ||
+      !hasOnlyKeys(candidate, OWNERSHIP_TARGET_KEYS) ||
       typeof candidate.path !== "string" ||
       !isAbsolute(candidate.path) ||
       candidate.path.length > 32_768 ||
-      typeof candidate.provider !== "string" ||
-      candidate.provider.trim().length === 0 ||
-      candidate.provider.length > 256 ||
+      !isOwnershipProvider(candidate.provider) ||
       (candidate.scope !== "user" && candidate.scope !== "workspace") ||
-      (candidate.format !== "toml" &&
-        candidate.format !== "json") ||
+      (format !== LEGACY_OWNERSHIP_FORMAT &&
+        format !== OWNERSHIP_FORMAT_BY_PROVIDER[candidate.provider]) ||
       typeof candidate.managedDigest !== "string" ||
       !SHA256_PATTERN.test(candidate.managedDigest) ||
       typeof candidate.installedFileDigest !== "string" ||
@@ -198,12 +285,42 @@ const parseOwnershipManifest = (
     ) {
       throw new Error(`${label} is malformed.`);
     }
+    const provider = candidate.provider;
+    const targetFormat = format as
+      | ManagedTargetFormat
+      | typeof LEGACY_OWNERSHIP_FORMAT;
     if (seenPaths.has(candidate.path)) {
       throw new Error(`${path} contains duplicate ownership for ${candidate.path}.`);
     }
     seenPaths.add(candidate.path);
+    const pathIdentity = getManagedTargetPathIdentity(candidate.path);
+    const previousAuthority = seenPathAuthorities.get(pathIdentity);
+    if (
+      previousAuthority &&
+      (previousAuthority.provider !== provider ||
+        previousAuthority.scope !== candidate.scope ||
+        previousAuthority.format !== targetFormat)
+    ) {
+      throw new Error(
+        `${path} contains ambiguous ownership for ${candidate.path}.`,
+      );
+    }
+    seenPathAuthorities.set(pathIdentity, {
+      provider,
+      scope: candidate.scope,
+      format: targetFormat,
+    });
 
     let managedKeys: string[] | undefined;
+    if (targetFormat === "json" && candidate.managedKeys === undefined) {
+      throw new Error(`${label} has invalid managed MCP keys.`);
+    }
+    if (
+      targetFormat !== "json" &&
+      candidate.managedKeys !== undefined
+    ) {
+      throw new Error(`${label} has invalid managed MCP keys.`);
+    }
     if (candidate.managedKeys !== undefined) {
       if (
         !Array.isArray(candidate.managedKeys) ||
@@ -226,18 +343,23 @@ const parseOwnershipManifest = (
       }
     }
 
+    // Persistent instruction targets predate MCP-only sync. Retire their
+    // ownership metadata without changing the referenced instruction file.
+    if (targetFormat === LEGACY_OWNERSHIP_FORMAT) return undefined;
     return {
       path: candidate.path,
-      provider: candidate.provider,
+      provider,
       scope: candidate.scope,
-      format: candidate.format,
+      format: targetFormat,
       managedDigest: candidate.managedDigest,
       installedFileDigest: candidate.installedFileDigest,
       createdFile: candidate.createdFile,
       ...(managedKeys ? { managedKeys } : {}),
       installedAt: candidate.installedAt,
     };
-  });
+  }).filter(
+    (target): target is ProviderOwnershipRecord => target !== undefined,
+  );
 
   return {
     schemaVersion: 1,
@@ -335,7 +457,8 @@ const installManagedTargetUnlocked = async (
 ): Promise<InstallManagedTargetResult> => {
   if (
     params.previous &&
-    (params.previous.path !== params.path ||
+    (getManagedTargetPathIdentity(params.previous.path) !==
+      getManagedTargetPathIdentity(params.path) ||
       params.previous.provider !== params.provider ||
       params.previous.scope !== params.scope ||
       params.previous.format !== params.format)
@@ -404,14 +527,19 @@ const installManagedTargetUnlocked = async (
     const payload = String(params.payload).trim();
     managedDigest = sha256(payload);
     const currentRegions = findRegions(existing);
-    const currentRegion = currentRegions[0];
+    assertWellFormedTextRegions(existing, currentRegions, params.path);
     if (!params.previous && currentRegions.length > 0) {
       throw new Error(
         `Refusing to overwrite an unowned Machdoch-managed region in ${params.path}; remove the stale region or restore its ownership metadata first.`,
       );
     }
+    const currentRegion = params.previous
+      ? selectOwnedTextRegion(currentRegions, params.previous)
+      : undefined;
     const generated = inventoryTomlMcpServers(payload);
-    const unmanaged = inventoryTomlMcpServers(removeTextRegions(existing));
+    const unmanaged = inventoryTomlMcpServers(
+      currentRegion ? removeTextRegion(existing, currentRegion) : existing,
+    );
     const collisions = [...generated.names]
       .filter((name) => unmanaged.names.has(name))
       .sort(compareCanonicalStrings);
@@ -424,15 +552,14 @@ const installManagedTargetUnlocked = async (
     }
     if (
       params.previous &&
-      (currentRegions.length !== 1 ||
-        sha256(currentRegion?.payload ?? "") !== params.previous.managedDigest)
+      sha256(currentRegion?.payload ?? "") !== params.previous.managedDigest
     ) {
       const backupPath = await createBackup(params.path, existing);
       warnings.push(
         `An externally changed managed region was backed up to ${backupPath} and reconciled.`,
       );
     }
-    content = mergeTextRegion(existing, payload);
+    content = mergeTextRegion(existing, payload, currentRegion);
   }
 
   const record: ProviderOwnershipRecord = {
@@ -519,10 +646,11 @@ const uninstallManagedTargetUnlocked = async (
     }
   } else {
     const regions = findRegions(existing);
+    assertWellFormedTextRegions(existing, regions, record.path);
     if (regions.length === 0) return { removed: true };
-    const isCurrent =
-      regions.length === 1 &&
-      sha256(regions[0]?.payload ?? "") === record.managedDigest;
+    const region = selectOwnedTextRegion(regions, record);
+    if (!region) return { removed: true };
+    const isCurrent = sha256(region.payload) === record.managedDigest;
     if (!isCurrent) {
       if (!options.force) {
         return {
@@ -533,8 +661,7 @@ const uninstallManagedTargetUnlocked = async (
       const backupPath = await createBackup(record.path, existing);
       warning = `An externally changed managed region was backed up to ${backupPath} and removed.`;
     }
-    next = removeTextRegions(existing);
-    if (next) next += "\n";
+    next = removeTextRegion(existing, region);
   }
 
   if (record.createdFile && !next.trim()) {
@@ -591,7 +718,9 @@ export const inspectManagedTarget = async (
         managedCurrent: digestJson(managed) === record.managedDigest,
       };
     }
-    const region = findRegion(content);
+    const regions = findRegions(content);
+    assertWellFormedTextRegions(content, regions, record.path);
+    const region = selectOwnedTextRegion(regions, record);
     return {
       exists: true,
       syntaxValid: Boolean(region),

@@ -12,10 +12,9 @@ import type {
   McpMarketplaceInstallPlan,
 } from "../../../core/mcp/marketplace.js";
 import { Input } from "../components/ui/input";
-import { cn } from "../lib/utils";
+import { AppNotification } from "../components/ui/notification";
 import type {
   MarketplaceMessage,
-  MarketplaceMessageTone,
   MarketplaceView,
 } from "./mcp-marketplace-model";
 
@@ -58,19 +57,6 @@ export const getInstallKindLabel = (
   }
 
   return plan.candidate.registryType ?? plan.kind;
-};
-
-const getMessageClass = (tone: MarketplaceMessageTone): string => {
-  switch (tone) {
-    case "success":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
-    case "warning":
-      return "border-amber-500/20 bg-amber-500/10 text-amber-100";
-    case "error":
-      return "border-rose-500/20 bg-rose-500/10 text-rose-100";
-    case "info":
-      return "border-sky-500/20 bg-sky-500/10 text-sky-100";
-  }
 };
 
 export const CredentialInput = ({
@@ -120,22 +106,19 @@ export const CredentialInput = ({
 
 export const StatusMessage = ({
   message,
+  onDismiss,
 }: {
   message: MarketplaceMessage | null;
+  onDismiss?: () => void;
 }): JSX.Element | null => {
   if (!message) {
     return null;
   }
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border px-3 py-2 text-sm",
-        getMessageClass(message.tone),
-      )}
-    >
+    <AppNotification tone={message.tone} onDismiss={onDismiss}>
       {message.text}
-    </div>
+    </AppNotification>
   );
 };
 

@@ -42,6 +42,8 @@ import type {
   MediaRunDetail,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import { EmptyState } from "../../components/ui/empty-state";
+import { SearchField } from "../../components/ui/search-field";
 import { Textarea } from "../../components/ui/textarea";
 import { usePromptHistoryNavigation } from "../../_helpers/use-prompt-history-navigation";
 import { cn } from "../../lib/utils";
@@ -1311,19 +1313,15 @@ export const MediaGenerateView = ({
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <label className="relative min-w-[min(100%,16rem)] flex-1">
                       <span className="sr-only">Search Library reference images</span>
-                      <Search
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
-                      />
-                      <input
-                        type="search"
+                      <SearchField
                         value={referenceQuery}
                         onChange={(event) => {
                           setReferenceQuery(event.currentTarget.value);
                           setReferencePage(1);
                         }}
                         placeholder="Search Library images, tags, or provenance"
-                        className="h-8 w-full rounded-md border border-slate-800 bg-slate-950 pr-2.5 pl-8 text-[10px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-sky-400/45 focus:ring-2 focus:ring-sky-400/10"
+                        iconClassName="left-2.5 size-3.5 text-slate-600"
+                        className="h-8 rounded-md border-slate-800 bg-slate-950 pr-2.5 pl-8 text-[10px] text-slate-200 shadow-none placeholder:text-slate-600 focus-visible:border-sky-400/45 focus-visible:ring-sky-400/10 md:text-[10px]"
                       />
                     </label>
                     <span
@@ -1358,15 +1356,22 @@ export const MediaGenerateView = ({
                     ))}
                   </div>
                   ) : (
-                    <p className="mt-3 rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-xs text-slate-600">
-                      No unused Library images match “{referenceQuery.trim()}”.
-                    </p>
+                    <EmptyState
+                      icon={Search}
+                      title={`No unused Library images match “${referenceQuery.trim()}”.`}
+                      size="compact"
+                      role="status"
+                      className="mt-3 rounded-lg"
+                    />
                   )}
                   </>
                 ) : (
-                  <p className="mt-3 rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-xs text-slate-600">
-                    No unused Library images are available.
-                  </p>
+                  <EmptyState
+                    icon={ImageIcon}
+                    title="No unused Library images are available."
+                    size="compact"
+                    className="mt-3 rounded-lg"
+                  />
                 )}
               </div>
             ) : null}
@@ -1490,19 +1495,15 @@ export const MediaGenerateView = ({
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <label className="relative min-w-[min(100%,16rem)] flex-1">
                       <span className="sr-only">Search available model add-ons</span>
-                      <Search
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
-                      />
-                      <input
-                        type="search"
+                      <SearchField
                         value={addonQuery}
                         onChange={(event) => {
                           setAddonQuery(event.currentTarget.value);
                           setAddonPage(1);
                         }}
                         placeholder="Find a LoRA, trigger, architecture, or target"
-                        className="h-8 w-full rounded-md border border-slate-800 bg-slate-950 pr-2.5 pl-8 text-[10px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/45 focus:ring-2 focus:ring-cyan-400/10"
+                        iconClassName="left-2.5 size-3.5 text-slate-600"
+                        className="h-8 rounded-md border-slate-800 bg-slate-950 pr-2.5 pl-8 text-[10px] text-slate-200 shadow-none placeholder:text-slate-600 focus-visible:border-cyan-400/45 focus-visible:ring-cyan-400/10 md:text-[10px]"
                       />
                     </label>
                     <span aria-live="polite" className="text-[9px] tabular-nums text-slate-600">
@@ -1543,10 +1544,14 @@ export const MediaGenerateView = ({
                   Import a LoRA or embedding in Models
                 </button>
               ) : visibleAddOnRows.length === 0 ? (
-                <div className="mt-3 rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-[11px] text-slate-600">
-                  No model add-ons match “{addonQuery.trim()}”. Active add-ons
-                  always remain visible.
-                </div>
+                <EmptyState
+                  icon={Search}
+                  title={`No model add-ons match “${addonQuery.trim()}”.`}
+                  description="Active add-ons always remain visible."
+                  size="compact"
+                  role="status"
+                  className="mt-3 rounded-lg"
+                />
               ) : (
                 <>
                 <MediaPagination

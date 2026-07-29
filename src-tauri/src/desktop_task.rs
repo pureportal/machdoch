@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     fs,
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
@@ -362,6 +362,23 @@ fn ensure_file_preview_path(path: PathBuf) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn allow_file_preview_source(
+    app_handle: &tauri::AppHandle,
+    preview_path: &Path,
+) -> Result<String, String> {
+    app_handle
+        .asset_protocol_scope()
+        .allow_file(preview_path)
+        .map_err(|error| {
+            format!(
+                "Unable to allow preview path `{}`: {error}",
+                preview_path.display()
+            )
+        })?;
+
+    Ok(format_path_for_ui(preview_path))
+}
+
 fn read_file_preview_sync(path: PathBuf) -> Result<FilePreviewReadResult, String> {
     let preview_path = ensure_file_preview_path(path)?;
     let mut file = fs::File::open(&preview_path).map_err(|error| {
@@ -412,17 +429,18 @@ fn read_file_preview_sync(path: PathBuf) -> Result<FilePreviewReadResult, String
 
 #[tauri::command]
 pub async fn resolve_workspace_file_preview_path(
+    app_handle: tauri::AppHandle,
     workspace_root: String,
     relative_path: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let preview_path = tauri::async_runtime::spawn_blocking(move || {
         let resolved_path = resolve_workspace_relative_path(&workspace_root, &relative_path)?;
-        let preview_path = ensure_file_preview_path(resolved_path)?;
-
-        Ok(format_path_for_ui(&preview_path))
+        ensure_file_preview_path(resolved_path)
     })
     .await
-    .map_err(|error| format!("The workspace preview resolver stopped unexpectedly. {error}"))?
+    .map_err(|error| format!("The workspace preview resolver stopped unexpectedly. {error}"))??;
+
+    allow_file_preview_source(&app_handle, &preview_path)
 }
 
 #[tauri::command]
@@ -470,6 +488,7 @@ pub async fn open_attached_path(
 
 #[tauri::command]
 pub async fn resolve_attached_file_preview_path(
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AttachmentPathGrantMap>,
     path: String,
     workspace_root: Option<String>,
@@ -477,7 +496,7 @@ pub async fn resolve_attached_file_preview_path(
     let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
     let preview_path = ensure_file_preview_path(resolved_path)?;
 
-    Ok(format_path_for_ui(&preview_path))
+    allow_file_preview_source(&app_handle, &preview_path)
 }
 
 #[tauri::command]
@@ -497,6 +516,7 @@ pub async fn read_attached_file_preview(
 
 #[tauri::command]
 pub async fn resolve_attached_image_preview_path(
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AttachmentPathGrantMap>,
     path: String,
     workspace_root: Option<String>,
@@ -507,7 +527,7 @@ pub async fn resolve_attached_image_preview_path(
         return Err("Expected the attached image preview path to be a file.".to_string());
     }
 
-    Ok(format_path_for_ui(&resolved_path))
+    allow_file_preview_source(&app_handle, &resolved_path)
 }
 
 #[tauri::command]
@@ -670,5 +690,15 @@ mod tests {
             format_timeout_duration(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
             "20 minutes"
         );
+    }
+
+    #[test]
+    fn attachment_preview_asset_protocol_uses_dynamic_scope() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+            .expect("Tauri config should be valid JSON");
+        let asset_protocol = &config["app"]["security"]["assetProtocol"];
+
+        assert_eq!(asset_protocol["enable"], true);
+        assert_eq!(asset_protocol["scope"], serde_json::json!([]));
     }
 }

@@ -1158,6 +1158,15 @@ export const loadMcpConfig = async (
   return createEffectiveConfig(workspaceRoot, userConfig, workspaceConfig, overrides);
 };
 
+export const loadUserMcpConfig = async (): Promise<McpEffectiveConfig> => {
+  const userConfig = await readConfigFile(getUserMcpConfigPath());
+  return createEffectiveConfig(
+    dirname(getUserConfigPath()),
+    userConfig,
+    {},
+  );
+};
+
 export const loadMcpConfigSync = (
   workspaceRoot: string,
   overrides?: McpConfigOverride,
@@ -1340,6 +1349,9 @@ const loadDiscoveryCacheFile = async (
 
   return parseDiscoveryCache(raw);
 };
+
+export const loadUserMcpDiscoveryCacheSync = (): McpDiscoveryCacheFile =>
+  loadDiscoveryCacheFileSync(getUserMcpDiscoveryCachePath());
 
 export const loadMcpDiscoveryCacheSync = (
   workspaceRoot: string,

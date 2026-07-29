@@ -5,6 +5,10 @@ import type {
   UserSpeechToTextSettings,
 } from "../../runtime";
 import {
+  resolveAppNotificationDismissMs,
+  scheduleAppNotificationDismiss,
+} from "../../components/ui/notification-lifecycle";
+import {
   getConfiguredSpeechToTextProvider,
   getRecordingErrorMessage,
   getSpeechInputAvailabilityDescription,
@@ -32,6 +36,7 @@ export interface ChatSessionSpeechInputController {
   statusTone: SpeechInputStatusTone | null;
   availabilityDescription: string;
   toggleRecording: () => void;
+  dismissStatus: () => void;
 }
 
 export const useChatSessionSpeechInput = (
@@ -52,6 +57,22 @@ export const useChatSessionSpeechInput = (
   const operationSequenceRef = useRef(0);
   const startInFlightRef = useRef<number | null>(null);
   const finalizingRef = useRef(false);
+
+  const dismissStatus = useCallback((): void => {
+    setStatusText(null);
+    setStatusTone(null);
+  }, []);
+
+  useEffect(() => {
+    if (!statusText || statusTone !== "success") {
+      return;
+    }
+
+    return scheduleAppNotificationDismiss(
+      dismissStatus,
+      resolveAppNotificationDismissMs("success"),
+    );
+  }, [dismissStatus, statusText, statusTone]);
 
   const availabilityDescription = useMemo(() => {
     return getSpeechInputAvailabilityDescription(
@@ -224,5 +245,6 @@ export const useChatSessionSpeechInput = (
     statusTone,
     availabilityDescription,
     toggleRecording,
+    dismissStatus,
   };
 };

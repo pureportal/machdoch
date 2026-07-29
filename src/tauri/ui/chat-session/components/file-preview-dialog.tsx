@@ -24,8 +24,10 @@ import {
 } from "react";
 import {
   FILE_PREVIEW_SYNTAX_OPTIONS,
+  getFilePreviewVisualKind,
   type FilePreviewLanguage,
   type FilePreviewSyntax,
+  type FilePreviewVisualKind,
 } from "../_helpers/file-preview-language";
 import { highlightFilePreviewContent } from "../_helpers/file-preview-highlight";
 import {
@@ -46,6 +48,7 @@ import {
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { cn } from "../../lib/utils";
+import { MessageMarkdown } from "./message-markdown";
 
 export type FilePreviewMode = "image" | "pdf" | "text";
 
@@ -71,6 +74,7 @@ export interface FilePreviewDialogProps {
 }
 
 type FilePreviewCopyState = "idle" | "copied" | "failed";
+type FilePreviewViewMode = "text" | "visual";
 
 interface FilePreviewSelectionPosition {
   left: number;
@@ -169,7 +173,7 @@ const getSelectionEndpointRectangle = (
     : selectionRectangles.at(-1);
 };
 
-const FilePreviewStatus = ({
+export const FilePreviewStatus = ({
   preview,
 }: {
   preview: FilePreview;
@@ -178,13 +182,16 @@ const FilePreviewStatus = ({
     return null;
   }
 
-  if (!preview.targetLine && !preview.truncated && !preview.lossy) {
+  const showTargetLine =
+    preview.targetLine !== null && preview.targetLine > 1;
+
+  if (!showTargetLine && !preview.truncated && !preview.lossy) {
     return null;
   }
 
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-500">
-      {preview.targetLine ? (
+      {showTargetLine ? (
         <span className="font-medium text-sky-300">
           Opened at line {preview.targetLine}
         </span>
@@ -192,6 +199,41 @@ const FilePreviewStatus = ({
       {preview.truncated ? <span>Preview truncated</span> : null}
       {preview.lossy ? <span>Encoding normalized</span> : null}
     </div>
+  );
+};
+
+export const FilePreviewVisualContent = ({
+  preview,
+  visualKind,
+}: {
+  preview: FilePreview;
+  visualKind: FilePreviewVisualKind;
+}): JSX.Element => {
+  const content = preview.content ?? "";
+
+  if (visualKind === "markdown") {
+    return (
+      <div
+        role="document"
+        aria-label={`Rendered preview of ${preview.title}`}
+        className="min-h-0 flex-1 overflow-auto bg-slate-950"
+      >
+        <MessageMarkdown
+          content={content}
+          className="app-file-preview-markdown mx-auto w-full max-w-5xl px-6 py-8 text-sm text-slate-200 sm:px-10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_hr]:border-slate-800 [&_img]:max-w-full [&_img]:rounded-lg"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <iframe
+      sandbox=""
+      referrerPolicy="no-referrer"
+      srcDoc={content}
+      title={`Rendered preview of ${preview.title}`}
+      className="min-h-0 w-full flex-1 border-0 bg-white"
+    />
   );
 };
 
@@ -231,6 +273,8 @@ export const FilePreviewTextContent = ({
 }: {
   preview: FilePreview;
 }): JSX.Element => {
+  const visualKind = getFilePreviewVisualKind(preview.title || preview.path);
+  const [viewMode, setViewMode] = useState<FilePreviewViewMode>("text");
   const [selectedLanguage, setSelectedLanguage] =
     useState<FilePreviewLanguage | null>(preview.language);
   const [searchQuery, setSearchQuery] = useState("");
@@ -252,6 +296,7 @@ export const FilePreviewTextContent = ({
   const lineSelectionAnchorRef = useRef<number | null>(null);
   const resetCopyStateTimeoutRef = useRef<number | null>(null);
   const searchStatusId = useId();
+  const activeViewMode = visualKind ? viewMode : "text";
   const lines = useMemo(
     () => (preview.content ?? "").split("\n"),
     [preview.content],
@@ -297,6 +342,7 @@ export const FilePreviewTextContent = ({
   );
 
   useEffect(() => {
+    setViewMode("text");
     setSelectedLanguage(preview.language);
     setSearchQuery("");
     setIsRegexSearch(false);
@@ -318,15 +364,19 @@ export const FilePreviewTextContent = ({
   }, [isRegexSearch, preview.content, searchQuery]);
 
   useEffect(() => {
+    if (activeViewMode !== "text") {
+      return;
+    }
+
     if (targetLineIndex === null) {
       return;
     }
 
     scrollFilePreviewTargetLineIntoView(targetLineRef.current);
-  }, [preview.content, preview.path, targetLineIndex]);
+  }, [activeViewMode, preview.content, preview.path, targetLineIndex]);
 
   useEffect(() => {
-    if (safeActiveMatchIndex < 0) {
+    if (activeViewMode !== "text" || safeActiveMatchIndex < 0) {
       return;
     }
 
@@ -337,9 +387,13 @@ export const FilePreviewTextContent = ({
     if (activeMatch && typeof activeMatch.scrollIntoView === "function") {
       activeMatch.scrollIntoView({ block: "center", inline: "nearest" });
     }
-  }, [renderedContent, safeActiveMatchIndex]);
+  }, [activeViewMode, renderedContent, safeActiveMatchIndex]);
 
   useEffect(() => {
+    if (activeViewMode !== "text") {
+      return;
+    }
+
     const focusSearch = (event: KeyboardEvent): void => {
       if (
         (event.ctrlKey || event.metaKey) &&
@@ -353,7 +407,7 @@ export const FilePreviewTextContent = ({
     window.addEventListener("keydown", focusSearch);
 
     return () => window.removeEventListener("keydown", focusSearch);
-  }, []);
+  }, [activeViewMode]);
 
   useEffect(() => {
     const updateNativeSelection = (): void => {
@@ -638,6 +692,32 @@ export const FilePreviewTextContent = ({
         aria-label="File preview controls"
         className="flex flex-wrap items-center gap-2 border-b border-slate-800/80 bg-slate-950 px-4 py-2"
       >
+        {visualKind ? (
+          <div
+            role="group"
+            aria-label="File preview mode"
+            className="flex h-8 items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5"
+          >
+            {(["text", "visual"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={activeViewMode === mode}
+                aria-label={`Show ${mode} preview`}
+                onClick={() => setViewMode(mode)}
+                className={cn(
+                  "h-6 rounded px-2.5 text-xs font-medium capitalize outline-none transition-colors focus-visible:ring-1 focus-visible:ring-sky-400/70",
+                  activeViewMode === mode
+                    ? "bg-slate-700 text-slate-100 shadow-sm"
+                    : "text-slate-500 hover:bg-slate-800 hover:text-slate-300",
+                )}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <select
           aria-label="Syntax highlighting"
           value={selectedLanguage ?? "plaintext"}
@@ -646,7 +726,10 @@ export const FilePreviewTextContent = ({
               getFilePreviewSyntaxOption(event.currentTarget.value).language,
             )
           }
-          className="h-8 w-40 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs text-slate-300 outline-none focus-visible:border-sky-500/70 focus-visible:ring-1 focus-visible:ring-sky-500/40"
+          className={cn(
+            "h-8 w-40 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs text-slate-300 outline-none focus-visible:border-sky-500/70 focus-visible:ring-1 focus-visible:ring-sky-500/40",
+            activeViewMode === "visual" && "hidden",
+          )}
         >
           {FILE_PREVIEW_SYNTAX_OPTIONS.map((option) => (
             <option
@@ -658,7 +741,12 @@ export const FilePreviewTextContent = ({
           ))}
         </select>
 
-        <div className="ml-auto flex min-w-[min(100%,22rem)] flex-1 items-center justify-end gap-1">
+        <div
+          className={cn(
+            "ml-auto min-w-[min(100%,22rem)] flex-1 items-center justify-end gap-1",
+            activeViewMode === "visual" ? "hidden" : "flex",
+          )}
+        >
           <div className="relative w-full max-w-sm">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <Input
@@ -727,7 +815,12 @@ export const FilePreviewTextContent = ({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-auto",
+          activeViewMode === "visual" && "hidden",
+        )}
+      >
         <div
           ref={codeSurfaceRef}
           className="relative grid min-h-full w-max min-w-full grid-cols-[2.5rem_minmax(max-content,1fr)] bg-slate-950"
@@ -875,6 +968,10 @@ export const FilePreviewTextContent = ({
           ) : null}
         </div>
       </div>
+
+      {activeViewMode === "visual" && visualKind ? (
+        <FilePreviewVisualContent preview={preview} visualKind={visualKind} />
+      ) : null}
     </div>
   );
 };

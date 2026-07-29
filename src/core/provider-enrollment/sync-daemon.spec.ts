@@ -3,12 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import {
   getCompatibleProviderSyncDaemonPid,
   getProviderSyncDaemonRuntimeId,
   getProviderSyncDaemonDiagnosticPath,
   isProviderSyncUserWatchPath,
   isProviderSyncWorkspaceWatchPath,
+  requestProviderSyncRefresh,
   runProviderSyncDaemon,
   stopProviderSyncDaemon,
   type ProviderSyncDaemonDiagnostic,
@@ -155,6 +157,89 @@ describe("provider sync daemon", () => {
 
     const daemonPath = join(userConfigRoot, "provider-enrollment", "daemon.json");
     await expect(stat(daemonPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("waits for an in-flight reconciliation before shutting down", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-daemon-shutdown-"));
+    roots.push(root);
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    await Promise.all([
+      mkdir(join(workspaceRoot, ".machdoch"), { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    await writeFile(
+      join(userConfigRoot, "user-config.json"),
+      `${JSON.stringify({
+        providerEnrollment: {
+          enabled: true,
+          persistentSync: {
+            enabled: true,
+            watch: true,
+            daemonAtLogin: false,
+            debounceMs: 50,
+            fullRescanIntervalMs: 10_000,
+          },
+          providers: {
+            "codex-cli": { enabled: false },
+            "claude-cli": { enabled: false },
+            "copilot-cli": { enabled: false },
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const controller = new AbortController();
+    const daemon = runProviderSyncDaemon(workspaceRoot, {
+      signal: controller.signal,
+    });
+    let releaseHeldLock: (() => void) | undefined;
+    let notifyLockAcquired: (() => void) | undefined;
+    const lockAcquired = new Promise<void>((resolveAcquired) => {
+      notifyLockAcquired = resolveAcquired;
+    });
+    let daemonSettled = false;
+    void daemon.then(
+      () => {
+        daemonSettled = true;
+      },
+      () => {
+        daemonSettled = true;
+      },
+    );
+
+    await waitForDiagnostic((diagnostic) => diagnostic.outcome === "success");
+    const heldLock = withCooperativeFileLock(
+      join(
+        userConfigRoot,
+        "provider-enrollment",
+        "reconcile.state",
+      ),
+      async () => {
+        notifyLockAcquired?.();
+        await new Promise<void>((resolveHeld) => {
+          releaseHeldLock = resolveHeld;
+        });
+      },
+    );
+    await lockAcquired;
+
+    try {
+      await requestProviderSyncRefresh();
+      await wait(150);
+      controller.abort();
+      await wait(100);
+
+      expect(daemonSettled).toBe(false);
+    } finally {
+      releaseHeldLock?.();
+      await heldLock;
+      controller.abort();
+      await daemon;
+      await wait(500);
+    }
   });
 
   it("stops a daemon launched by a different runtime", async () => {

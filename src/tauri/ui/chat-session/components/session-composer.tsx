@@ -1,21 +1,19 @@
 import {
   Brain,
   BrainCircuit,
-  CircleAlert,
-  CircleCheck,
   Info,
   LoaderCircle,
   MessageSquare,
   Mic,
   Monitor,
   Square,
-  X,
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
 import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
+import { AppNotification } from "../../components/ui/notification";
 import {
   isQuickVoiceSession,
   type ChatSessionContextAttachment,
@@ -94,6 +92,7 @@ export interface SessionComposerProps {
     statusText: string | null;
     statusTone: "success" | "error" | "info" | null;
     onAction: () => void;
+    onStatusDismiss: () => void;
   };
   canSendMessage: boolean;
   sendDisabledReason: string | null;
@@ -242,12 +241,10 @@ export const SessionComposer = ({
           tone: speechInput.statusTone,
         }
       : null);
-  const NotificationIcon =
-    notification?.tone === "error"
-      ? CircleAlert
-      : notification?.tone === "success"
-        ? CircleCheck
-        : Info;
+  const notificationTone = notification?.tone ?? "info";
+  const onNotificationDismiss = statusMessage
+    ? onStatusMessageDismiss
+    : speechInput.onStatusDismiss;
   const speechInputActionLabel = !speechInput.browserSupported
     ? "Speech input unavailable"
     : speechInput.transcribing
@@ -410,52 +407,20 @@ export const SessionComposer = ({
     <div className="relative grid gap-3">
       {notification ? (
         <div className="pointer-events-none absolute bottom-[calc(100%+0.75rem)] right-0 z-30 flex w-full justify-end">
-          <div
-            role={notification.tone === "error" ? "alert" : "status"}
-            aria-atomic="true"
-            className={cn(
-              "app-session-notification pointer-events-auto flex w-full max-w-md animate-in items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl backdrop-blur-xl fade-in-0 slide-in-from-bottom-2",
-              notification.tone === "error"
-                ? "border-rose-400/25 bg-rose-950/90 text-rose-100"
-                : notification.tone === "success"
-                  ? "border-emerald-400/25 bg-emerald-950/90 text-emerald-100"
-                  : "border-slate-700/80 bg-slate-900/95 text-slate-100",
-            )}
+          <AppNotification
+            tone={notificationTone}
+            title={
+              statusMessage && notificationTone === "error"
+                ? "Request not sent"
+                : undefined
+            }
+            presentation="floating"
+            dismissAfterMs={null}
+            onDismiss={onNotificationDismiss}
+            className="app-session-notification pointer-events-auto max-w-md animate-in fade-in-0 slide-in-from-bottom-2"
           >
-            <NotificationIcon
-              aria-hidden="true"
-              className={cn(
-                "mt-0.5 h-4 w-4 shrink-0",
-                notification.tone === "error"
-                  ? "text-rose-300"
-                  : notification.tone === "success"
-                    ? "text-emerald-300"
-                    : "text-sky-300",
-              )}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold leading-5">
-                {notification.tone === "error"
-                  ? "Request not sent"
-                  : notification.tone === "success"
-                    ? "Done"
-                    : "Notice"}
-              </p>
-              <p className="text-xs leading-5 text-current/80">
-                {notification.text}
-              </p>
-            </div>
-            {statusMessage && onStatusMessageDismiss ? (
-              <button
-                type="button"
-                aria-label="Dismiss notification"
-                className="-mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-current/60 transition-colors hover:bg-white/10 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/40"
-                onClick={onStatusMessageDismiss}
-              >
-                <X aria-hidden="true" className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </div>
+            {notification.text}
+          </AppNotification>
         </div>
       ) : null}
 

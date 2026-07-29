@@ -1,4 +1,4 @@
-import { Bot, Check, ChevronDown, Search } from "lucide-react";
+import { Bot, Check, ChevronDown } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -8,12 +8,12 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 import {
   getCatalogModelsForProvider,
@@ -326,21 +326,17 @@ export const SessionModelPicker = ({
             </div>
 
             <div className="grid gap-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                <Input
-                  ref={searchInputRef}
-                  type="search"
-                  value={modelSearchText}
-                  onChange={(event) => setModelSearchText(event.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  aria-label="Search models"
-                  placeholder="Search models"
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 pl-9 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
-                />
-              </div>
+              <SearchField
+                ref={searchInputRef}
+                value={modelSearchText}
+                onChange={(event) => setModelSearchText(event.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search models"
+                placeholder="Search models"
+                autoComplete="off"
+                spellCheck={false}
+                className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
+              />
 
               <div className="flex items-center justify-between gap-3 px-1">
                 <p className="text-sm font-semibold text-slate-100">

@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PROVIDER_ENROLLMENT_CONFIG } from "./config.js";
 import {
+  getProviderSyncOwnershipPath,
   getProviderSyncStatusPath,
   getProviderSyncWorkspaceRegistryPath,
   loadRegisteredProviderSyncWorkspaces,
@@ -124,6 +125,283 @@ describe("provider sync coordinator", () => {
     ]);
   });
 
+  it.runIf(process.platform === "win32")(
+    "reconciles extended-length ownership aliases without duplicating authority",
+    async () => {
+      const root = await createRoot();
+      const workspaceRoot = join(root, "workspace");
+      const userConfigRoot = join(root, "user-config");
+      const codexHome = join(root, "codex-home");
+      await Promise.all([
+        mkdir(workspaceRoot, { recursive: true }),
+        mkdir(userConfigRoot, { recursive: true }),
+        mkdir(codexHome, { recursive: true }),
+      ]);
+      vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+      vi.stubEnv("CODEX_HOME", codexHome);
+      await Promise.all([
+        writeFile(
+          join(userConfigRoot, "user-config.json"),
+          `${JSON.stringify(
+            {
+              agentCliPaths: { "codex-cli": process.execPath },
+              providerEnrollment: {
+                enabled: true,
+                persistentSync: {
+                  enabled: true,
+                  watch: false,
+                  daemonAtLogin: false,
+                },
+                providers: {
+                  "codex-cli": { enabled: true },
+                  "claude-cli": { enabled: false },
+                  "copilot-cli": { enabled: false },
+                },
+              },
+            },
+            null,
+            2,
+          )}\n`,
+          "utf8",
+        ),
+        writeFile(
+          join(userConfigRoot, "mcp.json"),
+          `${JSON.stringify({
+            schemaVersion: 1,
+            servers: [
+              {
+                id: "user-server",
+                enabled: true,
+                transport: {
+                  type: "stdio",
+                  command: process.execPath,
+                },
+              },
+            ],
+          })}\n`,
+          "utf8",
+        ),
+        writeFile(join(codexHome, "config.toml"), 'model = "gpt-5"\n', "utf8"),
+      ]);
+      await reconcileProviderSync(workspaceRoot);
+      const targetPath = join(codexHome, "config.toml");
+      const extendedTargetPath = `\\\\?\\${targetPath}`;
+      const initialOwnership = JSON.parse(
+        await readFile(getProviderSyncOwnershipPath(), "utf8"),
+      ) as { schemaVersion: 1; targets: Array<Record<string, unknown>> };
+      const userTarget = initialOwnership.targets.find(
+        (target) =>
+          target.provider === "codex-cli" && target.scope === "user",
+      );
+      expect(userTarget).toBeDefined();
+      await writeFile(
+        getProviderSyncOwnershipPath(),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            targets: [{ ...userTarget, path: extendedTargetPath }],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+
+      const status = await reconcileProviderSync(workspaceRoot);
+
+      expect(status.targets).toContainEqual(
+        expect.objectContaining({
+          provider: "codex-cli",
+          scope: "user",
+          state: "awaiting-provider-refresh",
+        }),
+      );
+      const reconciledContent = await readFile(targetPath, "utf8");
+      expect(reconciledContent).toContain('model = "gpt-5"');
+      let reconciledOwnership = JSON.parse(
+        await readFile(getProviderSyncOwnershipPath(), "utf8"),
+      ) as { schemaVersion: 1; targets: Array<Record<string, unknown>> };
+      expect(reconciledOwnership.targets).toHaveLength(1);
+      expect(reconciledOwnership.targets[0]?.path).toBe(extendedTargetPath);
+
+      await writeFile(
+        getProviderSyncOwnershipPath(),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            targets: [
+              reconciledOwnership.targets[0],
+              {
+                ...reconciledOwnership.targets[0],
+                path: targetPath,
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+      await reconcileProviderSync(workspaceRoot);
+
+      reconciledOwnership = JSON.parse(
+        await readFile(getProviderSyncOwnershipPath(), "utf8"),
+      ) as { schemaVersion: 1; targets: Array<Record<string, unknown>> };
+      expect(reconciledOwnership.targets).toHaveLength(1);
+      expect(reconciledOwnership.targets[0]?.path).toBe(targetPath);
+
+      vi.stubEnv("CODEX_HOME", `\\\\?\\${codexHome}`);
+      await reconcileProviderSync(workspaceRoot);
+      reconciledOwnership = JSON.parse(
+        await readFile(getProviderSyncOwnershipPath(), "utf8"),
+      ) as { schemaVersion: 1; targets: Array<Record<string, unknown>> };
+      expect(reconciledOwnership.targets[0]?.path).toBe(targetPath);
+      await expect(readFile(targetPath, "utf8")).resolves.toBe(
+        reconciledContent,
+      );
+    },
+  );
+
+  it("removes a superseded user target after the provider home changes", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const firstCodexHome = join(root, "codex-home-one");
+    const secondCodexHome = join(root, "codex-home-two");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+      mkdir(firstCodexHome, { recursive: true }),
+      mkdir(secondCodexHome, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    vi.stubEnv("CODEX_HOME", firstCodexHome);
+    await Promise.all([
+      writeFile(
+        join(userConfigRoot, "user-config.json"),
+        `${JSON.stringify(
+          {
+            agentCliPaths: { "codex-cli": process.execPath },
+            providerEnrollment: {
+              enabled: true,
+              persistentSync: {
+                enabled: true,
+                watch: false,
+                daemonAtLogin: false,
+              },
+              providers: {
+                "codex-cli": { enabled: true },
+                "claude-cli": { enabled: false },
+                "copilot-cli": { enabled: false },
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      ),
+      writeFile(
+        join(userConfigRoot, "mcp.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "user-server",
+              enabled: true,
+              transport: {
+                type: "stdio",
+                command: process.execPath,
+              },
+            },
+          ],
+        })}\n`,
+        "utf8",
+      ),
+    ]);
+    await reconcileProviderSync(workspaceRoot);
+    const firstTargetPath = join(firstCodexHome, "config.toml");
+    await expect(stat(firstTargetPath)).resolves.toBeDefined();
+
+    vi.stubEnv("CODEX_HOME", secondCodexHome);
+    await reconcileProviderSync(workspaceRoot);
+
+    const secondTargetPath = join(secondCodexHome, "config.toml");
+    await expect(stat(firstTargetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(secondTargetPath, "utf8")).resolves.toContain(
+      "[mcp_servers.",
+    );
+    const ownership = JSON.parse(
+      await readFile(getProviderSyncOwnershipPath(), "utf8"),
+    ) as {
+      targets: Array<{ path: string; provider: string; scope: string }>;
+    };
+    expect(
+      ownership.targets.filter(
+        (target) =>
+          target.provider === "codex-cli" && target.scope === "user",
+      ),
+    ).toEqual([expect.objectContaining({ path: secondTargetPath })]);
+  });
+
+  it("fails clearly when disabled synchronization cannot remove an owned target", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const stateDirectory = join(userConfigRoot, "provider-enrollment");
+    const targetPath = join(root, "mcp-config.json");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+      mkdir(stateDirectory, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    await Promise.all([
+      writeFile(
+        join(userConfigRoot, "user-config.json"),
+        `${JSON.stringify({
+          providerEnrollment: {
+            enabled: true,
+            persistentSync: {
+              enabled: false,
+              watch: false,
+              daemonAtLogin: false,
+            },
+          },
+        })}\n`,
+        "utf8",
+      ),
+      writeFile(targetPath, '{"mcpServers":\n', "utf8"),
+      writeFile(
+        getProviderSyncOwnershipPath(),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          targets: [
+            {
+              path: targetPath,
+              provider: "copilot-cli",
+              scope: "user",
+              format: "json",
+              managedDigest: "a".repeat(64),
+              installedFileDigest: "b".repeat(64),
+              createdFile: false,
+              managedKeys: ["managed"],
+              installedAt: new Date().toISOString(),
+            },
+          ],
+        })}\n`,
+        "utf8",
+      ),
+    ]);
+
+    await expect(reconcileProviderSync(workspaceRoot)).rejects.toThrow(
+      "Failed to remove",
+    );
+    await expect(readFile(targetPath, "utf8")).resolves.toBe(
+      '{"mcpServers":\n',
+    );
+  });
+
   it("removes an empty managed MCP config after the last canonical server is deleted", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
@@ -193,6 +471,131 @@ describe("provider sync coordinator", () => {
     await reconcileProviderSync(workspaceRoot);
 
     await expect(stat(projectedPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("migrates legacy instruction ownership without changing the instruction file", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const codexHome = join(root, "codex-home");
+    const mcpDirectory = join(workspaceRoot, ".machdoch", "mcp");
+    const codexDirectory = join(workspaceRoot, ".codex");
+    const stateDirectory = join(userConfigRoot, "provider-enrollment");
+    await Promise.all([
+      mkdir(mcpDirectory, { recursive: true }),
+      mkdir(codexDirectory, { recursive: true }),
+      mkdir(codexHome, { recursive: true }),
+      mkdir(stateDirectory, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    vi.stubEnv("CODEX_HOME", codexHome);
+    const instructionPath = join(workspaceRoot, "AGENTS.md");
+    const instructionContent =
+      "# User instructions\n\n" +
+      "<!-- machdoch-managed:provider-enrollment:start -->\n" +
+      "Legacy persistent instructions.\n" +
+      "<!-- machdoch-managed:provider-enrollment:end -->\n";
+    const projectedPath = join(codexDirectory, "config.toml");
+    await Promise.all([
+      writeFile(
+        join(userConfigRoot, "user-config.json"),
+        `${JSON.stringify(
+          {
+            agentCliPaths: { "codex-cli": process.execPath },
+            providerEnrollment: {
+              enabled: true,
+              persistentSync: {
+                enabled: true,
+                watch: false,
+                daemonAtLogin: false,
+              },
+              providers: {
+                "codex-cli": { enabled: true },
+                "claude-cli": { enabled: false },
+                "copilot-cli": { enabled: false },
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      ),
+      writeFile(
+        join(mcpDirectory, "mcp.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            servers: [
+              {
+                id: "workspace-server",
+                enabled: true,
+                transport: {
+                  type: "stdio",
+                  command: process.execPath,
+                  args: ["server.js"],
+                },
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      ),
+      writeFile(instructionPath, instructionContent, "utf8"),
+      writeFile(projectedPath, 'model = "gpt-5"\n', "utf8"),
+      writeFile(
+        getProviderSyncOwnershipPath(),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            targets: [
+              {
+                path: instructionPath,
+                provider: "codex-cli",
+                scope: "workspace",
+                format: "markdown",
+                managedDigest: "a".repeat(64),
+                installedFileDigest: "b".repeat(64),
+                createdFile: false,
+                installedAt: new Date().toISOString(),
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      ),
+    ]);
+
+    const status = await reconcileProviderSync(workspaceRoot);
+
+    expect(status.targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "codex-cli",
+          scope: "workspace",
+          state: "awaiting-provider-refresh",
+        }),
+      ]),
+    );
+    await expect(readFile(instructionPath, "utf8")).resolves.toBe(
+      instructionContent,
+    );
+    const projected = await readFile(projectedPath, "utf8");
+    expect(projected).toContain('model = "gpt-5"');
+    expect(projected).toContain("# machdoch-managed:provider-enrollment:start");
+    const ownership = JSON.parse(
+      await readFile(getProviderSyncOwnershipPath(), "utf8"),
+    ) as { targets: Array<{ path: string; format: string }> };
+    expect(ownership.targets).toContainEqual(
+      expect.objectContaining({ path: projectedPath, format: "toml" }),
+    );
+    expect(ownership.targets).not.toContainEqual(
+      expect.objectContaining({ path: instructionPath }),
+    );
   });
 
   it("writes exclusions to Git's actual linked-worktree exclude path", async () => {

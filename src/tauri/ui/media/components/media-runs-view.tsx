@@ -24,13 +24,13 @@ import type {
   MediaRunRecord,
   MediaProviderReviewAction,
   MediaRuntimeRunRecord,
-  MediaRuntimeStatus,
 } from "../../../../core/media/contracts.js";
 import { paginateMediaItems } from "../../../../core/media/gallery.js";
 import { matchesMediaRunQuery } from "../../../../core/media/run-library.js";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { EmptyState } from "../../components/ui/empty-state";
+import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 import { readMediaAssetReferencePreview } from "../media-runtime";
 import { MediaPagination } from "./media-pagination";
@@ -40,8 +40,6 @@ const RUN_HISTORY_PAGE_SIZE = 30;
 interface MediaRunsViewProps {
   runs: readonly MediaRunRecord[];
   selectedRun: MediaRunDetail | null;
-  runtimeStatus: MediaRuntimeStatus | null;
-  runtimeError: string | null;
   onCreate: () => void;
   onSelect: (runId: string) => void;
   onCancel: (runId: string) => void;
@@ -862,7 +860,6 @@ const RunInspector = ({
 export const MediaRunsView = ({
   runs,
   selectedRun,
-  runtimeError,
   onCreate,
   onSelect,
   onCancel,
@@ -926,31 +923,20 @@ export const MediaRunsView = ({
           </div>
         </div>
 
-        {runtimeError ? (
-          <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-xs text-rose-200">
-            {runtimeError}
-          </div>
-        ) : null}
-
         {runs.length > 0 ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="relative w-full sm:w-80">
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
-              />
-              <Input
-                type="search"
-                aria-label="Search run history"
-                placeholder="Search workflow, prompt, model, or status…"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.currentTarget.value);
-                  setRunPage(1);
-                }}
-                className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
-              />
-            </div>
+            <SearchField
+              aria-label="Search run history"
+              placeholder="Search workflow, prompt, model, or status…"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setRunPage(1);
+              }}
+              containerClassName="w-full sm:w-80"
+              iconClassName="text-slate-600"
+              className="border-slate-800 bg-slate-900/50 text-slate-300 placeholder:text-slate-600"
+            />
             <span aria-live="polite" className="text-[10px] tabular-nums text-slate-600">
               {filteredRuns.length} of {runs.length} runs
             </span>
@@ -958,12 +944,13 @@ export const MediaRunsView = ({
         ) : null}
 
         {runs.length === 0 ? (
-          <div className="mt-8 flex min-h-96 flex-1 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/15 px-6 text-center">
-            <Clock3 className="h-8 w-8 text-slate-600" />
-            <h2 className="mt-4 text-base font-semibold text-slate-200">
-              No runs yet
-            </h2>
-          </div>
+          <EmptyState
+            icon={Clock3}
+            title="No runs yet"
+            titleAs="h2"
+            size="large"
+            className="mt-8 min-h-96 flex-1 rounded-3xl bg-slate-900/15"
+          />
         ) : (
           <div
             className={cn(
@@ -1071,9 +1058,12 @@ export const MediaRunsView = ({
                 );
               })}
               {filteredRuns.length === 0 ? (
-                <div className="flex min-h-52 items-center justify-center px-6 text-center text-xs text-slate-500">
-                  No runs match “{query.trim()}”.
-                </div>
+                <EmptyState
+                  icon={Search}
+                  title={`No runs match “${query.trim()}”.`}
+                  role="status"
+                  className="min-h-52 rounded-none border-0 bg-transparent"
+                />
               ) : null}
               </div>
             </div>

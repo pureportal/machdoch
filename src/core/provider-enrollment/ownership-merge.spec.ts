@@ -252,6 +252,43 @@ describe("provider ownership merge", () => {
     expect(await readFile(path, "utf8")).toBe(original);
   });
 
+  it("preserves marker text inside unrelated TOML values", async () => {
+    const root = await createRoot();
+    const path = join(root, "config.toml");
+    const first = await installManagedTarget({
+      path,
+      provider: "codex-cli",
+      scope: "user",
+      format: "toml",
+      payload: '[mcp_servers.managed]\ncommand = "machdoch-v1"',
+    });
+    const unrelated =
+      'notes = """\n' +
+      "# machdoch-managed:provider-enrollment:start\n" +
+      "This text belongs to the user.\n" +
+      "# machdoch-managed:provider-enrollment:end\n" +
+      '"""\n\n';
+    await writeFile(
+      path,
+      `${unrelated}${await readFile(path, "utf8")}`,
+      "utf8",
+    );
+
+    const reconciled = await installManagedTarget({
+      path,
+      provider: "codex-cli",
+      scope: "user",
+      format: "toml",
+      payload: '[mcp_servers.managed]\ncommand = "machdoch-v2"',
+      previous: first.record,
+    });
+
+    expect(reconciled.warnings).toEqual([]);
+    await expect(readFile(path, "utf8")).resolves.toContain(unrelated.trim());
+    await uninstallManagedTarget(reconciled.record);
+    await expect(readFile(path, "utf8")).resolves.toContain(unrelated.trim());
+  });
+
   it("rejects oversized managed targets instead of reading them unbounded", async () => {
     const root = await createRoot();
     const path = join(root, "mcp.json");
@@ -345,6 +382,134 @@ describe("provider ownership merge", () => {
     await writeFile(
       path,
       JSON.stringify({ schemaVersion: 1, targets: [{ path: "relative" }] }),
+      "utf8",
+    );
+    await expect(loadOwnershipManifest(path)).rejects.toThrow("malformed");
+  });
+
+  it("rejects JSON ownership without managed-key authority", async () => {
+    const root = await createRoot();
+    const path = join(root, "ownership.json");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        targets: [
+          {
+            path: join(root, "mcp.json"),
+            provider: "copilot-cli",
+            scope: "user",
+            format: "json",
+            managedDigest: "a".repeat(64),
+            installedFileDigest: "b".repeat(64),
+            createdFile: false,
+            installedAt: new Date().toISOString(),
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(loadOwnershipManifest(path)).rejects.toThrow(
+      "managed MCP keys",
+    );
+  });
+
+  it("rejects ownership attributed to an unknown provider", async () => {
+    const root = await createRoot();
+    const path = join(root, "ownership.json");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        targets: [
+          {
+            path: join(root, "config.toml"),
+            provider: "unknown-cli",
+            scope: "user",
+            format: "toml",
+            managedDigest: "a".repeat(64),
+            installedFileDigest: "b".repeat(64),
+            createdFile: false,
+            installedAt: new Date().toISOString(),
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(loadOwnershipManifest(path)).rejects.toThrow("malformed");
+  });
+
+  it("rejects unknown ownership fields instead of discarding them", async () => {
+    const root = await createRoot();
+    const path = join(root, "ownership.json");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        targets: [],
+        pendingReconciliation: {
+          path: join(root, "mcp.json"),
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(loadOwnershipManifest(path)).rejects.toThrow(
+      "valid provider ownership manifest",
+    );
+  });
+
+  it("retires legacy markdown ownership while preserving MCP ownership", async () => {
+    const root = await createRoot();
+    const path = join(root, "ownership.json");
+    const mcpRecord = {
+      path: join(root, "mcp.json"),
+      provider: "copilot-cli",
+      scope: "workspace" as const,
+      format: "json" as const,
+      managedDigest: "a".repeat(64),
+      installedFileDigest: "b".repeat(64),
+      createdFile: false,
+      managedKeys: ["managed"],
+      installedAt: new Date().toISOString(),
+    };
+    const legacyRecord = {
+      ...mcpRecord,
+      path: join(root, "AGENTS.md"),
+      format: "markdown",
+      managedKeys: undefined,
+    };
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        targets: [legacyRecord, mcpRecord],
+      })}\n`,
+      "utf8",
+    );
+
+    const loaded = await loadOwnershipManifestSnapshot(path);
+
+    expect(loaded.manifest.targets).toEqual([mcpRecord]);
+    await saveOwnershipManifest(path, loaded.manifest, {
+      expectedTargetSnapshot: loaded.targetSnapshot,
+    });
+    await expect(
+      readFile(path, "utf8").then(
+        (content) =>
+          (JSON.parse(content) as { targets: Array<{ format: string }> })
+            .targets,
+      ),
+    ).resolves.toEqual([mcpRecord]);
+
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        targets: [{ ...legacyRecord, managedDigest: "invalid" }],
+      })}\n`,
       "utf8",
     );
     await expect(loadOwnershipManifest(path)).rejects.toThrow("malformed");

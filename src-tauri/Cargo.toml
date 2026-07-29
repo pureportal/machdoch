@@ -45,7 +45,7 @@ snow = { version = "=0.10.0", default-features = false, features = [
   "use-getrandom",
 ] }
 socket2 = "=0.6.0"
-tauri = { version = "2.11", features = ["tray-icon"] }
+tauri = { version = "2.11", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7"
 tauri-plugin-global-shortcut = "2"

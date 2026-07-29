@@ -20,7 +20,6 @@ import {
   Play,
   Plus,
   ScanSearch,
-  Search,
   ShieldCheck,
   Tags,
   Upload,
@@ -75,12 +74,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
+import { AppNotification } from "../../components/ui/notification";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 import { readMediaAssetReferencePreview } from "../media-runtime";
 import { MediaPagination } from "./media-pagination";
@@ -91,7 +93,6 @@ const ASSET_DIALOG_PAGE_SIZE = 20;
 interface MediaLibraryViewProps {
   assets: readonly MediaAssetRecord[];
   runtimeStatus: MediaRuntimeStatus | null;
-  runtimeError: string | null;
   importSupported: boolean;
   importLoading: boolean;
   transformLoading: boolean;
@@ -108,6 +109,8 @@ interface MediaLibraryViewProps {
   onImport: () => void;
   onTransform: (request: MediaImageTransformRequest) => void;
   onExport: (asset: MediaAssetRecord, mode: MediaAssetExportMode) => void;
+  onDismissExportNotice: () => void;
+  onDismissDeletionNotice: () => void;
   onAnalyzeQuality: (asset: MediaAssetRecord) => void;
   onLoadQualityReport: (reportAssetId: string) => void;
   onUpdateTags: (update: MediaAssetTagUpdate) => void;
@@ -2148,7 +2151,6 @@ const NumberField = ({
 export const MediaLibraryView = ({
   assets,
   runtimeStatus,
-  runtimeError,
   importSupported,
   importLoading,
   transformLoading,
@@ -2165,6 +2167,8 @@ export const MediaLibraryView = ({
   onImport,
   onTransform,
   onExport,
+  onDismissExportNotice,
+  onDismissDeletionNotice,
   onAnalyzeQuality,
   onLoadQualityReport,
   onUpdateTags,
@@ -2542,50 +2546,51 @@ export const MediaLibraryView = ({
               {importLoading ? "Validating…" : "Import images / SVG"}
             </Button>
             {assets.length > 0 ? (
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
-                <Input
-                  aria-label="Search media assets"
-                  placeholder="Search assets…"
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setAssetPage(1);
-                  }}
-                  className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
-                />
-              </div>
+              <SearchField
+                aria-label="Search media assets"
+                placeholder="Search assets…"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setAssetPage(1);
+                }}
+                containerClassName="w-full sm:w-72"
+                iconClassName="text-slate-600"
+                className="border-slate-800 bg-slate-900/50 text-slate-300 placeholder:text-slate-600"
+              />
             ) : null}
           </div>
         </div>
 
-        {runtimeError ? (
-          <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-xs text-rose-200">
-            {runtimeError}
-          </div>
-        ) : null}
         {exportNotice ? (
-          <div
-            role="status"
-            className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/8 px-4 py-3 text-xs text-emerald-200"
+          <AppNotification
+            tone="success"
+            title="Export complete"
+            onDismiss={onDismissExportNotice}
+            className="mt-4"
           >
             {exportNotice}
-          </div>
+          </AppNotification>
         ) : null}
         {deletionNotice ? (
-          <div
-            role="status"
-            className="mt-4 rounded-xl border border-sky-400/20 bg-sky-400/8 px-4 py-3 text-xs text-sky-200"
+          <AppNotification
+            tone="success"
+            title="Asset removed"
+            onDismiss={onDismissDeletionNotice}
+            className="mt-4"
           >
             {deletionNotice}
-          </div>
+          </AppNotification>
         ) : null}
 
         {assets.length === 0 ? (
-          <div className="mt-6 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-800 px-6 text-center">
-            <ImageIcon className="h-6 w-6 text-slate-600" />
-            <h2 className="mt-3 text-sm font-medium text-slate-300">No assets yet</h2>
-          </div>
+          <EmptyState
+            icon={ImageIcon}
+            title="No assets yet"
+            titleAs="h2"
+            size="large"
+            className="mt-6 rounded-2xl"
+          />
         ) : (
           <section
             ref={assetResultsRef}
@@ -2892,16 +2897,15 @@ export const MediaLibraryView = ({
               <div className="flex flex-wrap items-center gap-2">
                 <label className="relative min-w-[min(100%,16rem)] flex-1">
                   <span className="sr-only">Search composite backgrounds</span>
-                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
-                  <Input
-                    type="search"
+                  <SearchField
                     value={compositeQuery}
                     onChange={(event) => {
                       setCompositeQuery(event.currentTarget.value);
                       setCompositePage(1);
                     }}
                     placeholder="Search backgrounds, tags, or dimensions…"
-                    className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
+                    iconClassName="text-slate-600"
+                    className="border-slate-800 bg-slate-900/50 text-slate-300 placeholder:text-slate-600"
                   />
                 </label>
                 <span
@@ -2952,13 +2956,16 @@ export const MediaLibraryView = ({
                   </button>
                 ))
               ) : compositeBackgrounds.length > 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
-                  No backgrounds match “{compositeQuery.trim()}”.
-                </p>
+                <EmptyState
+                  title={`No backgrounds match “${compositeQuery.trim()}”.`}
+                  size="compact"
+                  role="status"
+                />
               ) : (
-                <p className="rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
-                  Add another image asset to use as the background.
-                </p>
+                <EmptyState
+                  title="Add another image asset to use as the background."
+                  size="compact"
+                />
               )}
             </div>
             <DialogFooter>
@@ -2999,16 +3006,15 @@ export const MediaLibraryView = ({
               <div className="flex flex-wrap items-center gap-2">
                 <label className="relative min-w-[min(100%,16rem)] flex-1">
                   <span className="sr-only">Search contact sheet images</span>
-                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
-                  <Input
-                    type="search"
+                  <SearchField
                     value={contactSheetQuery}
                     onChange={(event) => {
                       setContactSheetQuery(event.currentTarget.value);
                       setContactSheetPage(1);
                     }}
                     placeholder="Search images, tags, or provenance…"
-                    className="border-slate-800 bg-slate-900/50 pl-9 text-slate-300 placeholder:text-slate-600"
+                    iconClassName="text-slate-600"
+                    className="border-slate-800 bg-slate-900/50 text-slate-300 placeholder:text-slate-600"
                   />
                 </label>
                 <span className="text-[10px] tabular-nums text-slate-600">
@@ -3080,9 +3086,12 @@ export const MediaLibraryView = ({
                 );
               })}
               {visibleContactSheetCandidates.length === 0 ? (
-                <p className="col-span-full rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
-                  No images match “{contactSheetQuery.trim()}”.
-                </p>
+                <EmptyState
+                  title={`No images match “${contactSheetQuery.trim()}”.`}
+                  size="compact"
+                  role="status"
+                  className="col-span-full"
+                />
               ) : null}
               </div>
             </div>

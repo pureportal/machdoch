@@ -35,6 +35,7 @@ export interface FilePreviewSyntax {
 }
 
 export type FilePreviewRenderKind = "image" | "pdf" | "text";
+export type FilePreviewVisualKind = "html" | "markdown";
 
 const FILE_NAME_LANGUAGE_MAP = {
   agents: "markdown",
@@ -274,4 +275,19 @@ export const resolveFilePreviewSyntax = (
     language: extensionLanguage,
     label: LANGUAGE_LABELS[extensionLanguage],
   };
+};
+
+export const getFilePreviewVisualKind = (
+  fileNameOrPath: string,
+): FilePreviewVisualKind | null => {
+  const fileName = getFilePreviewFileName(fileNameOrPath);
+  const extension = getFileExtension(fileName);
+
+  if (extension === "htm" || extension === "html") {
+    return "html";
+  }
+
+  return resolveFilePreviewSyntax(fileName).language === "markdown"
+    ? "markdown"
+    : null;
 };

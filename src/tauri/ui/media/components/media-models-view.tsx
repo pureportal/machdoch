@@ -71,6 +71,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { EmptyState } from "../../components/ui/empty-state";
+import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 import { MediaPagination } from "./media-pagination";
 
@@ -2374,19 +2376,15 @@ export const MediaModelsView = ({
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <label className="relative min-w-[min(100%,18rem)] flex-1">
                 <span className="sr-only">Filter discovered model artifacts</span>
-                <Search
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
-                />
-                <input
-                  type="search"
+                <SearchField
                   value={workspaceQuery}
                   onChange={(event) => {
                     setWorkspaceQuery(event.currentTarget.value);
                     setWorkspacePage(1);
                   }}
                   placeholder="Filter by name, family, capability, or path"
-                  className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950/60 pl-9 pr-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-emerald-400/45 focus:ring-2 focus:ring-emerald-400/10"
+                  iconClassName="size-3.5 text-slate-600"
+                  className="h-9 rounded-lg border-slate-800 bg-slate-950/60 pr-3 text-xs text-slate-200 shadow-none placeholder:text-slate-600 focus-visible:border-emerald-400/45 focus-visible:ring-emerald-400/10 md:text-xs"
                 />
               </label>
               <span
@@ -2413,16 +2411,24 @@ export const MediaModelsView = ({
             />
           ) : null}
           {workspaceModels && workspaceModels.entries.length === 0 ? (
-            <p className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-600">
-              No model packages or safetensors artifacts were discovered.
-            </p>
+            <EmptyState
+              icon={HardDrive}
+              title="No model packages or safetensors artifacts were discovered."
+              size="compact"
+              role="status"
+              className="mt-4 rounded-lg"
+            />
           ) : null}
           {workspaceModels &&
           workspaceModels.entries.length > 0 &&
           filteredWorkspaceEntries.length === 0 ? (
-            <p className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-500">
-              No discovered artifacts match “{workspaceQuery.trim()}”.
-            </p>
+            <EmptyState
+              icon={Search}
+              title={`No discovered artifacts match “${workspaceQuery.trim()}”.`}
+              size="compact"
+              role="status"
+              className="mt-4 rounded-lg"
+            />
           ) : null}
           {workspaceModels && filteredWorkspaceEntries.length > 0 ? (
             <div className="mt-4 space-y-2">
@@ -2603,26 +2609,25 @@ export const MediaModelsView = ({
             </Badge>
           </div>
           {catalog.addons.length === 0 ? (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-600">
-              No LoRAs or embeddings imported yet.
-            </div>
+            <EmptyState
+              icon={Layers3}
+              title="No LoRAs or embeddings imported yet."
+              size="compact"
+              className="mt-4 rounded-lg"
+            />
           ) : (
             <>
               <label className="relative mt-4 block">
                 <span className="sr-only">Search LoRAs and embeddings</span>
-                <Search
-                  aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
-                />
-                <input
-                  type="search"
+                <SearchField
                   value={addonQuery}
                   onChange={(event) => {
                     setAddonQuery(event.currentTarget.value);
                     setAddonPage(1);
                   }}
                   placeholder="Search name, architecture, trigger, target, license, or path"
-                  className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950/60 pr-3 pl-9 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/45 focus:ring-2 focus:ring-cyan-400/10"
+                  iconClassName="size-3.5 text-slate-600"
+                  className="h-9 rounded-lg border-slate-800 bg-slate-950/60 pr-3 text-xs text-slate-200 shadow-none placeholder:text-slate-600 focus-visible:border-cyan-400/45 focus-visible:ring-cyan-400/10 md:text-xs"
                 />
               </label>
               <MediaPagination
@@ -2638,9 +2643,13 @@ export const MediaModelsView = ({
                 className="mt-3"
               />
               {filteredAddons.length === 0 ? (
-                <div className="mt-4 rounded-lg border border-dashed border-slate-800 px-4 py-5 text-center text-[11px] text-slate-500">
-                  No LoRAs or embeddings match “{addonQuery.trim()}”.
-                </div>
+                <EmptyState
+                  icon={Search}
+                  title={`No LoRAs or embeddings match “${addonQuery.trim()}”.`}
+                  size="compact"
+                  role="status"
+                  className="mt-4 rounded-lg"
+                />
               ) : (
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {addonPagination.items.map((addon) => (
@@ -2733,16 +2742,15 @@ export const MediaModelsView = ({
               <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
                 <label className="relative w-full sm:w-80">
                   <span className="sr-only">Search model catalog</span>
-                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600" />
-                  <input
-                    type="search"
+                  <SearchField
                     value={modelQuery}
                     onChange={(event) => {
                       setModelQuery(event.currentTarget.value);
                       setModelPage(1);
                     }}
                     placeholder="Search family, capability, license, or runtime"
-                    className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950 pr-3 pl-9 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-violet-400/45 focus:ring-2 focus:ring-violet-400/10"
+                    iconClassName="text-slate-600"
+                    className="h-9 rounded-lg border-slate-800 bg-slate-950 pr-3 text-xs text-slate-200 shadow-none placeholder:text-slate-600 focus-visible:border-violet-400/45 focus-visible:ring-violet-400/10 md:text-xs"
                   />
                 </label>
                 <span
@@ -2766,9 +2774,11 @@ export const MediaModelsView = ({
             />
           </div>
           {filteredCatalogModels.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-xs text-slate-500">
-              No models match “{modelQuery.trim()}”.
-            </div>
+            <EmptyState
+              icon={Search}
+              title={`No models match “${modelQuery.trim()}”.`}
+              role="status"
+            />
           ) : modelGroups.map((group) => {
             const GroupIcon = group.icon;
 

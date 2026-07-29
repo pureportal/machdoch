@@ -138,6 +138,7 @@ import {
 } from "../runtime";
 import { subscribeToSettingsImport } from "../settings-transfer";
 import { Button } from "../components/ui/button";
+import { EmptyState } from "../components/ui/empty-state";
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
@@ -150,6 +151,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
+import { SearchField } from "../components/ui/search-field";
 import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import {
@@ -12217,16 +12219,15 @@ export const RalphFlowEditor = ({
                           </Button>
                         </div>
 
-                        <label className="relative block max-w-xl">
-                          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                          <Input
-                            value={runHistoryQuery}
-                            aria-label="Search Ralph run history"
-                            placeholder="Search by status, summary, flow, or run ID"
-                            onChange={(event) => setRunHistoryQuery(event.target.value)}
-                            className="h-9 rounded-lg border-slate-700 bg-slate-950 pl-9 text-xs text-slate-100 placeholder:text-slate-600"
-                          />
-                        </label>
+                        <SearchField
+                          value={runHistoryQuery}
+                          aria-label="Search Ralph run history"
+                          placeholder="Search by status, summary, flow, or run ID"
+                          onChange={(event) => setRunHistoryQuery(event.target.value)}
+                          containerClassName="max-w-xl"
+                          iconClassName="size-3.5"
+                          className="h-9 rounded-lg border-slate-700 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+                        />
 
                         {runHistoryLoading ? (
                           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -12234,20 +12235,18 @@ export const RalphFlowEditor = ({
                             Loading runs.
                           </div>
                         ) : runHistory.length === 0 ? (
-                          <div className="grid min-h-48 place-items-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-6 text-center">
-                            <div className="grid gap-1">
-                              <div className="text-sm font-medium text-slate-300">
-                                No runs recorded
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                Completed, failed, and waiting runs will appear here.
-                              </div>
-                            </div>
-                          </div>
+                          <EmptyState
+                            icon={History}
+                            title="No runs recorded"
+                            description="Completed, failed, and waiting runs will appear here."
+                          />
                         ) : filteredRunHistory.length === 0 ? (
-                          <div className="rounded-xl border border-slate-800 bg-slate-900/25 p-5 text-sm text-slate-400">
-                            No runs match “{runHistoryQuery}”.
-                          </div>
+                          <EmptyState
+                            icon={Search}
+                            title={`No runs match “${runHistoryQuery}”.`}
+                            size="compact"
+                            role="status"
+                          />
                         ) : (
                           <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
                             {filteredRunHistory.map((run) => {

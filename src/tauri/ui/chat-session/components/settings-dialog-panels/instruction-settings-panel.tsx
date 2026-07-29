@@ -13,7 +13,9 @@ import {
 import { useEffect, useMemo, useState, type JSX } from "react";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
+import { EmptyState } from "../../../components/ui/empty-state";
 import { Input } from "../../../components/ui/input";
+import { SearchField } from "../../../components/ui/search-field";
 import { Textarea } from "../../../components/ui/textarea";
 import type {
   InstructionMutationInput,
@@ -451,15 +453,14 @@ export const InstructionSettingsPanel = ({
         description="Search, create, and edit reusable Markdown profiles."
       >
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative min-w-64 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-slate-500" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, description, UUID, or digest"
-              className={`${INPUT_CLASS} pl-9`}
-            />
-          </div>
+          <SearchField
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search instruction profiles"
+            placeholder="Search name, description, UUID, or digest"
+            containerClassName="min-w-64 flex-1"
+            className={INPUT_CLASS}
+          />
           {normalizedQuery ? (
             <Button variant="ghost" size="sm" onClick={() => setQuery("")}>
               Clear
@@ -516,9 +517,12 @@ export const InstructionSettingsPanel = ({
               </button>
             ))}
             {filteredProfiles.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500">
-                No profiles match this filter.
-              </p>
+              <EmptyState
+                icon={Search}
+                title="No profiles match this filter."
+                size="compact"
+                role="status"
+              />
             ) : null}
           </div>
           <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/50 p-4">

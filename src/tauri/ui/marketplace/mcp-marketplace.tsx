@@ -41,8 +41,10 @@ import {
   type McpMarketplaceRegistrySource,
 } from "../../../core/mcp/marketplace.js";
 import { Button } from "../components/ui/button";
+import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
+import { SearchField } from "../components/ui/search-field";
 import {
   createFailedRegistryPage,
   filterMarketplaceResults,
@@ -537,6 +539,9 @@ export const McpMarketplace = ({
     null,
   );
   const [message, setMessage] = useState<MarketplaceMessage | null>(null);
+  const dismissMessage = useCallback((): void => {
+    setMessage(null);
+  }, []);
   const catalogRefreshRequestRef = useRef<{
     controller: AbortController;
     id: number;
@@ -1653,9 +1658,13 @@ export const McpMarketplace = ({
           </div>
         ) : null}
         {!catalogUpdating && visibleResults.length === 0 ? (
-          <div className="m-3 rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-400">
-            No servers in this category.
-          </div>
+          <EmptyState
+            icon={Search}
+            title="No servers in this category."
+            size="compact"
+            role="status"
+            className="m-3 rounded-lg bg-slate-900/50"
+          />
         ) : null}
         {visibleResults.length > 0 ? (
           <div className="relative mx-3" style={{ height: totalHeight }}>
@@ -1675,26 +1684,26 @@ export const McpMarketplace = ({
     return (
       <div className={cn(PANEL_CLASS, "flex flex-col overflow-hidden lg:min-h-0")}>
         <div className="border-b border-slate-800 p-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <Input
-              value={query}
-              placeholder="Search MCP servers"
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  searchRegistries(query);
-                }
-              }}
-              className={cn(INPUT_CLASS, "pl-9 pr-9")}
-            />
-            {searchBusy ? (
-              <RefreshCw
-                aria-label="Updating search results"
-                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-sky-300"
-              />
-            ) : null}
-          </div>
+          <SearchField
+            value={query}
+            aria-label="Search MCP servers"
+            placeholder="Search MCP servers"
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                searchRegistries(query);
+              }
+            }}
+            endAdornment={
+              searchBusy ? (
+                <RefreshCw
+                  aria-label="Updating search results"
+                  className="size-4 animate-spin text-sky-300"
+                />
+              ) : null
+            }
+            className={INPUT_CLASS}
+          />
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               type="button"
@@ -2271,9 +2280,12 @@ export const McpMarketplace = ({
 
         <div className="grid gap-3 lg:grid-cols-2">
           {installedServers.length === 0 ? (
-            <div className={cn(PANEL_CLASS, "p-4 text-sm text-slate-500")}>
-              No global MCP servers are configured.
-            </div>
+            <EmptyState
+              icon={Package}
+              title="No global MCP servers are configured."
+              size="compact"
+              className={PANEL_CLASS}
+            />
           ) : null}
           {installedServers.map((server) => (
             <div key={server.id} className={cn(PANEL_CLASS, "grid gap-3 p-4")}>
@@ -2518,7 +2530,7 @@ export const McpMarketplace = ({
             </div>
           </div>
           <div className="mt-3">
-            <StatusMessage message={message} />
+            <StatusMessage message={message} onDismiss={dismissMessage} />
           </div>
         </header>
 

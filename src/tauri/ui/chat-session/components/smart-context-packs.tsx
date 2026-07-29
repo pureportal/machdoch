@@ -47,12 +47,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { SearchField } from "../../components/ui/search-field";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
@@ -1822,21 +1824,18 @@ export const SmartContextPackPicker = ({
             ))}
           </div>
           {view === "apply" ? (
-            <div className="relative mt-3">
-              <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <Input
-                ref={packSearchInputRef}
-                type="search"
-                value={packSearchText}
-                onChange={(event) => setPackSearchText(event.target.value)}
-                onKeyDown={handlePackSearchKeyDown}
-                aria-label="Search context packs"
-                placeholder="Search packs"
-                autoComplete="off"
-                spellCheck={false}
-                className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 pl-9 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
-              />
-            </div>
+            <SearchField
+              ref={packSearchInputRef}
+              value={packSearchText}
+              onChange={(event) => setPackSearchText(event.target.value)}
+              onKeyDown={handlePackSearchKeyDown}
+              aria-label="Search context packs"
+              placeholder="Search packs"
+              autoComplete="off"
+              spellCheck={false}
+              containerClassName="mt-3"
+              className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
+            />
           ) : null}
         </div>
 
@@ -1856,9 +1855,13 @@ export const SmartContextPackPicker = ({
             ) : null}
 
             {scopedPackItems.length > 0 && visiblePackItems.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-500">
-                No matching context packs
-              </div>
+              <EmptyState
+                icon={Search}
+                title="No matching context packs"
+                size="compact"
+                role="status"
+                className="rounded-2xl bg-slate-900/60"
+              />
             ) : null}
 
             {visiblePackItems.map((item) => (

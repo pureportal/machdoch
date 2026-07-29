@@ -1,5 +1,4 @@
 import {
-  CircleAlert,
   Cloud,
   Cpu,
   GitFork,
@@ -21,7 +20,9 @@ import {
 } from "../../../../core/media/templates.js";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { EmptyState } from "../../components/ui/empty-state";
+import { AppNotification } from "../../components/ui/notification";
+import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 
 interface MediaFlowTemplatesPanelProps {
@@ -98,22 +99,25 @@ export const MediaFlowTemplatesPanel = ({
       </div>
 
       {notice ? (
-        <div role="status" className="mt-4 flex gap-2 rounded-lg border border-rose-400/20 bg-rose-400/5 p-2 text-[10px] leading-4 text-rose-100">
-          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />{notice}
-        </div>
+        <AppNotification
+          tone="error"
+          title="Template unavailable"
+          onDismiss={() => setNotice(null)}
+          className="mt-4"
+        >
+          {notice}
+        </AppNotification>
       ) : null}
 
-      <div className="relative mt-4">
-        <Search className="pointer-events-none absolute top-2.5 left-3 h-3.5 w-3.5 text-slate-600" />
-        <Input
-          type="search"
-          aria-label="Search flow templates"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search purpose, node, or capability"
-          className="border-slate-700 bg-slate-900/60 pl-9 text-xs text-slate-100 placeholder:text-slate-600"
-        />
-      </div>
+      <SearchField
+        aria-label="Search flow templates"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search purpose, node, or capability"
+        containerClassName="mt-4"
+        iconClassName="size-3.5 text-slate-600"
+        className="border-slate-700 bg-slate-900/60 text-xs text-slate-100 placeholder:text-slate-600"
+      />
       <div className="mt-3 grid grid-cols-4 gap-1" aria-label="Template category">
         {TEMPLATE_CATEGORIES.map((candidate) => (
           <button
@@ -236,7 +240,12 @@ export const MediaFlowTemplatesPanel = ({
           );
         })}
         {visibleTemplates.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">No built-in template matches this search.</div>
+          <EmptyState
+            icon={Search}
+            title="No built-in template matches this search."
+            size="compact"
+            role="status"
+          />
         ) : null}
       </div>
     </aside>
