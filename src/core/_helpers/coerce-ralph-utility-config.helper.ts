@@ -118,6 +118,26 @@ const coerceFiniteNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const coerceFiniteNumberOrTemplate = (
+  value: unknown,
+): number | string | undefined => {
+  const number = coerceFiniteNumber(value);
+
+  if (number !== undefined) {
+    return number;
+  }
+
+  if (
+    typeof value === "string" &&
+    value.includes("{{") &&
+    value.includes("}}")
+  ) {
+    return value;
+  }
+
+  return undefined;
+};
+
 const coerceUtilityWaitMode = (
   value: unknown,
 ): RalphUtilityWaitMode | undefined => {
@@ -335,10 +355,12 @@ export const coerceRalphUtilityConfig = (
   const env = coerceStringRecord(record.env);
   const acceptedExitCodes = coerceNumberArray(record.acceptedExitCodes);
   const maxAttempts =
-    record.maxAttempts === null ? null : coerceFiniteNumber(record.maxAttempts);
-  const maxTasks = coerceFiniteNumber(record.maxTasks);
-  const maxResults = coerceFiniteNumber(record.maxResults);
-  const maxDepth = coerceFiniteNumber(record.maxDepth);
+    record.maxAttempts === null
+      ? null
+      : coerceFiniteNumberOrTemplate(record.maxAttempts);
+  const maxTasks = coerceFiniteNumberOrTemplate(record.maxTasks);
+  const maxResults = coerceFiniteNumberOrTemplate(record.maxResults);
+  const maxDepth = coerceFiniteNumberOrTemplate(record.maxDepth);
   const encoding = coerceUtilityEncoding(record.encoding);
   const adapter = coerceUiAnalyzeAdapter(record.adapter);
   const server = coerceUiAnalyzeServer(record.server);

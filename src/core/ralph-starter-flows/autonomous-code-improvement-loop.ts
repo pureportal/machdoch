@@ -22,7 +22,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   alias: "autonomous-code-improvement-loop",
   name: "Autonomous Code Improvement Loop",
   description:
-    "Bounded autonomous improvement cycle that discovers and scores evidence-backed work packages, verifies and reviews them, defers exhausted packages, and can be scheduled repeatedly without human intervention.",
+    "Bounded autonomous improvement run that selects one evidence-backed work package, implements it with progress-aware termination, verifies and reviews it, and can be scheduled repeatedly without redundant same-run rediscovery.",
   settings: {
     maxTransitions: 500,
     autonomy: {
@@ -54,8 +54,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { name: "targetUrl", type: "url", default: "", required: false },
     { name: "healthUrl", type: "url", default: "", required: false },
     { name: "screenshotPath", type: "path", default: "", required: false },
-    { name: "maxImprovementPasses", type: "number", default: "8", required: false },
-    { name: "maxVerificationRepairPasses", type: "number", default: "3", required: false },
+    { name: "maxImprovementPasses", type: "number", default: "3", required: false },
+    { name: "maxVerificationRepairPasses", type: "number", default: "2", required: false },
+    { name: "maxFinalValidationScans", type: "number", default: "3", required: false },
     { name: "activeImprovementFile", type: "path", default: ".machdoch/ralph/code-improvements/active-improvement.json", required: false },
     { name: "completedImprovementsFile", type: "path", default: ".machdoch/ralph/code-improvements/completed-improvements.jsonl", required: false },
     { name: "improvementOutcomesFile", type: "path", default: ".machdoch/ralph/code-improvements/outcomes.jsonl", required: false },
@@ -158,7 +159,6 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 2,
       },
       type: "UTILITY",
       utility: {
@@ -259,7 +259,6 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 2,
       },
       type: "UTILITY",
       utility: {
@@ -496,7 +495,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "LOOP_COUNTER",
         counterName:
           "autonomous-code-improvement-loop.implementation-pass.{{data:select-scope:scope.id}}.{{data:choose-improvement:output.selectedCandidate.id}}",
-        maxAttempts: "{{maxImprovementPasses:number=8}}",
+        maxAttempts: "{{maxImprovementPasses:number=3}}",
       },
     },
     {
@@ -523,11 +522,11 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 4,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
-        "Implement the active code improvement package at {{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}} using package {{data:choose-improvement:output.selectedCandidate}}, selected scope cluster {{result:select-scope}}, focused research {{summary:improvement-research}}, deterministic baseline {{result:git-snapshot-before}}, verification baseline {{result:baseline-verification}}, detected commands, pass count, latest validator/reviewer feedback, scope guard {{result:scope-change-guard}}, work-yield evidence {{data:work-yield-analysis:output}}, and verification routing. Complete the cohesive package within selected paths plus required adjacent tests/docs/imports. Favor correctness, reliability, UX, accessibility, performance, and maintainability; security-only hardening is low priority in this nonsecurity flow unless fixing an observed regression. Add meaningful tests, avoid speculative cleanup, and repair only new/worsened failures. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when necessary and verified. Make bounded reversible decisions autonomously, do not start/restart servers, and append a concise evidence note to {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}}.",
+        "Execute the active code improvement package at {{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}}. Treat the selected package {{data:choose-improvement:output.selectedCandidate}}, scope cluster {{result:select-scope}}, focused research {{summary:improvement-research}}, deterministic baseline {{result:git-snapshot-before}}, verification baseline {{result:baseline-verification}}, and detected commands as an authoritative handoff: do not repeat broad discovery, portfolio generation, or planning. This is implementation pass {{data:count-improvement-pass:count}}. Start by checking the current worktree and only the remaining acceptance criteria from prior validator feedback {{data:validate-improvement:output}}, reviewer feedback {{data:independent-review:output}}, scope guard {{result:scope-change-guard}}, work-yield evidence {{data:work-yield-analysis:output}}, and verification {{result:run-verification}}. Complete the cohesive package within selected paths plus required adjacent tests/docs/imports, then stop this agent session. Favor correctness, reliability, UX, accessibility, performance, and maintainability; security-only hardening is low priority in this nonsecurity flow unless fixing an observed regression. Add meaningful focused tests, avoid speculative cleanup, and repair only new/worsened failures. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when necessary and verified. Make bounded reversible decisions autonomously, do not start/restart servers, and append one concise evidence note to {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}}.",
     },
     {
       id: "select-verification-command",
@@ -581,7 +580,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "LOOP_COUNTER",
         counterName:
           "autonomous-code-improvement-loop.verification-repair.{{data:select-scope:scope.id}}.{{data:choose-improvement:output.selectedCandidate.id}}",
-        maxAttempts: "{{maxVerificationRepairPasses:number=3}}",
+        maxAttempts: "{{maxVerificationRepairPasses:number=2}}",
       },
     },
     {
@@ -594,11 +593,11 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         reasoning: "medium",
         attachments: [],
         packs: [],
-        maxIterations: 2,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
-        "Fix verification failures from {{result:run-verification}} that were caused by the current code improvement package, comparing signatures with pre-change baseline {{result:baseline-verification}}. Repair only new or worsened failures. Keep fixes scoped to active package {{data:choose-improvement:output.selectedCandidate}} and selected scope cluster {{result:select-scope}}. Do not broaden the package or start unrelated work.",
+        "Repair only the current package failures identified by verification {{result:run-verification}}, independent review {{data:independent-review:output}}, or final validation {{data:validate-improvement:output}}, comparing failure signatures with pre-change baseline {{result:baseline-verification}}. Treat those artifacts and active package {{data:choose-improvement:output.selectedCandidate}} as an authoritative handoff; do not redo discovery or planning. Fix only new or worsened failures in selected scope cluster {{result:select-scope}}, run focused checks when useful, then stop this agent session. Do not broaden the package or start unrelated work.",
     },
     {
       id: "visual-decision",
@@ -683,7 +682,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "TRANSFORM_JSON",
         input: "{}",
         expression:
-          "(() => { const diff = context.resultsByBlock?.get?.('git-diff-summary'); const baseline = context.resultsByBlock?.get?.('git-snapshot-before'); const current = Array.isArray(diff?.data?.files) ? diff.data.files : []; const before = new Map((Array.isArray(baseline?.data?.files) ? baseline.data.files : []).map((file) => [String(file?.path ?? '').replace(/\\\\/gu, '/'), file?.signature])); const changedFiles = current.filter((file) => before.get(String(file?.path ?? '').replace(/\\\\/gu, '/')) !== file?.signature).map((file) => String(file?.path ?? '').replace(/\\\\/gu, '/')).filter(Boolean); return { changedFiles, changedFileCount: changedFiles.length, producedWork: changedFiles.length > 0, diffOutput: diff?.output ?? '', scopeGuard: context.resultsByBlock?.get?.('scope-change-guard')?.output ?? '' }; })()",
+          "(() => { const diff = context.resultsByBlock?.get?.('git-diff-summary'); const baseline = context.resultsByBlock?.get?.('git-snapshot-before'); const previous = context.resultsByBlock?.get?.('work-yield-analysis')?.data?.output ?? {}; const current = Array.isArray(diff?.data?.files) ? diff.data.files : []; const before = new Map((Array.isArray(baseline?.data?.files) ? baseline.data.files : []).map((file) => [String(file?.path ?? '').replace(/\\\\/gu, '/'), file?.signature])); const changed = current.filter((file) => before.get(String(file?.path ?? '').replace(/\\\\/gu, '/')) !== file?.signature).map((file) => ({ path: String(file?.path ?? '').replace(/\\\\/gu, '/'), signature: String(file?.signature ?? '') })).filter((file) => file.path).sort((left, right) => left.path.localeCompare(right.path)); const changedFiles = changed.map((file) => file.path); const diffSignature = JSON.stringify(changed); const producedWork = changedFiles.length > 0; const madeProgress = producedWork && diffSignature !== previous.diffSignature; return { changedFiles, changedFileCount: changedFiles.length, producedWork, madeProgress, stalled: producedWork && !madeProgress, diffSignature, previousDiffSignature: previous.diffSignature ?? '', diffOutput: diff?.output ?? '', scopeGuard: context.resultsByBlock?.get?.('scope-change-guard')?.output ?? '' }; })()",
       },
     },
     {
@@ -697,7 +696,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "lastData?.producedWork === true && lastData?.scopeGuard === 'IN_SCOPE'",
+            "lastData?.output?.madeProgress === true && lastData?.output?.scopeGuard === 'IN_SCOPE'",
         },
       },
     },
@@ -726,7 +725,6 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 2,
       },
       type: "UTILITY",
       utility: {
@@ -792,6 +790,19 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           expression:
             "String(context.resultsByBlock?.['independent-review']?.data?.output?.decision ?? '').toUpperCase() === 'FIX'",
         },
+      },
+    },
+    {
+      id: "count-final-validation-scan",
+      title: "Count Final Validation Scan",
+      position: { x: 6740, y: -180 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "autonomous-code-improvement-loop.final-validation-scan.{{data:select-scope:scope.id}}.{{data:choose-improvement:output.selectedCandidate.id}}",
+        maxAttempts: "{{maxFinalValidationScans:number=3}}",
       },
     },
     {
@@ -992,23 +1003,8 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
     },
     {
-      id: "scope-cycle-complete",
-      title: "Scope Cycle Complete?",
-      position: { x: 4060, y: 300 },
-      size: { width: 256, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "CONDITION",
-        condition: {
-          style: "javascript",
-          expression:
-            "['EMPTY', 'ERROR'].includes(String(context.resultsByBlock?.['scan-scopes']?.output ?? '')) || context.resultsByBlock?.['select-scope']?.output === 'EMPTY' || ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope'].some((id) => context.resultsByBlock?.[id]?.data?.cycleCompleted === true)",
-        },
-      },
-    },
-    {
       id: "success",
-      title: "No Meaningful Improvements",
+      title: "Improvement Run Complete",
       position: { x: 4400, y: 300 },
       size: { width: 280, height: 114 },
       type: "END",
@@ -1101,26 +1097,29 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "diff-empty-to-scope-guard", from: "git-diff-summary", fromOutput: "EMPTY", to: "scope-change-guard" },
     { id: "diff-error-to-scope-guard", from: "git-diff-summary", fromOutput: "ERROR", to: "scope-change-guard" },
     { id: "scope-guard-in-scope", from: "scope-change-guard", fromOutput: "IN_SCOPE", to: "work-yield-analysis" },
-    { id: "scope-guard-out-of-scope", from: "scope-change-guard", fromOutput: "OUT_OF_SCOPE", to: "count-improvement-pass" },
-    { id: "scope-guard-empty", from: "scope-change-guard", fromOutput: "EMPTY", to: "count-improvement-pass" },
-    { id: "scope-guard-error", from: "scope-change-guard", fromOutput: "ERROR", to: "count-improvement-pass" },
+    { id: "scope-guard-out-of-scope", from: "scope-change-guard", fromOutput: "OUT_OF_SCOPE", to: "defer-scope" },
+    { id: "scope-guard-empty", from: "scope-change-guard", fromOutput: "EMPTY", to: "defer-scope" },
+    { id: "scope-guard-error", from: "scope-change-guard", fromOutput: "ERROR", to: "defer-scope" },
     { id: "work-yield-to-decision", from: "work-yield-analysis", fromOutput: "SUCCESS", to: "useful-work-produced" },
-    { id: "work-yield-error-to-count", from: "work-yield-analysis", fromOutput: "ERROR", to: "count-improvement-pass" },
+    { id: "work-yield-error-to-defer", from: "work-yield-analysis", fromOutput: "ERROR", to: "defer-scope" },
     { id: "useful-work-to-review", from: "useful-work-produced", fromOutput: "MATCH", to: "review-tier-decision" },
-    { id: "no-useful-work-to-count", from: "useful-work-produced", fromOutput: "NO_MATCH", to: "count-improvement-pass" },
-    { id: "useful-work-error-to-count", from: "useful-work-produced", fromOutput: "ERROR", to: "count-improvement-pass" },
+    { id: "no-useful-work-to-defer", from: "useful-work-produced", fromOutput: "NO_MATCH", to: "defer-scope" },
+    { id: "useful-work-error-to-defer", from: "useful-work-produced", fromOutput: "ERROR", to: "defer-scope" },
     { id: "review-tier-strict", from: "review-tier-decision", fromOutput: "MATCH", to: "independent-review" },
-    { id: "review-tier-validator-only", from: "review-tier-decision", fromOutput: "NO_MATCH", to: "validate-improvement" },
-    { id: "review-tier-error-to-validate", from: "review-tier-decision", fromOutput: "ERROR", to: "validate-improvement" },
+    { id: "review-tier-validator-only", from: "review-tier-decision", fromOutput: "NO_MATCH", to: "count-final-validation-scan" },
+    { id: "review-tier-error-to-validate", from: "review-tier-decision", fromOutput: "ERROR", to: "count-final-validation-scan" },
     { id: "review-to-defer-check", from: "independent-review", fromOutput: "SUCCESS", to: "review-is-deferred" },
     { id: "review-invalid", from: "independent-review", fromOutput: "INVALID", to: "mark-invalid-scope" },
     { id: "review-error", from: "independent-review", fromOutput: "ERROR", to: "mark-invalid-scope" },
     { id: "review-deferred", from: "review-is-deferred", fromOutput: "MATCH", to: "defer-scope" },
     { id: "review-not-deferred", from: "review-is-deferred", fromOutput: "NO_MATCH", to: "review-needs-fix" },
     { id: "review-defer-check-error", from: "review-is-deferred", fromOutput: "ERROR", to: "mark-invalid-scope" },
-    { id: "review-fix", from: "review-needs-fix", fromOutput: "MATCH", to: "fix-validation-failures" },
-    { id: "review-pass", from: "review-needs-fix", fromOutput: "NO_MATCH", to: "validate-improvement" },
+    { id: "review-fix", from: "review-needs-fix", fromOutput: "MATCH", to: "count-verification-repair" },
+    { id: "review-pass", from: "review-needs-fix", fromOutput: "NO_MATCH", to: "count-final-validation-scan" },
     { id: "review-fix-check-error", from: "review-needs-fix", fromOutput: "ERROR", to: "mark-invalid-scope" },
+    { id: "final-scan-counter-continue", from: "count-final-validation-scan", fromOutput: "CONTINUE", to: "validate-improvement" },
+    { id: "final-scan-counter-limit", from: "count-final-validation-scan", fromOutput: "LIMIT_REACHED", to: "defer-scope" },
+    { id: "final-scan-counter-error", from: "count-final-validation-scan", fromOutput: "ERROR", to: "defer-scope" },
     { id: "validate-done", from: "validate-improvement", fromOutput: "DONE", to: "read-active-improvement" },
     { id: "validate-continue", from: "validate-improvement", fromOutput: "CONTINUE", to: "count-improvement-pass" },
     { id: "validate-retry", from: "validate-improvement", fromOutput: "RETRY", to: "count-verification-repair" },
@@ -1160,19 +1159,16 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "archive-to-report", from: "archive-active-improvement", fromOutput: "SUCCESS", to: "final-report" },
     { id: "archive-missing-to-report", from: "archive-active-improvement", fromOutput: "NOT_FOUND", to: "final-report" },
     { id: "archive-error-to-retained-report", from: "archive-active-improvement", fromOutput: "ERROR", to: "retained-active-report" },
-    { id: "report-success-to-cycle", from: "final-report", fromOutput: "SUCCESS", to: "scope-cycle-complete" },
-    { id: "report-error-to-cycle", from: "final-report", fromOutput: "ERROR", to: "scope-cycle-complete" },
+    { id: "report-success-to-end", from: "final-report", fromOutput: "SUCCESS", to: "success" },
+    { id: "report-error-to-end", from: "final-report", fromOutput: "ERROR", to: "success" },
     { id: "retained-report-success-to-deferred", from: "retained-active-report", fromOutput: "SUCCESS", to: "deferred" },
     { id: "retained-report-error-to-deferred", from: "retained-active-report", fromOutput: "ERROR", to: "deferred" },
-    { id: "scope-cycle-complete-success", from: "scope-cycle-complete", fromOutput: "MATCH", to: "success" },
-    { id: "scope-cycle-next", from: "scope-cycle-complete", fromOutput: "NO_MATCH", to: "select-scope" },
-    { id: "scope-cycle-error", from: "scope-cycle-complete", fromOutput: "ERROR", to: "select-scope" },
   ],
 };
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 11,
+  version: 12,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

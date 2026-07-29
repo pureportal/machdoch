@@ -22,7 +22,7 @@ const autonomousRefactoringFlow: RalphFlow = {
   alias: "repository-refactor-validation-loop",
   name: "Repository Refactor & Validation Loop",
   description:
-    "Bounded autonomous refactor cycle that scores dependency-aware packages from coupling, churn, complexity, and testability evidence, then validates and defers exhausted scopes without human intervention.",
+    "Bounded autonomous refactor run that selects one dependency-aware package, implements it with progress-aware termination, validates it, and can be scheduled repeatedly without redundant same-run rediscovery.",
   settings: {
     maxTransitions: 240,
     autonomy: {
@@ -52,8 +52,9 @@ const autonomousRefactoringFlow: RalphFlow = {
     { name: "allowDependencyChanges", type: "boolean", default: "true", required: false },
     { name: "allowSchemaChanges", type: "boolean", default: "true", required: false },
     { name: "notesFile", type: "path", default: ".machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md", required: false },
-    { name: "maxRefactorPasses", type: "number", default: "5", required: false },
-    { name: "maxVerificationRepairPasses", type: "number", default: "3", required: false },
+    { name: "maxRefactorPasses", type: "number", default: "3", required: false },
+    { name: "maxVerificationRepairPasses", type: "number", default: "2", required: false },
+    { name: "maxFinalRefactorScans", type: "number", default: "3", required: false },
     { name: "projectCommandsFile", type: "path", default: "{{run:artifactRoot}}/refactor/project-commands.json", required: false },
     { name: "refactorPlanFile", type: "path", default: "{{run:artifactRoot}}/refactor/refactor-plan.json", required: false },
     { name: "gitSnapshotFile", type: "path", default: "{{run:artifactRoot}}/refactor/git-snapshot.json", required: false },
@@ -138,7 +139,6 @@ const autonomousRefactoringFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 2,
       },
       type: "UTILITY",
       utility: {
@@ -239,7 +239,6 @@ const autonomousRefactoringFlow: RalphFlow = {
         reasoning: "medium",
         attachments: [],
         packs: [],
-        maxIterations: 1,
       },
       type: "UTILITY",
       utility: {
@@ -386,11 +385,11 @@ const autonomousRefactoringFlow: RalphFlow = {
         reasoning: "medium",
         attachments: [],
         packs: [],
-        maxIterations: 2,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
-        "Apply one cohesive refactor package in selected scope cluster {{result:select-scope}} using structured conventions {{data:audit-against-policy:output.conventions}}, refactor plan, research, git/validation baselines, pass count, validation routing, scope guard {{result:scope-change-guard}}, and latest feedback. Complete the related pass set before stopping. Follow objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, naming policy {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max-lines advisory {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, and test framework {{testFramework:text=auto-detect}}. Public API changes use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}}, dependencies use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, and schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}} when justified and verified. Security-only hardening is low priority here. Repair only new/worsened failures, make bounded reversible decisions, update consumers/tests, and avoid broad formatting sweeps.",
+        "Execute the selected refactor package in scope cluster {{result:select-scope}}. Treat structured plan and conventions {{data:audit-against-policy:output}}, focused research {{summary:refactor-research}}, git snapshot {{result:git-snapshot-before}}, validation baseline {{result:baseline-validation}}, and detected commands as an authoritative handoff: do not repeat broad discovery, package selection, architecture planning, or policy analysis. This is refactor pass {{data:count-refactor-pass:count}}. Start by checking the current worktree and only the remaining work from prior final scan {{data:final-refactor-scan:output}}, validation {{result:run-validation-checks}}, scope guard {{result:scope-change-guard}}, and progress evidence {{data:refactor-progress-analysis:output}}. Complete the related pass set, update consumers and focused tests, then stop this agent session. Follow objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, naming policy {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max-lines advisory {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, and test framework {{testFramework:text=auto-detect}}. Public API changes use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}}, dependencies use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, and schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}} when justified and verified. Security-only hardening is low priority here. Repair only new/worsened failures, make bounded reversible decisions, and avoid broad formatting sweeps.",
     },
     {
       id: "count-refactor-pass",
@@ -402,7 +401,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "LOOP_COUNTER",
         counterName:
           "repository-refactor-validation-loop.refactor-pass.{{data:select-scope:scope.id}}",
-        maxAttempts: "{{maxRefactorPasses:number=5}}",
+        maxAttempts: "{{maxRefactorPasses:number=3}}",
       },
     },
     {
@@ -471,7 +470,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "LOOP_COUNTER",
         counterName:
           "repository-refactor-validation-loop.verification-repair.{{data:select-scope:scope.id}}",
-        maxAttempts: "{{maxVerificationRepairPasses:number=3}}",
+        maxAttempts: "{{maxVerificationRepairPasses:number=2}}",
       },
     },
     {
@@ -488,7 +487,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Fix validation failures from {{result:run-validation-checks}} that were caused by the current refactor package, comparing signatures with pre-change baseline {{result:baseline-validation}}. Repair only new or worsened failures, keep changes scoped to selected scope cluster {{result:select-scope}}, preserve intended behavior, and update consumers/tests/imports/exports as needed. If validation is unavailable, document that in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} and continue.",
+        "Repair only the current refactor failures identified by validation {{result:run-validation-checks}} or final scan {{data:final-refactor-scan:output}}, comparing signatures with pre-change baseline {{result:baseline-validation}}. Treat those artifacts and refactor plan {{data:audit-against-policy:output}} as an authoritative handoff; do not redo discovery, package selection, or planning. Keep changes scoped to selected scope cluster {{result:select-scope}}, preserve intended behavior, update consumers/tests/imports/exports as needed, run focused checks when useful, then stop this agent session. If validation is unavailable, document that in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} and continue.",
     },
     {
       id: "git-diff-summary",
@@ -503,9 +502,22 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
     },
     {
+      id: "count-final-refactor-scan",
+      title: "Count Final Refactor Scan",
+      position: { x: 3400, y: -150 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "repository-refactor-validation-loop.final-scan.{{data:select-scope:scope.id}}",
+        maxAttempts: "{{maxFinalRefactorScans:number=3}}",
+      },
+    },
+    {
       id: "final-refactor-scan",
       title: "Final Refactor Scan",
-      position: { x: 3400, y: -150 },
+      position: { x: 3740, y: -150 },
       size: { width: 300, height: 238 },
       type: "UTILITY",
       utility: {
@@ -569,6 +581,34 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "CHANGE_SCOPE_GUARD",
         input:
           "{\"scope\":{{data:select-scope:scope}},\"gitSummary\":{{data:git-diff-summary}}}",
+      },
+    },
+    {
+      id: "refactor-progress-analysis",
+      title: "Assess Refactor Progress",
+      position: { x: 3560, y: -260 },
+      size: { width: 300, height: 190 },
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        input: "{}",
+        expression:
+          "(() => { const diff = context.resultsByBlock?.get?.('git-diff-summary'); const baseline = context.resultsByBlock?.get?.('git-snapshot-before'); const previous = context.resultsByBlock?.get?.('refactor-progress-analysis')?.data?.output ?? {}; const current = Array.isArray(diff?.data?.files) ? diff.data.files : []; const before = new Map((Array.isArray(baseline?.data?.files) ? baseline.data.files : []).map((file) => [String(file?.path ?? '').replace(/\\\\/gu, '/'), file?.signature])); const changed = current.filter((file) => before.get(String(file?.path ?? '').replace(/\\\\/gu, '/')) !== file?.signature).map((file) => ({ path: String(file?.path ?? '').replace(/\\\\/gu, '/'), signature: String(file?.signature ?? '') })).filter((file) => file.path).sort((left, right) => left.path.localeCompare(right.path)); const changedFiles = changed.map((file) => file.path); const diffSignature = JSON.stringify(changed); const producedWork = changedFiles.length > 0; const madeProgress = producedWork && diffSignature !== previous.diffSignature; return { changedFiles, changedFileCount: changedFiles.length, producedWork, madeProgress, stalled: producedWork && !madeProgress, diffSignature, previousDiffSignature: previous.diffSignature ?? '', diffOutput: diff?.output ?? '', scopeGuard: context.resultsByBlock?.get?.('scope-change-guard')?.output ?? '' }; })()",
+      },
+    },
+    {
+      id: "refactor-progress-produced",
+      title: "Refactor Progress Produced?",
+      position: { x: 3740, y: -260 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression:
+            "lastData?.output?.madeProgress === true && lastData?.output?.scopeGuard === 'IN_SCOPE'",
+        },
       },
     },
     {
@@ -655,21 +695,6 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: { type: "APPEND_JSONL", path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}", input: "{\"outcome\":\"INVALID\",\"scopeRoot\":\"{{scopeRoot:path=.}}\"}" },
     },
     {
-      id: "scope-cycle-complete",
-      title: "Scope Cycle Complete?",
-      position: { x: 4080, y: 0 },
-      size: { width: 256, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "CONDITION",
-        condition: {
-          style: "javascript",
-          expression:
-            "['EMPTY', 'ERROR'].includes(String(context.resultsByBlock?.['scan-scopes']?.output ?? '')) || context.resultsByBlock?.['select-scope']?.output === 'EMPTY' || ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope'].some((id) => context.resultsByBlock?.[id]?.data?.cycleCompleted === true)",
-        },
-      },
-    },
-    {
       id: "success",
       title: "Refactor Complete",
       position: { x: 4420, y: 0 },
@@ -743,10 +768,18 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "git-diff-success-to-guard", from: "git-diff-summary", fromOutput: "SUCCESS", to: "scope-change-guard" },
     { id: "git-diff-empty-to-guard", from: "git-diff-summary", fromOutput: "EMPTY", to: "scope-change-guard" },
     { id: "git-diff-error-to-guard", from: "git-diff-summary", fromOutput: "ERROR", to: "scope-change-guard" },
-    { id: "scope-guard-in-scope", from: "scope-change-guard", fromOutput: "IN_SCOPE", to: "final-refactor-scan" },
-    { id: "scope-guard-out-of-scope", from: "scope-change-guard", fromOutput: "OUT_OF_SCOPE", to: "count-refactor-pass" },
-    { id: "scope-guard-empty", from: "scope-change-guard", fromOutput: "EMPTY", to: "count-refactor-pass" },
-    { id: "scope-guard-error", from: "scope-change-guard", fromOutput: "ERROR", to: "count-refactor-pass" },
+    { id: "scope-guard-in-scope", from: "scope-change-guard", fromOutput: "IN_SCOPE", to: "refactor-progress-analysis" },
+    { id: "scope-guard-out-of-scope", from: "scope-change-guard", fromOutput: "OUT_OF_SCOPE", to: "defer-scope" },
+    { id: "scope-guard-empty", from: "scope-change-guard", fromOutput: "EMPTY", to: "defer-scope" },
+    { id: "scope-guard-error", from: "scope-change-guard", fromOutput: "ERROR", to: "defer-scope" },
+    { id: "progress-analysis-to-decision", from: "refactor-progress-analysis", fromOutput: "SUCCESS", to: "refactor-progress-produced" },
+    { id: "progress-analysis-error", from: "refactor-progress-analysis", fromOutput: "ERROR", to: "defer-scope" },
+    { id: "progress-produced-to-scan-counter", from: "refactor-progress-produced", fromOutput: "MATCH", to: "count-final-refactor-scan" },
+    { id: "progress-stalled-to-defer", from: "refactor-progress-produced", fromOutput: "NO_MATCH", to: "defer-scope" },
+    { id: "progress-decision-error", from: "refactor-progress-produced", fromOutput: "ERROR", to: "defer-scope" },
+    { id: "final-scan-counter-continue", from: "count-final-refactor-scan", fromOutput: "CONTINUE", to: "final-refactor-scan" },
+    { id: "final-scan-counter-limit", from: "count-final-refactor-scan", fromOutput: "LIMIT_REACHED", to: "defer-scope" },
+    { id: "final-scan-counter-error", from: "count-final-refactor-scan", fromOutput: "ERROR", to: "defer-scope" },
     { id: "scan-done", from: "final-refactor-scan", fromOutput: "DONE", to: "mark-scope-result" },
     { id: "scan-continue", from: "final-refactor-scan", fromOutput: "CONTINUE", to: "count-refactor-pass" },
     { id: "scan-retry", from: "final-refactor-scan", fromOutput: "RETRY", to: "count-verification-repair" },
@@ -776,19 +809,16 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "invalid-ledger-to-report", from: "record-invalid-outcome", fromOutput: "SUCCESS", to: "final-report" },
     { id: "invalid-ledger-invalid-to-retained-report", from: "record-invalid-outcome", fromOutput: "INVALID", to: "retained-outcome-report" },
     { id: "invalid-ledger-error-to-retained-report", from: "record-invalid-outcome", fromOutput: "ERROR", to: "retained-outcome-report" },
-    { id: "report-success-to-cycle", from: "final-report", fromOutput: "SUCCESS", to: "scope-cycle-complete" },
-    { id: "report-error-to-cycle", from: "final-report", fromOutput: "ERROR", to: "scope-cycle-complete" },
+    { id: "report-success-to-end", from: "final-report", fromOutput: "SUCCESS", to: "success" },
+    { id: "report-error-to-end", from: "final-report", fromOutput: "ERROR", to: "success" },
     { id: "retained-report-success-to-deferred", from: "retained-outcome-report", fromOutput: "SUCCESS", to: "deferred" },
     { id: "retained-report-error-to-deferred", from: "retained-outcome-report", fromOutput: "ERROR", to: "deferred" },
-    { id: "scope-cycle-complete-success", from: "scope-cycle-complete", fromOutput: "MATCH", to: "success" },
-    { id: "scope-cycle-next", from: "scope-cycle-complete", fromOutput: "NO_MATCH", to: "select-scope" },
-    { id: "scope-cycle-error", from: "scope-cycle-complete", fromOutput: "ERROR", to: "select-scope" },
   ],
 };
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 12,
+  version: 13,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

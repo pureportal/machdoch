@@ -174,6 +174,9 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).toContain("<execution_playbook>");
     expect(prompt).toContain("discover -> plan -> execute -> verify");
     expect(prompt).toContain(
+      "do not repeat completed broad discovery or planning",
+    );
+    expect(prompt).toContain(
       "If the same tool call fails twice in a row, do not retry it unchanged",
     );
     expect(prompt).toContain(

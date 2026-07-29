@@ -102,7 +102,9 @@ Each executable block has a retry policy:
 Prompt blocks also have internal execution settings:
 
 - `maxIterations` defaults to `1`.
-- If `maxIterations > 1`, the prompt reruns in the same agent context, like normal chat mode.
+- If `maxIterations > 1`, the prompt may request another pass with
+  `RALPH_ITERATION: CONTINUE`; successful output otherwise completes early, and
+  the configured value remains a hard cap.
 - Internal prompt validators are disabled by default for Ralph but can be enabled per prompt block.
 
 ## Per-Block Execution Settings

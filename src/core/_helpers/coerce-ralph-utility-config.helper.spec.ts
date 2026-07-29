@@ -130,6 +130,24 @@ describe("coerceRalphUtilityConfig", () => {
     });
   });
 
+  it("preserves numeric templates until runtime values are resolved", () => {
+    expect(
+      coerceRalphUtilityConfig({
+        type: "LOOP_COUNTER",
+        maxAttempts: "{{maxPasses:number=3}}",
+        maxTasks: "{{maxTasks:number=2}}",
+        maxDepth: "{{maxDepth:number=4}}",
+        maxResults: "{{maxResults:number=200}}",
+      }),
+    ).toMatchObject({
+      type: "LOOP_COUNTER",
+      maxAttempts: "{{maxPasses:number=3}}",
+      maxTasks: "{{maxTasks:number=2}}",
+      maxDepth: "{{maxDepth:number=4}}",
+      maxResults: "{{maxResults:number=200}}",
+    });
+  });
+
   it("filters invalid enum values and non-string record entries", () => {
     expect(
       coerceRalphUtilityConfig({

@@ -563,7 +563,7 @@ describe("runRalphFlow", () => {
     expect(paused.checkpoint?.runLog).toHaveLength(1_000);
   });
 
-  it("continues autonomously across transition-budget segments without a fake terminal END", async () => {
+  it("enforces maxTransitions for autonomy-enabled flows", async () => {
     const flow = createFlow({
       settings: {
         maxTransitions: 2,
@@ -595,16 +595,63 @@ describe("runRalphFlow", () => {
       runId: "transition-run",
     });
 
-    expect(exhausted.status).toBe("completed");
-    expect(exhausted.checkpoint).toBeUndefined();
+    expect(exhausted.status).toBe("crashed");
+    expect(exhausted.summary).toBe("Ralph flow reached maxTransitions (2).");
+    expect(exhausted.checkpoint).toBeDefined();
     expect(exhausted.blockResults.map((entry) => entry.blockId)).toEqual([
       "start",
       "wait-one",
-      "wait-two",
-      "success",
     ]);
-    expect(exhausted.autonomy?.totalTransitions).toBe(3);
-    expect(exhausted.events.filter((event) => event.type === "end")).toHaveLength(1);
+    expect(exhausted.autonomy).toMatchObject({
+      totalTransitions: 2,
+      exhaustion: {
+        kind: "max-transitions",
+        limit: 2,
+        recoverable: true,
+      },
+    });
+    expect(exhausted.events).toContainEqual(
+      expect.objectContaining({
+        type: "crash",
+        blockId: "wait-two",
+      }),
+    );
+  });
+
+  it("enforces maxTotalTransitions even when the segment limit is disabled", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "wait",
+            type: "UTILITY",
+            title: "Wait",
+            utility: { type: "WAIT", mode: "delay", delaySeconds: 0 },
+          },
+        ],
+        edges: [
+          { id: "start-to-wait", from: "start", fromOutput: "SUCCESS", to: "wait" },
+          { id: "wait-to-start", from: "wait", fromOutput: "SUCCESS", to: "start" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      {
+        maxTransitions: null,
+        maxTotalTransitions: 2,
+        autonomy: true,
+      },
+    );
+
+    expect(result.status).toBe("crashed");
+    expect(result.summary).toBe("Ralph flow reached maxTotalTransitions (2).");
+    expect(result.blockResults).toHaveLength(2);
+    expect(result.autonomy?.exhaustion).toMatchObject({
+      kind: "max-transitions",
+      limit: 2,
+      totalTransitions: 2,
+    });
   });
 
   it("recovers a failed-END ERROR route with bounded autonomous retry", async () => {
@@ -1018,7 +1065,7 @@ describe("runRalphFlow", () => {
         createExecutionResult({
           summary: "First pass.",
           response: {
-            markdown: "First response.",
+            markdown: "First response.\n\nRALPH_ITERATION: CONTINUE",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -1030,7 +1077,7 @@ describe("runRalphFlow", () => {
         createExecutionResult({
           summary: "Second pass.",
           response: {
-            markdown: "Second response.",
+            markdown: "Second response.\n\nRALPH_ITERATION: CONTINUE",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -1074,13 +1121,104 @@ describe("runRalphFlow", () => {
         role: "user",
         content: expect.stringContaining("Iterate on the task."),
       },
-      { role: "assistant", content: "First response." },
+      {
+        role: "assistant",
+        content: "First response.\n\nRALPH_ITERATION: CONTINUE",
+      },
       {
         role: "user",
         content: expect.stringContaining("Iterate on the task."),
       },
-      { role: "assistant", content: "Second response." },
+      {
+        role: "assistant",
+        content: "Second response.\n\nRALPH_ITERATION: CONTINUE",
+      },
     ]);
+  });
+
+  it("completes a successful prompt before maxIterations without a continue marker", async () => {
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        summary: "Completed in one pass.",
+        response: {
+          markdown: "The requested work is complete.",
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "prompt",
+            type: "PROMPT",
+            title: "Prompt",
+            prompt: "Complete the task.",
+            settings: { maxIterations: 4 },
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
+          { id: "prompt-to-success", from: "prompt", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 5 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(executeTask).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(executeTask).mock.calls[0]?.[0]).toContain(
+      "A missing marker is treated as DONE.",
+    );
+  });
+
+  it("stops prompt continuation when another iteration produces no new output", async () => {
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({
+        summary: "No additional progress.",
+        response: {
+          markdown: "Still working.\n\nRALPH_ITERATION: CONTINUE",
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "prompt",
+            type: "PROMPT",
+            title: "Prompt",
+            prompt: "Complete the task.",
+            settings: { maxIterations: 4 },
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
+          { id: "prompt-to-success", from: "prompt", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 5 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(executeTask).toHaveBeenCalledTimes(2);
   });
 
   it("skips generated, dependency, and build folders when searching files", async () => {
@@ -2325,6 +2463,56 @@ describe("runRalphFlow", () => {
       await expect(readFile(join(workspace, "state", "project-commands.json"), "utf8"))
         .resolves.toContain("pnpm typecheck");
       expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Cargo verification tiers distinct", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-cargo-commands-"));
+
+    try {
+      await writeFile(
+        join(workspace, "Cargo.toml"),
+        '[package]\nname = "tiered-checks"\nversion = "0.1.0"\n',
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "detect",
+              type: "UTILITY",
+              title: "Detect Commands",
+              utility: { type: "DETECT_PROJECT_COMMANDS", rootPath: "." },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-detect", from: "start", fromOutput: "SUCCESS", to: "detect" },
+            { id: "detect-to-success", from: "detect", fromOutput: "SUCCESS", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+      const detection = result.blockResults.find(
+        (entry) => entry.blockId === "detect",
+      )?.data as Record<string, unknown>;
+      const focused = String(detection.focusedVerificationCommand ?? "");
+      const standard = String(detection.standardVerificationCommand ?? "");
+      const broad = String(detection.broadVerificationCommand ?? "");
+
+      expect(result.status).toBe("completed");
+      expect(focused).toContain("cargo check");
+      expect(focused).not.toContain("cargo test");
+      expect(standard).toContain("cargo test");
+      expect(standard).not.toContain("--all-targets");
+      expect(broad).toContain("cargo test --all-targets");
+      expect(new Set([focused, standard, broad]).size).toBe(3);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

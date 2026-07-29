@@ -3351,7 +3351,33 @@ const createPromptTask = (
     "",
     resolveTemplateText(block.prompt, context),
     ...(attachmentsBlock ? ["", attachmentsBlock] : []),
+    ...(block.settings?.maxIterations && block.settings.maxIterations > 1
+      ? [
+          "",
+          "Iteration contract:",
+          "Complete the task in this call whenever possible.",
+          "End with `RALPH_ITERATION: CONTINUE` only when another bounded iteration is necessary.",
+          "Otherwise end with `RALPH_ITERATION: DONE`. A missing marker is treated as DONE.",
+        ]
+      : []),
   ].join("\n");
+};
+
+type RalphPromptIterationDecision = "DONE" | "CONTINUE";
+
+const parseRalphPromptIterationDecision = (
+  result: TaskExecutionResult,
+): RalphPromptIterationDecision | undefined => {
+  const matches = [
+    ...getResultMarkdown(result).matchAll(
+      /^RALPH_ITERATION:\s*(DONE|CONTINUE)\s*$/gimu,
+    ),
+  ];
+  const decision = matches.at(-1)?.[1]?.toUpperCase();
+
+  return decision === "DONE" || decision === "CONTINUE"
+    ? decision
+    : undefined;
 };
 
 const createValidatorTask = (
@@ -3930,6 +3956,7 @@ const executePromptBlock = async (
     ...(options.conversationContext ?? { history: [] }),
     history: [...(options.conversationContext?.history ?? [])],
   };
+  let previousContinuationOutput: string | undefined;
 
   for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
     const task = createPromptTask(flow, block, context);
@@ -3978,6 +4005,19 @@ const executePromptBlock = async (
         blockProgressEvents,
       );
     }
+
+    const iterationDecision = parseRalphPromptIterationDecision(result);
+    const iterationOutput = getResultMarkdown(result).trim();
+    if (
+      iterationDecision !== "CONTINUE" ||
+      iterationOutput === previousContinuationOutput
+    ) {
+      return withRalphBlockProgress(
+        createRalphPromptExecutionResult(block, result, iteration),
+        blockProgressEvents,
+      );
+    }
+    previousContinuationOutput = iterationOutput;
   }
 
   return withRalphBlockProgress(
@@ -10263,6 +10303,12 @@ const executeDetectProjectCommandsUtilityBlock = async (
       manifests.push("Cargo.toml");
       commands.push(
         {
+          kind: "typecheck",
+          command: "cargo check",
+          source: "Cargo.toml",
+          confidence: "high",
+        },
+        {
           kind: "build",
           command: "cargo build",
           source: "Cargo.toml",
@@ -10328,11 +10374,26 @@ const executeDetectProjectCommandsUtilityBlock = async (
         : testCommands.length > 0
           ? testCommands.slice(0, 1)
           : verificationCommands.slice(0, 1);
-    const standardVerificationCommands = [
+    let standardVerificationCommands = [
       ...typecheckCommands,
       ...(lintCommands.length > 0 ? lintCommands : testCommands.slice(0, 1)),
     ];
-    const broadVerificationCommands = verificationCommands;
+    let broadVerificationCommands = verificationCommands;
+    const cargoOnly =
+      manifests.length === 1 && manifests[0] === "Cargo.toml";
+    if (cargoOnly) {
+      standardVerificationCommands = ["cargo test"];
+      broadVerificationCommands = ["cargo test --all-targets"];
+    } else if (manifests.includes("Cargo.toml")) {
+      if (!standardVerificationCommands.includes("cargo test")) {
+        standardVerificationCommands.push("cargo test");
+      }
+      broadVerificationCommands = broadVerificationCommands
+        .filter((command) => command !== "cargo check")
+        .map((command) =>
+          command === "cargo test" ? "cargo test --all-targets" : command,
+        );
+    }
     const data = {
       rootPath,
       requestedRootPath,
@@ -13697,9 +13758,9 @@ export const runRalphFlow = async (
   let currentBlockId: string | undefined =
     checkpoint?.currentBlockId ?? start.id;
   let transitions = checkpoint?.transitions ?? 0;
-  let transitionBase =
+  const transitionBase =
     checkpoint?.transitionBase ?? checkpoint?.totalTransitions ?? 0;
-  let segment =
+  const segment =
     (checkpoint?.segment ?? 1) +
     (instructionBoundaryChanged &&
     options.instructionBoundaryPolicy === "new-boundary"
@@ -13718,7 +13779,7 @@ export const runRalphFlow = async (
     options.maxTransitions === null
       ? null
       : (options.maxTransitions ?? flow.settings?.maxTransitions);
-  let maxTotalTransitions = options.maxTotalTransitions ?? null;
+  const maxTotalTransitions = options.maxTotalTransitions ?? null;
   const repeatedFailureLimit =
     options.repeatedFailureLimit === null
       ? null
@@ -13968,142 +14029,64 @@ export const runRalphFlow = async (
       nextRetryAt = undefined;
     }
 
-    if (maxTransitions !== null && maxTransitions !== undefined) {
-      if (transitions >= maxTransitions) {
-        const summary = `Ralph flow reached maxTransitions (${maxTransitions}).`;
+    const totalTransitions = syncTotalTransitions();
+    const totalTransitionLimitReached =
+      maxTotalTransitions !== null &&
+      maxTotalTransitions !== undefined &&
+      totalTransitions >= maxTotalTransitions;
+    const transitionLimitReached =
+      maxTransitions !== null &&
+      maxTransitions !== undefined &&
+      transitions >= maxTransitions;
 
-        if (
-          autonomyMetadata &&
-          autonomyPolicy.transitionExhaustion === "checkpoint"
-        ) {
-          const totalTransitions = syncTotalTransitions();
-          if (
-            maxTotalTransitions !== null &&
-            maxTotalTransitions !== undefined &&
-            totalTransitions >= maxTotalTransitions
-          ) {
-            const exhaustion: RalphAutonomyExhaustion = {
-              kind: "max-transitions",
-              blockId: currentBlockId,
-              recoverable: true,
-              limit: maxTotalTransitions,
-              totalTransitions,
-              reason: `Ralph flow reached the autonomous total-transition budget (${maxTotalTransitions}).`,
-            };
-            autonomyMetadata.exhaustion = exhaustion;
-            const deferTargetId = autonomyPolicy.deferToBlockId;
-            const deferTarget = deferTargetId
-              ? blockMap.get(deferTargetId)
-              : undefined;
-            if (deferTarget && isExecutableRalphBlock(deferTarget)) {
-              const deferred: RalphAutonomyDeferredWork = {
-                blockId: currentBlockId,
-                output: "LIMIT",
-                attempts: 1,
-                reason: exhaustion.reason,
-                routedToBlockId: deferTarget.id,
-              };
-              autonomyMetadata.deferred.push(deferred);
-              await emitRunEvent(
-                events,
-                {
-                  type: "edge-route",
-                  from: currentBlockId,
-                  output: "LIMIT",
-                  to: deferTarget.id,
-                  deferred,
-                },
-                options.onEvent,
-              );
-              currentBlockId = deferTarget.id;
-            }
+    if (totalTransitionLimitReached || transitionLimitReached) {
+      const limit = totalTransitionLimitReached
+        ? maxTotalTransitions
+        : maxTransitions;
+      const summary = totalTransitionLimitReached
+        ? `Ralph flow reached maxTotalTransitions (${limit}).`
+        : `Ralph flow reached maxTransitions (${limit}).`;
 
-            // A total budget is a one-shot compaction/defer trigger, never an
-            // unrecoverable checkpoint loop for an autonomy-enabled run.
-            maxTotalTransitions = null;
-            transitionBase = totalTransitions;
-            transitions = 0;
-            segment += 1;
-            await persistRunBoundary(
-              currentBlockId,
-              `${exhaustion.reason} Continuing autonomously${deferTarget ? ` at \`${deferTarget.id}\`` : ""}.`,
-            );
-            if (ownershipLost) {
-              return finishRun({
-                flow: flow.id,
-                status: "crashed",
-                summary: getOwnershipLostMessage(),
-                events,
-                blockResults,
-                missingVariables: [],
-                unknownVariables: [],
-                validation,
-              });
-            }
-            continue;
-          }
+      if (autonomyMetadata) {
+        autonomyMetadata.exhaustion = {
+          kind: "max-transitions",
+          blockId: currentBlockId,
+          recoverable: autonomyPolicy.transitionExhaustion === "checkpoint",
+          limit: limit!,
+          totalTransitions,
+          reason: summary,
+        };
+      }
 
-          const exhaustion: RalphAutonomyExhaustion = {
-            kind: "max-transitions",
-            blockId: currentBlockId,
-            recoverable: true,
-            limit: maxTransitions,
-            totalTransitions,
-            reason: summary,
-          };
-          autonomyMetadata.exhaustion = exhaustion;
-          transitionBase = totalTransitions;
-          transitions = 0;
-          segment += 1;
-          await persistRunBoundary(
-            currentBlockId,
-            `${summary} Continuing autonomously in segment ${segment}.`,
-          );
-          if (ownershipLost) {
-            return finishRun({
-              flow: flow.id,
-              status: "crashed",
-              summary: getOwnershipLostMessage(),
-              events,
-              blockResults,
-              missingVariables: [],
-              unknownVariables: [],
-              validation,
-            });
-          }
-          continue;
-        }
-
-        await emitRunEvent(
-          events,
-          {
-            type: "crash",
-            blockId: currentBlockId,
-            output: "ERROR",
-            reason: summary,
-          },
-          options.onEvent,
-        );
-        logger?.simple({
-          kind: "crash",
-          message: summary,
-          flowId: flow.id,
-          flowName: flow.name,
+      await emitRunEvent(
+        events,
+        {
+          type: "crash",
           blockId: currentBlockId,
           output: "ERROR",
-        });
-        return finishRun({
-          flow: flow.id,
-          status: "crashed",
-          summary,
-          events,
-          blockResults,
-          missingVariables: [],
-          unknownVariables: [],
-          validation,
-          checkpoint: runtimeState.latestCheckpoint,
-        });
-      }
+          reason: summary,
+        },
+        options.onEvent,
+      );
+      logger?.simple({
+        kind: "crash",
+        message: summary,
+        flowId: flow.id,
+        flowName: flow.name,
+        blockId: currentBlockId,
+        output: "ERROR",
+      });
+      return finishRun({
+        flow: flow.id,
+        status: "crashed",
+        summary,
+        events,
+        blockResults,
+        missingVariables: [],
+        unknownVariables: [],
+        validation,
+        checkpoint: runtimeState.latestCheckpoint,
+      });
     }
 
     if (autonomyMetadata?.exhaustion?.kind === "max-transitions") {

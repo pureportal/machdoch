@@ -1187,6 +1187,12 @@ describe("Ralph starter flows", () => {
     const finalRefactorScan = flow?.blocks.find(
       (block) => block.id === "final-refactor-scan",
     );
+    const finalScanCounter = flow?.blocks.find(
+      (block) => block.id === "count-final-refactor-scan",
+    );
+    const progressAnalysis = flow?.blocks.find(
+      (block) => block.id === "refactor-progress-analysis",
+    );
     expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
     expect(scopeSelectionStrategy).toMatchObject({
       type: "text",
@@ -1219,7 +1225,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "LOOP_COUNTER",
         counterName: expect.stringContaining("{{data:select-scope:scope.id}}"),
-        maxAttempts: "{{maxRefactorPasses:number=5}}",
+        maxAttempts: "{{maxRefactorPasses:number=3}}",
       },
     });
     expect(validationDecision).toMatchObject({
@@ -1249,12 +1255,13 @@ describe("Ralph starter flows", () => {
     });
     expect(refactorPass).toMatchObject({
       type: "PROMPT",
-      prompt: expect.stringContaining("latest feedback"),
+      settings: { maxIterations: 1 },
+      prompt: expect.stringContaining("authoritative handoff"),
     });
     expect(refactorPass?.settings).not.toHaveProperty("timeoutSeconds");
     expect(refactorPass).toMatchObject({
       type: "PROMPT",
-      prompt: expect.stringContaining("pass count"),
+      prompt: expect.stringContaining("count-refactor-pass:count"),
     });
     expect(fixValidationFailures).toMatchObject({
       type: "PROMPT",
@@ -1268,6 +1275,20 @@ describe("Ralph starter flows", () => {
       },
     });
     expect(finalRefactorScan?.settings).not.toHaveProperty("timeoutSeconds");
+    expect(finalScanCounter).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        maxAttempts: "{{maxFinalRefactorScans:number=3}}",
+      },
+    });
+    expect(progressAnalysis).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        expression: expect.stringContaining("previous.diffSignature"),
+      },
+    });
     expect(flow?.blocks.some((block) => block.id === "change-scope-guard")).toBe(
       false,
     );
@@ -1340,6 +1361,16 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "scope-change-guard",
           fromOutput: "IN_SCOPE",
+          to: "refactor-progress-analysis",
+        }),
+        expect.objectContaining({
+          from: "refactor-progress-produced",
+          fromOutput: "NO_MATCH",
+          to: "defer-scope",
+        }),
+        expect.objectContaining({
+          from: "count-final-refactor-scan",
+          fromOutput: "CONTINUE",
           to: "final-refactor-scan",
         }),
       ]),
@@ -1498,6 +1529,15 @@ describe("Ralph starter flows", () => {
     const validateImprovement = flow?.blocks.find(
       (block) => block.id === "validate-improvement",
     );
+    const workYieldAnalysis = flow?.blocks.find(
+      (block) => block.id === "work-yield-analysis",
+    );
+    const usefulWorkProduced = flow?.blocks.find(
+      (block) => block.id === "useful-work-produced",
+    );
+    const finalScanCounter = flow?.blocks.find(
+      (block) => block.id === "count-final-validation-scan",
+    );
 
     expect(starterFlow).toMatchObject({
       defaultAlias: "autonomous-code-improvement-loop",
@@ -1547,12 +1587,13 @@ describe("Ralph starter flows", () => {
         counterName: expect.stringContaining(
           "{{data:choose-improvement:output.selectedCandidate.id}}",
         ),
-        maxAttempts: "{{maxImprovementPasses:number=8}}",
+        maxAttempts: "{{maxImprovementPasses:number=3}}",
       },
     });
     expect(implementImprovement).toMatchObject({
       type: "PROMPT",
-      prompt: expect.stringContaining("latest validator/reviewer feedback"),
+      settings: { maxIterations: 1 },
+      prompt: expect.stringContaining("authoritative handoff"),
     });
     expect(implementImprovement).toMatchObject({
       type: "PROMPT",
@@ -1570,6 +1611,29 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "VALIDATOR_JSON",
         prompt: expect.stringContaining("no new/worsened failure"),
+      },
+    });
+    expect(workYieldAnalysis).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        expression: expect.stringContaining("previous.diffSignature"),
+      },
+    });
+    expect(usefulWorkProduced).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          expression: expect.stringContaining("lastData?.output?.madeProgress"),
+        },
+      },
+    });
+    expect(finalScanCounter).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        maxAttempts: "{{maxFinalValidationScans:number=3}}",
       },
     });
     expect(flow?.edges).toEqual(
@@ -1617,6 +1681,21 @@ describe("Ralph starter flows", () => {
           from: "validate-improvement",
           fromOutput: "RETRY",
           to: "count-verification-repair",
+        }),
+        expect.objectContaining({
+          from: "useful-work-produced",
+          fromOutput: "NO_MATCH",
+          to: "defer-scope",
+        }),
+        expect.objectContaining({
+          from: "review-needs-fix",
+          fromOutput: "MATCH",
+          to: "count-verification-repair",
+        }),
+        expect.objectContaining({
+          from: "count-final-validation-scan",
+          fromOutput: "CONTINUE",
+          to: "validate-improvement",
         }),
       ]),
     );
@@ -2017,7 +2096,10 @@ describe("Ralph starter flows", () => {
         type: "UTILITY",
         utility: {
           type: "LOOP_COUNTER",
-          maxAttempts: "{{maxVerificationRepairPasses:number=3}}",
+          maxAttempts:
+            starterFlowId === "autonomous-ui-improvement-loop"
+              ? "{{maxVerificationRepairPasses:number=3}}"
+              : "{{maxVerificationRepairPasses:number=2}}",
         },
       });
       expect(flow?.edges).toEqual(
@@ -2029,6 +2111,41 @@ describe("Ralph starter flows", () => {
           }),
         ]),
       );
+    }
+  });
+
+  it("terminates code-quality starters after one selected package per run", () => {
+    for (const starterFlowId of [
+      "autonomous-code-improvement-loop",
+      "autonomous-refactoring-flow",
+    ]) {
+      const flow = getRalphStarterFlow(starterFlowId)!.flow;
+
+      expect(
+        flow.blocks.some((block) => block.id === "scope-cycle-complete"),
+      ).toBe(false);
+      expect(
+        flow.blocks
+          .filter((block) => block.settings?.maxIterations !== undefined)
+          .every((block) => block.type === "PROMPT"),
+      ).toBe(true);
+      expect(flow.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: "final-report",
+            fromOutput: "SUCCESS",
+            to: "success",
+          }),
+        ]),
+      );
+      expect(
+        flow.edges.filter((edge) => edge.to === "select-scope"),
+      ).toEqual([
+        expect.objectContaining({
+          from: "update-scope-registry",
+          fromOutput: "SUCCESS",
+        }),
+      ]);
     }
   });
 

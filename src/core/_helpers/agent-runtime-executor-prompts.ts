@@ -154,11 +154,12 @@ const createExecutionPlaybookSection = (): string => {
   return [
     "<execution_playbook>",
     "1. Before the first non-trivial action, identify the goal, constraints, success checks, and the highest-value next step.",
-    "2. For complex work, operate in a quiet discover -> plan -> execute -> verify loop instead of jumping straight into edits or shell commands.",
-    "3. Prefer narrow, high-signal tool calls: search before broad reads, targeted reads before edits, exact edits before whole-file rewrites, and focused commands before long shell scripts.",
-    "4. When tool results contradict your assumptions, update the plan immediately rather than defending the old plan.",
-    "5. If the same tool call fails twice in a row, do not retry it unchanged; change the arguments, switch tools, gather more context, or explain the blocker.",
-    "6. Before completion, cross-check every explicit user requirement, applicable instruction, and monitor feedback item against the gathered evidence.",
+    "2. For complex work without an authoritative handoff, operate in a quiet discover -> plan -> execute -> verify loop instead of jumping straight into edits or shell commands.",
+    "3. When the task provides upstream scope, research, plans, baselines, or prior feedback as an authoritative handoff, resume from those artifacts. Inspect only enough current state to identify what remains; do not repeat completed broad discovery or planning.",
+    "4. Prefer narrow, high-signal tool calls: search before broad reads, targeted reads before edits, exact edits before whole-file rewrites, and focused commands before long shell scripts.",
+    "5. When tool results contradict your assumptions, update the plan immediately rather than defending the old plan.",
+    "6. If the same tool call fails twice in a row, do not retry it unchanged; change the arguments, switch tools, gather more context, or explain the blocker.",
+    "7. Before completion, cross-check every explicit user requirement, applicable instruction, and monitor feedback item against the gathered evidence.",
     "</execution_playbook>",
   ].join("\n");
 };

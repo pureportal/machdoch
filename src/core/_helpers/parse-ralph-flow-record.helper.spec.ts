@@ -233,4 +233,36 @@ describe("parseRalphFlowRecord", () => {
       edges: [{ id: "", from: "", fromOutput: "", to: "" }],
     });
   });
+
+  it("preserves templated numeric utility limits while parsing stored flows", () => {
+    const flow = parseRalphFlowRecord({
+      schemaVersion: 1,
+      id: "bounded-flow",
+      name: "Bounded flow",
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "counter",
+          type: "UTILITY",
+          title: "Counter",
+          utility: {
+            type: "LOOP_COUNTER",
+            maxAttempts: "{{maxPasses:number=3}}",
+            maxDepth: "{{maxDepth:number=4}}",
+            maxResults: "{{maxResults:number=200}}",
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    expect(flow.blocks[1]).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        maxAttempts: "{{maxPasses:number=3}}",
+        maxDepth: "{{maxDepth:number=4}}",
+        maxResults: "{{maxResults:number=200}}",
+      },
+    });
+  });
 });
