@@ -29,6 +29,33 @@ struct ObservedFileLockOwner {
     path: PathBuf,
 }
 
+trait LockRuntime {
+    fn now(&self) -> SystemTime;
+    fn is_process_alive(&self, pid: u32) -> bool;
+    fn elapsed(&self, started: std::time::Instant) -> Duration;
+    fn sleep(&self, duration: Duration);
+}
+
+struct SystemLockRuntime;
+
+impl LockRuntime for SystemLockRuntime {
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
+    }
+
+    fn is_process_alive(&self, pid: u32) -> bool {
+        process_is_alive(pid)
+    }
+
+    fn elapsed(&self, started: std::time::Instant) -> Duration {
+        started.elapsed()
+    }
+
+    fn sleep(&self, duration: Duration) {
+        thread::sleep(duration);
+    }
+}
+
 /// Cross-process lock shared with the Node runtime. Both implementations use
 /// an atomically-created sibling directory named `<destination>.machdoch.lock`
 /// containing the same owner metadata shape.
@@ -105,7 +132,7 @@ fn load_observed_owner(path: &Path) -> Option<ObservedFileLockOwner> {
 }
 
 #[cfg(windows)]
-fn is_process_alive(pid: u32) -> bool {
+fn process_is_alive(pid: u32) -> bool {
     use windows::Win32::{
         Foundation::{CloseHandle, E_ACCESSDENIED},
         System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
@@ -125,7 +152,7 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 #[cfg(unix)]
-fn is_process_alive(pid: u32) -> bool {
+fn process_is_alive(pid: u32) -> bool {
     unsafe extern "C" {
         fn kill(pid: i32, signal: i32) -> i32;
     }
@@ -135,7 +162,7 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn is_process_alive(_pid: u32) -> bool {
+fn process_is_alive(_pid: u32) -> bool {
     true
 }
 
@@ -149,15 +176,15 @@ fn create_quarantine_path(path: &Path, token: &str) -> PathBuf {
     ))
 }
 
-fn is_path_stale(path: &Path) -> bool {
+fn is_path_stale(path: &Path, runtime: &impl LockRuntime) -> bool {
     fs::metadata(path)
         .ok()
         .and_then(|metadata| metadata.modified().ok())
-        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+        .and_then(|modified| runtime.now().duration_since(modified).ok())
         .is_some_and(|age| age >= STALE_LOCK_AGE)
 }
 
-fn remove_directory_tree(path: &Path) -> io::Result<()> {
+fn remove_directory_tree(path: &Path, runtime: &impl LockRuntime) -> io::Result<()> {
     let started = std::time::Instant::now();
 
     loop {
@@ -170,13 +197,24 @@ fn remove_directory_tree(path: &Path) -> io::Result<()> {
                     io::ErrorKind::DirectoryNotEmpty
                         | io::ErrorKind::PermissionDenied
                         | io::ErrorKind::ResourceBusy
-                ) && started.elapsed() < LOCK_CLEANUP_RETRY_TIMEOUT =>
+                ) && runtime.elapsed(started) < LOCK_CLEANUP_RETRY_TIMEOUT =>
             {
-                thread::sleep(LOCK_RETRY_DELAY);
+                runtime.sleep(LOCK_RETRY_DELAY);
             }
             Err(error) => return Err(error),
         }
     }
+}
+
+fn cleanup_quarantined_owner(
+    lock_path: &Path,
+    quarantine_path: &Path,
+    runtime: &impl LockRuntime,
+) -> io::Result<()> {
+    // This is deliberately non-recursive: a successor may have installed its
+    // own token directory after this owner was quarantined.
+    let _ = fs::remove_dir(lock_path);
+    remove_directory_tree(quarantine_path, runtime)
 }
 
 fn create_owned_directory_candidate(target: &Path, token: &str) -> Result<PathBuf, String> {
@@ -212,7 +250,7 @@ fn create_owned_directory_candidate(target: &Path, token: &str) -> Result<PathBu
     Ok(candidate)
 }
 
-fn quarantine_stale_lock(path: &Path) -> Result<(), String> {
+fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), String> {
     let Some(observed) = load_observed_owner(path) else {
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
@@ -240,7 +278,7 @@ fn quarantine_stale_lock(path: &Path) -> Result<(), String> {
                 } else {
                     stale_path.clone()
                 };
-                if !is_path_stale(&metadata_path) {
+                if !is_path_stale(&metadata_path, runtime) {
                     continue;
                 }
 
@@ -250,10 +288,10 @@ fn quarantine_stale_lock(path: &Path) -> Result<(), String> {
                 let quarantine_path = create_quarantine_path(path, token);
                 match fs::rename(&stale_path, &quarantine_path) {
                     Ok(()) => {
-                        let _ = fs::remove_dir(path);
                         let cleanup = if is_token_owner {
-                            remove_directory_tree(&quarantine_path)
+                            cleanup_quarantined_owner(path, &quarantine_path, runtime)
                         } else {
+                            let _ = fs::remove_dir(path);
                             fs::remove_file(&quarantine_path)
                         };
                         cleanup.map_err(|error| {
@@ -279,7 +317,7 @@ fn quarantine_stale_lock(path: &Path) -> Result<(), String> {
             }
         }
 
-        if is_path_stale(path) {
+        if is_path_stale(path, runtime) {
             // Non-recursive removal reaps only a genuinely empty abandoned
             // lock and preserves any unrecognized user data.
             let _ = fs::remove_dir(path);
@@ -296,23 +334,20 @@ fn quarantine_stale_lock(path: &Path) -> Result<(), String> {
             ))
         }
     };
-    let modified = metadata.modified().unwrap_or(SystemTime::now());
-    let age = SystemTime::now()
-        .duration_since(modified)
-        .unwrap_or_default();
+    let modified = metadata.modified().unwrap_or_else(|_| runtime.now());
+    let age = runtime.now().duration_since(modified).unwrap_or_default();
     if age < STALE_LOCK_AGE {
         return Ok(());
     }
 
-    if is_process_alive(observed.owner.pid) {
+    if runtime.is_process_alive(observed.owner.pid) {
         return Ok(());
     }
 
     let quarantine_path = create_quarantine_path(path, &observed.owner.token);
     match fs::rename(&observed.path, &quarantine_path) {
         Ok(()) => {
-            let _ = fs::remove_dir(path);
-            remove_directory_tree(&quarantine_path).map_err(|error| {
+            cleanup_quarantined_owner(path, &quarantine_path, runtime).map_err(|error| {
                 format!(
                     "Failed to remove stale configuration lock {}: {error}",
                     quarantine_path.display()
@@ -357,8 +392,7 @@ fn release_owned_lock(path: &Path, token: &str) -> Result<(), String> {
     let quarantine_path = create_quarantine_path(path, token);
     match fs::rename(&observed.path, &quarantine_path) {
         Ok(()) => {
-            let _ = fs::remove_dir(path);
-            remove_directory_tree(&quarantine_path).map_err(|error| {
+            cleanup_quarantined_owner(path, &quarantine_path, &SystemLockRuntime).map_err(|error| {
                 format!(
                     "Failed to remove released configuration lock {}: {error}",
                     quarantine_path.display()
@@ -375,6 +409,13 @@ fn release_owned_lock(path: &Path, token: &str) -> Result<(), String> {
 
 pub(crate) fn acquire_cooperative_file_lock(
     destination: &Path,
+) -> Result<CooperativeFileLock, String> {
+    acquire_cooperative_file_lock_with_runtime(destination, &SystemLockRuntime)
+}
+
+fn acquire_cooperative_file_lock_with_runtime(
+    destination: &Path,
+    runtime: &impl LockRuntime,
 ) -> Result<CooperativeFileLock, String> {
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)
@@ -396,17 +437,17 @@ pub(crate) fn acquire_cooperative_file_lock(
                 Ok(()) => return Ok(()),
                 Err(_error) if candidate.exists() => {
                     if path.exists() {
-                        quarantine_stale_lock(&path)?;
+                        quarantine_stale_lock(&path, runtime)?;
                     }
 
-                    if started.elapsed() >= LOCK_TIMEOUT {
+                    if runtime.elapsed(started) >= LOCK_TIMEOUT {
                         return Err(format!(
                             "Timed out waiting for configuration lock {}.",
                             path.display()
                         ));
                     }
 
-                    thread::sleep(LOCK_RETRY_DELAY);
+                    runtime.sleep(LOCK_RETRY_DELAY);
                 }
                 Err(error) => {
                     return Err(format!(
@@ -439,14 +480,51 @@ mod tests {
     use std::{
         fs::{self, FileTimes, OpenOptions},
         sync::{
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
             Arc,
         },
         thread,
-        time::{Duration, SystemTime},
+        time::{Duration, Instant, SystemTime},
     };
 
     use super::*;
+
+    struct TestLockRuntime {
+        now: SystemTime,
+        elapsed_millis: AtomicU64,
+        processes_alive: AtomicBool,
+    }
+
+    impl TestLockRuntime {
+        fn new(now: SystemTime, processes_alive: bool) -> Self {
+            Self {
+                now,
+                elapsed_millis: AtomicU64::new(0),
+                processes_alive: AtomicBool::new(processes_alive),
+            }
+        }
+    }
+
+    impl LockRuntime for TestLockRuntime {
+        fn now(&self) -> SystemTime {
+            self.now
+        }
+
+        fn is_process_alive(&self, _pid: u32) -> bool {
+            self.processes_alive.load(Ordering::SeqCst)
+        }
+
+        fn elapsed(&self, _started: Instant) -> Duration {
+            Duration::from_millis(self.elapsed_millis.load(Ordering::SeqCst))
+        }
+
+        fn sleep(&self, duration: Duration) {
+            // Advance at least one second so production's ten-second timeout is
+            // exercised in a bounded number of filesystem retries.
+            let millis = duration.as_millis().max(1_000) as u64;
+            self.elapsed_millis.fetch_add(millis, Ordering::SeqCst);
+        }
+    }
 
     fn test_destination() -> (PathBuf, PathBuf) {
         let unique = SystemTime::now()
@@ -470,7 +548,8 @@ mod tests {
         drop(second);
 
         assert!(!lock_path(&destination).exists());
-        let _ = fs::remove_dir_all(directory);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
     }
 
     #[test]
@@ -491,7 +570,139 @@ mod tests {
         drop(lock);
         assert!(lock_path(&destination).exists());
 
-        let _ = fs::remove_dir_all(directory);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn quarantined_owner_cleanup_cannot_remove_a_successor_lock() {
+        let (destination, directory) = test_destination();
+        let path = lock_path(&destination);
+        fs::create_dir(&path).expect("lock directory should be created");
+        let old_owner = path.join("owner.old");
+        fs::create_dir(&old_owner).expect("old owner directory should be created");
+        fs::write(
+            owner_path(&old_owner),
+            serde_json::to_vec(&FileLockOwner {
+                token: "old".to_string(),
+                pid: std::process::id(),
+            })
+            .expect("old owner should serialize"),
+        )
+        .expect("old owner should write");
+        let quarantine = create_quarantine_path(&path, "old");
+        fs::rename(&old_owner, &quarantine).expect("old owner should be quarantined");
+
+        let successor = path.join("owner.successor");
+        fs::create_dir(&successor).expect("successor directory should be created");
+        fs::write(
+            owner_path(&successor),
+            serde_json::to_vec(&FileLockOwner {
+                token: "successor".to_string(),
+                pid: std::process::id(),
+            })
+            .expect("successor should serialize"),
+        )
+        .expect("successor should write");
+
+        cleanup_quarantined_owner(&path, &quarantine, &SystemLockRuntime)
+            .expect("quarantined owner should be cleaned");
+
+        assert!(path.is_dir(), "canonical successor lock must remain");
+        assert_eq!(
+            load_observed_owner(&path)
+                .expect("successor owner should remain observable")
+                .owner
+                .token,
+            "successor"
+        );
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn deterministic_runtime_times_out_for_a_live_stale_owner_without_wall_clock_delay() {
+        let (destination, directory) = test_destination();
+        let path = lock_path(&destination);
+        let owner_directory = path.join("owner.live");
+        fs::create_dir_all(&owner_directory).expect("live owner directory should be created");
+        fs::write(
+            owner_path(&owner_directory),
+            serde_json::to_vec(&FileLockOwner {
+                token: "live".to_string(),
+                pid: 42,
+            })
+            .expect("live owner should serialize"),
+        )
+        .expect("live owner should write");
+        let now = SystemTime::now();
+        let owner_file = OpenOptions::new()
+            .write(true)
+            .open(owner_path(&owner_directory))
+            .expect("live owner should open");
+        owner_file
+            .set_times(FileTimes::new().set_modified(now - Duration::from_secs(180)))
+            .expect("live owner timestamp should update");
+        drop(owner_file);
+        let runtime = TestLockRuntime::new(now, true);
+
+        let error = acquire_cooperative_file_lock_with_runtime(&destination, &runtime)
+            .err()
+            .expect("a live owner should cause timeout");
+
+        assert!(error.contains("Timed out waiting for configuration lock"));
+        assert!(runtime.elapsed_millis.load(Ordering::SeqCst) >= LOCK_TIMEOUT.as_millis() as u64);
+        assert_eq!(
+            load_observed_owner(&path)
+                .expect("live owner must remain")
+                .owner
+                .token,
+            "live"
+        );
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn deterministic_runtime_recovers_a_dead_stale_owner() {
+        let (destination, directory) = test_destination();
+        let path = lock_path(&destination);
+        let owner_directory = path.join("owner.dead");
+        fs::create_dir_all(&owner_directory).expect("dead owner directory should be created");
+        fs::write(
+            owner_path(&owner_directory),
+            serde_json::to_vec(&FileLockOwner {
+                token: "dead".to_string(),
+                pid: 42,
+            })
+            .expect("dead owner should serialize"),
+        )
+        .expect("dead owner should write");
+        let now = SystemTime::now();
+        let owner_file = OpenOptions::new()
+            .write(true)
+            .open(owner_path(&owner_directory))
+            .expect("dead owner should open");
+        owner_file
+            .set_times(FileTimes::new().set_modified(now - Duration::from_secs(180)))
+            .expect("dead owner timestamp should update");
+        drop(owner_file);
+        let runtime = TestLockRuntime::new(now, false);
+
+        let acquired = acquire_cooperative_file_lock_with_runtime(&destination, &runtime)
+            .expect("dead stale owner should be recovered");
+        assert_ne!(
+            load_observed_owner(&path)
+                .expect("new owner should be observable")
+                .owner
+                .token,
+            "dead"
+        );
+        drop(acquired);
+
+        assert!(!path.exists());
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
     }
 
     #[test]
@@ -547,7 +758,8 @@ mod tests {
 
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
         assert!(!path.exists());
-        let _ = fs::remove_dir_all(directory);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
     }
 
     #[test]
@@ -577,7 +789,8 @@ mod tests {
             .expect("legacy stale lock should be recovered");
 
         assert!(!path.exists());
-        let _ = fs::remove_dir_all(directory);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
     }
 
     #[test]
@@ -601,6 +814,7 @@ mod tests {
             .expect("truncated stale lock should be recovered");
 
         assert!(!path.exists());
-        let _ = fs::remove_dir_all(directory);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
     }
 }
