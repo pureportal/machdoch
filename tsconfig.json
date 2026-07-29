@@ -13,6 +13,7 @@
     "outDir": "dist",
     "declaration": true,
     "sourceMap": true,
+    "noEmitOnError": true,
     "incremental": true,
     "tsBuildInfoFile": "./.cache/tsconfig.tsbuildinfo",
     "resolveJsonModule": true,
