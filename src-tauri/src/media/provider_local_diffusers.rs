@@ -3481,6 +3481,17 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn worker_timeout_terminates_descendant_processes() {
+        let python_is_usable = Command::new("python")
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !python_is_usable {
+            return;
+        }
+
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
