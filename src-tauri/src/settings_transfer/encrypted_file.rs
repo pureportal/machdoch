@@ -951,14 +951,31 @@ fn read_container_file(path: &Path) -> Result<Vec<u8>, String> {
 }
 
 fn write_container_file(path: &Path, container: &[u8]) -> Result<(), String> {
+    write_container_file_with(
+        path,
+        container,
+        |path, container| {
+            write_file_atomic(path, container, AtomicWriteOptions::with_unix_mode(0o600)).map_err(
+                |_| "The encrypted settings file could not be written atomically.".to_string(),
+            )
+        },
+        verify_container_file,
+    )
+}
+
+fn write_container_file_with(
+    path: &Path,
+    container: &[u8],
+    write: impl FnOnce(&Path, &[u8]) -> Result<(), String>,
+    verify: impl FnOnce(&Path, u64, &[u8; 32]) -> Result<(), String>,
+) -> Result<(), String> {
     if container.is_empty() || container.len() as u64 > MAX_CONTAINER_BYTES {
         return Err("The encrypted settings output size is invalid.".to_string());
     }
     let expected_bytes = container.len() as u64;
     let expected_sha256: [u8; 32] = Sha256::digest(container).into();
-    write_file_atomic(path, container, AtomicWriteOptions::with_unix_mode(0o600))
-        .map_err(|_| "The encrypted settings file could not be written atomically.".to_string())?;
-    verify_container_file(path, expected_bytes, &expected_sha256)
+    write(path, container)?;
+    verify(path, expected_bytes, &expected_sha256)
 }
 
 fn verify_container_file(
@@ -1655,6 +1672,61 @@ mod tests {
     }
 
     #[test]
+    fn encrypted_file_interruption_exposes_previous_or_fully_replaced_contents() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock should follow the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-encrypted-settings-interruption-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("test directory should be created");
+        let path = root.join("settings.machdoch-settings");
+        let previous = b"previous complete encrypted container";
+        let next = b"next complete encrypted container";
+        std::fs::write(&path, previous).expect("previous container should be written");
+        let verification_called = AtomicBool::new(false);
+
+        let before_replacement = write_container_file_with(
+            &path,
+            next,
+            |_, _| Err("injected pre-replacement interruption".to_string()),
+            |_, _, _| {
+                verification_called.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .expect_err("pre-replacement interruption should fail");
+
+        assert_eq!(before_replacement, "injected pre-replacement interruption");
+        assert!(!verification_called.load(Ordering::SeqCst));
+        assert_eq!(
+            std::fs::read(&path).expect("previous container should remain readable"),
+            previous
+        );
+
+        let after_replacement = write_container_file_with(
+            &path,
+            next,
+            |path, contents| {
+                write_file_atomic(path, contents, AtomicWriteOptions::with_unix_mode(0o600))
+                    .map_err(|error| error.to_string())
+            },
+            |_, _, _| Err("injected post-replacement interruption".to_string()),
+        )
+        .expect_err("post-replacement interruption should be reported");
+
+        assert_eq!(after_replacement, "injected post-replacement interruption");
+        assert_eq!(
+            std::fs::read(&path).expect("replacement container should remain readable"),
+            next,
+            "after replacement, the only visible state is the complete new container"
+        );
+        std::fs::remove_dir_all(root).expect("test directory should be removable");
+    }
+
+    #[test]
     fn invalid_payload_fails_atomically_before_the_import_continuation() {
         let mut duplicate_payload = payload();
         duplicate_payload
@@ -1892,12 +1964,16 @@ mod tests {
             expiry_cancel,
         );
         tokio::time::timeout(Duration::from_secs(5), async {
-            while state.lock().pending.is_some() {
+            loop {
+                if let Ok(operation) = state.begin_network_operation() {
+                    drop(operation);
+                    break;
+                }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
-        .expect("the independent expiry task should evict the review");
+        .expect("the independent expiry task should evict the review and release its lease");
 
         assert!(state.lock().pending.is_none());
         assert!(state.begin_network_operation().is_ok());

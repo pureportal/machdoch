@@ -40,12 +40,54 @@ pub(crate) fn write_file_atomic(
     contents: &[u8],
     options: AtomicWriteOptions,
 ) -> io::Result<()> {
-    let temporary_path = create_temporary_sibling_file(destination, contents, options)?;
+    write_file_atomic_with_operations(
+        destination,
+        contents,
+        options,
+        &mut SystemAtomicFileOperations,
+    )
+}
 
-    match replace_file(&temporary_path, destination) {
+trait AtomicFileOperations {
+    fn write_all(&mut self, file: &mut File, contents: &[u8]) -> io::Result<()>;
+    fn sync_all(&mut self, file: &File) -> io::Result<()>;
+    fn replace(&mut self, source: &Path, destination: &Path) -> io::Result<()>;
+    fn remove(&mut self, path: &Path) -> io::Result<()>;
+}
+
+struct SystemAtomicFileOperations;
+
+impl AtomicFileOperations for SystemAtomicFileOperations {
+    fn write_all(&mut self, file: &mut File, contents: &[u8]) -> io::Result<()> {
+        file.write_all(contents)
+    }
+
+    fn sync_all(&mut self, file: &File) -> io::Result<()> {
+        file.sync_all()
+    }
+
+    fn replace(&mut self, source: &Path, destination: &Path) -> io::Result<()> {
+        replace_file(source, destination)
+    }
+
+    fn remove(&mut self, path: &Path) -> io::Result<()> {
+        fs::remove_file(path)
+    }
+}
+
+fn write_file_atomic_with_operations(
+    destination: &Path,
+    contents: &[u8],
+    options: AtomicWriteOptions,
+    operations: &mut impl AtomicFileOperations,
+) -> io::Result<()> {
+    let temporary_path =
+        create_temporary_sibling_file_with_operations(destination, contents, options, operations)?;
+
+    match operations.replace(&temporary_path, destination) {
         Ok(()) => Ok(()),
         Err(error) => {
-            let _ = fs::remove_file(&temporary_path);
+            let _ = operations.remove(&temporary_path);
             Err(error)
         }
     }
@@ -96,24 +138,48 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
     .map_err(|error| io::Error::other(format!("failed to replace destination: {error}")))
 }
 
-fn create_temporary_sibling_file(
+fn create_temporary_sibling_file_with_operations(
     destination: &Path,
     contents: &[u8],
     options: AtomicWriteOptions,
+    operations: &mut impl AtomicFileOperations,
 ) -> io::Result<PathBuf> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
 
-    create_temporary_sibling_file_with_seed(destination, contents, options, timestamp)
+    create_temporary_sibling_file_with_seed_and_operations(
+        destination,
+        contents,
+        options,
+        timestamp,
+        operations,
+    )
 }
 
+#[cfg(test)]
 fn create_temporary_sibling_file_with_seed(
     destination: &Path,
     contents: &[u8],
     options: AtomicWriteOptions,
     timestamp: u128,
+) -> io::Result<PathBuf> {
+    create_temporary_sibling_file_with_seed_and_operations(
+        destination,
+        contents,
+        options,
+        timestamp,
+        &mut SystemAtomicFileOperations,
+    )
+}
+
+fn create_temporary_sibling_file_with_seed_and_operations(
+    destination: &Path,
+    contents: &[u8],
+    options: AtomicWriteOptions,
+    timestamp: u128,
+    operations: &mut impl AtomicFileOperations,
 ) -> io::Result<PathBuf> {
     let parent = destination.parent().unwrap_or_else(|| Path::new("."));
     let file_name = destination
@@ -137,8 +203,13 @@ fn create_temporary_sibling_file_with_seed(
 
         match open_options.open(&temporary_path) {
             Ok(mut temporary_file) => {
-                if let Err(error) = write_temporary_file(&mut temporary_file, contents, options) {
-                    let _ = fs::remove_file(&temporary_path);
+                if let Err(error) = write_temporary_file_with_operations(
+                    &mut temporary_file,
+                    contents,
+                    options,
+                    operations,
+                ) {
+                    let _ = operations.remove(&temporary_path);
                     return Err(error);
                 }
 
@@ -158,10 +229,11 @@ fn create_temporary_sibling_file_with_seed(
     ))
 }
 
-fn write_temporary_file(
+fn write_temporary_file_with_operations(
     temporary_file: &mut File,
     contents: &[u8],
     options: AtomicWriteOptions,
+    operations: &mut impl AtomicFileOperations,
 ) -> io::Result<()> {
     #[cfg(not(unix))]
     let _ = options;
@@ -173,8 +245,8 @@ fn write_temporary_file(
         temporary_file.set_permissions(permissions)?;
     }
 
-    temporary_file.write_all(contents)?;
-    temporary_file.sync_all()?;
+    operations.write_all(temporary_file, contents)?;
+    operations.sync_all(temporary_file)?;
 
     Ok(())
 }
@@ -189,6 +261,65 @@ mod tests {
 
     use super::*;
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum FailurePoint {
+        Write,
+        Sync,
+        Replace,
+    }
+
+    struct FaultOperations {
+        failure: FailurePoint,
+        fail_cleanup: bool,
+        cleanup_attempts: usize,
+    }
+
+    impl FaultOperations {
+        fn new(failure: FailurePoint) -> Self {
+            Self {
+                failure,
+                fail_cleanup: false,
+                cleanup_attempts: 0,
+            }
+        }
+
+        fn injected_error() -> io::Error {
+            io::Error::other("injected atomic-file failure")
+        }
+    }
+
+    impl AtomicFileOperations for FaultOperations {
+        fn write_all(&mut self, file: &mut File, contents: &[u8]) -> io::Result<()> {
+            if self.failure == FailurePoint::Write {
+                file.write_all(&contents[..contents.len() / 2])?;
+                return Err(Self::injected_error());
+            }
+            file.write_all(contents)
+        }
+
+        fn sync_all(&mut self, file: &File) -> io::Result<()> {
+            if self.failure == FailurePoint::Sync {
+                return Err(Self::injected_error());
+            }
+            file.sync_all()
+        }
+
+        fn replace(&mut self, source: &Path, destination: &Path) -> io::Result<()> {
+            if self.failure == FailurePoint::Replace {
+                return Err(Self::injected_error());
+            }
+            replace_file(source, destination)
+        }
+
+        fn remove(&mut self, path: &Path) -> io::Result<()> {
+            self.cleanup_attempts += 1;
+            if self.fail_cleanup {
+                return Err(Self::injected_error());
+            }
+            fs::remove_file(path)
+        }
+    }
+
     fn temp_test_directory(name: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -200,6 +331,19 @@ mod tests {
 
     fn cleanup(path: &Path) {
         let _ = fs::remove_dir_all(path);
+    }
+
+    fn temporary_artifacts(directory: &Path) -> Vec<PathBuf> {
+        fs::read_dir(directory)
+            .expect("test directory should be readable")
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with('.') && name.ends_with(".tmp"))
+            })
+            .collect()
     }
 
     #[test]
@@ -287,6 +431,74 @@ mod tests {
             "{\n  \"valid\": true\n}\n"
         );
 
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn injected_write_sync_and_replace_failures_preserve_destination_and_cleanup_temporary_file() {
+        for failure in [
+            FailurePoint::Write,
+            FailurePoint::Sync,
+            FailurePoint::Replace,
+        ] {
+            let directory = temp_test_directory(&format!("injected-{failure:?}"));
+            let destination = directory.join("config.json");
+            fs::create_dir_all(&directory).expect("test directory should be created");
+            let previous = b"{\n  \"version\": 1\n}\n";
+            fs::write(&destination, previous).expect("initial destination should be written");
+            let mut operations = FaultOperations::new(failure);
+
+            let error = write_file_atomic_with_operations(
+                &destination,
+                b"{\n  \"version\": 2\n}\n",
+                AtomicWriteOptions::default(),
+                &mut operations,
+            )
+            .expect_err("the injected failure should abort the atomic write");
+
+            assert_eq!(error.kind(), io::ErrorKind::Other);
+            assert_eq!(
+                fs::read(&destination).expect("destination should remain readable"),
+                previous,
+                "{failure:?} must preserve the previous complete destination"
+            );
+            assert_eq!(operations.cleanup_attempts, 1);
+            assert!(
+                temporary_artifacts(&directory).is_empty(),
+                "{failure:?} should remove its owned temporary file"
+            );
+            cleanup(&directory);
+        }
+    }
+
+    #[test]
+    fn cleanup_failure_does_not_mask_the_atomic_operation_error_or_change_destination() {
+        let directory = temp_test_directory("injected-cleanup");
+        let destination = directory.join("config.json");
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        fs::write(&destination, b"previous").expect("initial destination should be written");
+        let mut operations = FaultOperations::new(FailurePoint::Replace);
+        operations.fail_cleanup = true;
+
+        let error = write_file_atomic_with_operations(
+            &destination,
+            b"next",
+            AtomicWriteOptions::default(),
+            &mut operations,
+        )
+        .expect_err("replacement should fail");
+
+        assert_eq!(error.to_string(), "injected atomic-file failure");
+        assert_eq!(
+            fs::read(&destination).expect("destination should remain readable"),
+            b"previous"
+        );
+        assert_eq!(operations.cleanup_attempts, 1);
+        assert_eq!(
+            temporary_artifacts(&directory).len(),
+            1,
+            "an artifact may remain only when its cleanup itself fails"
+        );
         cleanup(&directory);
     }
 

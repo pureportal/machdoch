@@ -1862,6 +1862,14 @@ fn retire_journal_and_cleanup(
     Ok(())
 }
 
+fn cleanup_retired_transaction_artifacts(root: &Path) -> Result<(), String> {
+    let transaction_base = root.join(TRANSACTION_DIRECTORY);
+    if transaction_base.exists() {
+        cleanup_private_directory(&transaction_base)?;
+    }
+    remove_retired_journal(&root.join(RETIRED_JOURNAL_FILE))
+}
+
 impl<R: Runtime> PreparedTransaction<R> {
     fn abort_before_writes(&self, error: String) -> Result<CommitOutcome, String> {
         match retire_journal_and_cleanup(
@@ -2029,12 +2037,7 @@ pub(crate) fn recover_pending_transaction<R: Runtime>(app: &AppHandle<R>) -> Res
     secure_directory(&root)?;
     let journal_path = root.join(JOURNAL_FILE);
     if !journal_path.exists() {
-        let transaction_base = root.join(TRANSACTION_DIRECTORY);
-        if transaction_base.exists() {
-            cleanup_private_directory(&transaction_base)?;
-        }
-        remove_retired_journal(&root.join(RETIRED_JOURNAL_FILE))?;
-        return Ok(());
+        return cleanup_retired_transaction_artifacts(&root);
     }
     let journal = load_journal(&root, &journal_path)?;
     let locks = acquire_transaction_locks(&root, &journal.categories)?;
@@ -2131,6 +2134,60 @@ mod tests {
             "failed backup cleanup must remain retryable through orphan cleanup"
         );
 
+        fs::remove_dir_all(&root).expect("test root should be removable");
+    }
+
+    #[test]
+    fn restart_cleanup_finishes_an_interrupted_journal_retirement() {
+        let root = temporary_test_root("restart-cleanup");
+        let transaction_id = "abcdefghijklmnopqrstuvwxyzABCDEF";
+        let transaction_base = root.join(TRANSACTION_DIRECTORY);
+        let transaction_path = transaction_base.join(transaction_id);
+        let journal_path = root.join(JOURNAL_FILE);
+        fs::create_dir_all(&transaction_base).expect("transaction base should be created");
+        fs::write(&transaction_path, b"temporarily invalid")
+            .expect("blocking transaction artifact should be created");
+        fs::write(&journal_path, b"journal").expect("journal should be created");
+
+        retire_journal_and_cleanup(&root, &journal_path, transaction_id)
+            .expect_err("cleanup interruption should leave a durable retirement marker");
+        assert!(!journal_path.exists());
+        assert!(root.join(RETIRED_JOURNAL_FILE).exists());
+        assert!(transaction_path.exists());
+
+        fs::remove_file(&transaction_path).expect("blocking artifact should be made removable");
+        fs::create_dir(&transaction_path).expect("transaction directory should be restored");
+        fs::write(transaction_path.join(BACKUP_FILE), b"owned rollback bytes")
+            .expect("owned rollback artifact should be created");
+
+        cleanup_retired_transaction_artifacts(&root)
+            .expect("restart cleanup should finish the interrupted retirement");
+
+        assert!(!transaction_base.exists());
+        assert!(!root.join(RETIRED_JOURNAL_FILE).exists());
+        fs::remove_dir_all(&root).expect("test root should be removable");
+    }
+
+    #[test]
+    fn file_rollback_restores_previous_complete_contents_or_absence() {
+        let root = temporary_test_root("file-rollback");
+        fs::create_dir_all(&root).expect("test root should be created");
+        let path = root.join("user-config.json");
+        let previous = b"{\"complete\":\"previous\"}\n";
+        fs::write(&path, b"{\"complete\":\"incoming\"}\n")
+            .expect("incoming settings should be written");
+        let encoded = BASE64.encode(previous);
+
+        restore_optional_file(&root, &path, &Some(encoded))
+            .expect("rollback should restore the previous file");
+        assert_eq!(
+            fs::read(&path).expect("restored file should be readable"),
+            previous
+        );
+
+        restore_optional_file(&root, &path, &None)
+            .expect("rollback should restore previous absence");
+        assert!(!path.exists());
         fs::remove_dir_all(&root).expect("test root should be removable");
     }
 
