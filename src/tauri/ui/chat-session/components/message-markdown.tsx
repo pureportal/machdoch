@@ -2,20 +2,24 @@ import { memo, useMemo, type JSX } from "react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
+  type Options as ReactMarkdownOptions,
   type UrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { markdownComponents } from "../_helpers/execution-message.tsx";
 import {
+  createWorkspacePathLinkRemarkPlugin,
   getWorkspaceMarkdownLinkTarget,
   isLocalMarkdownLinkHref,
+  openWorkspaceMarkdownLinkTarget,
+  type WorkspaceMarkdownLinkOpenHandler,
 } from "../_helpers/workspace-markdown-links";
 
 export interface MessageMarkdownProps {
   content: string;
   className?: string;
   workspaceRoot?: string | null;
-  onOpenWorkspaceFile?: (relativePath: string) => void;
+  onOpenWorkspaceFile?: WorkspaceMarkdownLinkOpenHandler;
 }
 
 const markdownLinkClassName =
@@ -31,8 +35,6 @@ const markdownInertLinkClassName = [
   "cursor-default opacity-80 hover:text-sky-300",
 ].join(" ");
 
-const messageMarkdownRemarkPlugins = [remarkGfm];
-
 const messageMarkdownUrlTransform: UrlTransform = (url, key) => {
   if (key === "href" && isLocalMarkdownLinkHref(url)) {
     return url;
@@ -47,6 +49,12 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   workspaceRoot,
   onOpenWorkspaceFile,
 }: MessageMarkdownProps): JSX.Element {
+  const remarkPlugins = useMemo<
+    NonNullable<ReactMarkdownOptions["remarkPlugins"]>
+  >(
+    () => [remarkGfm, createWorkspacePathLinkRemarkPlugin(workspaceRoot)],
+    [workspaceRoot],
+  );
   const components = useMemo<Components>(
     () => ({
       ...markdownComponents,
@@ -69,11 +77,22 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         );
 
         if (workspaceTarget && onOpenWorkspaceFile) {
+          const targetTitle = workspaceTarget.line
+            ? `${workspaceTarget.relativePath}:${workspaceTarget.line}`
+            : workspaceTarget.relativePath;
+
           return (
             <button
               type="button"
-              title={workspaceTarget.relativePath}
-              onClick={() => onOpenWorkspaceFile(workspaceTarget.relativePath)}
+              title={targetTitle}
+              data-workspace-path={workspaceTarget.relativePath}
+              data-workspace-line={workspaceTarget.line}
+              onClick={() =>
+                openWorkspaceMarkdownLinkTarget(
+                  workspaceTarget,
+                  onOpenWorkspaceFile,
+                )
+              }
               className={markdownWorkspaceLinkClassName}
             >
               {children}
@@ -115,7 +134,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         .join(" ")}
     >
       <ReactMarkdown
-        remarkPlugins={messageMarkdownRemarkPlugins}
+        remarkPlugins={remarkPlugins}
         urlTransform={messageMarkdownUrlTransform}
         components={components}
       >

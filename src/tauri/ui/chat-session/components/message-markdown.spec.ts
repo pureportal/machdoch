@@ -1,10 +1,13 @@
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MessageMarkdown } from "./message-markdown.tsx";
 
-const renderMarkdown = (content: string): string =>
-  renderToStaticMarkup(createElement(MessageMarkdown, { content }));
+const renderMarkdown = (
+  content: string,
+  props: Omit<ComponentProps<typeof MessageMarkdown>, "content"> = {},
+): string =>
+  renderToStaticMarkup(createElement(MessageMarkdown, { content, ...props }));
 
 describe("MessageMarkdown", () => {
   it("renders GFM tables with semantic sections, rows, and cells", () => {
@@ -36,5 +39,67 @@ describe("MessageMarkdown", () => {
 
     expect(markup).not.toContain("<table");
     expect(markup).toContain("<p");
+  });
+
+  it("renders a Windows Markdown path with a trailing line as a workspace file button", () => {
+    const markup = renderMarkdown(
+      "[get-branch-label.ts](C:/Development/alpartis.morgana/app.alpartis.cloud/src/common/helpers/get-branch-label.ts:13)",
+      {
+        workspaceRoot: "C:\\Development\\alpartis.morgana\\app.alpartis.cloud",
+        onOpenWorkspaceFile: () => undefined,
+      },
+    );
+
+    expect(markup).toContain('<button type="button"');
+    expect(markup).toContain(
+      'data-workspace-path="src/common/helpers/get-branch-label.ts"',
+    );
+    expect(markup).toContain('data-workspace-line="13"');
+    expect(markup).toContain(">get-branch-label.ts</button>");
+  });
+
+  it("auto-links a bare Windows path inside the active workspace", () => {
+    const markup = renderMarkdown(
+      "Location: C:/Development/alpartis.morgana/app.alpartis.cloud/src/branch.dto.ts:27.",
+      {
+        workspaceRoot: "C:\\Development\\alpartis.morgana\\app.alpartis.cloud",
+        onOpenWorkspaceFile: () => undefined,
+      },
+    );
+
+    expect(markup).toContain(
+      'data-workspace-path="src/branch.dto.ts" data-workspace-line="27"',
+    );
+    expect(markup).toContain(
+      ">C:/Development/alpartis.morgana/app.alpartis.cloud/src/branch.dto.ts:27</button>.",
+    );
+  });
+
+  it("keeps workspace paths without a line clickable without adding a line target", () => {
+    const markup = renderMarkdown(
+      "[branch.dto.ts](C:/Development/alpartis.morgana/app.alpartis.cloud/src/branch.dto.ts)",
+      {
+        workspaceRoot: "C:\\Development\\alpartis.morgana\\app.alpartis.cloud",
+        onOpenWorkspaceFile: () => undefined,
+      },
+    );
+
+    expect(markup).toContain('data-workspace-path="src/branch.dto.ts"');
+    expect(markup).not.toContain("data-workspace-line");
+  });
+
+  it("does not auto-link unsupported paths or change normal prose", () => {
+    const markup = renderMarkdown(
+      "Normal prose and C:/Other/secret.ts:1 stay unchanged.",
+      {
+        workspaceRoot: "C:\\Development\\alpartis.morgana\\app.alpartis.cloud",
+        onOpenWorkspaceFile: () => undefined,
+      },
+    );
+
+    expect(markup).not.toContain("<button");
+    expect(markup).toContain(
+      '<p class="m-0 whitespace-pre-wrap wrap-break-word">Normal prose and C:/Other/secret.ts:1 stay unchanged.</p>',
+    );
   });
 });

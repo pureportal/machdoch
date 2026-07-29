@@ -32,6 +32,10 @@ import {
   addSearchMatchesToHighlightedHtml,
   findFilePreviewMatches,
 } from "../_helpers/file-preview-search";
+import {
+  getFilePreviewTargetLineIndex,
+  scrollFilePreviewTargetLineIntoView,
+} from "../_helpers/file-preview-target-line";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -57,6 +61,7 @@ export interface FilePreview {
   languageLabel: string;
   truncated: boolean;
   lossy: boolean;
+  targetLine: number | null;
 }
 
 export interface FilePreviewDialogProps {
@@ -173,12 +178,17 @@ const FilePreviewStatus = ({
     return null;
   }
 
-  if (!preview.truncated && !preview.lossy) {
+  if (!preview.targetLine && !preview.truncated && !preview.lossy) {
     return null;
   }
 
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-500">
+      {preview.targetLine ? (
+        <span className="font-medium text-sky-300">
+          Opened at line {preview.targetLine}
+        </span>
+      ) : null}
       {preview.truncated ? <span>Preview truncated</span> : null}
       {preview.lossy ? <span>Encoding normalized</span> : null}
     </div>
@@ -216,7 +226,7 @@ const StableFilePreviewCode = memo(function StableFilePreviewCode({
   );
 });
 
-const TextPreviewContent = ({
+export const FilePreviewTextContent = ({
   preview,
 }: {
   preview: FilePreview;
@@ -234,6 +244,7 @@ const TextPreviewContent = ({
   const codeRef = useRef<HTMLElement>(null);
   const codeSurfaceRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const targetLineRef = useRef<HTMLButtonElement>(null);
   const gutterDragAnchorRef = useRef<number | null>(null);
   const gutterDragLineRef = useRef<number | null>(null);
   const gutterDragPointerIdRef = useRef<number | null>(null);
@@ -244,6 +255,10 @@ const TextPreviewContent = ({
   const lines = useMemo(
     () => (preview.content ?? "").split("\n"),
     [preview.content],
+  );
+  const targetLineIndex = getFilePreviewTargetLineIndex(
+    preview.targetLine,
+    lines.length,
   );
   const highlightedContent = useMemo(
     () =>
@@ -301,6 +316,14 @@ const TextPreviewContent = ({
   useEffect(() => {
     setActiveMatchIndex(0);
   }, [isRegexSearch, preview.content, searchQuery]);
+
+  useEffect(() => {
+    if (targetLineIndex === null) {
+      return;
+    }
+
+    scrollFilePreviewTargetLineIntoView(targetLineRef.current);
+  }, [preview.content, preview.path, targetLineIndex]);
 
   useEffect(() => {
     if (safeActiveMatchIndex < 0) {
@@ -709,6 +732,20 @@ const TextPreviewContent = ({
           ref={codeSurfaceRef}
           className="relative grid min-h-full w-max min-w-full grid-cols-[2.5rem_minmax(max-content,1fr)] bg-slate-950"
         >
+          {targetLineIndex !== null ? (
+            <div
+              aria-hidden="true"
+              data-file-preview-target-line={targetLineIndex + 1}
+              className="pointer-events-none absolute right-0 left-0 z-0 border-y border-amber-300/25 bg-amber-300/10"
+              style={{
+                top:
+                  FILE_PREVIEW_VERTICAL_PADDING +
+                  targetLineIndex * FILE_PREVIEW_LINE_HEIGHT,
+                height: FILE_PREVIEW_LINE_HEIGHT,
+              }}
+            />
+          ) : null}
+
           {previewSelection?.kind === "lines" ? (
             <div
               aria-hidden="true"
@@ -740,14 +777,23 @@ const TextPreviewContent = ({
                 previewSelection?.kind === "lines" &&
                 lineIndex >= previewSelection.startLineIndex &&
                 lineIndex <= previewSelection.endLineIndex;
+              const isTargetLine = lineIndex === targetLineIndex;
 
               return (
                 <button
                   key={lineIndex}
+                  ref={isTargetLine ? targetLineRef : undefined}
                   type="button"
-                  aria-label={`Select line ${lineIndex + 1}`}
+                  aria-label={`Select line ${lineIndex + 1}${
+                    isTargetLine ? " (opened location)" : ""
+                  }`}
                   aria-pressed={isSelected}
-                  title={`Select line ${lineIndex + 1}; hold and drag to select a range`}
+                  aria-current={isTargetLine ? "location" : undefined}
+                  title={
+                    isTargetLine
+                      ? `Opened at line ${lineIndex + 1}; hold and drag to select a range`
+                      : `Select line ${lineIndex + 1}; hold and drag to select a range`
+                  }
                   onPointerDown={(event) =>
                     startGutterDrag(lineIndex, event)
                   }
@@ -758,6 +804,7 @@ const TextPreviewContent = ({
                   }}
                   className={cn(
                     "group/line flex h-5 w-10 cursor-ns-resize items-center justify-center outline-none transition-colors focus-visible:bg-sky-400/15",
+                    isTargetLine && "bg-amber-300/15",
                     isSelected && "bg-sky-400/10",
                   )}
                 >
@@ -765,6 +812,8 @@ const TextPreviewContent = ({
                     aria-hidden="true"
                     className={cn(
                       "h-1.5 w-1.5 rounded-full bg-slate-700 transition-all group-hover/line:scale-125 group-hover/line:bg-sky-300 group-focus-visible/line:scale-125 group-focus-visible/line:bg-sky-300",
+                      isTargetLine &&
+                        "scale-125 bg-amber-300 ring-2 ring-amber-300/20",
                       isSelected && "scale-125 bg-sky-300",
                     )}
                   />
@@ -880,7 +929,7 @@ const PreviewBody = ({ preview }: { preview: FilePreview }): JSX.Element => {
   }
 
   if (preview.mode === "text") {
-    return <TextPreviewContent preview={preview} />;
+    return <FilePreviewTextContent preview={preview} />;
   }
 
   return (

@@ -535,6 +535,7 @@ type FilePreviewTarget =
       kind: "workspace";
       workspaceRoot: string | null | undefined;
       relativePath: string;
+      line?: number;
     };
 
 interface FilePreviewState {
@@ -551,6 +552,7 @@ interface FilePreviewState {
   languageLabel: string;
   truncated: boolean;
   lossy: boolean;
+  targetLine: number | null;
 }
 
 export interface UseChatSessionControllerOptions {
@@ -2441,6 +2443,7 @@ export const useChatSessionController = (
       languageLabel: syntax.label,
       truncated: false,
       lossy: false,
+      targetLine: target.kind === "workspace" ? (target.line ?? null) : null,
     };
   };
 
@@ -2553,20 +2556,28 @@ export const useChatSessionController = (
       });
   };
 
-  const handleOpenWorkspaceFile = (relativePath: string): void => {
+  const handleOpenWorkspaceFile = (
+    relativePath: string,
+    line?: number,
+  ): void => {
     showFilePreview({
       kind: "workspace",
       workspaceRoot: state.activeSession.workspace,
       relativePath,
+      line,
     });
   };
 
-  const handleOpenQuickTaskWorkspaceFile = (relativePath: string): void => {
+  const handleOpenQuickTaskWorkspaceFile = (
+    relativePath: string,
+    line?: number,
+  ): void => {
     showFilePreview({
       kind: "workspace",
       workspaceRoot:
         quickTaskSession?.workspace ?? state.activeSession.workspace,
       relativePath,
+      line,
     });
   };
 
