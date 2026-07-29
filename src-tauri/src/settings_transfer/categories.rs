@@ -7,11 +7,10 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_store::StoreExt as _;
 use unicode_normalization::UnicodeNormalization as _;
-use zeroize::{Zeroize as _, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
@@ -49,6 +48,26 @@ use super::contract::{
     FileSnapshotEntry, SettingsCategoryId, SnapshotAvailability, CATEGORY_SCHEMA_VERSION,
 };
 
+mod api_keys;
+mod global_mcp;
+mod global_ralph;
+mod shared;
+
+pub(crate) use shared::{
+    category_data_json, category_file_entries, has_file_ancestor_collision, relative_path_to_wire,
+    validate_wire_path, zeroize_envelope, zeroize_json_value, zeroize_snapshot,
+    zeroize_snapshot_availability, zeroize_snapshots,
+};
+use shared::{create_file_snapshot, create_json_snapshot, sha256_hex, MAX_RELATIVE_PATH_DEPTH};
+
+pub(crate) fn ralph_flow_id_from_path(path: &str) -> Option<&str> {
+    global_ralph::flow_id_from_path(path)
+}
+
+pub(crate) fn validate_global_ralph_preferences_value(value: &Value) -> Result<(), String> {
+    global_ralph::validate_preferences(value)
+}
+
 pub(crate) const MAX_TOTAL_PLAINTEXT_BYTES: u64 = 32 * 1024 * 1024;
 pub(crate) const MAX_TOTAL_ITEMS: usize = 2_000;
 pub(crate) const MAX_TEXT_FILE_BYTES: u64 = 128 * 1024;
@@ -65,9 +84,6 @@ const MAX_CONTEXT_PACK_TRIGGERS: usize = 16;
 const MAX_CONTEXT_PACK_TRIGGER_CHARS: usize = 96;
 const MAX_CONTEXT_PACK_ID_CHARS: usize = 256;
 const MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS: usize = 4_096;
-const MAX_RELATIVE_PATH_BYTES: usize = 512;
-const MAX_RELATIVE_PATH_DEPTH: usize = 12;
-const MAX_PATH_COMPONENT_BYTES: usize = 255;
 const RALPH_CORE_VALIDATION_TIMEOUT: Duration = Duration::from_secs(60);
 const STORE_FILE: &str = "machdoch-shell-state.json";
 const APPEARANCE_STORAGE_KEY: &str = "machdoch.desktop.appearance-state";
@@ -88,13 +104,6 @@ fn path_entry_exists(path: &Path) -> Result<bool, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(_) => Err("A global settings path could not be inspected.".to_string()),
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|value| format!("{value:02x}"))
-        .collect()
 }
 
 fn load_user_config_value() -> Result<Value, String> {
@@ -215,77 +224,6 @@ fn nullable_enum(value: Option<&Value>, allowed: &[&str]) -> Value {
         .filter(|value| allowed.contains(value))
         .map(|value| Value::String(value.to_string()))
         .unwrap_or(Value::Null)
-}
-
-fn create_json_snapshot(
-    id: SettingsCategoryId,
-    value: Value,
-    item_count: u32,
-    empty: bool,
-) -> Result<CategorySnapshot, String> {
-    let data = CategorySnapshotData::Json(value);
-    let bytes = Zeroizing::new(
-        serde_json::to_vec(&data)
-            .map_err(|_| "The selected settings could not be serialized.".to_string())?,
-    );
-    Ok(CategorySnapshot {
-        id,
-        schema_version: CATEGORY_SCHEMA_VERSION,
-        replacement: if empty { "empty" } else { "value" }.to_string(),
-        item_count,
-        plaintext_bytes: bytes.len() as u64,
-        sha256: sha256_hex(&bytes),
-        data,
-    })
-}
-
-fn create_file_snapshot(
-    id: SettingsCategoryId,
-    entries: Vec<FileSnapshotEntry>,
-) -> Result<CategorySnapshot, String> {
-    let item_count =
-        u32::try_from(entries.len()).map_err(|_| "Too many settings files.".to_string())?;
-    let data = CategorySnapshotData::Files(entries);
-    let bytes = Zeroizing::new(
-        serde_json::to_vec(&data)
-            .map_err(|_| "The selected settings could not be serialized.".to_string())?,
-    );
-    Ok(CategorySnapshot {
-        id,
-        schema_version: CATEGORY_SCHEMA_VERSION,
-        replacement: if item_count == 0 { "empty" } else { "value" }.to_string(),
-        item_count,
-        plaintext_bytes: bytes.len() as u64,
-        sha256: sha256_hex(&bytes),
-        data,
-    })
-}
-
-fn snapshot_api_keys() -> Result<CategorySnapshot, String> {
-    let root = load_user_config_value()?;
-    let root = root
-        .as_object()
-        .ok_or_else(|| "Global user settings are invalid.".to_string())?;
-    let api_keys = object_or_empty(root.get("apiKeys"));
-    let web_search = object_or_empty(root.get("webSearch"));
-    let web_search_keys = object_or_empty(web_search.get("apiKeys"));
-
-    for value in api_keys.values().chain(web_search_keys.values()) {
-        if !value.is_string() {
-            return Err("A persisted API-key entry has an invalid value.".to_string());
-        }
-    }
-
-    let count = api_keys.len().saturating_add(web_search_keys.len());
-    create_json_snapshot(
-        SettingsCategoryId::ApiKeys,
-        json!({
-            "apiKeys": api_keys,
-            "webSearchApiKeys": web_search_keys,
-        }),
-        u32::try_from(count).unwrap_or(u32::MAX),
-        count == 0,
-    )
 }
 
 fn normalized_provider_enrollment(value: Option<&Value>) -> Value {
@@ -511,60 +449,6 @@ fn snapshot_chat_voice_preferences<R: Runtime>(
         SettingsCategoryId::ChatVoicePreferences,
         chat_voice_preferences_from_sources(app)?,
         CHAT_VOICE_PREFERENCE_ITEM_COUNT,
-        false,
-    )
-}
-
-fn normalize_ralph_runtime_selection(root: &Map<String, Value>, prefix: &str) -> Value {
-    let provider_key = format!("{prefix}Provider");
-    let model_key = format!("{prefix}Model");
-    let reasoning_key = format!("{prefix}Reasoning");
-    let provider = normalized_runtime_provider(root.get(&provider_key));
-    json!({
-        "provider": provider,
-        "model": normalized_model(root.get(&model_key), provider),
-        "reasoning": nullable_enum(root.get(&reasoning_key), &REASONING_MODES),
-    })
-}
-
-pub(crate) fn global_ralph_preferences_from_store<R: Runtime>(
-    app: &AppHandle<R>,
-) -> Result<Value, String> {
-    let store = app
-        .store(STORE_FILE)
-        .map_err(|_| "Global RALPH preferences are unavailable.".to_string())?;
-    let root = store
-        .get(RALPH_SETTINGS_STORAGE_KEY)
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
-    let flow_library_mode = root
-        .get("flowLibraryMode")
-        .and_then(Value::as_str)
-        .filter(|value| ["workspace", "user", "all"].contains(value))
-        .unwrap_or("workspace");
-    let default_max_transitions = root
-        .get("defaultMaxTransitions")
-        .and_then(Value::as_u64)
-        .filter(|value| (1..=MAX_SAFE_INTEGER).contains(value))
-        .map(Value::from)
-        .unwrap_or(Value::Null);
-    let value = json!({
-        "flowLibraryMode": flow_library_mode,
-        "generation": normalize_ralph_runtime_selection(&root, "generation"),
-        "run": normalize_ralph_runtime_selection(&root, "run"),
-        "defaultMaxTransitions": default_max_transitions,
-    });
-    validate_global_ralph_preferences_value(&value)?;
-    Ok(value)
-}
-
-fn snapshot_global_ralph_preferences<R: Runtime>(
-    app: &AppHandle<R>,
-) -> Result<CategorySnapshot, String> {
-    create_json_snapshot(
-        SettingsCategoryId::GlobalRalphPreferences,
-        global_ralph_preferences_from_store(app)?,
-        RALPH_PREFERENCE_ITEM_COUNT,
         false,
     )
 }
@@ -1237,281 +1121,13 @@ fn snapshot_global_prompts() -> Result<CategorySnapshot, String> {
     create_file_snapshot(SettingsCategoryId::GlobalPrompts, entries)
 }
 
-fn normalize_marketplace(value: Option<Value>) -> Result<Value, String> {
-    let root = value.as_ref().and_then(Value::as_object);
-    let entries = root
-        .and_then(|value| value.get("registries"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let mut seen = HashSet::new();
-    let mut registries = Vec::new();
-    for entry in entries {
-        let object = entry
-            .as_object()
-            .ok_or_else(|| "An MCP marketplace registry is invalid.".to_string())?;
-        let id = required_trimmed_string(object.get("id"), "An MCP registry is missing its id.")?;
-        let title =
-            required_trimmed_string(object.get("title"), "An MCP registry is missing its title.")?;
-        let base_url =
-            required_trimmed_string(object.get("baseUrl"), "An MCP registry is missing its URL.")?;
-        let parsed = reqwest::Url::parse(&base_url)
-            .map_err(|_| "An MCP registry URL is invalid.".to_string())?;
-        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
-            return Err("An MCP registry URL must use HTTP or HTTPS.".to_string());
-        }
-        if !seen.insert(id.to_lowercase()) {
-            return Err("MCP registry ids must be unique.".to_string());
-        }
-        registries.push(json!({
-            "id": id,
-            "title": title,
-            "baseUrl": base_url,
-            "enabled": object.get("enabled").and_then(Value::as_bool).unwrap_or(true),
-        }));
-    }
-    Ok(json!({ "version": 1, "registries": registries }))
-}
-
-fn snapshot_global_mcp<R: Runtime>(app: &AppHandle<R>) -> Result<CategorySnapshot, String> {
-    let root = get_user_config_directory()?;
-    let path = root.join("mcp.json");
-    let exists = path_entry_exists(&path)?;
-    let config = if exists {
-        verify_regular_contained_file(&root, &path, MAX_MCP_BYTES)?;
-        let raw = Zeroizing::new(fs::read_to_string(&path).map_err(|_| {
-            "The global MCP configuration must contain valid UTF-8 text.".to_string()
-        })?);
-        if raw.len() as u64 > MAX_MCP_BYTES {
-            return Err("The global MCP configuration exceeds the transfer limit.".to_string());
-        }
-        serde_json::from_str::<Value>(&raw)
-            .map_err(|_| "The global MCP configuration is invalid JSON.".to_string())?
-    } else {
-        json!({})
-    };
-    validate_mcp_config(&config)?;
-    let store = app
-        .store(STORE_FILE)
-        .map_err(|_| "MCP registry settings are unavailable.".to_string())?;
-    let marketplace = normalize_marketplace(store.get(MCP_MARKETPLACE_STORAGE_KEY))?;
-    let registry_count = marketplace["registries"].as_array().map_or(0, Vec::len);
-    let server_count = config
-        .get("servers")
-        .and_then(Value::as_array)
-        .map_or(0, Vec::len);
-    let empty = !exists && registry_count == 0;
-    create_json_snapshot(
-        SettingsCategoryId::GlobalMcp,
-        json!({ "exists": exists, "config": config, "marketplace": marketplace }),
-        u32::try_from(server_count.saturating_add(registry_count)).unwrap_or(u32::MAX),
-        empty,
-    )
-}
-
-fn is_safe_flow_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-}
-
-pub(crate) fn ralph_flow_id_from_path(path: &str) -> Option<&str> {
-    let flow_id = path.strip_prefix("flows/")?.strip_suffix(".json")?;
-    if flow_id.contains('/') || !is_safe_flow_id(flow_id) {
-        return None;
-    }
-    Some(flow_id)
-}
-
-fn validate_ralph_flow(value: &Value) -> Result<String, String> {
-    let root = value
-        .as_object()
-        .ok_or_else(|| "A RALPH flow must be a JSON object.".to_string())?;
-    if root.contains_key("workspaceRoot") || root.contains_key("path") || root.contains_key("scope")
-    {
-        return Err("A global RALPH flow contains a forbidden scope field.".to_string());
-    }
-    if root.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
-        return Err("A RALPH flow must explicitly use schema version 1.".to_string());
-    }
-    let id = required_trimmed_string(root.get("id"), "A RALPH flow is missing its id.")?;
-    if !is_safe_flow_id(&id) {
-        return Err("A RALPH flow has an invalid id.".to_string());
-    }
-    let _ = required_trimmed_string(root.get("name"), "A RALPH flow is missing its name.")?;
-    let blocks = root
-        .get("blocks")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "A RALPH flow must contain a block list.".to_string())?;
-    let edges = root
-        .get("edges")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "A RALPH flow must contain an edge list.".to_string())?;
-    if blocks.is_empty() || blocks.len() > 250 || edges.len() > 500 {
-        return Err("A RALPH flow has an invalid number of blocks or edges.".to_string());
-    }
-    let mut block_ids = HashSet::new();
-    for block in blocks {
-        let block = block
-            .as_object()
-            .ok_or_else(|| "A RALPH flow block is invalid.".to_string())?;
-        let block_id =
-            required_trimmed_string(block.get("id"), "A RALPH flow block is missing its id.")?;
-        let _ =
-            required_trimmed_string(block.get("type"), "A RALPH flow block is missing its type.")?;
-        if !block_ids.insert(block_id) {
-            return Err("A RALPH flow contains duplicate block ids.".to_string());
-        }
-        if let Some(workspace) = block
-            .get("settings")
-            .and_then(Value::as_object)
-            .and_then(|settings| settings.get("workspace"))
-            .and_then(Value::as_object)
-        {
-            if workspace.get("mode").and_then(Value::as_str) == Some("custom")
-                || workspace.get("path").and_then(Value::as_str).is_some()
-            {
-                return Err("A global RALPH flow declares workspace-specific settings.".to_string());
-            }
-        }
-    }
-    for edge in edges {
-        let edge = edge
-            .as_object()
-            .ok_or_else(|| "A RALPH flow edge is invalid.".to_string())?;
-        let from =
-            required_trimmed_string(edge.get("from"), "A RALPH edge is missing its source.")?;
-        let to = required_trimmed_string(edge.get("to"), "A RALPH edge is missing its target.")?;
-        if !block_ids.contains(&from) || !block_ids.contains(&to) {
-            return Err("A RALPH edge references a missing block.".to_string());
-        }
-    }
-    Ok(id)
-}
-
-fn validate_ralph_flows_with_core(entries: &[FileSnapshotEntry]) -> Result<(), String> {
-    let flows = entries
-        .iter()
-        .filter(|entry| ralph_flow_id_from_path(&entry.relative_path).is_some())
-        .collect::<Vec<_>>();
-    if flows.is_empty() {
-        return Ok(());
-    }
-
-    let estimated_bytes = flows.iter().try_fold(
-        64_usize
-            .checked_add(flows.len())
-            .ok_or_else(|| "The RALPH validation batch exceeds its transfer bound.".to_string())?,
-        |total, entry| {
-            total
-                .checked_add(entry.utf8_content.len())
-                .ok_or_else(|| "The RALPH validation batch exceeds its transfer bound.".to_string())
-        },
-    )?;
-    if estimated_bytes as u64 > MAX_TOTAL_PLAINTEXT_BYTES.saturating_add(64 * 1024) {
-        return Err("The RALPH validation batch exceeds its transfer bound.".to_string());
-    }
-    let mut batch = Zeroizing::new(Vec::with_capacity(estimated_bytes));
-    batch.extend_from_slice(b"{\"schemaVersion\":1,\"flows\":[");
-    for (index, entry) in flows.iter().enumerate() {
-        if index > 0 {
-            batch.push(b',');
-        }
-        batch.extend_from_slice(entry.utf8_content.as_bytes());
-    }
-    batch.extend_from_slice(b"]}");
-
-    let arguments = vec![
-        "--json".to_string(),
-        "ralph".to_string(),
-        "validate-json".to_string(),
-        "--flow-json-file".to_string(),
-        "-".to_string(),
-    ];
-    let response = crate::shared_cli::run_side_effect_free_json_command(
-        &arguments,
-        batch,
-        RALPH_CORE_VALIDATION_TIMEOUT,
-    )
-    .map_err(|_| "The complete RALPH flow validator could not run safely.".to_string())?;
-    let results = response
-        .get("results")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            "The complete RALPH flow validator returned an invalid result.".to_string()
-        })?;
-    if response.get("valid").and_then(Value::as_bool) != Some(true) || results.len() != flows.len()
-    {
-        return Err("A RALPH flow failed complete parser or graph validation.".to_string());
-    }
-    for (entry, result) in flows.iter().zip(results) {
-        let expected_id = ralph_flow_id_from_path(&entry.relative_path).unwrap_or_default();
-        if result.get("valid").and_then(Value::as_bool) != Some(true)
-            || result.get("id").and_then(Value::as_str) != Some(expected_id)
-        {
-            return Err("A RALPH flow failed complete parser or graph validation.".to_string());
-        }
-    }
-    Ok(())
-}
-
-fn snapshot_global_ralph() -> Result<CategorySnapshot, String> {
-    let global_root = get_user_config_directory()?;
-    let ralph_root = global_root.join("ralph");
-    let flow_root = ralph_root.join("flows");
-    let mut entries = Vec::new();
-    let mut flow_ids = BTreeSet::new();
-    if verify_unlinked_directory_chain(&global_root, &flow_root)? {
-        for entry in fs::read_dir(&flow_root)
-            .map_err(|_| "The global RALPH flow directory could not be read.".to_string())?
-        {
-            let entry =
-                entry.map_err(|_| "A global RALPH flow entry could not be read.".to_string())?;
-            let path = entry.path();
-            let metadata = fs::symlink_metadata(&path)
-                .map_err(|_| "A global RALPH flow entry could not be inspected.".to_string())?;
-            if metadata.file_type().is_symlink() || is_windows_reparse_point(&metadata) {
-                return Err("The global RALPH flow directory contains a linked entry.".to_string());
-            }
-            if metadata.is_dir() {
-                continue;
-            }
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            verify_regular_contained_file(&global_root, &path, MAX_RALPH_FLOW_BYTES)?;
-            let content = fs::read_to_string(&path)
-                .map_err(|_| "A global RALPH flow must contain valid UTF-8 JSON.".to_string())?;
-            let value = serde_json::from_str::<Value>(&content)
-                .map_err(|_| "A global RALPH flow contains invalid JSON.".to_string())?;
-            let id = validate_ralph_flow(&value)?;
-            if !flow_ids.insert(id.clone()) {
-                return Err("Global RALPH flow ids must be unique.".to_string());
-            }
-            let expected_file = format!("{id}.json");
-            if entry.file_name().to_string_lossy().to_lowercase() != expected_file.to_lowercase() {
-                return Err("A global RALPH flow filename does not match its id.".to_string());
-            }
-            entries.push(FileSnapshotEntry {
-                relative_path: format!("flows/{expected_file}"),
-                sha256: sha256_hex(content.as_bytes()),
-                utf8_content: content,
-            });
-        }
-    }
-    entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-    create_file_snapshot(SettingsCategoryId::GlobalRalphFlows, entries)
-}
-
 fn snapshot_category_with_exported_at<R: Runtime>(
     app: &AppHandle<R>,
     id: SettingsCategoryId,
     exported_at: &str,
 ) -> SnapshotAvailability {
     let result = match id {
-        SettingsCategoryId::ApiKeys => snapshot_api_keys(),
+        SettingsCategoryId::ApiKeys => api_keys::snapshot(),
         SettingsCategoryId::AgentProviderPreferences => snapshot_agent_provider_preferences(),
         SettingsCategoryId::DesktopAppearance => snapshot_desktop_appearance(app),
         SettingsCategoryId::ChatVoicePreferences => snapshot_chat_voice_preferences(app),
@@ -1519,9 +1135,9 @@ fn snapshot_category_with_exported_at<R: Runtime>(
         SettingsCategoryId::InstructionProfiles => snapshot_instruction_profiles(exported_at),
         SettingsCategoryId::GlobalPrompts => snapshot_global_prompts(),
         SettingsCategoryId::GlobalContextPacks => snapshot_global_context_packs(app),
-        SettingsCategoryId::GlobalMcp => snapshot_global_mcp(app),
-        SettingsCategoryId::GlobalRalphPreferences => snapshot_global_ralph_preferences(app),
-        SettingsCategoryId::GlobalRalphFlows => snapshot_global_ralph(),
+        SettingsCategoryId::GlobalMcp => global_mcp::snapshot(app),
+        SettingsCategoryId::GlobalRalphPreferences => global_ralph::snapshot_preferences(app),
+        SettingsCategoryId::GlobalRalphFlows => global_ralph::snapshot_flows(),
     };
 
     match result {
@@ -1700,7 +1316,7 @@ pub(crate) fn validate_category_snapshot(snapshot: &CategorySnapshot) -> Result<
     }
     match (snapshot.id, &snapshot.data) {
         (SettingsCategoryId::ApiKeys, CategorySnapshotData::Json(value)) => {
-            validate_api_keys_value(value)
+            api_keys::validate(value)
         }
         (SettingsCategoryId::AgentProviderPreferences, CategorySnapshotData::Json(value)) => {
             validate_agent_provider_value(value)
@@ -1718,7 +1334,7 @@ pub(crate) fn validate_category_snapshot(snapshot: &CategorySnapshot) -> Result<
             validate_global_context_packs_value(value)
         }
         (SettingsCategoryId::GlobalMcp, CategorySnapshotData::Json(value)) => {
-            validate_mcp_value(value)
+            global_mcp::validate(value)
         }
         (SettingsCategoryId::GlobalRalphPreferences, CategorySnapshotData::Json(value)) => {
             validate_global_ralph_preferences_value(value)
@@ -1842,20 +1458,6 @@ fn validate_string_map(value: Option<&Value>, allowed_keys: &[&str]) -> Result<u
         return Err("A settings map contains invalid entries.".to_string());
     }
     Ok(object.len())
-}
-
-fn validate_api_keys_value(value: &Value) -> Result<(), String> {
-    let root = value
-        .as_object()
-        .ok_or_else(|| "The API-key category is invalid.".to_string())?;
-    require_exact_keys(root, &["apiKeys", "webSearchApiKeys"])?;
-    let count = validate_string_map(root.get("apiKeys"), &USER_API_PROVIDERS)?.saturating_add(
-        validate_string_map(root.get("webSearchApiKeys"), &USER_WEB_SEARCH_PROVIDERS)?,
-    );
-    if count > MAX_TOTAL_ITEMS {
-        return Err("The API-key category contains too many entries.".to_string());
-    }
-    Ok(())
 }
 
 fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
@@ -2319,42 +1921,6 @@ pub(crate) fn validate_chat_voice_preferences_value(value: &Value) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn validate_global_ralph_preferences_value(value: &Value) -> Result<(), String> {
-    let root = value
-        .as_object()
-        .ok_or_else(|| "Global RALPH preferences are invalid.".to_string())?;
-    require_exact_keys(
-        root,
-        &[
-            "flowLibraryMode",
-            "generation",
-            "run",
-            "defaultMaxTransitions",
-        ],
-    )?;
-    if !root
-        .get("flowLibraryMode")
-        .and_then(Value::as_str)
-        .is_some_and(|value| ["workspace", "user", "all"].contains(&value))
-        || !root.get("defaultMaxTransitions").is_some_and(|value| {
-            value.is_null()
-                || value
-                    .as_u64()
-                    .is_some_and(|value| (1..=MAX_SAFE_INTEGER).contains(&value))
-        })
-    {
-        return Err("A global RALPH preference is outside its supported range.".to_string());
-    }
-    validate_runtime_selection(
-        root.get("generation")
-            .ok_or_else(|| "RALPH generation preferences are missing.".to_string())?,
-    )?;
-    validate_runtime_selection(
-        root.get("run")
-            .ok_or_else(|| "RALPH run preferences are missing.".to_string())?,
-    )
-}
-
 fn valid_context_pack_string(
     value: Option<&Value>,
     maximum_chars: usize,
@@ -2638,572 +2204,6 @@ fn validate_global_context_packs_value(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_mcp_string_array(value: &Value) -> bool {
-    value.as_array().is_some_and(|values| {
-        values.len() <= MAX_TOTAL_ITEMS
-            && values.iter().all(|value| {
-                value.as_str().is_some_and(|value| {
-                    !value.trim().is_empty()
-                        && value.len() <= 4_096
-                        && !value.chars().any(char::is_control)
-                })
-            })
-    })
-}
-
-fn validate_mcp_string_map(value: &Value) -> bool {
-    value.as_object().is_some_and(|values| {
-        values.len() <= MAX_TOTAL_ITEMS
-            && values.iter().all(|(key, value)| {
-                !key.trim().is_empty()
-                    && key.len() <= 512
-                    && !key.chars().any(char::is_control)
-                    && value.is_string()
-            })
-    })
-}
-
-fn valid_mcp_positive_integer(value: Option<&Value>) -> bool {
-    value.and_then(Value::as_u64).is_some_and(|value| value > 0)
-}
-
-fn valid_optional_mcp_enum(value: Option<&Value>, allowed: &[&str]) -> bool {
-    value.is_none_or(|value| value.as_str().is_some_and(|value| allowed.contains(&value)))
-}
-
-fn validate_mcp_cache(value: &Value) -> Result<(), String> {
-    let cache = value
-        .as_object()
-        .ok_or_else(|| "An MCP cache policy is invalid.".to_string())?;
-    require_only_keys(cache, &["enabled", "ttlMs", "ttlSeconds", "forceRefresh"])?;
-    if cache
-        .get("enabled")
-        .is_some_and(|value| !value.is_boolean())
-        || cache
-            .get("forceRefresh")
-            .is_some_and(|value| !value.is_boolean())
-        || cache
-            .get("ttlMs")
-            .is_some_and(|value| value.as_u64().is_none())
-        || cache
-            .get("ttlSeconds")
-            .is_some_and(|value| value.as_u64().is_none())
-    {
-        return Err("An MCP cache policy is invalid.".to_string());
-    }
-    Ok(())
-}
-
-fn validate_mcp_roots(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|value| ["disabled", "workspace"].contains(&value))
-        || validate_mcp_string_array(value)
-}
-
-fn validate_mcp_defaults(value: &Value) -> Result<(), String> {
-    let defaults = value
-        .as_object()
-        .ok_or_else(|| "The global MCP defaults are invalid.".to_string())?;
-    require_only_keys(
-        defaults,
-        &[
-            "enabled",
-            "securityProfile",
-            "exposure",
-            "directTools",
-            "timeoutMs",
-            "maxTotalTimeoutMs",
-            "idleShutdownMs",
-            "maxResponseChars",
-            "cache",
-            "roots",
-            "sampling",
-            "tasks",
-            "elicitation",
-        ],
-    )?;
-    if defaults
-        .get("enabled")
-        .is_some_and(|value| !value.is_boolean())
-        || defaults
-            .get("directTools")
-            .is_some_and(|value| !value.is_boolean())
-        || !valid_optional_mcp_enum(
-            defaults.get("securityProfile"),
-            &["weak", "balanced", "strict"],
-        )
-        || !valid_optional_mcp_enum(
-            defaults.get("exposure"),
-            &["meta-tools", "direct-tools", "hybrid"],
-        )
-        || ["timeoutMs", "maxTotalTimeoutMs", "maxResponseChars"]
-            .into_iter()
-            .any(|key| {
-                defaults
-                    .get(key)
-                    .is_some_and(|_| !valid_mcp_positive_integer(defaults.get(key)))
-            })
-        || defaults
-            .get("idleShutdownMs")
-            .is_some_and(|value| value.as_u64().is_none())
-        || defaults
-            .get("roots")
-            .is_some_and(|value| !validate_mcp_roots(value))
-        || !valid_optional_mcp_enum(defaults.get("sampling"), &["disabled", "ask-agent"])
-        || !valid_optional_mcp_enum(defaults.get("tasks"), &["disabled", "optional"])
-        || !valid_optional_mcp_enum(defaults.get("elicitation"), &["disabled"])
-    {
-        return Err("The global MCP defaults are invalid.".to_string());
-    }
-    if let Some(cache) = defaults.get("cache") {
-        validate_mcp_cache(cache)?;
-    }
-    Ok(())
-}
-
-fn validate_mcp_transport(value: &Value) -> Result<(), String> {
-    let transport = value
-        .as_object()
-        .ok_or_else(|| "An MCP transport is invalid.".to_string())?;
-    match transport.get("type").and_then(Value::as_str) {
-        Some("stdio") => {
-            require_only_keys(
-                transport,
-                &[
-                    "type",
-                    "command",
-                    "args",
-                    "cwd",
-                    "env",
-                    "inheritEnvironment",
-                    "stderr",
-                ],
-            )?;
-            let _ = required_trimmed_string(
-                transport.get("command"),
-                "An MCP stdio transport is missing its command.",
-            )?;
-            if transport
-                .get("args")
-                .is_some_and(|value| !validate_mcp_string_array(value))
-                || transport.get("cwd").is_some_and(|value| !value.is_string())
-                || transport
-                    .get("env")
-                    .is_some_and(|value| !validate_mcp_string_map(value))
-                || transport
-                    .get("inheritEnvironment")
-                    .is_some_and(|value| !value.is_boolean())
-                || !valid_optional_mcp_enum(transport.get("stderr"), &["pipe", "ignore", "inherit"])
-            {
-                return Err("An MCP stdio transport is invalid.".to_string());
-            }
-        }
-        Some("streamable-http" | "sse") => {
-            let is_streamable =
-                transport.get("type").and_then(Value::as_str) == Some("streamable-http");
-            let allowed = if is_streamable {
-                &["type", "url", "headers", "sessionId", "legacySseFallback"][..]
-            } else {
-                &["type", "url", "headers"][..]
-            };
-            require_only_keys(transport, allowed)?;
-            let url = required_trimmed_string(
-                transport.get("url"),
-                "An MCP network transport is missing its URL.",
-            )?;
-            let parsed = reqwest::Url::parse(&url)
-                .map_err(|_| "An MCP transport URL is invalid.".to_string())?;
-            if !matches!(parsed.scheme(), "http" | "https")
-                || parsed.host_str().is_none()
-                || transport
-                    .get("headers")
-                    .is_some_and(|value| !validate_mcp_string_map(value))
-                || transport
-                    .get("sessionId")
-                    .is_some_and(|value| !value.is_string())
-                || transport
-                    .get("legacySseFallback")
-                    .is_some_and(|value| !value.is_boolean())
-            {
-                return Err("An MCP network transport is invalid.".to_string());
-            }
-        }
-        _ => return Err("An MCP server uses an unsupported transport.".to_string()),
-    }
-    Ok(())
-}
-
-fn validate_mcp_auth(value: &Value) -> Result<(), String> {
-    let auth = value
-        .as_object()
-        .ok_or_else(|| "An MCP authentication configuration is invalid.".to_string())?;
-    let auth_type = auth.get("type").and_then(Value::as_str);
-    let allowed = match auth_type {
-        Some("none") => &["type"][..],
-        Some("bearer") => &["type", "token", "tokenEnv", "headerName"][..],
-        Some("headers") => &["type", "headers", "envHeaders"][..],
-        Some("oauth") => &[
-            "type",
-            "clientId",
-            "clientSecret",
-            "clientSecretEnv",
-            "redirectUrl",
-            "clientMetadataUrl",
-            "scopes",
-            "accessToken",
-            "accessTokenEnv",
-            "refreshToken",
-            "refreshTokenEnv",
-            "tokenType",
-            "tokenScope",
-            "expiresIn",
-            "idToken",
-            "authorizationUrl",
-            "authorizationState",
-            "codeVerifier",
-            "clientInformation",
-            "discoveryState",
-        ][..],
-        _ => return Err("An MCP authentication type is unsupported.".to_string()),
-    };
-    require_only_keys(auth, allowed)?;
-    if auth_type == Some("headers")
-        && ["headers", "envHeaders"].into_iter().any(|key| {
-            auth.get(key)
-                .is_some_and(|value| !validate_mcp_string_map(value))
-        })
-    {
-        return Err("MCP authentication headers are invalid.".to_string());
-    }
-    if auth_type == Some("oauth")
-        && (auth
-            .get("scopes")
-            .is_some_and(|value| !validate_mcp_string_array(value))
-            || auth
-                .get("expiresIn")
-                .is_some_and(|value| value.as_u64().is_none())
-            || ["clientInformation", "discoveryState"]
-                .into_iter()
-                .any(|key| auth.get(key).is_some_and(|value| !value.is_object())))
-    {
-        return Err("An MCP OAuth configuration is invalid.".to_string());
-    }
-    if auth.iter().any(|(key, value)| {
-        key != "type"
-            && !matches!(
-                key.as_str(),
-                "headers"
-                    | "envHeaders"
-                    | "scopes"
-                    | "expiresIn"
-                    | "clientInformation"
-                    | "discoveryState"
-            )
-            && !value.is_string()
-    }) {
-        return Err("An MCP authentication value is invalid.".to_string());
-    }
-    Ok(())
-}
-
-fn validate_mcp_exposure(value: &Value) -> Result<(), String> {
-    let exposure = value
-        .as_object()
-        .ok_or_else(|| "An MCP exposure configuration is invalid.".to_string())?;
-    require_only_keys(exposure, &["mode", "directTools"])?;
-    if !valid_optional_mcp_enum(
-        exposure.get("mode"),
-        &["meta-tools", "direct-tools", "hybrid"],
-    ) {
-        return Err("An MCP exposure mode is invalid.".to_string());
-    }
-    if let Some(direct) = exposure.get("directTools") {
-        if direct.is_boolean() {
-            return Ok(());
-        }
-        let direct = direct
-            .as_object()
-            .ok_or_else(|| "An MCP direct-tool exposure rule is invalid.".to_string())?;
-        require_only_keys(
-            direct,
-            &["enabled", "include", "exclude", "namespacePrefix"],
-        )?;
-        if direct
-            .get("enabled")
-            .is_some_and(|value| !value.is_boolean())
-            || ["include", "exclude"].into_iter().any(|key| {
-                direct
-                    .get(key)
-                    .is_some_and(|value| !validate_mcp_string_array(value))
-            })
-            || direct
-                .get("namespacePrefix")
-                .is_some_and(|value| !value.is_string())
-        {
-            return Err("An MCP direct-tool exposure rule is invalid.".to_string());
-        }
-    }
-    Ok(())
-}
-
-fn validate_mcp_tool_overrides(value: &Value) -> Result<(), String> {
-    let overrides = value
-        .as_object()
-        .ok_or_else(|| "MCP tool overrides are invalid.".to_string())?;
-    if overrides.len() > MAX_TOTAL_ITEMS {
-        return Err("MCP tool overrides contain too many entries.".to_string());
-    }
-    for (name, value) in overrides {
-        if name.trim().is_empty() || name.len() > 512 {
-            return Err("An MCP tool override name is invalid.".to_string());
-        }
-        let value = value
-            .as_object()
-            .ok_or_else(|| "An MCP tool override is invalid.".to_string())?;
-        require_only_keys(
-            value,
-            &[
-                "enabled",
-                "title",
-                "description",
-                "riskLevel",
-                "effect",
-                "readOnlyInAskMode",
-            ],
-        )?;
-        if ["enabled", "readOnlyInAskMode"]
-            .into_iter()
-            .any(|key| value.get(key).is_some_and(|value| !value.is_boolean()))
-            || ["title", "description"]
-                .into_iter()
-                .any(|key| value.get(key).is_some_and(|value| !value.is_string()))
-            || !valid_optional_mcp_enum(value.get("riskLevel"), &["low", "medium", "high"])
-            || !valid_optional_mcp_enum(
-                value.get("effect"),
-                &["read", "write", "external-read", "external-side-effect"],
-            )
-        {
-            return Err("An MCP tool override is invalid.".to_string());
-        }
-    }
-    Ok(())
-}
-
-fn validate_mcp_server(server: &Value, ids: &mut HashSet<String>) -> Result<(), String> {
-    let server = server
-        .as_object()
-        .ok_or_else(|| "An MCP server entry is invalid.".to_string())?;
-    require_only_keys(
-        server,
-        &[
-            "id",
-            "title",
-            "description",
-            "enabled",
-            "preset",
-            "transport",
-            "auth",
-            "exposure",
-            "securityProfile",
-            "timeoutMs",
-            "maxTotalTimeoutMs",
-            "idleShutdownMs",
-            "maxResponseChars",
-            "cache",
-            "toolOverrides",
-            "roots",
-            "sampling",
-            "tasks",
-            "notes",
-        ],
-    )?;
-    let id = required_trimmed_string(server.get("id"), "An MCP server is missing its id.")?;
-    if id.len() > 80
-        || !id.chars().all(|character| {
-            character.is_ascii_lowercase()
-                || character.is_ascii_digit()
-                || matches!(character, '-' | '_')
-        })
-        || !ids.insert(id)
-    {
-        return Err("MCP server ids must be canonical and unique.".to_string());
-    }
-    if ["title", "description", "preset", "notes"]
-        .into_iter()
-        .any(|key| server.get(key).is_some_and(|value| !value.is_string()))
-        || server
-            .get("enabled")
-            .is_some_and(|value| !value.is_boolean())
-        || !valid_optional_mcp_enum(
-            server.get("securityProfile"),
-            &["weak", "balanced", "strict"],
-        )
-        || ["timeoutMs", "maxTotalTimeoutMs", "maxResponseChars"]
-            .into_iter()
-            .any(|key| {
-                server
-                    .get(key)
-                    .is_some_and(|_| !valid_mcp_positive_integer(server.get(key)))
-            })
-        || server
-            .get("idleShutdownMs")
-            .is_some_and(|value| value.as_u64().is_none())
-        || server
-            .get("roots")
-            .is_some_and(|value| !validate_mcp_roots(value))
-        || !valid_optional_mcp_enum(server.get("sampling"), &["disabled", "ask-agent"])
-        || !valid_optional_mcp_enum(server.get("tasks"), &["disabled", "optional"])
-    {
-        return Err("An MCP server entry contains invalid settings.".to_string());
-    }
-    if let Some(value) = server.get("transport") {
-        validate_mcp_transport(value)?;
-    }
-    if let Some(value) = server.get("auth") {
-        validate_mcp_auth(value)?;
-    }
-    if let Some(value) = server.get("exposure") {
-        validate_mcp_exposure(value)?;
-    }
-    if let Some(value) = server.get("cache") {
-        validate_mcp_cache(value)?;
-    }
-    if let Some(value) = server.get("toolOverrides") {
-        validate_mcp_tool_overrides(value)?;
-    }
-    Ok(())
-}
-
-fn validate_mcp_config(value: &Value) -> Result<(), String> {
-    let root = value
-        .as_object()
-        .ok_or_else(|| "The global MCP configuration must be an object.".to_string())?;
-    require_only_keys(root, &["schemaVersion", "defaults", "servers"])?;
-    if root
-        .get("schemaVersion")
-        .is_some_and(|version| version.as_u64() != Some(1))
-    {
-        return Err("The global MCP configuration uses an unsupported schema.".to_string());
-    }
-    if let Some(defaults) = root.get("defaults") {
-        validate_mcp_defaults(defaults)?;
-    }
-    let servers = match root.get("servers") {
-        None => return Ok(()),
-        Some(Value::Array(servers)) => servers,
-        _ => return Err("The global MCP server list is invalid.".to_string()),
-    };
-    if servers.len() > MAX_TOTAL_ITEMS {
-        return Err("The global MCP configuration contains too many servers.".to_string());
-    }
-    let mut ids = HashSet::new();
-    for server in servers {
-        validate_mcp_server(server, &mut ids)?;
-    }
-    Ok(())
-}
-
-fn validate_mcp_value(value: &Value) -> Result<(), String> {
-    let root = value
-        .as_object()
-        .ok_or_else(|| "The MCP category is invalid.".to_string())?;
-    require_exact_keys(root, &["exists", "config", "marketplace"])?;
-    if !root.get("exists").is_some_and(Value::is_boolean) {
-        return Err("The MCP file-presence marker is invalid.".to_string());
-    }
-    validate_mcp_config(
-        root.get("config")
-            .ok_or_else(|| "The MCP configuration is missing.".to_string())?,
-    )?;
-    let normalized = normalize_marketplace(root.get("marketplace").cloned())?;
-    if normalized != root["marketplace"] {
-        return Err("MCP marketplace registries are not normalized.".to_string());
-    }
-    Ok(())
-}
-
-pub(crate) fn relative_path_to_wire(relative: &Path) -> Result<String, String> {
-    let mut components = Vec::new();
-    for component in relative.components() {
-        match component {
-            Component::Normal(value) => components.push(
-                value
-                    .to_str()
-                    .ok_or_else(|| "A settings path is not valid UTF-8.".to_string())?,
-            ),
-            _ => return Err("A settings path is not relative.".to_string()),
-        }
-    }
-    Ok(components.join("/"))
-}
-
-fn is_windows_reserved_component(component: &str) -> bool {
-    let stem = component
-        .split('.')
-        .next()
-        .unwrap_or(component)
-        .trim_end_matches([' ', '.'])
-        .to_ascii_lowercase();
-    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
-        || ["com", "lpt"].iter().any(|prefix| {
-            stem.strip_prefix(prefix).is_some_and(|suffix| {
-                matches!(
-                    suffix,
-                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
-                )
-            })
-        })
-}
-
-fn contains_windows_forbidden_character(component: &str) -> bool {
-    component.chars().any(|character| {
-        character <= '\u{1f}' || matches!(character, '<' | '>' | '"' | '|' | '?' | '*')
-    })
-}
-
-pub(crate) fn validate_wire_path(path: &str) -> Result<(), String> {
-    if path.is_empty()
-        || path.len() > MAX_RELATIVE_PATH_BYTES
-        || path.contains('\0')
-        || path.contains('\\')
-        || path.starts_with('/')
-        || path.nfc().collect::<String>() != path
-    {
-        return Err("A settings entry has an invalid relative path.".to_string());
-    }
-    let components = path.split('/').collect::<Vec<_>>();
-    if components.len() > MAX_RELATIVE_PATH_DEPTH
-        || components.iter().any(|component| {
-            component.is_empty()
-                || component.len() > MAX_PATH_COMPONENT_BYTES
-                || matches!(*component, "." | "..")
-                || component.contains(':')
-                || component.starts_with(' ')
-                || component.ends_with([' ', '.'])
-                || contains_windows_forbidden_character(component)
-                || is_windows_reserved_component(component)
-        })
-    {
-        return Err("A settings entry has an unsafe relative path.".to_string());
-    }
-    Ok(())
-}
-
-pub(crate) fn has_file_ancestor_collision<'a>(aliases: impl IntoIterator<Item = &'a str>) -> bool {
-    let aliases = aliases.into_iter().collect::<HashSet<_>>();
-    aliases.iter().any(|alias| {
-        let mut ancestor = *alias;
-        while let Some((parent, _)) = ancestor.rsplit_once('/') {
-            if aliases.contains(parent) {
-                return true;
-            }
-            ancestor = parent;
-        }
-        false
-    })
-}
-
 fn validate_file_entries(
     id: SettingsCategoryId,
     entries: &[FileSnapshotEntry],
@@ -3241,10 +2241,10 @@ fn validate_file_entries(
                 validate_frontmatter(&entry.utf8_content)?;
             }
             SettingsCategoryId::GlobalRalphFlows => {
-                if let Some(path_flow_id) = ralph_flow_id_from_path(&entry.relative_path) {
+                if let Some(path_flow_id) = global_ralph::flow_id_from_path(&entry.relative_path) {
                     let value = serde_json::from_str::<Value>(&entry.utf8_content)
                         .map_err(|_| "A RALPH flow contains invalid JSON.".to_string())?;
-                    let flow_id = validate_ralph_flow(&value)?;
+                    let flow_id = global_ralph::validate_flow(&value)?;
                     if path_flow_id != flow_id || !flow_ids.insert(flow_id) {
                         return Err("A RALPH flow path or id is invalid or duplicated.".to_string());
                     }
@@ -3261,7 +2261,7 @@ fn validate_file_entries(
         return Err("A file category contains a path nested below another file.".to_string());
     }
     if id == SettingsCategoryId::GlobalRalphFlows {
-        validate_ralph_flows_with_core(entries)?;
+        global_ralph::validate_flows_with_core(entries)?;
     }
     Ok(())
 }
@@ -3291,24 +2291,6 @@ pub(crate) fn validate_envelope_categories(categories: &[CategorySnapshot]) -> R
     Ok(())
 }
 
-pub(crate) fn category_data_json(
-    snapshot: &CategorySnapshot,
-) -> Result<&Map<String, Value>, String> {
-    match &snapshot.data {
-        CategorySnapshotData::Json(Value::Object(value)) => Ok(value),
-        _ => Err("The category does not contain JSON settings.".to_string()),
-    }
-}
-
-pub(crate) fn category_file_entries(
-    snapshot: &CategorySnapshot,
-) -> Result<&[FileSnapshotEntry], String> {
-    match &snapshot.data {
-        CategorySnapshotData::Files(entries) => Ok(entries),
-        _ => Err("The category does not contain settings files.".to_string()),
-    }
-}
-
 pub(crate) fn appearance_store_key() -> &'static str {
     APPEARANCE_STORAGE_KEY
 }
@@ -3329,69 +2311,52 @@ pub(crate) fn store_file() -> &'static str {
     STORE_FILE
 }
 
-pub(crate) fn zeroize_json_value(value: &mut Value) {
-    match value {
-        Value::String(value) => value.zeroize(),
-        Value::Array(values) => {
-            for value in values.iter_mut() {
-                zeroize_json_value(value);
-            }
-            values.clear();
-        }
-        Value::Object(values) => {
-            for (mut key, mut value) in std::mem::take(values) {
-                key.zeroize();
-                zeroize_json_value(&mut value);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) => {}
-    }
-}
-
-pub(crate) fn zeroize_snapshot(snapshot: &mut CategorySnapshot) {
-    snapshot.replacement.zeroize();
-    snapshot.sha256.zeroize();
-    match &mut snapshot.data {
-        CategorySnapshotData::Json(value) => zeroize_json_value(value),
-        CategorySnapshotData::Files(entries) => {
-            for entry in entries.iter_mut() {
-                entry.relative_path.zeroize();
-                entry.utf8_content.zeroize();
-                entry.sha256.zeroize();
-            }
-            entries.clear();
-        }
-    }
-}
-
-pub(crate) fn zeroize_snapshot_availability(snapshot: &mut SnapshotAvailability) {
-    if let SnapshotAvailability::Available(snapshot) = snapshot {
-        zeroize_snapshot(snapshot);
-    }
-}
-
-pub(crate) fn zeroize_snapshots(
-    snapshots: &mut BTreeMap<SettingsCategoryId, SnapshotAvailability>,
-) {
-    for snapshot in snapshots.values_mut() {
-        zeroize_snapshot_availability(snapshot);
-    }
-    snapshots.clear();
-}
-
-pub(crate) fn zeroize_envelope(envelope: &mut super::contract::TransferEnvelope) {
-    envelope.transfer_id.zeroize();
-    for snapshot in &mut envelope.categories {
-        zeroize_snapshot(snapshot);
-    }
-    envelope.categories.clear();
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
+
+    #[test]
+    fn snapshot_resource_locks_release_after_an_interrupted_operation() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock should follow the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-settings-snapshot-locks-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("test root should be created");
+        let selected = BTreeSet::from([
+            SettingsCategoryId::InstructionProfiles,
+            SettingsCategoryId::GlobalPrompts,
+        ]);
+        let resources = category_resource_lock_paths(&root, &selected);
+
+        let interrupted = (|| -> Result<(), String> {
+            let _locks = acquire_snapshot_locks(&root, &selected)?;
+            for resource in &resources {
+                let lock_path =
+                    PathBuf::from(format!("{}.machdoch.lock", resource.to_string_lossy()));
+                assert!(lock_path.is_dir(), "resource lock should be held");
+            }
+            Err("injected snapshot interruption".to_string())
+        })();
+
+        assert_eq!(
+            interrupted.expect_err("operation should be interrupted"),
+            "injected snapshot interruption"
+        );
+        for resource in resources {
+            let lock_path = PathBuf::from(format!("{}.machdoch.lock", resource.to_string_lossy()));
+            assert!(
+                !lock_path.exists(),
+                "dropping the interrupted snapshot must release every owned lock"
+            );
+        }
+        std::fs::remove_dir_all(root).expect("test root should be removable");
+    }
 
     #[test]
     fn repeated_snapshot_inspections_reuse_one_export_timestamp() {
@@ -3464,33 +2429,6 @@ mod tests {
 
         assert_eq!(captures.get(), 2);
         assert_eq!(error, "SETTINGS_CHANGED_DURING_INSPECTION");
-    }
-
-    #[test]
-    fn wire_paths_reject_traversal_aliases_and_non_normalized_unicode() {
-        for invalid in [
-            "../secret.md",
-            "/absolute.md",
-            "C:/secret.md",
-            "folder\\secret.md",
-            "folder/con.txt",
-            "folder/COM¹.log",
-            "folder/name. ",
-            "folder/ leading.prompt.md",
-            "folder/question?.prompt.md",
-            "folder/control\u{1f}.prompt.md",
-            "folder//file.md",
-            "prompts/e\u{301}.prompt.md",
-        ] {
-            assert!(
-                validate_wire_path(invalid).is_err(),
-                "{invalid} should fail"
-            );
-        }
-        let oversized_component =
-            format!("prompts/{}.prompt.md", "a".repeat(MAX_PATH_COMPONENT_BYTES));
-        assert!(validate_wire_path(&oversized_component).is_err());
-        assert!(validate_wire_path("prompts/é.prompt.md").is_ok());
     }
 
     #[test]
@@ -3653,31 +2591,6 @@ mod tests {
     }
 
     #[test]
-    fn api_key_schema_is_closed_and_requires_string_values() {
-        assert!(validate_api_keys_value(&json!({
-            "apiKeys": { "openai": "secret" },
-            "webSearchApiKeys": {}
-        }))
-        .is_ok());
-        assert!(validate_api_keys_value(&json!({
-            "apiKeys": { "openai": 12 },
-            "webSearchApiKeys": {}
-        }))
-        .is_err());
-        assert!(validate_api_keys_value(&json!({
-            "apiKeys": {},
-            "webSearchApiKeys": {},
-            "workspaceRoot": "poison"
-        }))
-        .is_err());
-        assert!(validate_api_keys_value(&json!({
-            "apiKeys": { "future-provider": "secret" },
-            "webSearchApiKeys": {}
-        }))
-        .is_err());
-    }
-
-    #[test]
     fn provider_and_mcp_schemas_reject_unknown_or_mistyped_fields() {
         let provider = json!({
             "webSearchActiveProvider": "none",
@@ -3721,7 +2634,7 @@ mod tests {
             json!(true);
         assert!(validate_agent_provider_value(&provider_with_device_field).is_err());
 
-        assert!(validate_mcp_config(&json!({
+        assert!(global_mcp::validate_config(&json!({
             "schemaVersion": 1,
             "defaults": {
                 "enabled": true,
@@ -3744,14 +2657,14 @@ mod tests {
             }]
         }))
         .is_ok());
-        assert!(validate_mcp_config(&json!({
+        assert!(global_mcp::validate_config(&json!({
             "servers": [{
                 "id": "local-tools",
                 "transport": { "type": "stdio", "command": "node", "workspaceRoot": "poison" }
             }]
         }))
         .is_err());
-        assert!(validate_mcp_config(&json!({
+        assert!(global_mcp::validate_config(&json!({
             "defaults": { "securityProfile": 42 },
             "servers": []
         }))
@@ -3843,46 +2756,6 @@ mod tests {
     }
 
     #[test]
-    fn ralph_validation_rejects_workspace_specific_flows() {
-        let flow = json!({
-            "schemaVersion": 1,
-            "id": "global-flow",
-            "name": "Global flow",
-            "blocks": [{
-                "id": "start",
-                "type": "start",
-                "settings": { "workspace": { "mode": "custom", "path": "C:/poison" } }
-            }],
-            "edges": []
-        });
-        assert_eq!(
-            validate_ralph_flow(&flow).expect_err("workspace flow should fail"),
-            "A global RALPH flow declares workspace-specific settings."
-        );
-    }
-
-    #[test]
-    fn ralph_paths_match_only_the_closed_global_layout() {
-        assert_eq!(
-            ralph_flow_id_from_path("flows/global-flow.json"),
-            Some("global-flow")
-        );
-
-        for invalid in [
-            "flows/nested/global-flow.json",
-            "flows/global-flow.yaml",
-            "runs/global-flow.json",
-            "revisions/global-flow.json",
-            "global flow.json",
-        ] {
-            assert!(
-                ralph_flow_id_from_path(invalid).is_none(),
-                "{invalid} should not match a managed RALPH path"
-            );
-        }
-    }
-
-    #[test]
     fn directory_chain_validation_rejects_an_invalid_ancestor() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -3899,53 +2772,6 @@ mod tests {
         assert!(verify_unlinked_directory_chain(&root, &root.join("ralph/flows")).is_err());
 
         fs::remove_dir_all(&root).expect("test root should be removable");
-    }
-
-    #[test]
-    fn ralph_transfer_uses_the_complete_core_graph_validator() {
-        let valid = serde_json::json!({
-            "schemaVersion": 1,
-            "id": "transfer-flow",
-            "name": "Transfer flow",
-            "blocks": [
-                { "id": "start", "type": "START", "title": "Start" },
-                { "id": "work", "type": "PROMPT", "title": "Work", "prompt": "Do the work." },
-                { "id": "done", "type": "END", "title": "Done", "status": "success" }
-            ],
-            "edges": [
-                { "id": "start-work", "from": "start", "fromOutput": "SUCCESS", "to": "work" },
-                { "id": "work-done", "from": "work", "fromOutput": "SUCCESS", "to": "done" }
-            ]
-        })
-        .to_string();
-        let entry = FileSnapshotEntry {
-            relative_path: "flows/transfer-flow.json".to_string(),
-            sha256: sha256_hex(valid.as_bytes()),
-            utf8_content: valid,
-        };
-        validate_ralph_flows_with_core(std::slice::from_ref(&entry))
-            .expect("a complete valid graph should pass the shared validator");
-
-        let invalid = serde_json::json!({
-            "schemaVersion": 1,
-            "id": "transfer-flow",
-            "name": "Transfer flow",
-            "blocks": [
-                { "id": "start", "type": "START", "title": "Start" },
-                { "id": "second-start", "type": "START", "title": "Second start" }
-            ],
-            "edges": []
-        })
-        .to_string();
-        let invalid_entry = FileSnapshotEntry {
-            relative_path: "flows/transfer-flow.json".to_string(),
-            sha256: sha256_hex(invalid.as_bytes()),
-            utf8_content: invalid,
-        };
-        assert!(
-            validate_ralph_flows_with_core(std::slice::from_ref(&invalid_entry)).is_err(),
-            "a graph with two START blocks must fail complete graph validation"
-        );
     }
 
     #[test]
