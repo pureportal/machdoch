@@ -7,6 +7,25 @@ const GOOGLE_PCM_SAMPLE_RATE_HZ: u32 = 24_000;
 const GOOGLE_PCM_CHANNELS: u16 = 1;
 const GOOGLE_PCM_BITS_PER_SAMPLE: u16 = 16;
 
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum GoogleAudioExtractionFailure {
+    Retryable(String),
+    NonRetryable(String),
+}
+
+impl GoogleAudioExtractionFailure {
+    pub(super) fn into_message(self) -> String {
+        match self {
+            Self::Retryable(message) | Self::NonRetryable(message) => message,
+        }
+    }
+}
+
+enum GoogleAudioFormat {
+    Wav,
+    Pcm,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct GoogleGenerateContentResponse {
@@ -85,10 +104,12 @@ impl GoogleResponseKind {
 fn extract_google_candidate(
     response: GoogleGenerateContentResponse,
     kind: GoogleResponseKind,
-) -> Result<GoogleCandidate, String> {
+) -> Result<GoogleCandidate, GoogleAudioExtractionFailure> {
     if let Some(prompt_feedback) = response.prompt_feedback {
         if let Some(block_reason) = prompt_feedback.block_reason {
-            return Err(kind.blocked_message(block_reason));
+            return Err(GoogleAudioExtractionFailure::NonRetryable(
+                kind.blocked_message(block_reason),
+            ));
         }
     }
 
@@ -96,22 +117,42 @@ fn extract_google_candidate(
         .candidates
         .and_then(|candidates| candidates.into_iter().next())
     else {
-        return Err(kind.no_candidates_message().to_string());
+        return Err(GoogleAudioExtractionFailure::Retryable(
+            kind.no_candidates_message().to_string(),
+        ));
     };
 
     if let Some(finish_reason) = candidate.finish_reason.clone() {
         if matches!(finish_reason.as_str(), "SAFETY" | "PROHIBITED_CONTENT") {
-            return Err(candidate
-                .finish_message
-                .unwrap_or_else(|| kind.stopped_message(&finish_reason)));
+            return Err(GoogleAudioExtractionFailure::NonRetryable(
+                candidate
+                    .finish_message
+                    .unwrap_or_else(|| kind.stopped_message(&finish_reason)),
+            ));
         }
     }
 
     Ok(candidate)
 }
 
-fn create_wav_from_pcm_mono_16bit_24khz(pcm_bytes: &[u8]) -> Vec<u8> {
-    let data_len = pcm_bytes.len() as u32;
+fn checked_wav_data_len(pcm_len: usize) -> Result<u32, GoogleAudioExtractionFailure> {
+    let data_len = u32::try_from(pcm_len).map_err(|_| {
+        GoogleAudioExtractionFailure::NonRetryable(
+            "Google Gemini returned speech audio too large for WAV output.".to_string(),
+        )
+    })?;
+    data_len.checked_add(36).ok_or_else(|| {
+        GoogleAudioExtractionFailure::NonRetryable(
+            "Google Gemini returned speech audio too large for WAV output.".to_string(),
+        )
+    })?;
+    Ok(data_len)
+}
+
+fn create_wav_from_pcm_mono_16bit_24khz(
+    pcm_bytes: &[u8],
+) -> Result<Vec<u8>, GoogleAudioExtractionFailure> {
+    let data_len = checked_wav_data_len(pcm_bytes.len())?;
     let byte_rate = GOOGLE_PCM_SAMPLE_RATE_HZ
         * GOOGLE_PCM_CHANNELS as u32
         * (GOOGLE_PCM_BITS_PER_SAMPLE as u32 / 8);
@@ -133,43 +174,82 @@ fn create_wav_from_pcm_mono_16bit_24khz(pcm_bytes: &[u8]) -> Vec<u8> {
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_len.to_le_bytes());
     wav.extend_from_slice(pcm_bytes);
-    wav
+    Ok(wav)
+}
+
+fn parse_google_audio_format(
+    mime_type: Option<&str>,
+) -> Result<GoogleAudioFormat, GoogleAudioExtractionFailure> {
+    let normalized = mime_type
+        .unwrap_or("audio/pcm")
+        .split(';')
+        .next()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    match normalized.as_str() {
+        "audio/wav" | "audio/x-wav" => Ok(GoogleAudioFormat::Wav),
+        "audio/pcm" | "audio/l16" => Ok(GoogleAudioFormat::Pcm),
+        _ => Err(GoogleAudioExtractionFailure::NonRetryable(format!(
+            "Google Gemini returned unsupported speech audio type {normalized}."
+        ))),
+    }
 }
 
 pub(super) fn extract_google_audio(
     response: GoogleGenerateContentResponse,
-) -> Result<(String, Vec<u8>), String> {
+) -> Result<(String, Vec<u8>), GoogleAudioExtractionFailure> {
     let candidate = extract_google_candidate(response, GoogleResponseKind::Speech)?;
     let Some(content) = candidate.content else {
-        return Err("Google Gemini returned no audio content.".to_string());
+        return Err(GoogleAudioExtractionFailure::Retryable(
+            "Google Gemini returned no audio content.".to_string(),
+        ));
     };
 
     let Some(inline_data) = content.parts.into_iter().find_map(|part| part.inline_data) else {
-        return Err("Google Gemini returned a response without inline audio data.".to_string());
+        return Err(GoogleAudioExtractionFailure::Retryable(
+            "Google Gemini returned a response without inline audio data.".to_string(),
+        ));
     };
 
-    let mime_type = inline_data
-        .mime_type
-        .unwrap_or_else(|| "audio/pcm".to_string());
-    let decoded = BASE64_STANDARD
-        .decode(inline_data.data)
-        .map_err(|error| format!("Failed to decode Google Gemini audio: {error}"))?;
-    validate_synthesized_audio_bytes(&decoded, "Google Gemini")?;
+    let audio_format = parse_google_audio_format(inline_data.mime_type.as_deref())?;
+    let decoded = BASE64_STANDARD.decode(inline_data.data).map_err(|error| {
+        GoogleAudioExtractionFailure::NonRetryable(format!(
+            "Failed to decode Google Gemini audio: {error}"
+        ))
+    })?;
+    validate_synthesized_audio_bytes(&decoded, "Google Gemini")
+        .map_err(GoogleAudioExtractionFailure::NonRetryable)?;
 
-    if mime_type.contains("wav") {
-        return Ok(("audio/wav".to_string(), decoded));
+    match audio_format {
+        GoogleAudioFormat::Wav => Ok(("audio/wav".to_string(), decoded)),
+        GoogleAudioFormat::Pcm => {
+            let bytes_per_sample =
+                GOOGLE_PCM_CHANNELS as usize * GOOGLE_PCM_BITS_PER_SAMPLE as usize / 8;
+            if !decoded
+                .chunks_exact(bytes_per_sample)
+                .remainder()
+                .is_empty()
+            {
+                return Err(GoogleAudioExtractionFailure::NonRetryable(
+                    "Google Gemini returned misaligned PCM speech audio.".to_string(),
+                ));
+            }
+
+            Ok((
+                "audio/wav".to_string(),
+                create_wav_from_pcm_mono_16bit_24khz(&decoded)?,
+            ))
+        }
     }
-
-    Ok((
-        "audio/wav".to_string(),
-        create_wav_from_pcm_mono_16bit_24khz(&decoded),
-    ))
 }
 
 pub(super) fn extract_google_transcript(
     response: GoogleGenerateContentResponse,
 ) -> Result<String, String> {
-    let candidate = extract_google_candidate(response, GoogleResponseKind::Transcription)?;
+    let candidate = extract_google_candidate(response, GoogleResponseKind::Transcription)
+        .map_err(GoogleAudioExtractionFailure::into_message)?;
     let Some(content) = candidate.content else {
         return Err("Google Gemini returned no transcription content.".to_string());
     };
@@ -250,7 +330,7 @@ mod tests {
     fn extract_google_audio_wraps_pcm_bytes_as_wav() {
         let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
             inline_data: Some(GoogleInlineData {
-                mime_type: Some("audio/pcm".to_string()),
+                mime_type: Some(" Audio/PCM;rate=24000 ".to_string()),
                 data: BASE64_STANDARD.encode([1, 0, 2, 0]),
             }),
             text: None,
@@ -266,6 +346,22 @@ mod tests {
     }
 
     #[test]
+    fn extract_google_audio_accepts_x_wav_mime_type() {
+        let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
+            inline_data: Some(GoogleInlineData {
+                mime_type: Some("audio/x-wav; codec=pcm".to_string()),
+                data: BASE64_STANDARD.encode(b"RIFF"),
+            }),
+            text: None,
+        }]));
+
+        let (mime_type, audio) = extract_google_audio(response).expect("expected audio");
+
+        assert_eq!(mime_type, "audio/wav");
+        assert_eq!(audio, b"RIFF");
+    }
+
+    #[test]
     fn extract_google_audio_rejects_empty_wav_bytes() {
         let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
             inline_data: Some(GoogleInlineData {
@@ -275,7 +371,9 @@ mod tests {
             text: None,
         }]));
 
-        let error = extract_google_audio(response).expect_err("expected empty audio error");
+        let error = extract_google_audio(response)
+            .expect_err("expected empty audio error")
+            .into_message();
 
         assert_eq!(error, "Google Gemini returned empty speech audio.");
     }
@@ -290,8 +388,112 @@ mod tests {
             text: None,
         }]));
 
-        let error = extract_google_audio(response).expect_err("expected empty audio error");
+        let error = extract_google_audio(response)
+            .expect_err("expected empty audio error")
+            .into_message();
 
         assert_eq!(error, "Google Gemini returned empty speech audio.");
+    }
+
+    #[test]
+    fn extract_google_audio_rejects_unsupported_mime_type() {
+        let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
+            inline_data: Some(GoogleInlineData {
+                mime_type: Some("audio/ogg".to_string()),
+                data: BASE64_STANDARD.encode([1, 0]),
+            }),
+            text: None,
+        }]));
+
+        let error = extract_google_audio(response).expect_err("expected unsupported audio error");
+
+        assert_eq!(
+            error,
+            GoogleAudioExtractionFailure::NonRetryable(
+                "Google Gemini returned unsupported speech audio type audio/ogg.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn extract_google_audio_rejects_misaligned_pcm() {
+        let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
+            inline_data: Some(GoogleInlineData {
+                mime_type: Some("audio/L16;rate=24000".to_string()),
+                data: BASE64_STANDARD.encode([1, 0, 2]),
+            }),
+            text: None,
+        }]));
+
+        let error = extract_google_audio(response).expect_err("expected misaligned PCM error");
+
+        assert_eq!(
+            error,
+            GoogleAudioExtractionFailure::NonRetryable(
+                "Google Gemini returned misaligned PCM speech audio.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn extract_google_audio_rejects_invalid_base64_without_retry() {
+        let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
+            inline_data: Some(GoogleInlineData {
+                mime_type: Some("audio/pcm".to_string()),
+                data: "not base64".to_string(),
+            }),
+            text: None,
+        }]));
+
+        let error = extract_google_audio(response).expect_err("expected base64 error");
+
+        assert!(matches!(
+            error,
+            GoogleAudioExtractionFailure::NonRetryable(message)
+                if message.starts_with("Failed to decode Google Gemini audio:")
+        ));
+    }
+
+    #[test]
+    fn extract_google_audio_classifies_safety_block_as_non_retryable() {
+        let response = response_with_candidate(GoogleCandidate {
+            content: None,
+            finish_reason: Some("SAFETY".to_string()),
+            finish_message: Some("blocked by policy".to_string()),
+        });
+
+        let error = extract_google_audio(response).expect_err("expected safety error");
+
+        assert_eq!(
+            error,
+            GoogleAudioExtractionFailure::NonRetryable("blocked by policy".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_google_audio_classifies_missing_candidate_as_retryable() {
+        let response = GoogleGenerateContentResponse {
+            candidates: None,
+            prompt_feedback: None,
+        };
+
+        let error = extract_google_audio(response).expect_err("expected missing candidate error");
+
+        assert_eq!(
+            error,
+            GoogleAudioExtractionFailure::Retryable(
+                "Google Gemini returned no speech candidates.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn checked_wav_data_len_rejects_lengths_that_overflow_riff_chunk_size() {
+        assert_eq!(
+            checked_wav_data_len(u32::MAX as usize - 35),
+            Err(GoogleAudioExtractionFailure::NonRetryable(
+                "Google Gemini returned speech audio too large for WAV output.".to_string()
+            ))
+        );
     }
 }

@@ -7,7 +7,8 @@ use super::{
         get_required_api_key, normalize_language_code, read_api_error, validate_audio_upload_size,
     },
     google_response::{
-        extract_google_audio, extract_google_transcript, GoogleGenerateContentResponse,
+        extract_google_audio, extract_google_transcript, GoogleAudioExtractionFailure,
+        GoogleGenerateContentResponse,
     },
     SynthesizedVoiceAudio, TranscribedSpeechText,
 };
@@ -62,6 +63,10 @@ fn create_google_transcription_prompt(language_code: Option<&str>) -> String {
 
     "Generate an accurate transcript of the spoken audio. If no intelligible speech is present, return an empty transcript. Return only the transcript text."
         .to_string()
+}
+
+fn google_tts_failure_is_retryable(failure: &GoogleAudioExtractionFailure) -> bool {
+    matches!(failure, GoogleAudioExtractionFailure::Retryable(_))
 }
 
 pub(super) async fn synthesize_google(
@@ -153,11 +158,14 @@ pub(super) async fn synthesize_google(
                     audio_base64: BASE64_STANDARD.encode(audio_bytes),
                 });
             }
-            Err(error) if attempt + 1 < GOOGLE_TTS_RETRY_COUNT => {
-                last_error = Some(error);
+            Err(error)
+                if google_tts_failure_is_retryable(&error)
+                    && attempt + 1 < GOOGLE_TTS_RETRY_COUNT =>
+            {
+                last_error = Some(error.into_message());
             }
             Err(error) => {
-                return Err(error);
+                return Err(error.into_message());
             }
         }
     }
@@ -268,5 +276,15 @@ mod tests {
         let prompt = create_google_transcription_prompt(Some(" de-DE "));
 
         assert!(prompt.contains("de-DE"));
+    }
+
+    #[test]
+    fn google_tts_failure_is_retryable_only_for_retryable_extraction_failures() {
+        assert!(google_tts_failure_is_retryable(
+            &GoogleAudioExtractionFailure::Retryable("try again".to_string())
+        ));
+        assert!(!google_tts_failure_is_retryable(
+            &GoogleAudioExtractionFailure::NonRetryable("invalid audio".to_string())
+        ));
     }
 }
