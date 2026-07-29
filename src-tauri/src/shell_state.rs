@@ -81,6 +81,44 @@ pub struct ShellStateCompareAndSwapResponse {
     revision: u64,
 }
 
+struct SnapshotCommit {
+    committed: bool,
+    snapshot: ShellStateSnapshot,
+}
+
+fn commit_snapshot_with_lock(
+    path: &std::path::Path,
+    expected_revision: u64,
+    prepare_requested: impl FnOnce(&Value) -> Value,
+    load: impl FnOnce() -> Result<ShellStateSnapshot, String>,
+    persist: impl FnOnce(&ShellStateSnapshot) -> Result<(), String>,
+) -> Result<SnapshotCommit, String> {
+    with_cooperative_file_lock(path, || {
+        // The on-disk snapshot is authoritative across processes. A process
+        // cache can only be used after this revision check has completed under
+        // the same cooperative lock as the replacement.
+        let current = load()?;
+        if current.revision != expected_revision {
+            return Ok(SnapshotCommit {
+                committed: false,
+                snapshot: current,
+            });
+        }
+
+        let next_revision = current.revision.saturating_add(1);
+        let requested = prepare_requested(&current.state);
+        let snapshot = ShellStateSnapshot {
+            state: prepare_next_state(&current.state, requested, next_revision),
+            revision: next_revision,
+        };
+        persist(&snapshot)?;
+        Ok(SnapshotCommit {
+            committed: true,
+            snapshot,
+        })
+    })
+}
+
 async fn run_snapshot_io<T, F>(operation: F) -> Result<T, String>
 where
     T: Send + 'static,
@@ -823,19 +861,11 @@ pub async fn compare_and_swap_shell_state_patch(
     request: ShellStatePatchRequest,
 ) -> Result<ShellStateCompareAndSwapResponse, String> {
     let mut cache = lock.0.lock().await;
-    let current = load_cached_snapshot(&app_handle, &mut cache, Value::Null).await?;
     let expected_revision = request.expected_revision;
-
-    if current.revision != expected_revision {
-        return Ok(ShellStateCompareAndSwapResponse {
-            committed: false,
-            state: Some(current.state),
-            revision: current.revision,
-        });
-    }
-
-    let requested = apply_shell_state_patch(&current.state, request);
-    commit_requested_state(&app_handle, &mut cache, expected_revision, requested).await
+    commit_state_change(&app_handle, &mut cache, expected_revision, move |current| {
+        apply_shell_state_patch(current, request)
+    })
+    .await
 }
 
 async fn commit_requested_state(
@@ -844,57 +874,223 @@ async fn commit_requested_state(
     expected_revision: u64,
     requested: Value,
 ) -> Result<ShellStateCompareAndSwapResponse, String> {
-    let current = load_cached_snapshot(app_handle, cache, Value::Null).await?;
-    let current_revision = current.revision;
+    commit_state_change(app_handle, cache, expected_revision, move |_| requested).await
+}
 
-    if current_revision != expected_revision {
-        return Ok(ShellStateCompareAndSwapResponse {
-            committed: false,
-            state: Some(current.state),
-            revision: current_revision,
-        });
-    }
-
-    let next_revision = current_revision.saturating_add(1);
-    let next_state = prepare_next_state(&current.state, requested, next_revision);
-    let snapshot = ShellStateSnapshot {
-        state: next_state,
-        revision: next_revision,
-    };
+async fn commit_state_change(
+    app_handle: &AppHandle,
+    cache: &mut Option<ShellStateSnapshot>,
+    expected_revision: u64,
+    prepare_requested: impl FnOnce(&Value) -> Value + Send + 'static,
+) -> Result<ShellStateCompareAndSwapResponse, String> {
+    // Before the first dedicated snapshot is persisted, the cache may contain
+    // the frontend fallback returned by load_shell_state_snapshot. Preserve
+    // that state only as the no-file fallback; load_snapshot still prefers an
+    // authoritative snapshot or the legacy store when either exists.
+    let fallback = cache
+        .as_ref()
+        .map(|snapshot| snapshot.state.clone())
+        .unwrap_or(Value::Null);
     let app_handle_for_io = app_handle.clone();
-    let snapshot = run_snapshot_io(move || {
+    let committed = run_snapshot_io(move || {
         let path = snapshot_path(&app_handle_for_io)?;
-        with_cooperative_file_lock(&path, || {
-            persist_snapshot(&app_handle_for_io, &snapshot)?;
-            Ok(snapshot)
-        })
+        commit_snapshot_with_lock(
+            &path,
+            expected_revision,
+            prepare_requested,
+            || load_snapshot(&app_handle_for_io, fallback),
+            |snapshot| persist_snapshot(&app_handle_for_io, snapshot),
+        )
     })
     .await?;
-    *cache = Some(snapshot);
+    let revision = committed.snapshot.revision;
+    let state = (!committed.committed).then(|| committed.snapshot.state.clone());
+    *cache = Some(committed.snapshot);
 
     Ok(ShellStateCompareAndSwapResponse {
-        committed: true,
-        state: None,
-        revision: next_revision,
+        committed: committed.committed,
+        state,
+        revision,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_shell_state_patch, capture_chat_voice_owned_fields,
+        apply_shell_state_patch, capture_chat_voice_owned_fields, commit_snapshot_with_lock,
         prepare_chat_voice_owned_fields_restore, prepare_chat_voice_preference_replacement,
         prepare_context_pack_replacement, prepare_next_state, read_revision,
-        ShellStatePatchRequest, TOMBSTONES_KEY,
+        ShellStatePatchRequest, ShellStateSnapshot, TOMBSTONES_KEY,
     };
     use serde_json::json;
-    use std::collections::BTreeMap;
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::PathBuf,
+        sync::{Arc, Barrier},
+        thread,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temporary_snapshot_path(name: &str) -> (PathBuf, PathBuf) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test clock should follow the Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "machdoch-shell-state-{name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        (directory.join("snapshot.json"), directory)
+    }
+
+    fn load_test_snapshot(path: &std::path::Path) -> Result<ShellStateSnapshot, String> {
+        let raw = fs::read(path).map_err(|error| error.to_string())?;
+        serde_json::from_slice(&raw).map_err(|error| error.to_string())
+    }
+
+    fn persist_test_snapshot(
+        path: &std::path::Path,
+        snapshot: &ShellStateSnapshot,
+    ) -> Result<(), String> {
+        let mut raw = serde_json::to_vec(snapshot).map_err(|error| error.to_string())?;
+        raw.push(b'\n');
+        crate::atomic_file::write_file_atomic(
+            path,
+            &raw,
+            crate::atomic_file::AtomicWriteOptions::with_unix_mode(0o600),
+        )
+        .map_err(|error| error.to_string())
+    }
 
     #[test]
     fn revisions_default_to_zero_and_accept_unsigned_numbers() {
         assert_eq!(read_revision(None), 0);
         assert_eq!(read_revision(Some(json!("invalid"))), 0);
         assert_eq!(read_revision(Some(json!(42))), 42);
+    }
+
+    #[test]
+    fn concurrent_compare_and_swap_commits_only_one_expected_revision() {
+        let (path, directory) = temporary_snapshot_path("concurrent-cas");
+        persist_test_snapshot(
+            &path,
+            &ShellStateSnapshot {
+                state: json!({
+                    "version": 1,
+                    "sessions": [{
+                        "id": "session-1",
+                        "messages": [{ "id": "message-1", "text": "complete" }]
+                    }],
+                    "queuedSessionMessages": [],
+                    "contextPacks": []
+                }),
+                revision: 7,
+            },
+        )
+        .expect("initial snapshot should persist");
+        let barrier = Arc::new(Barrier::new(3));
+        let handles = ["first", "second"].map(|writer| {
+            let path = path.clone();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                commit_snapshot_with_lock(
+                    &path,
+                    7,
+                    |_| {
+                        json!({
+                            "version": 1,
+                            "writer": writer,
+                            "sessions": [{ "id": "session-1", "messages": [] }],
+                            "queuedSessionMessages": [],
+                            "contextPacks": []
+                        })
+                    },
+                    || load_test_snapshot(&path),
+                    |snapshot| persist_test_snapshot(&path, snapshot),
+                )
+            })
+        });
+        barrier.wait();
+        let results = handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .expect("compare-and-swap contender should not panic")
+                    .expect("compare-and-swap contender should complete")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            results.iter().filter(|result| result.committed).count(),
+            1,
+            "only one writer may consume revision 7"
+        );
+        let stale = results
+            .iter()
+            .find(|result| !result.committed)
+            .expect("one stale writer should be rejected");
+        assert_eq!(stale.snapshot.revision, 8);
+
+        let raw = fs::read(&path).expect("persisted snapshot should remain readable");
+        let persisted = serde_json::from_slice::<ShellStateSnapshot>(&raw)
+            .expect("persisted snapshot should remain complete and parseable");
+        assert_eq!(persisted.revision, 8);
+        assert!(matches!(
+            persisted.state["writer"].as_str(),
+            Some("first" | "second")
+        ));
+        assert!(persisted.state["sessions"][0]["messages"]
+            .as_array()
+            .is_some_and(Vec::is_empty));
+        assert_eq!(
+            persisted.state[TOMBSTONES_KEY]["messages"]["9:session-1message-1"],
+            json!(8)
+        );
+        assert_eq!(stale.snapshot.state, persisted.state);
+        fs::remove_dir_all(directory).expect("test directory should be removable");
+    }
+
+    #[test]
+    fn first_patch_commit_preserves_the_loaded_fallback_state() {
+        let (path, directory) = temporary_snapshot_path("first-patch-fallback");
+        let fallback = ShellStateSnapshot {
+            state: json!({
+                "version": 1,
+                "preserved": "fallback",
+                "sessions": [],
+                "queuedSessionMessages": [],
+                "contextPacks": []
+            }),
+            revision: 0,
+        };
+        let patch = ShellStatePatchRequest {
+            expected_revision: 0,
+            top_level: BTreeMap::from([("updated".to_string(), json!(true))]),
+            removed_top_level: Vec::new(),
+            sessions: Vec::new(),
+            session_order: Vec::new(),
+        };
+
+        let committed = commit_snapshot_with_lock(
+            &path,
+            0,
+            |current| apply_shell_state_patch(current, patch),
+            || Ok(fallback),
+            |snapshot| persist_test_snapshot(&path, snapshot),
+        )
+        .expect("first patch should commit against the loaded fallback");
+
+        assert!(committed.committed);
+        assert_eq!(committed.snapshot.revision, 1);
+        assert_eq!(committed.snapshot.state["preserved"], json!("fallback"));
+        assert_eq!(committed.snapshot.state["updated"], json!(true));
+        let persisted = load_test_snapshot(&path).expect("first snapshot should be parseable");
+        assert_eq!(persisted.state, committed.snapshot.state);
+        fs::remove_dir_all(directory).expect("test directory should be removable");
     }
 
     #[test]
