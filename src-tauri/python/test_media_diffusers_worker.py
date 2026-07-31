@@ -144,8 +144,53 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         self.assertTrue(torch.all(mask[:, :, -1] == 0))
         self.assertEqual(
             pipeline._machdoch_wan_conditioning_mode,
-            "first-last-temporal-context-lock-v3",
+            "first-last-temporal-context-lock-v5",
         )
+
+    def test_wan_circular_denoising_shifts_latents_and_timestep_together(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("WAN circular denoising test requires torch")
+
+        class FakeTransformer:
+            def __init__(self) -> None:
+                self.calls: list[tuple[object, object]] = []
+
+            def forward(
+                self,
+                hidden_states: object,
+                timestep: object,
+                *args: object,
+                **kwargs: object,
+            ) -> tuple[object]:
+                self.calls.append((hidden_states.clone(), timestep.clone()))
+                return (hidden_states,)
+
+        pipeline = SimpleNamespace(
+            transformer=FakeTransformer(),
+        )
+        WORKER._enable_wan_circular_denoising(pipeline, torch)
+        pipeline._machdoch_wan_loop_shift_index = 2
+        hidden_states = torch.arange(5.0).reshape(1, 1, 5, 1, 1)
+        timestep = torch.arange(10.0).reshape(1, 10)
+
+        output = pipeline.transformer.forward(
+            hidden_states,
+            timestep,
+            return_dict=False,
+        )
+
+        shifted_hidden_states, shifted_timestep = pipeline.transformer.calls[0]
+        torch.testing.assert_close(
+            shifted_hidden_states.flatten(),
+            torch.tensor([2.0, 3.0, 4.0, 0.0, 1.0]),
+        )
+        torch.testing.assert_close(
+            shifted_timestep,
+            torch.tensor([[4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.0, 1.0, 2.0, 3.0]]),
+        )
+        torch.testing.assert_close(output[0], hidden_states)
 
     def test_chroma_validation_is_explicit_and_not_inferred_from_prompt_text(self) -> None:
         opaque_landscape = Image.new("RGB", (96, 64), (30, 60, 120))
@@ -852,6 +897,67 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             WORKER._loop_transition_evidence(ping_pong)["continuityRatio"],
             WORKER.MAX_DECODED_LOOP_CONTINUITY_RATIO,
         )
+
+    def test_framepack_selects_one_semantic_prompt_per_generated_section(
+        self,
+    ) -> None:
+        observed = []
+
+        def forward(*args, **kwargs):
+            observed.append(int(kwargs["encoder_hidden_states"][0, 0, 0]))
+            return (np.zeros((1,), dtype=np.float32),)
+
+        transformer = SimpleNamespace(forward=forward)
+        prompts = np.asarray([10, 20, 30], dtype=np.float32).reshape(3, 1, 1)
+        pooled = np.asarray([11, 21, 31], dtype=np.float32).reshape(3, 1)
+        masks = np.ones((3, 1), dtype=np.float32)
+
+        state = WORKER._enable_framepack_section_prompt_conditioning(
+            transformer,
+            prompts,
+            pooled,
+            masks,
+            2,
+        )
+        for _ in range(6):
+            transformer.forward()
+
+        self.assertEqual(observed, [10, 10, 20, 20, 30, 30])
+        self.assertEqual(state["transformerCalls"], 6)
+        self.assertEqual(state["usedSectionIndices"], [0, 1, 2])
+        self.assertEqual(WORKER._framepack_generation_section_count(33), 1)
+        self.assertEqual(WORKER._framepack_generation_section_count(49), 2)
+        self.assertEqual(WORKER._framepack_generation_section_count(129), 4)
+
+    def test_hunyuan_soft_loop_cue_scales_the_last_condition_only(self) -> None:
+        original_condition = np.zeros((1, 16, 5, 2, 2), dtype=np.float32)
+        original_condition[:, :, 0] = 8.0
+        original_mask = np.zeros((1, 1, 5, 2, 2), dtype=np.float32)
+        original_mask[:, :, 0] = 1.0
+        pipeline = SimpleNamespace(
+            prepare_cond_latents_and_mask=lambda *args, **kwargs: (
+                original_condition,
+                original_mask,
+            )
+        )
+
+        WORKER._enable_hunyuan_video_15_soft_loop_endpoint_conditioning(
+            pipeline,
+            0.375,
+            3,
+        )
+        condition, mask = pipeline.prepare_cond_latents_and_mask()
+
+        np.testing.assert_array_equal(
+            condition[0, 0, :, 0, 0],
+            np.asarray([8.0, 0.0, 1.0, 2.0, 3.0], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(
+            mask[0, 0, :, 0, 0],
+            np.asarray([1.0, 0.0, 0.125, 0.25, 0.375], dtype=np.float32),
+        )
+        self.assertTrue(np.all(original_condition[:, :, -1] == 0.0))
+        self.assertTrue(np.all(original_mask[:, :, -1] == 0.0))
 
     def test_hunyuan_video_15_rejects_fake_seamless_conditioning(self) -> None:
         with mock.patch.object(

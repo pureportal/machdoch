@@ -59,7 +59,7 @@ describe("built-in media flow templates", () => {
     }
   });
 
-  it("ships a connected generated-frame FramePack loop with two publication paths", () => {
+  it("ships a connected generated-frame Wan loop with two publication paths", () => {
     const template = listBuiltInMediaFlowTemplates().find(
       (candidate) => candidate.id === "generated-character-idle-loop",
     );
@@ -78,10 +78,10 @@ describe("built-in media flow templates", () => {
     expect(flux).toBeDefined();
     models.push({
       ...flux!,
-      id: "local:framepack-i2v-hy-13b",
-      providerId: "local-video",
-      displayName: "FramePack I2V HY 13B",
-      family: "FramePack",
+      id: "local:wan2.2-ti2v-5b",
+      providerId: "local-wan",
+      displayName: "Wan2.2 TI2V 5B",
+      family: "Wan2.2",
       capabilities: [
         "image-to-video",
         "start-end-to-video",
@@ -89,9 +89,9 @@ describe("built-in media flow templates", () => {
         "alpha-video",
         "video-composite",
       ],
-      architecture: "framepack-i2v",
+      architecture: "wan-2.2-ti2v",
       addonCapabilities: [],
-      installedRevision: "86cef4396041b6002c957852daac4c91aaa47c79",
+      installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
     });
 
     const plan = compileMediaFlow({

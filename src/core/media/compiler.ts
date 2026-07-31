@@ -511,7 +511,7 @@ export const createImageToVideoFlow = ({
 
   const videoModelId =
     loopMode === "seamless"
-      ? "local:framepack-i2v-hy-13b"
+      ? "local:wan2.2-ti2v-5b"
       : "local:hunyuan-video-1.5-i2v-step-distilled";
   const prompt = createNode(
     "video-prompt",
@@ -535,9 +535,9 @@ export const createImageToVideoFlow = ({
       transparentBackground,
       loopMode,
       fps: 16,
-      numFrames: loopMode === "seamless" ? 49 : 33,
+      numFrames: 33,
       numInferenceSteps: 30,
-      guidanceScale: 9,
+      guidanceScale: loopMode === "seamless" ? 5 : 9,
       seed: 0,
       negativePrompt: "",
       matteQuality: "production",
@@ -713,16 +713,16 @@ export const createGeneratedLoopVideoFlow = ({
     {
       providerPolicy: "local",
       modelPolicy: "quality",
-      modelId: "local:framepack-i2v-hy-13b",
+      modelId: "local:wan2.2-ti2v-5b",
       aspectRatio: "1:1",
       resolution: "quality-640",
       generateAudio: false,
       transparentBackground: true,
       loopMode: "seamless",
       fps: 16,
-      numFrames: 49,
+      numFrames: 33,
       numInferenceSteps: 30,
-      guidanceScale: 9,
+      guidanceScale: 5,
       seed: 0,
       negativePrompt: "",
       matteQuality: "production",
@@ -3225,13 +3225,6 @@ export const compileMediaFlow = ({
         : null,
       config.loopMode === "seamless" && !sameEndpointSource
         ? "Seamless assembly requires the same source on both endpoint ports."
-        : null,
-      framepackVideo &&
-      config.loopMode === "seamless" &&
-      sameEndpointSource &&
-      typeof config.numFrames === "number" &&
-      config.numFrames <= 33
-        ? "FramePack seamless loops require at least 37 source frames so motion is generated across more than one native temporal window."
         : null,
       typeof config.numFrames !== "number" ||
       !Number.isInteger(config.numFrames) ||

@@ -233,7 +233,6 @@ export const resolveMediaVideoExecutionSettings = (
 export const resolveMediaVideoQualityPresetSettings = (
   preset: MediaVideoQualityPreset,
   architecture?: MediaLocalModelArchitecture | null,
-  loopMode?: MediaVideoLoopMode,
 ): MediaVideoQualityPreset["settings"] => {
   const execution = resolveMediaVideoExecutionSettings(
     preset.settings,
@@ -241,12 +240,6 @@ export const resolveMediaVideoQualityPresetSettings = (
   );
   return {
     ...preset.settings,
-    numFrames:
-      architecture === "framepack-i2v" && loopMode === "seamless"
-        ? preset.id === "draft"
-          ? 37
-          : 49
-        : preset.settings.numFrames,
     numInferenceSteps: execution.numInferenceSteps,
     guidanceScale:
       architecture === "framepack-i2v" ? 9 : execution.guidanceScale,
@@ -452,11 +445,7 @@ export const identifyMediaVideoQualityPreset = (
   return (
     MEDIA_VIDEO_QUALITY_PRESETS.find((preset) =>
       Object.entries(
-        resolveMediaVideoQualityPresetSettings(
-          preset,
-          architecture,
-          config.loopMode as MediaVideoLoopMode | undefined,
-        ),
+        resolveMediaVideoQualityPresetSettings(preset, architecture),
       ).every(([fieldId, value]) => effectiveConfig[fieldId] === value),
     )?.id ?? null
   );
@@ -511,14 +500,10 @@ export const fitMediaVideoDuration = (
   }
   const targetFrameCount = targetSeconds * fps;
   const contract = resolveMediaVideoFrameContract(architecture);
-  const minimumSourceFrameCount =
-    architecture === "framepack-i2v" && loopMode === "seamless"
-      ? 37
-      : contract.minimum;
   let best: MediaVideoDurationFit | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (
-    let sourceFrameCount = minimumSourceFrameCount;
+    let sourceFrameCount = contract.minimum;
     sourceFrameCount <= contract.maximum;
     sourceFrameCount += contract.stride
   ) {

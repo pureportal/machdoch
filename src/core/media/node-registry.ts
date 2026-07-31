@@ -1036,13 +1036,14 @@ export const MEDIA_NODE_DEFINITIONS = [
         id: "modelId",
         label: "Exact model pin",
         description:
-          "Use HunyuanVideo 1.5 for one-way first-frame motion, FramePack for forward loops or distinct endpoints, LTX 13B as an alternate endpoint model, and LTX 2B on lower-memory hardware.",
+          "Use HunyuanVideo 1.5 for one-way first-frame motion, Wan2.2 for circular same-endpoint loops, FramePack for distinct endpoints, LTX 13B as an alternate endpoint model, and LTX 2B on lower-memory hardware.",
         group: "Expert",
         kind: "model",
         required: true,
         defaultValue: "local:hunyuan-video-1.5-i2v-step-distilled",
         examples: [
           "local:hunyuan-video-1.5-i2v-step-distilled",
+          "local:wan2.2-ti2v-5b",
           "local:framepack-i2v-hy-13b",
           "local:ltx-video-0.9.8-13b-distilled-fp8",
           "local:ltx-video-0.9.8-2b-distilled-fp8",
@@ -1083,7 +1084,7 @@ export const MEDIA_NODE_DEFINITIONS = [
           option(
             "seamless",
             "Forward seamless",
-            "Condition matching first and last frames, then omit the duplicate closing sample for continuous forward playback.",
+            "Use matching endpoint inputs to request circular latent denoising, then omit the duplicate closing sample for continuous forward playback.",
           ),
         ],
       },
@@ -1105,7 +1106,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         id: "numFrames",
         label: "Source frames",
         description:
-          "Thirty-three frames provide a dense HunyuanVideo or FramePack shot; lightweight LTX uses compatible 8k+1 counts.",
+          "Thirty-three frames provide a dense HunyuanVideo, Wan2.2, or FramePack shot; lightweight LTX uses compatible 8k+1 counts.",
         group: "Expert",
         kind: "number",
         required: true,
@@ -1120,7 +1121,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         id: "numInferenceSteps",
         label: "Inference steps",
         description:
-          "FramePack uses 30 quality steps, HunyuanVideo 1.5 resolves to 8 or 12 distilled steps, and lightweight LTX resolves to eight.",
+          "Wan2.2 and FramePack use 30 quality steps, HunyuanVideo 1.5 resolves to 8 or 12 distilled steps, and lightweight LTX resolves to eight.",
         group: "Expert",
         kind: "number",
         required: true,
@@ -1135,7 +1136,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         id: "guidanceScale",
         label: "Motion guidance",
         description:
-          "FramePack uses guidance 9 for prompt adherence; distilled HunyuanVideo and LTX trajectories resolve to guidance 1.",
+          "Wan2.2 uses guidance 5 and FramePack uses guidance 9; distilled HunyuanVideo and LTX trajectories resolve to guidance 1.",
         group: "Creative",
         kind: "number",
         required: true,

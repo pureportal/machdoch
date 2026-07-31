@@ -111,12 +111,8 @@ describe("media video quality helpers", () => {
       resolveMediaVideoQualityPresetSettings(qualityPreset, "framepack-i2v"),
     ).toMatchObject({ numInferenceSteps: 30, guidanceScale: 9 });
     expect(
-      resolveMediaVideoQualityPresetSettings(
-        qualityPreset,
-        "framepack-i2v",
-        "seamless",
-      ),
-    ).toMatchObject({ numFrames: 49, numInferenceSteps: 30, guidanceScale: 9 });
+      resolveMediaVideoQualityPresetSettings(qualityPreset, "wan-2.2-ti2v"),
+    ).toMatchObject({ numFrames: 33, numInferenceSteps: 30, guidanceScale: 5 });
     expect(
       resolveMediaVideoQualityPresetSettings(qualityPreset, "ltx-video"),
     ).toMatchObject({ numInferenceSteps: 8, guidanceScale: 1 });
@@ -212,10 +208,10 @@ describe("media video quality helpers", () => {
     });
     expect(fitMediaVideoDuration(2, 16, "seamless", "framepack-i2v")).toEqual({
       targetSeconds: 2,
-      sourceFrameCount: 37,
-      outputFrameCount: 36,
-      durationSeconds: 2.25,
-      exact: false,
+      sourceFrameCount: 33,
+      outputFrameCount: 32,
+      durationSeconds: 2,
+      exact: true,
     });
     expect(
       fitMediaVideoDuration(3, 16, "none", "hunyuan-video-1.5-i2v"),

@@ -99,6 +99,19 @@ const createFramepackVideoModel = (): MediaModelDescriptor => ({
   qualityScore: 98,
 });
 
+const createWanVideoModel = (): MediaModelDescriptor => ({
+  ...createLtxVideoModel(),
+  id: "local:wan2.2-ti2v-5b",
+  providerId: "local-wan",
+  displayName: "Wan2.2 TI2V 5B",
+  family: "Wan2.2",
+  installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
+  architecture: "wan-2.2-ti2v",
+  minVramGb: 16,
+  expectedDownloadGb: 33.9,
+  qualityScore: 88,
+});
+
 const createHunyuanVideoModel = (): MediaModelDescriptor => ({
   ...createLtxVideoModel(),
   id: "local:hunyuan-video-1.5-i2v-step-distilled",
@@ -221,6 +234,7 @@ describe("media flow compiler", () => {
       createHunyuanVideoModel(),
       createFramepackVideoModel(),
       createLtxVideoModel(),
+      createWanVideoModel(),
     ];
     const compile = (
       lastFrameAssetId: string | undefined,
@@ -258,7 +272,7 @@ describe("media flow compiler", () => {
       );
     }
     expect(distinctEndpointPlan.model?.id).toBe("local:framepack-i2v-hy-13b");
-    expect(seamlessLoopPlan.model?.id).toBe("local:framepack-i2v-hy-13b");
+    expect(seamlessLoopPlan.model?.id).toBe("local:wan2.2-ti2v-5b");
     expect(
       createImageToVideoFlow({
         id: "flow:native-forward-loop",
@@ -267,33 +281,10 @@ describe("media flow compiler", () => {
         loopMode: "seamless",
       }).nodes.find((node) => node.id === "generate-video")?.config,
     ).toMatchObject({
-      modelId: "local:framepack-i2v-hy-13b",
-      numFrames: 49,
+      modelId: "local:wan2.2-ti2v-5b",
+      numFrames: 33,
+      guidanceScale: 5,
     });
-
-    const oneWindowLoop = createImageToVideoFlow({
-      id: "flow:one-window-loop",
-      createdAt: "2026-07-28T00:00:00.000Z",
-      sourceAssetId: "asset:opening-frame",
-      loopMode: "seamless",
-    });
-    oneWindowLoop.nodes.find(
-      (node) => node.id === "generate-video",
-    )!.config.numFrames = 33;
-    const oneWindowPlan = compileMediaFlow({
-      flow: oneWindowLoop,
-      models,
-      compiledAt: "2026-07-28T00:01:00.000Z",
-    });
-    expect(oneWindowPlan.status).toBe("blocked");
-    expect(oneWindowPlan.diagnostics).toContainEqual(
-      expect.objectContaining({
-        code: "NODE_SCHEMA_INVALID",
-        message: expect.stringContaining(
-          "more than one native temporal window",
-        ),
-      }),
-    );
   });
 
   it("creates generated loops with native matching-endpoint conditioning", () => {
@@ -306,9 +297,10 @@ describe("media flow compiler", () => {
     );
 
     expect(videoNode?.config).toMatchObject({
-      modelId: "local:framepack-i2v-hy-13b",
+      modelId: "local:wan2.2-ti2v-5b",
       loopMode: "seamless",
-      numFrames: 49,
+      numFrames: 33,
+      guidanceScale: 5,
     });
     expect(
       flow.edges.filter(

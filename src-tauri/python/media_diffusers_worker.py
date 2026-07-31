@@ -28,7 +28,7 @@ from typing import Any
 
 from PIL import Image
 
-WORKER_VERSION = "media-diffusers-worker/1.45.0"
+WORKER_VERSION = "media-diffusers-worker/1.48.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -3455,7 +3455,7 @@ def _encode_framepack_prompt_embeddings_in_process(
     diffusers: Any,
     torch: Any,
     model_path: Path,
-    prompt: str,
+    prompts: str | list[str],
     compute_dtype: Any,
 ) -> tuple[Any, Any, Any, dict[str, Any]]:
     from diffusers.hooks import apply_group_offloading
@@ -3517,7 +3517,8 @@ def _encode_framepack_prompt_embeddings_in_process(
         image_encoder=None,
         feature_extractor=None,
     )
-    prompt_embeddings, pooled_prompt_embeddings, prompt_attention_mask = (
+    prompt_list = [prompts] if isinstance(prompts, str) else prompts
+    encoded_prompts = [
         _encode_framepack_prompt(
             encoder,
             torch,
@@ -3525,6 +3526,16 @@ def _encode_framepack_prompt_embeddings_in_process(
             execution_device,
             compute_dtype,
         )
+        for prompt in prompt_list
+    ]
+    prompt_embeddings = torch.cat(
+        [encoded[0] for encoded in encoded_prompts], dim=0
+    )
+    pooled_prompt_embeddings = torch.cat(
+        [encoded[1] for encoded in encoded_prompts], dim=0
+    )
+    prompt_attention_mask = torch.cat(
+        [encoded[2] for encoded in encoded_prompts], dim=0
     )
     del encoder, text_encoder, text_encoder_2, tokenizer, tokenizer_2
     gc.collect()
@@ -3546,9 +3557,21 @@ def _encode_framepack_prompt_embeddings_in_process(
 
 def _encode_framepack_prompt_subprocess(request: dict[str, Any]) -> dict[str, Any]:
     model_path = _absolute_existing_path(request.get("modelPath"), file=False)
-    prompt = request.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8_000:
-        raise WorkerError("FramePack prompt must be a string from 1 to 8000 characters")
+    prompts = request.get("prompts")
+    if (
+        not isinstance(prompts, list)
+        or not 1 <= len(prompts) <= 4
+        or any(
+            not isinstance(prompt, str)
+            or not prompt.strip()
+            or len(prompt) > 8_000
+            for prompt in prompts
+        )
+    ):
+        raise WorkerError(
+            "FramePack prompts must contain one to four strings from 1 to "
+            "8000 characters"
+        )
     output_directory = _fresh_output_directory(request.get("outputDirectory"))
     torch, diffusers = _runtime()
     device, _, _ = _device(torch)
@@ -3563,7 +3586,7 @@ def _encode_framepack_prompt_subprocess(request: dict[str, Any]) -> dict[str, An
         diffusers,
         torch,
         model_path,
-        prompt,
+        prompts,
         torch.bfloat16,
     )
     from safetensors.torch import save_file
@@ -3588,9 +3611,10 @@ def _encode_framepack_prompt_subprocess(request: dict[str, Any]) -> dict[str, An
 def _encode_framepack_prompt_embeddings(
     torch: Any,
     model_path: Path,
-    prompt: str,
+    prompts: str | list[str],
     compute_dtype: Any,
 ) -> tuple[Any, Any, Any, dict[str, Any]]:
+    prompt_list = [prompts] if isinstance(prompts, str) else prompts
     with tempfile.TemporaryDirectory(
         prefix="machdoch-framepack-prompt-"
     ) as temporary:
@@ -3616,7 +3640,7 @@ def _encode_framepack_prompt_embeddings(
             input=json.dumps(
                 {
                     "modelPath": str(model_path),
-                    "prompt": prompt,
+                    "prompts": prompt_list,
                     "outputDirectory": temporary,
                 }
             ),
@@ -3657,6 +3681,68 @@ def _encode_framepack_prompt_embeddings(
             tensors["prompt_attention_mask"].to(dtype=compute_dtype).clone(),
             memory_evidence,
         )
+
+
+def _framepack_generation_section_count(
+    num_frames: int,
+    latent_window_size: int = 9,
+) -> int:
+    window_num_frames = (latent_window_size - 1) * 4 + 1
+    return max(1, (num_frames + window_num_frames - 1) // window_num_frames)
+
+
+def _enable_framepack_section_prompt_conditioning(
+    transformer: Any,
+    prompt_embeddings: Any,
+    pooled_prompt_embeddings: Any,
+    prompt_attention_mask: Any,
+    num_inference_steps: int,
+) -> dict[str, Any]:
+    """Select one prompt per backward-generated FramePack section.
+
+    Inverted anti-drifting FramePack renders the chronological closing section
+    first and then prepends earlier sections.  A single action prompt therefore
+    tends to restart the action in every section.  Selecting an independently
+    encoded semantic phase for each section lets one continuous action span the
+    complete clip without altering frames, cadence, or latent history.
+    """
+
+    prompt_count = int(prompt_embeddings.shape[0])
+    if (
+        prompt_count < 2
+        or int(pooled_prompt_embeddings.shape[0]) != prompt_count
+        or int(prompt_attention_mask.shape[0]) != prompt_count
+        or num_inference_steps < 1
+    ):
+        raise WorkerError("FramePack section prompt tensors are invalid")
+    original_forward = transformer.forward
+    state: dict[str, Any] = {
+        "promptCount": prompt_count,
+        "transformerCalls": 0,
+        "usedSectionIndices": [],
+        "generationOrder": "closing-to-opening",
+    }
+
+    def section_prompt_forward(*args: Any, **kwargs: Any) -> Any:
+        call_index = int(state["transformerCalls"])
+        section_index = min(call_index // num_inference_steps, prompt_count - 1)
+        kwargs["encoder_hidden_states"] = prompt_embeddings[
+            section_index : section_index + 1
+        ]
+        kwargs["pooled_projections"] = pooled_prompt_embeddings[
+            section_index : section_index + 1
+        ]
+        kwargs["encoder_attention_mask"] = prompt_attention_mask[
+            section_index : section_index + 1
+        ]
+        used = state["usedSectionIndices"]
+        if not used or used[-1] != section_index:
+            used.append(section_index)
+        state["transformerCalls"] = call_index + 1
+        return original_forward(*args, **kwargs)
+
+    transformer.forward = section_prompt_forward
+    return state
 
 
 def _load_framepack_transformer(
@@ -3762,7 +3848,7 @@ def _load_framepack_pipeline(
     diffusers: Any,
     torch: Any,
     model: dict[str, Any],
-    prompt: str,
+    prompt: str | list[str],
     memory_profile: Any = None,
 ) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
     from transformers import SiglipImageProcessor, SiglipVisionModel
@@ -3977,6 +4063,7 @@ def _generate_framepack_latents_subprocess(
     steps = request.get("numInferenceSteps")
     guidance_scale = request.get("guidanceScale")
     seed = request.get("seed")
+    requested_section_prompts = request.get("sectionPrompts")
     transparent_background = request.get("transparentBackground")
     if (
         not isinstance(width, int)
@@ -3994,6 +4081,25 @@ def _generate_framepack_latents_subprocess(
         or (num_frames - 1) % 4 != 0
     ):
         raise WorkerError("FramePack denoising frame count is invalid")
+    section_count = _framepack_generation_section_count(num_frames)
+    if requested_section_prompts is None:
+        section_prompts = [prompt]
+    elif (
+        not isinstance(requested_section_prompts, list)
+        or len(requested_section_prompts) != section_count
+        or any(
+            not isinstance(section_prompt, str)
+            or not section_prompt.strip()
+            or len(section_prompt) > 8_000
+            for section_prompt in requested_section_prompts
+        )
+    ):
+        raise WorkerError(
+            "FramePack sectionPrompts must provide one non-empty prompt for "
+            f"each of the {section_count} generated sections"
+        )
+    else:
+        section_prompts = requested_section_prompts
     if (
         not isinstance(steps, int)
         or isinstance(steps, bool)
@@ -4041,7 +4147,7 @@ def _generate_framepack_latents_subprocess(
         diffusers,
         torch,
         model,
-        prompt,
+        section_prompts,
         request.get("memoryProfile"),
     )
     performance["convolutionBackend"] = conv_backend
@@ -4074,14 +4180,23 @@ def _generate_framepack_latents_subprocess(
     prompt_embeddings = prompt_embeddings.to(execution_device)
     pooled_prompt_embeddings = pooled_prompt_embeddings.to(execution_device)
     prompt_attention_mask = prompt_attention_mask.to(execution_device)
+    section_prompt_state = None
+    if len(section_prompts) > 1:
+        section_prompt_state = _enable_framepack_section_prompt_conditioning(
+            pipeline.transformer,
+            prompt_embeddings,
+            pooled_prompt_embeddings,
+            prompt_attention_mask,
+            steps,
+        )
     generator = torch.Generator(device=execution_device).manual_seed(seed)
     result = pipeline(
         image=source,
         last_image=last_source,
         prompt=None,
-        prompt_embeds=prompt_embeddings,
-        pooled_prompt_embeds=pooled_prompt_embeddings,
-        prompt_attention_mask=prompt_attention_mask,
+        prompt_embeds=prompt_embeddings[:1],
+        pooled_prompt_embeds=pooled_prompt_embeddings[:1],
+        prompt_attention_mask=prompt_attention_mask[:1],
         width=width,
         height=height,
         num_frames=num_frames,
@@ -4094,6 +4209,21 @@ def _generate_framepack_latents_subprocess(
     )
     if not result.frames:
         raise WorkerError("FramePack returned no latent video")
+    if section_prompt_state is not None:
+        expected_calls = section_count * steps
+        expected_sections = list(range(section_count))
+        if (
+            section_prompt_state["transformerCalls"] != expected_calls
+            or section_prompt_state["usedSectionIndices"] != expected_sections
+        ):
+            raise WorkerError(
+                "FramePack did not consume every semantic section prompt "
+                "exactly once per denoising phase"
+            )
+        performance["sectionPromptConditioning"] = {
+            **section_prompt_state,
+            "numInferenceStepsPerSection": steps,
+        }
     latents = result.frames[-1].detach().to("cpu").contiguous()
     denoised_at = time.perf_counter()
     from safetensors.torch import save_file
@@ -4164,6 +4294,7 @@ def _generate_framepack_latents(
     seed: int,
     transparent_background: bool,
     memory_profile: Any,
+    section_prompts: list[str] | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     with tempfile.TemporaryDirectory(
         prefix="machdoch-framepack-denoise-"
@@ -4203,6 +4334,7 @@ def _generate_framepack_latents(
                         "numInferenceSteps": steps,
                         "guidanceScale": guidance_scale,
                         "seed": seed,
+                        "sectionPrompts": section_prompts,
                         "transparentBackground": transparent_background,
                         "memoryProfile": memory_profile,
                     }
@@ -4447,6 +4579,57 @@ def _load_hunyuan_video_15_pipeline(
     )
 
 
+def _enable_hunyuan_video_15_soft_loop_endpoint_conditioning(
+    pipeline: Any,
+    strength: float,
+    temporal_span: int = 1,
+) -> None:
+    """Add a bounded closing cue without replacing any generated latent."""
+
+    if not 0.0 < strength < 1.0:
+        raise WorkerError(
+            "HunyuanVideo 1.5 soft loop endpoint strength must be between 0 and 1"
+        )
+    if not 1 <= temporal_span <= 4:
+        raise WorkerError(
+            "HunyuanVideo 1.5 soft loop endpoint span must be from 1 to 4"
+        )
+    original_prepare = pipeline.prepare_cond_latents_and_mask
+
+    def prepare_soft_closed_loop(*args: Any, **kwargs: Any) -> tuple[Any, Any]:
+        latent_condition, latent_mask = original_prepare(*args, **kwargs)
+        if (
+            latent_condition.ndim != 5
+            or latent_mask.ndim != 5
+            or latent_condition.shape[2] < 2
+            or latent_mask.shape[2] < 2
+        ):
+            raise WorkerError(
+                "HunyuanVideo 1.5 returned invalid loop conditioning tensors"
+            )
+        latent_condition = (
+            latent_condition.clone()
+            if hasattr(latent_condition, "clone")
+            else latent_condition.copy()
+        )
+        latent_mask = (
+            latent_mask.clone()
+            if hasattr(latent_mask, "clone")
+            else latent_mask.copy()
+        )
+        cue_span = min(temporal_span, latent_condition.shape[2] - 1)
+        for cue_index in range(cue_span):
+            cue_strength = strength * (cue_index + 1) / cue_span
+            temporal_index = -cue_span + cue_index
+            latent_condition[:, :, temporal_index, :, :] = (
+                latent_condition[:, :, 0, :, :] * cue_strength
+            )
+            latent_mask[:, :, temporal_index, :, :] = cue_strength
+        return latent_condition, latent_mask
+
+    pipeline.prepare_cond_latents_and_mask = prepare_soft_closed_loop
+
+
 def _generate_hunyuan_video_15_latents_subprocess(
     request: dict[str, Any],
 ) -> dict[str, Any]:
@@ -4468,6 +4651,8 @@ def _generate_hunyuan_video_15_latents_subprocess(
     num_frames = request.get("numFrames")
     steps = request.get("numInferenceSteps")
     seed = request.get("seed")
+    loop_endpoint_strength = request.get("loopEndpointStrength", 0.0)
+    loop_endpoint_span = request.get("loopEndpointSpan", 1)
     transparent_background = request.get("transparentBackground")
     if (
         not isinstance(width, int)
@@ -4492,6 +4677,21 @@ def _generate_hunyuan_video_15_latents_subprocess(
         )
     if not isinstance(seed, int) or not 0 <= seed < 2**63:
         raise WorkerError("HunyuanVideo 1.5 denoising seed is invalid")
+    if (
+        not isinstance(loop_endpoint_strength, (int, float))
+        or isinstance(loop_endpoint_strength, bool)
+        or not math.isfinite(float(loop_endpoint_strength))
+        or not 0.0 <= float(loop_endpoint_strength) < 1.0
+    ):
+        raise WorkerError(
+            "HunyuanVideo 1.5 loop endpoint strength is invalid"
+        )
+    if (
+        not isinstance(loop_endpoint_span, int)
+        or isinstance(loop_endpoint_span, bool)
+        or not 1 <= loop_endpoint_span <= 4
+    ):
+        raise WorkerError("HunyuanVideo 1.5 loop endpoint span is invalid")
     if not isinstance(transparent_background, bool):
         raise WorkerError(
             "HunyuanVideo 1.5 denoising transparency flag is invalid"
@@ -4525,6 +4725,15 @@ def _generate_hunyuan_video_15_latents_subprocess(
         request.get("memoryProfile"),
     )
     performance["convolutionBackend"] = conv_backend
+    if float(loop_endpoint_strength) > 0.0:
+        _enable_hunyuan_video_15_soft_loop_endpoint_conditioning(
+            pipeline,
+            float(loop_endpoint_strength),
+            loop_endpoint_span,
+        )
+        performance["renderStrategy"] = "soft-identical-loop-endpoint-cue"
+        performance["loopEndpointStrength"] = float(loop_endpoint_strength)
+        performance["loopEndpointSpan"] = loop_endpoint_span
     pipeline.target_size = target_size
     model_ready_at = time.perf_counter()
     execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
@@ -4605,6 +4814,8 @@ def _generate_hunyuan_video_15_latents(
     seed: int,
     transparent_background: bool,
     memory_profile: Any,
+    loop_endpoint_strength: float = 0.0,
+    loop_endpoint_span: int = 1,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     with tempfile.TemporaryDirectory(
         prefix="machdoch-hunyuan-video-1.5-denoise-"
@@ -4643,6 +4854,8 @@ def _generate_hunyuan_video_15_latents(
                         "numFrames": num_frames,
                         "numInferenceSteps": steps,
                         "seed": seed,
+                        "loopEndpointStrength": loop_endpoint_strength,
+                        "loopEndpointSpan": loop_endpoint_span,
                         "transparentBackground": transparent_background,
                         "memoryProfile": memory_profile,
                     }
@@ -5275,6 +5488,7 @@ def _load_video_pipeline(
         expand_timesteps=True,
     )
     _enable_wan_last_frame_conditioning(pipeline, torch)
+    _enable_wan_circular_denoising(pipeline, torch)
     if hasattr(pipeline.vae, "enable_tiling"):
         pipeline.vae.enable_tiling()
     pipeline._machdoch_wan_performance = performance
@@ -5293,11 +5507,10 @@ def _enable_wan_last_frame_conditioning(pipeline: Any, torch: Any) -> None:
     only the first image and masks only latent frame zero. As a result, a
     radically different supplied last image is silently ignored. Preserve the
     model's required expanded-timestep input while encoding the endpoints once
-    as a complete temporal sequence. WAN's causal VAE must see a valid
-    four-frame terminal group: an isolated one-frame encode produces a
-    first-frame latent in the terminal slot, while neutral context leaks into
-    the decoded tail. Repeating the last endpoint over one temporal stride
-    supplies stable causal context without conditioning the denoised middle.
+    as a complete temporal sequence. Unlike ComfyUI's phase-aware conditioning
+    mask, this interface can lock only complete latent frames. WAN's causal VAE
+    therefore needs one full temporal stride of terminal pixels; a lone end
+    frame decodes the remaining tail frames from neutral context.
     """
     from diffusers.pipelines.wan.pipeline_wan_i2v import retrieve_latents
     from diffusers.utils.torch_utils import randn_tensor
@@ -5454,8 +5667,57 @@ def _enable_wan_last_frame_conditioning(pipeline: Any, torch: Any) -> None:
         pipeline,
     )
     pipeline._machdoch_wan_conditioning_mode = (  # noqa: SLF001
-        "first-last-temporal-context-lock-v3"
+        "first-last-temporal-context-lock-v5"
     )
+
+
+def _enable_wan_circular_denoising(pipeline: Any, torch: Any) -> None:
+    """Expose Mobius-style cyclic denoising on the local WAN pipeline."""
+    transformer = pipeline.transformer
+    original_forward = transformer.forward
+
+    def forward_with_circular_shift(
+        self: Any,
+        hidden_states: Any,
+        timestep: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        shift = pipeline._machdoch_wan_loop_shift_index  # noqa: SLF001
+        if shift == 0:
+            return original_forward(hidden_states, timestep, *args, **kwargs)
+        num_frames = hidden_states.shape[2]
+        shifted_hidden_states = torch.roll(
+            hidden_states,
+            shifts=-shift,
+            dims=2,
+        )
+        shifted_timestep = timestep
+        if timestep.ndim == 2:
+            shifted_timestep = torch.roll(
+                timestep.reshape(timestep.shape[0], num_frames, -1),
+                shifts=-shift,
+                dims=1,
+            ).reshape_as(timestep)
+        output = original_forward(
+            shifted_hidden_states,
+            shifted_timestep,
+            *args,
+            **kwargs,
+        )
+        if isinstance(output, tuple):
+            return (
+                torch.roll(output[0], shifts=shift, dims=2),
+                *output[1:],
+            )
+        output.sample = torch.roll(output.sample, shifts=shift, dims=2)
+        return output
+
+    transformer.forward = types.MethodType(
+        forward_with_circular_shift,
+        transformer,
+    )
+    pipeline._machdoch_wan_loop_shift_index = 0  # noqa: SLF001
 
 
 def _configure_video_conv3d_backend(torch: Any, device: str) -> str:
@@ -7916,29 +8178,43 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         transparent_background,
     )
     same_endpoint = _sha256_file(first_frame_path) == _sha256_file(last_frame_path)
+    requested_hunyuan_loop_endpoint_strength = request.get(
+        "loopEndpointStrength",
+        0.0,
+    )
+    requested_hunyuan_loop_endpoint_span = request.get("loopEndpointSpan", 1)
+    if (
+        not isinstance(requested_hunyuan_loop_endpoint_strength, (int, float))
+        or isinstance(requested_hunyuan_loop_endpoint_strength, bool)
+        or not math.isfinite(float(requested_hunyuan_loop_endpoint_strength))
+        or not 0.0 <= float(requested_hunyuan_loop_endpoint_strength) < 1.0
+    ):
+        raise WorkerError("loopEndpointStrength must be from 0 up to 1")
+    if (
+        not isinstance(requested_hunyuan_loop_endpoint_span, int)
+        or isinstance(requested_hunyuan_loop_endpoint_span, bool)
+        or not 1 <= requested_hunyuan_loop_endpoint_span <= 4
+    ):
+        raise WorkerError("loopEndpointSpan must be an integer from 1 to 4")
     if architecture == "hunyuan-video-1.5-i2v" and not same_endpoint:
         raise WorkerError(
             "HunyuanVideo 1.5 supports one native first-frame reference; "
-            "use FramePack or LTX-Video for distinct first and last references"
+            "use FramePack, LTX-Video, or Wan2.2 for distinct references"
         )
-    if architecture == "hunyuan-video-1.5-i2v" and loop_mode == "seamless":
+    if (
+        architecture == "hunyuan-video-1.5-i2v"
+        and loop_mode == "seamless"
+        and float(requested_hunyuan_loop_endpoint_strength) == 0.0
+    ):
         raise WorkerError(
             "HunyuanVideo 1.5 cannot natively condition a closing frame; "
-            "use LTX-Video or FramePack with matching endpoints"
+            "use FramePack or LTX-Video with matching endpoints for a "
+            "seamless loop"
         )
     if loop_mode == "seamless" and not same_endpoint:
         raise WorkerError(
             "seamless loopMode requires the same first and last source asset; "
             "use none for an intentionally changing shot"
-        )
-    if (
-        architecture == "framepack-i2v"
-        and loop_mode == "seamless"
-        and num_frames <= 33
-    ):
-        raise WorkerError(
-            "FramePack seamless loops require at least 37 source frames so motion "
-            "is generated across more than one native temporal window"
         )
     memory_evidence = _start_video_memory_observation(torch, device)
     conv3d_backend = _configure_video_conv3d_backend(torch, device)
@@ -7993,6 +8269,8 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 seed,
                 transparent_background,
                 request.get("memoryProfile"),
+                float(requested_hunyuan_loop_endpoint_strength),
+                requested_hunyuan_loop_endpoint_span,
             )
         )
         model_ready_at = model_load_started_at + float(
@@ -8031,7 +8309,11 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         vae.to("cpu")
         torch.cuda.empty_cache()
         del hunyuan_latents, vae
-        conditioning_mode = "hunyuan-video-1.5-native-first-frame"
+        conditioning_mode = (
+            "hunyuan-video-1.5-native-first+soft-identical-last-cue"
+            if float(requested_hunyuan_loop_endpoint_strength) > 0.0
+            else "hunyuan-video-1.5-native-first-frame"
+        )
         effective_guidance_scale = 1.0
         effective_steps = effective_hunyuan_steps
         negative_prompt_applied = False
@@ -8050,6 +8332,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             seed,
             transparent_background,
             request.get("memoryProfile"),
+            request.get("sectionPrompts"),
         )
         model_ready_at = model_load_started_at + float(
             denoiser_timing["modelLoadAndPrompt"]
@@ -8265,9 +8548,33 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             device=f"cuda:{torch.cuda.current_device()}"
         ).manual_seed(seed)
         model_ready_at = time.perf_counter()
+        wan_loop_shift_skip = 0
+        wan_loop_callback = None
+        wan_last_source = last_source
+        if same_endpoint and loop_mode == "seamless":
+            num_wan_latent_frames = (num_frames - 1) // 4 + 1
+            wan_loop_shift_skip = 6
+            while math.gcd(wan_loop_shift_skip, num_wan_latent_frames) != 1:
+                wan_loop_shift_skip -= 1
+            wan_last_source = None
+            pipeline._machdoch_wan_loop_shift_index = 0  # noqa: SLF001
+
+            def advance_wan_loop_shift(
+                _pipeline: Any,
+                _step: int,
+                _timestep: Any,
+                callback_kwargs: dict[str, Any],
+            ) -> dict[str, Any]:
+                pipeline._machdoch_wan_loop_shift_index = (  # noqa: SLF001
+                    pipeline._machdoch_wan_loop_shift_index  # noqa: SLF001
+                    + wan_loop_shift_skip
+                ) % num_wan_latent_frames
+                return callback_kwargs
+
+            wan_loop_callback = advance_wan_loop_shift
         result = pipeline(
             image=source,
-            last_image=last_source,
+            last_image=wan_last_source,
             prompt=None,
             negative_prompt=None,
             prompt_embeds=prompt_embeddings,
@@ -8278,9 +8585,16 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             num_inference_steps=steps,
             guidance_scale=float(guidance_scale),
             generator=generator,
+            callback_on_step_end=wan_loop_callback,
         )
         performance = pipeline._machdoch_wan_performance  # noqa: SLF001
         conditioning_mode = pipeline._machdoch_wan_conditioning_mode  # noqa: SLF001
+        if wan_loop_callback is not None:
+            conditioning_mode = "first-anchor+mobius-latent-shift-v2"
+            performance["loopDenoising"] = {
+                "engine": "mobius-latent-shift-v2",
+                "shiftSkip": wan_loop_shift_skip,
+            }
         effective_guidance_scale = float(guidance_scale)
         effective_steps = steps
         negative_prompt_applied = True

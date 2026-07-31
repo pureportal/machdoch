@@ -121,7 +121,6 @@ import {
   resolveMediaVideoFrameContract,
   resolveMediaVideoQualityPresetSettings,
   summarizeMediaVideoDelivery,
-  type MediaVideoLoopMode,
 } from "../../../../core/media/video-quality.js";
 import { MediaFlowVariablesPanel } from "./media-flow-variables-panel";
 import { MediaFlowTemplatesPanel } from "./media-flow-templates-panel";
@@ -2052,11 +2051,7 @@ const VideoQualityPresetPanel = ({
             title={preset.description}
             onClick={() =>
               onApply(
-                resolveMediaVideoQualityPresetSettings(
-                  preset,
-                  architecture,
-                  config.loopMode as MediaVideoLoopMode | undefined,
-                ),
+                resolveMediaVideoQualityPresetSettings(preset, architecture),
               )
             }
             className={cn(
@@ -2083,7 +2078,7 @@ const VideoQualityPresetPanel = ({
             type="button"
             onClick={() =>
               onApply({
-                modelId: "local:framepack-i2v-hy-13b",
+                modelId: "local:wan2.2-ti2v-5b",
               })
             }
             className="shrink-0 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 font-medium text-amber-100 outline-none hover:bg-amber-300/15 focus-visible:ring-2 focus-visible:ring-amber-300/40"
