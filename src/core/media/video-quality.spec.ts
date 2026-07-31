@@ -1,5 +1,6 @@
 import type { MediaAssetRecord } from "./contracts.js";
 import {
+  fitMediaVideoDuration,
   formatMediaAssetAspectRatio,
   identifyMediaVideoQualityPreset,
   inferMediaVideoAspectRatio,
@@ -7,6 +8,7 @@ import {
   isMediaAssetKnownTransparent,
   MEDIA_VIDEO_QUALITY_PRESETS,
   resolveMediaAssetVideoFrameRate,
+  resolveMediaAssetVideoLoopMode,
   resolveMediaVideoDimensions,
   resolveMediaVideoExecutionSettings,
   resolveMediaVideoFrameContract,
@@ -34,10 +36,14 @@ const asset = (
   tags,
 });
 
-const videoAsset = (hasAlpha: boolean, fps = 16): MediaAssetRecord => ({
+const videoAsset = (
+  hasAlpha: boolean,
+  fps = 16,
+  loopMode: "none" | "ping-pong" | "seamless" = "ping-pong",
+): MediaAssetRecord => ({
   ...asset({
     kind: "local-wan-video-generation",
-    output: { hasAlpha, fps },
+    output: { hasAlpha, fps, loopMode },
   } as MediaAssetRecord["operation"]),
   kind: "video",
   mimeType: "video/webm",
@@ -46,16 +52,13 @@ const videoAsset = (hasAlpha: boolean, fps = 16): MediaAssetRecord => ({
 describe("media video quality helpers", () => {
   it("maps every native quality canvas without stretching", () => {
     expect(resolveMediaVideoDimensions("16:9", "quality-640")).toEqual([
-      640,
-      352,
+      640, 352,
     ]);
     expect(resolveMediaVideoDimensions("9:16", "quality-768")).toEqual([
-      432,
-      768,
+      432, 768,
     ]);
     expect(resolveMediaVideoDimensions("21:9", "preview-512")).toEqual([
-      512,
-      224,
+      512, 224,
     ]);
     expect(
       resolveMediaVideoDimensions("16:9", "quality-768", "ltx-video"),
@@ -72,6 +75,27 @@ describe("media video quality helpers", () => {
     ).toEqual([848, 480]);
     expect(
       resolveMediaVideoDimensions(
+        "9:16",
+        "quality-640",
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual([480, 832]);
+    expect(
+      resolveMediaVideoDimensions(
+        "21:9",
+        "quality-640",
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual([944, 416]);
+    expect(
+      resolveMediaVideoDimensions(
+        "9:16",
+        "quality-768",
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toEqual([576, 1008]);
+    expect(
+      resolveMediaVideoDimensions(
         "21:9",
         "quality-768",
         "hunyuan-video-1.5-i2v",
@@ -86,6 +110,13 @@ describe("media video quality helpers", () => {
     expect(
       resolveMediaVideoQualityPresetSettings(qualityPreset, "framepack-i2v"),
     ).toMatchObject({ numInferenceSteps: 30, guidanceScale: 9 });
+    expect(
+      resolveMediaVideoQualityPresetSettings(
+        qualityPreset,
+        "framepack-i2v",
+        "seamless",
+      ),
+    ).toMatchObject({ numFrames: 49, numInferenceSteps: 30, guidanceScale: 9 });
     expect(
       resolveMediaVideoQualityPresetSettings(qualityPreset, "ltx-video"),
     ).toMatchObject({ numInferenceSteps: 8, guidanceScale: 1 });
@@ -145,14 +176,61 @@ describe("media video quality helpers", () => {
       maximum: 257,
       stride: 8,
     });
-    expect(isMediaVideoFrameCountValid(33, "hunyuan-video-1.5-i2v")).toBe(
-      true,
-    );
+    expect(isMediaVideoFrameCountValid(33, "hunyuan-video-1.5-i2v")).toBe(true);
     expect(isMediaVideoFrameCountValid(129, "hunyuan-video-1.5-i2v")).toBe(
       false,
     );
     expect(isMediaVideoFrameCountValid(129, "framepack-i2v")).toBe(true);
     expect(isMediaVideoFrameCountValid(25, "ltx-video")).toBe(true);
+  });
+
+  it("fits requested playback duration to native frame contracts", () => {
+    expect(
+      fitMediaVideoDuration(3, 16, "ping-pong", "hunyuan-video-1.5-i2v"),
+    ).toEqual({
+      targetSeconds: 3,
+      sourceFrameCount: 25,
+      outputFrameCount: 48,
+      durationSeconds: 3,
+      exact: true,
+    });
+    expect(
+      fitMediaVideoDuration(3, 24, "ping-pong", "hunyuan-video-1.5-i2v"),
+    ).toMatchObject({
+      sourceFrameCount: 37,
+      outputFrameCount: 72,
+      durationSeconds: 3,
+      exact: true,
+    });
+    expect(
+      fitMediaVideoDuration(3, 16, "seamless", "framepack-i2v"),
+    ).toMatchObject({
+      sourceFrameCount: 49,
+      outputFrameCount: 48,
+      durationSeconds: 3,
+      exact: true,
+    });
+    expect(
+      fitMediaVideoDuration(2, 16, "seamless", "framepack-i2v"),
+    ).toEqual({
+      targetSeconds: 2,
+      sourceFrameCount: 37,
+      outputFrameCount: 36,
+      durationSeconds: 2.25,
+      exact: false,
+    });
+    expect(
+      fitMediaVideoDuration(3, 16, "none", "hunyuan-video-1.5-i2v"),
+    ).toMatchObject({
+      sourceFrameCount: 49,
+      outputFrameCount: 49,
+      durationSeconds: 49 / 16,
+      exact: false,
+    });
+    expect(
+      fitMediaVideoDuration(3, 16, "seamless", "hunyuan-video-1.5-i2v"),
+    ).toBeNull();
+    expect(fitMediaVideoDuration(3, 0, "ping-pong")).toBeNull();
   });
 
   it("labels latent-aligned video canvases by their requested aspect", () => {
@@ -184,19 +262,6 @@ describe("media video quality helpers", () => {
         ...asset(null),
         width: 672,
         height: 384,
-      }),
-    ).toBe("7:4");
-    const legacyVideo = videoAsset(false);
-    const legacyOperation = {
-      ...legacyVideo.operation,
-      resolution: undefined,
-    } as unknown as MediaAssetRecord["operation"];
-    expect(
-      formatMediaAssetAspectRatio({
-        ...legacyVideo,
-        width: 672,
-        height: 384,
-        operation: legacyOperation,
       }),
     ).toBe("7:4");
   });
@@ -238,6 +303,15 @@ describe("media video quality helpers", () => {
   it("reads exact frame rates from generated video provenance", () => {
     expect(resolveMediaAssetVideoFrameRate(videoAsset(true, 24))).toBe(24);
     expect(resolveMediaAssetVideoFrameRate(asset(null))).toBeNull();
+    expect(resolveMediaAssetVideoFrameRate(videoAsset(false, 0))).toBeNull();
+  });
+
+  it("reads loop playback intent from generated video provenance", () => {
+    expect(resolveMediaAssetVideoLoopMode(videoAsset(false))).toBe("ping-pong");
+    expect(
+      resolveMediaAssetVideoLoopMode(videoAsset(false, 16, "seamless")),
+    ).toBe("seamless");
+    expect(resolveMediaAssetVideoLoopMode(asset(null))).toBeNull();
   });
 
   it("does not enable alpha extraction for a fully opaque cutout summary", () => {
@@ -286,9 +360,9 @@ describe("media video quality helpers", () => {
       width: 640,
       height: 352,
       sourceFrameCount: 33,
-      outputFrameCount: 65,
+      outputFrameCount: 64,
       fps: 16,
-      durationSeconds: 4.0625,
+      durationSeconds: 4,
       transparent: true,
       loopMode: "ping-pong",
       encodingQuality: "lossless",
@@ -326,5 +400,57 @@ describe("media video quality helpers", () => {
         "ltx-video",
       ),
     ).toMatchObject({ width: 768, height: 448 });
+    expect(
+      summarizeMediaVideoDelivery({
+        ...qualityConfig,
+        loopMode: "seamless",
+      }),
+    ).toMatchObject({
+      sourceFrameCount: 33,
+      outputFrameCount: 32,
+      durationSeconds: 2,
+    });
+    expect(
+      summarizeMediaVideoDelivery(
+        {
+          ...qualityConfig,
+          loopMode: "seamless",
+        },
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toBeNull();
+    expect(
+      summarizeMediaVideoDelivery({
+        ...qualityConfig,
+        numFrames: 0,
+      }),
+    ).toBeNull();
+    expect(
+      summarizeMediaVideoDelivery({
+        ...qualityConfig,
+        numFrames: 18,
+      }),
+    ).toBeNull();
+    expect(
+      summarizeMediaVideoDelivery(
+        {
+          ...qualityConfig,
+          numFrames: 18,
+        },
+        "hunyuan-video-1.5-i2v",
+      ),
+    ).toBeNull();
+    expect(
+      summarizeMediaVideoDelivery({
+        ...qualityConfig,
+        fps: 61,
+      }),
+    ).toBeNull();
+    expect(
+      summarizeMediaVideoDelivery({
+        ...qualityConfig,
+        transparentBackground: "yes",
+      }),
+    ).toBeNull();
   });
 });

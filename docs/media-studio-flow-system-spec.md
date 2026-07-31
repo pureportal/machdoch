@@ -213,7 +213,7 @@ Important research conclusions:
 - Modern video editing is moving toward "any input to video" and conversational edit loops. Gemini Omni/Flow, Runway Aleph, LTX, and Krea suggest that user-facing editing should be captured as structured edit intents, not only as freeform prompts.
 - All-in-one video creation/editing systems such as VACE show that reference-to-video, video-to-video, masked video editing, motion control, object swap, expansion, and animation should be modeled as reusable condition packs rather than unrelated one-off nodes.
 - Current creative suites are converging on ideation boards, rapid variant streams, reference-controlled video, storyboard generation, retakes, scene continuity, and timeline/canvas editing rather than one-shot prompt boxes.
-- Provider models and endpoints are now moving targets. Google has current image model deprecations in its Gemini API changelog, so the product needs provider lifecycle metadata, deprecation warnings, and migration checks instead of hardcoded model ids.
+- Provider models and endpoints are now moving targets. Google has current image model deprecations in its Gemini API changelog, so the product needs provider lifecycle metadata, deprecation warnings, and replacement guidance instead of hardcoded model ids.
 - Endpoint removal is not theoretical. OpenAI's Sora API deprecation and discontinuation notices reinforce that video provider integrations must be removable without breaking saved local flows or hiding the reason from users.
 - Consumer-local image generation is becoming more realistic. FLUX.2 klein 4B is positioned for consumer GPUs and has a practical LoRA training loop; the catalog should distinguish full, distilled, quantized, and trainable variants.
 - Multi-image and subject-consistent generation should be treated as a first-class workflow family, not just an image-list input. Reference roles, identity locks, negative reference constraints, and consistency evaluation must be typed.
@@ -370,7 +370,7 @@ Repository-aligned modules to add:
 
 - `src/shared/media-runtime.schema.json`: canonical strict contract for flow, node, port, asset reference, run, provider, model, hardware, and IPC records.
 - `src/core/media/contracts.generated.ts`: generated browser-safe TypeScript constants and types, following the repository's existing runtime-contract pattern.
-- `src/core/media/schemas.ts`: Ajv validators, normalization, and migration dispatch for media documents.
+- `src/core/media/schemas.ts`: Ajv validators and normalization for current media documents.
 - `src/core/media/compiler.ts`: semantic graph validation, subflow expansion, capability constraints, cardinality analysis, and execution-plan generation.
 - `src/core/media/node-registry.ts`: versioned built-in node definitions and schema-derived UI hints.
 - `src/core/media/capabilities.ts`: provider/model capability matching with explainable rejection reasons.
@@ -392,7 +392,13 @@ The Python worker should be an internal managed worker, not an app-facing web se
 
 ### Current Repository Integration Points
 
-The current app shell recognizes only `chat`, `ralph`, and `marketplace`. Add `media` to `MainAppId` and migrate the versioned shell state in `src/tauri/ui/lib/_helpers/shell-store-normalizers.helper.ts`. Add a Media Studio item and activity badge in `src/tauri/ui/app-shell/app-rail.tsx`, then lazy-load the media shell from `src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph and Marketplace. A broken or slow media bundle must not delay Chat startup.
+The app shell includes `media` in `MainAppId` and requires the current
+versioned shell state in
+`src/tauri/ui/lib/_helpers/shell-store-normalizers.helper.ts`; earlier state is
+recreated. The Media Studio item and activity badge live in
+`src/tauri/ui/app-shell/app-rail.tsx`, and the media shell is lazy-loaded from
+`src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph
+and Marketplace. A broken or slow media bundle must not delay Chat startup.
 
 Do not extend `src/tauri/ui/ralph/ralph-flow-editor.tsx` into a second domain. It is already a large control-flow editor and Ralph edges represent execution outcomes, while media edges carry typed values. Extract only small presentation primitives that are genuinely reusable, such as node chrome, selection styling, minimap conventions, keyboard helpers, and viewport persistence. Media graph state, validation, undo history, ports, and execution remain independent.
 
@@ -479,11 +485,17 @@ Workspace flows should reference assets by content hash and relative asset ids, 
 
 Use a hybrid store, not JSON-only indexing:
 
-- SQLite is the source of truth for mutable/queryable metadata: logical assets, blob references, tags, collections, lineage edges, flow heads, runs, node executions, jobs, provider jobs, resource leases, model installs, and migrations.
+- SQLite is the source of truth for mutable/queryable metadata: logical
+  assets, blob references, tags, collections, lineage edges, flow heads, runs,
+  node executions, jobs, provider jobs, resource leases, model installs, and
+  current schema metadata.
 - Content-addressed filesystem blobs are the source of truth for media bytes. Store a blob by SHA-256 only after streaming it into a temporary file, checking size and MIME, computing the digest, and atomically promoting it.
 - Immutable flow revisions, compiled plans, run summaries, and JSONL event/audit exports remain human-inspectable files. They are recovery/export artifacts, not a second mutable queue database.
 - SQLite uses WAL mode, foreign keys, short transactions, and one backend writer task. Queue claims, state transitions, lease renewals, retries, and asset publication are transactional.
-- On startup, run versioned migrations, mark expired worker leases for reconciliation, resume remote polling where safe, and move locally interrupted non-checkpointable jobs to a typed `interrupted` state.
+- On startup, initialize the current schema for an empty database, reject any
+  other schema version, mark expired worker leases for reconciliation, resume
+  remote polling where safe, and move locally interrupted
+  non-checkpointable jobs to a typed `interrupted` state.
 - Backup and repair tooling can rebuild thumbnails and search indexes from SQLite plus blobs, but must never invent missing lineage or pretend a partial file is complete.
 
 Suggested tables are `blobs`, `assets`, `asset_inputs`, `asset_renditions`, `tags`, `asset_tags`, `collections`, `collection_assets`, `flows`, `flow_revisions`, `runs`, `node_executions`, `jobs`, `job_dependencies`, `provider_jobs`, `run_events`, `resource_leases`, `models`, `model_installs`, and `schema_migrations`. Add indexes for workspace, kind, created time, run, flow, provider/model, status, blob hash, and normalized tag.
@@ -675,8 +687,8 @@ Flow requirements:
 Flow revision requirements:
 
 - `schemaVersion` is not enough to run. Each run stores the exact node pack versions, provider adapter versions, model catalog snapshot, hardware snapshot, and compiler version.
-- A saved flow may reference only supported node versions. If a node version has been retired, the flow opens in inspect mode with a migration action and cannot run until migrated.
-- Migrations must be explicit code transforms with before/after schema tests. The app must never mutate a user's saved flow without creating a new revision.
+- A saved flow may reference only current supported node versions. Any other
+  version is inspect-only and must be recreated before it can run.
 - Provider endpoint ids are not stored as generic strings. They are `modelRef` records with provider id, model id, lifecycle state, observed capabilities, and checked-at timestamp.
 - A flow can pin exact model versions for reproducibility or use a policy such as `best-local-image-edit` or `fastest-remote-video`. Policy selection is resolved into concrete versions only in the compiled execution plan.
 
@@ -702,7 +714,8 @@ Schema evolution rules:
 - Every top-level document, node payload, event, RPC message, pack manifest, and capability snapshot has an independently versioned schema. Compatibility ranges do not replace exact versions stored in a run.
 - Core schemas use `additionalProperties: false`. Extension data is allowed only below namespaced `extensions.<publisher>.<contract>` objects with declared size limits; it cannot affect execution unless a trusted pack schema and compiler explicitly consume it.
 - A newer or missing node/pack version opens as an immutable unknown-node tombstone that preserves the original JSON and edges for inspection/export. It cannot execute, validate as a known node, or be silently discarded.
-- A migration reads one immutable revision and produces a new revision plus a machine-readable report. Migration fixtures assert semantic and compiled-plan differences; downgrade is export-only unless an explicit reverse migration exists.
+- Noncurrent revisions remain immutable for inspection/export and are never
+  normalized into the current execution contract.
 - Canonicalization conformance vectors are shared across TypeScript, Rust, and Python CI, including Unicode, `-0`, decimal/exponent forms, rational rates, reordered graph collections, ordered references, and unsafe integer boundaries.
 
 Subflows and macros:
@@ -925,7 +938,7 @@ A full-feature system does not require every user to manipulate sampler, text en
 | Operation/orchestration | Advanced node browser | Crop, composite SVG, extract mask, map, iterate, rank, quality gate, provider route | Explicit typed transformation or bounded control behavior |
 | Runtime primitive | Compiled-plan inspector only | Tokenize, encode/decode latent, load VAE, quantize/offload, upload, poll, download, create preview | Adapter-generated execution step, never a saved-flow dependency |
 
-Node definitions are schema-driven, following the useful part of InvokeAI's invocation model: stable type id, semantic version, strongly typed inputs/outputs, constraints, defaults, conditional field visibility, examples, cost/privacy effects, and migration functions. The same definition renders the inspector, validates a flow, feeds node search, documents the node, and supplies compiler metadata. Avoid hand-building a separate form for each provider.
+Node definitions are schema-driven, following the useful part of InvokeAI's invocation model: stable type id, exact version, strongly typed inputs/outputs, constraints, defaults, conditional field visibility, examples, and cost/privacy effects. The same definition renders the inspector, validates a flow, feeds node search, documents the node, and supplies compiler metadata. Avoid hand-building a separate form for each provider.
 
 Task nodes expose `Basic`, `Creative`, and `Expert` inspector groups. Basic contains intent, input assets, aspect/duration, and output count. Creative contains seed policy, negative prompt, reference roles, edit strength, and quality/speed preference. Expert contains an explicit model pin, scheduler/steps when meaningful, optimization profile, and a namespaced provider override. Changing model or provider hides unsupported fields and explains the capability difference; it never silently drops a value.
 
@@ -940,7 +953,13 @@ The node card shows intent, essential inputs, provider/model badge, estimated re
 
 Connection assistance may suggest or insert a safe explicit conversion, such as image-to-mask extraction or frame selection, but must show the inserted node before saving. It may not auto-upload, spend money, download a model, change dimensions lossily, flatten alpha, or choose a fallback provider without preflight disclosure.
 
-Node packs are built-in and signed first. A pack manifest declares id, publisher, version, compatible flow/compiler versions, node schemas, migrations, runtime requirements, permissions, and content digest. Third-party packs remain disabled until the worker sandbox and signing/update/revocation model are implemented. Importing ComfyUI workflow JSON can be a later conversion tool; arbitrary Comfy custom nodes or Python repositories are not an execution surface.
+Node packs are built-in and signed first. A pack manifest declares id,
+publisher, exact version, compatible flow/compiler versions, node schemas,
+runtime requirements, permissions, and content digest. Third-party packs
+remain disabled until the worker sandbox and signing/update/revocation model
+are implemented. Importing ComfyUI workflow JSON can be a later conversion
+tool; arbitrary Comfy custom nodes or Python repositories are not an execution
+surface.
 
 ### Source Nodes
 
@@ -1764,7 +1783,7 @@ Lifecycle requirements:
 | Google Gemini image generation | instruction image editing, multiple references, and fast iteration | exact reference limits and supported sizes vary by model; deprecated Imagen models are scheduled to shut down on 2026-08-17 |
 | Google Veo | video generation, first/last-frame transition, audio where supported | long-running jobs, model-specific keyframe support, provider upload policy |
 | Google Gemini Omni/Flow | conversational multimodal video creation/editing, reference-to-video | product/API availability may differ from consumer Flow UI; adapter must expose only callable capabilities |
-| OpenAI Sora APIs | legacy saved-flow diagnostics only | do not build a new adapter: the official shutdown date for the API is 2026-09-24 |
+| OpenAI Sora APIs | unsupported | do not build an adapter: the official shutdown date for the API is 2026-09-24 |
 | BFL/FLUX APIs | FLUX image generation/editing | local FLUX.2 and remote BFL capabilities may differ |
 | fal/Replicate | broad model routing and fast access to new models | adapter must normalize async jobs, expiry, model-specific inputs, and cost visibility |
 | Runway/Luma | commercial video quality, image-to-video, extension/interpolation/video editing where exposed | provider-specific output constraints and nondeterministic reruns |
@@ -1782,7 +1801,7 @@ Lifecycle requirements:
 Remote provider adapters should support:
 
 - OpenAI image generation/editing through GPT Image 2, using the Image API for one-shot operations and the Responses API only when the flow explicitly needs multi-turn editing context. Store the concrete model snapshot when a pinned snapshot is available.
-- No new OpenAI Sora video execution adapter. Preserve only a tombstone adapter that opens legacy flows, explains the 2026-09-24 shutdown, and offers an explicit capability-based migration comparison.
+- Do not add an OpenAI Sora video execution adapter; saved flows must use a currently supported video capability.
 - Google Gemini image generation/editing through currently active image models discovered by the catalog. Do not create new flows pinned to Imagen models scheduled to shut down on 2026-08-17.
 - Google Veo video generation where configured, including first/last-frame capability when the selected model exposes it.
 - Google Gemini Omni Flash video only behind a preview feature flag while the API/model remains preview. Its current short 3-10 second 720p text/image-to-video and conversational editing surface is a distinct capability profile, not a generic replacement for Veo.
@@ -2608,7 +2627,11 @@ References resolve through privileged Tauri commands, check workspace access on 
 
 ### Chat Integration
 
-`ChatSessionContextAttachment` in `src/tauri/ui/chat-session.model.ts` is currently path-only. Evolve it through a backward-compatible discriminated union: old records normalize to `{ source: "path" }`, while media cards use `MediaAssetReference`. Bump and migrate the persisted session schema rather than overloading `path` with a pseudo-URI.
+`ChatSessionContextAttachment` in `src/tauri/ui/chat-session.model.ts` is a
+closed discriminated union. Path records require `source: "path"`; media cards
+use `MediaAssetReference` or `MediaRunReference`. Persisted shell state must use
+the current schema, and earlier records are rejected rather than migrated.
+Never overload `path` with a pseudo-URI.
 
 Chat actions:
 
@@ -2838,7 +2861,10 @@ Before adding a package:
 
 ### Runtime And Packaging Requirements
 
-- Add `rusqlite` with the `bundled` feature (or an equivalently reviewed embedded SQLite crate) to the Tauri backend for a consistent cross-platform queue/index. Keep migrations in source control and test upgrade plus rollback-by-backup behavior.
+- Use `rusqlite` with the `bundled` feature (or an equivalently reviewed
+  embedded SQLite crate) in the Tauri backend for a consistent cross-platform
+  queue/index. Keep the current schema in source control, initialize empty
+  databases atomically, and reject any other schema version.
 - The Python worker has a pinned CPython and lockfile per released runtime pack. Build/install packs in staging, verify hashes, run a known-good probe, then atomically activate; keep the last working pack for rollback. Never `pip install` ad hoc packages into an active environment during a run.
 - Use PyTorch/Diffusers for the first local image pack and separate native runner packs only when Diffusers lacks the required capability. CUDA, ROCm, MPS, ONNX, TensorRT, and model-specific dependencies are distinct pack compatibility dimensions.
 - Ship or download a pinned FFmpeg/ffprobe build only after platform distribution, codec, patent, and LGPL/GPL obligations are reviewed. Record its digest/version in each media operation and expose a clear unavailable-codec error.
@@ -3065,7 +3091,10 @@ Wasm is suitable for bounded metadata/image utilities, not PyTorch/GPU inference
 
 Pack install/update/revocation rules:
 
-- Manifest signature covers publisher id, pack id/version, content hashes, schemas, compiler/runtime compatibility, permissions, allowed provider hosts, licenses, and migrations. Trust roots and revocation state are versioned and visible.
+- Manifest signature covers publisher id, pack id/version, content hashes,
+  schemas, compiler/runtime compatibility, permissions, allowed provider
+  hosts, and licenses. Trust roots and revocation state are versioned and
+  visible.
 - Installation stages and verifies the entire pack, runs static/schema checks and an isolated probe, then activates atomically. Existing runs pin the exact digest; updates never replace bytes underneath them.
 - Removing or revoking a pack leaves saved flows inspectable with tombstones. Revocation blocks new execution and explains whether already-produced assets remain usable.
 - A pack cannot request permissions dynamically from a node payload. Permission increases require a new signed version and explicit review.
@@ -3625,9 +3654,9 @@ Implement no polished editor yet. Prove the boundaries that would be expensive t
 Deliverables:
 
 - Write schema version 1 for semantic flow, separate layout, node definition, compiled plan, run/event/job, logical asset/blob, provider capability, model descriptor, and worker RPC.
-- Define the RFC 8785-compatible canonicalization profile, document/execution/plan/cache identities, rational media time, color metadata, quality observation, and unknown-node migration contracts before implementing cache or timeline logic.
+- Define the RFC 8785-compatible canonicalization profile, document/execution/plan/cache identities, rational media time, color metadata, quality observation, and unknown-node rejection contracts before implementing cache or timeline logic.
 - Build deterministic mock provider and mock worker adapters that generate fixture images/reports and exercise progress, cancellation, crash, partial output, retry, and remote reconciliation.
-- Spike SQLite WAL/migrations/resource leases and content-addressed streaming ingest in `src-tauri/src/media`.
+- Spike SQLite WAL/current-schema bootstrap/resource leases and content-addressed streaming ingest in `src-tauri/src/media`.
 - Spike an authenticated framed managed-Python-worker protocol, replay-safe ids, bounded/backpressured event classes, two-phase output publication, environment fingerprint, cooperative/forced cancellation, and process-tree shutdown without starting an app-facing server.
 - Build a fault-injection remote adapter harness that crashes before submit, during submit, after paid acceptance, during polling, after provider success, and during download/CAS commit. Prove the `acceptance-unknown` path never blindly resubmits.
 - Probe NVIDIA CUDA, CPU, disk, and FFmpeg on the initial platform. Record unsupported AMD/MPS paths honestly rather than stubbing success.
@@ -3698,7 +3727,7 @@ Deliverables:
 - Compound-node expansion, `Explain plan`, promote-to-subflow, explicit converter insertion, side-effect bubbling, cardinality analysis, and budget gates.
 - Quality analyzers for dimensions/format/alpha, blur/noise/compression, OCR text comparison, prompt/reference adherence, and pairwise ranking. AI metrics always expose model/rubric and allow human override.
 - Versioned quality profiles/observations with deterministic, reference, learned, policy, and human layers; tri-state gates, calibration fixtures, explicit video sampling, component-score retention, and no universal aggregate by default.
-- Flow revision history, import/export, migrations, templates, fixture runner, dry-run, and reproducibility diff.
+- Flow revision history, current-schema import/export, templates, fixture runner, dry-run, and reproducibility diff.
 
 Gate:
 
@@ -3710,7 +3739,7 @@ Deliver cross-app workflows only after Media run/asset identity is stable.
 
 Deliverables:
 
-- Migrate Chat attachments to the path/media discriminated union, render media cards/tombstones, and implement Create/Edit in Media Studio, asset picker, Send to Chat, and explicit Save to Media Library.
+- Keep Chat attachments on the current path/media discriminated union, render media cards/tombstones, and implement Create/Edit in Media Studio, asset picker, Send to Chat, and explicit Save to Media Library.
 - Add typed Chat tools for draft, inspect, compile, and enqueue with confirmation cards for downloads, upload, cost, and policy decisions.
 - Add the dedicated Ralph `MEDIA_FLOW` block, pinned revisions, input/output bindings, durable run reconciliation, review deep links, and terminal/control outcomes.
 - Extend shell activity, deep-link routing, shutdown warnings, and diagnostics so ownership of cancellation and state is unambiguous.
@@ -3775,7 +3804,7 @@ Gate:
 | Model files execute code or compromise a worker | Pinned commit/file allowlist/checksums, prefer safetensors, quarantine, no remote code/repo scripts, isolated low-authority worker, malicious-fixture tests |
 | Local hardware support is overstated | Exact device/runtime catalog, tiny real probe, per-machine envelope, labeled hardware CI, unsupported rather than best-effort late failure |
 | Video scope delays all value | Image-first vertical slice; video pack depends on proven queue/CAS/provider reconciliation |
-| Provider API/model disappears | Live signed lifecycle catalog, pre-run refresh, tombstone adapters, explicit migration diff, no silent model substitution |
+| Provider API/model disappears | Live signed lifecycle catalog, pre-run refresh, explicit unsupported-state diagnostics, no silent model substitution |
 | Duplicate remote charge after retry/restart | Transactional provider job record before/after acceptance, idempotency keys where supported, reconcile before resubmit, user approval for cost-risking retry |
 | Provider callback/cancel race corrupts state | Callbacks are idempotent reconciliation hints, compare-and-set transitions, raw state retention, late-success ingestion, terminal-state replay fixtures |
 | Public or expired provider media leaks/vanishes | Preflight visibility/retention disclosure, no-store controls where documented, signed/public URL redaction, immediate bounded download, expiry fixtures |

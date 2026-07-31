@@ -574,7 +574,7 @@ Each diagnostic contains severity, affected entry/component, evidence, a concise
 
 ## 9. Flow and Compilation Integration
 
-The existing `adapterRef` and `adapterWeight` types migrate to explicit types:
+Add-on selections use these explicit types:
 
 - `modelAddonRef`
 - `modelAddonStack`
@@ -582,7 +582,7 @@ The existing `adapterRef` and `adapterWeight` types migrate to explicit types:
 - `trainedAddon`
 - `addonCompatibilityReport`
 
-Existing serialized flows remain readable through a versioned adapter that maps old LoRA-only values to a one-entry stack. New flows do not serialize prompt-only `<lora:file:weight>` syntax.
+Current flows serialize an explicit ordered `modelAddons` selection list. LoRA-only flow values and prompt-only `<lora:file:weight>` syntax are not accepted as alternate flow formats.
 
 Required nodes:
 
@@ -1012,7 +1012,7 @@ Exit: a local model can generate through the same compiler/job/asset pipeline as
 
 ### Phase 1: Safe registry and simple LoRA use
 
-- **Implemented:** add-on tables/contracts, bounded safetensors classifier, immutable local import, Models library, compiler compatibility, simple/component strength, visible stack reordering, ordered named multi-LoRA loading, OpenAI rejection, and run provenance. The registry and worker now agree on exact standard LoRA/LoCon/DoRA algorithm, dialect, rank, module, convolution, magnitude, and alpha profiles; legacy LoRAs upgrade only after managed-digest verification.
+- **Implemented:** add-on tables/contracts, bounded safetensors classifier, immutable local import, Models library, compiler compatibility, simple/component strength, visible stack reordering, ordered named multi-LoRA loading, OpenAI rejection, and run provenance. The registry and worker now agree on exact standard LoRA/LoCon/DoRA algorithm, dialect, rank, module, convolution, magnitude, and alpha profiles. Current imports persist those exact profiles; missing profiles are invalid state and require re-import.
 - **Implemented for public resources:** direct Civitai model/version URL and short/full AIR import with a metadata-only review, license/scan claims, a refetched review token, redirect allowlist, bounded streaming, hash/length verification, local safetensors inspection, and persisted source provenance. Authenticated/private downloads remain a later secret-store integration.
 - Promote Diffusers/PEFT and Kohya SDXL/FLUX tuples only after real load/generation fixtures report expected and ignored keys.
 - **Implemented:** reviewed dependency-aware add-on removal with active-run blocking, saved-flow/historical-run impact, immutable digest verification, atomic detach, restart recovery, and deferred cleanup.
@@ -1022,8 +1022,8 @@ Exit: a normal user can paste a Civitai LoRA URL, review it, apply it to a compa
 
 ### Phase 2: Textual inversion and full stack semantics
 
-- **Implemented baseline:** safetensors textual-inversion import, tensor-dimension/encoder-slot family detection that cannot be overridden at import, persisted per-tensor encoder/vector fingerprints, explicit generic/`clip_l`/`clip_g`/`t5` loading, runtime tensor-shape and encoder-width verification, exact numbered-alias evidence, unique alias validation, collision rejection across selected aliases and loaded tokenizers, and provider-aware placement with stored resolved prompts and loaded-component provenance. Stable Diffusion supports positive/negative/both; FLUX.1 is positive-only because its pipeline exposes no negative-prompt channel. Existing imported embeddings are profile-upgraded only after their managed SHA-256 passes verification.
-- **Implemented:** normalized start/end denoising windows for denoiser-only LoRAs, with provider/model capability flags, saved-flow migration, compiler and worker validation, step-boundary activation, exact worker evidence, and a simple percentage UI. Text-encoder-bearing LoRAs fail preflight because their conditioning is resolved before the denoising callback can change it.
+- **Implemented baseline:** safetensors textual-inversion import, tensor-dimension/encoder-slot family detection that cannot be overridden at import, persisted per-tensor encoder/vector fingerprints, explicit generic/`clip_l`/`clip_g`/`t5` loading, runtime tensor-shape and encoder-width verification, exact numbered-alias evidence, unique alias validation, collision rejection across selected aliases and loaded tokenizers, and provider-aware placement with stored resolved prompts and loaded-component provenance. Stable Diffusion supports positive/negative/both; FLUX.1 is positive-only because its pipeline exposes no negative-prompt channel. Imports without the current vector profile are rejected.
+- **Implemented:** normalized start/end denoising windows for denoiser-only LoRAs, with provider/model capability flags, saved-flow validation, compiler and worker validation, step-boundary activation, exact worker evidence, and a simple percentage UI. Text-encoder-bearing LoRAs fail preflight because their conditioning is resolved before the denoising callback can change it.
 - Promote SD 1.x/2.x multi-vector and SDXL dual-encoder support with real known-answer fixtures on each supported accelerator/runtime tuple.
 - Add fully validated non-attention component scales, supported block scales, piecewise denoising curves, stack presets, A/B comparison, and stack evaluation.
 - Add hot-swap/residency optimization with clean-load fallback and cache invalidation.

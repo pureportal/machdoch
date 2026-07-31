@@ -28,7 +28,7 @@ from typing import Any
 
 from PIL import Image
 
-WORKER_VERSION = "media-diffusers-worker/1.31.0"
+WORKER_VERSION = "media-diffusers-worker/1.45.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -42,8 +42,17 @@ LTX_13B_MIN_MEMORY_BYTES = 15 * 1024**3
 FRAMEPACK_MIN_MEMORY_BYTES = 6 * 1024**3
 FRAMEPACK_MIN_PHYSICAL_MEMORY_BYTES = 30 * 1024**3
 FRAMEPACK_BFLOAT16_MEMORY_BYTES = 32 * 1024**3
+FRAMEPACK_DENOISER_BASE_TIMEOUT_SECONDS = 2 * 60 * 60
+FRAMEPACK_DENOISER_MAX_TIMEOUT_SECONDS = 8 * 60 * 60
+FRAMEPACK_DENOISER_BASE_WORKLOAD = 640 * 640 * 25 * 16
 HUNYUAN_VIDEO_15_MIN_MEMORY_BYTES = 14 * 1024**3
 HUNYUAN_VIDEO_15_MIN_PHYSICAL_MEMORY_BYTES = 30 * 1024**3
+MAX_DECODED_LOOP_CONTINUITY_RATIO = 1.25
+MAX_DECODED_LOOP_LOW_TRANSITION_FRACTION = 0.05
+MAX_DECODED_LOOP_NORMALIZED_JERK = 0.30
+LOOP_LOW_TRANSITION_MEDIAN_RATIO = 0.35
+MAX_PING_PONG_ENDPOINT_FEATHER_MAE = 6.0
+MAX_PING_PONG_ENDPOINT_FEATHER_PASSES = 3
 LTX_DISTILLED_TIMESTEPS = (1000, 993, 987, 981, 975, 909, 725, 0.03)
 LTX_REFINEMENT_TIMESTEPS = (1000, 909, 725, 421, 0)
 LORA_TENSOR_PAIRS = (
@@ -3854,14 +3863,16 @@ def _load_framepack_pipeline(
         use_safetensors=True,
     )
     vae.enable_tiling(**_framepack_vae_tile_configuration(device_memory))
+    amd_runtime = getattr(torch.version, "hip", None) is not None
     image_encoder = SiglipVisionModel.from_pretrained(
         str(model_path),
         subfolder="image_encoder",
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float32 if amd_runtime else compute_dtype,
         local_files_only=True,
         use_safetensors=True,
         low_cpu_mem_usage=True,
     )
+    image_encoder.eval()
     feature_extractor = SiglipImageProcessor.from_pretrained(
         str(model_path),
         subfolder="feature_extractor",
@@ -3896,14 +3907,30 @@ def _load_framepack_pipeline(
             gc.collect()
             torch.cuda.empty_cache()
 
-    def encode_image_with_release(image: Any, device: Any) -> Any:
-        pipeline.image_encoder.to(device)
-        try:
-            return original_encode_image(image, device=device)
-        finally:
-            pipeline.image_encoder.to("cpu")
-            gc.collect()
-            torch.cuda.empty_cache()
+    if amd_runtime:
+
+        def encode_image_with_release(image: Any, device: Any) -> Any:
+            return original_encode_image(
+                image,
+                device=torch.device("cpu"),
+            ).to(device)
+
+        image_encoder_device = "cpu-amd-conv2d-fallback"
+    else:
+
+        def encode_image_with_release(image: Any, device: Any) -> Any:
+            pipeline.image_encoder.to(execution_device)
+            try:
+                return original_encode_image(
+                    image,
+                    device=execution_device,
+                ).to(device)
+            finally:
+                pipeline.image_encoder.to("cpu")
+                gc.collect()
+                torch.cuda.empty_cache()
+
+        image_encoder_device = "stage-sequential-gpu"
 
     pipeline.vae.encode = vae_encode_with_release
     pipeline.encode_image = encode_image_with_release
@@ -3916,7 +3943,7 @@ def _load_framepack_pipeline(
     performance["fp8CacheHit"] = fp8_cache_hit
     performance["computeDtype"] = "bfloat16"
     performance["textEncoderDevice"] = "isolated-block-level-gpu-offload"
-    performance["imageEncoderDevice"] = "sequential-gpu-offload"
+    performance["imageEncoderDevice"] = image_encoder_device
     performance["vaeDevice"] = "stage-sequential-gpu"
     performance["renderStrategy"] = "inverted-anti-drifting-single-window"
     return (
@@ -3989,6 +4016,7 @@ def _generate_framepack_latents_subprocess(
     device, _, _ = _device(torch)
     if device != "cuda":
         raise WorkerError("FramePack denoising requires a supported GPU")
+    conv_backend = _configure_video_conv3d_backend(torch, device)
     source, _ = _prepare_video_conditioning_frame(
         first_frame_path,
         width,
@@ -4016,6 +4044,31 @@ def _generate_framepack_latents_subprocess(
         prompt,
         request.get("memoryProfile"),
     )
+    performance["convolutionBackend"] = conv_backend
+    if first_frame_path == last_frame_path:
+        original_encode_image = pipeline.encode_image
+        original_prepare_image_latents = pipeline.prepare_image_latents
+        cached_image_embeds = None
+        cached_image_latents = None
+
+        def encode_same_image(image: Any, device: Any) -> Any:
+            nonlocal cached_image_embeds
+            if cached_image_embeds is None:
+                cached_image_embeds = original_encode_image(image, device)
+            return cached_image_embeds
+
+        def prepare_same_image_latents(*args: Any, **kwargs: Any) -> Any:
+            nonlocal cached_image_latents
+            if cached_image_latents is None:
+                cached_image_latents = original_prepare_image_latents(
+                    *args,
+                    **kwargs,
+                )
+            return cached_image_latents
+
+        pipeline.encode_image = encode_same_image
+        pipeline.prepare_image_latents = prepare_same_image_latents
+        performance["endpointConditioningReuse"] = "exact-first-last"
     model_ready_at = time.perf_counter()
     execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
     prompt_embeddings = prompt_embeddings.to(execution_device)
@@ -4077,6 +4130,26 @@ def _generate_framepack_latents_subprocess(
     }
 
 
+def _framepack_denoiser_timeout_seconds(
+    width: int,
+    height: int,
+    num_frames: int,
+    steps: int,
+) -> int:
+    scaled_timeout = math.ceil(
+        FRAMEPACK_DENOISER_BASE_TIMEOUT_SECONDS
+        * width
+        * height
+        * num_frames
+        * steps
+        / FRAMEPACK_DENOISER_BASE_WORKLOAD
+    )
+    return min(
+        FRAMEPACK_DENOISER_MAX_TIMEOUT_SECONDS,
+        max(FRAMEPACK_DENOISER_BASE_TIMEOUT_SECONDS, scaled_timeout),
+    )
+
+
 def _generate_framepack_latents(
     torch: Any,
     model: dict[str, Any],
@@ -4095,8 +4168,6 @@ def _generate_framepack_latents(
     with tempfile.TemporaryDirectory(
         prefix="machdoch-framepack-denoise-"
     ) as temporary:
-        output_directory = Path(temporary) / "output"
-        output_directory.mkdir()
         environment = os.environ.copy()
         environment.update(
             {
@@ -4108,46 +4179,70 @@ def _generate_framepack_latents(
         )
         environment.pop("HF_TOKEN", None)
         environment.pop("HUGGING_FACE_HUB_TOKEN", None)
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-I",
-                "-B",
-                str(Path(__file__).resolve()),
-                "_generate-framepack-latents",
-            ],
-            input=json.dumps(
-                {
-                    "model": model,
-                    "prompt": prompt,
-                    "firstFramePath": str(first_frame_path),
-                    "lastFramePath": str(last_frame_path),
-                    "outputDirectory": str(output_directory),
-                    "width": width,
-                    "height": height,
-                    "numFrames": num_frames,
-                    "numInferenceSteps": steps,
-                    "guidanceScale": guidance_scale,
-                    "seed": seed,
-                    "transparentBackground": transparent_background,
-                    "memoryProfile": memory_profile,
-                }
-            ),
-            capture_output=True,
-            text=True,
-            timeout=2 * 60 * 60,
-            check=False,
-            env=environment,
-        )
-        try:
-            response = json.loads(completed.stdout)
-        except json.JSONDecodeError as error:
-            raise WorkerError(
-                "FramePack denoiser returned an invalid response"
-            ) from error
-        if completed.returncode != 0 or response.get("error"):
+        for attempt in range(2):
+            output_directory = Path(temporary) / f"attempt-{attempt + 1}"
+            output_directory.mkdir()
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    str(Path(__file__).resolve()),
+                    "_generate-framepack-latents",
+                ],
+                input=json.dumps(
+                    {
+                        "model": model,
+                        "prompt": prompt,
+                        "firstFramePath": str(first_frame_path),
+                        "lastFramePath": str(last_frame_path),
+                        "outputDirectory": str(output_directory),
+                        "width": width,
+                        "height": height,
+                        "numFrames": num_frames,
+                        "numInferenceSteps": steps,
+                        "guidanceScale": guidance_scale,
+                        "seed": seed,
+                        "transparentBackground": transparent_background,
+                        "memoryProfile": memory_profile,
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                timeout=_framepack_denoiser_timeout_seconds(
+                    width,
+                    height,
+                    num_frames,
+                    steps,
+                ),
+                check=False,
+                env=environment,
+            )
             diagnostic = completed.stderr.strip()[-4_000:]
+            try:
+                response = json.loads(completed.stdout)
+            except json.JSONDecodeError as error:
+                if attempt == 0 and _is_retryable_video_backend_failure(
+                    completed.stdout,
+                    diagnostic,
+                ):
+                    gc.collect()
+                    continue
+                diagnostic = diagnostic or completed.stdout.strip()[-1_000:]
+                raise WorkerError(
+                    "FramePack denoiser returned an invalid "
+                    f"response (exit code {completed.returncode})"
+                    f"{f': {diagnostic}' if diagnostic else ''}"
+                ) from error
             message = response.get("error") or "FramePack denoising failed"
+            if completed.returncode == 0 and not response.get("error"):
+                break
+            if attempt == 0 and _is_retryable_video_backend_failure(
+                message,
+                diagnostic,
+            ):
+                gc.collect()
+                continue
             raise WorkerError(
                 f"{message}{f': {diagnostic}' if diagnostic else ''}"
             )
@@ -4172,6 +4267,7 @@ def _generate_framepack_latents(
         latents = load_file(destination, device="cpu").get("latents")
         if latents is None or latents.ndim != 5:
             raise WorkerError("FramePack denoiser returned invalid latents")
+        performance["nativeRetryCount"] = attempt
         performance["denoiserGpuMemory"] = gpu_memory
         performance["componentIsolation"] = (
             "prompt-encoder-subprocess->denoiser-subprocess->vae-parent"
@@ -4405,6 +4501,7 @@ def _generate_hunyuan_video_15_latents_subprocess(
     device, _, _ = _device(torch)
     if device != "cuda":
         raise WorkerError("HunyuanVideo 1.5 denoising requires a supported GPU")
+    conv_backend = _configure_video_conv3d_backend(torch, device)
     source, _ = _prepare_video_conditioning_frame(
         first_frame_path,
         width,
@@ -4427,6 +4524,7 @@ def _generate_hunyuan_video_15_latents_subprocess(
         prompt,
         request.get("memoryProfile"),
     )
+    performance["convolutionBackend"] = conv_backend
     pipeline.target_size = target_size
     model_ready_at = time.perf_counter()
     execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
@@ -4483,6 +4581,18 @@ def _generate_hunyuan_video_15_latents_subprocess(
     }
 
 
+def _is_retryable_video_backend_failure(*diagnostics: str) -> bool:
+    failure = "\n".join(diagnostics).lower()
+    return any(
+        signature in failure
+        for signature in (
+            "miopenstatusunknownerror",
+            "miopen error",
+            "hip runtime error: invalid device function",
+        )
+    )
+
+
 def _generate_hunyuan_video_15_latents(
     model: dict[str, Any],
     prompt: str,
@@ -4499,8 +4609,6 @@ def _generate_hunyuan_video_15_latents(
     with tempfile.TemporaryDirectory(
         prefix="machdoch-hunyuan-video-1.5-denoise-"
     ) as temporary:
-        output_directory = Path(temporary) / "output"
-        output_directory.mkdir()
         environment = os.environ.copy()
         environment.update(
             {
@@ -4512,47 +4620,66 @@ def _generate_hunyuan_video_15_latents(
         )
         environment.pop("HF_TOKEN", None)
         environment.pop("HUGGING_FACE_HUB_TOKEN", None)
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-I",
-                "-B",
-                str(Path(__file__).resolve()),
-                "_generate-hunyuan-video-1.5-latents",
-            ],
-            input=json.dumps(
-                {
-                    "model": model,
-                    "prompt": prompt,
-                    "firstFramePath": str(first_frame_path),
-                    "outputDirectory": str(output_directory),
-                    "width": width,
-                    "height": height,
-                    "targetSize": target_size,
-                    "numFrames": num_frames,
-                    "numInferenceSteps": steps,
-                    "seed": seed,
-                    "transparentBackground": transparent_background,
-                    "memoryProfile": memory_profile,
-                }
-            ),
-            capture_output=True,
-            text=True,
-            timeout=2 * 60 * 60,
-            check=False,
-            env=environment,
-        )
-        try:
-            response = json.loads(completed.stdout)
-        except json.JSONDecodeError as error:
-            raise WorkerError(
-                "HunyuanVideo 1.5 denoiser returned an invalid response"
-            ) from error
-        if completed.returncode != 0 or response.get("error"):
+        for attempt in range(2):
+            output_directory = Path(temporary) / f"attempt-{attempt + 1}"
+            output_directory.mkdir()
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    str(Path(__file__).resolve()),
+                    "_generate-hunyuan-video-1.5-latents",
+                ],
+                input=json.dumps(
+                    {
+                        "model": model,
+                        "prompt": prompt,
+                        "firstFramePath": str(first_frame_path),
+                        "outputDirectory": str(output_directory),
+                        "width": width,
+                        "height": height,
+                        "targetSize": target_size,
+                        "numFrames": num_frames,
+                        "numInferenceSteps": steps,
+                        "seed": seed,
+                        "transparentBackground": transparent_background,
+                        "memoryProfile": memory_profile,
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                timeout=2 * 60 * 60,
+                check=False,
+                env=environment,
+            )
             diagnostic = completed.stderr.strip()[-4_000:]
+            try:
+                response = json.loads(completed.stdout)
+            except json.JSONDecodeError as error:
+                if attempt == 0 and _is_retryable_video_backend_failure(
+                    completed.stdout,
+                    diagnostic,
+                ):
+                    gc.collect()
+                    continue
+                diagnostic = diagnostic or completed.stdout.strip()[-1_000:]
+                raise WorkerError(
+                    "HunyuanVideo 1.5 denoiser returned an invalid "
+                    f"response (exit code {completed.returncode})"
+                    f"{f': {diagnostic}' if diagnostic else ''}"
+                ) from error
             message = (
                 response.get("error") or "HunyuanVideo 1.5 denoising failed"
             )
+            if completed.returncode == 0 and not response.get("error"):
+                break
+            if attempt == 0 and _is_retryable_video_backend_failure(
+                message,
+                diagnostic,
+            ):
+                gc.collect()
+                continue
             raise WorkerError(
                 f"{message}{f': {diagnostic}' if diagnostic else ''}"
             )
@@ -4581,6 +4708,7 @@ def _generate_hunyuan_video_15_latents(
         latents = load_file(destination, device="cpu").get("latents")
         if latents is None or latents.ndim != 5:
             raise WorkerError("HunyuanVideo 1.5 denoiser returned invalid latents")
+        performance["nativeRetryCount"] = attempt
         performance["denoiserGpuMemory"] = gpu_memory
         performance["componentIsolation"] = (
             "prompt-encoder-subprocess->denoiser-subprocess->vae-parent"
@@ -5417,13 +5545,13 @@ def _video_dimensions(
             "quality-640": {
                 "1:1": (640, 640),
                 "16:9": (848, 480),
-                "9:16": (480, 848),
-                "21:9": (960, 416),
+                "9:16": (480, 832),
+                "21:9": (944, 416),
             },
             "quality-768": {
                 "1:1": (768, 768),
                 "16:9": (1024, 576),
-                "9:16": (576, 1024),
+                "9:16": (576, 1008),
                 "21:9": (1152, 496),
             },
         }
@@ -6330,7 +6458,7 @@ def _restore_wan_seam_endpoints(
     frames: list[Any],
     endpoint: Any,
 ) -> tuple[list[Any], dict[str, Any]]:
-    """Pin a requested loop to the exact same decoded first/last still."""
+    """Pin the generated interval to the same decoded start/end still."""
     if len(frames) < 3:
         raise WorkerError("WAN seamless restoration requires at least three frames")
     restored = list(frames)
@@ -6340,10 +6468,11 @@ def _restore_wan_seam_endpoints(
     restored[0] = exact.copy()
     restored[-1] = exact.copy()
     return restored, {
-        "engine": "exact-source-loop-endpoint-v1",
+        "engine": "exact-source-loop-endpoint-v2",
         "exactFirstFrame": True,
         "exactLastFrame": True,
-        "duplicateClosureFrame": True,
+        "sourceHasTerminalClosureFrame": True,
+        "deliveryDropsTerminalClosureFrame": True,
     }
 
 
@@ -6645,17 +6774,226 @@ def _vp9_quality_arguments(
     return arguments
 
 
+def _vp9_delivery_pixel_format(
+    encoding_quality: str,
+    *,
+    alpha: bool,
+) -> tuple[str, str]:
+    if alpha:
+        return "yuva420p", "limited"
+    if encoding_quality == "lossless":
+        return "yuv444p", "full"
+    return "yuv420p", "limited"
+
+
 def _assemble_video_frames(frames: list[Any], loop_mode: str) -> list[Any]:
     if loop_mode == "none":
         return list(frames)
     if loop_mode == "ping-pong":
-        return list(frames) + list(reversed(frames[:-1]))
+        # Both turnarounds are shared between the forward and reverse passes.
+        # Repeating either endpoint introduces a visible one-frame pause.
+        working_frames = list(frames)
+        output_frames = working_frames + list(reversed(working_frames[1:-1]))
+        for _ in range(MAX_PING_PONG_ENDPOINT_FEATHER_PASSES):
+            loop_evidence = _rgb_loop_transition_evidence(output_frames)
+            if (
+                len(working_frames) < 3
+                or loop_evidence["boundaryMae"]
+                > MAX_PING_PONG_ENDPOINT_FEATHER_MAE
+                or loop_evidence["continuityRatio"]
+                <= MAX_DECODED_LOOP_CONTINUITY_RATIO
+            ):
+                break
+
+            import numpy as np
+
+            # A small source-to-generated color mismatch can otherwise become
+            # the only abrupt transition when that endpoint is mirrored. Low
+            # motion clips may need another bounded pass after the first one.
+            feathered = list(working_frames)
+            anchor = np.asarray(working_frames[0]).astype(np.float32)
+            for index, anchor_weight in ((1, 0.5), (2, 0.25)):
+                current = np.asarray(working_frames[index])
+                feathered[index] = np.rint(
+                    anchor * anchor_weight
+                    + current.astype(np.float32) * (1.0 - anchor_weight)
+                ).astype(current.dtype)
+            candidate = feathered + list(reversed(feathered[1:-1]))
+            if np.array_equal(candidate[0], candidate[-1]):
+                break
+            if (
+                _rgb_loop_transition_evidence(candidate)["continuityRatio"]
+                >= loop_evidence["continuityRatio"]
+            ):
+                break
+            working_frames = feathered
+            output_frames = candidate
+        return output_frames
     if loop_mode == "seamless":
-        # First/last endpoint restoration is handled before matting. Retaining
-        # the exact closing endpoint makes the repeat seam deterministic; at a
-        # quality delivery rate the duplicate hold lasts one frame.
-        return list(frames)
+        # Generators sample the closed interval [0, T], with the terminal
+        # conditioning frame representing the same instant as frame zero of
+        # the next cycle. Publish [0, T) so that instant is displayed once.
+        return list(frames[:-1])
     raise WorkerError("loopMode must be none, ping-pong, or seamless")
+
+
+def _loop_transition_evidence(frames: list[Any]) -> dict[str, float]:
+    import numpy as np
+
+    if len(frames) < 2:
+        return {
+            "boundaryMae": 0.0,
+            "referenceMae": 0.0,
+            "continuityRatio": 0.0,
+        }
+
+    def mae(first: Any, second: Any) -> float:
+        return float(
+            np.mean(
+                np.abs(
+                    first.astype(np.int16) - second.astype(np.int16)
+                )
+            )
+        )
+
+    adjacent = [
+        mae(frames[index - 1], frames[index])
+        for index in range(1, len(frames))
+    ]
+    boundary = mae(frames[-1], frames[0])
+    reference = float(np.percentile(adjacent, 95))
+    continuity_ratio = (
+        0.0
+        if boundary <= 1e-12 and reference <= 1e-12
+        else boundary / max(reference, 1e-12)
+    )
+    return {
+        "boundaryMae": boundary,
+        "referenceMae": reference,
+        "continuityRatio": continuity_ratio,
+    }
+
+
+def _rgb_loop_transition_evidence(frames: list[Any]) -> dict[str, float]:
+    return _loop_transition_evidence([frame[..., :3] for frame in frames])
+
+
+def _duplicate_frame_evidence(frames: list[Any]) -> dict[str, Any]:
+    import numpy as np
+
+    duplicate_transitions = [
+        index
+        for index in range(1, len(frames))
+        if np.array_equal(frames[index - 1], frames[index])
+    ]
+    return {
+        "exactAdjacentDuplicateCount": len(duplicate_transitions),
+        "exactAdjacentDuplicateTransitions": duplicate_transitions,
+        "duplicateClosureFrame": (
+            len(frames) > 1 and np.array_equal(frames[-1], frames[0])
+        ),
+    }
+
+
+def _cadence_evidence(frames: list[Any]) -> dict[str, float | int]:
+    import numpy as np
+
+    if len(frames) < 2:
+        return {
+            "transitionCount": 0,
+            "adjacentMaeMean": 0.0,
+            "coefficientOfVariation": 0.0,
+            "normalizedJerkMean": 0.0,
+            "lowTransitionFraction": 0.0,
+            "lowTransitionThreshold": 0.0,
+            "finalQuarterToFirstQuarterMeanRatio": 0.0,
+        }
+    values = np.asarray(
+        [
+            np.mean(
+                np.abs(
+                    frames[index].astype(np.int16)
+                    - frames[(index + 1) % len(frames)].astype(np.int16)
+                )
+            )
+            for index in range(len(frames))
+        ],
+        dtype=np.float64,
+    )
+    mean = float(np.mean(values))
+    median = float(np.median(values))
+    low_transition_threshold = median * LOOP_LOW_TRANSITION_MEDIAN_RATIO
+    jerk = np.roll(values, -1) - 2.0 * values + np.roll(values, 1)
+    quarter = max(1, len(values) // 4)
+    first_quarter_mean = float(np.mean(values[:quarter]))
+    final_quarter_mean = float(np.mean(values[-quarter:]))
+    return {
+        "transitionCount": len(values),
+        "adjacentMaeMean": mean,
+        "coefficientOfVariation": (
+            float(np.std(values)) / mean if mean > 0.0 else 0.0
+        ),
+        "normalizedJerkMean": (
+            float(np.mean(np.abs(jerk))) / mean if mean > 0.0 else 0.0
+        ),
+        "lowTransitionFraction": float(
+            np.mean(values <= low_transition_threshold)
+        ),
+        "lowTransitionThreshold": low_transition_threshold,
+        "finalQuarterToFirstQuarterMeanRatio": (
+            final_quarter_mean / first_quarter_mean
+            if first_quarter_mean > 0.0
+            else 0.0
+        ),
+    }
+
+
+def _require_decoded_loop_continuity(
+    evidence: dict[str, float],
+    label: str,
+) -> None:
+    continuity_ratio = evidence["continuityRatio"]
+    if continuity_ratio > MAX_DECODED_LOOP_CONTINUITY_RATIO:
+        raise WorkerError(
+            f"{label} loop seam is {continuity_ratio:.3f}x its internal "
+            "transition reference; quality limit is "
+            f"{MAX_DECODED_LOOP_CONTINUITY_RATIO:.2f}x"
+        )
+
+
+def _require_decoded_loop_cadence(
+    evidence: dict[str, float | int],
+    label: str,
+) -> None:
+    low_transition_fraction = float(evidence["lowTransitionFraction"])
+    normalized_jerk = float(evidence["normalizedJerkMean"])
+    if (
+        low_transition_fraction >= MAX_DECODED_LOOP_LOW_TRANSITION_FRACTION
+        and normalized_jerk >= MAX_DECODED_LOOP_NORMALIZED_JERK
+    ):
+        raise WorkerError(
+            f"{label} loop cadence contains {low_transition_fraction:.1%} "
+            "near-hold transitions with "
+            f"{normalized_jerk:.3f} normalized jerk; evenly retime or "
+            "regenerate the loop instead of stretching sparse frames"
+        )
+
+
+def _decoded_rgb_encoding_evidence(
+    decoded_frames: Any,
+    source_frames: list[Any],
+) -> dict[str, float | int]:
+    import numpy as np
+
+    source_rgb = np.stack([frame[..., :3] for frame in source_frames])
+    decoded_rgb = decoded_frames[..., :3]
+    error = np.abs(
+        decoded_rgb.astype(np.int16) - source_rgb.astype(np.int16)
+    )
+    return {
+        "mae": float(np.mean(error)),
+        "maximumError": int(np.max(error)),
+    }
 
 
 def _encode_animated_composite(
@@ -6688,11 +7026,11 @@ def _encode_animated_composite(
         position = (x + y) * 0.5
     composite_directory = output_directory / "composite-frames"
     composite_directory.mkdir()
-    endpoint_frames: list[Any] = []
-    denominator = max(frame_count - 1, 1)
+    composite_frames: list[Any] = []
+    denominator = frame_count if loop_mode != "none" else max(frame_count - 1, 1)
     for index, rgba in enumerate(rgba_frames):
-        # Integer cycles ensure the procedural background's final sample is
-        # identical to its first sample, preserving the repeat seam.
+        # A loop samples [0, 2π) so the boundary advances by the same phase
+        # step as every internal transition instead of holding on 2π.
         phase = 2.0 * np.pi * config["cycles"] * (index / denominator)
         if config["style"] == "enchanted-beach":
             background, spell_rgb, spell_alpha = _enchanted_beach_pixels(
@@ -6726,18 +7064,14 @@ def _encode_animated_composite(
             format="PNG",
             compress_level=3,
         )
-        if index in (0, frame_count - 1):
-            endpoint_frames.append(composed)
-    endpoint_mae = float(
-        np.mean(
-            np.abs(
-                endpoint_frames[0].astype(np.int16)
-                - endpoint_frames[-1].astype(np.int16)
-            )
-        )
-    )
+        composite_frames.append(composed)
+    loop_evidence = _loop_transition_evidence(composite_frames)
     destination = output_directory / "output-0001.webm"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    pixel_format, color_range = _vp9_delivery_pixel_format(
+        encoding_quality,
+        alpha=False,
+    )
     encoded = subprocess.run(
         [
             ffmpeg,
@@ -6753,8 +7087,15 @@ def _encode_animated_composite(
             "-c:v",
             "libvpx-vp9",
             "-pix_fmt",
-            "yuv420p",
+            pixel_format,
+            *(
+                ["-color_range", "pc"]
+                if color_range == "full"
+                else []
+            ),
             *_vp9_quality_arguments(encoding_quality, alpha=False),
+            "-fps_mode",
+            "passthrough",
             str(destination),
         ],
         capture_output=True,
@@ -6801,18 +7142,36 @@ def _encode_animated_composite(
     decoded_frames = np.frombuffer(verified.stdout, dtype=np.uint8).reshape(
         (frame_count, height, width, 3)
     )
-    decoded_endpoint_mae = float(
-        np.mean(
-            np.abs(
-                decoded_frames[0].astype(np.int16)
-                - decoded_frames[-1].astype(np.int16)
-            )
-        )
+    duplicate_evidence = _duplicate_frame_evidence(composite_frames)
+    decoded_duplicate_evidence = _duplicate_frame_evidence(
+        list(decoded_frames)
     )
-    if loop_mode != "none" and decoded_endpoint_mae > 1.0:
+    encoding_evidence = _decoded_rgb_encoding_evidence(
+        decoded_frames,
+        composite_frames,
+    )
+    if (
+        encoding_quality == "lossless"
+        and pixel_format == "yuv444p"
+        and encoding_evidence["maximumError"] > 2
+    ):
         raise WorkerError(
-            "Animated-background WebM introduced an excessive decoded loop seam: "
-            f"{decoded_endpoint_mae:.3f} MAE"
+            "Lossless animated-background WebM exceeded the verified RGB "
+            f"round-trip error: {encoding_evidence['maximumError']}"
+        )
+    decoded_loop_evidence = _loop_transition_evidence(list(decoded_frames))
+    if loop_mode == "seamless" and (
+        decoded_duplicate_evidence["exactAdjacentDuplicateCount"] > 0
+        or decoded_duplicate_evidence["duplicateClosureFrame"]
+    ):
+        raise WorkerError(
+            "Animated-background WebM decoded with an exact duplicate frame "
+            "or closure hold"
+        )
+    if loop_mode != "none":
+        _require_decoded_loop_continuity(
+            decoded_loop_evidence,
+            "Animated-background WebM",
         )
     return destination, {
         "index": 1,
@@ -6824,10 +7183,33 @@ def _encode_animated_composite(
         "durationSeconds": frame_count / fps,
         "hasAlpha": False,
         "loopMode": loop_mode,
-        "loopEndpointMae": endpoint_mae,
+        "loopEndpointMae": loop_evidence["boundaryMae"],
+        "loopBoundaryReferenceMae": loop_evidence["referenceMae"],
+        "loopBoundaryContinuityRatio": loop_evidence["continuityRatio"],
         "decodedFrameCount": frame_count,
-        "decodedLoopEndpointMae": decoded_endpoint_mae,
+        "decodedLoopEndpointMae": decoded_loop_evidence["boundaryMae"],
+        "decodedLoopBoundaryReferenceMae": decoded_loop_evidence[
+            "referenceMae"
+        ],
+        "decodedLoopBoundaryContinuityRatio": decoded_loop_evidence[
+            "continuityRatio"
+        ],
+        "decodedRgbEncodingMae": encoding_evidence["mae"],
+        "decodedRgbEncodingMaximumError": encoding_evidence["maximumError"],
+        "frameCadence": "source-passthrough",
+        **duplicate_evidence,
+        "decodedExactAdjacentDuplicateCount": decoded_duplicate_evidence[
+            "exactAdjacentDuplicateCount"
+        ],
+        "decodedExactAdjacentDuplicateTransitions": decoded_duplicate_evidence[
+            "exactAdjacentDuplicateTransitions"
+        ],
+        "decodedDuplicateClosureFrame": decoded_duplicate_evidence[
+            "duplicateClosureFrame"
+        ],
         "encodingQuality": encoding_quality,
+        "pixelFormat": pixel_format,
+        "colorRange": color_range,
         "codec": "vp9",
         "container": "webm",
         "background": {
@@ -6902,16 +7284,29 @@ def _encode_video_webm(
             format="PNG",
             compress_level=3,
         )
-    endpoint_mae = float(
-        np.mean(
-            np.abs(
-                output_frames[0].astype(np.int16)
-                - output_frames[-1].astype(np.int16)
-            )
-        )
+    loop_evidence = _rgb_loop_transition_evidence(output_frames)
+    duplicate_evidence = _duplicate_frame_evidence(output_frames)
+    cadence_evidence = _cadence_evidence(
+        [frame[..., :3] for frame in output_frames]
     )
+    if loop_mode == "seamless" and (
+        duplicate_evidence["exactAdjacentDuplicateCount"] > 0
+        or duplicate_evidence["duplicateClosureFrame"]
+    ):
+        raise WorkerError(
+            "Seamless delivery contains an exact duplicate frame or closure hold"
+        )
+    if loop_mode == "seamless":
+        _require_decoded_loop_cadence(
+            cadence_evidence,
+            "Source",
+        )
     destination = output_directory / "output-0000.webm"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    pixel_format, color_range = _vp9_delivery_pixel_format(
+        encoding_quality,
+        alpha=transparent_background,
+    )
     command = [
         ffmpeg,
         "-y",
@@ -6926,11 +7321,18 @@ def _encode_video_webm(
         "-c:v",
         "libvpx-vp9",
         "-pix_fmt",
-        "yuva420p" if transparent_background else "yuv420p",
+        pixel_format,
+        *(
+            ["-color_range", "pc"]
+            if color_range == "full"
+            else []
+        ),
         *_vp9_quality_arguments(
             encoding_quality,
             alpha=transparent_background,
         ),
+        "-fps_mode",
+        "passthrough",
         str(destination),
     ]
     encoded = subprocess.run(
@@ -6938,12 +7340,12 @@ def _encode_video_webm(
     )
     if encoded.returncode != 0:
         raise WorkerError(
-            "VP9 alpha encoding failed: " + encoded.stderr.strip()[-2_000:]
+            "VP9 encoding failed: " + encoded.stderr.strip()[-2_000:]
         )
     if not destination.is_file() or destination.stat().st_size == 0:
-        raise WorkerError("VP9 alpha encoder produced no output")
+        raise WorkerError("VP9 encoder produced no output")
     if destination.read_bytes()[:4] != b"\x1aE\xdf\xa3":
-        raise WorkerError("VP9 alpha encoder produced an invalid WebM container")
+        raise WorkerError("VP9 encoder produced an invalid WebM container")
 
     # Force libvpx for transparent decode; FFmpeg's native decoder may discard
     # the WebM alpha plane even when the stream metadata is valid.
@@ -7008,39 +7410,65 @@ def _encode_video_webm(
         )
         decoded_alpha_minimum = 255
         decoded_alpha_maximum = 255
-    decoded_loop_endpoint_mae = float(
-        np.mean(
-            np.abs(
-                decoded_frames[0].astype(np.int16)
-                - decoded_frames[-1].astype(np.int16)
-            )
-        )
-    )
-    decoded_alpha_loop_endpoint_mae = (
-        float(
-            np.mean(
-                np.abs(
-                    decoded_frames[0, ..., 3].astype(np.int16)
-                    - decoded_frames[-1, ..., 3].astype(np.int16)
-                )
-            )
-        )
-        if transparent_background
-        else 0.0
+    encoding_evidence = _decoded_rgb_encoding_evidence(
+        decoded_frames,
+        output_frames,
     )
     if (
-        loop_mode != "none"
-        and (
-            decoded_loop_endpoint_mae > 1.0
-            or decoded_alpha_loop_endpoint_mae > 1.0
-        )
+        encoding_quality == "lossless"
+        and pixel_format == "yuv444p"
+        and encoding_evidence["maximumError"] > 2
     ):
         raise WorkerError(
-            "Encoded WebM introduced an excessive decoded loop seam: "
-            f"{decoded_loop_endpoint_mae:.3f} RGBA MAE, "
-            f"{decoded_alpha_loop_endpoint_mae:.3f} alpha MAE"
+            "Lossless opaque WebM exceeded the verified RGB round-trip error: "
+            f"{encoding_evidence['maximumError']}"
         )
+    decoded_loop_evidence = _rgb_loop_transition_evidence(
+        list(decoded_frames)
+    )
+    decoded_duplicate_evidence = _duplicate_frame_evidence(
+        list(decoded_frames)
+    )
+    decoded_cadence_evidence = _cadence_evidence(
+        [frame[..., :3] for frame in decoded_frames]
+    )
+    decoded_alpha_loop_evidence = (
+        _loop_transition_evidence(
+            [frame[..., 3] for frame in decoded_frames]
+        )
+        if transparent_background
+        else {
+            "boundaryMae": 0.0,
+            "referenceMae": 0.0,
+            "continuityRatio": 0.0,
+        }
+    )
+    if loop_mode != "none":
+        if loop_mode == "seamless" and (
+            decoded_duplicate_evidence["exactAdjacentDuplicateCount"] > 0
+            or decoded_duplicate_evidence["duplicateClosureFrame"]
+        ):
+            raise WorkerError(
+                "Encoded seamless WebM decoded with an exact duplicate frame "
+                "or closure hold"
+            )
+        _require_decoded_loop_continuity(
+            decoded_loop_evidence,
+            "Encoded WebM color",
+        )
+        if loop_mode == "seamless":
+            _require_decoded_loop_cadence(
+                decoded_cadence_evidence,
+                "Encoded WebM",
+            )
+        if transparent_background:
+            _require_decoded_loop_continuity(
+                decoded_alpha_loop_evidence,
+                "Encoded WebM alpha",
+            )
     evidence = {
+        "width": output_frames[0].shape[1],
+        "height": output_frames[0].shape[0],
         "frameCount": len(output_frames),
         "sourceFrameCount": len(frames),
         "fps": fps,
@@ -7050,13 +7478,46 @@ def _encode_video_webm(
         "decodedAlphaMinimum": decoded_alpha_minimum,
         "decodedAlphaMaximum": decoded_alpha_maximum,
         "decodedFrameCount": len(decoded_frames),
-        "decodedLoopEndpointMae": decoded_loop_endpoint_mae,
-        "decodedAlphaLoopEndpointMae": decoded_alpha_loop_endpoint_mae,
+        "decodedLoopEndpointMae": decoded_loop_evidence["boundaryMae"],
+        "decodedLoopBoundaryReferenceMae": decoded_loop_evidence[
+            "referenceMae"
+        ],
+        "decodedLoopBoundaryContinuityRatio": decoded_loop_evidence[
+            "continuityRatio"
+        ],
+        "decodedAlphaLoopEndpointMae": decoded_alpha_loop_evidence[
+            "boundaryMae"
+        ],
+        "decodedAlphaLoopBoundaryReferenceMae": decoded_alpha_loop_evidence[
+            "referenceMae"
+        ],
+        "decodedAlphaLoopBoundaryContinuityRatio": decoded_alpha_loop_evidence[
+            "continuityRatio"
+        ],
+        "decodedRgbEncodingMae": encoding_evidence["mae"],
+        "decodedRgbEncodingMaximumError": encoding_evidence["maximumError"],
+        "frameCadence": "source-passthrough",
+        "cadence": cadence_evidence,
+        "decodedCadence": decoded_cadence_evidence,
+        **duplicate_evidence,
+        "decodedExactAdjacentDuplicateCount": decoded_duplicate_evidence[
+            "exactAdjacentDuplicateCount"
+        ],
+        "decodedExactAdjacentDuplicateTransitions": decoded_duplicate_evidence[
+            "exactAdjacentDuplicateTransitions"
+        ],
+        "decodedDuplicateClosureFrame": decoded_duplicate_evidence[
+            "duplicateClosureFrame"
+        ],
         "loopMode": loop_mode,
-        "loopEndpointMae": endpoint_mae,
+        "loopEndpointMae": loop_evidence["boundaryMae"],
+        "loopBoundaryReferenceMae": loop_evidence["referenceMae"],
+        "loopBoundaryContinuityRatio": loop_evidence["continuityRatio"],
         "hasAlpha": transparent_background,
         "matte": matte_evidence,
         "encodingQuality": encoding_quality,
+        "pixelFormat": pixel_format,
+        "colorRange": color_range,
         "codec": "vp9",
         "container": "webm",
     }
@@ -7384,7 +7845,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         or not 1 <= fps <= 60
     ):
         raise WorkerError("fps must be between 1 and 60")
-    loop_mode = request.get("loopMode", "ping-pong")
+    loop_mode = request.get("loopMode", "none")
     if loop_mode not in ("none", "ping-pong", "seamless"):
         raise WorkerError("loopMode must be none, ping-pong, or seamless")
     transparent_background = request.get("transparentBackground", True)
@@ -7460,10 +7921,24 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             "HunyuanVideo 1.5 supports one native first-frame reference; "
             "use FramePack or LTX-Video for distinct first and last references"
         )
+    if architecture == "hunyuan-video-1.5-i2v" and loop_mode == "seamless":
+        raise WorkerError(
+            "HunyuanVideo 1.5 cannot natively condition a closing frame; "
+            "use LTX-Video or FramePack with matching endpoints"
+        )
     if loop_mode == "seamless" and not same_endpoint:
         raise WorkerError(
             "seamless loopMode requires the same first and last source asset; "
-            "use none for an intentionally changing shot or ping-pong for reversal"
+            "use none for an intentionally changing shot"
+        )
+    if (
+        architecture == "framepack-i2v"
+        and loop_mode == "seamless"
+        and num_frames <= 33
+    ):
+        raise WorkerError(
+            "FramePack seamless loops require at least 37 source frames so motion "
+            "is generated across more than one native temporal window"
         )
     memory_evidence = _start_video_memory_observation(torch, device)
     conv3d_backend = _configure_video_conv3d_backend(torch, device)

@@ -9,10 +9,7 @@ import type {
   MediaStudioSection,
   MediaStudioState,
 } from "../../../core/media/contracts.js";
-import {
-  getMediaNodeDefinition,
-  upgradeMediaFlowQualityDefaults,
-} from "../../../core/media/node-registry.js";
+import { getMediaNodeDefinition } from "../../../core/media/node-registry.js";
 import { validateMediaFlowVariableDocument } from "../../../core/media/variables.js";
 import {
   loadStoredValue,
@@ -452,7 +449,7 @@ const normalizeStoredFlow = (value: unknown): MediaFlow | null => {
     }
 
     return validateMediaFlowVariableDocument(candidate).length === 0
-      ? upgradeMediaFlowQualityDefaults({ flow: candidate })
+      ? candidate
       : null;
   } catch {
     return null;

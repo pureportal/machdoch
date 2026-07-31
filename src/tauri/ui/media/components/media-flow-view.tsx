@@ -113,6 +113,7 @@ import {
   subjectCutoutModelLabel,
 } from "../../../../core/media/subject-cutout-policy.js";
 import {
+  fitMediaVideoDuration,
   identifyMediaVideoQualityPreset,
   isMediaVideoFrameCountValid,
   MEDIA_VIDEO_QUALITY_PRESETS,
@@ -120,6 +121,7 @@ import {
   resolveMediaVideoFrameContract,
   resolveMediaVideoQualityPresetSettings,
   summarizeMediaVideoDelivery,
+  type MediaVideoLoopMode,
 } from "../../../../core/media/video-quality.js";
 import { MediaFlowVariablesPanel } from "./media-flow-variables-panel";
 import { MediaFlowTemplatesPanel } from "./media-flow-templates-panel";
@@ -154,11 +156,7 @@ interface MediaFlowViewProps {
   onLayoutChange: (layout: MediaFlowLayout) => void;
   onFlowVariablesChange?: (flow: MediaFlow) => void;
   onTemplateApply?: (result: InstantiateMediaFlowTemplateResult) => void;
-  onNodeConfigChange: (
-    nodeId: string,
-    fieldId: string,
-    value: unknown,
-  ) => void;
+  onNodeConfigChange: (nodeId: string, fieldId: string, value: unknown) => void;
   onNodeConfigPatch?: (
     nodeId: string,
     values: Readonly<Record<string, unknown>>,
@@ -296,13 +294,15 @@ const RUN_OVERLAY_NODE_STYLES: Record<MediaRunOverlayNodeState, string> = {
   retrying: "ring-2 ring-amber-300/70 ring-offset-2 ring-offset-slate-950",
   completed: "ring-2 ring-emerald-300/65 ring-offset-2 ring-offset-slate-950",
   cached: "ring-2 ring-teal-300/55 ring-offset-2 ring-offset-slate-950",
-  skipped: "ring-1 ring-slate-400/45 ring-offset-2 ring-offset-slate-950 opacity-70",
+  skipped:
+    "ring-1 ring-slate-400/45 ring-offset-2 ring-offset-slate-950 opacity-70",
   failed: "ring-2 ring-rose-300/80 ring-offset-2 ring-offset-slate-950",
   blocked: "ring-2 ring-orange-300/80 ring-offset-2 ring-offset-slate-950",
   rejected: "ring-2 ring-rose-300/65 ring-offset-2 ring-offset-slate-950",
   canceled: "ring-2 ring-slate-400/55 ring-offset-2 ring-offset-slate-950",
   "not-reached": "opacity-55 grayscale-[0.35]",
-  "not-observed": "ring-1 ring-slate-500/45 ring-offset-2 ring-offset-slate-950",
+  "not-observed":
+    "ring-1 ring-slate-500/45 ring-offset-2 ring-offset-slate-950",
 };
 
 const RUN_OVERLAY_BADGE_STYLES: Record<MediaRunOverlayNodeState, string> = {
@@ -322,7 +322,10 @@ const RUN_OVERLAY_BADGE_STYLES: Record<MediaRunOverlayNodeState, string> = {
   "not-observed": "border-slate-500/25 bg-slate-900/50 text-slate-400",
 };
 
-const readNodeDetail = (config: Record<string, unknown>): string => {
+const readNodeDetail = (
+  config: Record<string, unknown>,
+  architecture: MediaModelDescriptor["architecture"] = null,
+): string => {
   if (Array.isArray(config.modelPriority)) {
     const priority = config.modelPriority.filter(
       (modelId): modelId is string => typeof modelId === "string",
@@ -343,22 +346,22 @@ const readNodeDetail = (config: Record<string, unknown>): string => {
   if (typeof config.outputCount === "number") {
     return `${config.outputCount} output${config.outputCount === 1 ? "" : "s"}`;
   }
-  if (
-    typeof config.durationSeconds === "number" &&
-    typeof config.aspectRatio === "string"
-  ) {
-    return `${config.durationSeconds}s · ${config.aspectRatio}${
-      typeof config.resolution === "string" ? ` · ${config.resolution}` : ""
-    }`;
+  const delivery = summarizeMediaVideoDelivery(config, architecture);
+  if (delivery) {
+    const loop =
+      delivery.loopMode === "ping-pong"
+        ? "boomerang · reversed"
+        : delivery.loopMode === "seamless"
+          ? "seamless"
+          : "one-way";
+    return `${delivery.durationSeconds.toFixed(2)}s · ${delivery.outputFrameCount} frames · ${delivery.width}×${delivery.height} · ${loop}`;
   }
   return "Configured by the recipe compiler";
 };
 
-const mediaAssetLabel = (
-  asset: MediaAssetRecord,
-  index: number,
-): string =>
-  asset.tags.find((tag) => tag.source === "user")?.label ?? `Image ${index + 1}`;
+const mediaAssetLabel = (asset: MediaAssetRecord, index: number): string =>
+  asset.tags.find((tag) => tag.source === "user")?.label ??
+  `Image ${index + 1}`;
 
 const MediaAssetThumbnail = ({
   asset,
@@ -395,11 +398,17 @@ const MediaAssetThumbnail = ({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  // Asset ids identify immutable image bytes; runtime metadata objects refresh periodically.
+    // Asset ids identify immutable image bytes; runtime metadata objects refresh periodically.
   }, [assetId]);
 
   if (url) {
-    return <img src={url} alt={alt} className={cn("h-full w-full object-cover", className)} />;
+    return (
+      <img
+        src={url}
+        alt={alt}
+        className={cn("h-full w-full object-cover", className)}
+      />
+    );
   }
 
   return (
@@ -421,7 +430,8 @@ const MediaAssetThumbnail = ({
 
 const isEditableShortcutTarget = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
-  (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
+  (target.isContentEditable ||
+    ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 
 const MediaFlowNodeCard = ({
   data,
@@ -439,7 +449,8 @@ const MediaFlowNodeCard = ({
         "w-52 rounded-2xl border px-4 py-3 shadow-2xl shadow-black/30 outline-none backdrop-blur transition-[border-color,box-shadow]",
         LAYER_STYLES[data.layer],
         data.runOverlay && RUN_OVERLAY_NODE_STYLES[data.runOverlay.state],
-        selected && "ring-2 ring-sky-300/80 ring-offset-2 ring-offset-slate-950",
+        selected &&
+          "ring-2 ring-sky-300/80 ring-offset-2 ring-offset-slate-950",
       )}
     >
       {data.inputs.map((port, index) => (
@@ -669,27 +680,29 @@ const MediaAssetPicker = ({
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredAssets = useMemo(
-    () => imageAssets.filter((asset, index) => {
-      if (!normalizedQuery) return true;
-      return [
-        mediaAssetLabel(asset, index),
-        asset.id,
-        asset.digest,
-        `${asset.width}x${asset.height}`,
-        ...asset.tags.map((tag) => tag.label),
-      ]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(normalizedQuery);
-    }),
+    () =>
+      imageAssets.filter((asset, index) => {
+        if (!normalizedQuery) return true;
+        return [
+          mediaAssetLabel(asset, index),
+          asset.id,
+          asset.digest,
+          `${asset.width}x${asset.height}`,
+          ...asset.tags.map((tag) => tag.label),
+        ]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(normalizedQuery);
+      }),
     [imageAssets, normalizedQuery],
   );
   const currentAssetIndex = currentAsset
     ? imageAssets.findIndex((asset) => asset.id === currentAsset.id)
     : -1;
-  const currentAssetLabel = currentAsset && currentAssetIndex >= 0
-    ? mediaAssetLabel(currentAsset, currentAssetIndex)
-    : null;
+  const currentAssetLabel =
+    currentAsset && currentAssetIndex >= 0
+      ? mediaAssetLabel(currentAsset, currentAssetIndex)
+      : null;
 
   const handleOpenChange = (nextOpen: boolean): void => {
     setOpen(nextOpen);
@@ -715,7 +728,10 @@ const MediaAssetPicker = ({
       >
         <span className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
           {currentAsset ? (
-            <MediaAssetThumbnail asset={currentAsset} alt={`${currentAssetLabel ?? fieldLabel} thumbnail`} />
+            <MediaAssetThumbnail
+              asset={currentAsset}
+              alt={`${currentAssetLabel ?? fieldLabel} thumbnail`}
+            />
           ) : (
             <span className="flex h-full w-full items-center justify-center text-slate-600">
               <ImageIcon aria-hidden="true" className="h-5 w-5" />
@@ -723,19 +739,26 @@ const MediaAssetPicker = ({
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span className={cn(
-            "block break-words text-xs leading-5 font-medium",
-            currentAsset ? "text-slate-100" : "text-slate-400",
-          )}>
-            {currentAssetLabel ?? (currentAssetId ? "Unavailable asset" : "Choose an asset…")}
+          <span
+            className={cn(
+              "block break-words text-xs leading-5 font-medium",
+              currentAsset ? "text-slate-100" : "text-slate-400",
+            )}
+          >
+            {currentAssetLabel ??
+              (currentAssetId ? "Unavailable asset" : "Choose an asset…")}
           </span>
           <span className="mt-1 block truncate text-[10px] text-slate-500">
             {currentAsset
               ? `${currentAsset.width} × ${currentAsset.height}`
-              : currentAssetId || `${imageAssets.length} image${imageAssets.length === 1 ? "" : "s"} available`}
+              : currentAssetId ||
+                `${imageAssets.length} image${imageAssets.length === 1 ? "" : "s"} available`}
           </span>
         </span>
-        <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" />
+        <ChevronDown
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 text-slate-500"
+        />
       </button>
 
       <DialogContent className="max-h-[min(760px,calc(100vh-28px))] w-[min(720px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
@@ -762,7 +785,9 @@ const MediaAssetPicker = ({
               className="grid grid-cols-2 gap-3 sm:grid-cols-3"
             >
               {filteredAssets.map((asset) => {
-                const assetIndex = imageAssets.findIndex((candidate) => candidate.id === asset.id);
+                const assetIndex = imageAssets.findIndex(
+                  (candidate) => candidate.id === asset.id,
+                );
                 const label = mediaAssetLabel(asset, assetIndex);
                 const selected = asset.id === currentAssetId;
                 return (
@@ -778,11 +803,16 @@ const MediaAssetPicker = ({
                     }}
                     className={cn(
                       "group min-w-0 overflow-hidden rounded-xl border bg-slate-900/45 text-left outline-none transition-colors hover:border-sky-400/45 hover:bg-sky-400/5 focus-visible:ring-2 focus-visible:ring-sky-400/50",
-                      selected ? "border-sky-400/60 ring-1 ring-sky-400/25" : "border-slate-800",
+                      selected
+                        ? "border-sky-400/60 ring-1 ring-sky-400/25"
+                        : "border-slate-800",
                     )}
                   >
                     <span className="relative block aspect-square overflow-hidden bg-slate-900">
-                      <MediaAssetThumbnail asset={asset} alt={`${label} thumbnail`} />
+                      <MediaAssetThumbnail
+                        asset={asset}
+                        alt={`${label} thumbnail`}
+                      />
                       {selected ? (
                         <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-sky-400 text-slate-950 shadow-lg">
                           <Check aria-hidden="true" className="h-3.5 w-3.5" />
@@ -858,17 +888,21 @@ const NodeFieldEditor = ({
   const descriptionId = `${controlId}-description`;
   const issueId = `${controlId}-issue`;
   const value = node.config[field.id];
-  const variableTokenId = typeof value === "string"
-    ? value.match(/^\{\{([a-z][a-z0-9_-]{0,63})\}\}$/u)?.[1] ?? null
-    : null;
-  const compatibleVariableTypes = field.kind === "number"
-    ? new Set(["number"])
-    : field.kind === "boolean"
-      ? new Set(["boolean"])
-      : new Set(["text", "choice"]);
-  const compatibleVariables = variables.filter((variable) => compatibleVariableTypes.has(variable.type));
+  const variableTokenId =
+    typeof value === "string"
+      ? (value.match(/^\{\{([a-z][a-z0-9_-]{0,63})\}\}$/u)?.[1] ?? null)
+      : null;
+  const compatibleVariableTypes =
+    field.kind === "number"
+      ? new Set(["number"])
+      : field.kind === "boolean"
+        ? new Set(["boolean"])
+        : new Set(["text", "choice"]);
+  const compatibleVariables = variables.filter((variable) =>
+    compatibleVariableTypes.has(variable.type),
+  );
   const boundVariable = variableTokenId
-    ? variables.find((variable) => variable.id === variableTokenId) ?? null
+    ? (variables.find((variable) => variable.id === variableTokenId) ?? null)
     : null;
   const selectedOption = field.options?.find(
     (candidate) => candidate.value === value,
@@ -877,7 +911,8 @@ const NodeFieldEditor = ({
     node.type === "task.generate-video"
       ? new Set(["text-to-video", "image-to-video", "start-end-to-video"])
       : new Set([
-          node.type === "task.generate-image" && node.config.outputFormat === "svg"
+          node.type === "task.generate-image" &&
+          node.config.outputFormat === "svg"
             ? "text-to-svg"
             : "text-to-image",
         ]);
@@ -901,10 +936,9 @@ const NodeFieldEditor = ({
     !compatibleModels.some((model) => model.id === currentModelId);
   const imageAssets = assets.filter((asset) => asset.kind === "image");
   const currentAssetId = typeof value === "string" ? value : "";
-  const currentAsset = imageAssets.find((asset) => asset.id === currentAssetId) ?? null;
-  const describedBy = issue
-    ? `${descriptionId} ${issueId}`
-    : descriptionId;
+  const currentAsset =
+    imageAssets.find((asset) => asset.id === currentAssetId) ?? null;
+  const describedBy = issue ? `${descriptionId} ${issueId}` : descriptionId;
 
   let control: JSX.Element;
   switch (field.kind) {
@@ -1044,8 +1078,11 @@ const NodeFieldEditor = ({
           className="mt-2 space-y-2"
         >
           {modelPriority.map((modelId, index) => {
-            const selectedModel = models.find((model) => model.id === modelId) ?? null;
-            const isMissing = !subjectCutoutModels.some((model) => model.id === modelId);
+            const selectedModel =
+              models.find((model) => model.id === modelId) ?? null;
+            const isMissing = !subjectCutoutModels.some(
+              (model) => model.id === modelId,
+            );
             return (
               <div
                 key={`${modelId}-${index}`}
@@ -1061,7 +1098,9 @@ const NodeFieldEditor = ({
                     aria-label={`${index === 0 ? "Primary" : `Fallback ${index}`} subject-cutout model`}
                     onChange={(event) => {
                       const nextPriority = [...modelPriority];
-                      const duplicateIndex = nextPriority.indexOf(event.target.value);
+                      const duplicateIndex = nextPriority.indexOf(
+                        event.target.value,
+                      );
                       if (duplicateIndex >= 0 && duplicateIndex !== index) {
                         [nextPriority[index], nextPriority[duplicateIndex]] = [
                           nextPriority[duplicateIndex]!,
@@ -1079,7 +1118,8 @@ const NodeFieldEditor = ({
                     ) : null}
                     {subjectCutoutModels.map((model) => (
                       <option key={model.id} value={model.id}>
-                        {model.displayName} · {model.installed ? "Ready" : "Not installed"}
+                        {model.displayName} ·{" "}
+                        {model.installed ? "Ready" : "Not installed"}
                       </option>
                     ))}
                   </select>
@@ -1102,7 +1142,9 @@ const NodeFieldEditor = ({
                     </button>
                     <button
                       type="button"
-                      disabled={field.readOnly || index === modelPriority.length - 1}
+                      disabled={
+                        field.readOnly || index === modelPriority.length - 1
+                      }
                       aria-label={`Move ${subjectCutoutModelLabel(modelId)} down`}
                       onClick={() => {
                         const nextPriority = [...modelPriority];
@@ -1123,7 +1165,9 @@ const NodeFieldEditor = ({
                       onClick={() =>
                         onChange(
                           field.id,
-                          modelPriority.filter((_, candidateIndex) => candidateIndex !== index),
+                          modelPriority.filter(
+                            (_, candidateIndex) => candidateIndex !== index,
+                          ),
                         )
                       }
                       className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:border-rose-400/30 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-30"
@@ -1137,7 +1181,11 @@ const NodeFieldEditor = ({
                     {index === 0 ? "Primary" : `Fallback ${index}`}
                   </span>
                   <span
-                    className={selectedModel?.installed ? "text-emerald-300" : "text-amber-300"}
+                    className={
+                      selectedModel?.installed
+                        ? "text-emerald-300"
+                        : "text-amber-300"
+                    }
                   >
                     {selectedModel?.installed ? "Ready" : "Unavailable"}
                   </span>
@@ -1172,9 +1220,15 @@ const NodeFieldEditor = ({
           aria-invalid={issue !== null}
           aria-describedby={describedBy}
           onChange={(event) =>
-            onChange(field.id, event.target.value === "" ? null : event.target.value)
+            onChange(
+              field.id,
+              event.target.value === "" ? null : event.target.value,
+            )
           }
-          className={cn(FIELD_CONTROL_CLASS, "h-9 w-full rounded-md border px-3")}
+          className={cn(
+            FIELD_CONTROL_CLASS,
+            "h-9 w-full rounded-md border px-3",
+          )}
         >
           <option value="">Automatic compatible model</option>
           {currentModelIsMissing ? (
@@ -1184,7 +1238,8 @@ const NodeFieldEditor = ({
           ) : null}
           {compatibleModels.map((model) => (
             <option key={model.id} value={model.id}>
-              {model.displayName} · {model.target === "local" ? "Local" : "Remote"}
+              {model.displayName} ·{" "}
+              {model.target === "local" ? "Local" : "Remote"}
               {model.lifecycle === "removed" ? " · Removed" : ""}
             </option>
           ))}
@@ -1200,7 +1255,10 @@ const NodeFieldEditor = ({
           aria-invalid={issue !== null}
           aria-describedby={describedBy}
           onChange={(event) => onChange(field.id, event.target.value)}
-          className={cn(FIELD_CONTROL_CLASS, "h-9 w-full rounded-md border px-3")}
+          className={cn(
+            FIELD_CONTROL_CLASS,
+            "h-9 w-full rounded-md border px-3",
+          )}
         >
           {field.options?.map((candidate) => (
             <option key={candidate.value} value={candidate.value}>
@@ -1216,7 +1274,12 @@ const NodeFieldEditor = ({
     control = (
       <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-cyan-400/25 bg-cyan-400/5 px-3 py-2">
         <code className="min-w-0 truncate text-[10px] text-cyan-200">{`{{${boundVariable.id}}}`}</code>
-        <Badge variant="outline" className="border-cyan-400/20 text-[8px] capitalize text-cyan-300">{boundVariable.type}</Badge>
+        <Badge
+          variant="outline"
+          className="border-cyan-400/20 text-[8px] capitalize text-cyan-300"
+        >
+          {boundVariable.type}
+        </Badge>
       </div>
     );
   }
@@ -1239,18 +1302,26 @@ const NodeFieldEditor = ({
           <select
             aria-label={`Variable binding for ${field.label}`}
             value={variableTokenId ?? ""}
-            onChange={(event) => onChange(
-              field.id,
-              event.target.value ? `{{${event.target.value}}}` : field.defaultValue,
-            )}
+            onChange={(event) =>
+              onChange(
+                field.id,
+                event.target.value
+                  ? `{{${event.target.value}}}`
+                  : field.defaultValue,
+              )
+            }
             className="h-6 max-w-32 rounded border border-cyan-400/20 bg-slate-950 px-1.5 text-[8px] text-cyan-300 outline-none focus:border-cyan-400/50"
           >
             <option value="">Direct value</option>
             {variableTokenId && !boundVariable ? (
-              <option value={variableTokenId}>Missing · {variableTokenId}</option>
+              <option value={variableTokenId}>
+                Missing · {variableTokenId}
+              </option>
             ) : null}
             {compatibleVariables.map((variable) => (
-              <option key={variable.id} value={variable.id}>{variable.name}</option>
+              <option key={variable.id} value={variable.id}>
+                {variable.name}
+              </option>
             ))}
           </select>
         ) : null}
@@ -1260,7 +1331,11 @@ const NodeFieldEditor = ({
         {selectedOption?.description ?? field.description}
       </p>
       {issue ? (
-        <p id={issueId} role="alert" className="mt-2 text-[10px] leading-4 text-rose-300">
+        <p
+          id={issueId}
+          role="alert"
+          className="mt-2 text-[10px] leading-4 text-rose-300"
+        >
           {issue.message}
         </p>
       ) : null}
@@ -1355,7 +1430,10 @@ const NodePalettePanel = ({
             );
             if (categoryDefinitions.length === 0) return null;
             return (
-              <section key={category} aria-labelledby={`node-category-${category}`}>
+              <section
+                key={category}
+                aria-labelledby={`node-category-${category}`}
+              >
                 <h3
                   id={`node-category-${category}`}
                   className="text-[9px] font-bold tracking-[0.15em] text-slate-600 uppercase"
@@ -1397,8 +1475,14 @@ const NodePalettePanel = ({
                         </span>
                         <span className="mt-2 flex flex-wrap gap-1">
                           {[
-                            ...definition.inputs.map((port) => ({ direction: "input", port })),
-                            ...definition.outputs.map((port) => ({ direction: "output", port })),
+                            ...definition.inputs.map((port) => ({
+                              direction: "input",
+                              port,
+                            })),
+                            ...definition.outputs.map((port) => ({
+                              direction: "output",
+                              port,
+                            })),
                           ].map(({ direction, port }) => (
                             <span
                               key={`${direction}-${port.id}-${port.dataType}`}
@@ -1437,11 +1521,14 @@ const VisualGroupEditor = ({
 }: {
   group: MediaFlowLayout["groups"][number];
   nodeLabels: ReadonlyMap<string, string>;
-  onChange: (groupId: string, change: {
-    label?: string;
-    color?: MediaFlowGroupColor;
-    collapsed?: boolean;
-  }) => void;
+  onChange: (
+    groupId: string,
+    change: {
+      label?: string;
+      color?: MediaFlowGroupColor;
+      collapsed?: boolean;
+    },
+  ) => void;
   onRemove: (groupId: string) => void;
 }): JSX.Element => {
   const [draftLabel, setDraftLabel] = useState(group.label);
@@ -1501,7 +1588,11 @@ const VisualGroupEditor = ({
             className="mt-1 h-7 w-full rounded-md border border-current/15 bg-slate-950/65 px-2 text-[10px] text-current outline-none"
           >
             {(["slate", "cyan", "violet", "amber", "emerald"] as const).map(
-              (color) => <option key={color} value={color}>{color}</option>,
+              (color) => (
+                <option key={color} value={color}>
+                  {color}
+                </option>
+              ),
             )}
           </select>
         </label>
@@ -1538,7 +1629,9 @@ const CanvasCommentEditor = ({
   comment: MediaFlowLayoutComment;
   onChange: (
     commentId: string,
-    change: Partial<Pick<MediaFlowLayoutComment, "body" | "color" | "width" | "height">>,
+    change: Partial<
+      Pick<MediaFlowLayoutComment, "body" | "color" | "width" | "height">
+    >,
   ) => void;
   onRemove: (commentId: string) => void;
 }): JSX.Element => {
@@ -1555,7 +1648,9 @@ const CanvasCommentEditor = ({
   };
 
   return (
-    <article className={cn("rounded-xl border p-3", GROUP_STYLES[comment.color])}>
+    <article
+      className={cn("rounded-xl border p-3", GROUP_STYLES[comment.color])}
+    >
       <div className="flex items-start gap-2">
         <StickyNote className="mt-1 h-3.5 w-3.5 shrink-0" />
         <Textarea
@@ -1600,7 +1695,11 @@ const CanvasCommentEditor = ({
             className="mt-1 h-7 w-full rounded-md border border-current/15 bg-slate-950/65 px-2 text-[10px] text-current outline-none"
           >
             {(["slate", "cyan", "violet", "amber", "emerald"] as const).map(
-              (color) => <option key={color} value={color}>{color}</option>,
+              (color) => (
+                <option key={color} value={color}>
+                  {color}
+                </option>
+              ),
             )}
           </select>
         </label>
@@ -1621,7 +1720,9 @@ const CanvasCommentEditor = ({
           </select>
         </label>
       </div>
-      <p className="mt-2 text-[8px] opacity-45">Ctrl+Enter saves · drag the card to position it</p>
+      <p className="mt-2 text-[8px] opacity-45">
+        Ctrl+Enter saves · drag the card to position it
+      </p>
     </article>
   );
 };
@@ -1650,7 +1751,8 @@ const VisualGroupsPanel = ({
             Canvas organization
           </div>
           <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Layout-only groups and comments are revisioned but never affect execution.
+            Layout-only groups and comments are revisioned but never affect
+            execution.
           </p>
         </div>
         <Button
@@ -1665,36 +1767,49 @@ const VisualGroupsPanel = ({
         </Button>
       </div>
       <section className="mt-5" aria-labelledby="visual-groups-heading">
-        <h3 id="visual-groups-heading" className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase">
+        <h3
+          id="visual-groups-heading"
+          className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+        >
           Groups · {layout.groups.length}
         </h3>
         <div className="mt-2 space-y-3">
-        {layout.groups.length > 0 ? layout.groups.map((group) => (
-          <VisualGroupEditor
-            key={group.id}
-            group={group}
-            nodeLabels={nodeLabels}
-            onChange={(groupId, change) =>
-              onChange(updateMediaFlowLayoutGroup({ layout, groupId, ...change }))
-            }
-            onRemove={(groupId) =>
-              onChange(removeMediaFlowLayoutGroup(layout, groupId))
-            }
-          />
-        )) : (
-          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-5 text-center">
-            <Group className="mx-auto h-5 w-5 text-slate-700" />
-            <p className="mt-2 text-xs font-medium text-slate-400">No visual groups</p>
-            <p className="mt-1 text-[10px] leading-4 text-slate-600">
-              Select at least two nodes on the canvas, then choose Group selected nodes.
-            </p>
-          </div>
-        )}
+          {layout.groups.length > 0 ? (
+            layout.groups.map((group) => (
+              <VisualGroupEditor
+                key={group.id}
+                group={group}
+                nodeLabels={nodeLabels}
+                onChange={(groupId, change) =>
+                  onChange(
+                    updateMediaFlowLayoutGroup({ layout, groupId, ...change }),
+                  )
+                }
+                onRemove={(groupId) =>
+                  onChange(removeMediaFlowLayoutGroup(layout, groupId))
+                }
+              />
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-5 text-center">
+              <Group className="mx-auto h-5 w-5 text-slate-700" />
+              <p className="mt-2 text-xs font-medium text-slate-400">
+                No visual groups
+              </p>
+              <p className="mt-1 text-[10px] leading-4 text-slate-600">
+                Select at least two nodes on the canvas, then choose Group
+                selected nodes.
+              </p>
+            </div>
+          )}
         </div>
       </section>
       <section className="mt-6" aria-labelledby="canvas-comments-heading">
         <div className="flex items-center justify-between gap-3">
-          <h3 id="canvas-comments-heading" className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase">
+          <h3
+            id="canvas-comments-heading"
+            className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+          >
             Comments · {layout.comments.length}
           </h3>
           <Button
@@ -1702,29 +1817,40 @@ const VisualGroupsPanel = ({
             variant="ghost"
             size="sm"
             disabled={layout.comments.length >= 64}
-            onClick={() => onChange(addMediaFlowLayoutComment({ layout }).layout)}
+            onClick={() =>
+              onChange(addMediaFlowLayoutComment({ layout }).layout)
+            }
             className="h-7 border-amber-400/20 bg-amber-400/5 px-2 text-[9px] text-amber-200 hover:bg-amber-400/10"
           >
             <MessageSquarePlus className="h-3 w-3" /> Add comment
           </Button>
         </div>
         <div className="mt-2 space-y-3">
-          {layout.comments.length > 0 ? layout.comments.map((comment) => (
-            <CanvasCommentEditor
-              key={comment.id}
-              comment={comment}
-              onChange={(commentId, change) =>
-                onChange(updateMediaFlowLayoutComment({ layout, commentId, ...change }))
-              }
-              onRemove={(commentId) =>
-                onChange(removeMediaFlowLayoutComment(layout, commentId))
-              }
-            />
-          )) : (
+          {layout.comments.length > 0 ? (
+            layout.comments.map((comment) => (
+              <CanvasCommentEditor
+                key={comment.id}
+                comment={comment}
+                onChange={(commentId, change) =>
+                  onChange(
+                    updateMediaFlowLayoutComment({
+                      layout,
+                      commentId,
+                      ...change,
+                    }),
+                  )
+                }
+                onRemove={(commentId) =>
+                  onChange(removeMediaFlowLayoutComment(layout, commentId))
+                }
+              />
+            ))
+          ) : (
             <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-4 text-center">
               <StickyNote className="mx-auto h-5 w-5 text-slate-700" />
               <p className="mt-2 text-[10px] leading-4 text-slate-600">
-                Add review context, handoff notes, or creative direction directly to the canvas.
+                Add review context, handoff notes, or creative direction
+                directly to the canvas.
               </p>
             </div>
           )}
@@ -1749,10 +1875,14 @@ const NodeSelectionPanel = ({
 }): JSX.Element => {
   const selected = new Set(selectedNodeIds);
   const collapsed = new Set(
-    layout.groups.filter((group) => group.collapsed).flatMap((group) => group.nodeIds),
+    layout.groups
+      .filter((group) => group.collapsed)
+      .flatMap((group) => group.nodeIds),
   );
   const groupByNodeId = new Map(
-    layout.groups.flatMap((group) => group.nodeIds.map((nodeId) => [nodeId, group.label] as const)),
+    layout.groups.flatMap((group) =>
+      group.nodeIds.map((nodeId) => [nodeId, group.label] as const),
+    ),
   );
   const visibleNodeIds = flow.nodes
     .filter((node) => !collapsed.has(node.id))
@@ -1770,7 +1900,8 @@ const NodeSelectionPanel = ({
             Node selection
           </div>
           <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Choose an exact semantic region for grouping or clipboard operations.
+            Choose an exact semantic region for grouping or clipboard
+            operations.
           </p>
         </div>
         <Button
@@ -1835,7 +1966,9 @@ const NodeSelectionPanel = ({
                   {node.label}
                 </span>
                 <span className="mt-0.5 block truncate text-[9px] text-slate-600">
-                  {node.type}{groupLabel ? ` · ${groupLabel}` : ""}{hidden ? " · hidden" : ""}
+                  {node.type}
+                  {groupLabel ? ` · ${groupLabel}` : ""}
+                  {hidden ? " · hidden" : ""}
                 </span>
               </span>
             </label>
@@ -1856,6 +1989,10 @@ const VideoQualityPresetPanel = ({
   onApply: (values: Readonly<Record<string, unknown>>) => void;
 }): JSX.Element => {
   const architecture = model?.architecture;
+  const unsupportedLoopReason =
+    architecture === "hunyuan-video-1.5-i2v" && config.loopMode === "seamless"
+      ? "Hunyuan is first-frame-only. Choose an endpoint-conditioned model for a forward seamless loop."
+      : null;
   const activePreset = identifyMediaVideoQualityPreset(config, architecture);
   const activeDescription =
     MEDIA_VIDEO_QUALITY_PRESETS.find((preset) => preset.id === activePreset)
@@ -1868,6 +2005,27 @@ const VideoQualityPresetPanel = ({
     config.numFrames,
     architecture,
   );
+  const durationFits = ([2, 3, 4] as const).map((targetSeconds) => ({
+    targetSeconds,
+    fit:
+      typeof config.fps === "number" &&
+      (config.loopMode === "none" ||
+        config.loopMode === "ping-pong" ||
+        config.loopMode === "seamless")
+        ? fitMediaVideoDuration(
+            targetSeconds,
+            config.fps,
+            config.loopMode,
+            architecture,
+          )
+        : null,
+  }));
+  const smoothDurationFit =
+    config.loopMode === "none" ||
+    config.loopMode === "ping-pong" ||
+    config.loopMode === "seamless"
+      ? fitMediaVideoDuration(3, 24, config.loopMode, architecture)
+      : null;
   return (
     <section
       aria-labelledby="video-quality-preset-heading"
@@ -1894,7 +2052,11 @@ const VideoQualityPresetPanel = ({
             title={preset.description}
             onClick={() =>
               onApply(
-                resolveMediaVideoQualityPresetSettings(preset, architecture),
+                resolveMediaVideoQualityPresetSettings(
+                  preset,
+                  architecture,
+                  config.loopMode as MediaVideoLoopMode | undefined,
+                ),
               )
             }
             className={cn(
@@ -1911,6 +2073,83 @@ const VideoQualityPresetPanel = ({
       <p className="mt-2 text-[9px] leading-4 text-slate-500">
         {activeDescription}
       </p>
+      {unsupportedLoopReason ? (
+        <div
+          role="alert"
+          className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/8 px-2.5 py-2 text-[9px] leading-4 text-amber-100/75"
+        >
+          <span>{unsupportedLoopReason}</span>
+          <button
+            type="button"
+            onClick={() =>
+              onApply({
+                modelId: "local:framepack-i2v-hy-13b",
+              })
+            }
+            className="shrink-0 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 font-medium text-amber-100 outline-none hover:bg-amber-300/15 focus-visible:ring-2 focus-visible:ring-amber-300/40"
+          >
+            Use native loop model
+          </button>
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className="mr-0.5 text-[9px] font-medium text-slate-500">
+          Fit playback:
+        </span>
+        {durationFits.map(({ targetSeconds, fit }) => (
+          <button
+            key={targetSeconds}
+            type="button"
+            disabled={fit === null}
+            aria-pressed={
+              fit !== null && config.numFrames === fit.sourceFrameCount
+            }
+            title={
+              fit
+                ? `${fit.sourceFrameCount} native source frames deliver ${fit.outputFrameCount} frames (${fit.durationSeconds.toFixed(2)} seconds)${fit.exact ? "" : ", the closest supported duration"}`
+                : (unsupportedLoopReason ??
+                  "Choose a valid frame rate and loop mode first")
+            }
+            onClick={() => {
+              if (fit) onApply({ numFrames: fit.sourceFrameCount });
+            }}
+            className={cn(
+              "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40 disabled:cursor-not-allowed disabled:opacity-40",
+              fit !== null && config.numFrames === fit.sourceFrameCount
+                ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
+                : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
+            )}
+          >
+            {targetSeconds}s
+            {fit && !fit.exact ? ` ≈ ${fit.durationSeconds.toFixed(2)}s` : ""}
+          </button>
+        ))}
+        {smoothDurationFit?.exact ? (
+          <button
+            type="button"
+            aria-pressed={
+              config.fps === 24 &&
+              config.numFrames === smoothDurationFit.sourceFrameCount
+            }
+            title={`${smoothDurationFit.sourceFrameCount} native source frames deliver ${smoothDurationFit.outputFrameCount} frames in 3 seconds at 24 fps`}
+            onClick={() =>
+              onApply({
+                fps: 24,
+                numFrames: smoothDurationFit.sourceFrameCount,
+              })
+            }
+            className={cn(
+              "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
+              config.fps === 24 &&
+                config.numFrames === smoothDurationFit.sourceFrameCount
+                ? "border-sky-400/35 bg-sky-400/10 text-sky-200"
+                : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-sky-300/25 hover:text-slate-300",
+            )}
+          >
+            3s smooth · 24 fps
+          </button>
+        ) : null}
+      </div>
       {model ? (
         <>
           <p className="mt-2 text-[9px] leading-4 text-violet-200/70">
@@ -1918,6 +2157,13 @@ const VideoQualityPresetPanel = ({
             {execution.guidanceScale} guidance
             {execution.modelManaged ? " (fixed distilled trajectory)" : ""}.
           </p>
+          {architecture !== "wan-2.2-ti2v" ? (
+            <p className="mt-1 text-[9px] leading-4 text-amber-200/70">
+              This runtime has no separate negative-conditioning channel for the
+              selected model. Put identity, anatomy, camera, and stability
+              constraints directly in the Motion brief.
+            </p>
+          ) : null}
           <p
             className={cn(
               "mt-1 text-[9px] leading-4",
@@ -1937,7 +2183,15 @@ const VideoQualityPresetPanel = ({
           delivered frame{delivery.outputFrameCount === 1 ? "" : "s"} /{" "}
           {delivery.durationSeconds.toFixed(2)}s at {delivery.fps} fps /{" "}
           {delivery.transparent ? "verified alpha" : "opaque"} /{" "}
-          {delivery.encodingQuality}
+          {delivery.loopMode === "ping-pong"
+            ? "boomerang with reversed playback"
+            : delivery.loopMode === "seamless"
+              ? "forward seamless loop without a duplicate end frame"
+              : "one-way"}{" "}
+          /{" "}
+          {delivery.encodingQuality === "lossless" && !delivery.transparent
+            ? "full-range 4:4:4 lossless"
+            : `${delivery.encodingQuality} 4:2:0`}
         </p>
       ) : null}
     </section>
@@ -1959,8 +2213,7 @@ const VideoKeyframeReviewPanel = ({
   };
   model: MediaModelDescriptor | null;
 }): JSX.Element => {
-  const nativeFirstFrameOnly =
-    model?.architecture === "hunyuan-video-1.5-i2v";
+  const nativeFirstFrameOnly = model?.architecture === "hunyuan-video-1.5-i2v";
   const reviewedAssetCount = new Set(
     [firstFrame.asset?.id, lastFrame.asset?.id].filter(
       (assetId): assetId is string => assetId !== undefined,
@@ -1968,74 +2221,76 @@ const VideoKeyframeReviewPanel = ({
   ).size;
   return (
     <section
-    aria-labelledby="video-keyframe-review-heading"
-    className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3"
-  >
-    <div className="flex items-center justify-between gap-3">
-      <h3
-        id="video-keyframe-review-heading"
-        className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-100"
-      >
-        <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
-        Keyframe gate
-      </h3>
-      <span className="text-[9px] font-medium text-amber-300/70">
-        {firstFrame.connected && lastFrame.connected
-          ? firstFrame.asset && lastFrame.asset
-            ? `${reviewedAssetCount} reviewed asset${reviewedAssetCount === 1 ? "" : "s"}`
-            : "runtime sources"
-          : "incomplete"}
-      </span>
-    </div>
-    <div className="mt-2 grid grid-cols-2 gap-2">
-      {[
-        { label: "First frame", frame: firstFrame },
-        { label: "Last frame", frame: lastFrame },
-      ].map(({ label, frame }) => (
-        <div
-          key={label}
-          className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/55"
+      aria-labelledby="video-keyframe-review-heading"
+      className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3
+          id="video-keyframe-review-heading"
+          className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-100"
         >
-          <div className="aspect-video bg-black/30">
-            {frame.asset ? (
-              <MediaAssetThumbnail
-                asset={frame.asset}
-                alt={`${label} quality review`}
-                className="object-contain"
-              />
-            ) : (
-              <span className="flex h-full items-center justify-center px-2 text-center text-[9px] text-slate-600">
-                {frame.connected ? "Generated at run time" : "Not connected"}
+          <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
+          Keyframe gate
+        </h3>
+        <span className="text-[9px] font-medium text-amber-300/70">
+          {firstFrame.connected && lastFrame.connected
+            ? firstFrame.asset && lastFrame.asset
+              ? `${reviewedAssetCount} reviewed asset${reviewedAssetCount === 1 ? "" : "s"}`
+              : "runtime sources"
+            : "incomplete"}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {[
+          { label: "First frame", frame: firstFrame },
+          { label: "Last frame", frame: lastFrame },
+        ].map(({ label, frame }) => (
+          <div
+            key={label}
+            className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/55"
+          >
+            <div className="aspect-video bg-black/30">
+              {frame.asset ? (
+                <MediaAssetThumbnail
+                  asset={frame.asset}
+                  alt={`${label} quality review`}
+                  className="object-contain"
+                />
+              ) : (
+                <span className="flex h-full items-center justify-center px-2 text-center text-[9px] text-slate-600">
+                  {frame.connected ? "Generated at run time" : "Not connected"}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-slate-800 px-2 py-1.5">
+              <span className="text-[9px] font-medium text-slate-400">
+                {label}
               </span>
-            )}
+              {frame.asset ? (
+                <span className="text-[8px] tabular-nums text-slate-600">
+                  {frame.asset.width} x {frame.asset.height}
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="flex items-center justify-between gap-2 border-t border-slate-800 px-2 py-1.5">
-            <span className="text-[9px] font-medium text-slate-400">{label}</span>
-            {frame.asset ? (
-              <span className="text-[8px] tabular-nums text-slate-600">
-                {frame.asset.width} x {frame.asset.height}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      ))}
-    </div>
-    <p className="mt-2 text-[9px] leading-4 text-slate-500">
-      {nativeFirstFrameOnly
-        ? "Hunyuan uses the first image as its native reference; the last port must mirror it for the single-reference flow contract."
-        : "Both keys condition the generated motion."}{" "}
-      Inspect face, hands, limb count, costume, and framing at full size before a
-      quality run.
-    </p>
-    {firstFrame.asset &&
-    lastFrame.asset &&
-    firstFrame.asset.digest === lastFrame.asset.digest ? (
-      <p className="mt-1.5 text-[9px] leading-4 text-emerald-300/75">
+        ))}
+      </div>
+      <p className="mt-2 text-[9px] leading-4 text-slate-500">
         {nativeFirstFrameOnly
-          ? "Matching inputs satisfy the native first-frame contract; the ending remains model-authored."
-          : "Matching endpoint pixels are suitable for a seamless loop."}
+          ? "Hunyuan uses the first image as its native reference; the last port must mirror it for the single-reference flow contract."
+          : "Both keys condition the generated motion."}{" "}
+        Inspect face, hands, limb count, costume, and framing at full size
+        before a quality run.
       </p>
-    ) : null}
+      {firstFrame.asset &&
+      lastFrame.asset &&
+      firstFrame.asset.digest === lastFrame.asset.digest ? (
+        <p className="mt-1.5 text-[9px] leading-4 text-emerald-300/75">
+          {nativeFirstFrameOnly
+            ? "Matching inputs satisfy the native first-frame contract; the ending remains model-authored."
+            : "Matching endpoints close the cycle. If motion locks, try another seed or use two forward A→B and B→A legs."}
+        </p>
+      ) : null}
     </section>
   );
 };
@@ -2060,11 +2315,7 @@ const NodeInspector = ({
   plan: MediaCompiledPlan;
   models: readonly MediaModelDescriptor[];
   assets: readonly MediaAssetRecord[];
-  onNodeConfigChange: (
-    nodeId: string,
-    fieldId: string,
-    value: unknown,
-  ) => void;
+  onNodeConfigChange: (nodeId: string, fieldId: string, value: unknown) => void;
   onNodeConfigPatch?: (
     nodeId: string,
     values: Readonly<Record<string, unknown>>,
@@ -2186,7 +2437,8 @@ const NodeInspector = ({
           className="mt-4 rounded-xl border border-rose-400/25 bg-rose-400/5 p-3"
         >
           <p className="text-[10px] leading-4 text-rose-100">
-            Remove this node and {incoming.length + outgoing.length} connected edge
+            Remove this node and {incoming.length + outgoing.length} connected
+            edge
             {incoming.length + outgoing.length === 1 ? "" : "s"}?
           </p>
           <div className="mt-3 flex gap-2">
@@ -2281,8 +2533,9 @@ const NodeInspector = ({
                   assets={assets}
                   variables={flow.variables}
                   issue={
-                    validationIssues.find((issue) => issue.fieldId === field.id) ??
-                    null
+                    validationIssues.find(
+                      (issue) => issue.fieldId === field.id,
+                    ) ?? null
                   }
                   onChange={(fieldId, value) =>
                     onNodeConfigChange(node.id, fieldId, value)
@@ -2329,9 +2582,13 @@ const NodeInspector = ({
                 : "";
               const candidates = flow.nodes.flatMap((sourceNode) => {
                 if (sourceNode.id === node.id) return [];
-                const sourceDefinition = getMediaNodeDefinition(sourceNode.type);
+                const sourceDefinition = getMediaNodeDefinition(
+                  sourceNode.type,
+                );
                 return (sourceDefinition?.outputs ?? [])
-                  .filter((outputPort) => outputPort.dataType === inputPort.dataType)
+                  .filter(
+                    (outputPort) => outputPort.dataType === inputPort.dataType,
+                  )
                   .map((outputPort) => {
                     const request: MediaFlowConnectionRequest = {
                       fromNodeId: sourceNode.id,
@@ -2366,45 +2623,49 @@ const NodeInspector = ({
                       aria-label={`Connect ${inputPort.label}`}
                       className="mt-1.5 space-y-1"
                     >
-                      {candidates.length > 0 ? candidates.map(
-                        ({ sourceNode, outputPort, request, check }) => {
-                          const checked = currentEdges.some(
-                            (edge) =>
-                              edge.fromNodeId === request.fromNodeId &&
-                              edge.fromPortId === request.fromPortId,
-                          );
-                          return (
-                            <label
-                              key={`${sourceNode.id}\u001f${outputPort.id}`}
-                              className="flex items-start gap-2 rounded-md px-1.5 py-1 text-[10px] text-slate-300 hover:bg-slate-900/70"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={!checked && !check.valid}
-                                aria-label={`Use ${sourceNode.label} as ${inputPort.label}`}
-                                onChange={(event) => {
-                                  if (event.target.checked) onConnectPorts(request);
-                                  else onDisconnectConnection(request);
-                                }}
-                                className="mt-0.5 h-3.5 w-3.5 accent-cyan-400"
-                              />
-                              <span className="min-w-0">
-                                <span className="block truncate">
-                                  {sourceNode.label} · {outputPort.label}
-                                </span>
-                                {!checked && !check.valid ? (
-                                  <span className="block text-[8px] leading-3 text-amber-400/70">
-                                    {check.reason}
+                      {candidates.length > 0 ? (
+                        candidates.map(
+                          ({ sourceNode, outputPort, request, check }) => {
+                            const checked = currentEdges.some(
+                              (edge) =>
+                                edge.fromNodeId === request.fromNodeId &&
+                                edge.fromPortId === request.fromPortId,
+                            );
+                            return (
+                              <label
+                                key={`${sourceNode.id}\u001f${outputPort.id}`}
+                                className="flex items-start gap-2 rounded-md px-1.5 py-1 text-[10px] text-slate-300 hover:bg-slate-900/70"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={!checked && !check.valid}
+                                  aria-label={`Use ${sourceNode.label} as ${inputPort.label}`}
+                                  onChange={(event) => {
+                                    if (event.target.checked)
+                                      onConnectPorts(request);
+                                    else onDisconnectConnection(request);
+                                  }}
+                                  className="mt-0.5 h-3.5 w-3.5 accent-cyan-400"
+                                />
+                                <span className="min-w-0">
+                                  <span className="block truncate">
+                                    {sourceNode.label} · {outputPort.label}
                                   </span>
-                                ) : null}
-                              </span>
-                            </label>
-                          );
-                        },
+                                  {!checked && !check.valid ? (
+                                    <span className="block text-[8px] leading-3 text-amber-400/70">
+                                      {check.reason}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </label>
+                            );
+                          },
+                        )
                       ) : (
                         <p className="text-[9px] text-slate-600">
-                          Add a compatible source node to connect this collection.
+                          Add a compatible source node to connect this
+                          collection.
                         </p>
                       )}
                       {inputPort.required && currentEdges.length === 0 ? (
@@ -2437,7 +2698,9 @@ const NodeInspector = ({
                       className="mt-1.5 h-8 w-full rounded-md border border-slate-700 bg-slate-950/70 px-2 text-[10px] text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/30"
                     >
                       <option value="">
-                        {inputPort.required ? "Required · disconnected" : "Disconnected"}
+                        {inputPort.required
+                          ? "Required · disconnected"
+                          : "Disconnected"}
                       </option>
                       {candidates.map(({ sourceNode, outputPort, check }) => {
                         const value = `${sourceNode.id}\u001f${outputPort.id}`;
@@ -2483,7 +2746,6 @@ const NodeInspector = ({
           </div>
         </section>
       ) : null}
-
     </aside>
   );
 };
@@ -2509,7 +2771,9 @@ const RevisionHistoryPanel = ({
   onRefresh: () => void;
   onRestore: (revision: MediaFlowRevision) => void;
 }): JSX.Element => {
-  const [comparisonRevisionId, setComparisonRevisionId] = useState<string | null>(null);
+  const [comparisonRevisionId, setComparisonRevisionId] = useState<
+    string | null
+  >(null);
   const headRevision = history?.revisions.find((revision) => revision.isHead);
   const comparisonRevision = history?.revisions.find(
     (revision) => revision.revisionId === comparisonRevisionId,
@@ -2575,10 +2839,12 @@ const RevisionHistoryPanel = ({
             <div>
               <div className="flex items-center gap-2 text-[11px] font-semibold text-violet-100">
                 <FileDiff className="h-3.5 w-3.5" />
-                Revision {comparisonRevision.revisionNumber} → {headRevision.revisionNumber}
+                Revision {comparisonRevision.revisionNumber} →{" "}
+                {headRevision.revisionNumber}
               </div>
               <p className="mt-1 text-[9px] text-slate-500">
-                Saved behavior, document metadata, and canvas layout are compared independently.
+                Saved behavior, document metadata, and canvas layout are
+                compared independently.
               </p>
             </div>
             <Button
@@ -2608,15 +2874,22 @@ const RevisionHistoryPanel = ({
                 )}
               >
                 <div>{label}</div>
-                <div className="mt-0.5 opacity-60">{changed ? "Changed" : "Identical"}</div>
+                <div className="mt-0.5 opacity-60">
+                  {changed ? "Changed" : "Identical"}
+                </div>
               </div>
             ))}
           </div>
           {comparison.nodeChanges.length > 0 ? (
             <div className="mt-3 space-y-1.5">
               {comparison.nodeChanges.map((change) => (
-                <div key={change.nodeId} className="rounded border border-slate-800 bg-slate-950/35 p-2 text-[9px] text-slate-400">
-                  <span className="font-medium text-slate-200">{change.nodeLabel}</span>
+                <div
+                  key={change.nodeId}
+                  className="rounded border border-slate-800 bg-slate-950/35 p-2 text-[9px] text-slate-400"
+                >
+                  <span className="font-medium text-slate-200">
+                    {change.nodeLabel}
+                  </span>
                   <span className="ml-1 text-slate-600">· {change.kind}</span>
                   <div className="mt-1 break-words text-slate-600">
                     {change.changedFields.join(", ")}
@@ -2628,16 +2901,29 @@ const RevisionHistoryPanel = ({
           {comparison.variableChanges.length > 0 ? (
             <div className="mt-3 space-y-1.5">
               {comparison.variableChanges.map((change) => (
-                <div key={change.variableId} className="rounded border border-cyan-400/15 bg-cyan-400/5 p-2 text-[9px] text-slate-400">
-                  <span className="font-medium text-cyan-100">{change.variableName}</span>
-                  <span className="ml-1 text-slate-600">· variable {change.kind}</span>
-                  <div className="mt-1 break-words text-slate-600">{change.changedFields.join(", ")}</div>
+                <div
+                  key={change.variableId}
+                  className="rounded border border-cyan-400/15 bg-cyan-400/5 p-2 text-[9px] text-slate-400"
+                >
+                  <span className="font-medium text-cyan-100">
+                    {change.variableName}
+                  </span>
+                  <span className="ml-1 text-slate-600">
+                    · variable {change.kind}
+                  </span>
+                  <div className="mt-1 break-words text-slate-600">
+                    {change.changedFields.join(", ")}
+                  </div>
                 </div>
               ))}
             </div>
           ) : null}
           <div className="mt-3 text-[9px] leading-4 text-slate-500">
-            {comparison.edgeChanges.length} edge · {comparison.variableChanges.length} variable · {comparison.presetChanges.length} preset · {comparison.layoutChanges.length} position · {comparison.metadataFieldsChanged.length} metadata changes
+            {comparison.edgeChanges.length} edge ·{" "}
+            {comparison.variableChanges.length} variable ·{" "}
+            {comparison.presetChanges.length} preset ·{" "}
+            {comparison.layoutChanges.length} position ·{" "}
+            {comparison.metadataFieldsChanged.length} metadata changes
           </div>
         </section>
       ) : null}
@@ -2680,7 +2966,9 @@ const RevisionHistoryPanel = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setComparisonRevisionId(revision.revisionId)}
+                      onClick={() =>
+                        setComparisonRevisionId(revision.revisionId)
+                      }
                       className="h-7 border-violet-400/20 bg-violet-400/5 px-2 text-[10px] text-violet-200 hover:bg-violet-400/10"
                     >
                       <FileDiff className="h-3 w-3" /> Compare
@@ -2764,7 +3052,8 @@ const FlowPortabilityPanel = ({
             Portable flow
           </div>
           <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Review exact schema and node requirements before creating an isolated copy.
+            Review exact schema and node requirements before creating an
+            isolated copy.
           </p>
         </div>
         <Button
@@ -2781,7 +3070,8 @@ const FlowPortabilityPanel = ({
 
       {!supported ? (
         <div className="mt-5 rounded-xl border border-slate-800 bg-slate-900/35 p-4 text-[11px] leading-5 text-slate-400">
-          File import and verified export are available in the native desktop app. Browser preview keeps these controls read-only.
+          File import and verified export are available in the native desktop
+          app. Browser preview keeps these controls read-only.
         </div>
       ) : inspection ? (
         <>
@@ -2794,7 +3084,10 @@ const FlowPortabilityPanel = ({
                     ? "Read-only inspection"
                     : "Invalid bundle"}
               </span>
-              <Badge variant="outline" className="border-current/25 text-[9px] text-current">
+              <Badge
+                variant="outline"
+                className="border-current/25 text-[9px] text-current"
+              >
                 schema {inspection.bundleSchemaVersion ?? "?"}
               </Badge>
             </div>
@@ -2811,7 +3104,10 @@ const FlowPortabilityPanel = ({
           </div>
 
           {inspection.importMutations.length > 0 ? (
-            <section className="mt-5" aria-labelledby="flow-import-mutations-heading">
+            <section
+              className="mt-5"
+              aria-labelledby="flow-import-mutations-heading"
+            >
               <h3
                 id="flow-import-mutations-heading"
                 className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
@@ -2820,7 +3116,10 @@ const FlowPortabilityPanel = ({
               </h3>
               <ul className="mt-2 space-y-2 text-[10px] leading-4 text-slate-400">
                 {inspection.importMutations.map((mutation) => (
-                  <li key={mutation} className="rounded-lg border border-slate-800 bg-slate-900/35 p-3">
+                  <li
+                    key={mutation}
+                    className="rounded-lg border border-slate-800 bg-slate-900/35 p-3"
+                  >
                     {mutation}
                   </li>
                 ))}
@@ -2829,7 +3128,10 @@ const FlowPortabilityPanel = ({
           ) : null}
 
           {inspection.issues.length > 0 ? (
-            <section className="mt-5" aria-labelledby="flow-import-issues-heading">
+            <section
+              className="mt-5"
+              aria-labelledby="flow-import-issues-heading"
+            >
               <h3
                 id="flow-import-issues-heading"
                 className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
@@ -2847,7 +3149,9 @@ const FlowPortabilityPanel = ({
                         : "border-amber-400/20 bg-amber-400/5 text-amber-100",
                     )}
                   >
-                    <div className="font-mono text-[9px] opacity-60">{issue.code}</div>
+                    <div className="font-mono text-[9px] opacity-60">
+                      {issue.code}
+                    </div>
                     <div className="mt-1">{issue.message}</div>
                   </li>
                 ))}
@@ -2856,7 +3160,10 @@ const FlowPortabilityPanel = ({
           ) : null}
 
           {inspection.unknownNodes.length > 0 ? (
-            <section className="mt-5" aria-labelledby="unknown-flow-nodes-heading">
+            <section
+              className="mt-5"
+              aria-labelledby="unknown-flow-nodes-heading"
+            >
               <h3
                 id="unknown-flow-nodes-heading"
                 className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
@@ -2864,11 +3171,15 @@ const FlowPortabilityPanel = ({
                 Preserved unknown nodes
               </h3>
               <p className="mt-2 text-[10px] leading-4 text-slate-500">
-                Original node JSON and connected edges remain inspectable and are never coerced into a known node.
+                Original node JSON and connected edges remain inspectable and
+                are never coerced into a known node.
               </p>
               <div className="mt-3 space-y-2">
                 {inspection.unknownNodes.map((node) => (
-                  <details key={node.nodeId} className="rounded-lg border border-amber-400/15 bg-amber-400/5 p-3">
+                  <details
+                    key={node.nodeId}
+                    className="rounded-lg border border-amber-400/15 bg-amber-400/5 p-3"
+                  >
                     <summary className="cursor-pointer text-[10px] font-medium text-amber-100">
                       {node.nodeType}@{node.version ?? "?"} · {node.nodeId}
                     </summary>
@@ -2896,7 +3207,11 @@ const FlowPortabilityPanel = ({
               onClick={onImport}
               className="h-8 flex-1 bg-violet-500 text-xs text-white hover:bg-violet-400"
             >
-              {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
+              {loading ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileUp className="h-3.5 w-3.5" />
+              )}
               {loading ? "Importing…" : "Import isolated copy"}
             </Button>
             <Button
@@ -2917,9 +3232,12 @@ const FlowPortabilityPanel = ({
       ) : (
         <div className="mt-5 rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-5 text-center">
           <FileUp className="mx-auto h-5 w-5 text-slate-700" />
-          <p className="mt-2 text-xs font-medium text-slate-300">Inspect before import</p>
+          <p className="mt-2 text-xs font-medium text-slate-300">
+            Inspect before import
+          </p>
           <p className="mt-1 text-[10px] leading-4 text-slate-600">
-            The backend checks strict JSON, digests, graph bounds, node versions, and layout identity.
+            The backend checks strict JSON, digests, graph bounds, node
+            versions, and layout identity.
           </p>
           <Button
             type="button"
@@ -2929,7 +3247,11 @@ const FlowPortabilityPanel = ({
             onClick={onInspect}
             className="mt-4 h-8 border-violet-400/25 bg-violet-400/5 text-xs text-violet-200 hover:bg-violet-400/10"
           >
-            {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
+            {loading ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileUp className="h-3.5 w-3.5" />
+            )}
             {loading ? "Inspecting…" : "Choose flow bundle"}
           </Button>
         </div>
@@ -3014,9 +3336,9 @@ export const MediaFlowView = ({
   const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
   const undoStack = useRef<MediaFlowLayout[]>([]);
   const redoStack = useRef<MediaFlowLayout[]>([]);
-  const flowInstance = useRef<
-    ReactFlowInstance<MediaCanvasNode, Edge> | null
-  >(null);
+  const flowInstance = useRef<ReactFlowInstance<MediaCanvasNode, Edge> | null>(
+    null,
+  );
   const lastFollowedActiveNodes = useRef("");
   const [, setHistoryRevision] = useState(0);
   const layoutByNodeId = useMemo(
@@ -3024,11 +3346,22 @@ export const MediaFlowView = ({
     [layout.nodes],
   );
   const collapsedNodeIds = useMemo(
-    () => new Set(layout.groups.filter((group) => group.collapsed).flatMap((group) => group.nodeIds)),
+    () =>
+      new Set(
+        layout.groups
+          .filter((group) => group.collapsed)
+          .flatMap((group) => group.nodeIds),
+      ),
     [layout.groups],
   );
   const resolvedNodesById = useMemo(
-    () => new Map(resolveMediaFlowVariables(flow).flow.nodes.map((node) => [node.id, node])),
+    () =>
+      new Map(
+        resolveMediaFlowVariables(flow).flow.nodes.map((node) => [
+          node.id,
+          node,
+        ]),
+      ),
     [flow],
   );
   const flowImageAssets = useMemo(
@@ -3036,9 +3369,10 @@ export const MediaFlowView = ({
     [assets],
   );
   const runOverlayProjection = useMemo(
-    () => runOverlay
-      ? projectMediaRunOverlay({ flow, plan, run: runOverlay })
-      : null,
+    () =>
+      runOverlay
+        ? projectMediaRunOverlay({ flow, plan, run: runOverlay })
+        : null,
     [flow, plan, runOverlay],
   );
   const completedRunOutputAsset = useMemo(() => {
@@ -3071,24 +3405,26 @@ export const MediaFlowView = ({
       const maxY = Math.max(...positions.map((position) => position.y));
       const width = group.collapsed ? 240 : Math.max(272, maxX - minX + 272);
       const height = group.collapsed ? 54 : Math.max(130, maxY - minY + 190);
-      return [{
-        id: `layout-group:${group.id}`,
-        type: "mediaGroup" as const,
-        position: { x: minX - 32, y: minY - 52 },
-        data: {
-          label: group.label,
-          color: group.color,
-          collapsed: group.collapsed,
-          memberCount: group.nodeIds.length,
-          width,
-          height,
-        },
-        draggable: false,
-        selectable: false,
-        focusable: false,
-        zIndex: -10,
-        style: { width, height },
-      } satisfies MediaGroupCanvasNode];
+      return [
+        {
+          id: `layout-group:${group.id}`,
+          type: "mediaGroup" as const,
+          position: { x: minX - 32, y: minY - 52 },
+          data: {
+            label: group.label,
+            color: group.color,
+            collapsed: group.collapsed,
+            memberCount: group.nodeIds.length,
+            width,
+            height,
+          },
+          draggable: false,
+          selectable: false,
+          focusable: false,
+          zIndex: -10,
+          style: { width, height },
+        } satisfies MediaGroupCanvasNode,
+      ];
     });
     const commentNodes = layout.comments.map((comment) => ({
       id: `layout-comment:${comment.id}`,
@@ -3107,49 +3443,58 @@ export const MediaFlowView = ({
       style: { width: comment.width, height: comment.height },
     })) satisfies MediaCommentCanvasNode[];
     const semanticNodes = flow.nodes.map((node) => {
-        const position = layoutByNodeId.get(node.id) ?? { x: 0, y: 0 };
-        const definition = getMediaNodeDefinition(node.type);
-        const resolvedConfig = resolvedNodesById.get(node.id)?.config ?? node.config;
-        const assetField = definition?.fields.find((field) => field.kind === "asset");
-        const configuredAssetValue = assetField ? resolvedConfig[assetField.id] : null;
-        const configuredAssetId = typeof configuredAssetValue === "string"
+      const position = layoutByNodeId.get(node.id) ?? { x: 0, y: 0 };
+      const definition = getMediaNodeDefinition(node.type);
+      const resolvedConfig =
+        resolvedNodesById.get(node.id)?.config ?? node.config;
+      const configuredModel =
+        typeof resolvedConfig.modelId === "string"
+          ? (models.find((model) => model.id === resolvedConfig.modelId) ??
+            null)
+          : null;
+      const assetField = definition?.fields.find(
+        (field) => field.kind === "asset",
+      );
+      const configuredAssetValue = assetField
+        ? resolvedConfig[assetField.id]
+        : null;
+      const configuredAssetId =
+        typeof configuredAssetValue === "string"
           ? configuredAssetValue.trim()
           : "";
-        const assetIndex = configuredAssetId
-          ? flowImageAssets.findIndex((asset) => asset.id === configuredAssetId)
-          : -1;
-        const configuredAsset = assetIndex >= 0
-          ? flowImageAssets[assetIndex] ?? null
-          : null;
-        const runOutputAsset = node.type === "output.asset"
-          ? completedRunOutputAsset
-          : null;
-        const asset = configuredAsset ?? runOutputAsset;
-        return {
-          id: node.id,
-          type: "mediaNode",
-          position: { x: position.x, y: position.y },
-          data: {
-            label: node.label,
-            nodeType: node.type,
-            layer: node.layer,
-            detail: readNodeDetail(resolvedConfig),
-            asset,
-            assetId: configuredAssetId || runOutputAsset?.id || null,
-            assetLabel: runOutputAsset
-              ? runOutputAsset.kind === "vector"
-                ? "Final SVG"
-                : "Final image"
-              : configuredAsset
-                ? mediaAssetLabel(configuredAsset, assetIndex)
-                : null,
-            inputs: definition?.inputs ?? [],
-            outputs: definition?.outputs ?? [],
-            runOverlay: runOverlayProjection?.observations.get(node.id) ?? null,
-          },
-          hidden: collapsedNodeIds.has(node.id),
-        } satisfies MediaSemanticCanvasNode;
-      });
+      const assetIndex = configuredAssetId
+        ? flowImageAssets.findIndex((asset) => asset.id === configuredAssetId)
+        : -1;
+      const configuredAsset =
+        assetIndex >= 0 ? (flowImageAssets[assetIndex] ?? null) : null;
+      const runOutputAsset =
+        node.type === "output.asset" ? completedRunOutputAsset : null;
+      const asset = configuredAsset ?? runOutputAsset;
+      return {
+        id: node.id,
+        type: "mediaNode",
+        position: { x: position.x, y: position.y },
+        data: {
+          label: node.label,
+          nodeType: node.type,
+          layer: node.layer,
+          detail: readNodeDetail(resolvedConfig, configuredModel?.architecture),
+          asset,
+          assetId: configuredAssetId || runOutputAsset?.id || null,
+          assetLabel: runOutputAsset
+            ? runOutputAsset.kind === "vector"
+              ? "Final SVG"
+              : "Final image"
+            : configuredAsset
+              ? mediaAssetLabel(configuredAsset, assetIndex)
+              : null,
+          inputs: definition?.inputs ?? [],
+          outputs: definition?.outputs ?? [],
+          runOverlay: runOverlayProjection?.observations.get(node.id) ?? null,
+        },
+        hidden: collapsedNodeIds.has(node.id),
+      } satisfies MediaSemanticCanvasNode;
+    });
     return [...groupNodes, ...commentNodes, ...semanticNodes];
   }, [
     collapsedNodeIds,
@@ -3159,6 +3504,7 @@ export const MediaFlowView = ({
     layout.comments,
     layout.groups,
     layoutByNodeId,
+    models,
     resolvedNodesById,
     runOverlayProjection,
   ]);
@@ -3167,12 +3513,25 @@ export const MediaFlowView = ({
   const canvasEdges = useMemo<Edge[]>(
     () =>
       flow.edges.map((edge) => {
-        const sourceState = runOverlayProjection?.observations.get(edge.fromNodeId)?.state;
-        const targetState = runOverlayProjection?.observations.get(edge.toNodeId)?.state;
+        const sourceState = runOverlayProjection?.observations.get(
+          edge.fromNodeId,
+        )?.state;
+        const targetState = runOverlayProjection?.observations.get(
+          edge.toNodeId,
+        )?.state;
         const active = targetState === "running" || targetState === "retrying";
         const paused = targetState === "waiting" || targetState === "blocked";
-        const traversed = ["completed", "cached", "skipped"].includes(sourceState ?? "") &&
-          ["completed", "cached", "skipped", "running", "retrying", "waiting", "blocked"].includes(targetState ?? "");
+        const traversed =
+          ["completed", "cached", "skipped"].includes(sourceState ?? "") &&
+          [
+            "completed",
+            "cached",
+            "skipped",
+            "running",
+            "retrying",
+            "waiting",
+            "blocked",
+          ].includes(targetState ?? "");
         return {
           id: edge.id,
           source: edge.fromNodeId,
@@ -3192,14 +3551,18 @@ export const MediaFlowView = ({
                   ? "rgb(52 211 153)"
                   : "rgb(71 85 105)",
             strokeWidth: active || paused ? 2.75 : traversed ? 2 : 1.5,
-            opacity: runOverlayProjection && !active && !paused && !traversed ? 0.45 : 1,
+            opacity:
+              runOverlayProjection && !active && !paused && !traversed
+                ? 0.45
+                : 1,
           },
         };
       }),
     [collapsedNodeIds, flow.edges, runOverlayProjection],
   );
   const activeNodeSignature = useMemo(
-    () => [...(runOverlayProjection?.activeNodeIds ?? [])].sort().join("\u001f"),
+    () =>
+      [...(runOverlayProjection?.activeNodeIds ?? [])].sort().join("\u001f"),
     [runOverlayProjection],
   );
   const activeNodeSummary = useMemo(() => {
@@ -3249,7 +3612,13 @@ export const MediaFlowView = ({
         openNodePalette();
         return;
       }
-      if (event.key === "Escape" && (palettePanelOpen || selectionPanelOpen || variablesPanelOpen || templatesPanelOpen)) {
+      if (
+        event.key === "Escape" &&
+        (palettePanelOpen ||
+          selectionPanelOpen ||
+          variablesPanelOpen ||
+          templatesPanelOpen)
+      ) {
         setPalettePanelOpen(false);
         setSelectionPanelOpen(false);
         setVariablesPanelOpen(false);
@@ -3320,8 +3689,14 @@ export const MediaFlowView = ({
   useEffect(() => {
     if (!templatesPanelOpen) return;
     if (
-      planPanelOpen || historyPanelOpen || portabilityPanelOpen || palettePanelOpen ||
-      groupsPanelOpen || variablesPanelOpen || selectionPanelOpen || selectedNode !== undefined
+      planPanelOpen ||
+      historyPanelOpen ||
+      portabilityPanelOpen ||
+      palettePanelOpen ||
+      groupsPanelOpen ||
+      variablesPanelOpen ||
+      selectionPanelOpen ||
+      selectedNode !== undefined
     ) {
       setTemplatesPanelOpen(false);
     }
@@ -3382,7 +3757,9 @@ export const MediaFlowView = ({
     }
     lastFollowedActiveNodes.current = activeNodeSignature;
     const activeNodeIds = new Set(runOverlayProjection?.activeNodeIds ?? []);
-    const activeNodes = canvasNodes.filter((node) => activeNodeIds.has(node.id));
+    const activeNodes = canvasNodes.filter((node) =>
+      activeNodeIds.has(node.id),
+    );
     if (activeNodes.length === 0) return;
     const frame = window.requestAnimationFrame(() => {
       void flowInstance.current?.fitView({
@@ -3407,14 +3784,20 @@ export const MediaFlowView = ({
     redoStack.current = [];
     setHistoryRevision((revision) => revision + 1);
     setSelectedNodeId((current) =>
-      current && flow.nodes.some((node) => node.id === current) ? current : null,
+      current && flow.nodes.some((node) => node.id === current)
+        ? current
+        : null,
     );
   }, [flow.nodes, topologyKey]);
 
   useEffect(() => {
-    setSelectedNodeIds((current) => current.filter((nodeId) =>
-      flow.nodes.some((node) => node.id === nodeId) && !collapsedNodeIds.has(nodeId),
-    ));
+    setSelectedNodeIds((current) =>
+      current.filter(
+        (nodeId) =>
+          flow.nodes.some((node) => node.id === nodeId) &&
+          !collapsedNodeIds.has(nodeId),
+      ),
+    );
   }, [collapsedNodeIds, flow.nodes]);
 
   const commitLayout = useCallback(
@@ -3439,8 +3822,8 @@ export const MediaFlowView = ({
             current.color === group.color &&
             current.collapsed === group.collapsed &&
             current.nodeIds.length === group.nodeIds.length &&
-            current.nodeIds.every((nodeId, nodeIndex) =>
-              nodeId === group.nodeIds[nodeIndex],
+            current.nodeIds.every(
+              (nodeId, nodeIndex) => nodeId === group.nodeIds[nodeIndex],
             )
           );
         });
@@ -3473,7 +3856,7 @@ export const MediaFlowView = ({
   const handleSelectionChange = useCallback(
     ({ nodes }: OnSelectionChangeParams<MediaCanvasNode, Edge>): void => {
       setSelectedNodeIds(
-        nodes.flatMap((node) => node.type === "mediaNode" ? [node.id] : []),
+        nodes.flatMap((node) => (node.type === "mediaNode" ? [node.id] : [])),
       );
     },
     [],
@@ -3486,7 +3869,9 @@ export const MediaFlowView = ({
           .filter((node) => !collapsedNodeIds.has(node.id))
           .map((node) => node.id),
       );
-      const nextNodeIds = nodeIds.filter((nodeId) => visibleNodeIds.has(nodeId));
+      const nextNodeIds = nodeIds.filter((nodeId) =>
+        visibleNodeIds.has(nodeId),
+      );
       const nextNodeIdSet = new Set(nextNodeIds);
       setSelectedNodeIds(nextNodeIds);
       setSelectedNodeId(null);
@@ -3526,7 +3911,9 @@ export const MediaFlowView = ({
       });
       commitLayout(result.layout);
       setSelectedNodeIds([]);
-      setLayoutNotice(`Created ${result.groupId} with ${selectedNodeIds.length} nodes.`);
+      setLayoutNotice(
+        `Created ${result.groupId} with ${selectedNodeIds.length} nodes.`,
+      );
       setSelectedNodeId(null);
       setPlanPanelOpen(false);
       setHistoryPanelOpen(false);
@@ -3537,7 +3924,9 @@ export const MediaFlowView = ({
       setGroupsPanelOpen(true);
     } catch (error: unknown) {
       setLayoutNotice(
-        error instanceof Error ? error.message : "The selected nodes could not be grouped.",
+        error instanceof Error
+          ? error.message
+          : "The selected nodes could not be grouped.",
       );
     }
   }, [commitLayout, layout, selectedNodeIds]);
@@ -3561,12 +3950,12 @@ export const MediaFlowView = ({
         ...layout,
         nodes: layout.nodes.map((entry) => {
           const position = completedPositions.get(entry.nodeId);
-          return position
-            ? { ...entry, x: position.x, y: position.y }
-            : entry;
+          return position ? { ...entry, x: position.x, y: position.y } : entry;
         }),
         comments: layout.comments.map((comment) => {
-          const position = completedPositions.get(`layout-comment:${comment.id}`);
+          const position = completedPositions.get(
+            `layout-comment:${comment.id}`,
+          );
           return position
             ? { ...comment, x: position.x, y: position.y }
             : comment;
@@ -3614,14 +4003,18 @@ export const MediaFlowView = ({
             <GitBranch className="h-4 w-4 text-cyan-300" />
             Semantic flow
             {hasUnsavedChanges ? (
-              <span className="text-[10px] font-medium text-amber-300">Unsaved changes</span>
+              <span className="text-[10px] font-medium text-amber-300">
+                Unsaved changes
+              </span>
             ) : history?.head ? (
               <span className="text-[10px] font-normal text-slate-500">
                 Revision {history.head.headRevisionNumber}
               </span>
             ) : null}
             {plan.status !== "ready" ? (
-              <span className="text-[10px] font-medium text-rose-300">Preflight blocked</span>
+              <span className="text-[10px] font-medium text-rose-300">
+                Preflight blocked
+              </span>
             ) : null}
           </div>
           {revisionNotice ? (
@@ -3634,7 +4027,11 @@ export const MediaFlowView = ({
             </p>
           ) : null}
           {layoutNotice ? (
-            <p className="mt-1 text-[10px] text-cyan-300" role="status" aria-live="polite">
+            <p
+              className="mt-1 text-[10px] text-cyan-300"
+              role="status"
+              aria-live="polite"
+            >
               {layoutNotice}
             </p>
           ) : null}
@@ -3678,7 +4075,7 @@ export const MediaFlowView = ({
               title={
                 canPasteNode
                   ? `Paste ${clipboardLabel ?? "copied node"} (Ctrl+V)`
-                  : pasteBlockedReason ?? "Copy a node before pasting"
+                  : (pasteBlockedReason ?? "Copy a node before pasting")
               }
               disabled={!canPasteNode}
               onClick={() => {
@@ -3715,7 +4112,8 @@ export const MediaFlowView = ({
               }}
               className="rounded-md px-2 py-1 text-[9px] tabular-nums text-violet-300/70 transition-colors hover:bg-violet-400/10 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/30"
             >
-              Select{selectedNodeIds.length > 0 ? ` · ${selectedNodeIds.length}` : ""}
+              Select
+              {selectedNodeIds.length > 0 ? ` · ${selectedNodeIds.length}` : ""}
             </button>
             <Button
               type="button"
@@ -3730,36 +4128,36 @@ export const MediaFlowView = ({
             </Button>
             {selectedNodeIds.length > 0 ? (
               <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Copy ${selectedNodeIds.length} selected nodes`}
-              title="Copy selected semantic nodes and their internal connections (Ctrl+C)"
-              disabled={selectedNodeIds.length === 0}
-              onClick={() => onNodesCopy(selectedNodeIds)}
-              className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
-            >
-              <Copy className="h-3.5 w-3.5" />
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Copy ${selectedNodeIds.length} selected nodes`}
+                title="Copy selected semantic nodes and their internal connections (Ctrl+C)"
+                disabled={selectedNodeIds.length === 0}
+                onClick={() => onNodesCopy(selectedNodeIds)}
+                className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
+              >
+                <Copy className="h-3.5 w-3.5" />
               </Button>
             ) : null}
             {selectedNodeIds.length > 0 ? (
               <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Group ${selectedNodeIds.length} selected nodes`}
-              title={
-                selectedGroupConflict
-                  ? "A selected node already belongs to a visual group"
-                  : selectedNodeIds.length < 2
-                    ? "Select at least two nodes"
-                    : "Create a layout-only visual group"
-              }
-              disabled={!canGroupSelection}
-              onClick={groupSelectedNodes}
-              className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
-            >
-              <Group className="h-3.5 w-3.5" />
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Group ${selectedNodeIds.length} selected nodes`}
+                title={
+                  selectedGroupConflict
+                    ? "A selected node already belongs to a visual group"
+                    : selectedNodeIds.length < 2
+                      ? "Select at least two nodes"
+                      : "Create a layout-only visual group"
+                }
+                disabled={!canGroupSelection}
+                onClick={groupSelectedNodes}
+                className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
+              >
+                <Group className="h-3.5 w-3.5" />
               </Button>
             ) : null}
             <Button
@@ -3978,42 +4376,44 @@ export const MediaFlowView = ({
           ) : null}
           {hasUnsavedChanges || revisionLoading ? (
             <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={revisionLoading || !hasUnsavedChanges}
-            onClick={onSaveRevision}
-            className="h-8 border-cyan-400/25 bg-cyan-400/5 text-xs text-cyan-200 hover:bg-cyan-400/10"
-          >
-            {revisionLoading ? (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
-            {revisionLoading
-              ? "Saving…"
-              : history?.head
-                ? "Save revision"
-                : "Save first revision"}
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={revisionLoading || !hasUnsavedChanges}
+              onClick={onSaveRevision}
+              className="h-8 border-cyan-400/25 bg-cyan-400/5 text-xs text-cyan-200 hover:bg-cyan-400/10"
+            >
+              {revisionLoading ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              {revisionLoading
+                ? "Saving…"
+                : history?.head
+                  ? "Save revision"
+                  : "Save first revision"}
             </Button>
           ) : null}
           {localRunSupported || localRunPending ? (
             <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-describedby="media-local-run-description"
-            disabled={localRunPending || revisionLoading || !localRunSupported}
-            title={localRunDescription}
-            onClick={onRunLocalFlow}
-            className="h-8 border-emerald-400/25 bg-emerald-400/5 text-xs text-emerald-200 hover:bg-emerald-400/10 disabled:text-slate-500"
-          >
-            {localRunPending ? (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CirclePlay className="h-3.5 w-3.5" />
-            )}
-            {localRunPending ? "Running…" : "Run local"}
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-describedby="media-local-run-description"
+              disabled={
+                localRunPending || revisionLoading || !localRunSupported
+              }
+              title={localRunDescription}
+              onClick={onRunLocalFlow}
+              className="h-8 border-emerald-400/25 bg-emerald-400/5 text-xs text-emerald-200 hover:bg-emerald-400/10 disabled:text-slate-500"
+            >
+              {localRunPending ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CirclePlay className="h-3.5 w-3.5" />
+              )}
+              {localRunPending ? "Running…" : "Run local"}
             </Button>
           ) : null}
           <span id="media-local-run-description" className="sr-only">
@@ -4021,21 +4421,23 @@ export const MediaFlowView = ({
           </span>
           {remoteRunSupported || remoteRunPending ? (
             <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-describedby="media-remote-run-description"
-            disabled={remoteRunPending || revisionLoading || !remoteRunSupported}
-            title={remoteRunDescription}
-            onClick={() => setRemoteConfirmationOpen(true)}
-            className="h-8 border-amber-400/25 bg-amber-400/5 text-xs text-amber-100 hover:bg-amber-400/10 disabled:text-slate-500"
-          >
-            {remoteRunPending ? (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Cloud className="h-3.5 w-3.5" />
-            )}
-            {remoteRunPending ? "Submitting…" : "Review remote run"}
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-describedby="media-remote-run-description"
+              disabled={
+                remoteRunPending || revisionLoading || !remoteRunSupported
+              }
+              title={remoteRunDescription}
+              onClick={() => setRemoteConfirmationOpen(true)}
+              className="h-8 border-amber-400/25 bg-amber-400/5 text-xs text-amber-100 hover:bg-amber-400/10 disabled:text-slate-500"
+            >
+              {remoteRunPending ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Cloud className="h-3.5 w-3.5" />
+              )}
+              {remoteRunPending ? "Submitting…" : "Review remote run"}
             </Button>
           ) : null}
           <span id="media-remote-run-description" className="sr-only">
@@ -4043,24 +4445,24 @@ export const MediaFlowView = ({
           </span>
           {(history?.revisions.length ?? 0) > 0 ? (
             <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-expanded={historyPanelOpen}
-            onClick={() => {
-              setSelectedNodeId(null);
-              setPlanPanelOpen(false);
-              setPortabilityPanelOpen(false);
-              setGroupsPanelOpen(false);
-              setPalettePanelOpen(false);
-              setSelectionPanelOpen(false);
-              setVariablesPanelOpen(false);
-              setHistoryPanelOpen((open) => !open);
-            }}
-            className="h-8 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-          >
-            <History className="h-3.5 w-3.5" />
-            History · {history?.revisions.length ?? 0}
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-expanded={historyPanelOpen}
+              onClick={() => {
+                setSelectedNodeId(null);
+                setPlanPanelOpen(false);
+                setPortabilityPanelOpen(false);
+                setGroupsPanelOpen(false);
+                setPalettePanelOpen(false);
+                setSelectionPanelOpen(false);
+                setVariablesPanelOpen(false);
+                setHistoryPanelOpen((open) => !open);
+              }}
+              className="h-8 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+            >
+              <History className="h-3.5 w-3.5" />
+              History · {history?.revisions.length ?? 0}
             </Button>
           ) : null}
           <Button
@@ -4080,7 +4482,11 @@ export const MediaFlowView = ({
             }}
             className="h-8 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
           >
-            {planPanelOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+            {planPanelOpen ? (
+              <PanelRightClose className="h-3.5 w-3.5" />
+            ) : (
+              <PanelRightOpen className="h-3.5 w-3.5" />
+            )}
             Runtime plan · {plan.steps.length}
           </Button>
         </div>
@@ -4117,7 +4523,12 @@ export const MediaFlowView = ({
                 </span>
               </div>
               <p className="mt-1 text-[9px] leading-4 text-slate-500">
-                Read-only runtime evidence over the editable semantic graph · {Math.round(runOverlay.progress * 100)}% · {runOverlay.assets.length} stored asset{runOverlay.assets.length === 1 ? "" : "s"} · {runOverlay.events.length} event{runOverlay.events.length === 1 ? "" : "s"}
+                Read-only runtime evidence over the editable semantic graph ·{" "}
+                {Math.round(runOverlay.progress * 100)}% ·{" "}
+                {runOverlay.assets.length} stored asset
+                {runOverlay.assets.length === 1 ? "" : "s"} ·{" "}
+                {runOverlay.events.length} event
+                {runOverlay.events.length === 1 ? "" : "s"}
               </p>
               <p
                 aria-live="polite"
@@ -4129,7 +4540,10 @@ export const MediaFlowView = ({
                     ? "Flow complete"
                     : `Current flow: ${runOverlay.currentStep}`}
               </p>
-              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Run node state summary">
+              <div
+                className="mt-2 flex flex-wrap gap-1.5"
+                aria-label="Run node state summary"
+              >
                 {Array.from(runOverlayProjection.stateCounts.entries()).map(
                   ([state, count]) => (
                     <span
@@ -4156,7 +4570,10 @@ export const MediaFlowView = ({
                       : !runOverlayProjection.fingerprintMatches
                         ? "The editable flow changed after this run. Runtime evidence remains bound to the immutable plan snapshot."
                         : "The canvas topology differs from the immutable run snapshot."}{" "}
-                    {runOverlayProjection.matchedNodeCount} matched, {runOverlayProjection.missingSnapshotNodeCount} missing from canvas, {runOverlayProjection.currentOnlyNodeCount} current-only.
+                    {runOverlayProjection.matchedNodeCount} matched,{" "}
+                    {runOverlayProjection.missingSnapshotNodeCount} missing from
+                    canvas, {runOverlayProjection.currentOnlyNodeCount}{" "}
+                    current-only.
                   </span>
                 </p>
               ) : null}
@@ -4176,7 +4593,8 @@ export const MediaFlowView = ({
                   followRun ? "text-cyan-200" : "text-slate-400",
                 )}
               >
-                <LocateFixed className="h-3.5 w-3.5" /> Follow run {followRun ? "on" : "off"}
+                <LocateFixed className="h-3.5 w-3.5" /> Follow run{" "}
+                {followRun ? "on" : "off"}
               </Button>
               <Button
                 type="button"
@@ -4319,7 +4737,9 @@ export const MediaFlowView = ({
             layout={layout}
             onChange={(nextLayout) => {
               commitLayout(nextLayout);
-              setLayoutNotice("Updated canvas organization without changing execution identity.");
+              setLayoutNotice(
+                "Updated canvas organization without changing execution identity.",
+              );
             }}
             onClose={() => setGroupsPanelOpen(false)}
           />
@@ -4342,153 +4762,209 @@ export const MediaFlowView = ({
               onDismissImport();
             }}
           />
-        ) : planPanelOpen ? <aside className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-              <Sparkles className="h-4 w-4 text-violet-300" />
-              Runtime expansion
-            </div>
-            <span className="text-[10px] text-slate-600">{plan.steps.length} steps</span>
-          </div>
-          <section className="mt-4" aria-label="Flow validation">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase">
-                Validation
+        ) : planPanelOpen ? (
+          <aside className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <Sparkles className="h-4 w-4 text-violet-300" />
+                Runtime expansion
               </div>
-              <span className="text-[9px] text-slate-600">
-                {plan.diagnostics.length} diagnostic{plan.diagnostics.length === 1 ? "" : "s"}
+              <span className="text-[10px] text-slate-600">
+                {plan.steps.length} steps
               </span>
             </div>
-            <div className="mt-2 space-y-2">
-              {(["error", "warning", "info"] as const).map((severity) => {
-                const diagnostics = plan.diagnostics.filter(
-                  (diagnostic) => diagnostic.severity === severity,
-                );
-                const style =
-                  severity === "error"
-                    ? "border-rose-400/20 bg-rose-400/5 text-rose-100"
-                    : severity === "warning"
-                      ? "border-amber-400/20 bg-amber-400/5 text-amber-100"
-                      : "border-sky-400/20 bg-sky-400/5 text-sky-100";
-                const label =
-                  severity === "error"
-                    ? "Errors"
-                    : severity === "warning"
-                      ? "Warnings"
-                      : "Information";
-                return (
-                  <div key={severity} className={cn("rounded-xl border p-3", style)}>
-                    <div className="flex items-center justify-between gap-3 text-[10px] font-semibold capitalize">
-                      <span>{label}</span>
-                      <span className="opacity-60">{diagnostics.length}</span>
-                    </div>
-                    {diagnostics.length > 0 ? (
-                      <ul className="mt-2 space-y-2">
-                        {diagnostics.map((diagnostic) => {
-                          const node = diagnostic.nodeId
-                            ? flow.nodes.find((entry) => entry.id === diagnostic.nodeId)
-                            : null;
-                          return (
-                            <li key={`${diagnostic.code}-${diagnostic.nodeId ?? "flow"}-${diagnostic.message}`}>
-                              <button
-                                type="button"
-                                disabled={!node}
-                                onClick={() => {
-                                  if (!node) return;
-                                  setPlanPanelOpen(false);
-                                  setSelectedNodeId(node.id);
-                                }}
-                                className="w-full rounded-lg border border-current/10 bg-slate-950/25 p-2 text-left text-[9px] leading-4 transition-colors enabled:hover:bg-slate-950/45 disabled:cursor-default"
+            <section className="mt-4" aria-label="Flow validation">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase">
+                  Validation
+                </div>
+                <span className="text-[9px] text-slate-600">
+                  {plan.diagnostics.length} diagnostic
+                  {plan.diagnostics.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="mt-2 space-y-2">
+                {(["error", "warning", "info"] as const).map((severity) => {
+                  const diagnostics = plan.diagnostics.filter(
+                    (diagnostic) => diagnostic.severity === severity,
+                  );
+                  const style =
+                    severity === "error"
+                      ? "border-rose-400/20 bg-rose-400/5 text-rose-100"
+                      : severity === "warning"
+                        ? "border-amber-400/20 bg-amber-400/5 text-amber-100"
+                        : "border-sky-400/20 bg-sky-400/5 text-sky-100";
+                  const label =
+                    severity === "error"
+                      ? "Errors"
+                      : severity === "warning"
+                        ? "Warnings"
+                        : "Information";
+                  return (
+                    <div
+                      key={severity}
+                      className={cn("rounded-xl border p-3", style)}
+                    >
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-semibold capitalize">
+                        <span>{label}</span>
+                        <span className="opacity-60">{diagnostics.length}</span>
+                      </div>
+                      {diagnostics.length > 0 ? (
+                        <ul className="mt-2 space-y-2">
+                          {diagnostics.map((diagnostic) => {
+                            const node = diagnostic.nodeId
+                              ? flow.nodes.find(
+                                  (entry) => entry.id === diagnostic.nodeId,
+                                )
+                              : null;
+                            return (
+                              <li
+                                key={`${diagnostic.code}-${diagnostic.nodeId ?? "flow"}-${diagnostic.message}`}
                               >
-                                <span className="block font-medium">{diagnostic.message}</span>
-                                <span className="mt-1 block opacity-50">
-                                  {node ? `${node.label} · ` : ""}{diagnostic.code}
-                                </span>
-                                {diagnostic.action ? (
-                                  <span className="mt-1 block opacity-70">{diagnostic.action}</span>
-                                ) : null}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-[9px] opacity-45">None</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-          <div className="mt-4 space-y-2">
-            {plan.steps.map((step, index) => (
-              <div key={step.id} className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-slate-200">{step.label}</div>
-                    <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500">
-                      {step.target === "remote" ? <Cloud className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
-                      {step.target}
-                      {step.cacheable ? " · cacheable" : ""}
+                                <button
+                                  type="button"
+                                  disabled={!node}
+                                  onClick={() => {
+                                    if (!node) return;
+                                    setPlanPanelOpen(false);
+                                    setSelectedNodeId(node.id);
+                                  }}
+                                  className="w-full rounded-lg border border-current/10 bg-slate-950/25 p-2 text-left text-[9px] leading-4 transition-colors enabled:hover:bg-slate-950/45 disabled:cursor-default"
+                                >
+                                  <span className="block font-medium">
+                                    {diagnostic.message}
+                                  </span>
+                                  <span className="mt-1 block opacity-50">
+                                    {node ? `${node.label} · ` : ""}
+                                    {diagnostic.code}
+                                  </span>
+                                  {diagnostic.action ? (
+                                    <span className="mt-1 block opacity-70">
+                                      {diagnostic.action}
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-[9px] opacity-45">None</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+            <div className="mt-4 space-y-2">
+              {plan.steps.map((step, index) => (
+                <div
+                  key={step.id}
+                  className="rounded-xl border border-slate-800 bg-slate-900/45 p-3"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-slate-200">
+                        {step.label}
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500">
+                        {step.target === "remote" ? (
+                          <Cloud className="h-3 w-3" />
+                        ) : (
+                          <Cpu className="h-3 w-3" />
+                        )}
+                        {step.target}
+                        {step.cacheable ? " · cacheable" : ""}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/35 p-4">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
-              {plan.status === "ready" ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-              ) : (
-                <CircleAlert className="h-4 w-4 text-rose-300" />
-              )}
-              Preflight contract
+              ))}
             </div>
-            <dl className="mt-3 space-y-2 text-[11px]">
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">Target</dt><dd className="text-slate-300">{plan.preflight.target ?? "Unresolved"}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">Outputs</dt><dd className="text-slate-300">{plan.preflight.estimatedOutputs}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">Candidates</dt><dd className="text-slate-300">{plan.preflight.generatedCandidates}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">Human review</dt><dd className="text-slate-300">{plan.preflight.requiresHumanReview ? "Required" : "No"}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">Remote request</dt><dd className="text-slate-300">{plan.preflight.requiresRemoteRequest ? "Required" : "No"}</dd></div>
-            </dl>
-            <p className="mt-3 text-[10px] leading-4 text-slate-500">
-              {plan.preflight.privacySummary}
-            </p>
-            {plan.preflight.remoteUploadAssetIds.length > 0 ? (
-              <div className="mt-3 rounded-lg border border-amber-400/15 bg-amber-400/5 p-2.5">
-                <div className="text-[9px] font-semibold tracking-[0.1em] text-amber-200/80 uppercase">
-                  Exact remote upload manifest
+
+            <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/35 p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                {plan.status === "ready" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                ) : (
+                  <CircleAlert className="h-4 w-4 text-rose-300" />
+                )}
+                Preflight contract
+              </div>
+              <dl className="mt-3 space-y-2 text-[11px]">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Target</dt>
+                  <dd className="text-slate-300">
+                    {plan.preflight.target ?? "Unresolved"}
+                  </dd>
                 </div>
-                <ul className="mt-2 space-y-1 font-mono text-[9px] text-amber-100/60">
-                  {plan.preflight.remoteUploadAssetIds.map((assetId) => (
-                    <li key={assetId} className="break-all">{assetId}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Outputs</dt>
+                  <dd className="text-slate-300">
+                    {plan.preflight.estimatedOutputs}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Candidates</dt>
+                  <dd className="text-slate-300">
+                    {plan.preflight.generatedCandidates}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Human review</dt>
+                  <dd className="text-slate-300">
+                    {plan.preflight.requiresHumanReview ? "Required" : "No"}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Remote request</dt>
+                  <dd className="text-slate-300">
+                    {plan.preflight.requiresRemoteRequest ? "Required" : "No"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-[10px] leading-4 text-slate-500">
+                {plan.preflight.privacySummary}
+              </p>
+              {plan.preflight.remoteUploadAssetIds.length > 0 ? (
+                <div className="mt-3 rounded-lg border border-amber-400/15 bg-amber-400/5 p-2.5">
+                  <div className="text-[9px] font-semibold tracking-[0.1em] text-amber-200/80 uppercase">
+                    Exact remote upload manifest
+                  </div>
+                  <ul className="mt-2 space-y-1 font-mono text-[9px] text-amber-100/60">
+                    {plan.preflight.remoteUploadAssetIds.map((assetId) => (
+                      <li key={assetId} className="break-all">
+                        {assetId}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
 
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/25 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
-              <Fingerprint className="h-3.5 w-3.5" />
-              Reproducible execution identity
+            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/25 p-4">
+              <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
+                <Fingerprint className="h-3.5 w-3.5" />
+                Reproducible execution identity
+              </div>
+              <code className="mt-2 block break-all text-[9px] leading-4 text-slate-600">
+                {plan.flowFingerprint}
+              </code>
+              <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-600">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Canvas positions never affect cache identity.
+              </div>
             </div>
-            <code className="mt-2 block break-all text-[9px] leading-4 text-slate-600">
-              {plan.flowFingerprint}
-            </code>
-            <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-600">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Canvas positions never affect cache identity.
-            </div>
-          </div>
-        </aside> : null}
+          </aside>
+        ) : null}
       </div>
-      <Dialog open={remoteConfirmationOpen} onOpenChange={setRemoteConfirmationOpen}>
+      <Dialog
+        open={remoteConfirmationOpen}
+        onOpenChange={setRemoteConfirmationOpen}
+      >
         <DialogContent className="max-h-[min(760px,calc(100vh-28px))] w-[min(680px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-amber-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-lg text-white">
@@ -4504,41 +4980,81 @@ export const MediaFlowView = ({
           <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
-                <div className="text-[9px] font-semibold tracking-[0.12em] text-slate-500 uppercase">Upload</div>
-                <div className="mt-1 text-sm font-semibold text-white">{remoteUploadManifest.length} image{remoteUploadManifest.length === 1 ? "" : "s"}</div>
-                <div className="mt-1 text-[10px] text-slate-500">
-                  Up to {formatByteSize(remoteUploadManifest.reduce((total, item) => total + item.byteSize, 0))} original bytes
+                <div className="text-[9px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  Upload
                 </div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
-                <div className="text-[9px] font-semibold tracking-[0.12em] text-slate-500 uppercase">Billing</div>
                 <div className="mt-1 text-sm font-semibold text-white">
-                  {remoteRunMode === "browser-preview" ? "No charge" : "Provider calculated"}
+                  {remoteUploadManifest.length} image
+                  {remoteUploadManifest.length === 1 ? "" : "s"}
                 </div>
-                <div className="mt-1 text-[10px] text-slate-500">High-fidelity image inputs add token cost.</div>
+                <div className="mt-1 text-[10px] text-slate-500">
+                  Up to{" "}
+                  {formatByteSize(
+                    remoteUploadManifest.reduce(
+                      (total, item) => total + item.byteSize,
+                      0,
+                    ),
+                  )}{" "}
+                  original bytes
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
-                <div className="text-[9px] font-semibold tracking-[0.12em] text-slate-500 uppercase">Transport</div>
-                <div className="mt-1 text-sm font-semibold text-white">Direct multipart</div>
-                <div className="mt-1 text-[10px] text-slate-500">Inline base64 output · no public output URL</div>
+                <div className="text-[9px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  Billing
+                </div>
+                <div className="mt-1 text-sm font-semibold text-white">
+                  {remoteRunMode === "browser-preview"
+                    ? "No charge"
+                    : "Provider calculated"}
+                </div>
+                <div className="mt-1 text-[10px] text-slate-500">
+                  High-fidelity image inputs add token cost.
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
+                <div className="text-[9px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  Transport
+                </div>
+                <div className="mt-1 text-sm font-semibold text-white">
+                  Direct multipart
+                </div>
+                <div className="mt-1 text-[10px] text-slate-500">
+                  Inline base64 output · no public output URL
+                </div>
               </div>
             </div>
 
             <div className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-3 text-[11px] leading-5 text-cyan-100/75">
-              Before native upload, each immutable source is decoded with bounded memory, EXIF orientation is applied, private container metadata is removed, and its ICC color profile is preserved in a temporary PNG. Exact upload hashes and byte counts are audited before submission.
+              Before native upload, each immutable source is decoded with
+              bounded memory, EXIF orientation is applied, private container
+              metadata is removed, and its ICC color profile is preserved in a
+              temporary PNG. Exact upload hashes and byte counts are audited
+              before submission.
             </div>
 
             <div className="mt-4">
-              <div className="text-[10px] font-semibold tracking-[0.12em] text-slate-400 uppercase">Exact reference manifest</div>
+              <div className="text-[10px] font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                Exact reference manifest
+              </div>
               <ul className="mt-2 space-y-2">
                 {remoteUploadManifest.map((item, index) => (
-                  <li key={`${item.assetId}:${index}`} className="rounded-xl border border-slate-800 bg-slate-900/35 p-3">
+                  <li
+                    key={`${item.assetId}:${index}`}
+                    className="rounded-xl border border-slate-800 bg-slate-900/35 p-3"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/10 text-[9px] text-amber-200">{index + 1}</span>
-                        {item.role === "base" ? "Base image" : `${item.role} reference`}
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400/10 text-[9px] text-amber-200">
+                          {index + 1}
+                        </span>
+                        {item.role === "base"
+                          ? "Base image"
+                          : `${item.role} reference`}
                       </div>
-                      <Badge variant="outline" className="border-slate-700 text-[9px] text-slate-400">
+                      <Badge
+                        variant="outline"
+                        className="border-slate-700 text-[9px] text-slate-400"
+                      >
                         influence {Math.round(item.influence * 100)}%
                       </Badge>
                     </div>
@@ -4554,16 +5070,25 @@ export const MediaFlowView = ({
 
             {remoteRunMode !== "browser-preview" ? (
               <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[11px] leading-5 text-amber-100/75">
-                The synchronous Images API has no documented request lookup or idempotency key. If acceptance becomes uncertain, Machdoch blocks automatic retry and requires explicit provider review to avoid a duplicate charge. OpenAI-managed input retention is not asserted as zero by this app.
+                The synchronous Images API has no documented request lookup or
+                idempotency key. If acceptance becomes uncertain, Machdoch
+                blocks automatic retry and requires explicit provider review to
+                avoid a duplicate charge. OpenAI-managed input retention is not
+                asserted as zero by this app.
               </div>
             ) : null}
           </div>
           <DialogFooter className="border-t border-slate-800 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="max-w-sm text-[10px] leading-4 text-slate-500">
-              The saved flow revision, model snapshot, ordered roles, influence guidance, and source lineage are pinned to the run.
+              The saved flow revision, model snapshot, ordered roles, influence
+              guidance, and source lineage are pinned to the run.
             </p>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" onClick={() => setRemoteConfirmationOpen(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setRemoteConfirmationOpen(false)}
+              >
                 Cancel
               </Button>
               <Button

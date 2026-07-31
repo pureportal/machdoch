@@ -22,7 +22,6 @@ import {
   removeMediaFlowNode,
   updateMediaFlowNodeConfig,
   updateMediaFlowNodeConfigs,
-  upgradeMediaFlowQualityDefaults,
   validateMediaFlowGraph,
   validateMediaFlowNode,
   validateMediaFlowNodes,
@@ -438,51 +437,6 @@ describe("media node registry", () => {
       maximum.nodes.find((node) => node.id === "video-output")?.config.role,
     ).toBe("opaque");
     expect(validateMediaFlowNodes(maximum)).toEqual([]);
-  });
-
-  it("upgrades legacy quality nodes without changing their motion or framing choices", () => {
-    const flow = createImageToVideoFlow({
-      id: "flow:legacy-video",
-      createdAt: "2026-07-14T00:00:00.000Z",
-      sourceAssetId: "asset:source",
-    });
-    const legacy: MediaFlow = {
-      ...flow,
-      nodes: flow.nodes.map((node) => {
-        if (node.type !== "task.generate-video") return node;
-        const config = { ...node.config };
-        delete config.guidanceScale;
-        delete config.seed;
-        delete config.negativePrompt;
-        delete config.matteQuality;
-        delete config.encodingQuality;
-        delete config.memoryProfile;
-        return { ...node, config };
-      }),
-    };
-    expect(validateMediaFlowNodes(legacy)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "MISSING_CONFIG_FIELD",
-          nodeId: "generate-video",
-        }),
-      ]),
-    );
-
-    const upgraded = upgradeMediaFlowQualityDefaults({ flow: legacy });
-    expect(validateMediaFlowNodes(upgraded)).toEqual([]);
-    expect(
-      upgraded.nodes.find((node) => node.id === "generate-video")?.config,
-    ).toMatchObject({
-      aspectRatio: "1:1",
-      loopMode: "none",
-      guidanceScale: 5,
-      seed: 0,
-      negativePrompt: "",
-      matteQuality: "production",
-      encodingQuality: "lossless",
-      memoryProfile: "auto",
-    });
   });
 
   it("validates required inputs, typed ports, single cardinality, and acyclic topology", () => {

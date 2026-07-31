@@ -1721,6 +1721,12 @@ impl GenerateMediaVideoRequest {
                     .to_string(),
             );
         }
+        if hunyuan_video && self.loop_mode == "seamless" {
+            return Err(
+                "HunyuanVideo 1.5 cannot natively condition a closing frame; use LTX-Video or FramePack with matching endpoints"
+                    .to_string(),
+            );
+        }
         if self.loop_mode == "seamless" && self.first_frame_asset_id != self.last_frame_asset_id {
             return Err(
                 "seamless loopMode requires the same immutable first and last frame asset"

@@ -1233,9 +1233,8 @@ export interface MediaCompiledPlan {
   status: "ready" | "blocked";
   compiledAt: string;
   /**
-   * Legacy primary binding retained for direct single-stage callers. New
-   * executors consume runtimeBindings so mixed image/video/audio graphs do not
-   * need a new plan shape when another modality is introduced.
+   * Primary binding used by direct single-stage callers. Executors consume
+   * runtimeBindings for mixed image/video/audio graphs.
    */
   model: MediaModelDescriptor | null;
   runtimeBindings: MediaRuntimeBinding[];
@@ -1699,11 +1698,21 @@ export interface MediaLocalWanVideoGenerationOperation {
     decodedAlphaMaximum: number;
     decodedFrameCount: number;
     decodedLoopEndpointMae: number;
+    decodedLoopBoundaryReferenceMae: number;
+    decodedLoopBoundaryContinuityRatio: number;
     decodedAlphaLoopEndpointMae: number;
+    decodedAlphaLoopBoundaryReferenceMae: number;
+    decodedAlphaLoopBoundaryContinuityRatio: number;
+    decodedRgbEncodingMae: number;
+    decodedRgbEncodingMaximumError: number;
     loopMode: "none" | "ping-pong" | "seamless";
     loopEndpointMae: number;
+    loopBoundaryReferenceMae: number;
+    loopBoundaryContinuityRatio: number;
     matte: Record<string, unknown> | null;
     encodingQuality: "draft" | "balanced" | "production" | "lossless";
+    pixelFormat: "yuv420p" | "yuv444p" | "yuva420p";
+    colorRange: "limited" | "full";
     codec: "vp9";
     container: "webm";
       }
@@ -1718,9 +1727,17 @@ export interface MediaLocalWanVideoGenerationOperation {
         hasAlpha: false;
         loopMode: "none" | "ping-pong" | "seamless";
         loopEndpointMae: number;
+        loopBoundaryReferenceMae: number;
+        loopBoundaryContinuityRatio: number;
         decodedFrameCount: number;
         decodedLoopEndpointMae: number;
+        decodedLoopBoundaryReferenceMae: number;
+        decodedLoopBoundaryContinuityRatio: number;
+        decodedRgbEncodingMae: number;
+        decodedRgbEncodingMaximumError: number;
         encodingQuality: "draft" | "balanced" | "production" | "lossless";
+        pixelFormat: "yuv420p" | "yuv444p";
+        colorRange: "limited" | "full";
         codec: "vp9";
         container: "webm";
         background: MediaAnimatedBackgroundConfig & {

@@ -19,6 +19,7 @@ import {
   Pause,
   Play,
   Plus,
+  Repeat2,
   ScanSearch,
   ShieldCheck,
   Tags,
@@ -63,6 +64,7 @@ import {
   formatMediaAssetAspectRatio,
   isMediaAssetKnownTransparent,
   resolveMediaAssetVideoFrameRate,
+  resolveMediaAssetVideoLoopMode,
 } from "../../../../core/media/video-quality.js";
 import { Button } from "../../components/ui/button";
 import {
@@ -321,12 +323,39 @@ const VideoReview = ({
     asset.operation?.kind === "local-wan-video-generation"
       ? asset.operation.output
       : null;
+  const loopMode = resolveMediaAssetVideoLoopMode(asset);
+  const [looping, setLooping] = useState(
+    loopMode !== null && loopMode !== "none",
+  );
   const frameCount =
     generatedOutput?.frameCount ??
     (duration > 0 ? Math.max(1, Math.round(duration * frameRate)) : null);
   const frameIndex = frameCount
     ? Math.min(frameCount - 1, Math.max(0, Math.floor(currentTime * frameRate)))
     : 0;
+  const timelineMaximum =
+    frameCount && frameCount > 0
+      ? (frameCount - 1) / frameRate
+      : Math.max(0, duration - 1 / frameRate);
+  const decodedLoopRatio =
+    generatedOutput &&
+    Number.isFinite(generatedOutput.decodedLoopBoundaryContinuityRatio)
+      ? generatedOutput.decodedLoopBoundaryContinuityRatio
+      : null;
+  const decodedLoopMae =
+    generatedOutput && Number.isFinite(generatedOutput.decodedLoopEndpointMae)
+      ? generatedOutput.decodedLoopEndpointMae
+      : null;
+  const decodedAlphaLoopRatio =
+    generatedOutput?.index === 0 &&
+    Number.isFinite(generatedOutput.decodedAlphaLoopBoundaryContinuityRatio)
+      ? generatedOutput.decodedAlphaLoopBoundaryContinuityRatio
+      : null;
+  const decodedAlphaLoopMae =
+    generatedOutput?.index === 0 &&
+    Number.isFinite(generatedOutput.decodedAlphaLoopEndpointMae)
+      ? generatedOutput.decodedAlphaLoopEndpointMae
+      : null;
   const transparent = isMediaAssetKnownTransparent(asset);
 
   useEffect(() => {
@@ -334,6 +363,10 @@ const VideoReview = ({
       setMode("checker");
     }
   }, [mode, transparent]);
+
+  useEffect(() => {
+    setLooping(loopMode !== null && loopMode !== "none");
+  }, [asset.id, loopMode]);
 
   useEffect(() => {
     if (mode !== "alpha") return;
@@ -409,23 +442,31 @@ const VideoReview = ({
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      void video.play();
+      if (video.ended) {
+        video.currentTime = 0;
+      }
+      void video.play().catch(() => setPlaying(false));
     } else {
       video.pause();
     }
   };
 
-  const stepFrame = (direction: -1 | 1): void => {
+  const seekToFrame = (requestedFrame: number): void => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
     video.pause();
     const availableFrameCount =
-      frameCount ?? Math.max(1, Math.round(video.duration * frameRate));
+      frameCount ??
+      (Number.isFinite(video.duration) && video.duration > 0
+        ? Math.max(1, Math.round(video.duration * frameRate))
+        : 0);
+    if (availableFrameCount === 0) return;
     const targetFrame = Math.min(
       availableFrameCount - 1,
-      Math.max(0, frameIndex + direction),
+      Math.max(0, requestedFrame),
     );
-    const targetTime = targetFrame / frameRate + 0.0001;
+    const targetTime =
+      targetFrame / frameRate + (targetFrame === 0 ? 0 : 0.0001);
     video.currentTime = Math.min(
       Number.isFinite(video.duration)
         ? Math.max(0, video.duration - 0.0001)
@@ -433,6 +474,22 @@ const VideoReview = ({
       targetTime,
     );
     setCurrentTime(video.currentTime);
+  };
+
+  const stepFrame = (direction: -1 | 1): void => {
+    const video = videoRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+    const availableFrameCount =
+      frameCount ??
+      (Number.isFinite(video.duration) && video.duration > 0
+        ? Math.max(1, Math.round(video.duration * frameRate))
+        : 0);
+    if (availableFrameCount === 0) return;
+    const nextFrame = frameIndex + direction;
+    const targetFrame = looping
+      ? (nextFrame + availableFrameCount) % availableFrameCount
+      : Math.min(availableFrameCount - 1, Math.max(0, nextFrame));
+    seekToFrame(targetFrame);
   };
 
   return (
@@ -448,6 +505,12 @@ const VideoReview = ({
           event.preventDefault();
           event.stopPropagation();
           stepFrame(event.key === "ArrowLeft" ? -1 : 1);
+        } else if (event.key === "Home" || event.key === "End") {
+          event.preventDefault();
+          event.stopPropagation();
+          seekToFrame(
+            event.key === "Home" ? 0 : Math.max(0, (frameCount ?? 1) - 1),
+          );
         }
       }}
       className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
@@ -462,6 +525,7 @@ const VideoReview = ({
           ref={videoRef}
           src={url}
           aria-label={`Reviewing ${asset.width} by ${asset.height} video asset`}
+          loop={looping}
           muted
           playsInline
           preload="auto"
@@ -471,8 +535,12 @@ const VideoReview = ({
             setCurrentTime(event.currentTarget.currentTime);
             event.currentTarget.playbackRate = playbackRate;
           }}
-          onDurationChange={(event) => setDuration(event.currentTarget.duration)}
-          onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+          onDurationChange={(event) =>
+            setDuration(event.currentTarget.duration)
+          }
+          onTimeUpdate={(event) =>
+            setCurrentTime(event.currentTarget.currentTime)
+          }
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
@@ -507,7 +575,7 @@ const VideoReview = ({
             variant="ghost"
             size="icon-sm"
             aria-label="Previous video frame"
-            disabled={frameIndex <= 0}
+            disabled={!looping && frameIndex <= 0}
             onClick={() => stepFrame(-1)}
             className="shrink-0 text-slate-300 hover:bg-slate-800"
           >
@@ -518,7 +586,9 @@ const VideoReview = ({
             variant="ghost"
             size="icon-sm"
             aria-label="Next video frame"
-            disabled={frameCount !== null && frameIndex >= frameCount - 1}
+            disabled={
+              !looping && frameCount !== null && frameIndex >= frameCount - 1
+            }
             onClick={() => stepFrame(1)}
             className="shrink-0 text-slate-300 hover:bg-slate-800"
           >
@@ -528,9 +598,9 @@ const VideoReview = ({
             type="range"
             aria-label="Video timeline"
             min={0}
-            max={duration > 0 ? duration : 0}
+            max={timelineMaximum}
             step={1 / frameRate}
-            value={Math.min(currentTime, duration > 0 ? duration : currentTime)}
+            value={Math.min(currentTime, timelineMaximum)}
             onChange={(event) => {
               const video = videoRef.current;
               if (!video) return;
@@ -543,7 +613,8 @@ const VideoReview = ({
           <span className="shrink-0 text-[10px] tabular-nums text-slate-400">
             Frame {frameIndex + 1}
             {frameCount ? ` / ${frameCount}` : ""} /{" "}
-            {formatVideoReviewTime(currentTime)} / {formatVideoReviewTime(duration)}
+            {formatVideoReviewTime(currentTime)} /{" "}
+            {formatVideoReviewTime(duration)}
           </span>
           <select
             aria-label="Video playback speed"
@@ -563,6 +634,110 @@ const VideoReview = ({
               </option>
             ))}
           </select>
+        </div>
+        <div
+          role="group"
+          aria-label="Video loop review"
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={looping}
+            onClick={() => setLooping((current) => !current)}
+            className={cn(
+              "h-7 gap-1.5 border px-2 text-[9px]",
+              looping
+                ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/15"
+                : "border-slate-800 bg-slate-900/70 text-slate-500 hover:text-slate-300",
+            )}
+          >
+            <Repeat2 aria-hidden="true" className="h-3 w-3" />
+            {looping ? "Looping" : "Loop off"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={duration <= 0}
+            onClick={() => seekToFrame(0)}
+            className="h-7 border border-slate-800 bg-slate-900/70 px-2 text-[9px] text-slate-500 hover:text-slate-300"
+          >
+            First frame
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={duration <= 0 || frameCount === null}
+            onClick={() => seekToFrame(Math.max(0, (frameCount ?? 1) - 1))}
+            className="h-7 border border-slate-800 bg-slate-900/70 px-2 text-[9px] text-slate-500 hover:text-slate-300"
+          >
+            Last frame
+          </Button>
+          {loopMode ? (
+            <span className="rounded-md border border-slate-800 bg-slate-900/60 px-2 py-1 text-[9px] text-slate-500">
+              {loopMode === "ping-pong"
+                ? "Boomerang · reversed playback"
+                : loopMode === "seamless"
+                  ? "Forward seamless loop"
+                  : "One-way source"}
+            </span>
+          ) : null}
+          {loopMode && loopMode !== "none" && decodedLoopRatio !== null ? (
+            <span
+              title="Decoded boundary pixel error, followed by that error divided by the clip's 95th-percentile internal transition. New renders must be at or below 1.25x."
+              className={cn(
+                "rounded-md border px-2 py-1 font-mono text-[9px]",
+                decodedLoopRatio <= 1.25
+                  ? "border-emerald-400/25 bg-emerald-400/8 text-emerald-300/80"
+                  : decodedLoopRatio <= 2
+                    ? "border-amber-400/25 bg-amber-400/8 text-amber-300/80"
+                    : "border-rose-400/25 bg-rose-400/8 text-rose-300/80",
+              )}
+            >
+              Seam
+              {decodedLoopMae !== null
+                ? ` ${decodedLoopMae.toFixed(2)} MAE ·`
+                : ""}{" "}
+              {decodedLoopRatio.toFixed(3)}x / target ≤1.25x
+            </span>
+          ) : null}
+          {transparent &&
+          loopMode &&
+          loopMode !== "none" &&
+          decodedAlphaLoopRatio !== null ? (
+            <span
+              title="Decoded alpha error across the loop boundary and its ratio to the clip's 95th-percentile internal alpha transition."
+              className={cn(
+                "rounded-md border px-2 py-1 font-mono text-[9px]",
+                decodedAlphaLoopRatio <= 1.25
+                  ? "border-emerald-400/25 bg-emerald-400/8 text-emerald-300/80"
+                  : decodedAlphaLoopRatio <= 2
+                    ? "border-amber-400/25 bg-amber-400/8 text-amber-300/80"
+                    : "border-rose-400/25 bg-rose-400/8 text-rose-300/80",
+              )}
+            >
+              Alpha seam
+              {decodedAlphaLoopMae !== null
+                ? ` ${decodedAlphaLoopMae.toFixed(2)} MAE ·`
+                : ""}{" "}
+              {decodedAlphaLoopRatio.toFixed(3)}x
+            </span>
+          ) : null}
+          {generatedOutput?.pixelFormat ? (
+            <span className="rounded-md border border-slate-800 bg-slate-900/60 px-2 py-1 font-mono text-[9px] text-slate-500">
+              {generatedOutput.pixelFormat} / {generatedOutput.colorRange}
+              {generatedOutput.encodingQuality === "lossless"
+                ? ` / RGB error ≤${generatedOutput.decodedRgbEncodingMaximumError}`
+                : ""}
+            </span>
+          ) : null}
+          <span className="ml-auto text-[9px] text-slate-600">
+            Space play/pause / Left and Right frame step / Home and End boundary
+            {looping ? " across the seam" : ""}
+          </span>
         </div>
         {transparent ? (
           <div
@@ -589,9 +764,6 @@ const VideoReview = ({
                 {option.label}
               </button>
             ))}
-            <span className="ml-auto text-[9px] text-slate-600">
-              Space play/pause / Left and Right frame step
-            </span>
           </div>
         ) : null}
       </div>
@@ -721,18 +893,29 @@ const AssetPreviewDialog = ({
               aria-live={playing ? "off" : "polite"}
               className="shrink-0 text-[10px] tabular-nums text-slate-500"
             >
-              {Math.max(0, assets.findIndex((candidate) => candidate.id === asset.id)) + 1} / {assets.length}
+              {Math.max(
+                0,
+                assets.findIndex((candidate) => candidate.id === asset.id),
+              ) + 1}{" "}
+              / {assets.length}
               <span className="sr-only">: {assetDisplayName(asset)}</span>
             </span>
           </div>
           <DialogDescription className="text-xs text-slate-500">
-            {asset.width} × {asset.height} · {formatMediaAssetAspectRatio(asset)} · {formatBytes(asset.byteSize)} · {formatMediaType(asset.mimeType)}
+            {asset.width} × {asset.height} ·{" "}
+            {formatMediaAssetAspectRatio(asset)} · {formatBytes(asset.byteSize)}{" "}
+            · {formatMediaType(asset.mimeType)}
           </DialogDescription>
         </DialogHeader>
         <div
           role="group"
           aria-roledescription="slide"
-          aria-label={`${Math.max(0, assets.findIndex((candidate) => candidate.id === asset.id)) + 1} of ${assets.length}: ${assetDisplayName(asset)}`}
+          aria-label={`${
+            Math.max(
+              0,
+              assets.findIndex((candidate) => candidate.id === asset.id),
+            ) + 1
+          } of ${assets.length}: ${assetDisplayName(asset)}`}
           className="min-h-0 flex-1 bg-[repeating-conic-gradient(rgba(148,163,184,0.055)_0_25%,transparent_0_50%)] bg-[length:24px_24px] p-4"
         >
           <AssetPreview
@@ -771,7 +954,11 @@ const AssetPreviewDialog = ({
             onClick={() => onPlayingChange(!playing)}
             className="min-w-28 border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
           >
-            {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {playing ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
             {playing ? "Pause" : "Slideshow"}
           </Button>
           <Button
@@ -861,7 +1048,9 @@ const AssetCardContextMenu = ({
 
   return (
     <ContextMenuPrimitive.Root>
-      <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
+      <ContextMenuPrimitive.Trigger asChild>
+        {children}
+      </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content
           aria-label={`Actions for ${assetDisplayName(asset)}`}
@@ -914,7 +1103,8 @@ const AssetCardContextMenu = ({
                 className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
                 onSelect={() => onOpenVideoAsFlow(asset)}
               >
-                <Clapperboard className="text-emerald-300" /> Animate as video workflow
+                <Clapperboard className="text-emerald-300" /> Animate as video
+                workflow
               </ContextMenuPrimitive.Item>
             </>
           ) : null}
@@ -923,7 +1113,8 @@ const AssetCardContextMenu = ({
               className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
               onSelect={() => onOpenAsFlow(asset)}
             >
-              <WandSparkles className="text-orange-300" /> Open text-guided edit workflow
+              <WandSparkles className="text-orange-300" /> Open text-guided edit
+              workflow
             </ContextMenuPrimitive.Item>
           ) : null}
           {isImage || isVideo ? (
@@ -934,7 +1125,8 @@ const AssetCardContextMenu = ({
                   className={ASSET_CONTEXT_MENU_ITEM_CLASS_NAME}
                   onSelect={() => onAnalyzeQuality(asset)}
                 >
-                  <ShieldCheck className="text-amber-300" /> Analyze technical quality
+                  <ShieldCheck className="text-amber-300" /> Analyze technical
+                  quality
                 </ContextMenuPrimitive.Item>
               ) : null}
               <ContextMenuPrimitive.Item
@@ -990,7 +1182,10 @@ const AssetTagEditor = ({
   };
 
   return (
-    <section className="mt-4 border-t border-slate-800 pt-4" aria-label="Asset tags">
+    <section
+      className="mt-4 border-t border-slate-800 pt-4"
+      aria-label="Asset tags"
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.1em] text-slate-500 uppercase">
           <Tags className="h-3.5 w-3.5" /> Asset tags
@@ -1074,7 +1269,9 @@ const AssetTagEditor = ({
         className="mt-2 h-8 w-full justify-start text-[10px] text-violet-300 hover:bg-violet-400/5 hover:text-violet-200"
       >
         {loading ? <LoaderCircle className="animate-spin" /> : <ScanSearch />}
-        {technicalTags.length > 0 ? "Refresh technical tags" : "Generate technical tags"}
+        {technicalTags.length > 0
+          ? "Refresh technical tags"
+          : "Generate technical tags"}
       </Button>
     </section>
   );
@@ -1124,14 +1321,16 @@ const AssetDeletionDialog = ({
             <Trash2 className="h-4 w-4 text-rose-300" /> Delete asset safely
           </DialogTitle>
           <DialogDescription className="text-xs leading-5 text-slate-500">
-            Review live lineage and byte references before creating a durable tombstone.
+            Review live lineage and byte references before creating a durable
+            tombstone.
           </DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto px-5 py-5">
           {!impact || !asset ? (
             <div className="flex min-h-52 items-center justify-center gap-2 text-xs text-slate-500">
-              <LoaderCircle className="h-4 w-4 animate-spin" /> Inspecting dependencies…
+              <LoaderCircle className="h-4 w-4 animate-spin" /> Inspecting
+              dependencies…
             </div>
           ) : (
             <>
@@ -1153,7 +1352,9 @@ const AssetDeletionDialog = ({
                     key={String(label)}
                     className="rounded-lg border border-slate-800 bg-slate-900/25 px-3 py-2"
                   >
-                    <div className="text-sm font-semibold text-slate-200">{value}</div>
+                    <div className="text-sm font-semibold text-slate-200">
+                      {value}
+                    </div>
                     <div className="text-[9px] text-slate-600">{label}</div>
                   </div>
                 ))}
@@ -1179,9 +1380,11 @@ const AssetDeletionDialog = ({
                       Metadata only
                     </span>
                     <span className="mt-1 block text-[10px] leading-4 text-slate-500">
-                      Hide the asset and preserve {formatBytes(
+                      Hide the asset and preserve{" "}
+                      {formatBytes(
                         impact.originalByteSize + impact.renditionByteSize,
-                      )} of cataloged bytes.
+                      )}{" "}
+                      of cataloged bytes.
                     </span>
                   </button>
                   <button
@@ -1199,9 +1402,9 @@ const AssetDeletionDialog = ({
                       Metadata and safe bytes
                     </span>
                     <span className="mt-1 block text-[10px] leading-4 text-slate-500">
-                      Reclaim up to {formatBytes(impact.reclaimableByteSize)}; retain {formatBytes(
-                        impact.retainedSharedByteSize,
-                      )} still in use.
+                      Reclaim up to {formatBytes(impact.reclaimableByteSize)};
+                      retain {formatBytes(impact.retainedSharedByteSize)} still
+                      in use.
                     </span>
                   </button>
                 </div>
@@ -1231,7 +1434,9 @@ const AssetDeletionDialog = ({
                   <input
                     type="checkbox"
                     checked={confirmDependencies}
-                    onChange={(event) => setConfirmDependencies(event.target.checked)}
+                    onChange={(event) =>
+                      setConfirmDependencies(event.target.checked)
+                    }
                     className="mt-0.5 h-4 w-4 accent-rose-400"
                   />
                   <span>
@@ -1239,8 +1444,10 @@ const AssetDeletionDialog = ({
                       Preserve dependent lineage with a tombstone
                     </span>
                     <span className="mt-1 block text-[10px] leading-4 text-rose-200/60">
-                      I reviewed {impact.dependentAssetIds.length} dependent asset
-                      {impact.dependentAssetIds.length === 1 ? "" : "s"} and understand their source will be marked deleted.
+                      I reviewed {impact.dependentAssetIds.length} dependent
+                      asset
+                      {impact.dependentAssetIds.length === 1 ? "" : "s"} and
+                      understand their source will be marked deleted.
                     </span>
                   </span>
                 </label>
@@ -1266,7 +1473,9 @@ const AssetDeletionDialog = ({
               className="bg-rose-500 text-white hover:bg-rose-400"
             >
               {loading ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-              {mode === "metadata-only" ? "Create tombstone" : "Delete safe bytes"}
+              {mode === "metadata-only"
+                ? "Create tombstone"
+                : "Delete safe bytes"}
             </Button>
           </div>
         </DialogFooter>
@@ -1317,36 +1526,39 @@ const AssetExportDialog = ({
         <fieldset className="min-h-0 space-y-3 overflow-y-auto px-5 py-5">
           <legend className="sr-only">Export mode</legend>
           {asset?.kind === "image" ? (
-          <label
-            className={cn(
-              "block cursor-pointer rounded-2xl border p-4 transition-colors",
-              mode === "metadata-stripped"
-                ? "border-emerald-400/50 bg-emerald-400/8"
-                : "border-slate-800 bg-slate-900/40 hover:border-slate-700",
-            )}
-          >
-            <span className="flex items-start gap-3">
-              <input
-                type="radio"
-                name="media-export-mode"
-                value="metadata-stripped"
-                checked={mode === "metadata-stripped"}
-                onChange={() => setMode("metadata-stripped")}
-                className="mt-1 accent-emerald-400"
-              />
-              <span>
-                <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
-                  <ScanSearch className="h-4 w-4 text-emerald-300" /> Privacy-clean image
-                  <span className="text-[9px] font-semibold text-emerald-300">
-                    Recommended
+            <label
+              className={cn(
+                "block cursor-pointer rounded-2xl border p-4 transition-colors",
+                mode === "metadata-stripped"
+                  ? "border-emerald-400/50 bg-emerald-400/8"
+                  : "border-slate-800 bg-slate-900/40 hover:border-slate-700",
+              )}
+            >
+              <span className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="media-export-mode"
+                  value="metadata-stripped"
+                  checked={mode === "metadata-stripped"}
+                  onChange={() => setMode("metadata-stripped")}
+                  className="mt-1 accent-emerald-400"
+                />
+                <span>
+                  <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
+                    <ScanSearch className="h-4 w-4 text-emerald-300" />{" "}
+                    Privacy-clean image
+                    <span className="text-[9px] font-semibold text-emerald-300">
+                      Recommended
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-[11px] leading-5 text-slate-500">
+                    Applies EXIF orientation, then re-encodes decoded pixels
+                    without EXIF, XMP, IPTC, or embedded container metadata. PNG
+                    and WebP remain lossless; JPEG is re-encoded at quality 95.
                   </span>
                 </span>
-                <span className="mt-1 block text-[11px] leading-5 text-slate-500">
-                  Applies EXIF orientation, then re-encodes decoded pixels without EXIF, XMP, IPTC, or embedded container metadata. PNG and WebP remain lossless; JPEG is re-encoded at quality 95.
-                </span>
               </span>
-            </span>
-          </label>
+            </label>
           ) : null}
 
           <label
@@ -1368,10 +1580,13 @@ const AssetExportDialog = ({
               />
               <span>
                 <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
-                  <ShieldCheck className="h-4 w-4 text-sky-300" /> Verified original bytes
+                  <ShieldCheck className="h-4 w-4 text-sky-300" /> Verified
+                  original bytes
                 </span>
                 <span className="mt-1 block text-[11px] leading-5 text-slate-500">
-                  Copies the exact content-addressed source and verifies its SHA-256 digest after writing. Embedded camera, location, authoring, and color metadata are preserved.
+                  Copies the exact content-addressed source and verifies its
+                  SHA-256 digest after writing. Embedded camera, location,
+                  authoring, and color metadata are preserved.
                 </span>
               </span>
             </span>
@@ -1379,19 +1594,29 @@ const AssetExportDialog = ({
 
           {asset ? (
             <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-[10px] text-slate-600">
-              Source <span className="font-mono text-slate-400">{asset.digest}</span>
+              Source{" "}
+              <span className="font-mono text-slate-400">{asset.digest}</span>
             </div>
           ) : null}
           {!supported ? (
-            <div role="note" className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[10px] leading-4 text-amber-200/80">
-              Export review is available here, but writing a user-selected file requires the native desktop app.
+            <div
+              role="note"
+              className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[10px] leading-4 text-amber-200/80"
+            >
+              Export review is available here, but writing a user-selected file
+              requires the native desktop app.
             </div>
           ) : null}
         </fieldset>
 
         <DialogFooter className="border-t border-slate-800 px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
           <DialogClose asChild>
-            <Button type="button" variant="ghost" disabled={loading} className="text-slate-400">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={loading}
+              className="text-slate-400"
+            >
               Cancel
             </Button>
           </DialogClose>
@@ -1401,7 +1626,11 @@ const AssetExportDialog = ({
             onClick={() => onConfirm(mode)}
             className="bg-sky-500 text-slate-950 hover:bg-sky-400"
           >
-            {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {loading ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             {loading
               ? "Preparing verified export…"
               : supported
@@ -1541,48 +1770,51 @@ const TransformInspector = ({
 
   const createTransformRequest = (): MediaImageTransformRequest => {
     let operation: MediaImageTransformOperation;
-      if (operationKind === "crop") {
-        const cropX = integerValue(x, "Crop X", 0);
-        const cropY = integerValue(y, "Crop Y", 0);
-        const cropWidth = integerValue(width, "Crop width", 1);
-        const cropHeight = integerValue(height, "Crop height", 1);
-        if (cropX + cropWidth > asset.width || cropY + cropHeight > asset.height) {
-          throw new Error("Crop rectangle must stay inside the source image.");
-        }
-        operation = {
-          kind: "crop",
-          x: cropX,
-          y: cropY,
-          width: cropWidth,
-          height: cropHeight,
-        };
-      } else if (operationKind === "resize") {
-        operation = {
-          kind: "resize",
-          width: integerValue(width, "Resize width", 1),
-          height: integerValue(height, "Resize height", 1),
-          fit,
-        };
-      } else {
-        operation = { kind: "convert" };
+    if (operationKind === "crop") {
+      const cropX = integerValue(x, "Crop X", 0);
+      const cropY = integerValue(y, "Crop Y", 0);
+      const cropWidth = integerValue(width, "Crop width", 1);
+      const cropHeight = integerValue(height, "Crop height", 1);
+      if (
+        cropX + cropWidth > asset.width ||
+        cropY + cropHeight > asset.height
+      ) {
+        throw new Error("Crop rectangle must stay inside the source image.");
       }
-      const request: MediaImageTransformRequest = {
-        sourceAssetId: asset.id,
-        operation,
-        outputFormat,
-        ...(outputFormat === "jpeg"
-          ? {
-              quality: integerValue(quality, "JPEG quality", 1),
-              jpegBackground,
-            }
-          : {}),
+      operation = {
+        kind: "crop",
+        x: cropX,
+        y: cropY,
+        width: cropWidth,
+        height: cropHeight,
       };
-      if (isAlphaMatte && request.outputFormat === "jpeg") {
-        throw new Error("Alpha mattes must remain lossless PNG or WebP assets.");
-      }
-      if (request.quality !== undefined && request.quality > 100) {
-        throw new Error("JPEG quality cannot exceed 100.");
-      }
+    } else if (operationKind === "resize") {
+      operation = {
+        kind: "resize",
+        width: integerValue(width, "Resize width", 1),
+        height: integerValue(height, "Resize height", 1),
+        fit,
+      };
+    } else {
+      operation = { kind: "convert" };
+    }
+    const request: MediaImageTransformRequest = {
+      sourceAssetId: asset.id,
+      operation,
+      outputFormat,
+      ...(outputFormat === "jpeg"
+        ? {
+            quality: integerValue(quality, "JPEG quality", 1),
+            jpegBackground,
+          }
+        : {}),
+    };
+    if (isAlphaMatte && request.outputFormat === "jpeg") {
+      throw new Error("Alpha mattes must remain lossless PNG or WebP assets.");
+    }
+    if (request.quality !== undefined && request.quality > 100) {
+      throw new Error("JPEG quality cannot exceed 100.");
+    }
     return request;
   };
 
@@ -1595,7 +1827,9 @@ const TransformInspector = ({
       action(request);
     } catch (error: unknown) {
       setValidationError(
-        error instanceof Error ? error.message : "Transform settings are invalid.",
+        error instanceof Error
+          ? error.message
+          : "Transform settings are invalid.",
       );
     }
   };
@@ -1641,7 +1875,8 @@ const TransformInspector = ({
         <div className="mt-4 flex gap-2 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100/80">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {missingSourceAssetIds.length} source tombstone
-          {missingSourceAssetIds.length === 1 ? "" : "s"} preserved in lineage. The original metadata was deleted after dependency review.
+          {missingSourceAssetIds.length === 1 ? "" : "s"} preserved in lineage.
+          The original metadata was deleted after dependency review.
         </div>
       ) : null}
 
@@ -1698,18 +1933,22 @@ const TransformInspector = ({
           </div>
           {asset.operation.hadText ? (
             <p className="mt-2 text-[9px] leading-4 text-amber-300/70">
-              Text was flattened with the fonts installed on this machine. The published PNG is stable; rerasterizing the SVG on another system may choose different fonts.
+              Text was flattened with the fonts installed on this machine. The
+              published PNG is stable; rerasterizing the SVG on another system
+              may choose different fonts.
             </p>
           ) : null}
         </div>
       ) : null}
 
       <div className="mt-4 grid grid-cols-3 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
-        {([
-          ["crop", Crop, "Crop"],
-          ["resize", Maximize2, "Resize"],
-          ["convert", FileImage, "Convert"],
-        ] as const).map(([kind, Icon, label]) => (
+        {(
+          [
+            ["crop", Crop, "Crop"],
+            ["resize", Maximize2, "Resize"],
+            ["convert", FileImage, "Convert"],
+          ] as const
+        ).map(([kind, Icon, label]) => (
           <button
             key={kind}
             type="button"
@@ -1751,7 +1990,9 @@ const TransformInspector = ({
               <select
                 aria-label="Resize fit mode"
                 value={fit}
-                onChange={(event) => setFit(event.target.value as MediaImageResizeFit)}
+                onChange={(event) =>
+                  setFit(event.target.value as MediaImageResizeFit)
+                }
                 className="mt-1 h-9 w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 text-xs text-slate-300 outline-none focus:border-sky-400/50"
               >
                 <option value="contain">Contain · preserve all pixels</option>
@@ -1778,13 +2019,19 @@ const TransformInspector = ({
             className="mt-1 h-9 w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 text-xs text-slate-300 outline-none focus:border-sky-400/50"
           >
             <option value="png">PNG · lossless + alpha</option>
-            {!isAlphaMatte ? <option value="jpeg">JPEG · compact photo</option> : null}
+            {!isAlphaMatte ? (
+              <option value="jpeg">JPEG · compact photo</option>
+            ) : null}
             <option value="webp">WebP · lossless + alpha</option>
           </select>
         </label>
         {outputFormat === "jpeg" ? (
           <div className="mt-3 grid grid-cols-[1fr_72px] gap-2">
-            <NumberField label="Quality" value={quality} onChange={setQuality} />
+            <NumberField
+              label="Quality"
+              value={quality}
+              onChange={setQuality}
+            />
             <label className="text-[10px] text-slate-500">
               Matte
               <input
@@ -1799,13 +2046,21 @@ const TransformInspector = ({
         ) : null}
       </fieldset>
 
-      <section className="mt-4 border-t border-slate-800 pt-4" aria-label="Technical quality">
+      <section
+        className="mt-4 border-t border-slate-800 pt-4"
+        aria-label="Technical quality"
+      >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.1em] text-slate-500 uppercase">
             <ShieldCheck className="h-3.5 w-3.5" /> Technical quality
           </div>
           {qualityReport ? (
-            <span className={cn("text-[9px] font-semibold uppercase", verdictClassName(qualityReport.verdict))}>
+            <span
+              className={cn(
+                "text-[9px] font-semibold uppercase",
+                verdictClassName(qualityReport.verdict),
+              )}
+            >
               {qualityReport.verdict}
             </span>
           ) : null}
@@ -1816,8 +2071,22 @@ const TransformInspector = ({
               {qualityReport.gateReasons[0]}
             </p>
             <div className="mt-2 grid grid-cols-2 gap-2 text-[9px] text-slate-600">
-              <span>{qualityReport.observations.filter((item) => item.status === "observed").length} observed</span>
-              <span>{qualityReport.observations.filter((item) => item.status === "unknown").length} unknown</span>
+              <span>
+                {
+                  qualityReport.observations.filter(
+                    (item) => item.status === "observed",
+                  ).length
+                }{" "}
+                observed
+              </span>
+              <span>
+                {
+                  qualityReport.observations.filter(
+                    (item) => item.status === "unknown",
+                  ).length
+                }{" "}
+                unknown
+              </span>
             </div>
           </div>
         ) : null}
@@ -1939,7 +2208,9 @@ const TransformInspector = ({
             onClick={() => runFollowUp(() => onSendToChat(asset))}
           />
           <FollowUpAction
-            label={exportLoading ? "Preparing export…" : "Review export options"}
+            label={
+              exportLoading ? "Preparing export…" : "Review export options"
+            }
             icon={exportLoading ? LoaderCircle : Download}
             disabled={exportLoading}
             onClick={() => runFollowUp(() => onExport(asset))}
@@ -1999,11 +2270,17 @@ const QualityReportInspector = ({
             <FileJson className="h-4 w-4 text-amber-300" /> Quality report
           </div>
           <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Immutable component observations with explicit limitations and source lineage.
+            Immutable component observations with explicit limitations and
+            source lineage.
           </p>
         </div>
         {metadata ? (
-          <span className={cn("text-[9px] font-semibold uppercase", verdictClassName(metadata.verdict))}>
+          <span
+            className={cn(
+              "text-[9px] font-semibold uppercase",
+              verdictClassName(metadata.verdict),
+            )}
+          >
             {metadata.verdict}
           </span>
         ) : null}
@@ -2012,7 +2289,9 @@ const QualityReportInspector = ({
       {missingSourceAssetIds.length > 0 ? (
         <div className="mt-4 flex gap-2 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100/80">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Source metadata was deleted after dependency review. The report retains {missingSourceAssetIds.length} tombstone reference{missingSourceAssetIds.length === 1 ? "" : "s"}.
+          Source metadata was deleted after dependency review. The report
+          retains {missingSourceAssetIds.length} tombstone reference
+          {missingSourceAssetIds.length === 1 ? "" : "s"}.
         </div>
       ) : null}
 
@@ -2050,7 +2329,9 @@ const QualityReportInspector = ({
               <h3 className="text-[10px] font-semibold tracking-[0.1em] text-slate-500 uppercase">
                 Observations
               </h3>
-              <span className="text-[9px] text-slate-700">{report.observations.length} retained</span>
+              <span className="text-[9px] text-slate-700">
+                {report.observations.length} retained
+              </span>
             </div>
             <div className="mt-2 max-h-72 space-y-1.5 overflow-y-auto pr-1">
               {report.observations.map((observation) => (
@@ -2065,7 +2346,9 @@ const QualityReportInspector = ({
                     <span
                       className={cn(
                         "shrink-0 text-[8px] font-semibold uppercase",
-                        observation.status === "observed" ? "text-emerald-400/70" : "text-amber-400/70",
+                        observation.status === "observed"
+                          ? "text-emerald-400/70"
+                          : "text-amber-400/70",
                       )}
                     >
                       {observation.status}
@@ -2106,7 +2389,11 @@ const QualityReportInspector = ({
           onClick={() => onAnalyze(sourceAsset)}
           className="mt-4 w-full border-amber-400/20 bg-amber-400/5 text-amber-200 hover:bg-amber-400/10"
         >
-          {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+          {loading ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : (
+            <ShieldCheck className="h-4 w-4" />
+          )}
           Re-run profile on source
         </Button>
       ) : null}
@@ -2196,10 +2483,14 @@ export const MediaLibraryView = ({
   const [compositeQuery, setCompositeQuery] = useState("");
   const [compositePage, setCompositePage] = useState(1);
   const [contactSheetOpen, setContactSheetOpen] = useState(false);
-  const [contactSheetAssetIds, setContactSheetAssetIds] = useState<string[]>([]);
+  const [contactSheetAssetIds, setContactSheetAssetIds] = useState<string[]>(
+    [],
+  );
   const [contactSheetQuery, setContactSheetQuery] = useState("");
   const [contactSheetPage, setContactSheetPage] = useState(1);
-  const [deletionAsset, setDeletionAsset] = useState<MediaAssetRecord | null>(null);
+  const [deletionAsset, setDeletionAsset] = useState<MediaAssetRecord | null>(
+    null,
+  );
   const [deletionImpact, setDeletionImpact] =
     useState<MediaAssetDeletionImpact | null>(null);
   const [deletionLoading, setDeletionLoading] = useState(false);
@@ -2241,7 +2532,9 @@ export const MediaLibraryView = ({
     [assets],
   );
   const selectedContactSheetAssets = contactSheetAssetIds
-    .map((assetId) => contactSheetCandidates.find((asset) => asset.id === assetId))
+    .map((assetId) =>
+      contactSheetCandidates.find((asset) => asset.id === assetId),
+    )
     .filter((asset): asset is MediaAssetRecord => Boolean(asset));
   const selectedContactSheetAssetIds = useMemo(
     () => new Set(contactSheetAssetIds),
@@ -2287,24 +2580,28 @@ export const MediaLibraryView = ({
   const selectedAsset =
     assets.find((asset) => asset.id === selectedAssetId) ?? null;
   const previewAsset = previewAssetId
-    ? filteredVisualAssets.find((asset) => asset.id === previewAssetId) ??
+    ? (filteredVisualAssets.find((asset) => asset.id === previewAssetId) ??
       filteredVisualAssets[0] ??
-      null
+      null)
     : null;
   const selectedMissingSourceAssetIds = selectedAsset
-    ? selectedAsset.sourceAssetIds.filter((sourceId) => !activeAssetIds.has(sourceId))
+    ? selectedAsset.sourceAssetIds.filter(
+        (sourceId) => !activeAssetIds.has(sourceId),
+      )
     : [];
   const selectedSourceAsset = selectedAsset?.sourceAssetIds[0]
-    ? assets.find((asset) => asset.id === selectedAsset.sourceAssetIds[0]) ?? null
+    ? (assets.find((asset) => asset.id === selectedAsset.sourceAssetIds[0]) ??
+      null)
     : null;
-  const latestQualityReportAsset = selectedAsset?.kind === "image"
-    ? assets.find(
-        (asset) =>
-          asset.kind === "report" &&
-          asset.operation?.kind === "analyze-quality" &&
-          asset.sourceAssetIds.includes(selectedAsset.id),
-      ) ?? null
-    : null;
+  const latestQualityReportAsset =
+    selectedAsset?.kind === "image"
+      ? (assets.find(
+          (asset) =>
+            asset.kind === "report" &&
+            asset.operation?.kind === "analyze-quality" &&
+            asset.sourceAssetIds.includes(selectedAsset.id),
+        ) ?? null)
+      : null;
 
   useEffect(() => {
     const normalizedPage = assetPagination.page || 1;
@@ -2318,7 +2615,8 @@ export const MediaLibraryView = ({
   }, [compositePage, compositePagination.page]);
   useEffect(() => {
     const normalizedPage = contactSheetPagination.page || 1;
-    if (contactSheetPage !== normalizedPage) setContactSheetPage(normalizedPage);
+    if (contactSheetPage !== normalizedPage)
+      setContactSheetPage(normalizedPage);
   }, [contactSheetPage, contactSheetPagination.page]);
 
   const revealAssetPage = (page: number): void => {
@@ -2341,7 +2639,10 @@ export const MediaLibraryView = ({
   }, [assets, onOpenAssetHandled, openAssetId]);
 
   useEffect(() => {
-    if (selectedAssetId && !assets.some((asset) => asset.id === selectedAssetId)) {
+    if (
+      selectedAssetId &&
+      !assets.some((asset) => asset.id === selectedAssetId)
+    ) {
       setSelectedAssetId(null);
     }
   }, [assets, selectedAssetId]);
@@ -2356,13 +2657,18 @@ export const MediaLibraryView = ({
   }, [filteredAssets, selectedAssetId]);
 
   useEffect(() => {
-    if (!previewAssetId || filteredVisualAssetIds.includes(previewAssetId)) return;
+    if (!previewAssetId || filteredVisualAssetIds.includes(previewAssetId))
+      return;
     setPreviewAssetId(filteredVisualAssetIds[0] ?? null);
     if (filteredVisualAssetIds.length < 2) setSlideshowPlaying(false);
   }, [filteredVisualAssetIds, previewAssetId]);
 
   useEffect(() => {
-    if (!slideshowPlaying || !previewAssetId || filteredVisualAssetIds.length < 2) {
+    if (
+      !slideshowPlaying ||
+      !previewAssetId ||
+      filteredVisualAssetIds.length < 2
+    ) {
       return;
     }
     const intervalId = window.setInterval(() => {
@@ -2379,9 +2685,15 @@ export const MediaLibraryView = ({
       if (
         event.target instanceof HTMLElement &&
         (event.target.isContentEditable ||
-          ["A", "AUDIO", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "VIDEO"].includes(
-            event.target.tagName,
-          ))
+          [
+            "A",
+            "AUDIO",
+            "BUTTON",
+            "INPUT",
+            "SELECT",
+            "TEXTAREA",
+            "VIDEO",
+          ].includes(event.target.tagName))
       ) {
         return;
       }
@@ -2542,7 +2854,11 @@ export const MediaLibraryView = ({
               onClick={onImport}
               className="border-emerald-400/20 bg-emerald-400/5 text-emerald-200 hover:bg-emerald-400/10"
             >
-              {importLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {importLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
               {importLoading ? "Validating…" : "Import images / SVG"}
             </Button>
             {assets.length > 0 ? (
@@ -2601,10 +2917,16 @@ export const MediaLibraryView = ({
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xs font-semibold text-slate-300">Assets</h2>
               <span aria-live="polite" className="text-[10px] text-slate-600">
-                {filteredVisualAssets.length} visual · {filteredAssets.length} of {assets.length} records
+                {filteredVisualAssets.length} visual · {filteredAssets.length}{" "}
+                of {assets.length} records
               </span>
             </div>
-            <div className={cn("grid items-start gap-4", selectedAsset && "lg:grid-cols-[minmax(0,1fr)_340px]") }>
+            <div
+              className={cn(
+                "grid items-start gap-4",
+                selectedAsset && "lg:grid-cols-[minmax(0,1fr)_340px]",
+              )}
+            >
               <div className="min-w-0">
                 <MediaPagination
                   page={assetPagination.page}
@@ -2617,145 +2939,164 @@ export const MediaLibraryView = ({
                   className="mb-4"
                 />
                 <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-                {assetPagination.items.map((asset, assetIndex) => {
-                  const selected = asset.id === selectedAssetId;
-                  const missingSourceCount = asset.sourceAssetIds.filter(
-                    (sourceId) => !activeAssetIds.has(sourceId),
-                  ).length;
-                  return (
-                    <AssetCardContextMenu
-                      key={asset.id}
-                      asset={asset}
-                      chatWorkspaceAvailable={chatWorkspaceAvailable}
-                      exportLoading={exportLoading}
-                      qualityLoading={qualityLoadingAssetId === asset.id}
-                      onPreview={openPreview}
-                      onInspect={setSelectedAssetId}
-                      onSendToChat={onSendToChat}
-                      onUseAsReference={onUseAsReference}
-                      onOpenVideoAsFlow={onOpenVideoAsFlow}
-                      onOpenAsFlow={onOpenAsFlow}
-                      onAnalyzeQuality={onAnalyzeQuality}
-                      onExport={setExportAsset}
-                      onRequestDeletion={requestDeletion}
-                    >
-                      <article
-                        data-app-context-menu-trigger=""
-                        className={cn(
-                          "overflow-hidden rounded-2xl border bg-slate-900/35 transition-colors data-[state=open]:border-sky-400/45 data-[state=open]:ring-1 data-[state=open]:ring-sky-400/15",
-                          selected ? "border-sky-400/45 ring-1 ring-sky-400/15" : "border-slate-800 hover:border-slate-700",
-                        )}
+                  {assetPagination.items.map((asset, assetIndex) => {
+                    const selected = asset.id === selectedAssetId;
+                    const missingSourceCount = asset.sourceAssetIds.filter(
+                      (sourceId) => !activeAssetIds.has(sourceId),
+                    ).length;
+                    return (
+                      <AssetCardContextMenu
+                        key={asset.id}
+                        asset={asset}
+                        chatWorkspaceAvailable={chatWorkspaceAvailable}
+                        exportLoading={exportLoading}
+                        qualityLoading={qualityLoadingAssetId === asset.id}
+                        onPreview={openPreview}
+                        onInspect={setSelectedAssetId}
+                        onSendToChat={onSendToChat}
+                        onUseAsReference={onUseAsReference}
+                        onOpenVideoAsFlow={onOpenVideoAsFlow}
+                        onOpenAsFlow={onOpenAsFlow}
+                        onAnalyzeQuality={onAnalyzeQuality}
+                        onExport={setExportAsset}
+                        onRequestDeletion={requestDeletion}
                       >
-                      {asset.kind === "image" ||
-                      asset.kind === "vector" ||
-                      asset.kind === "video" ? (
-                        <button
-                          type="button"
-                          aria-label={`Preview ${assetDisplayName(asset)}, item ${assetPagination.startIndex + assetIndex + 1}`}
-                          onClick={() => openPreview(asset.id)}
-                          className="group relative block aspect-[16/9] w-full overflow-hidden border-b border-slate-800 bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(139,92,246,0.08)),repeating-conic-gradient(rgba(148,163,184,0.035)_0_25%,transparent_0_50%)] bg-[length:auto,24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
-                        >
-                          <AssetPreview
-                            asset={asset}
-                            fit={
-                              asset.kind === "vector" ||
-                              asset.kind === "video"
-                                ? "contain"
-                                : "cover"
-                            }
-                          />
-                          <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-slate-950/75 px-3 py-2 text-[9px] font-medium text-slate-300 opacity-80 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                            <Maximize2 className="h-3 w-3" /> Preview
-                          </span>
-                        </button>
-                      ) : (
-                        <div className="aspect-[16/9] overflow-hidden border-b border-slate-800 bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(139,92,246,0.08)),repeating-conic-gradient(rgba(148,163,184,0.035)_0_25%,transparent_0_50%)] bg-[length:auto,24px_24px]">
-                          <div className="flex h-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.10),transparent_60%)] text-center">
-                            <FileJson className="h-8 w-8 text-amber-300/70" />
-                            <span className="mt-2 text-[9px] font-semibold tracking-[0.14em] text-amber-200/60 uppercase">
-                              {qualityOperation(asset)?.verdict ?? "quality"} report
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        aria-pressed={selected}
-                        aria-label={`Select ${assetProvenance(asset)} asset ${assetDisplayName(asset)}, item ${assetPagination.startIndex + assetIndex + 1}`}
-                        onClick={() => setSelectedAssetId(selected ? null : asset.id)}
-                        className="block w-full p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
-                      >
-                        <div className="break-words text-xs leading-5 font-semibold text-slate-200">
-                          {assetDisplayName(asset)}
-                        </div>
-                        <dl
+                        <article
+                          data-app-context-menu-trigger=""
                           className={cn(
-                            "mt-3 grid gap-x-3 text-[10px]",
-                            asset.kind === "image" ||
-                            asset.kind === "vector" ||
-                            asset.kind === "video"
-                              ? "grid-cols-4"
-                              : "grid-cols-3",
+                            "overflow-hidden rounded-2xl border bg-slate-900/35 transition-colors data-[state=open]:border-sky-400/45 data-[state=open]:ring-1 data-[state=open]:ring-sky-400/15",
+                            selected
+                              ? "border-sky-400/45 ring-1 ring-sky-400/15"
+                              : "border-slate-800 hover:border-slate-700",
                           )}
                         >
-                          <div className="min-w-0">
-                            <dt className="text-slate-600">
-                              {asset.kind === "report" ? "Profile" : "Dimensions"}
-                            </dt>
-                            <dd className="mt-0.5 truncate text-slate-400">
-                              {asset.kind === "report"
-                                ? qualityOperation(asset)?.profileId ?? "Unknown"
-                                : `${asset.width} × ${asset.height}`}
-                            </dd>
-                          </div>
-                          <div className="min-w-0">
-                            <dt className="text-slate-600">Size</dt>
-                            <dd className="mt-0.5 truncate text-slate-400">
-                              {formatBytes(asset.byteSize)}
-                            </dd>
-                          </div>
-                          <div className="min-w-0">
-                            <dt className="text-slate-600">Type</dt>
-                            <dd className="mt-0.5 truncate text-slate-400">
-                              {formatMediaType(asset.mimeType)}
-                            </dd>
-                          </div>
                           {asset.kind === "image" ||
                           asset.kind === "vector" ||
                           asset.kind === "video" ? (
-                            <div className="min-w-0">
-                              <dt className="text-slate-600">Aspect ratio</dt>
-                              <dd className="mt-0.5 truncate text-slate-400">
-                                {formatMediaAssetAspectRatio(asset)}
-                              </dd>
+                            <button
+                              type="button"
+                              aria-label={`Preview ${assetDisplayName(asset)}, item ${assetPagination.startIndex + assetIndex + 1}`}
+                              onClick={() => openPreview(asset.id)}
+                              className="group relative block aspect-[16/9] w-full overflow-hidden border-b border-slate-800 bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(139,92,246,0.08)),repeating-conic-gradient(rgba(148,163,184,0.035)_0_25%,transparent_0_50%)] bg-[length:auto,24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
+                            >
+                              <AssetPreview
+                                asset={asset}
+                                fit={
+                                  asset.kind === "vector" ||
+                                  asset.kind === "video"
+                                    ? "contain"
+                                    : "cover"
+                                }
+                              />
+                              <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-slate-950/75 px-3 py-2 text-[9px] font-medium text-slate-300 opacity-80 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                                <Maximize2 className="h-3 w-3" /> Preview
+                              </span>
+                            </button>
+                          ) : (
+                            <div className="aspect-[16/9] overflow-hidden border-b border-slate-800 bg-[linear-gradient(135deg,rgba(14,165,233,0.08),rgba(139,92,246,0.08)),repeating-conic-gradient(rgba(148,163,184,0.035)_0_25%,transparent_0_50%)] bg-[length:auto,24px_24px]">
+                              <div className="flex h-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.10),transparent_60%)] text-center">
+                                <FileJson className="h-8 w-8 text-amber-300/70" />
+                                <span className="mt-2 text-[9px] font-semibold tracking-[0.14em] text-amber-200/60 uppercase">
+                                  {qualityOperation(asset)?.verdict ??
+                                    "quality"}{" "}
+                                  report
+                                </span>
+                              </div>
                             </div>
-                          ) : null}
-                        </dl>
-                        {missingSourceCount > 0 ? (
-                          <p className="mt-2 flex items-center gap-1 text-[9px] text-amber-300/70">
-                            <AlertTriangle className="h-3 w-3" /> {missingSourceCount} deleted source tombstone{missingSourceCount === 1 ? "" : "s"}
-                          </p>
-                        ) : asset.sourceAssetIds.length > 0 ? (
-                          <p className="mt-2 flex items-center gap-1 text-[9px] text-sky-300/60">
-                            <Boxes className="h-3 w-3" /> Derived from {asset.sourceAssetIds.length} source
-                          </p>
-                        ) : null}
-                        {asset.tags.length > 0 ? (
-                          <p className="mt-2 truncate text-[8px] text-slate-500">
-                            {asset.tags.slice(0, 3).map((tag) => tag.label).join(" · ")}
-                            {asset.tags.length > 3 ? ` · +${asset.tags.length - 3}` : ""}
-                          </p>
-                        ) : null}
-                      </button>
-                      </article>
-                    </AssetCardContextMenu>
-                  );
-                })}
-                {filteredAssets.length === 0 ? (
-                  <div className="col-span-full rounded-2xl border border-dashed border-slate-800 px-5 py-12 text-center text-xs text-slate-600">
-                    No assets match “{query.trim()}”.
-                  </div>
-                ) : null}
+                          )}
+                          <button
+                            type="button"
+                            aria-pressed={selected}
+                            aria-label={`Select ${assetProvenance(asset)} asset ${assetDisplayName(asset)}, item ${assetPagination.startIndex + assetIndex + 1}`}
+                            onClick={() =>
+                              setSelectedAssetId(selected ? null : asset.id)
+                            }
+                            className="block w-full p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
+                          >
+                            <div className="break-words text-xs leading-5 font-semibold text-slate-200">
+                              {assetDisplayName(asset)}
+                            </div>
+                            <dl
+                              className={cn(
+                                "mt-3 grid gap-x-3 text-[10px]",
+                                asset.kind === "image" ||
+                                  asset.kind === "vector" ||
+                                  asset.kind === "video"
+                                  ? "grid-cols-4"
+                                  : "grid-cols-3",
+                              )}
+                            >
+                              <div className="min-w-0">
+                                <dt className="text-slate-600">
+                                  {asset.kind === "report"
+                                    ? "Profile"
+                                    : "Dimensions"}
+                                </dt>
+                                <dd className="mt-0.5 truncate text-slate-400">
+                                  {asset.kind === "report"
+                                    ? (qualityOperation(asset)?.profileId ??
+                                      "Unknown")
+                                    : `${asset.width} × ${asset.height}`}
+                                </dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-slate-600">Size</dt>
+                                <dd className="mt-0.5 truncate text-slate-400">
+                                  {formatBytes(asset.byteSize)}
+                                </dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-slate-600">Type</dt>
+                                <dd className="mt-0.5 truncate text-slate-400">
+                                  {formatMediaType(asset.mimeType)}
+                                </dd>
+                              </div>
+                              {asset.kind === "image" ||
+                              asset.kind === "vector" ||
+                              asset.kind === "video" ? (
+                                <div className="min-w-0">
+                                  <dt className="text-slate-600">
+                                    Aspect ratio
+                                  </dt>
+                                  <dd className="mt-0.5 truncate text-slate-400">
+                                    {formatMediaAssetAspectRatio(asset)}
+                                  </dd>
+                                </div>
+                              ) : null}
+                            </dl>
+                            {missingSourceCount > 0 ? (
+                              <p className="mt-2 flex items-center gap-1 text-[9px] text-amber-300/70">
+                                <AlertTriangle className="h-3 w-3" />{" "}
+                                {missingSourceCount} deleted source tombstone
+                                {missingSourceCount === 1 ? "" : "s"}
+                              </p>
+                            ) : asset.sourceAssetIds.length > 0 ? (
+                              <p className="mt-2 flex items-center gap-1 text-[9px] text-sky-300/60">
+                                <Boxes className="h-3 w-3" /> Derived from{" "}
+                                {asset.sourceAssetIds.length} source
+                              </p>
+                            ) : null}
+                            {asset.tags.length > 0 ? (
+                              <p className="mt-2 truncate text-[8px] text-slate-500">
+                                {asset.tags
+                                  .slice(0, 3)
+                                  .map((tag) => tag.label)
+                                  .join(" · ")}
+                                {asset.tags.length > 3
+                                  ? ` · +${asset.tags.length - 3}`
+                                  : ""}
+                              </p>
+                            ) : null}
+                          </button>
+                        </article>
+                      </AssetCardContextMenu>
+                    );
+                  })}
+                  {filteredAssets.length === 0 ? (
+                    <div className="col-span-full rounded-2xl border border-dashed border-slate-800 px-5 py-12 text-center text-xs text-slate-600">
+                      No assets match “{query.trim()}”.
+                    </div>
+                  ) : null}
                 </div>
                 <MediaPagination
                   page={assetPagination.page}
@@ -2782,7 +3123,7 @@ export const MediaLibraryView = ({
                   qualityReportAssetId={latestQualityReportAsset?.id ?? null}
                   qualityReport={
                     latestQualityReportAsset
-                      ? qualityReports[latestQualityReportAsset.id] ?? null
+                      ? (qualityReports[latestQualityReportAsset.id] ?? null)
                       : null
                   }
                   tagLoading={tagLoadingAssetId === selectedAsset.id}
@@ -2889,8 +3230,9 @@ export const MediaLibraryView = ({
             <DialogHeader>
               <DialogTitle>Choose composite background</DialogTitle>
               <DialogDescription className="text-slate-400">
-                The selected foreground keeps its immutable source edge. The background
-                defines the output canvas; fit and opacity remain editable in the workflow.
+                The selected foreground keeps its immutable source edge. The
+                background defines the output canvas; fit and opacity remain
+                editable in the workflow.
               </DialogDescription>
             </DialogHeader>
             {compositeBackgrounds.length > 0 ? (
@@ -2947,7 +3289,8 @@ export const MediaLibraryView = ({
                         {assetDisplayName(candidate)}
                       </span>
                       <span className="mt-0.5 block text-[10px] text-slate-500">
-                        {candidate.width} × {candidate.height} · {candidate.mimeType}
+                        {candidate.width} × {candidate.height} ·{" "}
+                        {candidate.mimeType}
                       </span>
                     </span>
                     <span className="font-mono text-[9px] text-slate-600">
@@ -2992,8 +3335,9 @@ export const MediaLibraryView = ({
             <DialogHeader>
               <DialogTitle>Build contact sheet</DialogTitle>
               <DialogDescription className="text-slate-400">
-                Choose two to eight images in the order they should appear. Cell size,
-                columns, labels, gap, and background remain editable in the workflow.
+                Choose two to eight images in the order they should appear. Cell
+                size, columns, labels, gap, and background remain editable in
+                the workflow.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
@@ -3037,62 +3381,67 @@ export const MediaLibraryView = ({
                 className="sticky top-0 z-10 mb-2 bg-slate-950/95 backdrop-blur"
               />
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {visibleContactSheetCandidates.map((candidate) => {
-                const selectionIndex = contactSheetAssetIds.indexOf(candidate.id);
-                const selected = selectionIndex >= 0;
-                const atLimit = contactSheetAssetIds.length >= 8;
-                return (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    aria-pressed={selected}
-                    aria-label={`${selected ? "Remove" : "Select"} ${assetDisplayName(candidate)} ${candidate.digest.slice(0, 12)} ${selected ? "from" : "for"} contact sheet`}
-                    disabled={!selected && atLimit}
-                    onClick={() => {
-                      setContactSheetAssetIds((current) =>
-                        current.includes(candidate.id)
-                          ? current.filter((assetId) => assetId !== candidate.id)
-                          : current.length < 8
-                            ? [...current, candidate.id]
-                            : current,
-                      );
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:cursor-not-allowed disabled:opacity-40",
-                      selected
-                        ? "border-sky-300/60 bg-sky-400/10"
-                        : "border-slate-800 bg-slate-900/70 hover:border-sky-400/30 hover:bg-sky-400/5",
-                    )}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium text-slate-200">
-                        {assetDisplayName(candidate)}
-                      </span>
-                      <span className="mt-0.5 block text-[10px] text-slate-500">
-                        {candidate.width} × {candidate.height} · {candidate.mimeType}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-right">
-                      {selected ? (
-                        <span className="block text-[9px] font-semibold text-sky-200">
-                          Position {selectionIndex + 1}
+                {visibleContactSheetCandidates.map((candidate) => {
+                  const selectionIndex = contactSheetAssetIds.indexOf(
+                    candidate.id,
+                  );
+                  const selected = selectionIndex >= 0;
+                  const atLimit = contactSheetAssetIds.length >= 8;
+                  return (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={`${selected ? "Remove" : "Select"} ${assetDisplayName(candidate)} ${candidate.digest.slice(0, 12)} ${selected ? "from" : "for"} contact sheet`}
+                      disabled={!selected && atLimit}
+                      onClick={() => {
+                        setContactSheetAssetIds((current) =>
+                          current.includes(candidate.id)
+                            ? current.filter(
+                                (assetId) => assetId !== candidate.id,
+                              )
+                            : current.length < 8
+                              ? [...current, candidate.id]
+                              : current,
+                        );
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:cursor-not-allowed disabled:opacity-40",
+                        selected
+                          ? "border-sky-300/60 bg-sky-400/10"
+                          : "border-slate-800 bg-slate-900/70 hover:border-sky-400/30 hover:bg-sky-400/5",
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-slate-200">
+                          {assetDisplayName(candidate)}
                         </span>
-                      ) : null}
-                      <span className="block font-mono text-[9px] text-slate-600">
-                        {candidate.digest.slice(0, 12)}
+                        <span className="mt-0.5 block text-[10px] text-slate-500">
+                          {candidate.width} × {candidate.height} ·{" "}
+                          {candidate.mimeType}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                );
-              })}
-              {visibleContactSheetCandidates.length === 0 ? (
-                <EmptyState
-                  title={`No images match “${contactSheetQuery.trim()}”.`}
-                  size="compact"
-                  role="status"
-                  className="col-span-full"
-                />
-              ) : null}
+                      <span className="shrink-0 text-right">
+                        {selected ? (
+                          <span className="block text-[9px] font-semibold text-sky-200">
+                            Position {selectionIndex + 1}
+                          </span>
+                        ) : null}
+                        <span className="block font-mono text-[9px] text-slate-600">
+                          {candidate.digest.slice(0, 12)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+                {visibleContactSheetCandidates.length === 0 ? (
+                  <EmptyState
+                    title={`No images match “${contactSheetQuery.trim()}”.`}
+                    size="compact"
+                    role="status"
+                    className="col-span-full"
+                  />
+                ) : null}
               </div>
             </div>
             <DialogFooter>
@@ -3113,7 +3462,8 @@ export const MediaLibraryView = ({
                 }}
                 className="bg-sky-300 text-slate-950 hover:bg-sky-200"
               >
-                <LayoutGrid className="h-4 w-4" /> Open {selectedContactSheetAssets.length} images as workflow
+                <LayoutGrid className="h-4 w-4" /> Open{" "}
+                {selectedContactSheetAssets.length} images as workflow
               </Button>
             </DialogFooter>
           </DialogContent>

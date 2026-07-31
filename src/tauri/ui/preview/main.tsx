@@ -14,6 +14,8 @@ if (__MACHDOCH_DEVELOPMENT__) {
         driver.startWitchHunyuanQualityRun,
       startGeneralHunyuanQualityRun:
         driver.startGeneralHunyuanQualityRun,
+      startAnimationIterationRun:
+        driver.startAnimationIterationRun,
       startDogLoraImageQualityRun:
         driver.startDogLoraImageQualityRun,
     });

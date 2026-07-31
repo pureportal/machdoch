@@ -1327,7 +1327,7 @@ export const initializeMediaRuntime = async (): Promise<MediaRuntimeStatus> => {
   }
   const runs = [...browserRuns.values()];
   return {
-    schemaVersion: 21,
+    schemaVersion: 26,
     recoveredRuns: 0,
     queuedRuns: runs.filter((run) => run.status === "queued").length,
     activeRuns: runs.filter((run) =>

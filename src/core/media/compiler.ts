@@ -121,9 +121,15 @@ export const createImageRecipeFlow = ({
 }: CreateImageRecipeFlowInput): MediaFlow => {
   const isSvgVectorization =
     settings.outputFormat === "svg" && settings.svgMode === "vectorize";
-  const prompt = createNode("prompt", "source.prompt", "Creative brief", "source", {
-    prompt: settings.prompt,
-  });
+  const prompt = createNode(
+    "prompt",
+    "source.prompt",
+    "Creative brief",
+    "source",
+    {
+      prompt: settings.prompt,
+    },
+  );
   const generate = createNode(
     "generate",
     "task.generate-image",
@@ -153,10 +159,17 @@ export const createImageRecipeFlow = ({
     : [prompt, generate];
   const edges: MediaFlowEdge[] = isSvgVectorization
     ? []
-    : [createEdge("prompt-to-generate", "prompt", "prompt", "generate", "prompt")];
-  const generationReferences = settings.outputFormat === "svg"
-    ? settings.referenceImages
-    : [];
+    : [
+        createEdge(
+          "prompt-to-generate",
+          "prompt",
+          "prompt",
+          "generate",
+          "prompt",
+        ),
+      ];
+  const generationReferences =
+    settings.outputFormat === "svg" ? settings.referenceImages : [];
   generationReferences.forEach((reference, index) => {
     const source = createNode(
       `reference-${index + 1}`,
@@ -273,28 +286,29 @@ export const createImageRecipeFlow = ({
     previousNodeId = humanReview.id;
   }
 
-  const output = createNode("asset-output", "output.asset", "Save assets", "output", {
-    format: settings.outputFormat,
-    outputCount: review
-      ? Math.min(settings.outputCount, review.maxSelections)
-      : settings.outputCount,
-  });
+  const output = createNode(
+    "asset-output",
+    "output.asset",
+    "Save assets",
+    "output",
+    {
+      format: settings.outputFormat,
+      outputCount: review
+        ? Math.min(settings.outputCount, review.maxSelections)
+        : settings.outputCount,
+    },
+  );
   nodes.push(output);
   edges.push(
-    createEdge(
-      "result-to-output",
-      previousNodeId,
-      "image",
-      output.id,
-      "image",
-    ),
+    createEdge("result-to-output", previousNodeId, "image", output.id, "image"),
   );
 
   return {
     schemaVersion: 1,
     id,
     name: "Create image",
-    description: "Prompt-to-image recipe with explicit quality and output steps.",
+    description:
+      "Prompt-to-image recipe with explicit quality and output steps.",
     createdAt,
     updatedAt: createdAt,
     variables: [],
@@ -315,16 +329,30 @@ export const createImageEditFlow = ({
   referenceAssets = [],
 }: CreateImageEditFlowInput): MediaFlow => {
   if (referenceAssets.length > 7) {
-    throw new Error("Image edits support at most eight references including the base image.");
+    throw new Error(
+      "Image edits support at most eight references including the base image.",
+    );
   }
-  const prompt = createNode("prompt", "source.prompt", "Edit instructions", "source", {
-    prompt: settings.prompt,
-  });
-  const source = createNode("source-image", "source.image", "Source image", "source", {
-    assetId: sourceAssetId,
-    referenceRole: "base",
-    influence: 1,
-  });
+  const prompt = createNode(
+    "prompt",
+    "source.prompt",
+    "Edit instructions",
+    "source",
+    {
+      prompt: settings.prompt,
+    },
+  );
+  const source = createNode(
+    "source-image",
+    "source.image",
+    "Source image",
+    "source",
+    {
+      assetId: sourceAssetId,
+      referenceRole: "base",
+      influence: 1,
+    },
+  );
   const additionalSources = referenceAssets.map((reference, index) =>
     createNode(
       `reference-image-${index + 1}`,
@@ -435,26 +463,27 @@ export const createImageEditFlow = ({
     previousNodeId = gate.id;
   }
 
-  const output = createNode("asset-output", "output.asset", "Save assets", "output", {
-    format: settings.outputFormat,
-    outputCount: settings.outputCount,
-  });
+  const output = createNode(
+    "asset-output",
+    "output.asset",
+    "Save assets",
+    "output",
+    {
+      format: settings.outputFormat,
+      outputCount: settings.outputCount,
+    },
+  );
   nodes.push(output);
   edges.push(
-    createEdge(
-      "result-to-output",
-      previousNodeId,
-      "image",
-      output.id,
-      "image",
-    ),
+    createEdge("result-to-output", previousNodeId, "image", output.id, "image"),
   );
 
   return {
     schemaVersion: 1,
     id,
     name: "Edit image",
-    description: "Text-guided image edit with an explicit immutable source and output lineage.",
+    description:
+      "Text-guided image edit with an explicit immutable source and output lineage.",
     createdAt,
     updatedAt: createdAt,
     variables: [],
@@ -480,6 +509,10 @@ export const createImageToVideoFlow = ({
     throw new Error("A video last frame requires an explicit first frame.");
   }
 
+  const videoModelId =
+    loopMode === "seamless"
+      ? "local:framepack-i2v-hy-13b"
+      : "local:hunyuan-video-1.5-i2v-step-distilled";
   const prompt = createNode(
     "video-prompt",
     "source.prompt",
@@ -495,15 +528,14 @@ export const createImageToVideoFlow = ({
     {
       providerPolicy: "local",
       modelPolicy: "quality",
-      modelId: "local:hunyuan-video-1.5-i2v-step-distilled",
+      modelId: videoModelId,
       aspectRatio,
-      durationSeconds: 2,
       resolution: "quality-640",
       generateAudio: false,
       transparentBackground,
       loopMode,
       fps: 16,
-      numFrames: 33,
+      numFrames: loopMode === "seamless" ? 49 : 33,
       numInferenceSteps: 30,
       guidanceScale: 9,
       seed: 0,
@@ -526,13 +558,7 @@ export const createImageToVideoFlow = ({
   );
   const nodes: MediaFlowNode[] = [prompt];
   const edges: MediaFlowEdge[] = [
-    createEdge(
-      "prompt-to-video",
-      prompt.id,
-      "prompt",
-      generate.id,
-      "prompt",
-    ),
+    createEdge("prompt-to-video", prompt.id, "prompt", generate.id, "prompt"),
   ];
   let firstFrameNode: MediaFlowNode | null = null;
 
@@ -602,13 +628,7 @@ export const createImageToVideoFlow = ({
 
   nodes.push(generate, output);
   edges.push(
-    createEdge(
-      "video-to-output",
-      generate.id,
-      "video",
-      output.id,
-      "video",
-    ),
+    createEdge("video-to-output", generate.id, "video", output.id, "video"),
   );
 
   return {
@@ -636,7 +656,9 @@ export const createGeneratedLoopVideoFlow = ({
     "facing the camera with arms naturally at her sides",
     "detailed adventurer outfit, centered and fully visible",
     "even studio lighting on a perfectly uniform chroma-green background",
-    "subtle breathing and natural hair movement, fixed camera, seamless loop",
+    "one forward-time idle cycle: gently inhale, complete one soft blink, then exhale back to the opening pose only at the final instant",
+    "hair tips and loose fabric trace one continuous clockwise sway while ambient particles keep rising",
+    "fixed camera, matching first and last pose, never reverse playback or boomerang",
     "no shadows or background movement",
   ].join(", "),
   imageModelId = null,
@@ -693,13 +715,12 @@ export const createGeneratedLoopVideoFlow = ({
       modelPolicy: "quality",
       modelId: "local:framepack-i2v-hy-13b",
       aspectRatio: "1:1",
-      durationSeconds: 2,
       resolution: "quality-640",
       generateAudio: false,
       transparentBackground: true,
       loopMode: "seamless",
       fps: 16,
-      numFrames: 33,
+      numFrames: 49,
       numInferenceSteps: 30,
       guidanceScale: 9,
       seed: 0,
@@ -1028,13 +1049,7 @@ export const createSubjectCutoutFlow = ({
         autoTag.id,
         "image",
       ),
-      createEdge(
-        "auto-tag-to-output",
-        autoTag.id,
-        "image",
-        output.id,
-        "image",
-      ),
+      createEdge("auto-tag-to-output", autoTag.id, "image", output.id, "image"),
     ],
   };
 };
@@ -1107,13 +1122,7 @@ export const createAlphaMatteFlow = ({
         autoTag.id,
         "image",
       ),
-      createEdge(
-        "auto-tag-to-output",
-        autoTag.id,
-        "image",
-        output.id,
-        "image",
-      ),
+      createEdge("auto-tag-to-output", autoTag.id, "image", output.id, "image"),
     ],
   };
 };
@@ -1204,13 +1213,7 @@ export const createImageCompositeFlow = ({
         autoTag.id,
         "image",
       ),
-      createEdge(
-        "auto-tag-to-output",
-        autoTag.id,
-        "image",
-        output.id,
-        "image",
-      ),
+      createEdge("auto-tag-to-output", autoTag.id, "image", output.id, "image"),
     ],
   };
 };
@@ -1219,7 +1222,10 @@ export const createImageContactSheetFlow = ({
   id,
   createdAt,
   sourceAssetIds,
-  columns = Math.min(4, Math.max(2, Math.ceil(Math.sqrt(sourceAssetIds.length)))),
+  columns = Math.min(
+    4,
+    Math.max(2, Math.ceil(Math.sqrt(sourceAssetIds.length))),
+  ),
   cellWidth = 512,
   cellHeight = 512,
   gap = 16,
@@ -1242,7 +1248,9 @@ export const createImageContactSheetFlow = ({
     sourceAssetIds.some((assetId) => assetId.trim().length === 0) ||
     new Set(sourceAssetIds).size !== sourceAssetIds.length
   ) {
-    throw new Error("Contact sheet flows require between two and eight unique image assets.");
+    throw new Error(
+      "Contact sheet flows require between two and eight unique image assets.",
+    );
   }
   const sources = sourceAssetIds.map((assetId, index) =>
     createNode(
@@ -1305,13 +1313,7 @@ export const createImageContactSheetFlow = ({
         autoTag.id,
         "image",
       ),
-      createEdge(
-        "auto-tag-to-output",
-        autoTag.id,
-        "image",
-        output.id,
-        "image",
-      ),
+      createEdge("auto-tag-to-output", autoTag.id, "image", output.id, "image"),
     ],
   };
 };
@@ -1382,7 +1384,9 @@ export interface AddMediaFlowLayoutGroupResult {
   groupId: string;
 }
 
-const createLayoutGroupId = (groups: readonly MediaFlowLayoutGroup[]): string => {
+const createLayoutGroupId = (
+  groups: readonly MediaFlowLayoutGroup[],
+): string => {
   const existingIds = new Set(groups.map((group) => group.id));
   let index = 1;
   while (existingIds.has(`group-${index}`)) index += 1;
@@ -1405,10 +1409,16 @@ export const addMediaFlowLayoutGroup = ({
   if (normalizedNodeIds.length < 2) {
     throw new Error("Select at least two flow nodes to create a visual group.");
   }
-  const groupedNodeIds = new Set(layout.groups.flatMap((group) => group.nodeIds));
-  const alreadyGrouped = normalizedNodeIds.find((nodeId) => groupedNodeIds.has(nodeId));
+  const groupedNodeIds = new Set(
+    layout.groups.flatMap((group) => group.nodeIds),
+  );
+  const alreadyGrouped = normalizedNodeIds.find((nodeId) =>
+    groupedNodeIds.has(nodeId),
+  );
   if (alreadyGrouped) {
-    throw new Error(`Media node ${alreadyGrouped} already belongs to a visual group.`);
+    throw new Error(
+      `Media node ${alreadyGrouped} already belongs to a visual group.`,
+    );
   }
   const groupId = createLayoutGroupId(layout.groups);
   return {
@@ -1419,7 +1429,10 @@ export const addMediaFlowLayoutGroup = ({
         ...layout.groups,
         {
           id: groupId,
-          label: (label?.trim() || `Group ${layout.groups.length + 1}`).slice(0, 80),
+          label: (label?.trim() || `Group ${layout.groups.length + 1}`).slice(
+            0,
+            80,
+          ),
           color: "cyan",
           collapsed: false,
           nodeIds: normalizedNodeIds,
@@ -1444,7 +1457,8 @@ export const updateMediaFlowLayoutGroup = ({
 }): MediaFlowLayout => {
   const group = layout.groups.find((entry) => entry.id === groupId);
   if (!group) throw new Error(`Media flow group ${groupId} was not found.`);
-  const nextLabel = label === undefined ? group.label : label.trim().slice(0, 80);
+  const nextLabel =
+    label === undefined ? group.label : label.trim().slice(0, 80);
   if (!nextLabel) throw new Error("Visual group labels cannot be empty.");
   return {
     ...layout,
@@ -1502,12 +1516,16 @@ export const addMediaFlowLayoutComment = ({
   }
   const normalizedBody = body.trim().slice(0, 1_000);
   if (!normalizedBody) throw new Error("Canvas comments cannot be empty.");
-  const automaticX = layout.nodes.length > 0
-    ? Math.min(...layout.nodes.map((node) => node.x))
-    : 80;
-  const automaticY = layout.nodes.length > 0
-    ? Math.max(...layout.nodes.map((node) => node.y)) + 220 + layout.comments.length * 36
-    : 80;
+  const automaticX =
+    layout.nodes.length > 0
+      ? Math.min(...layout.nodes.map((node) => node.x))
+      : 80;
+  const automaticY =
+    layout.nodes.length > 0
+      ? Math.max(...layout.nodes.map((node) => node.y)) +
+        220 +
+        layout.comments.length * 36
+      : 80;
   const nextX = x ?? automaticX;
   const nextY = y ?? automaticY;
   if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
@@ -1554,8 +1572,10 @@ export const updateMediaFlowLayoutComment = ({
   height?: number;
 }): MediaFlowLayout => {
   const comment = layout.comments.find((entry) => entry.id === commentId);
-  if (!comment) throw new Error(`Media flow comment ${commentId} was not found.`);
-  const nextBody = body === undefined ? comment.body : body.trim().slice(0, 1_000);
+  if (!comment)
+    throw new Error(`Media flow comment ${commentId} was not found.`);
+  const nextBody =
+    body === undefined ? comment.body : body.trim().slice(0, 1_000);
   if (!nextBody) throw new Error("Canvas comments cannot be empty.");
   const nextX = x ?? comment.x;
   const nextY = y ?? comment.y;
@@ -1624,7 +1644,9 @@ const selectImageModel = (
     .filter((model) => model.capabilities.includes(requiredCapability))
     .filter((model) => matchesProviderPolicy(model, settings.providerPolicy))
     .filter((model) => model.lifecycle !== "removed")
-    .sort((left, right) => scoreModel(right, settings) - scoreModel(left, settings));
+    .sort(
+      (left, right) => scoreModel(right, settings) - scoreModel(left, settings),
+    );
 
   return candidates[0] ?? null;
 };
@@ -1777,13 +1799,13 @@ const readImageTaskNodeSettings = (
   const outputCount = taskNode.config.outputCount;
   const outputFormat = taskNode.config.outputFormat;
   const svgMode = taskNode.config.svgMode;
-  const isSvgVectorization =
-    outputFormat === "svg" && svgMode === "vectorize";
+  const isSvgVectorization = outputFormat === "svg" && svgMode === "vectorize";
   const prompt = promptNode?.config.prompt;
   const modelId = taskNode.config.modelId;
-  const modelAddons = taskNode.config.modelAddons === undefined
-    ? []
-    : readModelAddonSelections(taskNode.config.modelAddons);
+  const modelAddons =
+    taskNode.config.modelAddons === undefined
+      ? []
+      : readModelAddonSelections(taskNode.config.modelAddons);
 
   if (
     (typeof prompt !== "string" && !isSvgVectorization) ||
@@ -1823,20 +1845,23 @@ const readImageTaskNodeSettings = (
         ? taskNode.config.referenceBoost
         : 2,
     requireChromaBackground: taskNode.config.requireChromaBackground === true,
-    referenceFit:
-      taskNode.config.referenceFit === "crop" ? "crop" : "fit",
+    referenceFit: taskNode.config.referenceFit === "crop" ? "crop" : "fit",
     groundingPixels:
       typeof taskNode.config.groundingPixels === "number"
         ? taskNode.config.groundingPixels
         : 768,
-    memoryProfile:
-      ["auto", "memory-saver", "balanced", "maximum-speed"].includes(
-        String(taskNode.config.memoryProfile),
-      )
-        ? taskNode.config.memoryProfile as NonNullable<ImageRecipeSettings["memoryProfile"]>
-        : "auto",
+    memoryProfile: [
+      "auto",
+      "memory-saver",
+      "balanced",
+      "maximum-speed",
+    ].includes(String(taskNode.config.memoryProfile))
+      ? (taskNode.config.memoryProfile as NonNullable<
+          ImageRecipeSettings["memoryProfile"]
+        >)
+      : "auto",
     svgMode: ["generate", "vectorize"].includes(String(taskNode.config.svgMode))
-      ? taskNode.config.svgMode as NonNullable<ImageRecipeSettings["svgMode"]>
+      ? (taskNode.config.svgMode as NonNullable<ImageRecipeSettings["svgMode"]>)
       : "generate",
     svgAutoCrop: taskNode.config.svgAutoCrop !== false,
     svgTargetSize:
@@ -1846,12 +1871,16 @@ const readImageTaskNodeSettings = (
     svgStyle: ["illustration", "icon", "logo", "diagram", "technical"].includes(
       String(taskNode.config.svgStyle),
     )
-      ? taskNode.config.svgStyle as NonNullable<ImageRecipeSettings["svgStyle"]>
+      ? (taskNode.config.svgStyle as NonNullable<
+          ImageRecipeSettings["svgStyle"]
+        >)
       : "illustration",
     svgTextPolicy: ["avoid", "editable", "outlines"].includes(
       String(taskNode.config.svgTextPolicy),
     )
-      ? taskNode.config.svgTextPolicy as NonNullable<ImageRecipeSettings["svgTextPolicy"]>
+      ? (taskNode.config.svgTextPolicy as NonNullable<
+          ImageRecipeSettings["svgTextPolicy"]
+        >)
       : "avoid",
     svgCandidateCount:
       typeof taskNode.config.svgCandidateCount === "number"
@@ -1873,15 +1902,17 @@ const readMediaImageTaskSettings = (
   const settings = readImageTaskNodeSettings(flow, taskNode);
   if (!settings) return null;
   const taskType = taskNode.type === "task.edit-image" ? "edit" : "generate";
-  const sourceAssets = listUpstreamImageSources(flow, taskNode.id).map((node) => ({
-        nodeId: node.id,
-        assetId:
-          typeof node.config.assetId === "string" ? node.config.assetId : "",
-        role:
-          typeof node.config.referenceRole === "string"
-            ? node.config.referenceRole
-            : "base",
-      }));
+  const sourceAssets = listUpstreamImageSources(flow, taskNode.id).map(
+    (node) => ({
+      nodeId: node.id,
+      assetId:
+        typeof node.config.assetId === "string" ? node.config.assetId : "",
+      role:
+        typeof node.config.referenceRole === "string"
+          ? node.config.referenceRole
+          : "base",
+    }),
+  );
   return {
     settings,
     taskType,
@@ -1919,18 +1950,27 @@ export const readImageRecipeSettings = (
       const role = node.config.referenceRole;
       if (
         typeof assetId !== "string" ||
-        !["base", "subject", "style", "composition", "palette", "detail"].includes(
-          String(role),
-        )
+        ![
+          "base",
+          "subject",
+          "style",
+          "composition",
+          "palette",
+          "detail",
+        ].includes(String(role))
       ) {
         return [];
       }
-      return [{
-        assetId,
-        role: role as MediaImageReferenceRole,
-        influence:
-          typeof node.config.influence === "number" ? node.config.influence : 1,
-      }];
+      return [
+        {
+          assetId,
+          role: role as MediaImageReferenceRole,
+          influence:
+            typeof node.config.influence === "number"
+              ? node.config.influence
+              : 1,
+        },
+      ];
     })
     .sort((left, right) =>
       left.role === "base" ? -1 : right.role === "base" ? 1 : 0,
@@ -1953,7 +1993,10 @@ export interface MediaFlowCardinalityAnalysis {
 }
 
 const readBoundedCardinality = (value: unknown): number | null =>
-  typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 8
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= 1 &&
+  value <= 8
     ? value
     : null;
 
@@ -1975,9 +2018,8 @@ export const analyzeMediaFlowCardinality = (
       )
       .map((edge) => outputBounds.get(edge.fromNodeId) ?? null)
       .filter((bound): bound is number => bound !== null);
-    const inputBound = incomingImageBounds.length > 0
-      ? Math.max(...incomingImageBounds)
-      : null;
+    const inputBound =
+      incomingImageBounds.length > 0 ? Math.max(...incomingImageBounds) : null;
     let outputBound = inputBound;
 
     if (node.type === "source.image") {
@@ -1996,9 +2038,10 @@ export const analyzeMediaFlowCardinality = (
     } else if (node.type === "control.human-review") {
       requiresHumanReview = true;
       const selectionBound = readBoundedCardinality(node.config.maxSelections);
-      outputBound = inputBound === null || selectionBound === null
-        ? null
-        : Math.min(inputBound, selectionBound);
+      outputBound =
+        inputBound === null || selectionBound === null
+          ? null
+          : Math.min(inputBound, selectionBound);
     }
 
     outputBounds.set(node.id, outputBound);
@@ -2019,9 +2062,10 @@ export const analyzeMediaFlowCardinality = (
 
   return {
     generatedCandidates,
-    maxPublishedOutputs: publishedBounds.length > 0
-      ? Math.max(...publishedBounds)
-      : generatedCandidates,
+    maxPublishedOutputs:
+      publishedBounds.length > 0
+        ? Math.max(...publishedBounds)
+        : generatedCandidates,
     requiresHumanReview,
     stages,
   };
@@ -2043,7 +2087,9 @@ const createModelDiagnostics = (
   if (!model) {
     return [
       {
-        code: settings.modelId ? "MODEL_NOT_FOUND" : "PROVIDER_POLICY_UNSATISFIED",
+        code: settings.modelId
+          ? "MODEL_NOT_FOUND"
+          : "PROVIDER_POLICY_UNSATISFIED",
         severity: "error",
         message: settings.modelId
           ? "The selected model is not present in the current media catalog."
@@ -2152,7 +2198,9 @@ const resolveModelAddons = (
   const seenAddonIds = new Set<string>();
 
   for (const kind of ["lora", "textual-inversion"] as const) {
-    const count = enabledSelections.filter((selection) => selection.kind === kind).length;
+    const count = enabledSelections.filter(
+      (selection) => selection.kind === kind,
+    ).length;
     const limit = model?.addonCapabilities.find(
       (capability) => capability.kind === kind,
     )?.maxActive;
@@ -2162,7 +2210,8 @@ const resolveModelAddons = (
         severity: "error",
         message: `${model?.displayName ?? "The selected model"} supports at most ${limit} active ${kind === "lora" ? "LoRA adapters" : "textual-inversion embeddings"}; this flow enables ${count}.`,
         nodeId,
-        action: "Disable add-ons until the model's active-adapter limit is satisfied.",
+        action:
+          "Disable add-ons until the model's active-adapter limit is satisfied.",
       });
     }
   }
@@ -2188,7 +2237,8 @@ const resolveModelAddons = (
         severity: "error",
         message: `The selected ${selection.kind === "lora" ? "LoRA" : "embedding"} (${selection.addonId}) is not present in the local add-on library.`,
         nodeId,
-        action: "Import the original safetensors file again or remove it from this flow.",
+        action:
+          "Import the original safetensors file again or remove it from this flow.",
       });
       continue;
     }
@@ -2243,7 +2293,8 @@ const resolveModelAddons = (
         severity: "error",
         message: `${model.displayName} cannot change LoRA strength during denoising.`,
         nodeId,
-        action: "Disable the denoising window or choose a compatible local model.",
+        action:
+          "Disable the denoising window or choose a compatible local model.",
       });
       continue;
     }
@@ -2266,7 +2317,8 @@ const resolveModelAddons = (
       selection.kind === "lora" &&
       selection.textEncoderStrength !== null &&
       !descriptor.targetComponents.some(
-        (component) => component === "text-encoder" || component === "text-encoder-2",
+        (component) =>
+          component === "text-encoder" || component === "text-encoder-2",
       )
     ) {
       diagnostics.push({
@@ -2292,7 +2344,10 @@ const resolveModelAddons = (
       });
       continue;
     }
-    const compatibility = inspectMediaModelAddonCompatibility(model, descriptor);
+    const compatibility = inspectMediaModelAddonCompatibility(
+      model,
+      descriptor,
+    );
     if (compatibility.status === "incompatible") {
       diagnostics.push({
         code: "ADDON_ARCHITECTURE_MISMATCH",
@@ -2329,18 +2384,14 @@ const createExecutionSteps = (
   hasModelAddons: boolean,
 ): MediaExecutionStep[] => {
   const steps: MediaExecutionStep[] = [];
-  const stepId = (
-    node: MediaFlowNode,
-    legacyNodeId: string,
-    legacyStepId: string,
-  ): string =>
-    node.id === legacyNodeId ? legacyStepId : `${legacyStepId}:${node.id}`;
+  const stepId = (node: MediaFlowNode, kind: string): string =>
+    `${kind}:${node.id}`;
 
   for (const node of orderMediaFlowNodes(flow)) {
     switch (node.type) {
       case "source.prompt":
         steps.push({
-          id: stepId(node, "prompt", "normalize-prompt"),
+          id: stepId(node, "normalize-prompt"),
           sourceNodeId: node.id,
           kind: "normalize-prompt",
           label: "Normalize prompt and recipe inputs",
@@ -2348,14 +2399,13 @@ const createExecutionSteps = (
           cacheable: true,
         });
         break;
-      case "source.image":
-        {
-          const referenceRole =
-            typeof node.config.referenceRole === "string"
-              ? node.config.referenceRole.replaceAll("-", " ")
-              : "base";
+      case "source.image": {
+        const referenceRole =
+          typeof node.config.referenceRole === "string"
+            ? node.config.referenceRole.replaceAll("-", " ")
+            : "base";
         steps.push({
-          id: stepId(node, "source-image", "resolve-asset"),
+          id: stepId(node, "resolve-asset"),
           sourceNodeId: node.id,
           kind: "resolve-asset",
           label: `Resolve immutable ${referenceRole} reference and verify workspace access`,
@@ -2363,7 +2413,7 @@ const createExecutionSteps = (
           cacheable: true,
         });
         break;
-        }
+      }
       case "source.animated-background":
         steps.push({
           id: `${node.id}:resolve-animated-background`,
@@ -2374,11 +2424,10 @@ const createExecutionSteps = (
           cacheable: true,
         });
         break;
-      case "task.generate-image":
-        {
+      case "task.generate-image": {
         const isSvg = node.config.outputFormat === "svg";
         steps.push({
-          id: stepId(node, "generate", "resolve-model"),
+          id: stepId(node, "resolve-model"),
           sourceNodeId: node.id,
           kind: "resolve-model",
           label: "Resolve provider, model, and capability constraints",
@@ -2387,7 +2436,7 @@ const createExecutionSteps = (
         });
         if (hasModelAddons) {
           steps.push({
-            id: stepId(node, "generate", "resolve-model-addons"),
+            id: stepId(node, "resolve-model-addons"),
             sourceNodeId: node.id,
             kind: "resolve-model-addons",
             label: "Resolve and validate model add-on weights",
@@ -2396,15 +2445,14 @@ const createExecutionSteps = (
           });
         }
         if (imageModel) {
-          const isVectorization =
-            isSvg && node.config.svgMode === "vectorize";
+          const isVectorization = isSvg && node.config.svgMode === "vectorize";
           const generationStepKind = isVectorization
             ? "vectorize-svg"
             : isSvg
               ? "generate-svg"
               : "generate-image";
           steps.push({
-            id: stepId(node, "generate", generationStepKind),
+            id: stepId(node, generationStepKind),
             sourceNodeId: node.id,
             kind: generationStepKind,
             label: isVectorization
@@ -2412,12 +2460,14 @@ const createExecutionSteps = (
               : `${isSvg ? "Generate SVG candidates" : "Generate"} with ${imageModel.displayName}`,
             target: imageModel.target,
             cacheable: imageModel.target === "local",
-            ...(imageModel.target === "remote" ? { sideEffect: "paid-request" } : {}),
+            ...(imageModel.target === "remote"
+              ? { sideEffect: "paid-request" }
+              : {}),
           });
           if (isSvg) {
             steps.push(
               {
-                id: stepId(node, "generate", "validate-svg"),
+                id: stepId(node, "validate-svg"),
                 sourceNodeId: node.id,
                 kind: "validate-svg",
                 label: "Validate SVG Secure Static structure",
@@ -2425,7 +2475,7 @@ const createExecutionSteps = (
                 cacheable: true,
               },
               {
-                id: stepId(node, "generate", "render-svg"),
+                id: stepId(node, "render-svg"),
                 sourceNodeId: node.id,
                 kind: "render-svg",
                 label: "Render candidates deterministically at multiple scales",
@@ -2433,10 +2483,11 @@ const createExecutionSteps = (
                 cacheable: true,
               },
               {
-                id: stepId(node, "generate", "score-svg"),
+                id: stepId(node, "score-svg"),
                 sourceNodeId: node.id,
                 kind: "score-svg",
-                label: "Score canvas fit, visibility, and structural complexity",
+                label:
+                  "Score canvas fit, visibility, and structural complexity",
                 target: "local",
                 cacheable: true,
               },
@@ -2448,10 +2499,11 @@ const createExecutionSteps = (
               imageModel.target === "remote"
             ) {
               steps.push({
-                id: stepId(node, "generate", "repair-svg"),
+                id: stepId(node, "repair-svg"),
                 sourceNodeId: node.id,
                 kind: "repair-svg",
-                label: "Repair and independently verify shortlisted weak candidates with OpenAI",
+                label:
+                  "Repair and independently verify shortlisted weak candidates with OpenAI",
                 target: "remote",
                 cacheable: false,
                 sideEffect: "paid-request",
@@ -2460,10 +2512,10 @@ const createExecutionSteps = (
           }
         }
         break;
-        }
+      }
       case "task.edit-image":
         steps.push({
-          id: stepId(node, "edit", "resolve-model"),
+          id: stepId(node, "resolve-model"),
           sourceNodeId: node.id,
           kind: "resolve-model",
           label: "Resolve edit provider, model, and capability constraints",
@@ -2472,7 +2524,7 @@ const createExecutionSteps = (
         });
         if (hasModelAddons) {
           steps.push({
-            id: stepId(node, "edit", "resolve-model-addons"),
+            id: stepId(node, "resolve-model-addons"),
             sourceNodeId: node.id,
             kind: "resolve-model-addons",
             label: "Resolve and validate model add-on weights",
@@ -2482,22 +2534,25 @@ const createExecutionSteps = (
         }
         if (imageModel) {
           steps.push({
-            id: stepId(node, "edit", "edit-image"),
+            id: stepId(node, "edit-image"),
             sourceNodeId: node.id,
             kind: "edit-image",
             label: `Edit with ${imageModel.displayName}`,
             target: imageModel.target,
             cacheable: imageModel.target === "local",
-            ...(imageModel.target === "remote" ? { sideEffect: "paid-request" } : {}),
+            ...(imageModel.target === "remote"
+              ? { sideEffect: "paid-request" }
+              : {}),
           });
         }
         break;
       case "task.generate-video":
         steps.push({
-          id: stepId(node, "generate-video", "resolve-video-model"),
+          id: stepId(node, "resolve-video-model"),
           sourceNodeId: node.id,
           kind: "resolve-model",
-          label: "Resolve video provider, model, keyframe, and audio capabilities",
+          label:
+            "Resolve video provider, model, keyframe, and audio capabilities",
           target: "orchestrator",
           cacheable: false,
         });
@@ -2510,10 +2565,10 @@ const createExecutionSteps = (
             node.config.loopMode === "seamless"
               ? "seamless loop"
               : node.config.loopMode === "ping-pong"
-                ? "ping-pong loop"
+                ? "reversed boomerang"
                 : "one-way video";
           steps.push({
-            id: stepId(node, "generate-video", "generate-video"),
+            id: stepId(node, "generate-video"),
             sourceNodeId: node.id,
             kind: "generate-video",
             label: `Generate ${videoDelivery} ${videoAssembly} with ${videoModel.displayName}`,
@@ -2527,7 +2582,7 @@ const createExecutionSteps = (
         break;
       case "operation.crop":
         steps.push({
-          id: stepId(node, "crop", "crop-image"),
+          id: stepId(node, "crop-image"),
           sourceNodeId: node.id,
           kind: "crop-image",
           label: "Validate bounds and crop immutable source pixels",
@@ -2537,7 +2592,7 @@ const createExecutionSteps = (
         break;
       case "operation.resize":
         steps.push({
-          id: stepId(node, "resize", "resize-image"),
+          id: stepId(node, "resize-image"),
           sourceNodeId: node.id,
           kind: "resize-image",
           label: "Resize with the explicit target box and fit policy",
@@ -2547,7 +2602,7 @@ const createExecutionSteps = (
         break;
       case "operation.format-convert":
         steps.push({
-          id: stepId(node, "format-convert", "convert-image"),
+          id: stepId(node, "convert-image"),
           sourceNodeId: node.id,
           kind: "convert-image",
           label: "Re-encode pixels and verify output metadata",
@@ -2557,7 +2612,7 @@ const createExecutionSteps = (
         break;
       case "operation.metadata-strip":
         steps.push({
-          id: stepId(node, "metadata-strip", "strip-metadata"),
+          id: stepId(node, "strip-metadata"),
           sourceNodeId: node.id,
           kind: "strip-metadata",
           label: "Apply orientation and remove private image metadata",
@@ -2567,17 +2622,18 @@ const createExecutionSteps = (
         break;
       case "operation.auto-tag":
         steps.push({
-          id: stepId(node, "auto-tag", "auto-tag"),
+          id: stepId(node, "auto-tag"),
           sourceNodeId: node.id,
           kind: "auto-tag",
-          label: "Apply deterministic format, shape, resolution, and asset-role tags",
+          label:
+            "Apply deterministic format, shape, resolution, and asset-role tags",
           target: "local",
           cacheable: true,
         });
         break;
       case "operation.contact-sheet":
         steps.push({
-          id: stepId(node, "contact-sheet", "create-contact-sheet"),
+          id: stepId(node, "create-contact-sheet"),
           sourceNodeId: node.id,
           kind: "create-contact-sheet",
           label: "Compose the bounded image collection into a comparison sheet",
@@ -2585,18 +2641,17 @@ const createExecutionSteps = (
           cacheable: true,
         });
         break;
-      case "operation.subject-cutout":
-        {
-          const modelPriority = readSubjectCutoutModelPriority(node.config);
-          const modelLabels = modelPriority.map(
-            (modelId, index) =>
-              `${index + 1} ${
-                models.find((candidate) => candidate.id === modelId)?.displayName ??
-                subjectCutoutModelLabel(modelId)
-              }`,
-          );
+      case "operation.subject-cutout": {
+        const modelPriority = readSubjectCutoutModelPriority(node.config);
+        const modelLabels = modelPriority.map(
+          (modelId, index) =>
+            `${index + 1} ${
+              models.find((candidate) => candidate.id === modelId)
+                ?.displayName ?? subjectCutoutModelLabel(modelId)
+            }`,
+        );
         steps.push({
-          id: stepId(node, "subject-cutout", "cutout-subject"),
+          id: stepId(node, "cutout-subject"),
           sourceNodeId: node.id,
           kind: "cutout-subject",
           label: `Cut out subject · ${modelLabels.join(" → ")}`,
@@ -2604,10 +2659,10 @@ const createExecutionSteps = (
           cacheable: true,
         });
         break;
-        }
+      }
       case "operation.alpha-matte":
         steps.push({
-          id: stepId(node, "alpha-matte", "extract-alpha-matte"),
+          id: stepId(node, "extract-alpha-matte"),
           sourceNodeId: node.id,
           kind: "extract-alpha-matte",
           label: "Extract the exact 8-bit alpha channel as a grayscale matte",
@@ -2617,7 +2672,7 @@ const createExecutionSteps = (
         break;
       case "operation.composite":
         steps.push({
-          id: stepId(node, "composite", "composite-image"),
+          id: stepId(node, "composite-image"),
           sourceNodeId: node.id,
           kind: "composite-image",
           label: "Scale, center, and alpha-blend foreground over background",
@@ -2627,7 +2682,7 @@ const createExecutionSteps = (
         break;
       case "operation.quality-analyze":
         steps.push({
-          id: stepId(node, "quality-analyze", "analyze-quality"),
+          id: stepId(node, "analyze-quality"),
           sourceNodeId: node.id,
           kind: "analyze-quality",
           label: "Measure dimensions, alpha, blur, clipping, and artifacts",
@@ -2637,7 +2692,7 @@ const createExecutionSteps = (
         break;
       case "control.quality-gate":
         steps.push({
-          id: stepId(node, "quality-gate", "evaluate-gate"),
+          id: stepId(node, "evaluate-gate"),
           sourceNodeId: node.id,
           kind: "evaluate-gate",
           label: "Evaluate the versioned quality profile",
@@ -2646,13 +2701,14 @@ const createExecutionSteps = (
         });
         break;
       case "control.human-review": {
-        const maxSelections = readBoundedCardinality(node.config.maxSelections) ?? 1;
+        const maxSelections =
+          readBoundedCardinality(node.config.maxSelections) ?? 1;
         const instructions =
           typeof node.config.instructions === "string"
             ? node.config.instructions.trim()
             : "Review the generated candidates before publication.";
         steps.push({
-          id: stepId(node, "human-review", "wait-for-review"),
+          id: stepId(node, "wait-for-review"),
           sourceNodeId: node.id,
           kind: "wait-for-review",
           label: `Pause for human review · approve up to ${maxSelections}`,
@@ -2668,7 +2724,7 @@ const createExecutionSteps = (
       }
       case "output.asset":
         steps.push({
-          id: stepId(node, "asset-output", "ingest-asset"),
+          id: stepId(node, "ingest-asset"),
           sourceNodeId: node.id,
           kind: "ingest-asset",
           label: "Validate, hash, and publish immutable assets",
@@ -2693,7 +2749,9 @@ const createExecutionSteps = (
           (edge) => edge.toNodeId === node.id && edge.toPortId === "video",
         );
         const sourceNode = inputEdge
-          ? flow.nodes.find((candidate) => candidate.id === inputEdge.fromNodeId)
+          ? flow.nodes.find(
+              (candidate) => candidate.id === inputEdge.fromNodeId,
+            )
           : null;
         const inferredRole =
           sourceNode?.type === "operation.video-composite"
@@ -2707,7 +2765,7 @@ const createExecutionSteps = (
             ? node.config.role
             : inferredRole;
         steps.push({
-          id: stepId(node, "video-output", "ingest-video"),
+          id: stepId(node, "ingest-video"),
           sourceNodeId: node.id,
           kind: "ingest-asset",
           label:
@@ -2743,7 +2801,7 @@ export const compileMediaFlow = ({
     (node) => node.type === "task.generate-video",
   );
   const videoTaskNode =
-    videoTaskNodes.length === 1 ? videoTaskNodes[0] ?? null : null;
+    videoTaskNodes.length === 1 ? (videoTaskNodes[0] ?? null) : null;
   const imageTask = readMediaImageTaskSettings(effectiveFlow);
   const isLocalUtilityFlow =
     imageTaskNodes.length === 0 &&
@@ -2787,7 +2845,7 @@ export const compileMediaFlow = ({
         ? `Review ${issue.fieldId} in the schema-generated node inspector.`
         : issue.code === "UNKNOWN_NODE_DEFINITION" ||
             issue.code === "UNSUPPORTED_NODE_VERSION"
-          ? "Install or migrate to a supported node definition."
+          ? "Install a supported node definition or recreate the node."
           : "Repair the typed graph connection before enqueueing this flow.",
     })),
   );
@@ -2826,7 +2884,8 @@ export const compileMediaFlow = ({
     diagnostics.push({
       code: "PROMPT_REQUIRED",
       severity: "error",
-      message: "Describe the shot, motion, camera behavior, or transition before compiling.",
+      message:
+        "Describe the shot, motion, camera behavior, or transition before compiling.",
       nodeId: promptNode?.id ?? videoTaskNode.id,
       action: "Add a concise motion brief for the video task.",
     });
@@ -2857,8 +2916,7 @@ export const compileMediaFlow = ({
         .filter(
           (edge) =>
             edge.toNodeId === videoTaskNode.id &&
-            (edge.toPortId === "first-frame" ||
-              edge.toPortId === "last-frame"),
+            (edge.toPortId === "first-frame" || edge.toPortId === "last-frame"),
         )
         .flatMap((edge) => {
           const source = effectiveFlow.nodes.find(
@@ -2893,7 +2951,11 @@ export const compileMediaFlow = ({
     imageTask?.taskType === "generate" &&
     settings?.outputFormat === "svg" &&
     settings.svgMode === "vectorize";
-  if (imageTask?.taskType === "edit" || isLocalUtilityFlow || isSvgVectorization) {
+  if (
+    imageTask?.taskType === "edit" ||
+    isLocalUtilityFlow ||
+    isSvgVectorization
+  ) {
     if (connectedSourceAssets.length === 0) {
       diagnostics.push({
         code: "SOURCE_ASSET_REQUIRED",
@@ -2917,16 +2979,14 @@ export const compileMediaFlow = ({
       });
     }
   }
-  if (
-    isSvgVectorization &&
-    connectedSourceAssets.length !== 1
-  ) {
+  if (isSvgVectorization && connectedSourceAssets.length !== 1) {
     diagnostics.push({
       code: "SOURCE_ASSET_REQUIRED",
       severity: "error",
       message: "SVG vectorization requires exactly one connected source asset.",
       nodeId: imageTaskNode?.id ?? "generate",
-      action: "Connect one raster image or existing vector asset to the SVG task.",
+      action:
+        "Connect one raster image or existing vector asset to the SVG task.",
     });
   }
   for (const source of videoFrameSources.filter(
@@ -2959,7 +3019,8 @@ export const compileMediaFlow = ({
     diagnostics.push({
       code: "OUTPUT_COUNT_INVALID",
       severity: "error",
-      message: "SVG vectorization produces exactly one verified vector asset per request.",
+      message:
+        "SVG vectorization produces exactly one verified vector asset per request.",
       nodeId: imageTaskNode?.id ?? "generate",
       action: "Set the output count to one.",
     });
@@ -2976,13 +3037,15 @@ export const compileMediaFlow = ({
     candidate: MediaModelDescriptor | null,
   ): candidate is MediaModelDescriptor =>
     candidate !== null && isMediaModelReady(candidate);
-  const selectedSubjectCutoutIndex = subjectCutoutCandidates.findIndex((candidate) =>
-    isRunnableSubjectCutoutModel(candidate.descriptor),
+  const selectedSubjectCutoutIndex = subjectCutoutCandidates.findIndex(
+    (candidate) => isRunnableSubjectCutoutModel(candidate.descriptor),
   );
   const subjectCutoutModel =
     selectedSubjectCutoutIndex >= 0
-      ? subjectCutoutCandidates[selectedSubjectCutoutIndex]?.descriptor ?? null
-      : subjectCutoutCandidates.find((candidate) => candidate.descriptor)?.descriptor ?? null;
+      ? (subjectCutoutCandidates[selectedSubjectCutoutIndex]?.descriptor ??
+        null)
+      : (subjectCutoutCandidates.find((candidate) => candidate.descriptor)
+          ?.descriptor ?? null);
   const videoUsesDistinctEndpoints = (() => {
     const firstFrames = videoFrameSources.filter(
       (source) => source.portId === "first-frame",
@@ -2996,10 +3059,8 @@ export const compileMediaFlow = ({
       firstFrames[0] !== undefined &&
       lastFrames[0] !== undefined &&
       firstFrames[0].nodeId !== lastFrames[0].nodeId &&
-      (
-        firstFrames[0].assetId.trim().length === 0 ||
-        firstFrames[0].assetId !== lastFrames[0].assetId
-      )
+      (firstFrames[0].assetId.trim().length === 0 ||
+        firstFrames[0].assetId !== lastFrames[0].assetId)
     );
   })();
   const videoRequiresTerminalConditioning =
@@ -3013,10 +3074,8 @@ export const compileMediaFlow = ({
         const candidates = models.filter(
           (candidate) =>
             candidate.capabilities.includes("image-to-video") &&
-            (
-              !videoRequiresTerminalConditioning ||
-              candidate.capabilities.includes("start-end-to-video")
-            ) &&
+            (!videoRequiresTerminalConditioning ||
+              candidate.capabilities.includes("start-end-to-video")) &&
             matchesProviderPolicy(
               candidate,
               videoTaskNode.config.providerPolicy === "local" ||
@@ -3044,18 +3103,14 @@ export const compileMediaFlow = ({
           : null;
         return configured && isMediaModelReady(configured)
           ? configured
-          : ranked.find((candidate) => isMediaModelReady(candidate)) ??
+          : (ranked.find((candidate) => isMediaModelReady(candidate)) ??
               configured ??
               ranked[0] ??
-              null;
+              null);
       })()
     : null;
   const imageModel = imageTask
-    ? selectImageModel(
-        imageTask.settings,
-        models,
-        imageTask.requiredCapability,
-      )
+    ? selectImageModel(imageTask.settings, models, imageTask.requiredCapability)
     : null;
   const model = imageModel ?? videoModel ?? subjectCutoutModel;
   const svgCriticRequested = Boolean(
@@ -3063,9 +3118,9 @@ export const compileMediaFlow = ({
   );
   const svgCriticActive = Boolean(
     svgCriticRequested &&
-      !isSvgVectorization &&
-      settings?.modelPolicy === "quality" &&
-      model?.target === "remote",
+    !isSvgVectorization &&
+    settings?.modelPolicy === "quality" &&
+    model?.target === "remote",
   );
   const openAiConfigured = models.some(
     (candidate) => candidate.providerId === "openai" && candidate.configured,
@@ -3112,10 +3167,7 @@ export const compileMediaFlow = ({
     const lastFrames = videoFrameSources.filter(
       (source) => source.portId === "last-frame",
     );
-    if (
-      firstFrames.length !== 1 ||
-      lastFrames.length !== 1
-    ) {
+    if (firstFrames.length !== 1 || lastFrames.length !== 1) {
       diagnostics.push({
         code: "SOURCE_ASSET_REQUIRED",
         severity: "error",
@@ -3151,16 +3203,13 @@ export const compileMediaFlow = ({
     const config = videoTaskNode.config;
     const ltxVideo = videoModel?.architecture === "ltx-video";
     const framepackVideo = videoModel?.architecture === "framepack-i2v";
-    const hunyuanVideo15 =
-      videoModel?.architecture === "hunyuan-video-1.5-i2v";
+    const hunyuanVideo15 = videoModel?.architecture === "hunyuan-video-1.5-i2v";
     const sameEndpointSource =
       firstFrames[0] !== undefined &&
       lastFrames[0] !== undefined &&
       (firstFrames[0].nodeId === lastFrames[0].nodeId ||
-        (
-          firstFrames[0].assetId.trim().length > 0 &&
-          firstFrames[0].assetId === lastFrames[0].assetId
-        ));
+        (firstFrames[0].assetId.trim().length > 0 &&
+          firstFrames[0].assetId === lastFrames[0].assetId));
     const hasVideoComposite = effectiveFlow.nodes.some(
       (node) => node.type === "operation.video-composite",
     );
@@ -3172,10 +3221,17 @@ export const compileMediaFlow = ({
         ? "Animated background compositing requires transparent foreground extraction."
         : null,
       !["none", "ping-pong", "seamless"].includes(String(config.loopMode))
-        ? "Select one-way, ping-pong, or seamless assembly."
+        ? "Select one-way, reversed boomerang, or seamless assembly."
         : null,
       config.loopMode === "seamless" && !sameEndpointSource
         ? "Seamless assembly requires the same source on both endpoint ports."
+        : null,
+      framepackVideo &&
+      config.loopMode === "seamless" &&
+      sameEndpointSource &&
+      typeof config.numFrames === "number" &&
+      config.numFrames <= 33
+        ? "FramePack seamless loops require at least 37 source frames so motion is generated across more than one native temporal window."
         : null,
       typeof config.numFrames !== "number" ||
       !Number.isInteger(config.numFrames) ||
@@ -3245,8 +3301,7 @@ export const compileMediaFlow = ({
       (node) => node.type === "output.video",
     )) {
       const inputEdge = effectiveFlow.edges.find(
-        (edge) =>
-          edge.toNodeId === outputNode.id && edge.toPortId === "video",
+        (edge) => edge.toNodeId === outputNode.id && edge.toPortId === "video",
       );
       const sourceNode = inputEdge
         ? effectiveFlow.nodes.find((node) => node.id === inputEdge.fromNodeId)
@@ -3281,7 +3336,8 @@ export const compileMediaFlow = ({
       diagnostics.push({
         code: "MODEL_NOT_FOUND",
         severity: "error",
-        message: "Subject cutout requires at least one model in its priority list.",
+        message:
+          "Subject cutout requires at least one model in its priority list.",
         nodeId: subjectCutoutNode.id,
         action: "Select a primary subject-cutout model and optional fallbacks.",
       });
@@ -3301,18 +3357,22 @@ export const compileMediaFlow = ({
           : "Choose an active background-removal model from the current media catalog.",
       });
     } else if (selectedSubjectCutoutIndex > 0) {
-      const selected = subjectCutoutCandidates[selectedSubjectCutoutIndex]?.descriptor;
+      const selected =
+        subjectCutoutCandidates[selectedSubjectCutoutIndex]?.descriptor;
       const skipped = subjectCutoutCandidates
         .slice(0, selectedSubjectCutoutIndex)
-        .map((candidate) =>
-          candidate.descriptor?.displayName ?? subjectCutoutModelLabel(candidate.modelId),
+        .map(
+          (candidate) =>
+            candidate.descriptor?.displayName ??
+            subjectCutoutModelLabel(candidate.modelId),
         );
       diagnostics.push({
         code: "SUBJECT_CUTOUT_FALLBACK_SELECTED",
         severity: "warning",
         message: `${selected?.displayName ?? "A fallback model"} will run because ${skipped.join(", ")} ${skipped.length === 1 ? "is" : "are"} not currently available.`,
         nodeId: subjectCutoutNode.id,
-        action: "Reorder the model policy or install the preferred model if this fallback is not intended.",
+        action:
+          "Reorder the model policy or install the preferred model if this fallback is not intended.",
       });
     }
   }
@@ -3335,13 +3395,15 @@ export const compileMediaFlow = ({
         message:
           "OpenAI SVG render-feedback repair is available only for remote prompt-to-SVG generation with the quality policy.",
         nodeId: imageTaskNode?.id ?? "generate",
-        action: "Disable repair or select a remote SVG model with the quality policy.",
+        action:
+          "Disable repair or select a remote SVG model with the quality policy.",
       });
     } else if (svgCriticActive && !openAiConfigured) {
       diagnostics.push({
         code: "SVG_CRITIC_UNAVAILABLE",
         severity: "error",
-        message: "OpenAI SVG render-feedback repair requires a configured OpenAI API key.",
+        message:
+          "OpenAI SVG render-feedback repair requires a configured OpenAI API key.",
         nodeId: imageTaskNode?.id ?? "generate",
         action: "Configure OpenAI in Settings or disable the repair pass.",
       });
@@ -3359,7 +3421,10 @@ export const compileMediaFlow = ({
       model?.target === "remote" &&
       matchesProviderPolicy(model, settings.providerPolicy)
     ) {
-      if (imageTask?.taskType === "edit" || normalizedSourceAssetIds.length > 0) {
+      if (
+        imageTask?.taskType === "edit" ||
+        normalizedSourceAssetIds.length > 0
+      ) {
         diagnostics.push({
           code: "REMOTE_ASSET_UPLOAD_SELECTED",
           severity: "info",
@@ -3407,7 +3472,8 @@ export const compileMediaFlow = ({
       severity: "info",
       message: `The run will pause with up to ${cardinality.generatedCandidates} candidate${cardinality.generatedCandidates === 1 ? "" : "s"}; at most ${cardinality.maxPublishedOutputs} approved output${cardinality.maxPublishedOutputs === 1 ? "" : "s"} may continue. Worker and GPU leases are released while waiting.`,
       nodeId: humanReviewNode.id,
-      action: "Reviewers can approve or reject candidates without keeping a model loaded.",
+      action:
+        "Reviewers can approve or reject candidates without keeping a model loaded.",
     });
   }
 
@@ -3415,34 +3481,38 @@ export const compileMediaFlow = ({
   const hasErrors = diagnostics.some(
     (diagnostic) => diagnostic.severity === "error",
   );
-  const outputCount =
-    videoTaskNode
-      ? Math.max(
-          1,
-          effectiveFlow.nodes.filter((node) => node.type === "output.video")
-            .length,
-        )
-      : settings || isLocalUtilityFlow
-        ? cardinality.maxPublishedOutputs
+  const outputCount = videoTaskNode
+    ? Math.max(
+        1,
+        effectiveFlow.nodes.filter((node) => node.type === "output.video")
+          .length,
+      )
+    : settings || isLocalUtilityFlow
+      ? cardinality.maxPublishedOutputs
       : 0;
   const runtimeBindings = [
     ...(imageTaskNode && imageModel
-      ? [{
-          nodeId: imageTaskNode.id,
-          modality: "image" as const,
-          requiredCapability: imageTask?.requiredCapability ?? "text-to-image",
-          model: imageModel,
-        }]
+      ? [
+          {
+            nodeId: imageTaskNode.id,
+            modality: "image" as const,
+            requiredCapability:
+              imageTask?.requiredCapability ?? "text-to-image",
+            model: imageModel,
+          },
+        ]
       : []),
     ...(videoTaskNode && videoModel
-      ? [{
-          nodeId: videoTaskNode.id,
-          modality: "video" as const,
-          requiredCapability: videoRequiresTerminalConditioning
-            ? "start-end-to-video" as const
-            : "image-to-video" as const,
-          model: videoModel,
-        }]
+      ? [
+          {
+            nodeId: videoTaskNode.id,
+            modality: "video" as const,
+            requiredCapability: videoRequiresTerminalConditioning
+              ? ("start-end-to-video" as const)
+              : ("image-to-video" as const),
+            model: videoModel,
+          },
+        ]
       : []),
   ];
   const resolvedRuntimeModels = runtimeBindings.map((binding) => binding.model);
@@ -3454,13 +3524,15 @@ export const compileMediaFlow = ({
           ? "The generated image, alpha cutout, both video endpoint conditions, and generated frames remain local; only immutable outputs are published."
           : "The motion brief remains local; execution stays blocked until first and last frames are connected."
       : isLocalUtilityFlow
-      ? `${normalizedSourceAssetIds.length} source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} ${normalizedSourceAssetIds.length === 1 ? "remains" : "remain"} on this device for local image operations.`
-      : model && (imageTask?.taskType === "edit" || normalizedSourceAssetIds.length > 0)
-        ? model.target === "remote"
-          ? `Prompt text and ${normalizedSourceAssetIds.length} disclosed source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} are sent to ${model.displayName}.`
-          : `Prompt text and ${normalizedSourceAssetIds.length} source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} remain on this device.`
-        : model?.privacySummary ??
-          "Execution privacy is unresolved until a model is selected.") +
+        ? `${normalizedSourceAssetIds.length} source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} ${normalizedSourceAssetIds.length === 1 ? "remains" : "remain"} on this device for local image operations.`
+        : model &&
+            (imageTask?.taskType === "edit" ||
+              normalizedSourceAssetIds.length > 0)
+          ? model.target === "remote"
+            ? `Prompt text and ${normalizedSourceAssetIds.length} disclosed source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} are sent to ${model.displayName}.`
+            : `Prompt text and ${normalizedSourceAssetIds.length} source asset${normalizedSourceAssetIds.length === 1 ? "" : "s"} remain on this device.`
+          : (model?.privacySummary ??
+            "Execution privacy is unresolved until a model is selected.")) +
     (svgCriticActive
       ? " Shortlisted weak candidates may also send the prompt, candidate SVG, and deterministic renders to OpenAI for up to two separately billed, audited repair-and-verification requests per candidate."
       : "");
@@ -3488,7 +3560,9 @@ export const compileMediaFlow = ({
       modelId: model?.id ?? null,
       modelLabel:
         (resolvedRuntimeModels.length > 1
-          ? resolvedRuntimeModels.map((candidate) => candidate.displayName).join(" → ")
+          ? resolvedRuntimeModels
+              .map((candidate) => candidate.displayName)
+              .join(" → ")
           : model?.displayName) ??
         (isLocalUtilityFlow ? "Built-in media utilities" : "Unresolved model"),
       requiresRemoteRequest: resolvedRuntimeModels.some(
@@ -3497,8 +3571,7 @@ export const compileMediaFlow = ({
       requiresModelDownload:
         resolvedRuntimeModels.some(
           (candidate) => candidate.target === "local" && !candidate.installed,
-        ) ||
-        Boolean(subjectCutoutModel && !subjectCutoutModel.installed),
+        ) || Boolean(subjectCutoutModel && !subjectCutoutModel.installed),
       requiresHumanReview: cardinality.requiresHumanReview,
       remoteUploadAssetIds:
         model?.target === "remote" && normalizedSourceAssetIds.length > 0
@@ -3519,14 +3592,14 @@ export const compileMediaFlow = ({
           (total, candidate) =>
             total +
             (candidate.target === "local" && !candidate.installed
-              ? candidate.expectedDownloadGb ?? 0
+              ? (candidate.expectedDownloadGb ?? 0)
               : 0),
           0,
         ) +
           (subjectCutoutModel &&
           subjectCutoutModel.id !== model?.id &&
           !subjectCutoutModel.installed
-            ? subjectCutoutModel.expectedDownloadGb ?? 0
+            ? (subjectCutoutModel.expectedDownloadGb ?? 0)
             : 0) || null,
       costHint:
         model?.costHint ??

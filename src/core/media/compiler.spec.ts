@@ -14,6 +14,7 @@ import {
   createImageRecipeFlow,
   createImageToVideoFlow,
   createImageTransformFlow,
+  createGeneratedLoopVideoFlow,
   readImageRecipeSettings,
 } from "./compiler.js";
 import {
@@ -200,9 +201,7 @@ describe("media flow compiler", () => {
     });
 
     expect(plan.status).toBe("ready");
-    expect(plan.model?.id).toBe(
-      "local:hunyuan-video-1.5-i2v-step-distilled",
-    );
+    expect(plan.model?.id).toBe("local:hunyuan-video-1.5-i2v-step-distilled");
     expect(
       flow.nodes.find((node) => node.id === "generate-video")?.config,
     ).toMatchObject({
@@ -217,7 +216,7 @@ describe("media flow compiler", () => {
     );
   });
 
-  it("requires terminal conditioning for distinct endpoints and seamless loops", () => {
+  it("pins endpoint-capable models for distinct endpoints and seamless loops", () => {
     const models = [
       createHunyuanVideoModel(),
       createFramepackVideoModel(),
@@ -242,23 +241,80 @@ describe("media flow compiler", () => {
       });
     };
 
-    for (const plan of [
-      compile("asset:closing-frame", "none"),
-      compile(undefined, "seamless"),
-    ]) {
+    const distinctEndpointPlan = compile("asset:closing-frame", "none");
+    const seamlessLoopPlan = compile(undefined, "seamless");
+
+    for (const plan of [distinctEndpointPlan, seamlessLoopPlan]) {
       expect(
         plan.status,
         plan.diagnostics
           .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`)
           .join("\n"),
       ).toBe("ready");
-      expect(plan.model?.id).toBe("local:framepack-i2v-hy-13b");
       expect(plan.runtimeBindings).toContainEqual(
         expect.objectContaining({
           requiredCapability: "start-end-to-video",
         }),
       );
     }
+    expect(distinctEndpointPlan.model?.id).toBe("local:framepack-i2v-hy-13b");
+    expect(seamlessLoopPlan.model?.id).toBe("local:framepack-i2v-hy-13b");
+    expect(
+      createImageToVideoFlow({
+        id: "flow:native-forward-loop",
+        createdAt: "2026-07-28T00:00:00.000Z",
+        sourceAssetId: "asset:opening-frame",
+        loopMode: "seamless",
+      }).nodes.find((node) => node.id === "generate-video")?.config,
+    ).toMatchObject({
+      modelId: "local:framepack-i2v-hy-13b",
+      numFrames: 49,
+    });
+
+    const oneWindowLoop = createImageToVideoFlow({
+      id: "flow:one-window-loop",
+      createdAt: "2026-07-28T00:00:00.000Z",
+      sourceAssetId: "asset:opening-frame",
+      loopMode: "seamless",
+    });
+    oneWindowLoop.nodes.find(
+      (node) => node.id === "generate-video",
+    )!.config.numFrames = 33;
+    const oneWindowPlan = compileMediaFlow({
+      flow: oneWindowLoop,
+      models,
+      compiledAt: "2026-07-28T00:01:00.000Z",
+    });
+    expect(oneWindowPlan.status).toBe("blocked");
+    expect(oneWindowPlan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "NODE_SCHEMA_INVALID",
+        message: expect.stringContaining("more than one native temporal window"),
+      }),
+    );
+  });
+
+  it("creates generated loops with native matching-endpoint conditioning", () => {
+    const flow = createGeneratedLoopVideoFlow({
+      id: "flow:generated-forward-loop",
+      createdAt: "2026-07-28T00:00:00.000Z",
+    });
+    const videoNode = flow.nodes.find(
+      (node) => node.id === "generate-idle-loop",
+    );
+
+    expect(videoNode?.config).toMatchObject({
+      modelId: "local:framepack-i2v-hy-13b",
+      loopMode: "seamless",
+      numFrames: 49,
+    });
+    expect(
+      flow.edges.filter(
+        (edge) =>
+          edge.toNodeId === videoNode?.id &&
+          (edge.toPortId === "first-frame" || edge.toPortId === "last-frame"),
+      ),
+    ).toHaveLength(2);
   });
 
   it("creates an executable hardware-adaptive FramePack image-to-video flow", () => {
@@ -300,7 +356,9 @@ describe("media flow compiler", () => {
       }),
     );
     expect(
-      plan.diagnostics.some((item) => item.code === "VIDEO_EXECUTOR_UNAVAILABLE"),
+      plan.diagnostics.some(
+        (item) => item.code === "VIDEO_EXECUTOR_UNAVAILABLE",
+      ),
     ).toBe(false);
     expect(
       plan.diagnostics.some((item) =>
@@ -374,7 +432,7 @@ describe("media flow compiler", () => {
                   role: "opaque",
                 },
               }
-          : node,
+            : node,
       ),
     } satisfies MediaFlow;
     const qualityPlan = compileMediaFlow({
@@ -384,7 +442,9 @@ describe("media flow compiler", () => {
     });
     expect(qualityPlan.status).toBe("ready");
     expect(
-      qualityPlan.diagnostics.some((diagnostic) => diagnostic.code === "NODE_SCHEMA_INVALID"),
+      qualityPlan.diagnostics.some(
+        (diagnostic) => diagnostic.code === "NODE_SCHEMA_INVALID",
+      ),
     ).toBe(false);
 
     const mismatchedOutput = {
@@ -435,7 +495,7 @@ describe("media flow compiler", () => {
                   role: "transparent",
                 },
               }
-          : node,
+            : node,
       ),
     } satisfies MediaFlow;
     const invalidPlan = compileMediaFlow({
@@ -486,7 +546,9 @@ describe("media flow compiler", () => {
     });
 
     expect(plan.status).toBe("ready");
-    expect(flow.nodes.filter((node) => node.type === "source.image")).toHaveLength(2);
+    expect(
+      flow.nodes.filter((node) => node.type === "source.image"),
+    ).toHaveLength(2);
     expect(
       flow.edges.filter(
         (edge) => edge.toNodeId === "generate" && edge.toPortId === "image",
@@ -495,7 +557,9 @@ describe("media flow compiler", () => {
     expect(readImageRecipeSettings(flow)?.referenceImages).toEqual(
       settings.referenceImages,
     );
-    expect(plan.steps.filter((step) => step.kind === "resolve-asset")).toHaveLength(2);
+    expect(
+      plan.steps.filter((step) => step.kind === "resolve-asset"),
+    ).toHaveLength(2);
     expect(plan.steps.some((step) => step.kind === "generate-svg")).toBe(true);
     expect(plan.preflight.remoteUploadAssetIds).toEqual([
       "asset:sketch",
@@ -533,8 +597,13 @@ describe("media flow compiler", () => {
 
     const repairStep = plan.steps.find((step) => step.kind === "repair-svg");
     expect(plan.status).toBe("ready");
-    expect(repairStep).toMatchObject({ target: "remote", sideEffect: "paid-request" });
-    expect(plan.preflight.privacySummary).toContain("up to two separately billed");
+    expect(repairStep).toMatchObject({
+      target: "remote",
+      sideEffect: "paid-request",
+    });
+    expect(plan.preflight.privacySummary).toContain(
+      "up to two separately billed",
+    );
   });
 
   it("compiles one-source SVG vectorization without requiring a prompt", () => {
@@ -575,12 +644,19 @@ describe("media flow compiler", () => {
     });
 
     expect(plan.status).toBe("ready");
-    expect(flow.nodes.some((node) => node.type === "source.prompt")).toBe(false);
-    expect(plan.steps.some((step) => step.kind === "normalize-prompt")).toBe(false);
+    expect(flow.nodes.some((node) => node.type === "source.prompt")).toBe(
+      false,
+    );
+    expect(plan.steps.some((step) => step.kind === "normalize-prompt")).toBe(
+      false,
+    );
     expect(plan.steps.some((step) => step.kind === "vectorize-svg")).toBe(true);
     expect(plan.steps.some((step) => step.kind === "repair-svg")).toBe(false);
-    expect(plan.diagnostics.some((diagnostic) => diagnostic.code === "PROMPT_REQUIRED"))
-      .toBe(false);
+    expect(
+      plan.diagnostics.some(
+        (diagnostic) => diagnostic.code === "PROMPT_REQUIRED",
+      ),
+    ).toBe(false);
   });
 
   it("resolves compatible local LoRAs into an explicit execution step", () => {
@@ -589,14 +665,16 @@ describe("media flow compiler", () => {
         ...DEFAULT_SETTINGS,
         providerPolicy: "local",
         modelId: "local:flux-2-klein-4b",
-        modelAddons: [{
-          kind: "lora",
-          addonId: FLUX_LORA.id,
-          enabled: true,
-          modelStrength: 0.8,
-          textEncoderStrength: null,
-          denoisingSchedule: { start: 0.2, end: 0.8 },
-        }],
+        modelAddons: [
+          {
+            kind: "lora",
+            addonId: FLUX_LORA.id,
+            enabled: true,
+            modelStrength: 0.8,
+            textEncoderStrength: null,
+            denoisingSchedule: { start: 0.2, end: 0.8 },
+          },
+        ],
       }),
       models: createMediaModelCatalog({
         isOpenAiConfigured: false,
@@ -616,7 +694,9 @@ describe("media flow compiler", () => {
         compatibility: "compatible",
       }),
     ]);
-    expect(plan.steps.map((step) => step.kind)).toContain("resolve-model-addons");
+    expect(plan.steps.map((step) => step.kind)).toContain(
+      "resolve-model-addons",
+    );
   });
 
   it("accepts exact normalized publisher base-family hints without a warning", () => {
@@ -684,14 +764,16 @@ describe("media flow compiler", () => {
         ...DEFAULT_SETTINGS,
         providerPolicy: "local",
         modelId: stableDiffusionModel.id,
-        modelAddons: [{
-          kind: "lora",
-          addonId: multiComponentLora.id,
-          enabled: true,
-          modelStrength: 0.8,
-          textEncoderStrength: null,
-          denoisingSchedule: { start: 0.1, end: 0.7 },
-        }],
+        modelAddons: [
+          {
+            kind: "lora",
+            addonId: multiComponentLora.id,
+            enabled: true,
+            modelStrength: 0.8,
+            textEncoderStrength: null,
+            denoisingSchedule: { start: 0.1, end: 0.7 },
+          },
+        ],
       }),
       models: [stableDiffusionModel],
       addons: [multiComponentLora],
@@ -735,14 +817,16 @@ describe("media flow compiler", () => {
         ...DEFAULT_SETTINGS,
         providerPolicy: "local",
         modelId: stableDiffusionModel.id,
-        modelAddons: [{
-          kind: "lora",
-          addonId: denoiserLora.id,
-          enabled: true,
-          modelStrength: 0.8,
-          textEncoderStrength: 0.4,
-          denoisingSchedule: null,
-        }],
+        modelAddons: [
+          {
+            kind: "lora",
+            addonId: denoiserLora.id,
+            enabled: true,
+            modelStrength: 0.8,
+            textEncoderStrength: 0.4,
+            denoisingSchedule: null,
+          },
+        ],
       }),
       models: [stableDiffusionModel],
       addons: [denoiserLora],
@@ -760,14 +844,16 @@ describe("media flow compiler", () => {
       flow: createFlow({
         ...DEFAULT_SETTINGS,
         modelId: "openai:gpt-image-2",
-        modelAddons: [{
-          kind: "lora",
-          addonId: FLUX_LORA.id,
-          enabled: true,
-          modelStrength: 1,
-          textEncoderStrength: null,
-          denoisingSchedule: null,
-        }],
+        modelAddons: [
+          {
+            kind: "lora",
+            addonId: FLUX_LORA.id,
+            enabled: true,
+            modelStrength: 1,
+            textEncoderStrength: null,
+            denoisingSchedule: null,
+          },
+        ],
       }),
       models: createMediaModelCatalog({ isOpenAiConfigured: true }),
       addons: [FLUX_LORA],
@@ -803,13 +889,15 @@ describe("media flow compiler", () => {
         ...DEFAULT_SETTINGS,
         providerPolicy: "local",
         modelId: stableDiffusionModel.id,
-        modelAddons: [{
-          kind: "textual-inversion",
-          addonId: SDXL_EMBEDDING.id,
-          enabled: true,
-          token: "<sdxl-concept>",
-          placement: "positive",
-        }],
+        modelAddons: [
+          {
+            kind: "textual-inversion",
+            addonId: SDXL_EMBEDDING.id,
+            enabled: true,
+            token: "<sdxl-concept>",
+            placement: "positive",
+          },
+        ],
       }),
       models: [stableDiffusionModel],
       addons: [SDXL_EMBEDDING],
@@ -846,12 +934,14 @@ describe("media flow compiler", () => {
       displayName: "FLUX Concept",
       architecture: "flux-1",
       targetComponents: ["text-encoder-2"],
-      embeddingVectors: [{
-        component: "text-encoder-2",
-        tensorKey: "t5",
-        vectorCount: 1,
-        dimension: 4_096,
-      }],
+      embeddingVectors: [
+        {
+          component: "text-encoder-2",
+          tensorKey: "t5",
+          vectorCount: 1,
+          dimension: 4_096,
+        },
+      ],
       defaultToken: "<flux-concept>",
     } as const satisfies MediaModelAddonDescriptor;
     const plan = compileMediaFlow({
@@ -859,13 +949,15 @@ describe("media flow compiler", () => {
         ...DEFAULT_SETTINGS,
         providerPolicy: "local",
         modelId: fluxModel.id,
-        modelAddons: [{
-          kind: "textual-inversion",
-          addonId: embedding.id,
-          enabled: true,
-          token: "<flux-concept>",
-          placement: "negative",
-        }],
+        modelAddons: [
+          {
+            kind: "textual-inversion",
+            addonId: embedding.id,
+            enabled: true,
+            token: "<flux-concept>",
+            placement: "negative",
+          },
+        ],
       }),
       models: [fluxModel],
       addons: [embedding],
@@ -911,7 +1003,8 @@ describe("media flow compiler", () => {
       sourceAssetId: "asset:approved-product-shot",
       settings: {
         ...DEFAULT_SETTINGS,
-        prompt: "Keep the product unchanged and replace the background with warm travertine.",
+        prompt:
+          "Keep the product unchanged and replace the background with warm travertine.",
         outputCount: 2,
         qualityGateEnabled: false,
       },
@@ -1005,8 +1098,7 @@ describe("media flow compiler", () => {
       baseModelHint: "krea2",
       digest:
         "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423",
-      relativePath:
-        "addons/sha256/f7/krea2_identity_edit_v1_2_r64.safetensors",
+      relativePath: "addons/sha256/f7/krea2_identity_edit_v1_2_r64.safetensors",
     } as const satisfies MediaModelAddonDescriptor;
     const createFlow = (adapter: MediaModelAddonDescriptor) =>
       createImageEditFlow({
@@ -1070,7 +1162,9 @@ describe("media flow compiler", () => {
     expect(unreviewedPlan.diagnostics).toContainEqual(
       expect.objectContaining({
         code: "ADDON_CONFIG_INVALID",
-        message: expect.stringContaining("exactly one reviewed KREA 2 Identity Edit"),
+        message: expect.stringContaining(
+          "exactly one reviewed KREA 2 Identity Edit",
+        ),
       }),
     );
   });
@@ -1086,7 +1180,8 @@ describe("media flow compiler", () => {
       ],
       settings: {
         ...DEFAULT_SETTINGS,
-        prompt: "Preserve the subject and apply the material language from the style reference.",
+        prompt:
+          "Preserve the subject and apply the material language from the style reference.",
         qualityGateEnabled: false,
       },
     });
@@ -1103,7 +1198,9 @@ describe("media flow compiler", () => {
       "asset:subject",
       "asset:style",
     ]);
-    expect(plan.steps.filter((step) => step.kind === "resolve-asset")).toHaveLength(3);
+    expect(
+      plan.steps.filter((step) => step.kind === "resolve-asset"),
+    ).toHaveLength(3);
     expect(plan.diagnostics).toContainEqual(
       expect.objectContaining({
         code: "REMOTE_ASSET_UPLOAD_SELECTED",
@@ -1481,9 +1578,9 @@ describe("media flow compiler", () => {
       requiresRemoteRequest: false,
       estimatedOutputs: 1,
     });
-    expect(plan.steps.find((step) => step.kind === "cutout-subject")?.label).toContain(
-      "1 BiRefNet Matting → 2 Local Border Matte",
-    );
+    expect(
+      plan.steps.find((step) => step.kind === "cutout-subject")?.label,
+    ).toContain("1 BiRefNet Matting → 2 Local Border Matte");
   });
 
   it("selects the first runnable subject-cutout fallback without blocking the flow", () => {
@@ -1638,15 +1735,17 @@ describe("media flow compiler", () => {
         .filter((node) => node.type === "source.image")
         .map((node) => node.config.assetId),
     ).toEqual(["asset:one", "asset:two", "asset:three"]);
-    expect(flow.nodes.find((node) => node.type === "operation.contact-sheet")?.config)
-      .toEqual({
-        columns: 2,
-        cellWidth: 512,
-        cellHeight: 512,
-        gap: 16,
-        background: "#0f172a",
-        labelMode: "index",
-      });
+    expect(
+      flow.nodes.find((node) => node.type === "operation.contact-sheet")
+        ?.config,
+    ).toEqual({
+      columns: 2,
+      cellWidth: 512,
+      cellHeight: 512,
+      gap: 16,
+      background: "#0f172a",
+      labelMode: "index",
+    });
     expect(plan.steps.map((step) => step.kind)).toEqual([
       "resolve-asset",
       "resolve-asset",
@@ -1668,7 +1767,11 @@ describe("media flow compiler", () => {
     const flow = createImageRecipeFlow({
       id: "flow:generate-and-choose",
       createdAt: "2026-07-14T00:00:00.000Z",
-      settings: { ...DEFAULT_SETTINGS, qualityGateEnabled: false, outputCount: 4 },
+      settings: {
+        ...DEFAULT_SETTINGS,
+        qualityGateEnabled: false,
+        outputCount: 4,
+      },
       review: {
         instructions: "Choose the strongest candidate for publication.",
         maxSelections: 1,
@@ -1688,14 +1791,16 @@ describe("media flow compiler", () => {
     expect(plan.preflight.generatedCandidates).toBe(4);
     expect(plan.preflight.estimatedOutputs).toBe(1);
     expect(plan.preflight.requiresHumanReview).toBe(true);
-    expect(plan.steps.find((step) => step.kind === "wait-for-review")?.review)
-      .toEqual({
-        instructions: "Choose the strongest candidate for publication.",
-        maxSelections: 1,
-        requireComment: false,
-      });
-    expect(flow.nodes.find((node) => node.type === "output.asset")?.config)
-      .toMatchObject({ outputCount: 1 });
+    expect(
+      plan.steps.find((step) => step.kind === "wait-for-review")?.review,
+    ).toEqual({
+      instructions: "Choose the strongest candidate for publication.",
+      maxSelections: 1,
+      requireComment: false,
+    });
+    expect(
+      flow.nodes.find((node) => node.type === "output.asset")?.config,
+    ).toMatchObject({ outputCount: 1 });
   });
 
   it("compiles bounded contact-sheet and metadata privacy operations", () => {
@@ -1889,7 +1994,9 @@ describe("media flow compiler", () => {
       expect.objectContaining({
         code: "PROVIDER_POLICY_UNSATISFIED",
         severity: "error",
-        message: expect.stringContaining("conflicts with the local execution boundary"),
+        message: expect.stringContaining(
+          "conflicts with the local execution boundary",
+        ),
       }),
     );
     expect(plan.diagnostics).not.toContainEqual(
@@ -1985,5 +2092,4 @@ describe("media flow compiler", () => {
       "asset-output",
     ]);
   });
-
 });

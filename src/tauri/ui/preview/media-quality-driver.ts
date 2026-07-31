@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { compileMediaFlow } from "../../../core/media/compiler.js";
 import { extendMediaCatalogWithWorkspaceDiscovery } from "../../../core/media/discovered-model-profiles.js";
-import { upgradeMediaFlowQualityDefaults } from "../../../core/media/node-registry.js";
 import type {
   MediaFlowHistory,
+  MediaImageImportResult,
   MediaModelCatalogSnapshot,
   MediaRunDetail,
   MediaRunPlanSnapshot,
@@ -29,12 +29,17 @@ const startVideoQualityRun = async ({
   prompt,
   sameEndpoint,
   sourceAssetId,
+  lastSourceAssetId = null,
   transparentBackground,
   guidanceScale,
   seed,
   numFrames,
   numInferenceSteps,
   resolution,
+  aspectRatio = "16:9",
+  fps = 16,
+  loopMode = "none",
+  negativePrompt = null,
 }: {
   flowId: string;
   modelId: string;
@@ -42,12 +47,17 @@ const startVideoQualityRun = async ({
   prompt: string | null;
   sameEndpoint: boolean;
   sourceAssetId: string | null;
+  lastSourceAssetId?: string | null;
   transparentBackground: boolean;
   guidanceScale: number;
   seed: number;
   numFrames: number;
   numInferenceSteps: number;
   resolution: string;
+  aspectRatio?: string;
+  fps?: number;
+  loopMode?: "none" | "seamless";
+  negativePrompt?: string | null;
 },
 ): Promise<{
   runId: string;
@@ -110,7 +120,10 @@ const startVideoQualityRun = async ({
   }
   if (sourceAssetId) {
     firstFrame.config = { ...firstFrame.config, assetId: sourceAssetId };
-    lastFrame.config = { ...lastFrame.config, assetId: sourceAssetId };
+    lastFrame.config = {
+      ...lastFrame.config,
+      assetId: lastSourceAssetId ?? sourceAssetId,
+    };
   }
   if (sameEndpoint) {
     lastFrame.config = {
@@ -124,21 +137,27 @@ const startVideoQualityRun = async ({
   if (prompt && promptNode) {
     promptNode.config = { ...promptNode.config, prompt };
   }
+  const {
+    durationSeconds: _legacyDurationSeconds,
+    ...videoConfig
+  } = videoNode.config;
   videoNode.config = {
-    ...videoNode.config,
+    ...videoConfig,
     modelId,
     modelPolicy: "quality",
+    aspectRatio,
     resolution,
-    fps: 16,
+    fps,
     numFrames,
     numInferenceSteps,
     guidanceScale,
     seed,
     memoryProfile: "auto",
-    loopMode: "none",
+    loopMode,
     transparentBackground,
     matteQuality: "production",
     encodingQuality: "lossless",
+    ...(negativePrompt === null ? {} : { negativePrompt }),
   };
   flow.nodes
     .filter((node) => node.type === "output.video")
@@ -211,17 +230,19 @@ const startVideoQualityRun = async ({
     workspaceRoot,
     firstFrameAssetId: firstFrame.config.assetId,
     lastFrameAssetId: lastFrame.config.assetId,
-    aspectRatio: "16:9",
+    aspectRatio,
     resolution,
     outputFormat: "webm",
     transparentBackground,
-    loopMode: "none",
-    fps: 16,
+    loopMode,
+    fps,
     numFrames,
     numInferenceSteps,
     guidanceScale,
     seed,
-    negativePrompt: String(videoNode.config.negativePrompt ?? ""),
+    negativePrompt: String(
+      negativePrompt ?? videoNode.config.negativePrompt ?? "",
+    ),
     matteQuality: "production",
     encodingQuality: "lossless",
     memoryProfile: "auto",
@@ -260,6 +281,76 @@ const startVideoQualityRun = async ({
     revisionId: revision.revision.revisionId,
     planId: plan.id,
     modelLabel: model.displayName,
+  };
+};
+
+export const startAnimationIterationRun = async ({
+  sourcePath,
+  lastSourcePath,
+  runLabel,
+  prompt,
+  negativePrompt,
+  modelId = hunyuanVideoModelId,
+  aspectRatio,
+  resolution,
+  fps,
+  numFrames,
+  numInferenceSteps,
+  guidanceScale,
+  seed,
+  loopMode,
+}: {
+  sourcePath: string;
+  lastSourcePath?: string;
+  runLabel: string;
+  prompt: string;
+  negativePrompt: string;
+  modelId?: string;
+  aspectRatio: string;
+  resolution: string;
+  fps: number;
+  numFrames: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  seed: number;
+  loopMode: "none" | "seamless";
+}) => {
+  const imported = await invoke<MediaImageImportResult>(
+    "media_import_image",
+    { path: sourcePath },
+  );
+  const importedLast = lastSourcePath
+    ? await invoke<MediaImageImportResult>(
+        "media_import_image",
+        { path: lastSourcePath },
+      )
+    : null;
+  const run = await startVideoQualityRun({
+    flowId: generalVideoFlowId,
+    modelId,
+    runLabel,
+    prompt,
+    sameEndpoint: importedLast === null,
+    sourceAssetId: imported.asset.id,
+    lastSourceAssetId: importedLast?.asset.id,
+    transparentBackground: false,
+    guidanceScale,
+    seed,
+    numFrames,
+    numInferenceSteps,
+    resolution,
+    aspectRatio,
+    fps,
+    loopMode,
+    negativePrompt,
+  });
+  return {
+    ...run,
+    sourceAssetId: imported.asset.id,
+    sourceDeduplicated: imported.deduplicated,
+    lastSourceAssetId: importedLast?.asset.id ?? imported.asset.id,
+    lastSourceDeduplicated:
+      importedLast?.deduplicated ?? imported.deduplicated,
   };
 };
 
@@ -369,9 +460,7 @@ export const startDogLoraImageQualityRun = async (): Promise<{
   if (!head) {
     throw new Error("The dog LoRA comparison flow has no saved head revision.");
   }
-  const flow = upgradeMediaFlowQualityDefaults({
-    flow: structuredClone(head.flow),
-  });
+  const flow = structuredClone(head.flow);
   const promptNode = flow.nodes.find(
     (node) => node.type === "source.prompt",
   );

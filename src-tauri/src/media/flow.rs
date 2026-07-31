@@ -1206,7 +1206,12 @@ fn local_bool_config(node: &MediaFlowNode, key: &str) -> MediaResult<bool> {
 
 fn local_subject_cutout_model_priority(node: &MediaFlowNode) -> MediaResult<Vec<String>> {
     let mut model_priority = match node.config.get("modelPriority") {
-        None => vec![subject_cutout::BIREFNET_MODEL_ID.to_string()],
+        None => {
+            return Err(format!(
+                "flow node {} requires config modelPriority",
+                node.id
+            ))
+        }
         Some(Value::Array(entries)) => entries
             .iter()
             .map(|entry| {
@@ -2183,8 +2188,7 @@ fn review_flow_bundle(
             inspection.issues.push(import_issue(
                 "warning",
                 "NEWER_FLOW_SCHEMA",
-                "The flow or layout schema needs an explicit migration before it can run."
-                    .to_string(),
+                "The flow or layout schema is not runnable by this app version.".to_string(),
                 None,
             ));
         }
@@ -3935,7 +3939,6 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     "modelPolicy",
                     "modelId",
                     "aspectRatio",
-                    "durationSeconds",
                     "resolution",
                     "generateAudio",
                     "transparentBackground",
@@ -3973,19 +3976,6 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 ));
             }
             config_enum(node, "aspectRatio", &["1:1", "16:9", "9:16", "21:9"])?;
-            let duration_seconds = node
-                .config
-                .get("durationSeconds")
-                .and_then(Value::as_u64)
-                .ok_or_else(|| {
-                    format!("flow node {} requires an integer durationSeconds", node.id)
-                })?;
-            if !(1..=30).contains(&duration_seconds) {
-                return Err(format!(
-                    "flow node {} durationSeconds must be between 1 and 30",
-                    node.id
-                ));
-            }
             config_enum(
                 node,
                 "resolution",
@@ -5422,7 +5412,7 @@ mod tests {
                 {"id":"prompt","type":"source.prompt","version":1,"label":"Motion brief","layer":"source","config":{"prompt":"A slow camera orbit"}},
                 {"id":"first","type":"source.image","version":1,"label":"First frame","layer":"source","config":{"assetId":"asset:first","referenceRole":"base","influence":1.0}},
                 {"id":"last","type":"source.image","version":1,"label":"Last frame","layer":"source","config":{"assetId":"asset:last","referenceRole":"composition","influence":1.0}},
-                {"id":"generate","type":"task.generate-video","version":1,"label":"Animate","layer":"task","config":{"providerPolicy":"local","modelPolicy":"quality","modelId":"local:wan2.2-ti2v-5b","aspectRatio":"21:9","durationSeconds":2,"resolution":"quality-768","generateAudio":false,"transparentBackground":false,"loopMode":"none","fps":24,"numFrames":33,"numInferenceSteps":24,"guidanceScale":5.5,"seed":7,"negativePrompt":"identity drift, texture crawl","matteQuality":"production","encodingQuality":"lossless","memoryProfile":"memory-saver","experimentalLowMemory":true}},
+                {"id":"generate","type":"task.generate-video","version":1,"label":"Animate","layer":"task","config":{"providerPolicy":"local","modelPolicy":"quality","modelId":"local:wan2.2-ti2v-5b","aspectRatio":"21:9","resolution":"quality-768","generateAudio":false,"transparentBackground":false,"loopMode":"none","fps":24,"numFrames":33,"numInferenceSteps":24,"guidanceScale":5.5,"seed":7,"negativePrompt":"identity drift, texture crawl","matteQuality":"production","encodingQuality":"lossless","memoryProfile":"memory-saver","experimentalLowMemory":true}},
                 {"id":"output","type":"output.video","version":1,"label":"Save video","layer":"output","config":{"format":"webm","role":"opaque"}}
             ],
             "edges": [

@@ -1,10 +1,4 @@
-import {
-  Boxes,
-  FileClock,
-  FolderGit2,
-  Gauge,
-  ImagePlus,
-} from "lucide-react";
+import { Boxes, FileClock, FolderGit2, Gauge, ImagePlus } from "lucide-react";
 import {
   open as openDialog,
   save as saveDialog,
@@ -51,7 +45,6 @@ import {
   removeMediaFlowNode,
   updateMediaFlowNodeConfig,
   updateMediaFlowNodeConfigs,
-  upgradeMediaFlowQualityDefaults,
   type MediaFlowConnectionRequest,
   type MediaFlowNodeClipboardPayload,
 } from "../../../core/media/node-registry.js";
@@ -303,16 +296,24 @@ const assessRemoteEditExecution = ({
     return unavailable("This flow does not contain a remote image-edit task.");
   }
   if (plan.status !== "ready") {
-    return unavailable("Resolve preflight diagnostics before using image references.");
+    return unavailable(
+      "Resolve preflight diagnostics before using image references.",
+    );
   }
   if (directReferenceImageModelIds === null) {
-    return unavailable("Checking whether the selected model can use image references.");
+    return unavailable(
+      "Checking whether the selected model can use image references.",
+    );
   }
   if (!plan.model || !directReferenceImageModelIds.includes(plan.model.id)) {
-    return unavailable("The selected model runtime does not support image references yet.");
+    return unavailable(
+      "The selected model runtime does not support image references yet.",
+    );
   }
   if (plan.model.target !== "remote" || !plan.preflight.requiresRemoteRequest) {
-    return unavailable("The selected reference-image runtime is not available in this build.");
+    return unavailable(
+      "The selected reference-image runtime is not available in this build.",
+    );
   }
   const supportedNodeTypes = new Set<MediaNodeType>([
     "source.prompt",
@@ -362,17 +363,24 @@ const assessRemoteEditExecution = ({
           byteSize: asset.byteSize,
           role: String(node.config.referenceRole ?? "base"),
           influence:
-            typeof node.config.influence === "number" ? node.config.influence : 1,
+            typeof node.config.influence === "number"
+              ? node.config.influence
+              : 1,
         }
       : null;
   });
   if (manifest.some((item) => item === null)) {
-    return unavailable("Every reference must point to an available Library image.");
+    return unavailable(
+      "Every reference must point to an available Library image.",
+    );
   }
   const exactManifest = manifest.filter(
     (item): item is NonNullable<typeof item> => item !== null,
   );
-  if (new Set(exactManifest.map((item) => item.assetId)).size !== exactManifest.length) {
+  if (
+    new Set(exactManifest.map((item) => item.assetId)).size !==
+    exactManifest.length
+  ) {
     return unavailable("Remove duplicate reference images before generation.");
   }
   if (exactManifest.filter((item) => item.role === "base").length !== 1) {
@@ -413,11 +421,14 @@ export const MediaStudio = ({
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [runtimeStatus, setRuntimeStatus] =
-    useState<MediaRuntimeStatus | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<MediaRuntimeStatus | null>(
+    null,
+  );
   const [runtimeRuns, setRuntimeRuns] = useState<MediaRuntimeRunRecord[]>([]);
   const [runtimeAssets, setRuntimeAssets] = useState<MediaAssetRecord[]>([]);
-  const [runtimeError, setRuntimeError] = useState<MediaErrorDetail | null>(null);
+  const [runtimeError, setRuntimeError] = useState<MediaErrorDetail | null>(
+    null,
+  );
   const [importedAssetId, setImportedAssetId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedRun, setSelectedRun] = useState<MediaRunDetail | null>(null);
@@ -427,13 +438,17 @@ export const MediaStudio = ({
   const [remoteEditPending, setRemoteEditPending] = useState(false);
   const [providerReviewPending, setProviderReviewPending] = useState(false);
   const [humanReviewPending, setHumanReviewPending] = useState(false);
-  const [hardware, setHardware] = useState<MediaHardwareInspection | null>(null);
+  const [hardware, setHardware] = useState<MediaHardwareInspection | null>(
+    null,
+  );
   const [hardwareLoading, setHardwareLoading] = useState(false);
   const [hardwareError, setHardwareError] = useState<string | null>(null);
   const [modelCatalog, setModelCatalog] =
     useState<MediaModelCatalogSnapshot | null>(null);
   const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
-  const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
+  const [modelCatalogError, setModelCatalogError] = useState<string | null>(
+    null,
+  );
   const [workspaceModelDiscovery, setWorkspaceModelDiscovery] =
     useState<MediaWorkspaceModelDiscovery | null>(null);
   const [workspaceModelDiscoveryLoading, setWorkspaceModelDiscoveryLoading] =
@@ -447,7 +462,9 @@ export const MediaStudio = ({
     useState<MediaLocalModelImportResult | null>(null);
   const [modelImportLoading, setModelImportLoading] = useState(false);
   const [modelImportError, setModelImportError] = useState<string | null>(null);
-  const [modelProbeLoadingId, setModelProbeLoadingId] = useState<string | null>(null);
+  const [modelProbeLoadingId, setModelProbeLoadingId] = useState<string | null>(
+    null,
+  );
   const [modelProbeError, setModelProbeError] = useState<string | null>(null);
   const [addonImportInspection, setAddonImportInspection] =
     useState<MediaModelAddonImportInspection | null>(null);
@@ -460,23 +477,31 @@ export const MediaStudio = ({
   const [addonImportCivitaiSource, setAddonImportCivitaiSource] =
     useState<MediaCivitaiModelAddonInspection | null>(null);
   const [civitaiAddonLoading, setCivitaiAddonLoading] = useState(false);
-  const [civitaiAddonError, setCivitaiAddonError] = useState<string | null>(null);
+  const [civitaiAddonError, setCivitaiAddonError] = useState<string | null>(
+    null,
+  );
   const [addonRemovalPlan, setAddonRemovalPlan] =
     useState<MediaModelAddonRemovalPlan | null>(null);
   const [addonRemovalResult, setAddonRemovalResult] =
     useState<MediaModelAddonRemovalResult | null>(null);
   const [addonRemovalLoading, setAddonRemovalLoading] = useState(false);
-  const [addonRemovalError, setAddonRemovalError] = useState<string | null>(null);
+  const [addonRemovalError, setAddonRemovalError] = useState<string | null>(
+    null,
+  );
   const [modelInstallPlan, setModelInstallPlan] =
     useState<MediaModelInstallPlan | null>(null);
   const [modelInstallJob, setModelInstallJob] =
     useState<MediaModelInstallJob | null>(null);
   const [modelInstallLoading, setModelInstallLoading] = useState(false);
-  const [modelInstallError, setModelInstallError] = useState<string | null>(null);
+  const [modelInstallError, setModelInstallError] = useState<string | null>(
+    null,
+  );
   const [modelRemovalPlan, setModelRemovalPlan] =
     useState<MediaModelRemovalPlan | null>(null);
   const [modelRemovalLoading, setModelRemovalLoading] = useState(false);
-  const [modelRemovalError, setModelRemovalError] = useState<string | null>(null);
+  const [modelRemovalError, setModelRemovalError] = useState<string | null>(
+    null,
+  );
   const [modelRemovalResult, setModelRemovalResult] =
     useState<MediaModelRemovalResult | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -486,19 +511,29 @@ export const MediaStudio = ({
   const [deletionNotice, setDeletionNotice] = useState<string | null>(null);
   const dismissExportNotice = useCallback(() => setExportNotice(null), []);
   const dismissDeletionNotice = useCallback(() => setDeletionNotice(null), []);
-  const [qualityLoadingAssetId, setQualityLoadingAssetId] = useState<string | null>(null);
-  const [qualityReports, setQualityReports] = useState<Record<string, MediaQualityReport>>({});
-  const [tagLoadingAssetId, setTagLoadingAssetId] = useState<string | null>(null);
+  const [qualityLoadingAssetId, setQualityLoadingAssetId] = useState<
+    string | null
+  >(null);
+  const [qualityReports, setQualityReports] = useState<
+    Record<string, MediaQualityReport>
+  >({});
+  const [tagLoadingAssetId, setTagLoadingAssetId] = useState<string | null>(
+    null,
+  );
   const [draftCreatedAt] = useState(() => new Date().toISOString());
   const [flowHistory, setFlowHistory] = useState<MediaFlowHistory | null>(null);
   const [savedFlows, setSavedFlows] = useState<MediaFlowHead[]>([]);
   const [savedFlowsLoading, setSavedFlowsLoading] = useState(false);
   const [flowRevisionLoading, setFlowRevisionLoading] = useState(false);
-  const [flowRevisionNotice, setFlowRevisionNotice] = useState<string | null>(null);
+  const [flowRevisionNotice, setFlowRevisionNotice] = useState<string | null>(
+    null,
+  );
   const [flowPortabilityLoading, setFlowPortabilityLoading] = useState(false);
   const [flowImportInspection, setFlowImportInspection] =
     useState<MediaFlowImportInspection | null>(null);
-  const [flowImportSourcePath, setFlowImportSourcePath] = useState<string | null>(null);
+  const [flowImportSourcePath, setFlowImportSourcePath] = useState<
+    string | null
+  >(null);
   const [flowClipboard, setFlowClipboard] =
     useState<MediaFlowNodeClipboardPayload | null>(null);
   const semanticUndoStack = useRef<MediaFlow[]>([]);
@@ -1137,7 +1172,9 @@ export const MediaStudio = ({
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setRuntimeError(normalizeMediaError(error, "initialize_media_runtime"));
+          setRuntimeError(
+            normalizeMediaError(error, "initialize_media_runtime"),
+          );
         }
       });
 
@@ -1308,15 +1345,16 @@ export const MediaStudio = ({
         runtime: runtimeStatus?.localDiffusers ?? null,
       }),
     [
-    fallbackModelCatalog,
-    modelCatalog,
-    runtimeStatus?.localDiffusers,
-    workspaceModelDiscovery,
+      fallbackModelCatalog,
+      modelCatalog,
+      runtimeStatus?.localDiffusers,
+      workspaceModelDiscovery,
     ],
   );
   const models = activeModelCatalog.models;
   const recipeFlow = useMemo(() => {
-    const [baseReference, ...additionalReferences] = state.recipe.referenceImages;
+    const [baseReference, ...additionalReferences] =
+      state.recipe.referenceImages;
     return baseReference && state.recipe.outputFormat !== "svg"
       ? createImageEditFlow({
           id: "media-image-recipe-draft",
@@ -1501,7 +1539,8 @@ export const MediaStudio = ({
     if (outputs.length !== 1) {
       return {
         supported: false,
-        reason: "Local utility execution requires exactly one Save asset output.",
+        reason:
+          "Local utility execution requires exactly one Save asset output.",
       };
     }
     const metadataStrip = resolvedFlow.nodes.find(
@@ -1556,7 +1595,9 @@ export const MediaStudio = ({
       (node) => node.type === "task.generate-video",
     );
     if (videoNodes.length !== 1) {
-      return unavailable("This flow does not contain exactly one video generation node.");
+      return unavailable(
+        "This flow does not contain exactly one video generation node.",
+      );
     }
     const videoBinding = plan.runtimeBindings.find(
       (binding) =>
@@ -1565,7 +1606,9 @@ export const MediaStudio = ({
         isExecutableLocalVideoModelId(binding.model.id),
     );
     if (plan.status !== "ready" || !videoBinding) {
-      return unavailable("Resolve the local video model, runtime, and node contract diagnostics first.");
+      return unavailable(
+        "Resolve the local video model, runtime, and node contract diagnostics first.",
+      );
     }
     const videoNode = videoNodes[0];
     if (!videoNode) {
@@ -1576,9 +1619,7 @@ export const MediaStudio = ({
         edge.toNodeId === videoNode.id && edge.toPortId === "first-frame",
     );
     const firstFrameNode = firstFrameEdge
-      ? resolvedFlow.nodes.find(
-          (node) => node.id === firstFrameEdge.fromNodeId,
-        )
+      ? resolvedFlow.nodes.find((node) => node.id === firstFrameEdge.fromNodeId)
       : null;
     const firstFrameAssetId =
       typeof firstFrameNode?.config.assetId === "string"
@@ -1589,9 +1630,7 @@ export const MediaStudio = ({
         edge.toNodeId === videoNode.id && edge.toPortId === "last-frame",
     );
     const lastFrameNode = lastFrameEdge
-      ? resolvedFlow.nodes.find(
-          (node) => node.id === lastFrameEdge.fromNodeId,
-        )
+      ? resolvedFlow.nodes.find((node) => node.id === lastFrameEdge.fromNodeId)
       : null;
     const lastFrameAssetId =
       typeof lastFrameNode?.config.assetId === "string"
@@ -1600,9 +1639,8 @@ export const MediaStudio = ({
     const generatedFrame =
       firstFrameNode?.type !== "source.image" ||
       lastFrameNode?.type !== "source.image";
-    let imageModel:
-      | (typeof plan.runtimeBindings)[number]["model"]
-      | null = null;
+    let imageModel: (typeof plan.runtimeBindings)[number]["model"] | null =
+      null;
     let imageSettings: ImageRecipeSettings | null = null;
     if (generatedFrame) {
       if (
@@ -1664,7 +1702,9 @@ export const MediaStudio = ({
           (asset) => asset.id === firstFrameAssetId && asset.kind === "image",
         )
       ) {
-        return unavailable("Choose an available Library image for the first video frame.");
+        return unavailable(
+          "Choose an available Library image for the first video frame.",
+        );
       }
       if (
         !lastFrameAssetId ||
@@ -1715,23 +1755,21 @@ export const MediaStudio = ({
         "Connect an Animated background source to the video composite node.",
       );
     }
-    if (
-      animatedBackground &&
-      videoNode.config.transparentBackground !== true
-    ) {
+    if (animatedBackground && videoNode.config.transparentBackground !== true) {
       return unavailable(
         "Animated background compositing requires Transparent background on the video node.",
       );
     }
     if (!workspaceRoot?.trim()) {
-      return unavailable("The active workspace root is required to resolve models safely.");
+      return unavailable(
+        "The active workspace root is required to resolve models safely.",
+      );
     }
     return {
       supported: true as const,
-      reason:
-        animatedBackground
-          ? "Runs the selected local video quality profile, verifies temporally stabilized VP9 alpha, and publishes an animated-background companion."
-          : "Runs the selected local video quality, shot/loop, transparency, memory, and encoding profiles with decoded-output verification.",
+      reason: animatedBackground
+        ? "Runs the selected local video quality profile, verifies temporally stabilized VP9 alpha, and publishes an animated-background companion."
+        : "Runs the selected local video quality, shot/loop, transparency, memory, and encoding profiles with decoded-output verification.",
       firstFrameAssetId,
       lastFrameAssetId,
       videoNode,
@@ -1751,25 +1789,27 @@ export const MediaStudio = ({
   ]);
 
   const remoteEditExecution = useMemo(
-    () => assessRemoteEditExecution({
-      plan,
-      flow,
-      assets: runtimeAssets,
-      runtimeMode: runtimeStatus?.mode ?? null,
-      directReferenceImageModelIds:
-        runtimeStatus?.directReferenceImageModelIds ?? null,
-    }),
+    () =>
+      assessRemoteEditExecution({
+        plan,
+        flow,
+        assets: runtimeAssets,
+        runtimeMode: runtimeStatus?.mode ?? null,
+        directReferenceImageModelIds:
+          runtimeStatus?.directReferenceImageModelIds ?? null,
+      }),
     [flow, plan, runtimeAssets, runtimeStatus],
   );
   const recipeRemoteEditExecution = useMemo(
-    () => assessRemoteEditExecution({
-      plan: recipePlan,
-      flow: recipeFlow,
-      assets: runtimeAssets,
-      runtimeMode: runtimeStatus?.mode ?? null,
-      directReferenceImageModelIds:
-        runtimeStatus?.directReferenceImageModelIds ?? null,
-    }),
+    () =>
+      assessRemoteEditExecution({
+        plan: recipePlan,
+        flow: recipeFlow,
+        assets: runtimeAssets,
+        runtimeMode: runtimeStatus?.mode ?? null,
+        directReferenceImageModelIds:
+          runtimeStatus?.directReferenceImageModelIds ?? null,
+      }),
     [recipeFlow, recipePlan, runtimeAssets, runtimeStatus],
   );
 
@@ -1781,7 +1821,9 @@ export const MediaStudio = ({
     setState((current) => ({ ...current, flowLayout }));
   }, []);
   const replaceSemanticFlow = useCallback((nextFlow: MediaFlow): void => {
-    const recipe = readImageRecipeSettings(resolveMediaFlowVariables(nextFlow).flow);
+    const recipe = readImageRecipeSettings(
+      resolveMediaFlowVariables(nextFlow).flow,
+    );
     setRuntimeError(null);
     setState((current) => ({
       ...current,
@@ -1819,7 +1861,9 @@ export const MediaStudio = ({
       changeFlowLayout(result.layout);
       setFlowHistory(null);
       setFlowRunOverlayId(null);
-      setFlowRevisionNotice(`Forked ${result.flow.name} as a new editable flow.`);
+      setFlowRevisionNotice(
+        `Forked ${result.flow.name} as a new editable flow.`,
+      );
     },
     [applySemanticFlow, changeFlowLayout],
   );
@@ -1890,60 +1934,57 @@ export const MediaStudio = ({
       setFlowRunOverlayId(null);
       setFlowRevisionNotice(
         sourceAssetId
-          ? `Connected this image to both video endpoints as a ${aspectRatio} ${loopMode === "seamless" ? "closed seamless loop" : "one-way delivery that returns to the source pose; connect a distinct Last frame for progressive action"}. ${transparentBackground ? "Production alpha extraction is enabled because the source has verified cutout provenance." : "Opaque delivery is selected because the source does not have verified transparent-cutout provenance."}`
+          ? `Connected this image to both video endpoints as a ${aspectRatio} ${loopMode === "seamless" ? "forward seamless loop" : "one-way delivery that returns to the source pose; connect a distinct Last frame for progressive action"}. ${transparentBackground ? "Production alpha extraction is enabled because the source has verified cutout provenance." : "Opaque delivery is selected because the source does not have verified transparent-cutout provenance."}`
           : "Created a typed video draft. Connect reviewed first and last frames, then review motion, framing, and delivery settings before running.",
       );
       setState((current) => ({ ...current, activeSection: "flow" }));
     },
     [applySemanticFlow, changeFlowLayout],
   );
-  const openVideoCreationFlow = useCallback(
-    (): void => {
-      const sourceAssetId = state.recipe.referenceImages[0]?.assetId;
-      if (!sourceAssetId) {
-        const createdAt = new Date().toISOString();
-        const generatedLoop = createGeneratedLoopVideoFlow({
-          id: `media-generated-loop-${createFlowSaveId()}`,
-          createdAt,
-          ...(state.recipe.prompt.trim()
-            ? { prompt: state.recipe.prompt.trim() }
-            : {}),
-          imageModelId: state.recipe.modelId,
-          imageModelAddons: state.recipe.modelAddons,
-        });
-        applySemanticFlow(generatedLoop);
-        changeFlowLayout(createMediaFlowLayout(generatedLoop));
-        setFlowHistory(null);
-        setFlowRunOverlayId(null);
-        setFlowRevisionNotice(
-          "Created a connected local character loop: image generation → subject cutout → the same first/last video frame → transparent master and animated-background companion.",
-        );
-        setState((current) => ({ ...current, activeSection: "flow" }));
-        return;
-      }
-      const sourceAsset =
-        runtimeAssets.find((asset) => asset.id === sourceAssetId) ?? null;
-      openVideoFlowDraft({
-        prompt: state.recipe.prompt.trim(),
-        sourceAssetId,
-        aspectRatio: sourceAsset
-          ? inferMediaVideoAspectRatio(sourceAsset.width, sourceAsset.height)
-          : "1:1",
-        transparentBackground:
-          sourceAsset !== null && isMediaAssetKnownTransparent(sourceAsset),
+  const openVideoCreationFlow = useCallback((): void => {
+    const sourceAssetId = state.recipe.referenceImages[0]?.assetId;
+    if (!sourceAssetId) {
+      const createdAt = new Date().toISOString();
+      const generatedLoop = createGeneratedLoopVideoFlow({
+        id: `media-generated-loop-${createFlowSaveId()}`,
+        createdAt,
+        ...(state.recipe.prompt.trim()
+          ? { prompt: state.recipe.prompt.trim() }
+          : {}),
+        imageModelId: state.recipe.modelId,
+        imageModelAddons: state.recipe.modelAddons,
       });
-    },
-    [
-      applySemanticFlow,
-      changeFlowLayout,
-      openVideoFlowDraft,
-      state.recipe.modelAddons,
-      state.recipe.modelId,
-      state.recipe.prompt,
-      state.recipe.referenceImages,
-      runtimeAssets,
-    ],
-  );
+      applySemanticFlow(generatedLoop);
+      changeFlowLayout(createMediaFlowLayout(generatedLoop));
+      setFlowHistory(null);
+      setFlowRunOverlayId(null);
+      setFlowRevisionNotice(
+        "Created a connected local character loop: image generation → subject cutout → the same first/last video frame → transparent master and animated-background companion.",
+      );
+      setState((current) => ({ ...current, activeSection: "flow" }));
+      return;
+    }
+    const sourceAsset =
+      runtimeAssets.find((asset) => asset.id === sourceAssetId) ?? null;
+    openVideoFlowDraft({
+      prompt: state.recipe.prompt.trim(),
+      sourceAssetId,
+      aspectRatio: sourceAsset
+        ? inferMediaVideoAspectRatio(sourceAsset.width, sourceAsset.height)
+        : "1:1",
+      transparentBackground:
+        sourceAsset !== null && isMediaAssetKnownTransparent(sourceAsset),
+    });
+  }, [
+    applySemanticFlow,
+    changeFlowLayout,
+    openVideoFlowDraft,
+    state.recipe.modelAddons,
+    state.recipe.modelId,
+    state.recipe.prompt,
+    state.recipe.referenceImages,
+    runtimeAssets,
+  ]);
   const openAssetAsVideoFlow = useCallback(
     (asset: MediaAssetRecord): void => {
       if (asset.kind !== "image") return;
@@ -1954,8 +1995,8 @@ export const MediaStudio = ({
         loopMode: "seamless",
         transparentBackground,
         prompt: transparentBackground
-          ? "A seamless looping subject animation on a perfectly uniform chroma-green background; locked camera; subtle natural motion; keep the subject centered, fully visible, and unchanged; no shadows or background movement."
-          : "A seamless looping animation of the exact supplied image; locked camera; subtle intentional subject motion; preserve identity, composition, lighting, and the existing background; no cuts, zooms, camera shake, or background-only motion.",
+          ? "One continuous forward-time subject cycle on a perfectly uniform chroma-green background. Locked camera. First the subject gently inhales or shifts weight, then completes one soft blink with one continuous secondary sway, then exhales and arrives naturally at the opening pose only at the final instant. Keep the subject centered, fully visible, and unchanged. Never reverse playback, mirrored replay, boomerang, pause, shadows, or background movement."
+          : "One continuous forward-time cyclic animation of the exact supplied image. Locked camera. First the subject gently inhales or shifts weight, then completes one soft blink while hair, fabric, flames, or particles continue along one natural direction, then exhales and arrives naturally at the opening pose only at the final instant. Preserve identity, anatomy, composition, lighting, and the existing background. Never reverse playback, mirrored replay, boomerang, cut, pause, zoom, camera shake, or background-only motion.",
       });
     },
     [openVideoFlowDraft],
@@ -2072,7 +2113,8 @@ export const MediaStudio = ({
   );
   const openContactSheetAsFlow = useCallback(
     (assets: readonly MediaAssetRecord[]): void => {
-      if (assets.length < 2 || assets.some((asset) => asset.kind !== "image")) return;
+      if (assets.length < 2 || assets.some((asset) => asset.kind !== "image"))
+        return;
       const createdAt = new Date().toISOString();
       const contactSheetFlow = createImageContactSheetFlow({
         id: `media-contact-sheet-${createFlowSaveId()}`,
@@ -2247,7 +2289,9 @@ export const MediaStudio = ({
       try {
         const clipboard = copyMediaFlowNodes(flow, nodeIds);
         setFlowClipboard(clipboard);
-        setFlowRevisionNotice(`Copied ${clipboard.label} with internal connections.`);
+        setFlowRevisionNotice(
+          `Copied ${clipboard.label} with internal connections.`,
+        );
         setRuntimeError(null);
       } catch (error: unknown) {
         setRuntimeError(normalizeMediaError(error, "copy_media_flow_nodes"));
@@ -2328,12 +2372,7 @@ export const MediaStudio = ({
           if (!head) {
             throw new Error("The saved workflow has no head revision.");
           }
-          const openedFlow = upgradeMediaFlowQualityDefaults({
-            flow: head.flow,
-            updatedAt: new Date().toISOString(),
-          });
-          const upgraded =
-            createMediaFlowDocumentDigest(openedFlow) !== head.documentDigest;
+          const openedFlow = head.flow;
           const recipe = readImageRecipeSettings(openedFlow);
           clearSemanticHistory();
           setFlowHistory(history);
@@ -2346,9 +2385,7 @@ export const MediaStudio = ({
             flowLayout: head.layout,
           }));
           setFlowRevisionNotice(
-            upgraded
-              ? `Opened ${openedFlow.name}. New quality defaults are an unsaved draft.`
-              : `Opened ${openedFlow.name} at revision ${head.revisionNumber}.`,
+            `Opened ${openedFlow.name} at revision ${head.revisionNumber}.`,
           );
           setRuntimeError(null);
         })
@@ -2406,7 +2443,9 @@ export const MediaStudio = ({
         const failure = normalizeMediaError(error, "media_save_flow_revision");
         setRuntimeError(failure);
         if (failure.code === "FLOW_REVISION_CONFLICT") {
-          void getMediaFlow(sourceFlow.id).then(setFlowHistory).catch(() => undefined);
+          void getMediaFlow(sourceFlow.id)
+            .then(setFlowHistory)
+            .catch(() => undefined);
         }
         return null;
       } finally {
@@ -2417,14 +2456,20 @@ export const MediaStudio = ({
   );
 
   const saveCurrentFlowRevision = useCallback((): void => {
-    void persistFlowRevision(flow, layout, "Saved from the guided image recipe");
+    void persistFlowRevision(
+      flow,
+      layout,
+      "Saved from the guided image recipe",
+    );
   }, [flow, layout, persistFlowRevision]);
 
   const openRecipeAsFlow = useCallback((): void => {
     clearSemanticHistory();
     setFlowHistory(null);
     setFlowRunOverlayId(null);
-    setFlowRevisionNotice("Opened the current guided recipe as an editable semantic flow.");
+    setFlowRevisionNotice(
+      "Opened the current guided recipe as an editable semantic flow.",
+    );
     setState((current) => ({
       ...current,
       activeSection: "flow",
@@ -2435,10 +2480,7 @@ export const MediaStudio = ({
 
   const restoreFlowRevision = useCallback(
     (revision: MediaFlowRevision): void => {
-      const restoredFlow = upgradeMediaFlowQualityDefaults({
-        flow: revision.flow,
-        updatedAt: new Date().toISOString(),
-      });
+      const restoredFlow = revision.flow;
       const recipe = readImageRecipeSettings(restoredFlow);
       void persistFlowRevision(
         restoredFlow,
@@ -2491,7 +2533,9 @@ export const MediaStudio = ({
       setFlowImportInspection(inspection);
     })()
       .catch((error: unknown) => {
-        setRuntimeError(normalizeMediaError(error, "media_inspect_flow_import"));
+        setRuntimeError(
+          normalizeMediaError(error, "media_inspect_flow_import"),
+        );
       })
       .finally(() => setFlowPortabilityLoading(false));
   }, [flowPortabilityLoading]);
@@ -2515,13 +2559,9 @@ export const MediaStudio = ({
     })
       .then(async (result) => {
         const history = await getMediaFlow(result.targetFlowId);
-        const importedFlow = upgradeMediaFlowQualityDefaults({
-          flow: result.revision.flow,
-          updatedAt: new Date().toISOString(),
-        });
+        const importedFlow = result.revision.flow;
         const importedLayout = result.revision.layout;
         const recipe = readImageRecipeSettings(importedFlow);
-        const upgraded = importedFlow !== result.revision.flow;
         clearSemanticHistory();
         setFlowHistory(history);
         const importedHead = history.head;
@@ -2546,10 +2586,6 @@ export const MediaStudio = ({
             result.created
               ? `Imported immutable revision 1 as isolated flow ${result.targetFlowId}.`
               : `This reviewed bundle already exists as ${result.targetFlowId}.`
-          }${
-            upgraded
-              ? " New quality defaults were applied to the local draft; save once to pin the upgraded revision."
-              : ""
           }`,
         );
       })
@@ -2602,15 +2638,12 @@ export const MediaStudio = ({
       );
     })()
       .catch((error: unknown) => {
-        setRuntimeError(normalizeMediaError(error, "media_export_flow_revision"));
+        setRuntimeError(
+          normalizeMediaError(error, "media_export_flow_revision"),
+        );
       })
       .finally(() => setFlowPortabilityLoading(false));
-  }, [
-    flow.id,
-    flowHistory,
-    flowPortabilityLoading,
-    hasUnsavedFlowChanges,
-  ]);
+  }, [flow.id, flowHistory, flowPortabilityLoading, hasUnsavedFlowChanges]);
 
   const dismissFlowImport = useCallback((): void => {
     setFlowImportInspection(null);
@@ -2783,23 +2816,16 @@ export const MediaStudio = ({
             aspectRatio,
             resolution,
             outputFormat: "webm",
-            transparentBackground:
-              videoConfig.transparentBackground === true,
+            transparentBackground: videoConfig.transparentBackground === true,
             loopMode,
-            fps:
-              typeof videoConfig.fps === "number"
-                ? videoConfig.fps
-                : 8,
+            fps: typeof videoConfig.fps === "number" ? videoConfig.fps : 8,
             numFrames:
               typeof videoConfig.numFrames === "number"
                 ? videoConfig.numFrames
                 : 33,
             numInferenceSteps: videoExecutionSettings.numInferenceSteps,
             guidanceScale: videoExecutionSettings.guidanceScale,
-            seed:
-              typeof videoConfig.seed === "number"
-                ? videoConfig.seed
-                : 0,
+            seed: typeof videoConfig.seed === "number" ? videoConfig.seed : 0,
             negativePrompt:
               typeof videoConfig.negativePrompt === "string"
                 ? videoConfig.negativePrompt
@@ -2901,9 +2927,9 @@ export const MediaStudio = ({
             : "none";
         const ending =
           loopMode === "seamless"
-            ? "with an exact seamless endpoint"
+            ? "as a seamless interval without a duplicate closing frame"
             : loopMode === "ping-pong"
-              ? "with an exact ping-pong endpoint"
+              ? "with continuous no-hold ping-pong motion"
               : "as an intentional one-way shot";
         setFlowRevisionNotice(
           outputs.length > 0
@@ -2981,7 +3007,9 @@ export const MediaStudio = ({
         return refreshRuntime();
       })
       .catch((error: unknown) => {
-        setRuntimeError(normalizeMediaError(error, "execute_remote_image_edit_flow"));
+        setRuntimeError(
+          normalizeMediaError(error, "execute_remote_image_edit_flow"),
+        );
       })
       .finally(() => setRemoteEditPending(false));
   }, [
@@ -2995,68 +3023,118 @@ export const MediaStudio = ({
     remoteEditPending,
     runtimeStatus?.mode,
   ]);
-  const runRecipeGeneration = useCallback((requiresReview: boolean) => {
-    const activeFlow = requiresReview ? reviewRecipeFlow : recipeFlow;
-    const activeLayout = requiresReview ? reviewRecipeLayout : recipeLayout;
-    const activePlan = requiresReview ? reviewRecipePlan : recipePlan;
-    const activePlanSnapshot = requiresReview
-      ? reviewRecipePlanSnapshot
-      : recipePlanSnapshot;
-    const model = activePlan.model;
-    const isSvg = state.recipe.outputFormat === "svg";
-    const isSvgVectorization = isSvg && state.recipe.svgMode === "vectorize";
-    const hasReferences = state.recipe.referenceImages.length > 0;
-    const localReferenceEdit =
-      !isSvg &&
-      hasReferences &&
-      state.recipe.referenceImages.length === 1 &&
-      model?.target === "local" &&
-      (runtimeStatus?.directReferenceImageModelIds ?? []).includes(model.id);
-    const imageTaskConfig = activeFlow.nodes.find(
-      (node) =>
-        node.type === "task.generate-image" ||
-        node.type === "task.edit-image",
-    )?.config;
-    if (
-      activePlan.status !== "ready" ||
-      !model ||
-      (requiresReview && (hasReferences || state.recipe.outputCount < 2)) ||
-      (isSvg
-        ? !(runtimeStatus?.directGenerationModelIds ?? []).includes(model.id) ||
-          (hasReferences &&
-            !(runtimeStatus?.directReferenceImageModelIds ?? []).includes(model.id))
-        : hasReferences
-          ? !localReferenceEdit && !recipeRemoteEditExecution.supported
-          : !(runtimeStatus?.directGenerationModelIds ?? []).includes(model.id)) ||
-      state.recipe.qualityGateEnabled ||
-      generationPending
-    ) {
-      return;
-    }
-    setGenerationPending(true);
-    setRuntimeError(null);
-    void persistFlowRevision(
-      activeFlow,
-      activeLayout,
-      requiresReview
-        ? "Pinned automatically for guided candidate review"
-        : "Pinned automatically for direct image generation",
-    )
-      .then((revisionResult) => {
-        if (!revisionResult) {
-          return null;
-        }
-        if (isSvg) {
-          const candidateCount = isSvgVectorization
-            ? 1
-            : Math.max(
-                state.recipe.outputCount,
-                Math.min(
-                  model.id.startsWith("recraft:") ? 6 : 16,
-                  state.recipe.svgCandidateCount ?? 6,
-                ),
-              );
-          return generateMediaSvg({
+  const runRecipeGeneration = useCallback(
+    (requiresReview: boolean) => {
+      const activeFlow = requiresReview ? reviewRecipeFlow : recipeFlow;
+      const activeLayout = requiresReview ? reviewRecipeLayout : recipeLayout;
+      const activePlan = requiresReview ? reviewRecipePlan : recipePlan;
+      const activePlanSnapshot = requiresReview
+        ? reviewRecipePlanSnapshot
+        : recipePlanSnapshot;
+      const model = activePlan.model;
+      const isSvg = state.recipe.outputFormat === "svg";
+      const isSvgVectorization = isSvg && state.recipe.svgMode === "vectorize";
+      const hasReferences = state.recipe.referenceImages.length > 0;
+      const localReferenceEdit =
+        !isSvg &&
+        hasReferences &&
+        state.recipe.referenceImages.length === 1 &&
+        model?.target === "local" &&
+        (runtimeStatus?.directReferenceImageModelIds ?? []).includes(model.id);
+      const imageTaskConfig = activeFlow.nodes.find(
+        (node) =>
+          node.type === "task.generate-image" ||
+          node.type === "task.edit-image",
+      )?.config;
+      if (
+        activePlan.status !== "ready" ||
+        !model ||
+        (requiresReview && (hasReferences || state.recipe.outputCount < 2)) ||
+        (isSvg
+          ? !(runtimeStatus?.directGenerationModelIds ?? []).includes(
+              model.id,
+            ) ||
+            (hasReferences &&
+              !(runtimeStatus?.directReferenceImageModelIds ?? []).includes(
+                model.id,
+              ))
+          : hasReferences
+            ? !localReferenceEdit && !recipeRemoteEditExecution.supported
+            : !(runtimeStatus?.directGenerationModelIds ?? []).includes(
+                model.id,
+              )) ||
+        state.recipe.qualityGateEnabled ||
+        generationPending
+      ) {
+        return;
+      }
+      setGenerationPending(true);
+      setRuntimeError(null);
+      void persistFlowRevision(
+        activeFlow,
+        activeLayout,
+        requiresReview
+          ? "Pinned automatically for guided candidate review"
+          : "Pinned automatically for direct image generation",
+      )
+        .then((revisionResult) => {
+          if (!revisionResult) {
+            return null;
+          }
+          if (isSvg) {
+            const candidateCount = isSvgVectorization
+              ? 1
+              : Math.max(
+                  state.recipe.outputCount,
+                  Math.min(
+                    model.id.startsWith("recraft:") ? 6 : 16,
+                    state.recipe.svgCandidateCount ?? 6,
+                  ),
+                );
+            return generateMediaSvg({
+              schemaVersion: 1,
+              runId: createRunId(),
+              flowId: activeFlow.id,
+              flowRevisionId: revisionResult.revision.revisionId,
+              flowName: activeFlow.name,
+              planId: activePlan.id,
+              prompt: state.recipe.prompt,
+              modelId: model.id,
+              modelLabel: activePlan.preflight.modelLabel,
+              outputCount: activePlan.preflight.generatedCandidates,
+              candidateCount,
+              diagnosticCount: activePlan.diagnostics.length,
+              aspectRatio: state.recipe.aspectRatio,
+              modelPolicy: state.recipe.modelPolicy,
+              transparentBackground: state.recipe.transparentBackground,
+              mode: state.recipe.svgMode ?? "generate",
+              autoCrop: state.recipe.svgAutoCrop !== false,
+              targetSize: state.recipe.svgTargetSize ?? 1024,
+              style: state.recipe.svgStyle ?? "illustration",
+              textPolicy: state.recipe.svgTextPolicy ?? "avoid",
+              criticEnabled:
+                !isSvgVectorization &&
+                model.target === "remote" &&
+                state.recipe.modelPolicy === "quality" &&
+                state.recipe.svgCriticEnabled === true,
+              referenceImages: state.recipe.referenceImages,
+              allowRemoteUpload: model.target === "remote" && hasReferences,
+              planSnapshot: activePlanSnapshot,
+            } satisfies GenerateMediaSvgRequest);
+          }
+          if (hasReferences && !localReferenceEdit) {
+            const request: ExecuteRemoteImageEditFlowRequest = {
+              schemaVersion: 1,
+              runId: createRunId(),
+              flowId: activeFlow.id,
+              flowRevisionId: revisionResult.revision.revisionId,
+              planId: activePlan.id,
+              planSnapshot: activePlanSnapshot,
+              allowRemoteUpload: true,
+            };
+            return executeMediaRemoteImageEditFlow(request, activeFlow);
+          }
+          return generateMediaImages({
             schemaVersion: 1,
             runId: createRunId(),
             flowId: activeFlow.id,
@@ -3067,148 +3145,109 @@ export const MediaStudio = ({
             modelId: model.id,
             modelLabel: activePlan.preflight.modelLabel,
             outputCount: activePlan.preflight.generatedCandidates,
-            candidateCount,
             diagnosticCount: activePlan.diagnostics.length,
             aspectRatio: state.recipe.aspectRatio,
+            outputFormat:
+              state.recipe.outputFormat === "svg"
+                ? "png"
+                : state.recipe.outputFormat,
             modelPolicy: state.recipe.modelPolicy,
+            modelAddons: state.recipe.modelAddons,
             transparentBackground: state.recipe.transparentBackground,
-            mode: state.recipe.svgMode ?? "generate",
-            autoCrop: state.recipe.svgAutoCrop !== false,
-            targetSize: state.recipe.svgTargetSize ?? 1024,
-            style: state.recipe.svgStyle ?? "illustration",
-            textPolicy: state.recipe.svgTextPolicy ?? "avoid",
-            criticEnabled:
-              !isSvgVectorization &&
-              model.target === "remote" &&
-              state.recipe.modelPolicy === "quality" &&
-              state.recipe.svgCriticEnabled === true,
-            referenceImages: state.recipe.referenceImages,
-            allowRemoteUpload: model.target === "remote" && hasReferences,
-            planSnapshot: activePlanSnapshot,
-          } satisfies GenerateMediaSvgRequest);
-        }
-        if (hasReferences && !localReferenceEdit) {
-          const request: ExecuteRemoteImageEditFlowRequest = {
-            schemaVersion: 1,
-            runId: createRunId(),
-            flowId: activeFlow.id,
-            flowRevisionId: revisionResult.revision.revisionId,
-            planId: activePlan.id,
-            planSnapshot: activePlanSnapshot,
-            allowRemoteUpload: true,
-          };
-          return executeMediaRemoteImageEditFlow(request, activeFlow);
-        }
-        return generateMediaImages({
-          schemaVersion: 1,
-          runId: createRunId(),
-          flowId: activeFlow.id,
-          flowRevisionId: revisionResult.revision.revisionId,
-          flowName: activeFlow.name,
-          planId: activePlan.id,
-          prompt: state.recipe.prompt,
-          modelId: model.id,
-          modelLabel: activePlan.preflight.modelLabel,
-          outputCount: activePlan.preflight.generatedCandidates,
-          diagnosticCount: activePlan.diagnostics.length,
-          aspectRatio: state.recipe.aspectRatio,
-          outputFormat:
-            state.recipe.outputFormat === "svg"
-              ? "png"
-              : state.recipe.outputFormat,
-          modelPolicy: state.recipe.modelPolicy,
-          modelAddons: state.recipe.modelAddons,
-          transparentBackground: state.recipe.transparentBackground,
-          subjectCutoutModelPriority: readFlowSubjectCutoutModelPriority(activeFlow),
-          negativePrompt: "",
-          referenceImageAssetId:
-            localReferenceEdit
-              ? state.recipe.referenceImages[0]?.assetId ?? null
+            subjectCutoutModelPriority:
+              readFlowSubjectCutoutModelPriority(activeFlow),
+            negativePrompt: "",
+            referenceImageAssetId: localReferenceEdit
+              ? (state.recipe.referenceImages[0]?.assetId ?? null)
               : null,
-          editStrength:
-            localReferenceEdit &&
-            typeof imageTaskConfig?.editStrength === "number"
-              ? imageTaskConfig.editStrength
-              : undefined,
-          referenceBoost:
-            localReferenceEdit &&
-            typeof imageTaskConfig?.referenceBoost === "number"
-              ? imageTaskConfig.referenceBoost
-              : undefined,
-          requireChromaBackground:
-            localReferenceEdit &&
-            imageTaskConfig?.requireChromaBackground === true,
-          groundingPixels:
-            localReferenceEdit &&
-            typeof imageTaskConfig?.groundingPixels === "number"
-              ? imageTaskConfig.groundingPixels
-              : undefined,
-          referenceFit:
-            localReferenceEdit && imageTaskConfig?.referenceFit === "crop"
-              ? "crop"
-              : localReferenceEdit
-                ? "fit"
+            editStrength:
+              localReferenceEdit &&
+              typeof imageTaskConfig?.editStrength === "number"
+                ? imageTaskConfig.editStrength
                 : undefined,
-          memoryProfile:
-            imageTaskConfig?.memoryProfile === "memory-saver" ||
-            imageTaskConfig?.memoryProfile === "balanced" ||
-            imageTaskConfig?.memoryProfile === "maximum-speed"
-              ? imageTaskConfig.memoryProfile
-              : "auto",
-          planSnapshot: activePlanSnapshot,
-        } satisfies GenerateMediaImagesRequest);
-      })
-      .then((detail) => {
-        if (!detail) {
-          return undefined;
-        }
-        ++selectedRunDetailSequence.current;
-        selectedRunIdRef.current = detail.id;
-        setSelectedRunId(detail.id);
-        setSelectedRun(detail);
-        return refreshRuntime();
-      })
-      .catch((error: unknown) => {
-        setRuntimeError(
-          normalizeMediaError(
-            error,
-            hasReferences ? "generate_images_with_references" : "generate_images",
-          ),
-        );
-      })
-      .finally(() => setGenerationPending(false));
-  }, [
-    generationPending,
-    persistFlowRevision,
-    recipeFlow,
-    recipeLayout,
-    recipePlan,
-    recipePlanSnapshot,
-    recipeRemoteEditExecution.supported,
-    refreshRuntime,
-    reviewRecipeFlow,
-    reviewRecipeLayout,
-    reviewRecipePlan,
-    reviewRecipePlanSnapshot,
-    runtimeStatus?.directGenerationModelIds,
-    runtimeStatus?.directReferenceImageModelIds,
-    state.recipe.aspectRatio,
-    state.recipe.modelAddons,
-    state.recipe.modelPolicy,
-    state.recipe.outputCount,
-    state.recipe.outputFormat,
-    state.recipe.prompt,
-    state.recipe.qualityGateEnabled,
-    state.recipe.referenceImages,
-    state.recipe.svgCandidateCount,
-    state.recipe.svgCriticEnabled,
-    state.recipe.svgAutoCrop,
-    state.recipe.svgMode,
-    state.recipe.svgStyle,
-    state.recipe.svgTargetSize,
-    state.recipe.svgTextPolicy,
-    state.recipe.transparentBackground,
-  ]);
+            referenceBoost:
+              localReferenceEdit &&
+              typeof imageTaskConfig?.referenceBoost === "number"
+                ? imageTaskConfig.referenceBoost
+                : undefined,
+            requireChromaBackground:
+              localReferenceEdit &&
+              imageTaskConfig?.requireChromaBackground === true,
+            groundingPixels:
+              localReferenceEdit &&
+              typeof imageTaskConfig?.groundingPixels === "number"
+                ? imageTaskConfig.groundingPixels
+                : undefined,
+            referenceFit:
+              localReferenceEdit && imageTaskConfig?.referenceFit === "crop"
+                ? "crop"
+                : localReferenceEdit
+                  ? "fit"
+                  : undefined,
+            memoryProfile:
+              imageTaskConfig?.memoryProfile === "memory-saver" ||
+              imageTaskConfig?.memoryProfile === "balanced" ||
+              imageTaskConfig?.memoryProfile === "maximum-speed"
+                ? imageTaskConfig.memoryProfile
+                : "auto",
+            planSnapshot: activePlanSnapshot,
+          } satisfies GenerateMediaImagesRequest);
+        })
+        .then((detail) => {
+          if (!detail) {
+            return undefined;
+          }
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = detail.id;
+          setSelectedRunId(detail.id);
+          setSelectedRun(detail);
+          return refreshRuntime();
+        })
+        .catch((error: unknown) => {
+          setRuntimeError(
+            normalizeMediaError(
+              error,
+              hasReferences
+                ? "generate_images_with_references"
+                : "generate_images",
+            ),
+          );
+        })
+        .finally(() => setGenerationPending(false));
+    },
+    [
+      generationPending,
+      persistFlowRevision,
+      recipeFlow,
+      recipeLayout,
+      recipePlan,
+      recipePlanSnapshot,
+      recipeRemoteEditExecution.supported,
+      refreshRuntime,
+      reviewRecipeFlow,
+      reviewRecipeLayout,
+      reviewRecipePlan,
+      reviewRecipePlanSnapshot,
+      runtimeStatus?.directGenerationModelIds,
+      runtimeStatus?.directReferenceImageModelIds,
+      state.recipe.aspectRatio,
+      state.recipe.modelAddons,
+      state.recipe.modelPolicy,
+      state.recipe.outputCount,
+      state.recipe.outputFormat,
+      state.recipe.prompt,
+      state.recipe.qualityGateEnabled,
+      state.recipe.referenceImages,
+      state.recipe.svgCandidateCount,
+      state.recipe.svgCriticEnabled,
+      state.recipe.svgAutoCrop,
+      state.recipe.svgMode,
+      state.recipe.svgStyle,
+      state.recipe.svgTargetSize,
+      state.recipe.svgTextPolicy,
+      state.recipe.transparentBackground,
+    ],
+  );
   const runGeneration = useCallback(
     () => runRecipeGeneration(false),
     [runRecipeGeneration],
@@ -3217,36 +3256,39 @@ export const MediaStudio = ({
     () => runRecipeGeneration(true),
     [runRecipeGeneration],
   );
-  const selectRun = useCallback((runId: string) => {
-    const requestSequence = ++selectedRunDetailSequence.current;
-    selectedRunIdRef.current = runId;
-    setSelectedRunId(runId);
-    setSelectedRun(null);
-    void getMediaRunDetail(runId)
-      .then((detail) => {
-        if (
-          requestSequence !== selectedRunDetailSequence.current ||
-          selectedRunIdRef.current !== runId
-        ) {
-          return;
-        }
-        setSelectedRun(detail);
-        if (detail.failure) {
-          presentRunFailure(detail.failure);
-        } else {
-          announcedFailureKey.current = null;
-          setRuntimeError(null);
-        }
-      })
-      .catch((error: unknown) => {
-        if (
-          requestSequence === selectedRunDetailSequence.current &&
-          selectedRunIdRef.current === runId
-        ) {
-          setRuntimeError(normalizeMediaError(error, "inspect_run"));
-        }
-      });
-  }, [presentRunFailure]);
+  const selectRun = useCallback(
+    (runId: string) => {
+      const requestSequence = ++selectedRunDetailSequence.current;
+      selectedRunIdRef.current = runId;
+      setSelectedRunId(runId);
+      setSelectedRun(null);
+      void getMediaRunDetail(runId)
+        .then((detail) => {
+          if (
+            requestSequence !== selectedRunDetailSequence.current ||
+            selectedRunIdRef.current !== runId
+          ) {
+            return;
+          }
+          setSelectedRun(detail);
+          if (detail.failure) {
+            presentRunFailure(detail.failure);
+          } else {
+            announcedFailureKey.current = null;
+            setRuntimeError(null);
+          }
+        })
+        .catch((error: unknown) => {
+          if (
+            requestSequence === selectedRunDetailSequence.current &&
+            selectedRunIdRef.current === runId
+          ) {
+            setRuntimeError(normalizeMediaError(error, "inspect_run"));
+          }
+        });
+    },
+    [presentRunFailure],
+  );
   useEffect(() => {
     if (!loaded || !openRunId) {
       return;
@@ -3286,11 +3328,7 @@ export const MediaStudio = ({
       claimedImportPath.current = null;
       return;
     }
-    if (
-      !loaded ||
-      importLoading ||
-      claimedImportPath.current === importPath
-    ) {
+    if (!loaded || importLoading || claimedImportPath.current === importPath) {
       return;
     }
 
@@ -3315,13 +3353,7 @@ export const MediaStudio = ({
         );
       })
       .finally(() => setImportLoading(false));
-  }, [
-    importLoading,
-    importPath,
-    loaded,
-    onImportPathHandled,
-    refreshRuntime,
-  ]);
+  }, [importLoading, importPath, loaded, onImportPathHandled, refreshRuntime]);
   const inspectRunInFlow = useCallback((run: MediaRunDetail): void => {
     ++selectedRunDetailSequence.current;
     selectedRunIdRef.current = run.id;
@@ -3376,7 +3408,9 @@ export const MediaStudio = ({
           return refreshRuntime();
         })
         .catch((error: unknown) => {
-          setRuntimeError(normalizeMediaError(error, "resolve_provider_review"));
+          setRuntimeError(
+            normalizeMediaError(error, "resolve_provider_review"),
+          );
         })
         .finally(() => setProviderReviewPending(false));
     },
@@ -3500,8 +3534,8 @@ export const MediaStudio = ({
             assetId: asset.id,
             role:
               current.recipe.referenceImages.length === 0 && index === 0
-                ? "base" as const
-                : "subject" as const,
+                ? ("base" as const)
+                : ("subject" as const),
             influence: 1,
           }));
         return {
@@ -3560,7 +3594,9 @@ export const MediaStudio = ({
             (candidate) => candidate.kind === "report",
           );
           if (!reportAsset) {
-            throw new Error("Quality analysis completed without a report asset.");
+            throw new Error(
+              "Quality analysis completed without a report asset.",
+            );
           }
           setQualityReports((current) => ({
             ...current,
@@ -3829,9 +3865,7 @@ export const MediaStudio = ({
                     </span>
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="right">
-                  {item.label}
-                </TooltipContent>
+                <TooltipContent side="right">{item.label}</TooltipContent>
               </Tooltip>
             );
           })}
@@ -3847,259 +3881,259 @@ export const MediaStudio = ({
           />
         ) : null}
         <div className="min-h-0 min-w-0 flex-1">
-        {state.activeSection === "generate" ? (
-          <MediaGenerateView
-            settings={state.recipe}
-            plan={recipePlan}
-            catalog={activeModelCatalog}
-            directGenerationModelIds={
-              runtimeStatus?.directGenerationModelIds ?? null
-            }
-            directReferenceImageModelIds={
-              runtimeStatus?.directReferenceImageModelIds ?? null
-            }
-            referenceAssets={runtimeAssets}
-            referenceImportSupported={supportsNativeMediaImport()}
-            referenceImportPending={importLoading}
-            generatedRun={
-              selectedRun?.flowId === recipeFlow.id ||
-              selectedRun?.flowId === reviewRecipeFlow.id
-                ? selectedRun
-                : null
-            }
-            persistenceError={persistenceError}
-            promptHistory={recipePromptHistory}
-            onChange={changeRecipe}
-            onOpenFlow={openRecipeAsFlow}
-            onOpenVideoFlow={openVideoCreationFlow}
-            onOpenModels={() => selectSection("models")}
-            onOpenProviderSettings={onOpenProviderSettings}
-            onGenerate={runGeneration}
-            onGenerateWithReview={runGenerationWithReview}
-            onOpenRunReview={() => selectSection("runs")}
-            onAddReferenceImages={importReferenceImages}
-            onEditResult={useAssetAsCreateReference}
-            onAnimateResult={openAssetAsVideoFlow}
-            onOpenResult={openAssetInLibrary}
-            generationPending={generationPending}
-            runtimeMode={runtimeStatus?.mode ?? null}
-          />
-        ) : null}
-        {state.activeSection === "flow" ? (
-          <MediaFlowView
-            flow={flow}
-            layout={layout}
-            plan={plan}
-            models={models}
-            assets={runtimeAssets}
-            onLayoutChange={changeFlowLayout}
-            onFlowVariablesChange={applySemanticFlow}
-            onTemplateApply={applyFlowTemplate}
-            onNodeConfigChange={changeFlowNodeConfig}
-            onNodeConfigPatch={changeFlowNodeConfigs}
-            onNodeAdd={addFlowNode}
-            onNodeRemove={removeFlowNode}
-            onConnectPorts={connectFlowPorts}
-            onDisconnectInput={disconnectFlowInput}
-            onDisconnectConnection={disconnectFlowConnection}
-            canUndoSemantic={semanticUndoStack.current.length > 0}
-            canRedoSemantic={semanticRedoStack.current.length > 0}
-            onUndoSemantic={undoSemanticFlow}
-            onRedoSemantic={redoSemanticFlow}
-            onNodeCopy={copyFlowNode}
-            onNodePaste={pasteFlowNode}
-            onNodesCopy={copySelectedFlowNodes}
-            clipboardLabel={flowClipboard?.label ?? null}
-            canPasteNode={pasteInspection.valid}
-            pasteBlockedReason={pasteInspection.reason}
-            history={flowHistory}
-            savedFlows={savedFlows}
-            savedFlowsLoading={savedFlowsLoading}
-            revisionLoading={flowRevisionLoading}
-            revisionNotice={flowRevisionNotice}
-            hasUnsavedChanges={hasUnsavedFlowChanges}
-            onRefreshHistory={refreshFlowHistory}
-            onRefreshSavedFlows={refreshSavedFlows}
-            onOpenSavedFlow={openSavedFlow}
-            onSaveRevision={saveCurrentFlowRevision}
-            onRestoreRevision={restoreFlowRevision}
-            portabilitySupported={supportsNativeMediaFlowPortability()}
-            portabilityLoading={flowPortabilityLoading}
-            importInspection={flowImportInspection}
-            onInspectImport={inspectPortableFlow}
-            onImportReviewed={importReviewedFlow}
-            onDismissImport={dismissFlowImport}
-            onExportRevision={exportCurrentFlowRevision}
-            onRunLocalFlow={
-              videoFlowExecution.supported ? runVideoFlow : runLocalFlow
-            }
-            localRunPending={localFlowPending}
-            localRunSupported={
-              localFlowExecution.supported || videoFlowExecution.supported
-            }
-            localRunDescription={
-              videoFlowExecution.videoNode
-                ? videoFlowExecution.reason
-                : localFlowExecution.reason
-            }
-            onRunRemoteEdit={runRemoteEditFlow}
-            remoteRunPending={remoteEditPending}
-            remoteRunSupported={remoteEditExecution.supported}
-            remoteRunDescription={remoteEditExecution.reason}
-            remoteRunMode={runtimeStatus?.mode ?? null}
-            remoteUploadManifest={remoteEditExecution.manifest}
-            runOverlay={
-              flowRunOverlayId === selectedRun?.id ? selectedRun : null
-            }
-            onRunOverlayClear={() => setFlowRunOverlayId(null)}
-          />
-        ) : null}
-        {state.activeSection === "library" ? (
-          <MediaLibraryView
-            assets={runtimeAssets}
-            runtimeStatus={runtimeStatus}
-            importSupported={supportsNativeMediaImport()}
-            importLoading={importLoading}
-            transformLoading={transformLoading}
-            exportSupported={supportsNativeMediaExport()}
-            exportLoading={exportLoading}
-            exportNotice={exportNotice}
-            deletionNotice={deletionNotice}
-            qualityLoadingAssetId={qualityLoadingAssetId}
-            qualityReports={qualityReports}
-            tagLoadingAssetId={tagLoadingAssetId}
-            chatWorkspaceAvailable={Boolean(workspaceRoot?.trim())}
-            openAssetId={openAssetId ?? importedAssetId}
-            onOpenAssetHandled={() => {
-              if (openAssetId) onOpenAssetHandled?.();
-              if (importedAssetId) setImportedAssetId(null);
-            }}
-            onImport={importImages}
-            onTransform={transformImage}
-            onExport={exportAsset}
-            onDismissExportNotice={dismissExportNotice}
-            onDismissDeletionNotice={dismissDeletionNotice}
-            onAnalyzeQuality={analyzeQuality}
-            onLoadQualityReport={loadQualityReport}
-            onUpdateTags={updateAssetTags}
-            onAutoTag={autoTagAsset}
-            onUseAsReference={useAssetAsCreateReference}
-            onOpenVideoAsFlow={openAssetAsVideoFlow}
-            onOpenAsFlow={openAssetAsEditFlow}
-            onOpenBackgroundRemovalAsFlow={openBackgroundRemovalAsFlow}
-            onOpenAlphaMatteAsFlow={openAlphaMatteAsFlow}
-            onOpenCompositeAsFlow={openCompositeAsFlow}
-            onOpenContactSheetAsFlow={openContactSheetAsFlow}
-            onOpenTransformAsFlow={openTransformAsFlow}
-            onSendToChat={(asset) => {
-              const normalizedWorkspaceRoot = workspaceRoot?.trim();
-              if (!normalizedWorkspaceRoot || asset.kind !== "image") return;
-              onSendAssetToChat({
-                source: "media-asset",
-                workspaceRoot: normalizedWorkspaceRoot,
-                assetId: asset.id,
-                kind: "image",
-                displayName: `Media image ${asset.digest.slice(0, 12)}`,
-                rendition: "original",
-              });
-            }}
-            onPlanDeletion={planAssetDeletion}
-            onDeleteAsset={deleteAsset}
-          />
-        ) : null}
-        {state.activeSection === "runs" ? (
-          <MediaRunsView
-            runs={combinedRuns}
-            selectedRun={selectedRun}
-            onCreate={() => selectSection("generate")}
-            onSelect={selectRun}
-            onCancel={cancelRun}
-            onRetry={retryRun}
-            onResolveProviderReview={resolveProviderReview}
-            providerReviewPending={providerReviewPending}
-            onResolveHumanReview={resolveHumanReview}
-            humanReviewPending={humanReviewPending}
-            onInspectInFlow={inspectRunInFlow}
-            onRefresh={() => void refreshRuntime()}
-          />
-        ) : null}
-        {state.activeSection === "models" ? (
-          <MediaModelsView
-            catalog={activeModelCatalog}
-            catalogLoading={modelCatalogLoading}
-            catalogError={modelCatalogError}
-            hardware={hardware}
-            hardwareLoading={hardwareLoading}
-            hardwareError={hardwareError}
-            installPlan={modelInstallPlan}
-            installJob={modelInstallJob}
-            installLoading={modelInstallLoading}
-            installError={modelInstallError}
-            removalPlan={modelRemovalPlan}
-            removalResult={modelRemovalResult}
-            removalLoading={modelRemovalLoading}
-            removalError={modelRemovalError}
-            modelImportInspection={modelImportInspection}
-            modelImportResult={modelImportResult}
-            modelImportSupported={supportsNativeMediaModelImport()}
-            modelImportLoading={modelImportLoading}
-            modelImportError={modelImportError}
-            modelProbeSupported={supportsNativeMediaModelProbe()}
-            modelProbeLoadingId={modelProbeLoadingId}
-            modelProbeError={modelProbeError}
-            addonImportInspection={addonImportInspection}
-            addonImportResult={addonImportResult}
-            addonImportSupported={supportsNativeMediaModelAddonImport()}
-            addonImportLoading={addonImportLoading}
-            addonImportError={addonImportError}
-            civitaiAddonInspection={civitaiAddonInspection}
-            addonImportCivitaiSource={addonImportCivitaiSource}
-            civitaiAddonLoading={civitaiAddonLoading}
-            civitaiAddonError={civitaiAddonError}
-            addonRemovalPlan={addonRemovalPlan}
-            addonRemovalResult={addonRemovalResult}
-            addonRemovalLoading={addonRemovalLoading}
-            addonRemovalError={addonRemovalError}
-            localDiffusers={runtimeStatus?.localDiffusers ?? null}
-            workspaceModels={workspaceModelDiscovery}
-            workspaceModelsLoading={workspaceModelDiscoveryLoading}
-            workspaceModelsError={workspaceModelDiscoveryError}
-            localRuntimeLoading={localRuntimeLoading}
-            onRefreshWorkspaceModels={refreshWorkspaceModels}
-            onRefreshLocalRuntime={refreshLocalRuntime}
-            onRefreshHardware={refreshHardware}
-            onRefreshCatalog={refreshModelCatalog}
-            onReviewInstall={reviewModelInstall}
-            onStartInstall={startModelInstall}
-            onCancelInstall={cancelModelInstall}
-            onDismissInstall={() => {
-              setModelInstallPlan(null);
-              setModelInstallError(null);
-            }}
-            onReviewRemoval={reviewModelRemoval}
-            onConfirmRemoval={confirmModelRemoval}
-            onDismissRemoval={() => {
-              setModelRemovalPlan(null);
-              setModelRemovalResult(null);
-              setModelRemovalError(null);
-            }}
-            onChooseModelImport={chooseModelImport}
-            onInspectWorkspaceArtifact={inspectWorkspaceArtifact}
-            onImportModel={importLocalModel}
-            onDismissModelImport={dismissModelImport}
-            onProbeModel={probeLocalModel}
-            onChooseAddonImport={chooseAddonImport}
-            onInspectCivitaiAddon={inspectCivitaiAddon}
-            onDownloadCivitaiAddon={downloadCivitaiAddon}
-            onDismissCivitaiAddon={dismissCivitaiAddon}
-            onReviewAddonRemoval={reviewAddonRemoval}
-            onConfirmAddonRemoval={confirmAddonRemoval}
-            onDismissAddonRemoval={dismissAddonRemoval}
-            onImportAddon={importAddon}
-            onDismissAddonImport={dismissAddonImport}
-            onOpenProviderSettings={onOpenProviderSettings}
-          />
-        ) : null}
+          {state.activeSection === "generate" ? (
+            <MediaGenerateView
+              settings={state.recipe}
+              plan={recipePlan}
+              catalog={activeModelCatalog}
+              directGenerationModelIds={
+                runtimeStatus?.directGenerationModelIds ?? null
+              }
+              directReferenceImageModelIds={
+                runtimeStatus?.directReferenceImageModelIds ?? null
+              }
+              referenceAssets={runtimeAssets}
+              referenceImportSupported={supportsNativeMediaImport()}
+              referenceImportPending={importLoading}
+              generatedRun={
+                selectedRun?.flowId === recipeFlow.id ||
+                selectedRun?.flowId === reviewRecipeFlow.id
+                  ? selectedRun
+                  : null
+              }
+              persistenceError={persistenceError}
+              promptHistory={recipePromptHistory}
+              onChange={changeRecipe}
+              onOpenFlow={openRecipeAsFlow}
+              onOpenVideoFlow={openVideoCreationFlow}
+              onOpenModels={() => selectSection("models")}
+              onOpenProviderSettings={onOpenProviderSettings}
+              onGenerate={runGeneration}
+              onGenerateWithReview={runGenerationWithReview}
+              onOpenRunReview={() => selectSection("runs")}
+              onAddReferenceImages={importReferenceImages}
+              onEditResult={useAssetAsCreateReference}
+              onAnimateResult={openAssetAsVideoFlow}
+              onOpenResult={openAssetInLibrary}
+              generationPending={generationPending}
+              runtimeMode={runtimeStatus?.mode ?? null}
+            />
+          ) : null}
+          {state.activeSection === "flow" ? (
+            <MediaFlowView
+              flow={flow}
+              layout={layout}
+              plan={plan}
+              models={models}
+              assets={runtimeAssets}
+              onLayoutChange={changeFlowLayout}
+              onFlowVariablesChange={applySemanticFlow}
+              onTemplateApply={applyFlowTemplate}
+              onNodeConfigChange={changeFlowNodeConfig}
+              onNodeConfigPatch={changeFlowNodeConfigs}
+              onNodeAdd={addFlowNode}
+              onNodeRemove={removeFlowNode}
+              onConnectPorts={connectFlowPorts}
+              onDisconnectInput={disconnectFlowInput}
+              onDisconnectConnection={disconnectFlowConnection}
+              canUndoSemantic={semanticUndoStack.current.length > 0}
+              canRedoSemantic={semanticRedoStack.current.length > 0}
+              onUndoSemantic={undoSemanticFlow}
+              onRedoSemantic={redoSemanticFlow}
+              onNodeCopy={copyFlowNode}
+              onNodePaste={pasteFlowNode}
+              onNodesCopy={copySelectedFlowNodes}
+              clipboardLabel={flowClipboard?.label ?? null}
+              canPasteNode={pasteInspection.valid}
+              pasteBlockedReason={pasteInspection.reason}
+              history={flowHistory}
+              savedFlows={savedFlows}
+              savedFlowsLoading={savedFlowsLoading}
+              revisionLoading={flowRevisionLoading}
+              revisionNotice={flowRevisionNotice}
+              hasUnsavedChanges={hasUnsavedFlowChanges}
+              onRefreshHistory={refreshFlowHistory}
+              onRefreshSavedFlows={refreshSavedFlows}
+              onOpenSavedFlow={openSavedFlow}
+              onSaveRevision={saveCurrentFlowRevision}
+              onRestoreRevision={restoreFlowRevision}
+              portabilitySupported={supportsNativeMediaFlowPortability()}
+              portabilityLoading={flowPortabilityLoading}
+              importInspection={flowImportInspection}
+              onInspectImport={inspectPortableFlow}
+              onImportReviewed={importReviewedFlow}
+              onDismissImport={dismissFlowImport}
+              onExportRevision={exportCurrentFlowRevision}
+              onRunLocalFlow={
+                videoFlowExecution.supported ? runVideoFlow : runLocalFlow
+              }
+              localRunPending={localFlowPending}
+              localRunSupported={
+                localFlowExecution.supported || videoFlowExecution.supported
+              }
+              localRunDescription={
+                videoFlowExecution.videoNode
+                  ? videoFlowExecution.reason
+                  : localFlowExecution.reason
+              }
+              onRunRemoteEdit={runRemoteEditFlow}
+              remoteRunPending={remoteEditPending}
+              remoteRunSupported={remoteEditExecution.supported}
+              remoteRunDescription={remoteEditExecution.reason}
+              remoteRunMode={runtimeStatus?.mode ?? null}
+              remoteUploadManifest={remoteEditExecution.manifest}
+              runOverlay={
+                flowRunOverlayId === selectedRun?.id ? selectedRun : null
+              }
+              onRunOverlayClear={() => setFlowRunOverlayId(null)}
+            />
+          ) : null}
+          {state.activeSection === "library" ? (
+            <MediaLibraryView
+              assets={runtimeAssets}
+              runtimeStatus={runtimeStatus}
+              importSupported={supportsNativeMediaImport()}
+              importLoading={importLoading}
+              transformLoading={transformLoading}
+              exportSupported={supportsNativeMediaExport()}
+              exportLoading={exportLoading}
+              exportNotice={exportNotice}
+              deletionNotice={deletionNotice}
+              qualityLoadingAssetId={qualityLoadingAssetId}
+              qualityReports={qualityReports}
+              tagLoadingAssetId={tagLoadingAssetId}
+              chatWorkspaceAvailable={Boolean(workspaceRoot?.trim())}
+              openAssetId={openAssetId ?? importedAssetId}
+              onOpenAssetHandled={() => {
+                if (openAssetId) onOpenAssetHandled?.();
+                if (importedAssetId) setImportedAssetId(null);
+              }}
+              onImport={importImages}
+              onTransform={transformImage}
+              onExport={exportAsset}
+              onDismissExportNotice={dismissExportNotice}
+              onDismissDeletionNotice={dismissDeletionNotice}
+              onAnalyzeQuality={analyzeQuality}
+              onLoadQualityReport={loadQualityReport}
+              onUpdateTags={updateAssetTags}
+              onAutoTag={autoTagAsset}
+              onUseAsReference={useAssetAsCreateReference}
+              onOpenVideoAsFlow={openAssetAsVideoFlow}
+              onOpenAsFlow={openAssetAsEditFlow}
+              onOpenBackgroundRemovalAsFlow={openBackgroundRemovalAsFlow}
+              onOpenAlphaMatteAsFlow={openAlphaMatteAsFlow}
+              onOpenCompositeAsFlow={openCompositeAsFlow}
+              onOpenContactSheetAsFlow={openContactSheetAsFlow}
+              onOpenTransformAsFlow={openTransformAsFlow}
+              onSendToChat={(asset) => {
+                const normalizedWorkspaceRoot = workspaceRoot?.trim();
+                if (!normalizedWorkspaceRoot || asset.kind !== "image") return;
+                onSendAssetToChat({
+                  source: "media-asset",
+                  workspaceRoot: normalizedWorkspaceRoot,
+                  assetId: asset.id,
+                  kind: "image",
+                  displayName: `Media image ${asset.digest.slice(0, 12)}`,
+                  rendition: "original",
+                });
+              }}
+              onPlanDeletion={planAssetDeletion}
+              onDeleteAsset={deleteAsset}
+            />
+          ) : null}
+          {state.activeSection === "runs" ? (
+            <MediaRunsView
+              runs={combinedRuns}
+              selectedRun={selectedRun}
+              onCreate={() => selectSection("generate")}
+              onSelect={selectRun}
+              onCancel={cancelRun}
+              onRetry={retryRun}
+              onResolveProviderReview={resolveProviderReview}
+              providerReviewPending={providerReviewPending}
+              onResolveHumanReview={resolveHumanReview}
+              humanReviewPending={humanReviewPending}
+              onInspectInFlow={inspectRunInFlow}
+              onRefresh={() => void refreshRuntime()}
+            />
+          ) : null}
+          {state.activeSection === "models" ? (
+            <MediaModelsView
+              catalog={activeModelCatalog}
+              catalogLoading={modelCatalogLoading}
+              catalogError={modelCatalogError}
+              hardware={hardware}
+              hardwareLoading={hardwareLoading}
+              hardwareError={hardwareError}
+              installPlan={modelInstallPlan}
+              installJob={modelInstallJob}
+              installLoading={modelInstallLoading}
+              installError={modelInstallError}
+              removalPlan={modelRemovalPlan}
+              removalResult={modelRemovalResult}
+              removalLoading={modelRemovalLoading}
+              removalError={modelRemovalError}
+              modelImportInspection={modelImportInspection}
+              modelImportResult={modelImportResult}
+              modelImportSupported={supportsNativeMediaModelImport()}
+              modelImportLoading={modelImportLoading}
+              modelImportError={modelImportError}
+              modelProbeSupported={supportsNativeMediaModelProbe()}
+              modelProbeLoadingId={modelProbeLoadingId}
+              modelProbeError={modelProbeError}
+              addonImportInspection={addonImportInspection}
+              addonImportResult={addonImportResult}
+              addonImportSupported={supportsNativeMediaModelAddonImport()}
+              addonImportLoading={addonImportLoading}
+              addonImportError={addonImportError}
+              civitaiAddonInspection={civitaiAddonInspection}
+              addonImportCivitaiSource={addonImportCivitaiSource}
+              civitaiAddonLoading={civitaiAddonLoading}
+              civitaiAddonError={civitaiAddonError}
+              addonRemovalPlan={addonRemovalPlan}
+              addonRemovalResult={addonRemovalResult}
+              addonRemovalLoading={addonRemovalLoading}
+              addonRemovalError={addonRemovalError}
+              localDiffusers={runtimeStatus?.localDiffusers ?? null}
+              workspaceModels={workspaceModelDiscovery}
+              workspaceModelsLoading={workspaceModelDiscoveryLoading}
+              workspaceModelsError={workspaceModelDiscoveryError}
+              localRuntimeLoading={localRuntimeLoading}
+              onRefreshWorkspaceModels={refreshWorkspaceModels}
+              onRefreshLocalRuntime={refreshLocalRuntime}
+              onRefreshHardware={refreshHardware}
+              onRefreshCatalog={refreshModelCatalog}
+              onReviewInstall={reviewModelInstall}
+              onStartInstall={startModelInstall}
+              onCancelInstall={cancelModelInstall}
+              onDismissInstall={() => {
+                setModelInstallPlan(null);
+                setModelInstallError(null);
+              }}
+              onReviewRemoval={reviewModelRemoval}
+              onConfirmRemoval={confirmModelRemoval}
+              onDismissRemoval={() => {
+                setModelRemovalPlan(null);
+                setModelRemovalResult(null);
+                setModelRemovalError(null);
+              }}
+              onChooseModelImport={chooseModelImport}
+              onInspectWorkspaceArtifact={inspectWorkspaceArtifact}
+              onImportModel={importLocalModel}
+              onDismissModelImport={dismissModelImport}
+              onProbeModel={probeLocalModel}
+              onChooseAddonImport={chooseAddonImport}
+              onInspectCivitaiAddon={inspectCivitaiAddon}
+              onDownloadCivitaiAddon={downloadCivitaiAddon}
+              onDismissCivitaiAddon={dismissCivitaiAddon}
+              onReviewAddonRemoval={reviewAddonRemoval}
+              onConfirmAddonRemoval={confirmAddonRemoval}
+              onDismissAddonRemoval={dismissAddonRemoval}
+              onImportAddon={importAddon}
+              onDismissAddonImport={dismissAddonImport}
+              onOpenProviderSettings={onOpenProviderSettings}
+            />
+          ) : null}
         </div>
       </section>
     </main>

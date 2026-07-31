@@ -8,10 +8,6 @@ export const DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY = [
   LOCAL_BORDER_MATTE_MODEL_ID,
 ] as const;
 
-export const LEGACY_SUBJECT_CUTOUT_MODEL_PRIORITY = [
-  LOCAL_BIREFNET_MODEL_ID,
-] as const;
-
 const MODEL_LABELS: Readonly<Record<string, string>> = {
   [LOCAL_BIREFNET_MODEL_ID]: "BiRefNet Matting",
   [LOCAL_BORDER_MATTE_MODEL_ID]: "Local Border Matte",
@@ -25,7 +21,7 @@ export const readSubjectCutoutModelPriority = (
 ): string[] => {
   const configured = config.modelPriority;
   if (!Array.isArray(configured)) {
-    return [...LEGACY_SUBJECT_CUTOUT_MODEL_PRIORITY];
+    return [];
   }
   return configured.filter(
     (modelId): modelId is string =>

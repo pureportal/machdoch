@@ -38,7 +38,7 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
     id: "draft",
     label: "Draft",
     description:
-      "Validate framing and motion quickly at 512-class resolution before an expensive render.",
+      "Validate framing and motion at 512-class resolution before an expensive render.",
     settings: {
       resolution: "preview-512",
       numFrames: 17,
@@ -54,7 +54,7 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
     id: "quality",
     label: "Quality",
     description:
-      "Temporally dense 640-class render with 33 source frames, model-native quality sampling, production alpha, and lossless delivery.",
+      "Temporally dense 640-class render with model-native quality sampling, production alpha, and lossless delivery.",
     settings: {
       resolution: "quality-640",
       numFrames: 33,
@@ -70,7 +70,7 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
     id: "maximum",
     label: "Maximum",
     description:
-      "Slow 768-class, 33-frame model-native refinement for capable systems; use only after motion and framing are approved.",
+      "Slow 768-class model-native refinement for capable systems; use only after motion and framing are approved.",
     settings: {
       resolution: "quality-768",
       numFrames: 33,
@@ -85,7 +85,10 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
 ] as const;
 
 const VIDEO_DIMENSIONS: Readonly<
-  Record<MediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
+  Record<
+    MediaVideoResolution,
+    Record<MediaVideoAspectRatio, readonly [number, number]>
+  >
 > = {
   "preview-512": {
     "1:1": [512, 512],
@@ -117,7 +120,10 @@ const LTX_VIDEO_768_DIMENSIONS: Readonly<
 };
 
 const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
-  Record<MediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
+  Record<
+    MediaVideoResolution,
+    Record<MediaVideoAspectRatio, readonly [number, number]>
+  >
 > = {
   "preview-512": {
     "1:1": [512, 512],
@@ -128,13 +134,13 @@ const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
   "quality-640": {
     "1:1": [640, 640],
     "16:9": [848, 480],
-    "9:16": [480, 848],
-    "21:9": [960, 416],
+    "9:16": [480, 832],
+    "21:9": [944, 416],
   },
   "quality-768": {
     "1:1": [768, 768],
     "16:9": [1_024, 576],
-    "9:16": [576, 1_024],
+    "9:16": [576, 1_008],
     "21:9": [1_152, 496],
   },
 };
@@ -227,6 +233,7 @@ export const resolveMediaVideoExecutionSettings = (
 export const resolveMediaVideoQualityPresetSettings = (
   preset: MediaVideoQualityPreset,
   architecture?: MediaLocalModelArchitecture | null,
+  loopMode?: MediaVideoLoopMode,
 ): MediaVideoQualityPreset["settings"] => {
   const execution = resolveMediaVideoExecutionSettings(
     preset.settings,
@@ -234,6 +241,12 @@ export const resolveMediaVideoQualityPresetSettings = (
   );
   return {
     ...preset.settings,
+    numFrames:
+      architecture === "framepack-i2v" && loopMode === "seamless"
+        ? preset.id === "draft"
+          ? 37
+          : 49
+        : preset.settings.numFrames,
     numInferenceSteps: execution.numInferenceSteps,
     guidanceScale:
       architecture === "framepack-i2v" ? 9 : execution.guidanceScale,
@@ -307,21 +320,19 @@ export const formatMediaAssetAspectRatio = (
         operation.kind === "local-video-generation"
           ? operation.architecture
           : "wan-2.2-ti2v";
-      const intended = (
-        ["1:1", "16:9", "9:16", "21:9"] as const
-      ).find((aspectRatio) => {
-        const [width, height] = resolveMediaVideoDimensions(
-          aspectRatio,
-          resolution,
-          architecture,
-        );
-        return width === asset.width && height === asset.height;
-      });
+      const intended = (["1:1", "16:9", "9:16", "21:9"] as const).find(
+        (aspectRatio) => {
+          const [width, height] = resolveMediaVideoDimensions(
+            aspectRatio,
+            resolution,
+            architecture,
+          );
+          return width === asset.width && height === asset.height;
+        },
+      );
       if (intended) {
         const pixelRatio = formatPixelAspectRatio(asset.width, asset.height);
-        return pixelRatio === intended
-          ? intended
-          : `${intended} model-aligned`;
+        return pixelRatio === intended ? intended : `${intended} model-aligned`;
       }
     }
   }
@@ -375,8 +386,8 @@ export const isMediaAssetKnownTransparent = (
   ): boolean =>
     Boolean(
       subjectCutout &&
-        (subjectCutout.transparentPixels > 0 ||
-          (subjectCutout.softPixels ?? 0) > 0),
+      (subjectCutout.transparentPixels > 0 ||
+        (subjectCutout.softPixels ?? 0) > 0),
     );
   switch (operation.kind) {
     case "local-image-flow":
@@ -406,7 +417,26 @@ export const resolveMediaAssetVideoFrameRate = (
   ) {
     return null;
   }
-  return asset.operation.output.fps;
+  const fps = asset.operation.output.fps;
+  return Number.isFinite(fps) && fps > 0 ? fps : null;
+};
+
+export const resolveMediaAssetVideoLoopMode = (
+  asset: MediaAssetRecord,
+): MediaVideoLoopMode | null => {
+  if (
+    asset.kind !== "video" ||
+    (asset.operation?.kind !== "local-video-generation" &&
+      asset.operation?.kind !== "local-wan-video-generation")
+  ) {
+    return null;
+  }
+  const loopMode = asset.operation.output.loopMode;
+  return loopMode === "none" ||
+    loopMode === "ping-pong" ||
+    loopMode === "seamless"
+    ? loopMode
+    : null;
 };
 
 export const identifyMediaVideoQualityPreset = (
@@ -422,7 +452,11 @@ export const identifyMediaVideoQualityPreset = (
   return (
     MEDIA_VIDEO_QUALITY_PRESETS.find((preset) =>
       Object.entries(
-        resolveMediaVideoQualityPresetSettings(preset, architecture),
+        resolveMediaVideoQualityPresetSettings(
+          preset,
+          architecture,
+          config.loopMode as MediaVideoLoopMode | undefined,
+        ),
       ).every(([fieldId, value]) => effectiveConfig[fieldId] === value),
     )?.id ?? null
   );
@@ -440,6 +474,78 @@ export interface MediaVideoDeliverySummary {
   encodingQuality: "draft" | "balanced" | "production" | "lossless";
 }
 
+export interface MediaVideoDurationFit {
+  targetSeconds: number;
+  sourceFrameCount: number;
+  outputFrameCount: number;
+  durationSeconds: number;
+  exact: boolean;
+}
+
+const mediaVideoOutputFrameCount = (
+  sourceFrameCount: number,
+  loopMode: MediaVideoLoopMode,
+): number =>
+  loopMode === "ping-pong"
+    ? sourceFrameCount * 2 - 2
+    : loopMode === "seamless"
+      ? sourceFrameCount - 1
+      : sourceFrameCount;
+
+export const fitMediaVideoDuration = (
+  targetSeconds: number,
+  fps: number,
+  loopMode: MediaVideoLoopMode,
+  architecture?: MediaLocalModelArchitecture | null,
+): MediaVideoDurationFit | null => {
+  if (
+    !Number.isFinite(targetSeconds) ||
+    targetSeconds <= 0 ||
+    !Number.isInteger(fps) ||
+    fps <= 0 ||
+    fps > 60 ||
+    !["none", "ping-pong", "seamless"].includes(loopMode) ||
+    (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless")
+  ) {
+    return null;
+  }
+  const targetFrameCount = targetSeconds * fps;
+  const contract = resolveMediaVideoFrameContract(architecture);
+  const minimumSourceFrameCount =
+    architecture === "framepack-i2v" && loopMode === "seamless"
+      ? 37
+      : contract.minimum;
+  let best: MediaVideoDurationFit | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (
+    let sourceFrameCount = minimumSourceFrameCount;
+    sourceFrameCount <= contract.maximum;
+    sourceFrameCount += contract.stride
+  ) {
+    const outputFrameCount = mediaVideoOutputFrameCount(
+      sourceFrameCount,
+      loopMode,
+    );
+    const distance = Math.abs(outputFrameCount - targetFrameCount);
+    if (
+      distance < bestDistance ||
+      (distance === bestDistance &&
+        best !== null &&
+        sourceFrameCount < best.sourceFrameCount)
+    ) {
+      bestDistance = distance;
+      best = {
+        targetSeconds,
+        sourceFrameCount,
+        outputFrameCount,
+        durationSeconds: outputFrameCount / fps,
+        exact: distance <= Number.EPSILON * Math.max(1, targetFrameCount),
+      };
+    }
+  }
+  return best;
+};
+
 export const summarizeMediaVideoDelivery = (
   config: Record<string, unknown>,
   architecture?: MediaLocalModelArchitecture | null,
@@ -456,11 +562,15 @@ export const summarizeMediaVideoDelivery = (
       String(resolution),
     ) ||
     !["none", "ping-pong", "seamless"].includes(String(loopMode)) ||
+    (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless") ||
     typeof sourceFrameCount !== "number" ||
     !Number.isInteger(sourceFrameCount) ||
+    !isMediaVideoFrameCountValid(sourceFrameCount, architecture) ||
     typeof fps !== "number" ||
     !Number.isInteger(fps) ||
     fps <= 0 ||
+    fps > 60 ||
+    typeof config.transparentBackground !== "boolean" ||
     !["draft", "balanced", "production", "lossless"].includes(
       String(encodingQuality),
     )
@@ -472,10 +582,10 @@ export const summarizeMediaVideoDelivery = (
     resolution as MediaVideoResolution,
     architecture,
   );
-  const outputFrameCount =
-    loopMode === "ping-pong"
-      ? sourceFrameCount * 2 - 1
-      : sourceFrameCount;
+  const outputFrameCount = mediaVideoOutputFrameCount(
+    sourceFrameCount,
+    loopMode as MediaVideoLoopMode,
+  );
   return {
     width,
     height,
@@ -485,6 +595,7 @@ export const summarizeMediaVideoDelivery = (
     durationSeconds: outputFrameCount / fps,
     transparent: config.transparentBackground === true,
     loopMode: loopMode as MediaVideoLoopMode,
-    encodingQuality: encodingQuality as MediaVideoDeliverySummary["encodingQuality"],
+    encodingQuality:
+      encodingQuality as MediaVideoDeliverySummary["encodingQuality"],
   };
 };

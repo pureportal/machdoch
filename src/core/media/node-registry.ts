@@ -67,7 +67,13 @@ export interface MediaNodeDefinition {
   displayName: string;
   summary: string;
   layer: MediaNodeLayer;
-  category: "Input" | "Generation" | "Transform" | "Quality" | "Control" | "Output";
+  category:
+    | "Input"
+    | "Generation"
+    | "Transform"
+    | "Quality"
+    | "Control"
+    | "Output";
   paletteVisibility: "default" | "advanced" | "output";
   maxInstances?: number;
   inputs: readonly MediaNodePortDefinition[];
@@ -75,7 +81,6 @@ export interface MediaNodeDefinition {
   fields: readonly MediaNodeFieldDefinition[];
   privacyEffects: readonly string[];
   costEffects: readonly string[];
-  migrationSources: readonly number[];
 }
 
 export interface MediaNodeValidationIssue {
@@ -114,7 +119,8 @@ const promptPort: MediaNodePortDefinition = {
   dataType: "prompt",
   required: true,
   cardinality: "single",
-  description: "Normalized creative intent passed to a semantic generation task.",
+  description:
+    "Normalized creative intent passed to a semantic generation task.",
 };
 
 const imageInput: MediaNodePortDefinition = {
@@ -218,7 +224,8 @@ export const MEDIA_NODE_DEFINITIONS = [
     type: "source.prompt",
     version: 1,
     displayName: "Creative brief",
-    summary: "Captures provider-neutral creative intent without runtime prompt plumbing.",
+    summary:
+      "Captures provider-neutral creative intent without runtime prompt plumbing.",
     layer: "source",
     category: "Input",
     paletteVisibility: "default",
@@ -229,7 +236,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "prompt",
         label: "Prompt",
-        description: "Describe subject, environment, light, material, camera, and exclusions.",
+        description:
+          "Describe subject, environment, light, material, camera, and exclusions.",
         group: "Basic",
         kind: "textarea",
         required: true,
@@ -241,15 +249,17 @@ export const MEDIA_NODE_DEFINITIONS = [
         maxLength: 8_000,
       },
     ],
-    privacyEffects: ["Prompt text follows the selected generation provider's data boundary."],
+    privacyEffects: [
+      "Prompt text follows the selected generation provider's data boundary.",
+    ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "source.image",
     version: 1,
     displayName: "Image asset",
-    summary: "References one immutable Media Studio image without copying provider URLs or bytes into the flow.",
+    summary:
+      "References one immutable Media Studio image without copying provider URLs or bytes into the flow.",
     layer: "source",
     category: "Input",
     paletteVisibility: "default",
@@ -260,7 +270,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "assetId",
         label: "Source asset",
-        description: "A stable Media Studio asset id resolved through the privileged runtime boundary.",
+        description:
+          "A stable Media Studio asset id resolved through the privileged runtime boundary.",
         group: "Basic",
         kind: "asset",
         required: true,
@@ -272,25 +283,51 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "referenceRole",
         label: "Reference role",
-        description: "Explains how downstream edit tasks should use this image.",
+        description:
+          "Explains how downstream edit tasks should use this image.",
         group: "Creative",
         kind: "select",
         required: false,
         defaultValue: "base",
         examples: ["base", "style"],
         options: [
-          option("base", "Base image", "Primary pixels and composition to edit."),
-          option("subject", "Subject identity", "Preserve the referenced subject or product."),
-          option("style", "Visual style", "Borrow visual treatment without replacing identity."),
-          option("composition", "Composition", "Follow framing, pose, or spatial arrangement."),
-          option("palette", "Color palette", "Use the reference primarily for color direction."),
-          option("detail", "Detail", "Use the reference for material or localized detail."),
+          option(
+            "base",
+            "Base image",
+            "Primary pixels and composition to edit.",
+          ),
+          option(
+            "subject",
+            "Subject identity",
+            "Preserve the referenced subject or product.",
+          ),
+          option(
+            "style",
+            "Visual style",
+            "Borrow visual treatment without replacing identity.",
+          ),
+          option(
+            "composition",
+            "Composition",
+            "Follow framing, pose, or spatial arrangement.",
+          ),
+          option(
+            "palette",
+            "Color palette",
+            "Use the reference primarily for color direction.",
+          ),
+          option(
+            "detail",
+            "Detail",
+            "Use the reference for material or localized detail.",
+          ),
         ],
       },
       {
         id: "influence",
         label: "Reference influence",
-        description: "Provider-neutral relative influence; adapters clamp or disclose unsupported mapping.",
+        description:
+          "Provider-neutral relative influence; adapters clamp or disclose unsupported mapping.",
         group: "Creative",
         kind: "number",
         required: false,
@@ -305,13 +342,13 @@ export const MEDIA_NODE_DEFINITIONS = [
       "The source remains local unless a downstream task explicitly resolves a remote provider.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "task.generate-image",
     version: 1,
     displayName: "Generate image",
-    summary: "Resolves a semantic image request into a compatible local or remote runtime plan.",
+    summary:
+      "Resolves a semantic image request into a compatible local or remote runtime plan.",
     layer: "task",
     category: "Generation",
     paletteVisibility: "default",
@@ -322,14 +359,19 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "providerPolicy",
         label: "Execution boundary",
-        description: "Auto chooses a ready compatible model; Local prevents remote prompt upload.",
+        description:
+          "Auto chooses a ready compatible model; Local prevents remote prompt upload.",
         group: "Basic",
         kind: "select",
         required: true,
         defaultValue: "auto",
         examples: ["auto", "local"],
         options: [
-          option("auto", "Automatic", "Choose the best ready compatible runtime."),
+          option(
+            "auto",
+            "Automatic",
+            "Choose the best ready compatible runtime.",
+          ),
           option("local", "Local only", "Keep generation on this device."),
           option("remote", "Remote only", "Use a configured cloud provider."),
         ],
@@ -345,7 +387,11 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: ["1:1", "16:9"],
         options: [
           option("1:1", "1:1 Square", "Balanced square composition."),
-          option("4:5", "4:5 Portrait", "Portrait-oriented social and product framing."),
+          option(
+            "4:5",
+            "4:5 Portrait",
+            "Portrait-oriented social and product framing.",
+          ),
           option("16:9", "16:9 Landscape", "Wide cinematic composition."),
           option("9:16", "9:16 Vertical", "Full-height mobile composition."),
         ],
@@ -353,7 +399,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "outputCount",
         label: "Variants",
-        description: "Explicit bounded cardinality. Remote providers may bill per output.",
+        description:
+          "Explicit bounded cardinality. Remote providers may bill per output.",
         group: "Basic",
         kind: "number",
         required: true,
@@ -377,28 +424,42 @@ export const MEDIA_NODE_DEFINITIONS = [
           option("png", "PNG", "Lossless output with alpha support."),
           option("webp", "WebP", "Efficient lossless or photographic output."),
           option("jpeg", "JPEG", "Photographic output without alpha."),
-          option("svg", "SVG", "Editable vector source with a deterministic raster preview."),
+          option(
+            "svg",
+            "SVG",
+            "Editable vector source with a deterministic raster preview.",
+          ),
         ],
       },
       {
         id: "svgMode",
         label: "SVG workflow",
-        description: "Generate from a brief or faithfully vectorize one source asset.",
+        description:
+          "Generate from a brief or faithfully vectorize one source asset.",
         group: "Basic",
         kind: "select",
         required: false,
         defaultValue: "generate",
         examples: ["generate", "vectorize"],
         options: [
-          option("generate", "Create from prompt", "Generate new editable vector artwork."),
-          option("vectorize", "Vectorize image", "Convert one reference into editable paths."),
+          option(
+            "generate",
+            "Create from prompt",
+            "Generate new editable vector artwork.",
+          ),
+          option(
+            "vectorize",
+            "Vectorize image",
+            "Convert one reference into editable paths.",
+          ),
         ],
         visibleWhen: { fieldId: "outputFormat", equals: "svg" },
       },
       {
         id: "svgAutoCrop",
         label: "Auto-crop vectorization",
-        description: "Ask supported vectorization providers to isolate the dominant subject.",
+        description:
+          "Ask supported vectorization providers to isolate the dominant subject.",
         group: "Creative",
         kind: "boolean",
         required: false,
@@ -409,7 +470,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "svgTargetSize",
         label: "Vectorization target",
-        description: "Provider-side square analysis resolution for image-to-SVG conversion.",
+        description:
+          "Provider-side square analysis resolution for image-to-SVG conversion.",
         group: "Expert",
         kind: "number",
         required: false,
@@ -424,41 +486,60 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "svgStyle",
         label: "Vector design lane",
-        description: "Chooses the structural brief used by native SVG generators and critics.",
+        description:
+          "Chooses the structural brief used by native SVG generators and critics.",
         group: "Creative",
         kind: "select",
         required: false,
         defaultValue: "illustration",
         examples: ["illustration", "diagram"],
         options: [
-          option("illustration", "Illustration", "Layered creative vector artwork."),
+          option(
+            "illustration",
+            "Illustration",
+            "Layered creative vector artwork.",
+          ),
           option("icon", "Icon", "Compact, low-complexity symbolic artwork."),
           option("logo", "Logo", "Clean brand-mark geometry."),
           option("diagram", "Diagram", "Structured explanatory layout."),
-          option("technical", "Technical figure", "Precise scientific or engineering figure."),
+          option(
+            "technical",
+            "Technical figure",
+            "Precise scientific or engineering figure.",
+          ),
         ],
         visibleWhen: { fieldId: "outputFormat", equals: "svg" },
       },
       {
         id: "svgTextPolicy",
         label: "Vector text",
-        description: "Controls whether generated lettering is avoided, editable, or converted to paths.",
+        description:
+          "Controls whether generated lettering is avoided, editable, or converted to paths.",
         group: "Creative",
         kind: "select",
         required: false,
         defaultValue: "avoid",
         examples: ["avoid", "editable"],
         options: [
-          option("avoid", "Avoid", "Avoid text unless explicitly required by the brief."),
+          option(
+            "avoid",
+            "Avoid",
+            "Avoid text unless explicitly required by the brief.",
+          ),
           option("editable", "Editable", "Keep necessary text as SVG text."),
-          option("outlines", "Outlines", "Represent necessary lettering as vector paths."),
+          option(
+            "outlines",
+            "Outlines",
+            "Represent necessary lettering as vector paths.",
+          ),
         ],
         visibleWhen: { fieldId: "outputFormat", equals: "svg" },
       },
       {
         id: "svgCandidateCount",
         label: "SVG candidates",
-        description: "Generate a wider candidate pool for local render verification and ranking.",
+        description:
+          "Generate a wider candidate pool for local render verification and ranking.",
         group: "Expert",
         kind: "number",
         required: false,
@@ -473,7 +554,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "svgCriticEnabled",
         label: "OpenAI render-feedback repair",
-        description: "Optionally send weak candidates and deterministic previews to OpenAI in separately billed, durably audited repair requests; keep only validated improvements.",
+        description:
+          "Optionally send weak candidates and deterministic previews to OpenAI in separately billed, durably audited repair requests; keep only validated improvements.",
         group: "Expert",
         kind: "boolean",
         required: false,
@@ -484,7 +566,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "transparentBackground",
         label: "Transparent canvas",
-        description: "Leaves the SVG canvas transparent instead of requesting a backdrop.",
+        description:
+          "Leaves the SVG canvas transparent instead of requesting a backdrop.",
         group: "Creative",
         kind: "boolean",
         required: false,
@@ -495,7 +578,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "modelPolicy",
         label: "Optimization goal",
-        description: "Balances model quality and latency without pinning provider internals.",
+        description:
+          "Balances model quality and latency without pinning provider internals.",
         group: "Creative",
         kind: "select",
         required: true,
@@ -510,7 +594,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "modelId",
         label: "Exact model pin",
-        description: "Expert override. Automatic selection remains reproducible in the compiled plan.",
+        description:
+          "Expert override. Automatic selection remains reproducible in the compiled plan.",
         group: "Expert",
         kind: "model",
         required: true,
@@ -520,7 +605,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "modelAddons",
         label: "LoRAs and embeddings",
-        description: "Managed in Generate. Stored here so model add-ons remain part of the reproducible flow.",
+        description:
+          "Managed in Generate. Stored here so model add-ons remain part of the reproducible flow.",
         group: "Expert",
         kind: "addons",
         required: false,
@@ -539,10 +625,22 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "auto",
         examples: ["auto", "memory-saver"],
         options: [
-          option("auto", "Automatic", "Choose the safest quality-preserving profile for this host."),
-          option("memory-saver", "Memory saver", "Use disk-backed group offload and accept longer generation."),
+          option(
+            "auto",
+            "Automatic",
+            "Choose the safest quality-preserving profile for this host.",
+          ),
+          option(
+            "memory-saver",
+            "Memory saver",
+            "Use disk-backed group offload and accept longer generation.",
+          ),
           option("balanced", "Balanced", "Use host offload when available."),
-          option("maximum-speed", "Maximum speed", "Keep more weights resident; requires substantially more memory."),
+          option(
+            "maximum-speed",
+            "Maximum speed",
+            "Keep more weights resident; requires substantially more memory.",
+          ),
         ],
       },
     ],
@@ -550,14 +648,16 @@ export const MEDIA_NODE_DEFINITIONS = [
       "Remote execution uploads prompt text to the resolved provider.",
       "Local-only execution performs no provider request.",
     ],
-    costEffects: ["Remote generation can create one billable request per output variant."],
-    migrationSources: [],
+    costEffects: [
+      "Remote generation can create one billable request per output variant.",
+    ],
   },
   {
     type: "task.edit-image",
     version: 1,
     displayName: "Edit image",
-    summary: "Applies provider-neutral text-guided changes to one or more labeled immutable references.",
+    summary:
+      "Applies provider-neutral text-guided changes to one or more labeled immutable references.",
     layer: "task",
     category: "Generation",
     paletteVisibility: "default",
@@ -568,22 +668,36 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "providerPolicy",
         label: "Execution boundary",
-        description: "Auto chooses a ready compatible model; Local prevents source-image upload.",
+        description:
+          "Auto chooses a ready compatible model; Local prevents source-image upload.",
         group: "Basic",
         kind: "select",
         required: true,
         defaultValue: "auto",
         examples: ["auto", "local"],
         options: [
-          option("auto", "Automatic", "Choose the best ready compatible runtime."),
-          option("local", "Local only", "Keep prompt and source pixels on this device."),
-          option("remote", "Remote only", "Upload the disclosed source to a configured provider."),
+          option(
+            "auto",
+            "Automatic",
+            "Choose the best ready compatible runtime.",
+          ),
+          option(
+            "local",
+            "Local only",
+            "Keep prompt and source pixels on this device.",
+          ),
+          option(
+            "remote",
+            "Remote only",
+            "Upload the disclosed source to a configured provider.",
+          ),
         ],
       },
       {
         id: "aspectRatio",
         label: "Aspect ratio",
-        description: "Output composition requested from the selected edit model.",
+        description:
+          "Output composition requested from the selected edit model.",
         group: "Basic",
         kind: "select",
         required: true,
@@ -591,7 +705,11 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: ["1:1", "16:9"],
         options: [
           option("1:1", "1:1 Square", "Balanced square composition."),
-          option("4:5", "4:5 Portrait", "Portrait-oriented social and product framing."),
+          option(
+            "4:5",
+            "4:5 Portrait",
+            "Portrait-oriented social and product framing.",
+          ),
           option("16:9", "16:9 Landscape", "Wide cinematic composition."),
           option("9:16", "9:16 Vertical", "Full-height mobile composition."),
         ],
@@ -599,7 +717,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "outputCount",
         label: "Variants",
-        description: "Explicit bounded edit cardinality. Remote providers may bill per output.",
+        description:
+          "Explicit bounded edit cardinality. Remote providers may bill per output.",
         group: "Basic",
         kind: "number",
         required: true,
@@ -628,7 +747,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "editStrength",
         label: "Edit strength",
-        description: "Provider-neutral intent strength; adapters map it only when their contract supports an equivalent control.",
+        description:
+          "Provider-neutral intent strength; adapters map it only when their contract supports an equivalent control.",
         group: "Creative",
         kind: "number",
         required: true,
@@ -674,7 +794,11 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "fit",
         examples: ["fit", "crop"],
         options: [
-          option("fit", "Fit", "Preserve the full reference and pad to the target ratio."),
+          option(
+            "fit",
+            "Fit",
+            "Preserve the full reference and pad to the target ratio.",
+          ),
           option("crop", "Crop", "Fill the target ratio with a centered crop."),
         ],
       },
@@ -696,7 +820,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "modelPolicy",
         label: "Optimization goal",
-        description: "Balances edit quality and latency without exposing runtime plumbing.",
+        description:
+          "Balances edit quality and latency without exposing runtime plumbing.",
         group: "Creative",
         kind: "select",
         required: true,
@@ -705,13 +830,18 @@ export const MEDIA_NODE_DEFINITIONS = [
         options: [
           option("balanced", "Balanced", "Balance quality and responsiveness."),
           option("fast", "Faster", "Prefer lower latency where compatible."),
-          option("quality", "Higher quality", "Prefer edit fidelity over latency."),
+          option(
+            "quality",
+            "Higher quality",
+            "Prefer edit fidelity over latency.",
+          ),
         ],
       },
       {
         id: "modelId",
         label: "Exact model pin",
-        description: "Expert override. Automatic selection remains reproducible in the compiled plan.",
+        description:
+          "Expert override. Automatic selection remains reproducible in the compiled plan.",
         group: "Expert",
         kind: "model",
         required: true,
@@ -721,7 +851,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "modelAddons",
         label: "LoRAs and embeddings",
-        description: "Managed in Generate. Stored here so model add-ons remain part of the reproducible flow.",
+        description:
+          "Managed in Generate. Stored here so model add-ons remain part of the reproducible flow.",
         group: "Expert",
         kind: "addons",
         required: false,
@@ -740,10 +871,26 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "auto",
         examples: ["auto", "memory-saver"],
         options: [
-          option("auto", "Automatic", "Choose the safest profile for the detected host."),
-          option("memory-saver", "Memory saver", "Minimize peak commit with disk-backed groups."),
-          option("balanced", "Balanced", "Trade host memory for lower latency."),
-          option("maximum-speed", "Maximum speed", "Keep more weights resident when memory permits."),
+          option(
+            "auto",
+            "Automatic",
+            "Choose the safest profile for the detected host.",
+          ),
+          option(
+            "memory-saver",
+            "Memory saver",
+            "Minimize peak commit with disk-backed groups.",
+          ),
+          option(
+            "balanced",
+            "Balanced",
+            "Trade host memory for lower latency.",
+          ),
+          option(
+            "maximum-speed",
+            "Maximum speed",
+            "Keep more weights resident when memory permits.",
+          ),
         ],
       },
     ],
@@ -751,8 +898,9 @@ export const MEDIA_NODE_DEFINITIONS = [
       "Remote execution uploads prompt text and only the explicitly connected reference assets.",
       "Local-only execution performs no provider request.",
     ],
-    costEffects: ["Remote editing can create one billable request per output variant."],
-    migrationSources: [],
+    costEffects: [
+      "Remote editing can create one billable request per output variant.",
+    ],
   },
   {
     type: "task.generate-video",
@@ -779,9 +927,21 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: ["local"],
         readOnly: true,
         options: [
-          option("auto", "Automatic", "Choose a ready compatible video runtime."),
-          option("local", "Local only", "Keep prompts and source frames on this device."),
-          option("remote", "Remote only", "Use a configured cloud video provider."),
+          option(
+            "auto",
+            "Automatic",
+            "Choose a ready compatible video runtime.",
+          ),
+          option(
+            "local",
+            "Local only",
+            "Keep prompts and source frames on this device.",
+          ),
+          option(
+            "remote",
+            "Remote only",
+            "Use a configured cloud video provider.",
+          ),
         ],
       },
       {
@@ -794,32 +954,29 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "1:1",
         examples: ["1:1", "16:9", "9:16", "21:9"],
         options: [
-          option("1:1", "1:1 Square", "Preserves a square FLUX source without cropping."),
-          option("16:9", "16:9 Landscape", "Wide cinematic and presentation framing."),
+          option(
+            "1:1",
+            "1:1 Square",
+            "Preserves a square FLUX source without cropping.",
+          ),
+          option(
+            "16:9",
+            "16:9 Landscape",
+            "Wide cinematic and presentation framing.",
+          ),
           option("9:16", "9:16 Vertical", "Full-height mobile framing."),
-          option("21:9", "21:9 Ultra-wide", "Cinematic panorama with a native ultra-wide latent canvas."),
+          option(
+            "21:9",
+            "21:9 Ultra-wide",
+            "Cinematic panorama with a native ultra-wide latent canvas.",
+          ),
         ],
-      },
-      {
-        id: "durationSeconds",
-        label: "Duration",
-        description:
-          "Informational draft duration; encoded duration is derived exactly from source frames, loop assembly, and fps.",
-        group: "Basic",
-        kind: "number",
-        required: true,
-        defaultValue: 2,
-        examples: [2, 4],
-        readOnly: true,
-        min: 1,
-        max: 30,
-        step: 1,
-        integer: true,
       },
       {
         id: "modelPolicy",
         label: "Optimization goal",
-        description: "Balances motion quality and latency without hiding the resolved model.",
+        description:
+          "Balances motion quality and latency without hiding the resolved model.",
         group: "Creative",
         kind: "select",
         required: true,
@@ -828,7 +985,11 @@ export const MEDIA_NODE_DEFINITIONS = [
         options: [
           option("balanced", "Balanced", "Balance quality and responsiveness."),
           option("fast", "Faster", "Prefer lower latency where compatible."),
-          option("quality", "Higher quality", "Prefer motion and temporal quality."),
+          option(
+            "quality",
+            "Higher quality",
+            "Prefer motion and temporal quality.",
+          ),
         ],
       },
       {
@@ -842,9 +1003,21 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "quality-640",
         examples: ["quality-640", "preview-512"],
         options: [
-          option("preview-512", "512 px preview", "Fast validation and lower-memory iteration."),
-          option("quality-640", "640 px quality", "Recommended consumer-GPU quality profile."),
-          option("quality-768", "768 px high quality", "More spatial detail with substantially higher latency."),
+          option(
+            "preview-512",
+            "512 px preview",
+            "Fast validation and lower-memory iteration.",
+          ),
+          option(
+            "quality-640",
+            "640 px quality",
+            "Recommended consumer-GPU quality profile.",
+          ),
+          option(
+            "quality-768",
+            "768 px high quality",
+            "More spatial detail with substantially higher latency.",
+          ),
         ],
       },
       {
@@ -863,7 +1036,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         id: "modelId",
         label: "Exact model pin",
         description:
-          "Prefers HunyuanVideo 1.5 for one-reference motion, FramePack for distinct endpoints, and LTX 2B on CPU or lower-memory hardware.",
+          "Use HunyuanVideo 1.5 for one-way first-frame motion, FramePack for forward loops or distinct endpoints, LTX 13B as an alternate endpoint model, and LTX 2B on lower-memory hardware.",
         group: "Expert",
         kind: "model",
         required: true,
@@ -890,16 +1063,28 @@ export const MEDIA_NODE_DEFINITIONS = [
         id: "loopMode",
         label: "Loop assembly",
         description:
-          "None preserves a meaningful one-way action; Ping-pong reverses it; Seamless closes same-endpoint motion without reversal.",
+          "None preserves a one-way action; Boomerang appends reversed playback; Seamless generates forward motion between matching endpoints.",
         group: "Creative",
         kind: "select",
         required: true,
         defaultValue: "none",
         examples: ["none", "ping-pong", "seamless"],
         options: [
-          option("none", "One-way shot", "Keep intentional non-looping motion without artificial repetition."),
-          option("ping-pong", "Ping-pong", "Append reversed frames and verify a zero-error endpoint."),
-          option("seamless", "Seamless", "Use identical endpoints and stabilize the repeat seam without reversal."),
+          option(
+            "none",
+            "One-way shot",
+            "Keep intentional non-looping motion without artificial repetition.",
+          ),
+          option(
+            "ping-pong",
+            "Boomerang (reverses)",
+            "Append the motion in reverse without repeating either turnaround frame. This is not a forward-time seamless loop.",
+          ),
+          option(
+            "seamless",
+            "Forward seamless",
+            "Condition matching first and last frames, then omit the duplicate closing sample for continuous forward playback.",
+          ),
         ],
       },
       {
@@ -984,7 +1169,9 @@ export const MEDIA_NODE_DEFINITIONS = [
         kind: "text",
         required: false,
         defaultValue: "",
-        examples: ["camera shake, identity drift, deformed hands, texture crawl"],
+        examples: [
+          "camera shake, identity drift, deformed hands, texture crawl",
+        ],
         allowEmpty: true,
         maxLength: 8_000,
       },
@@ -1000,8 +1187,16 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: ["production", "balanced"],
         options: [
           option("fast", "Fast", "Frame-local matte for quick drafts."),
-          option("balanced", "Balanced", "Temporal stabilization and moderate edge cleanup."),
-          option("production", "Production", "Maximum matte stability and fine-detail cleanup."),
+          option(
+            "balanced",
+            "Balanced",
+            "Temporal stabilization and moderate edge cleanup.",
+          ),
+          option(
+            "production",
+            "Production",
+            "Maximum matte stability and fine-detail cleanup.",
+          ),
         ],
         visibleWhen: { fieldId: "transparentBackground", equals: true },
       },
@@ -1019,7 +1214,11 @@ export const MEDIA_NODE_DEFINITIONS = [
           option("draft", "Draft", "Small and fast for iteration."),
           option("balanced", "Balanced", "Good preview size and quality."),
           option("production", "Production", "High-fidelity VP9 delivery."),
-          option("lossless", "Lossless intermediate", "Lossless VP9 coding after WebM's required YUVA/YUV pixel conversion."),
+          option(
+            "lossless",
+            "Lossless intermediate",
+            "Lossless VP9 coding after WebM's required YUVA/YUV pixel conversion.",
+          ),
         ],
       },
       {
@@ -1033,10 +1232,26 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "auto",
         examples: ["auto", "memory-saver"],
         options: [
-          option("auto", "Automatic", "Choose from physical memory and adapter capacity."),
-          option("memory-saver", "Memory saver", "Swap one transformer block at a time through system memory."),
-          option("balanced", "Balanced", "Swap larger block groups for lower latency on capable GPUs."),
-          option("maximum-speed", "Maximum speed", "Keep weights resident only when adapter memory safely permits it."),
+          option(
+            "auto",
+            "Automatic",
+            "Choose from physical memory and adapter capacity.",
+          ),
+          option(
+            "memory-saver",
+            "Memory saver",
+            "Swap one transformer block at a time through system memory.",
+          ),
+          option(
+            "balanced",
+            "Balanced",
+            "Swap larger block groups for lower latency on capable GPUs.",
+          ),
+          option(
+            "maximum-speed",
+            "Maximum speed",
+            "Keep weights resident only when adapter memory safely permits it.",
+          ),
         ],
       },
       {
@@ -1059,7 +1274,6 @@ export const MEDIA_NODE_DEFINITIONS = [
     costEffects: [
       "No provider charge; CPU offload can use substantial RAM and local generation may be slow.",
     ],
-    migrationSources: [],
   },
   {
     type: "source.animated-background",
@@ -1107,7 +1321,11 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "diagonal",
         examples: ["horizontal", "diagonal"],
         options: [
-          option("horizontal", "Horizontal", "Move the wave across the canvas."),
+          option(
+            "horizontal",
+            "Horizontal",
+            "Move the wave across the canvas.",
+          ),
           option("vertical", "Vertical", "Move the wave from top to bottom."),
           option("diagonal", "Diagonal", "Move the wave across both axes."),
         ],
@@ -1126,7 +1344,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "colorEnd",
         label: "Second color",
-        description: "Six-digit sRGB color for the other end of the animated range.",
+        description:
+          "Six-digit sRGB color for the other end of the animated range.",
         group: "Creative",
         kind: "text",
         required: true,
@@ -1154,13 +1373,13 @@ export const MEDIA_NODE_DEFINITIONS = [
       "Background frames are rendered locally from explicit color and motion parameters.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.crop",
     version: 1,
     displayName: "Crop image",
-    summary: "Publishes a bounded rectangular derivative without mutating the source image.",
+    summary:
+      "Publishes a bounded rectangular derivative without mutating the source image.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "default",
@@ -1198,7 +1417,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "width",
         label: "Width",
-        description: "Output width in pixels; runtime validation keeps the rectangle inside the source.",
+        description:
+          "Output width in pixels; runtime validation keeps the rectangle inside the source.",
         group: "Basic",
         kind: "number",
         required: true,
@@ -1212,7 +1432,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "height",
         label: "Height",
-        description: "Output height in pixels; runtime validation keeps the rectangle inside the source.",
+        description:
+          "Output height in pixels; runtime validation keeps the rectangle inside the source.",
         group: "Basic",
         kind: "number",
         required: true,
@@ -1224,15 +1445,17 @@ export const MEDIA_NODE_DEFINITIONS = [
         integer: true,
       },
     ],
-    privacyEffects: ["Cropping executes locally against an immutable source asset."],
+    privacyEffects: [
+      "Cropping executes locally against an immutable source asset.",
+    ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.resize",
     version: 1,
     displayName: "Resize image",
-    summary: "Creates a dimension-constrained derivative with an explicit fit policy.",
+    summary:
+      "Creates a dimension-constrained derivative with an explicit fit policy.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "default",
@@ -1270,28 +1493,43 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "fit",
         label: "Fit mode",
-        description: "Controls whether pixels are preserved, cropped to fill, or stretched.",
+        description:
+          "Controls whether pixels are preserved, cropped to fill, or stretched.",
         group: "Basic",
         kind: "select",
         required: true,
         defaultValue: "contain",
         examples: ["contain", "cover"],
         options: [
-          option("contain", "Contain", "Preserve every source pixel inside the target box."),
-          option("cover", "Cover", "Crop edges as needed to fill the target box."),
-          option("stretch", "Stretch", "Scale directly to the exact target dimensions."),
+          option(
+            "contain",
+            "Contain",
+            "Preserve every source pixel inside the target box.",
+          ),
+          option(
+            "cover",
+            "Cover",
+            "Crop edges as needed to fill the target box.",
+          ),
+          option(
+            "stretch",
+            "Stretch",
+            "Scale directly to the exact target dimensions.",
+          ),
         ],
       },
     ],
-    privacyEffects: ["Resizing executes locally against an immutable source asset."],
+    privacyEffects: [
+      "Resizing executes locally against an immutable source asset.",
+    ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.format-convert",
     version: 1,
     displayName: "Convert image format",
-    summary: "Re-encodes an image into an explicit output format and preserves lineage.",
+    summary:
+      "Re-encodes an image into an explicit output format and preserves lineage.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "default",
@@ -1316,7 +1554,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "quality",
         label: "Lossy quality",
-        description: "Used for JPEG and lossy WebP adapters; ignored by lossless encoders.",
+        description:
+          "Used for JPEG and lossy WebP adapters; ignored by lossless encoders.",
         group: "Creative",
         kind: "number",
         required: true,
@@ -1330,7 +1569,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "jpegBackground",
         label: "JPEG alpha background",
-        description: "Explicit color used when flattening transparent pixels into JPEG.",
+        description:
+          "Explicit color used when flattening transparent pixels into JPEG.",
         group: "Creative",
         kind: "text",
         required: false,
@@ -1340,15 +1580,17 @@ export const MEDIA_NODE_DEFINITIONS = [
         visibleWhen: { fieldId: "outputFormat", equals: "jpeg" },
       },
     ],
-    privacyEffects: ["Format conversion executes locally and strips unsupported container metadata."],
+    privacyEffects: [
+      "Format conversion executes locally and strips unsupported container metadata.",
+    ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.metadata-strip",
     version: 1,
     displayName: "Strip image metadata",
-    summary: "Re-encodes image pixels without private container metadata while preserving explicit color policy.",
+    summary:
+      "Re-encodes image pixels without private container metadata while preserving explicit color policy.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "default",
@@ -1358,7 +1600,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "preserveColorProfile",
         label: "Preserve color profile",
-        description: "Retain a validated embedded color profile when the output format supports it.",
+        description:
+          "Retain a validated embedded color profile when the output format supports it.",
         group: "Basic",
         kind: "boolean",
         required: true,
@@ -1368,7 +1611,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "applyOrientation",
         label: "Apply orientation",
-        description: "Bake validated EXIF orientation into pixels before removing metadata.",
+        description:
+          "Bake validated EXIF orientation into pixels before removing metadata.",
         group: "Basic",
         kind: "boolean",
         required: true,
@@ -1380,13 +1624,13 @@ export const MEDIA_NODE_DEFINITIONS = [
       "Metadata stripping executes locally and removes EXIF, XMP, and IPTC payloads.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.auto-tag",
     version: 1,
     displayName: "Auto tag",
-    summary: "Adds deterministic format, shape, resolution, and asset-role tags.",
+    summary:
+      "Adds deterministic format, shape, resolution, and asset-role tags.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "advanced",
@@ -1396,7 +1640,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "profile",
         label: "Tag profile",
-        description: "Pinned deterministic vocabulary; this profile does not infer semantic content.",
+        description:
+          "Pinned deterministic vocabulary; this profile does not infer semantic content.",
         group: "Expert",
         kind: "select",
         required: true,
@@ -1415,13 +1660,13 @@ export const MEDIA_NODE_DEFINITIONS = [
       "The pinned technical metadata profile executes locally and does not inspect semantic image content.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.contact-sheet",
     version: 1,
     displayName: "Create contact sheet",
-    summary: "Composes a bounded image collection into one deterministic comparison sheet.",
+    summary:
+      "Composes a bounded image collection into one deterministic comparison sheet.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "default",
@@ -1498,27 +1743,32 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "labelMode",
         label: "Labels",
-        description: "Optional deterministic index labels for comparison review.",
+        description:
+          "Optional deterministic index labels for comparison review.",
         group: "Creative",
         kind: "select",
         required: true,
         defaultValue: "index",
         examples: ["index", "none"],
         options: [
-          option("index", "Index", "Label cells with their stable one-based order."),
+          option(
+            "index",
+            "Index",
+            "Label cells with their stable one-based order.",
+          ),
           option("none", "None", "Render images without labels."),
         ],
       },
     ],
     privacyEffects: ["Contact sheet composition executes locally."],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.subject-cutout",
     version: 1,
     displayName: "Cut out subject",
-    summary: "Creates a soft subject matte with an ordered local model fallback policy.",
+    summary:
+      "Creates a soft subject matte with an ordered local model fallback policy.",
     layer: "operation",
     category: "Transform",
     paletteVisibility: "default",
@@ -1532,7 +1782,7 @@ export const MEDIA_NODE_DEFINITIONS = [
           "Runs the first model in this ordered list and tries each later model if an earlier one is unavailable or fails.",
         group: "Basic",
         kind: "model-priority",
-        required: false,
+        required: true,
         defaultValue: [...DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY],
         examples: [
           [...DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY],
@@ -1542,7 +1792,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "outputMatte",
         label: "Publish alpha matte",
-        description: "Keep the matte as an explicit lineage asset for downstream corrections.",
+        description:
+          "Keep the matte as an explicit lineage asset for downstream corrections.",
         group: "Expert",
         kind: "boolean",
         required: true,
@@ -1557,7 +1808,6 @@ export const MEDIA_NODE_DEFINITIONS = [
     costEffects: [
       "The bundled border matte has no download; the managed BiRefNet package is approximately 0.91 GB.",
     ],
-    migrationSources: [],
   },
   {
     type: "operation.alpha-matte",
@@ -1573,7 +1823,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "invert",
         label: "Invert matte",
-        description: "Swap protected and transparent areas after extracting the alpha channel.",
+        description:
+          "Swap protected and transparent areas after extracting the alpha channel.",
         group: "Creative",
         kind: "boolean",
         required: true,
@@ -1586,7 +1837,6 @@ export const MEDIA_NODE_DEFINITIONS = [
       "The exact 8-bit channel is preserved only in lossless PNG or WebP output.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.composite",
@@ -1602,22 +1852,36 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "fit",
         label: "Foreground fit",
-        description: "How the foreground is scaled into the background canvas before blending.",
+        description:
+          "How the foreground is scaled into the background canvas before blending.",
         group: "Creative",
         kind: "select",
         required: true,
         defaultValue: "contain",
         examples: ["contain", "cover", "stretch"],
         options: [
-          option("contain", "Contain", "Preserve the entire foreground and center it."),
-          option("cover", "Cover", "Fill the canvas and crop overflow from the center."),
-          option("stretch", "Stretch", "Resize the foreground to the exact canvas dimensions."),
+          option(
+            "contain",
+            "Contain",
+            "Preserve the entire foreground and center it.",
+          ),
+          option(
+            "cover",
+            "Cover",
+            "Fill the canvas and crop overflow from the center.",
+          ),
+          option(
+            "stretch",
+            "Stretch",
+            "Resize the foreground to the exact canvas dimensions.",
+          ),
         ],
       },
       {
         id: "opacityPercent",
         label: "Foreground opacity",
-        description: "Scales the foreground alpha channel before source-over blending.",
+        description:
+          "Scales the foreground alpha channel before source-over blending.",
         group: "Creative",
         kind: "number",
         required: true,
@@ -1633,13 +1897,13 @@ export const MEDIA_NODE_DEFINITIONS = [
       "Both immutable inputs are decoded and composited locally with bounded allocations.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.quality-analyze",
     version: 1,
     displayName: "Analyze quality",
-    summary: "Measures explicit quality observations without silently changing image pixels.",
+    summary:
+      "Measures explicit quality observations without silently changing image pixels.",
     layer: "operation",
     category: "Quality",
     paletteVisibility: "advanced",
@@ -1651,7 +1915,8 @@ export const MEDIA_NODE_DEFINITIONS = [
         dataType: "quality-report",
         required: true,
         cardinality: "single",
-        description: "Versioned observations, thresholds, and evidence for downstream gates.",
+        description:
+          "Versioned observations, thresholds, and evidence for downstream gates.",
       },
     ],
     fields: [
@@ -1669,7 +1934,6 @@ export const MEDIA_NODE_DEFINITIONS = [
     ],
     privacyEffects: ["The current technical quality profile executes locally."],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "control.quality-gate",
@@ -1695,16 +1959,29 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "onUnknown",
         label: "Unknown result",
-        description: "Choose an explicit policy when evidence cannot produce pass or fail.",
+        description:
+          "Choose an explicit policy when evidence cannot produce pass or fail.",
         group: "Basic",
         kind: "select",
         required: true,
         defaultValue: "human-review",
         examples: ["human-review", "fail"],
         options: [
-          option("human-review", "Require human review", "Pause before publication."),
-          option("fail", "Treat as failed", "Block publication conservatively."),
-          option("pass", "Treat as passed", "Continue despite incomplete evidence."),
+          option(
+            "human-review",
+            "Require human review",
+            "Pause before publication.",
+          ),
+          option(
+            "fail",
+            "Treat as failed",
+            "Block publication conservatively.",
+          ),
+          option(
+            "pass",
+            "Treat as passed",
+            "Continue despite incomplete evidence.",
+          ),
         ],
       },
       {
@@ -1721,13 +1998,13 @@ export const MEDIA_NODE_DEFINITIONS = [
     ],
     privacyEffects: [],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "control.human-review",
     version: 1,
     displayName: "Human review",
-    summary: "Pauses the run for an explicit bounded candidate selection before publication.",
+    summary:
+      "Pauses the run for an explicit bounded candidate selection before publication.",
     layer: "control",
     category: "Control",
     paletteVisibility: "advanced",
@@ -1742,25 +2019,31 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         ...imageOutput,
         label: "Approved images",
-        description: "At most the configured number of explicitly approved images.",
+        description:
+          "At most the configured number of explicitly approved images.",
       },
     ],
     fields: [
       {
         id: "instructions",
         label: "Review instructions",
-        description: "A concrete rubric shown with the candidates; this does not invoke an AI evaluator.",
+        description:
+          "A concrete rubric shown with the candidates; this does not invoke an AI evaluator.",
         group: "Basic",
         kind: "textarea",
         required: true,
-        defaultValue: "Select the strongest candidate and reject outputs with visible technical defects.",
-        examples: ["Approve only candidates with a clean silhouette and faithful material detail."],
+        defaultValue:
+          "Select the strongest candidate and reject outputs with visible technical defects.",
+        examples: [
+          "Approve only candidates with a clean silhouette and faithful material detail.",
+        ],
         maxLength: 1_000,
       },
       {
         id: "maxSelections",
         label: "Maximum approvals",
-        description: "A hard upper bound on assets that may continue beyond this review gate.",
+        description:
+          "A hard upper bound on assets that may continue beyond this review gate.",
         group: "Basic",
         kind: "number",
         required: true,
@@ -1774,7 +2057,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "requireComment",
         label: "Require review note",
-        description: "Require the reviewer to record a note with the approval or rejection decision.",
+        description:
+          "Require the reviewer to record a note with the approval or rejection decision.",
         group: "Expert",
         kind: "boolean",
         required: true,
@@ -1782,15 +2066,19 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: [false, true],
       },
     ],
-    privacyEffects: ["Review decisions and notes remain in the local run event history."],
-    costEffects: ["Waiting releases worker and GPU leases; immutable input assets remain pinned."],
-    migrationSources: [],
+    privacyEffects: [
+      "Review decisions and notes remain in the local run event history.",
+    ],
+    costEffects: [
+      "Waiting releases worker and GPU leases; immutable input assets remain pinned.",
+    ],
   },
   {
     type: "output.asset",
     version: 1,
     displayName: "Save assets",
-    summary: "Validates, hashes, and publishes immutable output assets with lineage.",
+    summary:
+      "Validates, hashes, and publishes immutable output assets with lineage.",
     layer: "output",
     category: "Output",
     paletteVisibility: "output",
@@ -1801,7 +2089,8 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "format",
         label: "Output format",
-        description: "Synchronized from the generation task for this compound recipe.",
+        description:
+          "Synchronized from the generation task for this compound recipe.",
         group: "Basic",
         kind: "select",
         required: true,
@@ -1831,9 +2120,10 @@ export const MEDIA_NODE_DEFINITIONS = [
         integer: true,
       },
     ],
-    privacyEffects: ["Asset publication writes to the managed local content-addressed store."],
+    privacyEffects: [
+      "Asset publication writes to the managed local content-addressed store.",
+    ],
     costEffects: [],
-    migrationSources: [],
   },
   {
     type: "operation.video-composite",
@@ -1873,7 +2163,6 @@ export const MEDIA_NODE_DEFINITIONS = [
     costEffects: [
       "Frame-by-frame VP9 composition uses local CPU, disk staging, and encoding time.",
     ],
-    migrationSources: [],
   },
   {
     type: "output.video",
@@ -1941,7 +2230,6 @@ export const MEDIA_NODE_DEFINITIONS = [
       "Video publication will write verified bytes to the managed content-addressed store.",
     ],
     costEffects: [],
-    migrationSources: [],
   },
 ] as const satisfies readonly MediaNodeDefinition[];
 
@@ -2052,7 +2340,8 @@ const validateFieldValue = (
         [...value].length <= (field.maxLength ?? Number.POSITIVE_INFINITY) &&
         ![...value].some(
           (character) =>
-            !["\n", "\r", "\t"].includes(character) && /\p{Cc}/u.test(character),
+            !["\n", "\r", "\t"].includes(character) &&
+            /\p{Cc}/u.test(character),
         );
       break;
     case "number":
@@ -2072,7 +2361,9 @@ const validateFieldValue = (
         field.options?.some((candidate) => candidate.value === value) === true;
       break;
     case "model":
-      isValid = value === null || (typeof value === "string" && value.trim().length > 0);
+      isValid =
+        value === null ||
+        (typeof value === "string" && value.trim().length > 0);
       break;
     case "model-priority":
       isValid =
@@ -2220,12 +2511,17 @@ export const validateMediaFlowGraph = (
   }
   for (const definition of listMediaNodeDefinitions()) {
     if (definition.maxInstances === undefined) continue;
-    const matchingNodes = flow.nodes.filter((node) => node.type === definition.type);
+    const matchingNodes = flow.nodes.filter(
+      (node) => node.type === definition.type,
+    );
     if (matchingNodes.length > definition.maxInstances) {
       issues.push({
         code: "NODE_TYPE_CARDINALITY_EXCEEDED",
         severity: "error",
-        nodeId: matchingNodes[definition.maxInstances]?.id ?? matchingNodes[0]?.id ?? flow.id,
+        nodeId:
+          matchingNodes[definition.maxInstances]?.id ??
+          matchingNodes[0]?.id ??
+          flow.id,
         fieldId: null,
         message: `${definition.displayName} allows at most ${definition.maxInstances} instance${definition.maxInstances === 1 ? "" : "s"} in this flow.`,
       });
@@ -2295,7 +2591,8 @@ export const validateMediaFlowGraph = (
         severity: "error",
         nodeId: targetNode.id,
         fieldId: "svgMode",
-        message: "SVG vectorization accepts one source image instead of a creative brief.",
+        message:
+          "SVG vectorization accepts one source image instead of a creative brief.",
       });
     }
     outgoingByPort.add(`${sourceNode.id}\u001f${sourcePort.id}`);
@@ -2331,9 +2628,7 @@ export const validateMediaFlowGraph = (
       node.config.outputFormat === "svg" &&
       node.config.svgMode === "vectorize";
     for (const port of definition?.inputs ?? []) {
-      const required = isSvgVectorization
-        ? port.id === "image"
-        : port.required;
+      const required = isSvgVectorization ? port.id === "image" : port.required;
       if (required && !incomingByPort.has(`${node.id}\u001f${port.id}`)) {
         issues.push({
           code: "REQUIRED_INPUT_MISSING",
@@ -2365,7 +2660,8 @@ export const validateMediaFlowGraph = (
         severity: "error",
         nodeId: node.id,
         fieldId: null,
-        message: "Generate video requires a First frame whenever a Last frame is connected.",
+        message:
+          "Generate video requires a First frame whenever a Last frame is connected.",
       });
     }
   }
@@ -2373,7 +2669,8 @@ export const validateMediaFlowGraph = (
   const indegree = new Map(flow.nodes.map((node) => [node.id, 0]));
   const targetsBySource = new Map<string, string[]>();
   for (const edge of flow.edges) {
-    if (!nodesById.has(edge.fromNodeId) || !nodesById.has(edge.toNodeId)) continue;
+    if (!nodesById.has(edge.fromNodeId) || !nodesById.has(edge.toNodeId))
+      continue;
     indegree.set(edge.toNodeId, (indegree.get(edge.toNodeId) ?? 0) + 1);
     targetsBySource.set(edge.fromNodeId, [
       ...(targetsBySource.get(edge.fromNodeId) ?? []),
@@ -2395,7 +2692,8 @@ export const validateMediaFlowGraph = (
     }
   }
   if (visited !== flow.nodes.length) {
-    const cycleNodeId = [...indegree].find(([, count]) => count > 0)?.[0] ?? flow.id;
+    const cycleNodeId =
+      [...indegree].find(([, count]) => count > 0)?.[0] ?? flow.id;
     issues.push({
       code: "GRAPH_CYCLE",
       severity: "error",
@@ -2459,13 +2757,19 @@ const cloneConfigValue = (value: unknown): unknown => {
   }
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, cloneConfigValue(entry)]),
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        cloneConfigValue(entry),
+      ]),
     );
   }
   return value;
 };
 
-const createUniqueId = (base: string, existingIds: ReadonlySet<string>): string => {
+const createUniqueId = (
+  base: string,
+  existingIds: ReadonlySet<string>,
+): string => {
   if (!existingIds.has(base)) return base;
   let suffix = 2;
   while (existingIds.has(`${base}-${suffix}`)) suffix += 1;
@@ -2497,7 +2801,9 @@ export const addMediaFlowNode = ({
     definition.maxInstances !== undefined &&
     existingCount >= definition.maxInstances
   ) {
-    throw new Error(`${definition.displayName} is already present in this flow.`);
+    throw new Error(
+      `${definition.displayName} is already present in this flow.`,
+    );
   }
 
   const nodeId = createUniqueId(
@@ -2588,7 +2894,10 @@ export const copyMediaFlowNodes = (
   }
   return {
     schemaVersion: 1,
-    label: nodes.length === 1 ? nodes[0]?.label ?? "Media node" : `${nodes.length} nodes`,
+    label:
+      nodes.length === 1
+        ? (nodes[0]?.label ?? "Media node")
+        : `${nodes.length} nodes`,
     nodes: nodes.map((node) => ({
       sourceNodeId: node.id,
       nodeType: node.type,
@@ -2612,16 +2921,28 @@ export const inspectMediaFlowNodePaste = (
   payload: MediaFlowNodeClipboardPayload,
 ): MediaFlowConnectionCheck => {
   if (payload.schemaVersion !== 1) {
-    return { valid: false, reason: "The copied node uses an unsupported clipboard schema." };
+    return {
+      valid: false,
+      reason: "The copied node uses an unsupported clipboard schema.",
+    };
   }
   if (payload.nodes.length === 0 || payload.nodes.length > 64) {
-    return { valid: false, reason: "The clipboard must contain between one and 64 nodes." };
+    return {
+      valid: false,
+      reason: "The clipboard must contain between one and 64 nodes.",
+    };
   }
   if (flow.nodes.length + payload.nodes.length > 64) {
-    return { valid: false, reason: "Pasting would exceed the 64-node flow limit." };
+    return {
+      valid: false,
+      reason: "Pasting would exceed the 64-node flow limit.",
+    };
   }
   if (flow.edges.length + payload.connections.length > 128) {
-    return { valid: false, reason: "Pasting would exceed the 128-edge flow limit." };
+    return {
+      valid: false,
+      reason: "Pasting would exceed the 128-edge flow limit.",
+    };
   }
   const sourceNodeIds = new Set<string>();
   for (const clipboardNode of payload.nodes) {
@@ -2634,7 +2955,8 @@ export const inspectMediaFlowNodePaste = (
     ) {
       return {
         valid: false,
-        reason: "Every clipboard node must have a unique bounded source identity.",
+        reason:
+          "Every clipboard node must have a unique bounded source identity.",
       };
     }
     sourceNodeIds.add(sourceNodeId);
@@ -2712,7 +3034,9 @@ export const pasteMediaFlowNodes = ({
 }): PasteMediaFlowNodesResult => {
   const check = inspectMediaFlowNodePaste(flow, payload);
   if (!check.valid) {
-    throw new Error(check.reason ?? "The copied media nodes cannot be pasted here.");
+    throw new Error(
+      check.reason ?? "The copied media nodes cannot be pasted here.",
+    );
   }
   let nextFlow = flow;
   const idMap = new Map<string, string>();
@@ -2733,7 +3057,10 @@ export const pasteMediaFlowNodes = ({
           ? {
               ...node,
               label: copyLabel.slice(0, 160),
-              config: cloneConfigValue(clipboardNode.config) as Record<string, unknown>,
+              config: cloneConfigValue(clipboardNode.config) as Record<
+                string,
+                unknown
+              >,
             }
           : node,
       ),
@@ -2747,7 +3074,8 @@ export const pasteMediaFlowNodes = ({
       fromNodeId: idMap.get(connection.fromNodeId) ?? connection.fromNodeId,
       toNodeId,
     };
-    if (!nextFlow.nodes.some((node) => node.id === request.fromNodeId)) continue;
+    if (!nextFlow.nodes.some((node) => node.id === request.fromNodeId))
+      continue;
     if (!inspectMediaFlowConnection(nextFlow, request).valid) continue;
     nextFlow = connectMediaFlowPorts({ flow: nextFlow, request, updatedAt });
   }
@@ -2769,7 +3097,9 @@ export const pasteMediaFlowNode = ({
 }): AddMediaFlowNodeResult => {
   const check = inspectMediaFlowNodePaste(flow, payload);
   if (!check.valid) {
-    throw new Error(check.reason ?? "The copied media node cannot be pasted here.");
+    throw new Error(
+      check.reason ?? "The copied media node cannot be pasted here.",
+    );
   }
   const pasted = pasteMediaFlowNodes({ flow, payload, updatedAt });
   const nodeId = pasted.nodeIds[0];
@@ -2815,7 +3145,10 @@ export const inspectMediaFlowConnection = (
   const sourceNode = flow.nodes.find((node) => node.id === request.fromNodeId);
   const targetNode = flow.nodes.find((node) => node.id === request.toNodeId);
   if (!sourceNode || !targetNode) {
-    return { valid: false, reason: "Both connection nodes must exist in the flow." };
+    return {
+      valid: false,
+      reason: "Both connection nodes must exist in the flow.",
+    };
   }
   const sourcePort = getMediaNodeDefinition(sourceNode.type)?.outputs.find(
     (port) => port.id === request.fromPortId,
@@ -2855,8 +3188,7 @@ export const inspectMediaFlowConnection = (
   );
   const incomingCount = flow.edges.filter(
     (edge) =>
-      edge.toNodeId === request.toNodeId &&
-      edge.toPortId === request.toPortId,
+      edge.toNodeId === request.toNodeId && edge.toPortId === request.toPortId,
   ).length;
   if (
     !exactConnectionExists &&
@@ -2873,7 +3205,8 @@ export const inspectMediaFlowConnection = (
     targetPort.cardinality === "single"
       ? flow.edges.filter(
           (edge) =>
-            edge.toNodeId !== request.toNodeId || edge.toPortId !== request.toPortId,
+            edge.toNodeId !== request.toNodeId ||
+            edge.toPortId !== request.toPortId,
         )
       : flow.edges;
   if (
@@ -2917,7 +3250,9 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
   const outputFormats = new Map<string, unknown>();
   const videoRoles = new Map<string, "transparent" | "opaque" | "composited">();
 
-  for (const output of flow.nodes.filter((node) => node.type === "output.asset")) {
+  for (const output of flow.nodes.filter(
+    (node) => node.type === "output.asset",
+  )) {
     let currentNodeId = output.id;
     let generatedOutputCount: unknown;
     let resolvedOutputFormat: unknown;
@@ -2942,7 +3277,8 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
         generatedOutputCount = sourceNode.config.outputCount;
         resolvedOutputFormat ??= sourceNode.config.outputFormat;
         const value = effectiveNode.config.outputCount;
-        if (typeof value === "number" && Number.isInteger(value)) numericalBounds.push(value);
+        if (typeof value === "number" && Number.isInteger(value))
+          numericalBounds.push(value);
       }
       if (sourceNode.type === "operation.format-convert") {
         resolvedOutputFormat = sourceNode.config.outputFormat;
@@ -2953,7 +3289,8 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
       if (sourceNode.type === "control.human-review") {
         hasHumanReview = true;
         const value = effectiveNode.config.maxSelections;
-        if (typeof value === "number" && Number.isInteger(value)) numericalBounds.push(value);
+        if (typeof value === "number" && Number.isInteger(value))
+          numericalBounds.push(value);
       }
       currentNodeId = sourceNode.id;
     }
@@ -2970,7 +3307,9 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
     }
   }
 
-  for (const output of flow.nodes.filter((node) => node.type === "output.video")) {
+  for (const output of flow.nodes.filter(
+    (node) => node.type === "output.video",
+  )) {
     const inputEdge = flow.edges.find(
       (edge) => edge.toNodeId === output.id && edge.toPortId === "video",
     );
@@ -3069,7 +3408,8 @@ export const connectMediaFlowPorts = ({
     targetPort?.cardinality === "single"
       ? flow.edges.filter(
           (edge) =>
-            edge.toNodeId !== request.toNodeId || edge.toPortId !== request.toPortId,
+            edge.toNodeId !== request.toNodeId ||
+            edge.toPortId !== request.toPortId,
         )
       : flow.edges;
   return synchronizeMediaFlowAssetCounts({
@@ -3141,12 +3481,15 @@ export const disconnectMediaFlowConnection = ({
     : synchronizeMediaFlowAssetCounts({ ...flow, updatedAt, edges });
 };
 
-export const orderMediaFlowNodes = (flow: MediaFlow): readonly MediaFlowNode[] => {
+export const orderMediaFlowNodes = (
+  flow: MediaFlow,
+): readonly MediaFlowNode[] => {
   const nodeIndex = new Map(flow.nodes.map((node, index) => [node.id, index]));
   const indegree = new Map(flow.nodes.map((node) => [node.id, 0]));
   const targetsBySource = new Map<string, string[]>();
   for (const edge of flow.edges) {
-    if (!indegree.has(edge.fromNodeId) || !indegree.has(edge.toNodeId)) continue;
+    if (!indegree.has(edge.fromNodeId) || !indegree.has(edge.toNodeId))
+      continue;
     indegree.set(edge.toNodeId, (indegree.get(edge.toNodeId) ?? 0) + 1);
     targetsBySource.set(edge.fromNodeId, [
       ...(targetsBySource.get(edge.fromNodeId) ?? []),
@@ -3192,9 +3535,13 @@ export const updateMediaFlowNodeConfig = ({
     throw new Error(`Media node ${nodeId} was not found.`);
   }
   const definition = getMediaNodeDefinition(sourceNode.type);
-  const field = definition?.fields.find((candidate) => candidate.id === fieldId);
+  const field = definition?.fields.find(
+    (candidate) => candidate.id === fieldId,
+  );
   if (!definition || !field) {
-    throw new Error(`Config field ${fieldId} is not declared by ${sourceNode.type}.`);
+    throw new Error(
+      `Config field ${fieldId} is not declared by ${sourceNode.type}.`,
+    );
   }
   if (field.readOnly) {
     throw new Error(`Config field ${fieldId} is synchronized and read-only.`);
@@ -3227,67 +3574,6 @@ export const updateMediaFlowNodeConfig = ({
   });
 
   return synchronizeMediaFlowAssetCounts({ ...flow, updatedAt, nodes });
-};
-
-const QUALITY_DEFAULTS_BY_NODE_TYPE: Partial<
-  Record<MediaNodeType, Readonly<Record<string, unknown>>>
-> = {
-  "task.generate-image": {
-    memoryProfile: "auto",
-  },
-  "task.edit-image": {
-    referenceBoost: 2,
-    requireChromaBackground: false,
-    referenceFit: "fit",
-    groundingPixels: 768,
-    memoryProfile: "auto",
-  },
-  "task.generate-video": {
-    guidanceScale: 5,
-    seed: 0,
-    negativePrompt: "",
-    matteQuality: "production",
-    encodingQuality: "lossless",
-    memoryProfile: "auto",
-  },
-};
-
-export const upgradeMediaFlowQualityDefaults = ({
-  flow,
-  updatedAt,
-}: {
-  flow: MediaFlow;
-  updatedAt?: string;
-}): MediaFlow => {
-  let changed = false;
-  const nodes = flow.nodes.map((node) => {
-    const defaults = QUALITY_DEFAULTS_BY_NODE_TYPE[node.type];
-    if (!defaults) return node;
-    const missingDefaults = Object.fromEntries(
-      Object.entries(defaults).filter(
-        ([fieldId]) => node.config[fieldId] === undefined,
-      ),
-    );
-    if (Object.keys(missingDefaults).length === 0) return node;
-    changed = true;
-    return {
-      ...node,
-      config: {
-        ...node.config,
-        ...missingDefaults,
-      },
-    };
-  });
-  const withDefaults = changed
-    ? {
-        ...flow,
-        ...(updatedAt ? { updatedAt } : {}),
-        nodes,
-      }
-    : flow;
-  const synchronized = synchronizeMediaFlowAssetCounts(withDefaults);
-  if (synchronized === flow || !updatedAt) return synchronized;
-  return { ...synchronized, updatedAt };
 };
 
 export const updateMediaFlowNodeConfigs = ({

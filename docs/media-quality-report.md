@@ -224,10 +224,8 @@ long render (`17–121, 4k+1` for Hunyuan, `17–129, 4k+1` for FramePack, and
 `9–257, 8k+1` for LTX). Persisted Hunyuan operations now have a complete
 TypeScript provenance contract. Model-aligned canvases are labeled by the
 requested aspect (`16:9 model-aligned`) instead of exposing implementation
-fractions such as `7:4`, while unrecognized and legacy assets still report
-their exact pixel ratio. Live Tauri validation found one legacy record without
-a resolution field; the display helper now falls back safely instead of
-crashing the Library, with a focused regression test for that case.
+fractions such as `7:4`, while unrecognized assets report their exact pixel
+ratio.
 
 Hunyuan step-distilled I2V does not apply a separate negative-prompt branch;
 provenance records `negativePromptApplied=false` instead of pretending

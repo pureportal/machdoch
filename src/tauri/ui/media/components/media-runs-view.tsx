@@ -643,7 +643,7 @@ const RunInspector = ({
           <p className="mt-3 border-t border-sky-300/10 pt-2.5 font-mono text-[8px] text-slate-700">
             {run.flowRevisionId
               ? `revision ${run.flowRevisionId} · `
-              : "unrevisioned legacy run · "}
+              : "unrevisioned run · "}
             flow {planSnapshot.flowFingerprint.slice(0, 16)}… · schema {planSnapshot.schemaVersion}
           </p>
         </section>

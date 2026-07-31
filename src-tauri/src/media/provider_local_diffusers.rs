@@ -42,6 +42,7 @@ const MAX_WORKER_RESPONSE_BYTES: usize = 2 * 1_024 * 1_024;
 const MAX_WORKER_DIAGNOSTIC_BYTES: usize = 256 * 1_024;
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
 const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
+const MAX_DECODED_LOOP_CONTINUITY_RATIO: f64 = 1.25;
 // A nominal 16 GB adapter reports slightly less usable memory after the
 // display driver reserves VRAM. Keep the bounded CPU-offload profile honest
 // while accepting those adapters instead of requiring a full 16 GiB report.
@@ -261,12 +262,22 @@ pub(crate) struct LocalWanOutputProvenance {
     pub(crate) decoded_alpha_maximum: u32,
     pub(crate) decoded_frame_count: u32,
     pub(crate) decoded_loop_endpoint_mae: f64,
+    pub(crate) decoded_loop_boundary_reference_mae: f64,
+    pub(crate) decoded_loop_boundary_continuity_ratio: f64,
     pub(crate) decoded_alpha_loop_endpoint_mae: f64,
+    pub(crate) decoded_alpha_loop_boundary_reference_mae: f64,
+    pub(crate) decoded_alpha_loop_boundary_continuity_ratio: f64,
+    pub(crate) decoded_rgb_encoding_mae: f64,
+    pub(crate) decoded_rgb_encoding_maximum_error: u32,
     pub(crate) loop_mode: String,
     pub(crate) loop_endpoint_mae: f64,
+    pub(crate) loop_boundary_reference_mae: f64,
+    pub(crate) loop_boundary_continuity_ratio: f64,
     pub(crate) has_alpha: bool,
     pub(crate) matte: Option<serde_json::Value>,
     pub(crate) encoding_quality: String,
+    pub(crate) pixel_format: String,
+    pub(crate) color_range: String,
     pub(crate) codec: String,
     pub(crate) container: String,
 }
@@ -296,9 +307,17 @@ pub(crate) struct LocalWanCompositeOutputProvenance {
     pub(crate) has_alpha: bool,
     pub(crate) loop_mode: String,
     pub(crate) loop_endpoint_mae: f64,
+    pub(crate) loop_boundary_reference_mae: f64,
+    pub(crate) loop_boundary_continuity_ratio: f64,
     pub(crate) decoded_frame_count: u32,
     pub(crate) decoded_loop_endpoint_mae: f64,
+    pub(crate) decoded_loop_boundary_reference_mae: f64,
+    pub(crate) decoded_loop_boundary_continuity_ratio: f64,
+    pub(crate) decoded_rgb_encoding_mae: f64,
+    pub(crate) decoded_rgb_encoding_maximum_error: u32,
     pub(crate) encoding_quality: String,
+    pub(crate) pixel_format: String,
+    pub(crate) color_range: String,
     pub(crate) codec: String,
     pub(crate) container: String,
     pub(crate) background: LocalWanAnimatedBackgroundEvidence,
@@ -1361,10 +1380,9 @@ fn resolve_addons(
         }
         let target_components = serde_json::from_str::<Vec<String>>(&row.2)
             .map_err(|error| format!("failed to decode model add-on targets: {error}"))?;
-        let mut embedding_vectors =
-            serde_json::from_str::<Vec<MediaEmbeddingVectorProfile>>(&row.3)
-                .map_err(|error| format!("failed to decode embedding vector profiles: {error}"))?;
-        let mut lora_profile = row
+        let embedding_vectors = serde_json::from_str::<Vec<MediaEmbeddingVectorProfile>>(&row.3)
+            .map_err(|error| format!("failed to decode embedding vector profiles: {error}"))?;
+        let lora_profile = row
             .4
             .as_deref()
             .map(serde_json::from_str::<MediaLoraTensorProfile>)
@@ -1400,58 +1418,6 @@ fn resolve_addons(
             return Err(format!(
                 "model add-on {addon_id} failed its content-addressed integrity check"
             ));
-        }
-        if row.0 == "textual-inversion" && embedding_vectors.is_empty() {
-            let inspection = model_addon::inspect(path.to_string_lossy().as_ref())?;
-            if !inspection.can_import
-                || inspection.detected_kind.as_deref() != Some("textual-inversion")
-                || inspection
-                    .detected_architecture
-                    .as_deref()
-                    .is_some_and(|architecture| architecture != row.1)
-                || inspection.target_components != target_components
-                || inspection.embedding_vectors.is_empty()
-            {
-                return Err(format!(
-                    "model add-on {addon_id} cannot be upgraded to an exact embedding vector profile; re-import the original safetensors file"
-                ));
-            }
-            embedding_vectors = inspection.embedding_vectors;
-            let encoded = serde_json::to_string(&embedding_vectors)
-                .map_err(|error| format!("failed to encode embedding vector profiles: {error}"))?;
-            connection
-                .execute(
-                    "UPDATE media_model_addons SET embedding_vectors_json = ?2, updated_at = ?3
-                     WHERE id = ?1 AND digest = ?4",
-                    params![addon_id, encoded, database::now(), row.5],
-                )
-                .map_err(|error| format!("failed to upgrade embedding vector profiles: {error}"))?;
-        }
-        if row.0 == "lora" && lora_profile.is_none() {
-            let inspection = model_addon::inspect(path.to_string_lossy().as_ref())?;
-            if !inspection.can_import
-                || inspection.detected_kind.as_deref() != Some("lora")
-                || inspection
-                    .detected_architecture
-                    .as_deref()
-                    .is_some_and(|architecture| architecture != row.1)
-                || inspection.target_components != target_components
-                || inspection.lora_profile.is_none()
-            {
-                return Err(format!(
-                    "model add-on {addon_id} cannot be upgraded to an exact LoRA tensor profile; re-import the original safetensors file"
-                ));
-            }
-            lora_profile = inspection.lora_profile;
-            let encoded = serde_json::to_string(&lora_profile)
-                .map_err(|error| format!("failed to encode LoRA tensor profile: {error}"))?;
-            connection
-                .execute(
-                    "UPDATE media_model_addons SET lora_profile_json = ?2, updated_at = ?3
-                     WHERE id = ?1 AND digest = ?4",
-                    params![addon_id, encoded, database::now(), row.5],
-                )
-                .map_err(|error| format!("failed to upgrade LoRA tensor profile: {error}"))?;
         }
         if row.0 == "lora" && !embedding_vectors.is_empty() {
             return Err(format!(
@@ -3121,11 +3087,11 @@ pub(crate) fn generate_video(
         ("hunyuan-video-1.5-i2v", "preview-512", "21:9") => (768, 336),
         ("hunyuan-video-1.5-i2v", "quality-640", "1:1") => (640, 640),
         ("hunyuan-video-1.5-i2v", "quality-640", "16:9") => (848, 480),
-        ("hunyuan-video-1.5-i2v", "quality-640", "9:16") => (480, 848),
-        ("hunyuan-video-1.5-i2v", "quality-640", "21:9") => (960, 416),
+        ("hunyuan-video-1.5-i2v", "quality-640", "9:16") => (480, 832),
+        ("hunyuan-video-1.5-i2v", "quality-640", "21:9") => (944, 416),
         ("hunyuan-video-1.5-i2v", "quality-768", "1:1") => (768, 768),
         ("hunyuan-video-1.5-i2v", "quality-768", "16:9") => (1_024, 576),
-        ("hunyuan-video-1.5-i2v", "quality-768", "9:16") => (576, 1_024),
+        ("hunyuan-video-1.5-i2v", "quality-768", "9:16") => (576, 1_008),
         ("hunyuan-video-1.5-i2v", "quality-768", "21:9") => (1_152, 496),
         (_, "preview-512", "1:1") => (512, 512),
         (_, "preview-512", "16:9") => (512, 288),
@@ -3145,10 +3111,32 @@ pub(crate) fn generate_video(
         (_, "quality-768", "21:9") => (768, 336),
         _ => unreachable!("validated video resolution and aspect ratio"),
     };
-    let expected_frame_count = if request.loop_mode == "ping-pong" {
-        request.num_frames * 2 - 1
+    let expected_frame_count = match request.loop_mode.as_str() {
+        "ping-pong" => request.num_frames * 2 - 2,
+        "seamless" => request.num_frames - 1,
+        _ => request.num_frames,
+    };
+    let expected_pixel_format = if request.transparent_background {
+        "yuva420p"
+    } else if request.encoding_quality == "lossless" {
+        "yuv444p"
     } else {
-        request.num_frames
+        "yuv420p"
+    };
+    let expected_color_range = if expected_pixel_format == "yuv444p" {
+        "full"
+    } else {
+        "limited"
+    };
+    let expected_composite_pixel_format = if request.encoding_quality == "lossless" {
+        "yuv444p"
+    } else {
+        "yuv420p"
+    };
+    let expected_composite_color_range = if expected_composite_pixel_format == "yuv444p" {
+        "full"
+    } else {
+        "limited"
     };
     let expected_conditioning_mode = match architecture {
         "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
@@ -3198,12 +3186,48 @@ pub(crate) fn generate_video(
         || response.output.frame_count != expected_frame_count
         || response.output.fps != request.fps
         || response.output.loop_mode != request.loop_mode
-        || (expects_loop_seam && response.output.loop_endpoint_mae > 0.01)
+        || !response.output.loop_endpoint_mae.is_finite()
+        || response.output.loop_endpoint_mae < 0.0
+        || !response.output.loop_boundary_reference_mae.is_finite()
+        || response.output.loop_boundary_reference_mae < 0.0
+        || !response.output.loop_boundary_continuity_ratio.is_finite()
+        || response.output.loop_boundary_continuity_ratio < 0.0
         || response.output.decoded_frame_count != response.output.frame_count
         || !response.output.decoded_loop_endpoint_mae.is_finite()
-        || (expects_loop_seam && response.output.decoded_loop_endpoint_mae > 1.0)
+        || response.output.decoded_loop_endpoint_mae < 0.0
+        || !response
+            .output
+            .decoded_loop_boundary_reference_mae
+            .is_finite()
+        || response.output.decoded_loop_boundary_reference_mae < 0.0
+        || !response
+            .output
+            .decoded_loop_boundary_continuity_ratio
+            .is_finite()
+        || response.output.decoded_loop_boundary_continuity_ratio < 0.0
+        || (expects_loop_seam
+            && response.output.decoded_loop_boundary_continuity_ratio
+                > MAX_DECODED_LOOP_CONTINUITY_RATIO)
         || !response.output.decoded_alpha_loop_endpoint_mae.is_finite()
-        || (expects_loop_seam && response.output.decoded_alpha_loop_endpoint_mae > 1.0)
+        || response.output.decoded_alpha_loop_endpoint_mae < 0.0
+        || !response
+            .output
+            .decoded_alpha_loop_boundary_reference_mae
+            .is_finite()
+        || response.output.decoded_alpha_loop_boundary_reference_mae < 0.0
+        || !response
+            .output
+            .decoded_alpha_loop_boundary_continuity_ratio
+            .is_finite()
+        || response.output.decoded_alpha_loop_boundary_continuity_ratio < 0.0
+        || (expects_loop_seam
+            && response.output.decoded_alpha_loop_boundary_continuity_ratio
+                > MAX_DECODED_LOOP_CONTINUITY_RATIO)
+        || !response.output.decoded_rgb_encoding_mae.is_finite()
+        || response.output.decoded_rgb_encoding_mae < 0.0
+        || response.output.decoded_rgb_encoding_maximum_error > 255
+        || (expected_pixel_format == "yuv444p"
+            && response.output.decoded_rgb_encoding_maximum_error > 2)
         || response.output.has_alpha != request.transparent_background
         || (request.transparent_background && response.output.alpha_minimum >= 255)
         || response.output.alpha_maximum != 255
@@ -3214,6 +3238,8 @@ pub(crate) fn generate_video(
                 || response.output.decoded_alpha_minimum != 255))
         || response.output.matte.is_some() != request.transparent_background
         || response.output.encoding_quality != request.encoding_quality
+        || response.output.pixel_format != expected_pixel_format
+        || response.output.color_range != expected_color_range
         || response.output.codec != "vp9"
         || response.output.container != "webm"
         || !matches!(
@@ -3223,6 +3249,10 @@ pub(crate) fn generate_video(
         || response.conditioning_mode != expected_conditioning_mode
         || response.negative_prompt_applied != (architecture == "wan-2.2-ti2v")
         || !response.output.duration_seconds.is_finite()
+        || (response.output.duration_seconds
+            - f64::from(expected_frame_count) / f64::from(request.fps))
+        .abs()
+            > 1e-9
     {
         return Err(
             "local video generation returned inconsistent alpha, loop, model, or runtime evidence"
@@ -3274,7 +3304,7 @@ pub(crate) fn generate_video(
     if architecture != "wan-2.2-ti2v" {
         if response.endpoint_restoration.is_some() || response.loop_endpoint_restoration.is_some() {
             return Err(
-                "native video conditioning returned legacy endpoint-restoration evidence"
+                "native video conditioning returned unexpected endpoint-restoration evidence"
                     .to_string(),
             );
         }
@@ -3335,11 +3365,30 @@ pub(crate) fn generate_video(
                 || composite.fps != request.fps
                 || composite.has_alpha
                 || composite.loop_mode != request.loop_mode
-                || (expects_loop_seam && composite.loop_endpoint_mae > 0.01)
+                || !composite.loop_endpoint_mae.is_finite()
+                || composite.loop_endpoint_mae < 0.0
+                || !composite.loop_boundary_reference_mae.is_finite()
+                || composite.loop_boundary_reference_mae < 0.0
+                || !composite.loop_boundary_continuity_ratio.is_finite()
+                || composite.loop_boundary_continuity_ratio < 0.0
                 || composite.decoded_frame_count != composite.frame_count
                 || !composite.decoded_loop_endpoint_mae.is_finite()
-                || (expects_loop_seam && composite.decoded_loop_endpoint_mae > 1.0)
+                || composite.decoded_loop_endpoint_mae < 0.0
+                || !composite.decoded_loop_boundary_reference_mae.is_finite()
+                || composite.decoded_loop_boundary_reference_mae < 0.0
+                || !composite.decoded_loop_boundary_continuity_ratio.is_finite()
+                || composite.decoded_loop_boundary_continuity_ratio < 0.0
+                || (expects_loop_seam
+                    && composite.decoded_loop_boundary_continuity_ratio
+                        > MAX_DECODED_LOOP_CONTINUITY_RATIO)
+                || !composite.decoded_rgb_encoding_mae.is_finite()
+                || composite.decoded_rgb_encoding_mae < 0.0
+                || composite.decoded_rgb_encoding_maximum_error > 255
+                || (expected_composite_pixel_format == "yuv444p"
+                    && composite.decoded_rgb_encoding_maximum_error > 2)
                 || composite.encoding_quality != request.encoding_quality
+                || composite.pixel_format != expected_composite_pixel_format
+                || composite.color_range != expected_composite_color_range
                 || composite.codec != "vp9"
                 || composite.container != "webm"
                 || composite.background.engine
@@ -3354,6 +3403,10 @@ pub(crate) fn generate_video(
                 || composite.background.color_end != background.color_end
                 || composite.background.cycles != background.cycles
                 || !composite.duration_seconds.is_finite()
+                || (composite.duration_seconds
+                    - f64::from(expected_frame_count) / f64::from(request.fps))
+                .abs()
+                    > 1e-9
             {
                 return Err(
                     "local WAN animated composite returned inconsistent frame, loop, or background evidence"

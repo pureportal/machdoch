@@ -8,8 +8,9 @@ alpha plane and make a transparent asset look like its hidden chroma-key RGB.
 The evaluator intentionally keeps semantic judgements (anatomy, identity, and
 whether an action reads clearly) in the accompanying human rubric. The metrics
 here cover properties that can be measured reliably without a learned critic:
-decode integrity, sharpness, motion-compensated temporal residual, alpha
-stability, edge spill, holes/components, coverage drift, and loop closure.
+decode integrity, resolution-normalized sharpness and motion, motion-compensated
+temporal residual, alpha stability, edge spill, holes/components, coverage
+drift, loop closure, and exact or near-exact mirrored playback.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ BUNDLED_FFMPEG = (
     / "binaries"
     / "ffmpeg-win-x86_64-v7.1.exe"
 )
-VIDEO_SUFFIXES = {".webm", ".mp4", ".mov", ".mkv", ".avi"}
+VIDEO_SUFFIXES = {".webm", ".mp4", ".mov", ".mkv", ".avi", ".gif"}
 IMAGE_SUFFIXES = {".png", ".webp", ".jpg", ".jpeg"}
 
 
@@ -55,6 +56,8 @@ class ClipInfo:
     fps: float
     duration_seconds: float
     decoded_alpha: bool
+    pixel_format: str | None
+    color_range: str | None
 
 
 def _rounded(value: float | np.floating[Any], digits: int = 6) -> float:
@@ -79,7 +82,10 @@ def _ffmpeg_path(explicit: Path | None) -> Path:
     return candidate
 
 
-def _probe_video(ffmpeg: Path, source: Path) -> tuple[int, int, float]:
+def _probe_video(
+    ffmpeg: Path,
+    source: Path,
+) -> tuple[int, int, float, float | None, str | None, str | None]:
     completed = subprocess.run(
         [
             str(ffmpeg),
@@ -101,17 +107,52 @@ def _probe_video(ffmpeg: Path, source: Path) -> tuple[int, int, float]:
     )
     dimension_match = re.search(r"(?<![\d.])(\d{2,5})x(\d{2,5})(?![\d.])", video_line)
     fps_match = re.search(r"(\d+(?:\.\d+)?)\s+fps\b", video_line)
+    pixel_format_match = re.search(
+        r",\s+([a-z][a-z0-9_]*)(?:\(([^)]*)\))?,\s+\d{2,5}x\d{2,5}",
+        video_line,
+    )
+    duration_match = re.search(
+        r"Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)",
+        diagnostic,
+    )
     if dimension_match is None:
         raise SystemExit(f"Could not read video dimensions from FFmpeg:\n{video_line}")
+    duration_seconds = None
+    if duration_match is not None:
+        duration_seconds = (
+            int(duration_match.group(1)) * 60 * 60
+            + int(duration_match.group(2)) * 60
+            + float(duration_match.group(3))
+        )
+    pixel_format = pixel_format_match.group(1) if pixel_format_match else None
+    color_metadata = (
+        pixel_format_match.group(2).split(",", 1)[0].strip()
+        if pixel_format_match and pixel_format_match.group(2)
+        else None
+    )
+    color_range = {
+        "pc": "full",
+        "tv": "limited",
+    }.get(color_metadata)
     return (
         int(dimension_match.group(1)),
         int(dimension_match.group(2)),
         float(fps_match.group(1)) if fps_match else 0.0,
+        duration_seconds,
+        pixel_format,
+        color_range,
     )
 
 
 def _decode_video(ffmpeg: Path, source: Path) -> tuple[np.ndarray, ClipInfo]:
-    width, height, fps = _probe_video(ffmpeg, source)
+    (
+        width,
+        height,
+        fps,
+        duration_seconds,
+        pixel_format,
+        color_range,
+    ) = _probe_video(ffmpeg, source)
     command = [
         str(ffmpeg),
         "-hide_banner",
@@ -156,17 +197,33 @@ def _decode_video(ffmpeg: Path, source: Path) -> tuple[np.ndarray, ClipInfo]:
         (-1, height, width, 4)
     )
     alpha = frames[..., 3]
-    decoded_alpha = bool(int(alpha.min()) < 255 and int(alpha.max()) == 255)
-    if fps <= 0:
-        fps = 1.0
+    decoded_alpha = bool(int(alpha.min()) < 255)
+    if (
+        source.suffix.lower() == ".gif"
+        and duration_seconds is not None
+        and duration_seconds > 0
+    ):
+        # GIF stores centisecond frame delays and may be variable-rate. Its
+        # nominal stream FPS does not reproduce the actual playback duration.
+        fps = len(frames) / duration_seconds
+    else:
+        if fps > 0:
+            duration_seconds = len(frames) / fps
+        elif duration_seconds is not None and duration_seconds > 0:
+            fps = len(frames) / duration_seconds
+        else:
+            fps = 1.0
+            duration_seconds = len(frames) / fps
     return frames.copy(), ClipInfo(
         source=str(source.resolve()),
         width=width,
         height=height,
         frame_count=len(frames),
         fps=fps,
-        duration_seconds=len(frames) / fps,
+        duration_seconds=duration_seconds,
         decoded_alpha=decoded_alpha,
+        pixel_format=pixel_format,
+        color_range=color_range,
     )
 
 
@@ -201,7 +258,9 @@ def _load_frame_directory(source: Path, fps: float) -> tuple[np.ndarray, ClipInf
         frame_count=len(frames),
         fps=fps,
         duration_seconds=len(frames) / fps,
-        decoded_alpha=bool(int(alpha.min()) < 255 and int(alpha.max()) == 255),
+        decoded_alpha=bool(int(alpha.min()) < 255),
+        pixel_format="rgba",
+        color_range="full",
     )
 
 
@@ -226,7 +285,9 @@ def _load_clip(
             frame_count=1,
             fps=directory_fps,
             duration_seconds=1.0 / directory_fps,
-            decoded_alpha=bool(int(alpha.min()) < 255 and int(alpha.max()) == 255),
+            decoded_alpha=bool(int(alpha.min()) < 255),
+            pixel_format="rgba",
+            color_range="full",
         )
     raise SystemExit(f"Unsupported input: {source}")
 
@@ -342,6 +403,17 @@ def _contact_sheet_pages(
     return pages
 
 
+def _loop_boundary_indices(frame_count: int) -> list[int]:
+    if frame_count == 1:
+        return [0]
+    return [
+        max(0, frame_count - 2),
+        frame_count - 1,
+        0,
+        min(1, frame_count - 1),
+    ]
+
+
 def _alpha_components(alpha: np.ndarray) -> tuple[int, int]:
     binary = (alpha >= 128).astype(np.uint8)
     component_count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
@@ -417,7 +489,7 @@ def _edge_mask(alpha: np.ndarray) -> np.ndarray:
 
 
 def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
-    rgba = frames.astype(np.uint8)
+    rgba = frames.astype(np.uint8, copy=False)
     alpha = rgba[..., 3]
     opaque_alpha = bool(int(alpha.min()) == 255)
     background = np.full((info.height, info.width, 3), 96, dtype=np.uint8)
@@ -425,8 +497,17 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
     grays = np.stack(
         [cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY) for frame in composited]
     )
+    spatial_normalization_scale = 512 / max(info.width, info.height)
+    normalized_width = max(1, round(info.width * spatial_normalization_scale))
+    normalized_height = max(1, round(info.height * spatial_normalization_scale))
+    normalization_interpolation = (
+        cv2.INTER_AREA
+        if spatial_normalization_scale < 1
+        else cv2.INTER_CUBIC
+    )
 
     sharpness: list[float] = []
+    normalized_sharpness: list[float] = []
     alpha_coverages: list[float] = []
     fractional_coverages: list[float] = []
     component_counts: list[float] = []
@@ -436,6 +517,25 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
         subject = matte >= 224
         sharp_values = cv2.Laplacian(gray, cv2.CV_32F)[subject]
         sharpness.append(float(np.var(sharp_values)) if sharp_values.size else 0.0)
+        normalized_gray = cv2.resize(
+            gray,
+            (normalized_width, normalized_height),
+            interpolation=normalization_interpolation,
+        )
+        normalized_matte = cv2.resize(
+            matte,
+            (normalized_width, normalized_height),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        normalized_values = cv2.Laplacian(
+            normalized_gray,
+            cv2.CV_32F,
+        )[normalized_matte >= 224]
+        normalized_sharpness.append(
+            float(np.var(normalized_values))
+            if normalized_values.size
+            else 0.0
+        )
         alpha_coverages.append(float(np.mean(matte >= 128)))
         fractional_coverages.append(float(np.mean((matte > 8) & (matte < 247))))
         components, holes = _alpha_components(matte)
@@ -505,6 +605,129 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
     loop_alpha_mae = float(
         np.mean(np.abs(alpha[0].astype(np.int16) - alpha[-1].astype(np.int16)))
     )
+    exact_closure_frame = bool(np.array_equal(frames[0], frames[-1]))
+    loop_maps, loop_flow_magnitude = _flow_warp(grays[-1], grays[0])
+    loop_warped_last = _remap(composited[-1], loop_maps)
+    loop_warped_alpha = _remap(alpha[-1], loop_maps)
+    loop_stable_region = (alpha[0] >= 224) & (loop_warped_alpha >= 224)
+    loop_measure_region = (
+        loop_stable_region if np.any(loop_stable_region) else loop_union
+    )
+    loop_residual = np.abs(
+        composited[0].astype(np.float32) - loop_warped_last.astype(np.float32)
+    )
+    loop_motion_compensated_mae = (
+        float(loop_residual[loop_measure_region].mean())
+        if np.any(loop_measure_region)
+        else 0.0
+    )
+    loop_flow = (
+        float(loop_flow_magnitude[loop_union].mean())
+        if np.any(loop_union)
+        else 0.0
+    )
+    loop_current_high = composited[0].astype(np.float32) - cv2.GaussianBlur(
+        composited[0].astype(np.float32), (0, 0), 1.2
+    )
+    loop_previous_high = loop_warped_last.astype(np.float32) - cv2.GaussianBlur(
+        loop_warped_last.astype(np.float32), (0, 0), 1.2
+    )
+    loop_high_residual = np.abs(loop_current_high - loop_previous_high)
+    loop_high_frequency_mae = (
+        float(loop_high_residual[loop_measure_region].mean())
+        if np.any(loop_measure_region)
+        else 0.0
+    )
+    internal_residual_p95 = (
+        float(np.percentile(warped_rgb_mae, 95)) if warped_rgb_mae else 0.0
+    )
+    loop_residual_ratio = (
+        loop_motion_compensated_mae / internal_residual_p95
+        if internal_residual_p95 > 0.0
+        else 0.0
+    )
+    circular_adjacent_mae = np.asarray(
+        [*adjacent_mae, loop_rgb_mae],
+        dtype=np.float64,
+    )
+    circular_flow = np.asarray(
+        [*flow_magnitudes, loop_flow],
+        dtype=np.float64,
+    )
+    circular_residual = np.asarray(
+        [*warped_rgb_mae, loop_motion_compensated_mae],
+        dtype=np.float64,
+    )
+    exact_duplicate_transitions = sum(
+        np.array_equal(rgba[index], rgba[(index + 1) % len(rgba)])
+        for index in range(len(rgba))
+    )
+    near_duplicate_threshold = 0.2
+    near_duplicate_transitions = int(
+        np.count_nonzero(circular_adjacent_mae <= near_duplicate_threshold)
+    )
+    mirrored_pair_mae: list[float] = []
+    exact_mirrored_pairs = 0
+    for index in range(1, (len(rgba) + 1) // 2):
+        mirrored_index = len(rgba) - index
+        mirrored_union = (alpha[index] >= 64) | (
+            alpha[mirrored_index] >= 64
+        )
+        mirrored_error = np.abs(
+            composited[index].astype(np.int16)
+            - composited[mirrored_index].astype(np.int16)
+        )
+        mirrored_pair_mae.append(
+            float(mirrored_error[mirrored_union].mean())
+            if np.any(mirrored_union)
+            else 0.0
+        )
+        exact_mirrored_pairs += int(
+            np.array_equal(
+                composited[index],
+                composited[mirrored_index],
+            )
+        )
+    mirrored_pair_count = len(mirrored_pair_mae)
+    adjacent_reference_mean = (
+        float(np.mean(adjacent_mae)) if adjacent_mae else 0.0
+    )
+    mirrored_pair_mean = (
+        float(np.mean(mirrored_pair_mae)) if mirrored_pair_mae else 0.0
+    )
+    mirrored_pair_ratio = (
+        mirrored_pair_mean / adjacent_reference_mean
+        if adjacent_reference_mean > 0.0
+        else 0.0
+    )
+    mirrored_near_duplicate_threshold = max(
+        0.5,
+        adjacent_reference_mean * 0.1,
+    )
+    near_duplicate_mirrored_pairs = sum(
+        value <= mirrored_near_duplicate_threshold
+        for value in mirrored_pair_mae
+    )
+    exact_mirrored_pair_fraction = (
+        exact_mirrored_pairs / mirrored_pair_count
+        if mirrored_pair_count
+        else 0.0
+    )
+    near_duplicate_mirrored_pair_fraction = (
+        near_duplicate_mirrored_pairs / mirrored_pair_count
+        if mirrored_pair_count
+        else 0.0
+    )
+    likely_ping_pong_assembly = bool(
+        mirrored_pair_count >= 3
+        and (
+            exact_mirrored_pair_fraction >= 0.8
+            or (
+                near_duplicate_mirrored_pair_fraction >= 0.8
+                and mirrored_pair_ratio <= 0.15
+            )
+        )
+    )
 
     def transition_peak(values: list[float]) -> dict[str, Any] | None:
         if not values:
@@ -514,6 +737,55 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
             "fromFrame": index,
             "toFrame": index + 1,
             "value": _rounded(values[index]),
+        }
+
+    def cadence_summary(values: np.ndarray) -> dict[str, float]:
+        if not values.size:
+            return {
+                "coefficientOfVariation": 0.0,
+                "lagOneAutocorrelation": 0.0,
+                "normalizedJerkMean": 0.0,
+                "adjacentSpeedRatioP95": 0.0,
+                "finalQuarterToFirstQuarterMeanRatio": 0.0,
+                "lowTransitionFraction": 0.0,
+            }
+        mean = float(np.mean(values))
+        median = float(np.median(values))
+        centered = values - mean
+        energy = float(np.dot(centered, centered))
+        lag_one = (
+            float(np.dot(centered, np.roll(centered, 1)) / energy)
+            if energy > 1e-12
+            else 0.0
+        )
+        jerk = np.roll(values, -1) - 2.0 * values + np.roll(values, 1)
+        previous = np.roll(values, 1)
+        ratios = np.maximum(values, previous) / np.maximum(
+            np.minimum(values, previous),
+            max(mean * 0.02, 1e-9),
+        )
+        quarter = max(1, len(values) // 4)
+        first_quarter = float(np.mean(values[:quarter]))
+        final_quarter = float(np.mean(values[-quarter:]))
+        return {
+            "coefficientOfVariation": _rounded(
+                float(np.std(values)) / mean if mean > 0.0 else 0.0
+            ),
+            "lagOneAutocorrelation": _rounded(lag_one),
+            "normalizedJerkMean": _rounded(
+                float(np.mean(np.abs(jerk))) / mean if mean > 0.0 else 0.0
+            ),
+            "adjacentSpeedRatioP95": _rounded(
+                float(np.percentile(ratios, 95))
+            ),
+            "finalQuarterToFirstQuarterMeanRatio": _rounded(
+                final_quarter / first_quarter if first_quarter > 0.0 else 0.0
+            ),
+            "lowTransitionFraction": _rounded(
+                float(np.mean(values <= median * 0.35))
+                if median > 0.0
+                else 0.0
+            ),
         }
 
     per_frame = []
@@ -567,6 +839,26 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
             "subjectLaplacianVarianceMean": _rounded(np.mean(sharpness)),
             "subjectLaplacianVarianceP10": _percentile(sharpness, 10),
             "subjectLaplacianVarianceP90": _percentile(sharpness, 90),
+            "subjectLaplacianVarianceAt512Mean": _rounded(
+                np.mean(normalized_sharpness)
+            ),
+            "normalizationLongEdgePixels": 512,
+            "coefficientOfVariation": _rounded(
+                np.std(sharpness) / np.mean(sharpness)
+            )
+            if np.mean(sharpness) > 0.0
+            else 0.0,
+            "finalQuarterToFirstQuarterMeanRatio": _rounded(
+                np.mean(sharpness[-max(1, len(sharpness) // 4) :])
+                / np.mean(sharpness[: max(1, len(sharpness) // 4)])
+            )
+            if np.mean(sharpness[: max(1, len(sharpness) // 4)]) > 0.0
+            else 0.0,
+            "minimumToMedianRatio": _rounded(
+                min(sharpness) / np.median(sharpness)
+            )
+            if np.median(sharpness) > 0.0
+            else 0.0,
         },
         "motion": {
             "adjacentSubjectRgbMaeMean": _rounded(np.mean(adjacent_mae))
@@ -576,6 +868,32 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
             if flow_magnitudes
             else 0.0,
             "opticalFlowPixelsP95": _percentile(flow_magnitudes, 95),
+            "opticalFlowPixelsPerSecondMean": _rounded(
+                np.mean(flow_magnitudes) * info.fps
+            )
+            if flow_magnitudes
+            else 0.0,
+            "opticalFlowPixelsPerSecondP95": _rounded(
+                np.percentile(flow_magnitudes, 95) * info.fps
+            )
+            if flow_magnitudes
+            else 0.0,
+            "opticalFlowPathPixels": _rounded(sum(flow_magnitudes)),
+            "opticalFlowPixelsAt512Mean": _rounded(
+                np.mean(flow_magnitudes) * spatial_normalization_scale
+            )
+            if flow_magnitudes
+            else 0.0,
+            "opticalFlowPixelsAt512PerSecondMean": _rounded(
+                np.mean(flow_magnitudes)
+                * spatial_normalization_scale
+                * info.fps
+            )
+            if flow_magnitudes
+            else 0.0,
+            "opticalFlowPathPixelsAt512": _rounded(
+                sum(flow_magnitudes) * spatial_normalization_scale
+            ),
         },
         "temporal": {
             "motionCompensatedRgbMaeMean": _rounded(np.mean(warped_rgb_mae))
@@ -587,6 +905,15 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
             )
             if high_frequency_residual
             else 0.0,
+        },
+        "cadence": {
+            "transitionCount": len(circular_flow),
+            "includesLoopBoundary": True,
+            "opticalFlow": cadence_summary(circular_flow),
+            "motionCompensatedRgb": cadence_summary(circular_residual),
+            "exactDuplicateTransitionCount": exact_duplicate_transitions,
+            "nearDuplicateTransitionCount": near_duplicate_transitions,
+            "nearDuplicateRgbMaeThreshold": near_duplicate_threshold,
         },
         "alpha": {
             "coverageMean": _rounded(np.mean(alpha_coverages)),
@@ -608,6 +935,41 @@ def _evaluate(frames: np.ndarray, info: ClipInfo) -> dict[str, Any]:
         "loop": {
             "compositedSubjectRgbMae": _rounded(loop_rgb_mae),
             "alphaMae": _rounded(loop_alpha_mae),
+            "duplicateClosureFrame": exact_closure_frame,
+            "opticalFlowPixels": _rounded(loop_flow),
+            "opticalFlowPixelsAt512": _rounded(
+                loop_flow * spatial_normalization_scale
+            ),
+            "motionCompensatedRgbMae": _rounded(
+                loop_motion_compensated_mae
+            ),
+            "motionCompensatedHighFrequencyResidual": _rounded(
+                loop_high_frequency_mae
+            ),
+            "motionCompensatedRgbRatioToInternalP95": _rounded(
+                loop_residual_ratio
+            ),
+        },
+        "reversal": {
+            "mirroredPairCount": mirrored_pair_count,
+            "exactMirroredPairFraction": _rounded(
+                exact_mirrored_pair_fraction
+            ),
+            "nearDuplicateMirroredPairFraction": _rounded(
+                near_duplicate_mirrored_pair_fraction
+            ),
+            "mirroredSubjectRgbMaeMean": _rounded(mirrored_pair_mean),
+            "mirroredSubjectRgbMaeP10": _percentile(
+                mirrored_pair_mae,
+                10,
+            ),
+            "mirroredSubjectRgbMaeRatioToAdjacentMean": _rounded(
+                mirrored_pair_ratio
+            ),
+            "nearDuplicateThreshold": _rounded(
+                mirrored_near_duplicate_threshold
+            ),
+            "likelyPingPongAssembly": likely_ping_pong_assembly,
         },
         "outliers": {
             "largestMotion": transition_peak(flow_magnitudes),
@@ -642,9 +1004,14 @@ def _write_evidence(
     clip_directory = output_directory / _safe_name(name)
     clip_directory.mkdir(parents=True, exist_ok=True)
     diagnostics = _backgrounds(info.height, info.width)
+    review_backgrounds = (
+        diagnostics
+        if info.decoded_alpha
+        else {"checker": diagnostics["checker"]}
+    )
     contact_sheets: dict[str, str] = {}
     all_frame_contact_sheets: dict[str, list[str]] = {}
-    for background_name, background in diagnostics.items():
+    for background_name, background in review_backgrounds.items():
         pages = _contact_sheet_pages(
             frames,
             background,
@@ -666,10 +1033,33 @@ def _write_evidence(
     )
     contact_sheets["alpha"] = alpha_pages[0]
     all_frame_contact_sheets["alpha"] = alpha_pages
+    loop_boundary_indices = _loop_boundary_indices(len(frames))
+    loop_boundary_path = clip_directory / "loop-boundary-checker.png"
+    _contact_sheet(
+        frames,
+        diagnostics["checker"],
+        loop_boundary_path,
+        f"{name} | playback order across last-to-first loop boundary",
+        frame_indices=loop_boundary_indices,
+    )
+    loop_boundary_alpha_path = clip_directory / "loop-boundary-alpha.png"
+    _contact_sheet(
+        alpha_rgba,
+        np.zeros((info.height, info.width, 3), dtype=np.uint8),
+        loop_boundary_alpha_path,
+        f"{name} | alpha across last-to-first loop boundary",
+        frame_indices=loop_boundary_indices,
+    )
+    del alpha_rgba
     metrics = _evaluate(frames, info)
     metrics["evidence"] = {
         "contactSheets": contact_sheets,
         "allFrameContactSheets": all_frame_contact_sheets,
+        "loopBoundary": {
+            "frameOrder": loop_boundary_indices,
+            "checker": str(loop_boundary_path.resolve()),
+            "alpha": str(loop_boundary_alpha_path.resolve()),
+        },
     }
     metrics_path = clip_directory / "metrics.json"
     metrics_path.write_text(
@@ -695,11 +1085,62 @@ def _parse_input(value: str) -> tuple[str, Path]:
 def _comparison(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
     fields = {
         "sharpness": ("spatial", "subjectLaplacianVarianceMean"),
+        "sharpnessAt512": (
+            "spatial",
+            "subjectLaplacianVarianceAt512Mean",
+        ),
+        "sharpnessConsistency": ("spatial", "coefficientOfVariation"),
+        "endingSharpnessRatio": (
+            "spatial",
+            "finalQuarterToFirstQuarterMeanRatio",
+        ),
+        "minimumSharpnessRatio": ("spatial", "minimumToMedianRatio"),
         "motion": ("motion", "opticalFlowPixelsMean"),
+        "motionAt512": ("motion", "opticalFlowPixelsAt512Mean"),
+        "motionVelocity": ("motion", "opticalFlowPixelsPerSecondMean"),
+        "motionVelocityAt512": (
+            "motion",
+            "opticalFlowPixelsAt512PerSecondMean",
+        ),
+        "motionPath": ("motion", "opticalFlowPathPixels"),
+        "motionPathAt512": ("motion", "opticalFlowPathPixelsAt512"),
         "temporalResidual": ("temporal", "motionCompensatedRgbMaeMean"),
         "textureCrawl": (
             "temporal",
             "motionCompensatedHighFrequencyResidualMean",
+        ),
+        "cadenceVariation": (
+            "cadence",
+            "opticalFlow",
+            "coefficientOfVariation",
+        ),
+        "cadenceAlternation": (
+            "cadence",
+            "opticalFlow",
+            "lagOneAutocorrelation",
+        ),
+        "cadenceJerk": (
+            "cadence",
+            "opticalFlow",
+            "normalizedJerkMean",
+        ),
+        "endingMotionRatio": (
+            "cadence",
+            "opticalFlow",
+            "finalQuarterToFirstQuarterMeanRatio",
+        ),
+        "lowMotionTransitionFraction": (
+            "cadence",
+            "opticalFlow",
+            "lowTransitionFraction",
+        ),
+        "exactDuplicateTransitionCount": (
+            "cadence",
+            "exactDuplicateTransitionCount",
+        ),
+        "nearDuplicateTransitionCount": (
+            "cadence",
+            "nearDuplicateTransitionCount",
         ),
         "alphaInstability": ("alpha", "motionCompensatedMaeMean"),
         "alphaCoverageDrift": ("alpha", "coverageStd"),
@@ -707,14 +1148,39 @@ def _comparison(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "holes": ("alpha", "holesMean"),
         "loopRgbSeam": ("loop", "compositedSubjectRgbMae"),
         "loopAlphaSeam": ("loop", "alphaMae"),
+        "duplicateClosureFrame": ("loop", "duplicateClosureFrame"),
+        "loopTemporalResidual": ("loop", "motionCompensatedRgbMae"),
+        "loopTemporalResidualRatio": (
+            "loop",
+            "motionCompensatedRgbRatioToInternalP95",
+        ),
+        "exactMirroredPairFraction": (
+            "reversal",
+            "exactMirroredPairFraction",
+        ),
+        "nearDuplicateMirroredPairFraction": (
+            "reversal",
+            "nearDuplicateMirroredPairFraction",
+        ),
+        "mirroredPairRgbRatio": (
+            "reversal",
+            "mirroredSubjectRgbMaeRatioToAdjacentMean",
+        ),
+        "likelyPingPongAssembly": (
+            "reversal",
+            "likelyPingPongAssembly",
+        ),
     }
-    return {
-        label: {
-            name: record[section][field]
-            for name, record in records.items()
-        }
-        for label, (section, field) in fields.items()
-    }
+    comparison: dict[str, dict[str, Any]] = {}
+    for label, path in fields.items():
+        values: dict[str, Any] = {}
+        for name, record in records.items():
+            value: Any = record
+            for segment in path:
+                value = value[segment]
+            values[name] = value
+        comparison[label] = values
+    return comparison
 
 
 def main() -> int:
@@ -756,7 +1222,7 @@ def main() -> int:
         frames, info = _load_clip(source, ffmpeg, args.directory_fps)
         records[name] = _write_evidence(name, frames, info, output_directory)
     report = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAtUnixSeconds": time.time(),
         "elapsedSeconds": _rounded(time.perf_counter() - started, 3),
         "ffmpeg": str(ffmpeg.resolve()) if ffmpeg != Path("ffmpeg") else "ffmpeg",
@@ -766,17 +1232,49 @@ def main() -> int:
             "lowerIsBetter": [
                 "temporalResidual",
                 "textureCrawl",
+                "sharpnessConsistency",
+                "cadenceVariation",
+                "cadenceJerk",
+                "lowMotionTransitionFraction",
+                "exactDuplicateTransitionCount",
+                "nearDuplicateTransitionCount",
                 "alphaInstability",
                 "alphaCoverageDrift",
                 "greenSpill",
                 "holes",
                 "loopRgbSeam",
                 "loopAlphaSeam",
+                "exactMirroredPairFraction",
+                "nearDuplicateMirroredPairFraction",
             ],
             "contextDependent": [
                 "sharpness",
+                "sharpnessAt512",
+                "endingSharpnessRatio",
+                "minimumSharpnessRatio",
                 "motion",
+                "motionAt512",
+                "motionVelocity",
+                "motionVelocityAt512",
+                "motionPath",
+                "motionPathAt512",
+                "cadenceAlternation",
+                "endingMotionRatio",
+                "loopTemporalResidual",
+                "loopTemporalResidualRatio",
+                "mirroredPairRgbRatio",
             ],
+            "loopContinuityRatioTargetMaximum": 1.25,
+            "cadenceTargets": {
+                "endingMotionRatio": 1.0,
+                "endingSharpnessRatio": 1.0,
+                "cadenceAlternationMinimum": -0.25,
+                "exactDuplicateTransitionCount": 0,
+            },
+            "forwardOnlyLoopRequirement": {
+                "likelyPingPongAssembly": False,
+                "exactMirroredPairFractionMaximum": 0.8,
+            },
             "semanticReviewRequired": [
                 "identity",
                 "anatomy",

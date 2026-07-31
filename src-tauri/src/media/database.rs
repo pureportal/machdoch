@@ -102,34 +102,6 @@ pub(crate) fn initialize(paths: &MediaRuntimePaths) -> MediaResult<RecoverySumma
     Ok(summary)
 }
 
-fn sqlite_table_exists(connection: &Connection, table: &str) -> MediaResult<bool> {
-    connection
-        .query_row(
-            "SELECT EXISTS(
-               SELECT 1
-               FROM sqlite_master
-               WHERE type = 'table' AND name = ?1
-             )",
-            params![table],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|error| format!("failed to inspect SQLite table {table}: {error}"))
-}
-
-fn sqlite_column_exists(connection: &Connection, table: &str, column: &str) -> MediaResult<bool> {
-    connection
-        .query_row(
-            "SELECT EXISTS(
-               SELECT 1
-               FROM pragma_table_info(?1)
-               WHERE name = ?2
-             )",
-            params![table, column],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|error| format!("failed to inspect SQLite column {table}.{column}: {error}"))
-}
-
 pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
     let mut connection = open(paths)?;
     connection
@@ -137,12 +109,12 @@ pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
         .map_err(|error| format!("failed to enable Media Studio WAL mode: {error}"))?;
     connection
         .execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (\n\
-               version INTEGER PRIMARY KEY,\n\
-               applied_at TEXT NOT NULL\n\
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+               version INTEGER PRIMARY KEY,
+               applied_at TEXT NOT NULL
              );",
         )
-        .map_err(|error| format!("failed to initialize Media Studio migrations: {error}"))?;
+        .map_err(|error| format!("failed to initialize Media Studio schema metadata: {error}"))?;
 
     let version = connection
         .query_row(
@@ -151,1077 +123,30 @@ pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
             |row| row.get::<_, u32>(0),
         )
         .map_err(|error| format!("failed to read Media Studio schema version: {error}"))?;
-    if version > SCHEMA_VERSION {
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    if version != 0 {
         return Err(format!(
-            "Media Studio database schema {version} is newer than supported schema {SCHEMA_VERSION}"
+            "Media Studio database schema {version} is unsupported; recreate it with schema {SCHEMA_VERSION}"
         ));
     }
 
-    if version < 1 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE runs (\n\
-                   id TEXT PRIMARY KEY,\n\
-                   flow_id TEXT NOT NULL,\n\
-                   flow_name TEXT NOT NULL,\n\
-                   plan_id TEXT NOT NULL,\n\
-                   status TEXT NOT NULL,\n\
-                   created_at TEXT NOT NULL,\n\
-                   updated_at TEXT NOT NULL,\n\
-                   prompt TEXT NOT NULL,\n\
-                   model_label TEXT NOT NULL,\n\
-                   target TEXT,\n\
-                   output_count INTEGER NOT NULL,\n\
-                   diagnostic_count INTEGER NOT NULL,\n\
-                   progress REAL NOT NULL DEFAULT 0,\n\
-                   current_step TEXT NOT NULL,\n\
-                   executor TEXT NOT NULL,\n\
-                   error TEXT,\n\
-                   cancel_requested INTEGER NOT NULL DEFAULT 0,\n\
-                   aspect_ratio TEXT NOT NULL\n\
-                 );\n\
-                 CREATE TABLE jobs (\n\
-                   id TEXT PRIMARY KEY,\n\
-                   run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,\n\
-                   status TEXT NOT NULL,\n\
-                   attempts INTEGER NOT NULL DEFAULT 0,\n\
-                   max_attempts INTEGER NOT NULL DEFAULT 3,\n\
-                   started_at TEXT,\n\
-                   finished_at TEXT,\n\
-                   heartbeat_at TEXT,\n\
-                   error TEXT\n\
-                 );\n\
-                 CREATE TABLE run_events (\n\
-                   id INTEGER PRIMARY KEY AUTOINCREMENT,\n\
-                   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,\n\
-                   sequence INTEGER NOT NULL,\n\
-                   kind TEXT NOT NULL,\n\
-                   created_at TEXT NOT NULL,\n\
-                   message TEXT NOT NULL,\n\
-                   progress REAL,\n\
-                   step_id TEXT,\n\
-                   UNIQUE(run_id, sequence)\n\
-                 );\n\
-                 CREATE TABLE blobs (\n\
-                   digest TEXT PRIMARY KEY,\n\
-                   byte_size INTEGER NOT NULL,\n\
-                   mime_type TEXT NOT NULL,\n\
-                   relative_path TEXT NOT NULL,\n\
-                   created_at TEXT NOT NULL\n\
-                 );\n\
-                 CREATE TABLE assets (\n\
-                   id TEXT PRIMARY KEY,\n\
-                   run_id TEXT NOT NULL REFERENCES runs(id),\n\
-                   blob_digest TEXT NOT NULL REFERENCES blobs(digest),\n\
-                   kind TEXT NOT NULL,\n\
-                   mime_type TEXT NOT NULL,\n\
-                   byte_size INTEGER NOT NULL,\n\
-                   width INTEGER NOT NULL,\n\
-                   height INTEGER NOT NULL,\n\
-                   created_at TEXT NOT NULL,\n\
-                   output_index INTEGER NOT NULL,\n\
-                   fixture INTEGER NOT NULL DEFAULT 0,\n\
-                   UNIQUE(run_id, output_index)\n\
-                 );\n\
-                 CREATE TABLE asset_inputs (\n\
-                   asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,\n\
-                   input_asset_id TEXT NOT NULL REFERENCES assets(id),\n\
-                   role TEXT NOT NULL,\n\
-                   PRIMARY KEY(asset_id, input_asset_id, role)\n\
-                 );\n\
-                 CREATE TABLE resource_leases (\n\
-                   resource_key TEXT PRIMARY KEY,\n\
-                   owner_run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,\n\
-                   acquired_at TEXT NOT NULL,\n\
-                   expires_at TEXT NOT NULL\n\
-                 );\n\
-                 CREATE INDEX runs_created_at_idx ON runs(created_at DESC);\n\
-                 CREATE INDEX run_events_run_idx ON run_events(run_id, sequence);\n\
-                 CREATE INDEX assets_created_at_idx ON assets(created_at DESC);",
-            )
-            .map_err(|error| format!("failed to apply Media Studio schema: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![1_u32, now()],
-            )
-            .map_err(|error| format!("failed to record Media Studio migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit Media Studio migration: {error}"))?;
-    }
-
-    if version < 2 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio metadata migration: {error}"))?;
-        transaction
-            .execute_batch("ALTER TABLE assets ADD COLUMN operation_json TEXT;")
-            .map_err(|error| format!("failed to add Media Studio asset metadata: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![2_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record Media Studio metadata migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio metadata migration: {error}")
-        })?;
-    }
-
-    if version < 3 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio rendition migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE asset_renditions (\n\
-                   asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,\n\
-                   profile TEXT NOT NULL,\n\
-                   blob_digest TEXT NOT NULL REFERENCES blobs(digest),\n\
-                   mime_type TEXT NOT NULL,\n\
-                   byte_size INTEGER NOT NULL,\n\
-                   width INTEGER NOT NULL,\n\
-                   height INTEGER NOT NULL,\n\
-                   created_at TEXT NOT NULL,\n\
-                   PRIMARY KEY(asset_id, profile)\n\
-                 );\n\
-                 CREATE INDEX asset_renditions_blob_idx ON asset_renditions(blob_digest);",
-            )
-            .map_err(|error| format!("failed to add Media Studio rendition cache: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![3_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record Media Studio rendition migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio rendition migration: {error}")
-        })?;
-    }
-
-    if version < 4 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio export migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE asset_exports (\n\
-                   id TEXT PRIMARY KEY,\n\
-                   asset_id TEXT NOT NULL REFERENCES assets(id),\n\
-                   destination_path TEXT NOT NULL,\n\
-                   digest TEXT NOT NULL,\n\
-                   byte_size INTEGER NOT NULL,\n\
-                   status TEXT NOT NULL,\n\
-                   created_at TEXT NOT NULL,\n\
-                   completed_at TEXT,\n\
-                   error TEXT\n\
-                 );\n\
-                 CREATE INDEX asset_exports_asset_idx ON asset_exports(asset_id, created_at DESC);",
-            )
-            .map_err(|error| format!("failed to add Media Studio export audit log: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![4_u32, now()],
-            )
-            .map_err(|error| format!("failed to record Media Studio export migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit Media Studio export migration: {error}"))?;
-    }
-
-    if version < 5 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio tag migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE asset_tags (\n\
-                   asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,\n\
-                   normalized_tag TEXT NOT NULL,\n\
-                   display_tag TEXT NOT NULL,\n\
-                   source TEXT NOT NULL,\n\
-                   confidence REAL,\n\
-                   created_at TEXT NOT NULL,\n\
-                   PRIMARY KEY(asset_id, normalized_tag, source)\n\
-                 );\n\
-                 CREATE TABLE asset_tag_revisions (\n\
-                   id INTEGER PRIMARY KEY AUTOINCREMENT,\n\
-                   asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,\n\
-                   source TEXT NOT NULL,\n\
-                   tags_json TEXT NOT NULL,\n\
-                   created_at TEXT NOT NULL\n\
-                 );\n\
-                 CREATE INDEX asset_tags_value_idx ON asset_tags(normalized_tag, asset_id);\n\
-                 CREATE INDEX asset_tag_revisions_asset_idx ON asset_tag_revisions(asset_id, id DESC);",
-            )
-            .map_err(|error| format!("failed to add Media Studio asset tags: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![5_u32, now()],
-            )
-            .map_err(|error| format!("failed to record Media Studio tag migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit Media Studio tag migration: {error}"))?;
-    }
-
-    if version < 6 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio deletion migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE assets ADD COLUMN deleted_at TEXT;\n\
-                 ALTER TABLE assets ADD COLUMN deletion_mode TEXT;\n\
-                 ALTER TABLE blobs ADD COLUMN available INTEGER NOT NULL DEFAULT 1;\n\
-                 CREATE TABLE asset_deletions (\n\
-                   id INTEGER PRIMARY KEY AUTOINCREMENT,\n\
-                   asset_id TEXT NOT NULL REFERENCES assets(id),\n\
-                   mode TEXT NOT NULL,\n\
-                   status TEXT NOT NULL,\n\
-                   impact_token TEXT NOT NULL,\n\
-                   reclaimed_bytes INTEGER NOT NULL DEFAULT 0,\n\
-                   retained_bytes INTEGER NOT NULL DEFAULT 0,\n\
-                   error TEXT,\n\
-                   created_at TEXT NOT NULL,\n\
-                   completed_at TEXT\n\
-                 );\n\
-                 CREATE TABLE blob_gc_queue (\n\
-                   deletion_id INTEGER NOT NULL REFERENCES asset_deletions(id) ON DELETE CASCADE,\n\
-                   digest TEXT NOT NULL REFERENCES blobs(digest),\n\
-                   relative_path TEXT NOT NULL,\n\
-                   byte_size INTEGER NOT NULL,\n\
-                   status TEXT NOT NULL,\n\
-                   error TEXT,\n\
-                   created_at TEXT NOT NULL,\n\
-                   completed_at TEXT,\n\
-                   PRIMARY KEY(deletion_id, digest)\n\
-                 );\n\
-                 CREATE INDEX assets_active_created_idx ON assets(deleted_at, created_at DESC);\n\
-                 CREATE INDEX asset_deletions_asset_idx ON asset_deletions(asset_id, id DESC);\n\
-                 CREATE INDEX blob_gc_queue_status_idx ON blob_gc_queue(status, deletion_id);",
-            )
-            .map_err(|error| format!("failed to add Media Studio deletion state: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![6_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record Media Studio deletion migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio deletion migration: {error}")
-        })?;
-    }
-
-    if version < 7 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio blob cleanup migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE blob_gc_queue ADD COLUMN reclaimed_bytes INTEGER NOT NULL DEFAULT 0;",
-            )
-            .map_err(|error| format!("failed to add blob cleanup accounting: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![7_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record Media Studio blob cleanup migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio blob cleanup migration: {error}")
-        })?;
-    }
-
-    if version < 8 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio catalog migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE media_providers (\n\
-                   id TEXT PRIMARY KEY, display_name TEXT NOT NULL, target TEXT NOT NULL,\n\
-                   lifecycle TEXT NOT NULL, capabilities_json TEXT NOT NULL, privacy_summary TEXT NOT NULL,\n\
-                   checked_at TEXT NOT NULL, stale_after_seconds INTEGER NOT NULL, source_url TEXT,\n\
-                   catalog_revision TEXT NOT NULL, updated_at TEXT NOT NULL\n\
-                 );\n\
-                 CREATE TABLE media_models (\n\
-                   id TEXT PRIMARY KEY, provider_id TEXT NOT NULL REFERENCES media_providers(id),\n\
-                   display_name TEXT NOT NULL, family TEXT NOT NULL, target TEXT NOT NULL, lifecycle TEXT NOT NULL,\n\
-                   lifecycle_checked_at TEXT NOT NULL, lifecycle_stale_after_seconds INTEGER NOT NULL,\n\
-                   lifecycle_source_url TEXT, catalog_revision TEXT NOT NULL, capabilities_json TEXT NOT NULL,\n\
-                   bundled INTEGER NOT NULL, package_type TEXT NOT NULL, license_name TEXT NOT NULL,\n\
-                   license_spdx_id TEXT, license_source_url TEXT NOT NULL, license_commercial_use TEXT NOT NULL,\n\
-                   license_requires_acceptance INTEGER NOT NULL, recommended INTEGER NOT NULL, speed_score INTEGER NOT NULL,\n\
-                   quality_score INTEGER NOT NULL, min_vram_gb REAL, expected_download_gb REAL, cost_hint TEXT,\n\
-                   privacy_summary TEXT NOT NULL, limitation TEXT, updated_at TEXT NOT NULL\n\
-                 );\n\
-                 CREATE TABLE media_model_installations (\n\
-                   model_id TEXT PRIMARY KEY REFERENCES media_models(id), revision TEXT NOT NULL, status TEXT NOT NULL,\n\
-                   manifest_digest TEXT NOT NULL, bytes_on_disk INTEGER NOT NULL DEFAULT 0, installed_at TEXT,\n\
-                   verified_at TEXT, error TEXT, updated_at TEXT NOT NULL\n\
-                 );\n\
-                 CREATE TABLE media_model_lifecycle_snapshots (\n\
-                   id INTEGER PRIMARY KEY AUTOINCREMENT, model_id TEXT NOT NULL REFERENCES media_models(id),\n\
-                   lifecycle TEXT NOT NULL, checked_at TEXT NOT NULL, source_url TEXT,\n\
-                   catalog_revision TEXT NOT NULL, observed_at TEXT NOT NULL,\n\
-                   UNIQUE(model_id, lifecycle, catalog_revision)\n\
-                 );\n\
-                 CREATE INDEX media_models_provider_idx ON media_models(provider_id, lifecycle);\n\
-                 CREATE INDEX media_model_lifecycle_idx ON media_model_lifecycle_snapshots(model_id, observed_at DESC);",
-            )
-            .map_err(|error| format!("failed to add Media Studio catalog state: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![8_u32, now()],
-            )
-            .map_err(|error| format!("failed to record Media Studio catalog migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit Media Studio catalog migration: {error}"))?;
-    }
-
-    if version < 9 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio model installer migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE media_model_installations ADD COLUMN relative_path TEXT;\n\
-                 CREATE TABLE media_model_license_acceptances (\n\
-                   model_id TEXT NOT NULL REFERENCES media_models(id), revision TEXT NOT NULL,\n\
-                   license_digest TEXT NOT NULL, accepted_at TEXT NOT NULL,\n\
-                   PRIMARY KEY(model_id, revision, license_digest)\n\
-                 );\n\
-                 CREATE TABLE media_model_install_jobs (\n\
-                   id TEXT PRIMARY KEY, model_id TEXT NOT NULL REFERENCES media_models(id),\n\
-                   revision TEXT NOT NULL, status TEXT NOT NULL, manifest_digest TEXT NOT NULL,\n\
-                   license_digest TEXT NOT NULL, files_total INTEGER NOT NULL, files_completed INTEGER NOT NULL DEFAULT 0,\n\
-                   bytes_total INTEGER NOT NULL, bytes_downloaded INTEGER NOT NULL DEFAULT 0, current_file TEXT,\n\
-                   error TEXT, cancel_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,\n\
-                   updated_at TEXT NOT NULL, completed_at TEXT\n\
-                 );\n\
-                 CREATE TABLE media_model_install_files (\n\
-                   job_id TEXT NOT NULL REFERENCES media_model_install_jobs(id) ON DELETE CASCADE,\n\
-                   path TEXT NOT NULL, sha256 TEXT NOT NULL, byte_size INTEGER NOT NULL,\n\
-                   status TEXT NOT NULL DEFAULT 'pending', bytes_downloaded INTEGER NOT NULL DEFAULT 0,\n\
-                   error TEXT, updated_at TEXT NOT NULL, PRIMARY KEY(job_id, path)\n\
-                 );\n\
-                 CREATE INDEX media_model_install_jobs_model_idx\n\
-                   ON media_model_install_jobs(model_id, created_at DESC);",
-            )
-            .map_err(|error| format!("failed to add Media Studio model installer state: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![9_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record Media Studio model installer migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio model installer migration: {error}")
-        })?;
-    }
-
-    if version < 10 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio model removal migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE media_model_removals (\n\
-                   id TEXT PRIMARY KEY, model_id TEXT NOT NULL REFERENCES media_models(id), revision TEXT NOT NULL,\n\
-                   status TEXT NOT NULL, relative_path TEXT NOT NULL, trash_relative_path TEXT NOT NULL,\n\
-                   byte_size INTEGER NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,\n\
-                   completed_at TEXT\n\
-                 );\n\
-                 CREATE INDEX media_model_removals_status_idx ON media_model_removals(status, created_at);",
-            )
-            .map_err(|error| format!("failed to add Media Studio model removal journal: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![10_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record Media Studio model removal migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio model removal migration: {error}")
-        })?;
-    }
-
-    if version < 11 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio provider job migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE provider_jobs (\n\
-                   id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,\n\
-                   attempt INTEGER NOT NULL, status TEXT NOT NULL, raw_state TEXT, scenario TEXT NOT NULL,\n\
-                   phase_cursor INTEGER NOT NULL DEFAULT 0, request_digest TEXT NOT NULL,\n\
-                   idempotency_key TEXT, provider_job_id TEXT, provider_request_id TEXT,\n\
-                   estimated_cost_min REAL NOT NULL, estimated_cost_max REAL NOT NULL, currency TEXT NOT NULL,\n\
-                   poll_attempts INTEGER NOT NULL DEFAULT 0, next_poll_at TEXT, reconciliation_deadline TEXT NOT NULL,\n\
-                   accepted_at TEXT, retention_expires_at TEXT, late_success INTEGER NOT NULL DEFAULT 0,\n\
-                   review_required INTEGER NOT NULL DEFAULT 0, review_reason TEXT, error TEXT,\n\
-                   cancel_requested INTEGER NOT NULL DEFAULT 0, policy_json TEXT NOT NULL,\n\
-                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,\n\
-                   UNIQUE(run_id, attempt)\n\
-                 );\n\
-                 CREATE TABLE provider_observations (\n\
-                   id INTEGER PRIMARY KEY AUTOINCREMENT, provider_job_id TEXT NOT NULL REFERENCES provider_jobs(id) ON DELETE CASCADE,\n\
-                   sequence INTEGER NOT NULL, normalized_state TEXT NOT NULL, raw_state TEXT NOT NULL,\n\
-                   source TEXT NOT NULL, retry_after_ms INTEGER, observed_at TEXT NOT NULL,\n\
-                   UNIQUE(provider_job_id, sequence)\n\
-                 );\n\
-                 CREATE INDEX provider_jobs_due_idx ON provider_jobs(status, next_poll_at);\n\
-                 CREATE INDEX provider_jobs_run_idx ON provider_jobs(run_id, attempt DESC);\n\
-                 CREATE INDEX provider_observations_job_idx ON provider_observations(provider_job_id, sequence);",
-            )
-            .map_err(|error| format!("failed to add Media Studio provider job state: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![11_u32, now()],
-            )
-            .map_err(|error| format!("failed to record provider job migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio provider job migration: {error}")
-        })?;
-    }
-
-    if version < 12 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin Media Studio run plan migration: {error}"))?;
-        transaction
-            .execute_batch("ALTER TABLE runs ADD COLUMN plan_snapshot_json TEXT;")
-            .map_err(|error| format!("failed to add Media Studio run plan snapshots: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![12_u32, now()],
-            )
-            .map_err(|error| format!("failed to record run plan migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio run plan migration: {error}")
-        })?;
-    }
-
-    if version < 13 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio export privacy migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE asset_exports ADD COLUMN mode TEXT NOT NULL DEFAULT 'verified-original';
-                 ALTER TABLE asset_exports ADD COLUMN source_digest TEXT;
-                 ALTER TABLE asset_exports ADD COLUMN metadata_stripped INTEGER NOT NULL DEFAULT 0;
-                 UPDATE asset_exports SET source_digest = digest WHERE source_digest IS NULL;",
-            )
-            .map_err(|error| {
-                format!("failed to add Media Studio privacy-safe export audit data: {error}")
-            })?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![13_u32, now()],
-            )
-            .map_err(|error| format!("failed to record export privacy migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio export privacy migration: {error}")
-        })?;
-    }
-
-    if version < 14 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio flow revision migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE flows (
-                   id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
-                   head_revision_id TEXT NOT NULL, head_revision_number INTEGER NOT NULL,
-                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                   document_digest TEXT NOT NULL, execution_digest TEXT NOT NULL,
-                   layout_digest TEXT NOT NULL
-                 );
-                 CREATE TABLE flow_revisions (
-                   revision_id TEXT PRIMARY KEY, flow_id TEXT NOT NULL,
-                   revision_number INTEGER NOT NULL, parent_revision_id TEXT,
-                   created_at TEXT NOT NULL, change_summary TEXT NOT NULL,
-                   document_digest TEXT NOT NULL, execution_digest TEXT NOT NULL,
-                   layout_digest TEXT NOT NULL, node_count INTEGER NOT NULL,
-                   edge_count INTEGER NOT NULL, flow_json TEXT NOT NULL,
-                   layout_json TEXT NOT NULL, artifact_relative_path TEXT NOT NULL,
-                   UNIQUE(flow_id, revision_number),
-                   FOREIGN KEY(flow_id) REFERENCES flows(id) DEFERRABLE INITIALLY DEFERRED,
-                   FOREIGN KEY(parent_revision_id) REFERENCES flow_revisions(revision_id)
-                 );
-                 CREATE TABLE flow_save_requests (
-                   flow_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
-                   request_digest TEXT NOT NULL, revision_id TEXT NOT NULL,
-                   created_revision INTEGER NOT NULL, created_at TEXT NOT NULL,
-                   PRIMARY KEY(flow_id, idempotency_key),
-                   FOREIGN KEY(flow_id) REFERENCES flows(id) DEFERRABLE INITIALLY DEFERRED,
-                   FOREIGN KEY(revision_id) REFERENCES flow_revisions(revision_id)
-                 );
-                 CREATE INDEX flows_updated_at_idx ON flows(updated_at DESC);
-                 CREATE INDEX flow_revisions_flow_idx ON flow_revisions(flow_id, revision_number DESC);",
-            )
-            .map_err(|error| format!("failed to add Media Studio flow revision storage: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![14_u32, now()],
-            )
-            .map_err(|error| format!("failed to record flow revision migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio flow revision migration: {error}")
-        })?;
-    }
-
-    if version < 15 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio run flow lineage migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE runs ADD COLUMN flow_revision_id TEXT REFERENCES flow_revisions(revision_id);
-                 CREATE INDEX runs_flow_revision_idx ON runs(flow_revision_id);",
-            )
-            .map_err(|error| format!("failed to add run flow revision lineage: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![15_u32, now()],
-            )
-            .map_err(|error| format!("failed to record run flow lineage migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio run flow lineage migration: {error}")
-        })?;
-    }
-
-    if version < 16 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio flow portability migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE flow_revision_imports (
-                   revision_id TEXT PRIMARY KEY,
-                   bundle_digest TEXT NOT NULL,
-                   source_flow_id TEXT NOT NULL,
-                   source_revision_id TEXT NOT NULL,
-                   source_display_name TEXT NOT NULL,
-                   review_token TEXT NOT NULL,
-                   imported_at TEXT NOT NULL,
-                   report_json TEXT NOT NULL,
-                   bundle_artifact_relative_path TEXT NOT NULL,
-                   FOREIGN KEY(revision_id) REFERENCES flow_revisions(revision_id)
-                 );
-                 CREATE INDEX flow_revision_imports_bundle_idx
-                   ON flow_revision_imports(bundle_digest, imported_at DESC);",
-            )
-            .map_err(|error| {
-                format!("failed to add Media Studio flow import provenance: {error}")
-            })?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![16_u32, now()],
-            )
-            .map_err(|error| format!("failed to record flow portability migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio flow portability migration: {error}")
-        })?;
-    }
-
-    if version < 17 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio human review migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE human_reviews (
-                   id TEXT PRIMARY KEY,
-                   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-                   node_id TEXT NOT NULL,
-                   sequence INTEGER NOT NULL,
-                   status TEXT NOT NULL,
-                   instructions TEXT NOT NULL,
-                   max_selections INTEGER NOT NULL,
-                   require_comment INTEGER NOT NULL,
-                   candidate_asset_ids_json TEXT NOT NULL,
-                   created_at TEXT NOT NULL,
-                   updated_at TEXT NOT NULL,
-                   decided_at TEXT,
-                   UNIQUE(run_id, node_id),
-                   UNIQUE(run_id, sequence)
-                 );
-                 CREATE TABLE human_review_decisions (
-                   id TEXT PRIMARY KEY,
-                   review_id TEXT NOT NULL UNIQUE REFERENCES human_reviews(id) ON DELETE CASCADE,
-                   action TEXT NOT NULL,
-                   selected_asset_ids_json TEXT NOT NULL,
-                   comment TEXT NOT NULL,
-                   actor TEXT NOT NULL,
-                   created_at TEXT NOT NULL
-                 );
-                 CREATE INDEX human_reviews_run_idx ON human_reviews(run_id, sequence);
-                 CREATE INDEX human_reviews_pending_idx ON human_reviews(status, updated_at);",
-            )
-            .map_err(|error| format!("failed to add durable human reviews: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![17_u32, now()],
-            )
-            .map_err(|error| format!("failed to record human review migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio human review migration: {error}")
-        })?;
-    }
-
-    if version < 18 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio node execution migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE run_events ADD COLUMN node_id TEXT;
-                 CREATE TABLE node_executions (
-                   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-                   node_id TEXT NOT NULL,
-                   node_type TEXT NOT NULL,
-                   node_label TEXT NOT NULL,
-                   ordinal INTEGER NOT NULL,
-                   status TEXT NOT NULL CHECK(status IN (
-                     'pending', 'queued', 'running', 'waiting-for-review', 'retrying',
-                     'completed', 'cached', 'skipped', 'failed', 'canceled', 'blocked'
-                   )),
-                   active_step_id TEXT,
-                   runtime_phase TEXT,
-                   attempt INTEGER NOT NULL DEFAULT 0,
-                   progress REAL,
-                   message TEXT,
-                   started_at TEXT,
-                   updated_at TEXT NOT NULL,
-                   finished_at TEXT,
-                   state_sequence INTEGER NOT NULL DEFAULT 0,
-                   PRIMARY KEY(run_id, node_id)
-                 );
-                 CREATE INDEX node_executions_run_status_idx
-                   ON node_executions(run_id, status, ordinal);",
-            )
-            .map_err(|error| format!("failed to add durable node executions: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![18_u32, now()],
-            )
-            .map_err(|error| format!("failed to record node execution migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio node execution migration: {error}")
-        })?;
-    }
-
-    if version < 19 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio model add-on migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE media_models ADD COLUMN architecture TEXT;
-                 ALTER TABLE media_models ADD COLUMN addon_capabilities_json TEXT NOT NULL DEFAULT '[]';
-                 CREATE TABLE media_model_addons (
-                   id TEXT PRIMARY KEY,
-                   kind TEXT NOT NULL CHECK(kind IN ('lora', 'textual-inversion')),
-                   display_name TEXT NOT NULL,
-                   architecture TEXT NOT NULL,
-                   architecture_confidence TEXT NOT NULL,
-                   format TEXT NOT NULL CHECK(format = 'safetensors'),
-                   target_components_json TEXT NOT NULL,
-                   base_model_hint TEXT,
-                   trigger_words_json TEXT NOT NULL,
-                   default_token TEXT,
-                   digest TEXT NOT NULL UNIQUE,
-                   header_digest TEXT NOT NULL,
-                   byte_size INTEGER NOT NULL CHECK(byte_size > 0),
-                   relative_path TEXT NOT NULL,
-                   source_url TEXT,
-                   license_name TEXT NOT NULL,
-                   license_source_url TEXT NOT NULL,
-                   license_commercial_use TEXT NOT NULL,
-                   imported_at TEXT NOT NULL,
-                   updated_at TEXT NOT NULL
-                 );
-                 CREATE INDEX media_model_addons_architecture_kind_idx
-                   ON media_model_addons(architecture, kind, display_name);",
-            )
-            .map_err(|error| format!("failed to add Media Studio model add-on state: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![19_u32, now()],
-            )
-            .map_err(|error| format!("failed to record model add-on migration: {error}"))?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit Media Studio model add-on migration: {error}")
-        })?;
-    }
-
-    if version < 20 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin Media Studio canonical node step migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE node_executions ADD COLUMN first_step_id TEXT;
-                 ALTER TABLE node_executions ADD COLUMN last_step_id TEXT;",
-            )
-            .map_err(|error| format!("failed to add canonical node step bounds: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![20_u32, now()],
-            )
-            .map_err(|error| format!("failed to record canonical node step migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit canonical node step migration: {error}"))?;
-    }
-
-    if version < 21 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin local model runtime probe migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE media_model_runtime_probes (
-                   model_id TEXT PRIMARY KEY REFERENCES media_models(id) ON DELETE CASCADE,
-                   revision TEXT NOT NULL,
-                   model_digest TEXT NOT NULL,
-                   runtime_fingerprint TEXT NOT NULL,
-                   status TEXT NOT NULL CHECK(status IN ('ready', 'failed')),
-                   worker_version TEXT NOT NULL,
-                   pipeline_class TEXT,
-                   device_label TEXT,
-                   diagnostic TEXT NOT NULL,
-                   probed_at TEXT NOT NULL
-                 );
-                 CREATE INDEX media_model_runtime_probes_status_idx
-                   ON media_model_runtime_probes(status, probed_at);",
-            )
-            .map_err(|error| format!("failed to add local model runtime probes: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![21_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record local model runtime probe migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit local model runtime probe migration: {error}")
-        })?;
-    }
-
-    if version < 22 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin model add-on source provenance migration: {error}")
-        })?;
-        transaction
-            .execute_batch("ALTER TABLE media_model_addons ADD COLUMN source_metadata_json TEXT;")
-            .map_err(|error| format!("failed to add model add-on source provenance: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![22_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record model add-on source provenance migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit model add-on source provenance migration: {error}")
-        })?;
-    }
-
-    if version < 23 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin model add-on removal migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE media_model_addon_removals (
-                   id TEXT PRIMARY KEY,
-                   addon_id TEXT NOT NULL,
-                   digest TEXT NOT NULL,
-                   status TEXT NOT NULL CHECK(status IN ('prepared', 'cleanup-pending', 'removed')),
-                   relative_path TEXT NOT NULL,
-                   trash_relative_path TEXT NOT NULL,
-                   byte_size INTEGER NOT NULL CHECK(byte_size > 0),
-                   error TEXT,
-                   created_at TEXT NOT NULL,
-                   updated_at TEXT NOT NULL,
-                   completed_at TEXT
-                 );
-                 CREATE INDEX media_model_addon_removals_status_idx
-                   ON media_model_addon_removals(status, created_at);",
-            )
-            .map_err(|error| format!("failed to add model add-on removal journal: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![23_u32, now()],
-            )
-            .map_err(|error| format!("failed to record model add-on removal migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit model add-on removal migration: {error}"))?;
-    }
-
-    if version < 24 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin embedding vector profile migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE media_model_addons
-                   ADD COLUMN embedding_vectors_json TEXT NOT NULL DEFAULT '[]';",
-            )
-            .map_err(|error| format!("failed to add embedding vector profiles: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![24_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record embedding vector profile migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit embedding vector profile migration: {error}")
-        })?;
-    }
-
-    if version < 25 {
-        let transaction = connection
-            .transaction()
-            .map_err(|error| format!("failed to begin LoRA tensor profile migration: {error}"))?;
-        transaction
-            .execute_batch(
-                "ALTER TABLE media_model_addons
-                   ADD COLUMN lora_profile_json TEXT;",
-            )
-            .map_err(|error| format!("failed to add LoRA tensor profiles: {error}"))?;
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![25_u32, now()],
-            )
-            .map_err(|error| format!("failed to record LoRA tensor profile migration: {error}"))?;
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to commit LoRA tensor profile migration: {error}"))?;
-    }
-
-    if version < 26 {
-        let transaction = connection.transaction().map_err(|error| {
-            format!("failed to begin media catalog revision migration: {error}")
-        })?;
-        transaction
-            .execute_batch(
-                "CREATE TABLE media_catalog_revisions (
-                   catalog TEXT PRIMARY KEY,
-                   instance_id TEXT NOT NULL,
-                   revision INTEGER NOT NULL CHECK(revision > 0)
-                 );
-                 INSERT INTO media_catalog_revisions(catalog, instance_id, revision)
-                   VALUES ('asset-library', lower(hex(randomblob(16))), 1);
-                 INSERT INTO media_catalog_revisions(catalog, instance_id, revision)
-                   VALUES ('run-library', lower(hex(randomblob(16))), 1);",
-            )
-            .map_err(|error| format!("failed to add media catalog revisions: {error}"))?;
-
-        if sqlite_table_exists(&transaction, "assets")? {
-            transaction
-                .execute_batch(
-                    "CREATE TRIGGER asset_library_revision_assets_insert
-                   AFTER INSERT ON assets BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_assets_update
-                   AFTER UPDATE ON assets BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_assets_delete
-                   AFTER DELETE ON assets BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;",
-                )
-                .map_err(|error| {
-                    format!("failed to add asset catalog revision triggers: {error}")
-                })?;
-        }
-
-        if sqlite_table_exists(&transaction, "asset_inputs")? {
-            transaction
-                .execute_batch(
-                    "CREATE TRIGGER asset_library_revision_inputs_insert
-                   AFTER INSERT ON asset_inputs BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_inputs_update
-                   AFTER UPDATE ON asset_inputs BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_inputs_delete
-                   AFTER DELETE ON asset_inputs BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;",
-                )
-                .map_err(|error| format!("failed to add asset input revision triggers: {error}"))?;
-        }
-
-        if sqlite_table_exists(&transaction, "asset_tags")? {
-            transaction
-                .execute_batch(
-                    "CREATE TRIGGER asset_library_revision_tags_insert
-                   AFTER INSERT ON asset_tags BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_tags_update
-                   AFTER UPDATE ON asset_tags BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_tags_delete
-                   AFTER DELETE ON asset_tags BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;",
-                )
-                .map_err(|error| format!("failed to add asset tag revision triggers: {error}"))?;
-        }
-
-        if sqlite_table_exists(&transaction, "human_reviews")? {
-            transaction
-                .execute_batch(
-                    "CREATE TRIGGER asset_library_revision_reviews_insert
-                   AFTER INSERT ON human_reviews BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_reviews_update
-                   AFTER UPDATE ON human_reviews BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_reviews_delete
-                   AFTER DELETE ON human_reviews BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;",
-                )
-                .map_err(|error| {
-                    format!("failed to add asset review revision triggers: {error}")
-                })?;
-        }
-
-        if sqlite_table_exists(&transaction, "human_review_decisions")? {
-            transaction
-                .execute_batch(
-                    "CREATE TRIGGER asset_library_revision_decisions_insert
-                   AFTER INSERT ON human_review_decisions BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_decisions_update
-                   AFTER UPDATE ON human_review_decisions BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;
-                 CREATE TRIGGER asset_library_revision_decisions_delete
-                   AFTER DELETE ON human_review_decisions BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;",
-                )
-                .map_err(|error| {
-                    format!("failed to add asset decision revision triggers: {error}")
-                })?;
-        }
-
-        if sqlite_table_exists(&transaction, "runs")? {
-            if sqlite_column_exists(&transaction, "runs", "status")? {
-                transaction
-                    .execute_batch(
-                        "CREATE TRIGGER asset_library_revision_run_status
-                   AFTER UPDATE OF status ON runs
-                   WHEN OLD.status IS NOT NEW.status BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'asset-library';
-                   END;",
-                    )
-                    .map_err(|error| {
-                        format!("failed to add run status revision trigger: {error}")
-                    })?;
-            }
-
-            transaction
-                .execute_batch(
-                    "CREATE TRIGGER run_library_revision_runs_insert
-                   AFTER INSERT ON runs BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'run-library';
-                   END;
-                 CREATE TRIGGER run_library_revision_runs_delete
-                   AFTER DELETE ON runs BEGIN
-                     UPDATE media_catalog_revisions SET revision = revision + 1
-                       WHERE catalog = 'run-library';
-                   END;",
-                )
-                .map_err(|error| format!("failed to add run catalog revision triggers: {error}"))?;
-        }
-        transaction
-            .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-                params![26_u32, now()],
-            )
-            .map_err(|error| {
-                format!("failed to record media catalog revision migration: {error}")
-            })?;
-        transaction.commit().map_err(|error| {
-            format!("failed to commit media catalog revision migration: {error}")
-        })?;
-    }
-
-    Ok(())
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("failed to begin Media Studio schema initialization: {error}"))?;
+    transaction
+        .execute_batch(include_str!("schema.sql"))
+        .map_err(|error| format!("failed to initialize Media Studio schema: {error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+            params![SCHEMA_VERSION, now()],
+        )
+        .map_err(|error| format!("failed to record Media Studio schema version: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to commit Media Studio schema: {error}"))
 }
 
 pub(crate) fn get_model_catalog(
@@ -3246,7 +2171,7 @@ pub(crate) fn begin_local_video_generation(
     };
     let ending_contract = match request.loop_mode.as_str() {
         "seamless" => "seamless endpoint policy",
-        "ping-pong" => "ping-pong endpoint policy",
+        "ping-pong" => "reversed boomerang boundary policy",
         _ => "intentional one-way ending policy",
     };
     append_event(
@@ -3479,9 +2404,12 @@ pub(crate) fn complete_local_video_generation(
     } else {
         technical_tags.push(("opaque-video", "Opaque video"));
     }
+    if video.output.pixel_format == "yuv444p" {
+        technical_tags.push(("vp9-profile-1-444", "VP9 4:4:4"));
+    }
     technical_tags.push(match request.loop_mode.as_str() {
-        "ping-pong" => ("ping-pong-loop", "Ping-pong loop"),
-        "seamless" => ("seamless-loop", "Seamless loop"),
+        "ping-pong" => ("ping-pong-loop", "Boomerang (reversed)"),
+        "seamless" => ("seamless-loop", "Forward seamless loop"),
         _ => ("non-looping-shot", "Non-looping shot"),
     });
     for (tag, label) in technical_tags {
@@ -3593,8 +2521,8 @@ pub(crate) fn complete_local_video_generation(
             architecture_tag,
         ];
         composite_tags.push(match request.loop_mode.as_str() {
-            "ping-pong" => ("ping-pong-loop", "Ping-pong loop"),
-            "seamless" => ("seamless-loop", "Seamless loop"),
+            "ping-pong" => ("ping-pong-loop", "Boomerang (reversed)"),
+            "seamless" => ("seamless-loop", "Forward seamless loop"),
             _ => ("non-looping-shot", "Non-looping shot"),
         });
         for (tag, label) in composite_tags {
@@ -3630,31 +2558,45 @@ pub(crate) fn complete_local_video_generation(
     } else {
         "immutable first and last frames"
     };
+    let loop_evidence = if request.loop_mode == "none" {
+        "as a one-way delivery".to_string()
+    } else {
+        format!(
+            "with {:.3}x source and {:.3}x decoded loop-boundary continuity",
+            video.output.loop_boundary_continuity_ratio,
+            video.output.decoded_loop_boundary_continuity_ratio,
+        )
+    };
     append_event(
         &transaction,
         &request.run_id,
         "video_generated",
         &format!(
-            "{} conditioned on {conditioning_label}, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps with {:.3} source and {:.3} decoded endpoint MAE.",
+            "{} conditioned on {conditioning_label}, generated {} source frames, and produced {} verified {delivery_label} VP9 {ending_label} frames at {} fps {loop_evidence}.",
             video.architecture,
             video.output.source_frame_count,
             video.output.frame_count,
             video.output.fps,
-            video.output.loop_endpoint_mae,
-            video.output.decoded_loop_endpoint_mae,
         ),
         Some(0.92),
         Some("local-video.generate"),
     )?;
+    let publication_evidence = if video.transparent_background {
+        "The WebM container decoded with a verified non-opaque alpha plane and was ingested into immutable CAS.".to_string()
+    } else {
+        format!(
+            "The opaque {} {} WebM decoded with the expected dimensions and frame count; RGB round-trip MAE was {:.3} with maximum error {}, then the bytes were ingested into immutable CAS.",
+            video.output.color_range,
+            video.output.pixel_format,
+            video.output.decoded_rgb_encoding_mae,
+            video.output.decoded_rgb_encoding_maximum_error,
+        )
+    };
     append_event(
         &transaction,
         &request.run_id,
         "asset_published",
-        if video.transparent_background {
-            "The WebM container decoded with a verified non-opaque alpha plane and was ingested into immutable CAS."
-        } else {
-            "The opaque WebM container decoded with the expected dimensions and frame count and was ingested into immutable CAS."
-        },
+        &publication_evidence,
         Some(0.98),
         Some("asset.publish"),
     )?;
@@ -7630,22 +6572,32 @@ mod tests {
             "seed": 7,
             "width": 512,
             "height": 288,
-            "frameCount": 33,
+            "frameCount": 32,
             "sourceFrameCount": 17,
             "fps": 8,
-            "durationSeconds": 4.125,
+            "durationSeconds": 4.0,
             "alphaMinimum": 0,
             "alphaMaximum": 255,
             "decodedAlphaMinimum": 0,
             "decodedAlphaMaximum": 255,
-            "decodedFrameCount": 33,
-            "decodedLoopEndpointMae": 0.01,
+            "decodedFrameCount": 32,
+            "decodedLoopEndpointMae": 1.0,
+            "decodedLoopBoundaryReferenceMae": 1.0,
+            "decodedLoopBoundaryContinuityRatio": 1.0,
             "decodedAlphaLoopEndpointMae": 0.01,
+            "decodedAlphaLoopBoundaryReferenceMae": 0.01,
+            "decodedAlphaLoopBoundaryContinuityRatio": 1.0,
+            "decodedRgbEncodingMae": 1.0,
+            "decodedRgbEncodingMaximumError": 8,
             "loopMode": "ping-pong",
-            "loopEndpointMae": 0.0,
+            "loopEndpointMae": 1.0,
+            "loopBoundaryReferenceMae": 1.0,
+            "loopBoundaryContinuityRatio": 1.0,
             "hasAlpha": true,
             "matte": {"engine": "test-matte"},
             "encodingQuality": "production",
+            "pixelFormat": "yuva420p",
+            "colorRange": "limited",
             "codec": "vp9",
             "container": "webm"
         }))
@@ -7768,15 +6720,23 @@ mod tests {
                 "seed": 7,
                 "width": 512,
                 "height": 288,
-                "frameCount": 33,
+                "frameCount": 32,
                 "fps": 8,
-                "durationSeconds": 4.125,
+                "durationSeconds": 4.0,
                 "hasAlpha": false,
                 "loopMode": "ping-pong",
-                "loopEndpointMae": 0.0,
-                "decodedFrameCount": 33,
-                "decodedLoopEndpointMae": 0.01,
+                "loopEndpointMae": 1.0,
+                "loopBoundaryReferenceMae": 1.0,
+                "loopBoundaryContinuityRatio": 1.0,
+                "decodedFrameCount": 32,
+                "decodedLoopEndpointMae": 1.0,
+                "decodedLoopBoundaryReferenceMae": 1.0,
+                "decodedLoopBoundaryContinuityRatio": 1.0,
+                "decodedRgbEncodingMae": 1.0,
+                "decodedRgbEncodingMaximumError": 8,
                 "encodingQuality": "production",
+                "pixelFormat": "yuv420p",
+                "colorRange": "limited",
                 "codec": "vp9",
                 "container": "webm",
                 "background": {
@@ -7819,7 +6779,7 @@ mod tests {
             .unwrap()
             .execute(
                 "INSERT INTO blobs(digest, byte_size, mime_type, relative_path, created_at, available)
-                 VALUES (?1, 1, 'application/octet-stream', 'legacy/missing', ?2, 0)",
+                 VALUES (?1, 1, 'application/octet-stream', 'missing/blob', ?2, 0)",
                 params![digest, now()],
             )
             .unwrap();
@@ -7857,7 +6817,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_and_enqueue_are_idempotent() {
+    fn initialization_and_enqueue_are_idempotent() {
         let paths = test_paths("enqueue");
         initialize(&paths).unwrap();
         initialize(&paths).unwrap();
@@ -8404,70 +7364,25 @@ mod tests {
     }
 
     #[test]
-    fn export_privacy_migration_backfills_existing_audit_rows() {
-        let paths = test_paths("export-privacy-migration");
+    fn rejects_database_state_from_another_schema_version() {
+        let paths = test_paths("unsupported-schema");
         fs::create_dir_all(paths.database.parent().unwrap()).unwrap();
         let connection = Connection::open(&paths.database).unwrap();
         connection
             .execute_batch(
                 "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
-                 INSERT INTO schema_migrations(version, applied_at) VALUES (12, '2026-01-01T00:00:00Z');
-                 CREATE TABLE runs (id TEXT PRIMARY KEY);
-                 CREATE TABLE run_events (id INTEGER PRIMARY KEY AUTOINCREMENT);
-                 CREATE TABLE media_models (id TEXT PRIMARY KEY);
-                 CREATE TABLE asset_exports (
-                   id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, destination_path TEXT NOT NULL,
-                   digest TEXT NOT NULL, byte_size INTEGER NOT NULL, status TEXT NOT NULL,
-                   created_at TEXT NOT NULL, completed_at TEXT, error TEXT
-                 );
-                 INSERT INTO asset_exports(
-                   id, asset_id, destination_path, digest, byte_size, status, created_at
-                 ) VALUES (
-                   'export:legacy', 'asset:legacy', 'C:/legacy.png',
-                   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-                   128, 'completed', '2026-01-01T00:00:00Z'
-                 );",
+                 INSERT INTO schema_migrations(version, applied_at)
+                 VALUES (12, '2026-01-01T00:00:00Z');",
             )
             .unwrap();
         drop(connection);
 
-        ensure_initialized(&paths).unwrap();
-
-        let connection = open(&paths).unwrap();
-        let migrated: (String, String, bool) = connection
-            .query_row(
-                "SELECT mode, source_digest, metadata_stripped FROM asset_exports WHERE id = 'export:legacy'",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        assert_eq!(
+            ensure_initialized(&paths).unwrap_err(),
+            format!(
+                "Media Studio database schema 12 is unsupported; recreate it with schema {SCHEMA_VERSION}"
             )
-            .unwrap();
-        assert_eq!(migrated.0, "verified-original");
-        assert_eq!(
-            migrated.1,
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
-        assert!(!migrated.2);
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master
-                     WHERE type = 'table' AND name = 'media_model_runtime_probes'",
-                    [],
-                    |row| row.get::<_, u32>(0),
-                )
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            connection
-                .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row
-                    .get::<_, u32>(
-                    0
-                ),)
-                .unwrap(),
-            SCHEMA_VERSION
-        );
-        drop(connection);
         cleanup(&paths);
     }
 

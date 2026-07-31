@@ -198,7 +198,9 @@ class MediaDiffusersQualityTests(unittest.TestCase):
     def test_hunyuan_video_15_dimensions_follow_official_aspect_buckets(self) -> None:
         expected = {
             ("preview-512", "16:9"): (672, 384),
-            ("quality-640", "9:16"): (480, 848),
+            ("quality-640", "9:16"): (480, 832),
+            ("quality-640", "21:9"): (944, 416),
+            ("quality-768", "9:16"): (576, 1_008),
             ("quality-768", "21:9"): (1_152, 496),
         }
         for (resolution, aspect), dimensions in expected.items():
@@ -599,6 +601,79 @@ class MediaDiffusersQualityTests(unittest.TestCase):
 
         self.assertEqual(run.call_count, 2)
 
+    def test_hunyuan_video_15_denoiser_retries_a_transient_miopen_failure(
+        self,
+    ) -> None:
+        completed = SimpleNamespace(
+            stdout=json.dumps(
+                {
+                    "error": (
+                        "Local Diffusers worker failed: RuntimeError: "
+                        "miopenStatusUnknownError"
+                    )
+                }
+            ),
+            stderr="MIOpen Error: transient convolution failure",
+            returncode=3,
+        )
+        with mock.patch.object(
+            WORKER.subprocess,
+            "run",
+            return_value=completed,
+        ) as run:
+            with self.assertRaisesRegex(
+                WORKER.WorkerError,
+                "miopenStatusUnknownError",
+            ):
+                WORKER._generate_hunyuan_video_15_latents(
+                    {},
+                    "A useful motion prompt",
+                    Path("unused.png"),
+                    640,
+                    640,
+                    640,
+                    25,
+                    8,
+                    7,
+                    False,
+                    "auto",
+                )
+
+        self.assertEqual(run.call_count, 2)
+
+    def test_hunyuan_video_15_denoiser_does_not_retry_a_permanent_bad_response(
+        self,
+    ) -> None:
+        completed = SimpleNamespace(
+            stdout="not-json",
+            stderr="permanent denoiser configuration failure",
+            returncode=3,
+        )
+        with mock.patch.object(
+            WORKER.subprocess,
+            "run",
+            return_value=completed,
+        ) as run:
+            with self.assertRaisesRegex(
+                WORKER.WorkerError,
+                "returned an invalid response",
+            ):
+                WORKER._generate_hunyuan_video_15_latents(
+                    {},
+                    "A useful motion prompt",
+                    Path("unused.png"),
+                    640,
+                    640,
+                    640,
+                    25,
+                    8,
+                    7,
+                    False,
+                    "auto",
+                )
+
+        self.assertEqual(run.call_count, 1)
+
     def test_cpu_video_memory_evidence_is_explicitly_process_isolated(self) -> None:
         evidence = WORKER._start_video_memory_observation(
             SimpleNamespace(),
@@ -618,15 +693,297 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             evidence,
         )
 
-    def test_loop_assembly_preserves_one_way_and_exact_ping_pong(self) -> None:
+    def test_loop_assembly_omits_duplicate_cyclic_endpoints(self) -> None:
         frames = [np.full((4, 4, 4), index, dtype=np.uint8) for index in range(3)]
         one_way = WORKER._assemble_video_frames(frames, "none")
         ping_pong = WORKER._assemble_video_frames(frames, "ping-pong")
         seamless = WORKER._assemble_video_frames(frames, "seamless")
         self.assertEqual(len(one_way), 3)
-        self.assertEqual(len(seamless), 3)
-        self.assertEqual(len(ping_pong), 5)
-        np.testing.assert_array_equal(ping_pong[0], ping_pong[-1])
+        self.assertEqual(
+            [int(frame[0, 0, 0]) for frame in seamless],
+            [0, 1],
+        )
+        self.assertEqual(len(ping_pong), 4)
+        self.assertEqual(
+            [int(frame[0, 0, 0]) for frame in ping_pong],
+            [0, 1, 2, 1],
+        )
+        self.assertFalse(np.array_equal(ping_pong[0], ping_pong[-1]))
+        self.assertEqual(
+            WORKER._loop_transition_evidence(ping_pong),
+            {
+                "boundaryMae": 1.0,
+                "referenceMae": 1.0,
+                "continuityRatio": 1.0,
+            },
+        )
+
+    def test_duplicate_frame_evidence_reports_holds_and_closure_duplicates(self) -> None:
+        first = np.zeros((4, 4, 3), dtype=np.uint8)
+        second = np.ones((4, 4, 3), dtype=np.uint8)
+
+        evidence = WORKER._duplicate_frame_evidence(
+            [first, second, second.copy(), first.copy()]
+        )
+
+        self.assertEqual(evidence["exactAdjacentDuplicateCount"], 1)
+        self.assertEqual(evidence["exactAdjacentDuplicateTransitions"], [2])
+        self.assertTrue(evidence["duplicateClosureFrame"])
+
+    def test_cadence_gate_rejects_sparse_frame_stretching(self) -> None:
+        values = (0, 10, 20, 30, 31, 40, 50, 60, 50, 40, 30, 29, 20, 10)
+        frames = [
+            np.full((4, 4, 3), value, dtype=np.uint8) for value in values
+        ]
+
+        evidence = WORKER._cadence_evidence(frames)
+
+        self.assertGreaterEqual(
+            evidence["lowTransitionFraction"],
+            WORKER.MAX_DECODED_LOOP_LOW_TRANSITION_FRACTION,
+        )
+        self.assertGreaterEqual(
+            evidence["normalizedJerkMean"],
+            WORKER.MAX_DECODED_LOOP_NORMALIZED_JERK,
+        )
+        with self.assertRaisesRegex(
+            WORKER.WorkerError,
+            "near-hold transitions",
+        ):
+            WORKER._require_decoded_loop_cadence(evidence, "Test")
+
+    def test_seamless_encoder_rejects_an_exact_internal_hold(self) -> None:
+        frames = [
+            Image.fromarray(np.full((16, 16, 3), value, dtype=np.uint8))
+            for value in (0, 1, 1, 0)
+        ]
+        with tempfile.TemporaryDirectory(
+            prefix="machdoch-duplicate-loop-"
+        ) as temporary:
+            with self.assertRaisesRegex(
+                WORKER.WorkerError,
+                "exact duplicate frame",
+            ):
+                WORKER._encode_video_webm(
+                    frames,
+                    Path(temporary),
+                    8,
+                    None,
+                    transparent_background=False,
+                    loop_mode="seamless",
+                    matte_quality="production",
+                    encoding_quality="lossless",
+                )
+
+    def test_framepack_denoiser_timeout_scales_with_requested_workload(self) -> None:
+        self.assertEqual(
+            WORKER._framepack_denoiser_timeout_seconds(640, 640, 25, 16),
+            2 * 60 * 60,
+        )
+        self.assertEqual(
+            WORKER._framepack_denoiser_timeout_seconds(768, 768, 37, 12),
+            11_509,
+        )
+        self.assertEqual(
+            WORKER._framepack_denoiser_timeout_seconds(768, 768, 129, 50),
+            8 * 60 * 60,
+        )
+
+    def test_ping_pong_feathers_a_small_conditioned_endpoint_outlier(self) -> None:
+        frames = [
+            np.full((4, 4, 4), value, dtype=np.uint8)
+            for value in (0, 4, 5, 6, 7)
+        ]
+
+        ping_pong = WORKER._assemble_video_frames(frames, "ping-pong")
+
+        self.assertEqual(
+            [int(frame[0, 0, 0]) for frame in ping_pong],
+            [0, 2, 4, 6, 7, 6, 4, 2],
+        )
+        self.assertLessEqual(
+            WORKER._loop_transition_evidence(ping_pong)["continuityRatio"],
+            WORKER.MAX_DECODED_LOOP_CONTINUITY_RATIO,
+        )
+        self.assertFalse(np.array_equal(ping_pong[0], ping_pong[-1]))
+
+    def test_ping_pong_repeats_feathering_for_a_quiet_clip(self) -> None:
+        frames = [
+            np.full((4, 4, 4), value, dtype=np.uint8)
+            for value in (0, *range(6, 42))
+        ]
+
+        ping_pong = WORKER._assemble_video_frames(frames, "ping-pong")
+
+        self.assertEqual(len(ping_pong), len(frames) * 2 - 2)
+        self.assertLessEqual(
+            WORKER._loop_transition_evidence(ping_pong)["continuityRatio"],
+            WORKER.MAX_DECODED_LOOP_CONTINUITY_RATIO,
+        )
+        self.assertFalse(np.array_equal(ping_pong[0], ping_pong[-1]))
+
+    def test_ping_pong_feathering_never_creates_a_duplicate_closure(self) -> None:
+        frames = [np.zeros((8, 8, 4), dtype=np.uint8)]
+        current = np.ones((8, 8, 4), dtype=np.uint8)
+        frames.append(current.copy())
+        for index in range(35):
+            current = current.copy()
+            current[index // 8, index % 8, 0] += 1
+            frames.append(current)
+
+        ping_pong = WORKER._assemble_video_frames(frames, "ping-pong")
+
+        self.assertFalse(np.array_equal(ping_pong[0], ping_pong[-1]))
+        self.assertEqual(ping_pong[-1][0, 0, 0], 1)
+
+    def test_ping_pong_does_not_hide_a_large_endpoint_jump(self) -> None:
+        frames = [
+            np.full((4, 4, 4), value, dtype=np.uint8)
+            for value in (0, 100, 110, 120, 130)
+        ]
+
+        ping_pong = WORKER._assemble_video_frames(frames, "ping-pong")
+
+        self.assertEqual(
+            [int(frame[0, 0, 0]) for frame in ping_pong],
+            [0, 100, 110, 120, 130, 120, 110, 100],
+        )
+        self.assertGreater(
+            WORKER._loop_transition_evidence(ping_pong)["continuityRatio"],
+            WORKER.MAX_DECODED_LOOP_CONTINUITY_RATIO,
+        )
+
+    def test_hunyuan_video_15_rejects_fake_seamless_conditioning(self) -> None:
+        with mock.patch.object(
+            WORKER,
+            "_absolute_existing_path",
+            side_effect=[Path("first.png"), Path("last.png")],
+        ), mock.patch.object(
+            WORKER,
+            "_fresh_output_directory",
+            return_value=Path("output"),
+        ), mock.patch.object(
+            WORKER,
+            "_video_dimensions",
+            return_value=(640, 640),
+        ), mock.patch.object(
+            WORKER,
+            "_runtime",
+            return_value=(SimpleNamespace(), SimpleNamespace()),
+        ), mock.patch.object(
+            WORKER,
+            "_device",
+            return_value=("cuda", "test-gpu", 16 * 1024**3),
+        ), mock.patch.object(
+            WORKER,
+            "_sha256_file",
+            return_value="same",
+        ), mock.patch.object(
+            WORKER,
+            "_prepare_video_conditioning_frame",
+            return_value=(object(), {}),
+        ):
+            with self.assertRaisesRegex(
+                WORKER.WorkerError,
+                "cannot natively condition a closing frame",
+            ):
+                WORKER.generate_video(
+                    {
+                        "schemaVersion": WORKER.SCHEMA_VERSION,
+                        "model": {
+                            "architecture": "hunyuan-video-1.5-i2v",
+                        },
+                        "prompt": "subtle motion",
+                        "firstFramePath": "first.png",
+                        "lastFramePath": "last.png",
+                        "outputDirectory": "output",
+                        "aspectRatio": "1:1",
+                        "resolution": "quality-640",
+                        "numFrames": 17,
+                        "numInferenceSteps": 8,
+                        "fps": 16,
+                        "loopMode": "seamless",
+                        "transparentBackground": False,
+                        "matteQuality": "production",
+                        "encodingQuality": "lossless",
+                        "guidanceScale": 1,
+                        "seed": 7,
+                    }
+                )
+
+    def test_loop_evidence_detects_low_motion_boundary_drift(self) -> None:
+        frames = []
+        current = np.zeros((100, 100), dtype=np.uint8)
+        for index in range(10):
+            if index > 0:
+                current = current.copy()
+                current.flat[index] = 1
+            frames.append(current)
+
+        evidence = WORKER._loop_transition_evidence(frames)
+
+        self.assertAlmostEqual(evidence["boundaryMae"], 0.0009)
+        self.assertAlmostEqual(evidence["referenceMae"], 0.0001)
+        self.assertAlmostEqual(evidence["continuityRatio"], 9.0)
+
+    def test_rgb_loop_evidence_does_not_mix_in_alpha_motion(self) -> None:
+        frames = [
+            np.full((4, 4, 4), (value, value, value, alpha), dtype=np.uint8)
+            for value, alpha in ((0, 0), (1, 255), (2, 0))
+        ]
+
+        self.assertEqual(
+            WORKER._rgb_loop_transition_evidence(frames),
+            {
+                "boundaryMae": 2.0,
+                "referenceMae": 1.0,
+                "continuityRatio": 2.0,
+            },
+        )
+        self.assertNotEqual(
+            WORKER._loop_transition_evidence(frames),
+            WORKER._rgb_loop_transition_evidence(frames),
+        )
+
+    def test_decoded_loop_quality_gate_uses_the_visible_continuity_target(
+        self,
+    ) -> None:
+        WORKER._require_decoded_loop_continuity(
+            {
+                "boundaryMae": 1.25,
+                "referenceMae": 1.0,
+                "continuityRatio": 1.25,
+            },
+            "test video",
+        )
+        with self.assertRaisesRegex(
+            WORKER.WorkerError,
+            r"1\.251x.*quality limit is 1\.25x",
+        ):
+            WORKER._require_decoded_loop_continuity(
+                {
+                    "boundaryMae": 1.251,
+                    "referenceMae": 1.0,
+                    "continuityRatio": 1.251,
+                },
+                "test video",
+            )
+
+    def test_vp9_delivery_uses_full_range_444_only_for_opaque_lossless(
+        self,
+    ) -> None:
+        self.assertEqual(
+            WORKER._vp9_delivery_pixel_format("lossless", alpha=False),
+            ("yuv444p", "full"),
+        )
+        self.assertEqual(
+            WORKER._vp9_delivery_pixel_format("production", alpha=False),
+            ("yuv420p", "limited"),
+        )
+        self.assertEqual(
+            WORKER._vp9_delivery_pixel_format("lossless", alpha=True),
+            ("yuva420p", "limited"),
+        )
 
     def test_ground_suppression_removes_shadow_but_preserves_connected_foot(self) -> None:
         alphas = [np.zeros((64, 64), dtype=np.uint8) for _ in range(5)]
@@ -780,10 +1137,24 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             self.assertTrue(destination.is_file())
             self.assertIsNone(composite)
             self.assertFalse(evidence["hasAlpha"])
+            self.assertEqual(evidence["width"], 96)
+            self.assertEqual(evidence["height"], 64)
             self.assertEqual(evidence["decodedFrameCount"], 3)
             self.assertEqual(evidence["decodedAlphaMinimum"], 255)
             self.assertEqual(evidence["decodedAlphaMaximum"], 255)
             self.assertEqual(evidence["decodedAlphaLoopEndpointMae"], 0.0)
+            self.assertEqual(evidence["frameCadence"], "source-passthrough")
+            self.assertEqual(evidence["exactAdjacentDuplicateCount"], 0)
+            self.assertEqual(evidence["decodedExactAdjacentDuplicateCount"], 0)
+            self.assertFalse(evidence["duplicateClosureFrame"])
+            self.assertFalse(evidence["decodedDuplicateClosureFrame"])
+            self.assertEqual(evidence["pixelFormat"], "yuv444p")
+            self.assertEqual(evidence["colorRange"], "full")
+            self.assertLessEqual(
+                evidence["decodedRgbEncodingMaximumError"],
+                2,
+            )
+            self.assertLess(evidence["decodedRgbEncodingMae"], 0.5)
 
 
 if __name__ == "__main__":
