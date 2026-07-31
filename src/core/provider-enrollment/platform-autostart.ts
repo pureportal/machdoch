@@ -81,12 +81,6 @@ export const getProviderSyncAutostartPath = (): string => {
   return join(configHome, "autostart", "machdoch-provider-sync.desktop");
 };
 
-const getLegacyProviderSyncAutostartPaths = (): string[] => {
-  return process.platform === "win32"
-    ? [join(getWindowsStartupDirectory(), "machdoch-provider-sync.cmd")]
-    : [];
-};
-
 const createAutostartContent = (workspaceRoot: string): string => {
   const configuredCli = process.env.MACHDOCH_CLI_PATH?.trim();
   const executable = configuredCli || process.execPath;
@@ -108,21 +102,11 @@ export const installProviderSyncAutostart = async (
   const path = getProviderSyncAutostartPath();
   await mkdir(dirname(path), { recursive: true });
   await writeFileAtomically(path, createAutostartContent(workspaceRoot));
-  await Promise.all(
-    getLegacyProviderSyncAutostartPaths().map((legacyPath) =>
-      rm(legacyPath, { force: true })
-    ),
-  );
   return path;
 };
 
 export const removeProviderSyncAutostart = async (): Promise<void> => {
-  await Promise.all([
-    rm(getProviderSyncAutostartPath(), { force: true }),
-    ...getLegacyProviderSyncAutostartPaths().map((path) =>
-      rm(path, { force: true })
-    ),
-  ]);
+  await rm(getProviderSyncAutostartPath(), { force: true });
 };
 
 export const isProviderSyncAutostartInstalled = async (): Promise<boolean> => {

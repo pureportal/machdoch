@@ -24,9 +24,16 @@ const probeProviderCliMock = vi.hoisted(() =>
     version: "fixture-cli 1.0.0",
     features:
       provider === "claude-cli"
-        ? ["--append-system-prompt-file", "--mcp-config", "--strict-mcp-config"]
+        ? [
+            "--append-system-prompt-file",
+            "--mcp-config",
+            "--setting-sources",
+            "--strict-mcp-config",
+          ]
         : provider === "copilot-cli"
           ? [
+              "--agent",
+              "--attachment",
               "--no-auto-update",
               "--no-custom-instructions",
               "--additional-mcp-config",
@@ -61,17 +68,33 @@ vi.mock("./capability-registry.js", async (importOriginal) => {
   };
 });
 
-import { materializeCliEnrollment } from "./materializer.js";
+import { materializeCliEnrollment as materializeCliEnrollmentRaw } from "./materializer.js";
 import { createCliInstructionCapabilityFromProbe } from "./instruction-delivery-preflight.js";
 import {
+  createInstructionProfile,
   createInstructionDeliveryPlan,
+  createLocalInstruction,
+  registerInstructionWorkspace,
   resolveInstructionSet,
+  setDefaultInstructionProfiles,
+  setWorkspaceInstructionScope,
 } from "../instruction-system/index.js";
 import type { FrozenInstructionSet } from "../instruction-system/index.js";
 import type { ProviderProbeResult } from "./types.js";
 import { inventoryNativeInstructions } from "../instruction-system/native-inventory.js";
 
 const roots: string[] = [];
+const runtimeSystemInstructions = "Fixture run-scoped system instructions.";
+const materializeCliEnrollment = (
+  params: Omit<
+    Parameters<typeof materializeCliEnrollmentRaw>[0],
+    "runtimeSystemInstructions"
+  >,
+) =>
+  materializeCliEnrollmentRaw({
+    ...params,
+    runtimeSystemInstructions,
+  });
 
 const createRoot = async (): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), "machdoch-materializer-test-"));
@@ -82,6 +105,7 @@ const createRoot = async (): Promise<string> => {
     join(root, "isolated-provider-home", "claude"),
   );
   vi.stubEnv("COPILOT_HOME", join(root, "isolated-provider-home", "copilot"));
+  vi.stubEnv("ANTHROPIC_API_KEY", "");
   return root;
 };
 
@@ -93,9 +117,16 @@ const createProbe = (provider: AgentCliProvider, features?: string[]) => ({
   features:
     features ??
     (provider === "claude-cli"
-      ? ["--append-system-prompt-file", "--mcp-config", "--strict-mcp-config"]
+      ? [
+          "--append-system-prompt-file",
+          "--mcp-config",
+          "--setting-sources",
+          "--strict-mcp-config",
+        ]
       : provider === "copilot-cli"
         ? [
+            "--agent",
+            "--attachment",
             "--no-auto-update",
             "--no-custom-instructions",
             "--additional-mcp-config",
@@ -181,6 +212,15 @@ describe("CLI provider enrollment materializer", () => {
       expect(enrollment.manifest.coverage).not.toContainEqual(
         expect.objectContaining({ entityId: "fixture:profile" }),
       );
+      await expect(
+        stat(join(workspaceRoot, "AGENTS.md")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(
+        stat(join(workspaceRoot, "CLAUDE.md")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(
+        stat(join(workspaceRoot, ".github", "copilot-instructions.md")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
 
       if (provider === "codex-cli") {
         const configPath = enrollment.manifest.renderedFiles[0]?.path;
@@ -190,7 +230,9 @@ describe("CLI provider enrollment materializer", () => {
         );
         expect(enrollment.env.CODEX_HOME).toContain("codex-home");
         expect(enrollment.args[0]).toBe("--config");
-        expect(enrollment.args[1]).toContain("developer_instructions=");
+        expect(enrollment.args).not.toContainEqual(
+          expect.stringContaining("developer_instructions="),
+        );
         expect(
           await readFile(join(enrollment.env.CODEX_HOME!, "auth.json"), "utf8"),
         ).toContain('"fixture":"redacted"');
@@ -199,16 +241,25 @@ describe("CLI provider enrollment materializer", () => {
         expect(enrollment.args).toContain("--mcp-config");
         expect(enrollment.args).toContain("--strict-mcp-config");
         expect(enrollment.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1");
+        expect(enrollment.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe("1");
       } else {
         expect(enrollment.args).toContain("--no-custom-instructions");
         expect(enrollment.args).toContain("--no-auto-update");
         expect(enrollment.args).toContain("--disable-builtin-mcps");
+        expect(
+          enrollment.args.some((argument) => argument.startsWith("--agent=")),
+        ).toBe(true);
         expect(enrollment.args).not.toContain(
           "--allow-all-mcp-server-instructions",
         );
         expect(enrollment.env.COPILOT_HOME).toContain("copilot-home");
         expect(enrollment.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS).toBeUndefined();
-        expect(enrollment.promptFallback).toBe(resolution.renderedEnvelope);
+        const agentPath = enrollment.manifest.renderedFiles.find((file) =>
+          file.purpose.includes("custom-agent instructions"),
+        )!.path;
+        expect(await readFile(agentPath, "utf8")).toContain(
+          resolution.renderedEnvelope,
+        );
       }
 
       const enrollmentRoot = enrollment.rootPath;
@@ -295,17 +346,18 @@ describe("CLI provider enrollment materializer", () => {
         deliveryPlan,
       });
 
-      const transportText =
-        provider === "copilot-cli"
-          ? enrollment.promptFallback
-          : provider === "claude-cli"
-            ? await readFile(
-                enrollment.manifest.renderedFiles.find((file) =>
-                  file.purpose.includes("system prompt"),
-                )!.path,
-                "utf8",
-              )
-            : enrollment.args.join("\n");
+      const transportText = await readFile(
+        enrollment.manifest.renderedFiles.find((file) =>
+          file.purpose.includes(
+            provider === "claude-cli"
+              ? "system prompt"
+              : provider === "codex-cli"
+                ? "developer instructions"
+                : "custom-agent instructions",
+          ),
+        )!.path,
+        "utf8",
+      );
       expect(transportText).toContain("Use the frozen fixture MCP hint.");
       expect(resolution.budget.runtimeSupplementBytes).toBeGreaterThan(0);
       expect(enrollment.instructionDelivery.instructionPayloadBytes).toBe(
@@ -315,6 +367,113 @@ describe("CLI provider enrollment materializer", () => {
       await enrollment.dispose();
     },
   );
+
+  it("preserves centrally resolved scope precedence at the native Copilot boundary", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const nestedScope = join(workspaceRoot, "apps", "web");
+    const userConfigRoot = join(root, "user-config");
+    const libraryPath = join(root, "instruction-library.json");
+    await Promise.all([
+      mkdir(nestedScope, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+
+    const global = await createInstructionProfile(
+      { name: "Global", body: "Global boundary policy." },
+      { path: libraryPath },
+    );
+    const workspace = await createInstructionProfile(
+      { name: "Workspace", body: "Workspace boundary policy." },
+      { path: libraryPath, expectedRevision: 1 },
+    );
+    const nested = await createInstructionProfile(
+      { name: "Nested", body: "Nested boundary policy." },
+      { path: libraryPath, expectedRevision: 2 },
+    );
+    await setDefaultInstructionProfiles([global.profile.id], {
+      path: libraryPath,
+      expectedRevision: 3,
+    });
+    const registered = await registerInstructionWorkspace(
+      workspaceRoot,
+      {},
+      { path: libraryPath, expectedRevision: 4 },
+    );
+    await setWorkspaceInstructionScope(
+      registered.workspace.id,
+      ".",
+      [workspace.profile.id],
+      { path: libraryPath, expectedRevision: 5 },
+    );
+    await setWorkspaceInstructionScope(
+      registered.workspace.id,
+      "apps/web",
+      [nested.profile.id],
+      { path: libraryPath, expectedRevision: 6 },
+    );
+    await createLocalInstruction(
+      workspaceRoot,
+      ".",
+      "Root local boundary policy.",
+    );
+    await createLocalInstruction(
+      workspaceRoot,
+      "apps/web",
+      "Nested local boundary policy.",
+    );
+
+    const resolution = await resolveInstructionSet(
+      {
+        providerId: "copilot-cli",
+        surface: "cli",
+        workspaceRoot,
+      },
+      { libraryPath },
+    );
+    const enrollment = await materializeCliEnrollment({
+      provider: "copilot-cli",
+      executable: process.execPath,
+      runId: "test-central-scope-order",
+      workspaceRoot,
+      resolution,
+      deliveryPlan: createProbedPlan(resolution),
+    });
+    const agentPath = enrollment.manifest.renderedFiles.find((file) =>
+      file.purpose.includes("custom-agent instructions"),
+    )!.path;
+    const agent = await readFile(agentPath, "utf8");
+    const orderedBodies = [
+      "Global boundary policy.",
+      "Workspace boundary policy.",
+      "Root local boundary policy.",
+      "Nested boundary policy.",
+      "Nested local boundary policy.",
+    ];
+
+    for (const [index, body] of orderedBodies.entries()) {
+      expect(
+        agent.match(new RegExp(body.replace(".", "\\."), "gu")),
+      ).toHaveLength(1);
+      if (index > 0) {
+        expect(agent.indexOf(orderedBodies[index - 1]!)).toBeLessThan(
+          agent.indexOf(body),
+        );
+      }
+    }
+    await expect(
+      stat(join(workspaceRoot, ".github", "copilot-instructions.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(join(workspaceRoot, "CLAUDE.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      stat(join(workspaceRoot, ".codex", "config.toml")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await enrollment.dispose();
+  });
 
   it("rejects a mismatched frozen plan before creating provider artifacts", async () => {
     const root = await createRoot();
@@ -345,9 +504,7 @@ describe("CLI provider enrollment materializer", () => {
         resolution,
         deliveryPlan: createInstructionPlanFixture(otherResolution),
       }),
-    ).rejects.toThrow(
-      "requires a matching frozen resolution and delivery plan",
-    );
+    ).rejects.toThrow("requires matching frozen instructions");
     await expect(stat(join(workspaceRoot, "AGENTS.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -384,24 +541,197 @@ describe("CLI provider enrollment materializer", () => {
       deliveryPlan,
     });
 
-    expect(enrollment.promptFallback).toBe(resolution.renderedEnvelope);
     expect(enrollment.env.CLAUDE_CONFIG_DIR).toContain("claude-home");
     await enrollment.dispose();
   });
 
-  it("blocks Codex envelopes that cannot fit the safe runtime override", () => {
+  it("keeps large Codex instructions in the invocation-scoped config", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    const body = [
+      "long-codex-instruction-start",
+      '"quotes", backslashes \\\\, shell & | < > ^ % !, and Unicode 🦊',
+      "x".repeat(70_000),
+      "long-codex-instruction-end",
+    ].join("\n");
     const resolution = createInstructionResolutionFixture({
       providerId: "codex-cli",
       surface: "cli",
-      body: "x".repeat(20_000),
+      body,
     });
     const plan = createProbedPlan(resolution);
 
-    expect(plan.grade).toBe("unsupported");
-    expect(plan.blockingReasons.join(" ")).toContain("command-argument bound");
+    expect(plan.grade).not.toBe("unsupported");
+    const enrollment = await materializeCliEnrollment({
+      provider: "codex-cli",
+      executable: process.execPath,
+      runId: "test-large-codex-instructions",
+      workspaceRoot,
+      resolution,
+      deliveryPlan: plan,
+    });
+    const configPath = enrollment.manifest.renderedFiles.find((file) =>
+      file.purpose.includes("developer instructions"),
+    )!.path;
+    const config = await readFile(configPath, "utf8");
+    const serializedInstructions = config
+      .split("\n")
+      .find((line) => line.startsWith("developer_instructions = "))
+      ?.slice("developer_instructions = ".length);
+
+    expect(serializedInstructions).toBeDefined();
+    expect(JSON.parse(serializedInstructions!)).toBe(
+      `${runtimeSystemInstructions}\n\n${resolution.renderedEnvelope}`,
+    );
+    expect(config).toContain(
+      `[projects.${JSON.stringify(workspaceRoot)}]\ntrust_level = "untrusted"`,
+    );
+    expect(enrollment.args.join("\n")).not.toContain(
+      "long-codex-instruction-start",
+    );
+    expect(enrollment.args.join(" ").length).toBeLessThan(8_191);
+
+    const enrollmentRoot = enrollment.rootPath;
+    await enrollment.dispose();
+    await expect(stat(enrollmentRoot)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
-  it("blocks arbitrary Codex overrides through Windows command wrappers", () => {
+  it.each([
+    ["claude-cli", "system prompt"],
+    ["copilot-cli", "custom-agent instructions"],
+  ] as const)(
+    "keeps large %s instructions in its invocation-scoped native file",
+    async (provider, purpose) => {
+      const root = await createRoot();
+      const workspaceRoot = join(root, "workspace");
+      const userConfigRoot = join(root, "user-config");
+      await Promise.all([
+        mkdir(workspaceRoot, { recursive: true }),
+        mkdir(userConfigRoot, { recursive: true }),
+      ]);
+      await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
+      vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+      const body = [
+        `long-${provider}-instruction-start`,
+        '"quotes", backslashes \\\\, shell & | < > ^ % !, CRLF\r\nand Unicode 🦊',
+        "y".repeat(70_000),
+        `long-${provider}-instruction-end`,
+      ].join("\n");
+      const resolution = createInstructionResolutionFixture({
+        providerId: provider,
+        surface: "cli",
+        body,
+      });
+      const enrollment = await materializeCliEnrollment({
+        provider,
+        executable: process.execPath,
+        runId: `test-large-${provider}-instructions`,
+        workspaceRoot,
+        resolution,
+        deliveryPlan: createProbedPlan(resolution),
+      });
+      const instructionPath = enrollment.manifest.renderedFiles.find((file) =>
+        file.purpose.includes(purpose),
+      )!.path;
+      const nativeInstructions = await readFile(instructionPath, "utf8");
+
+      expect(nativeInstructions).toContain(
+        `long-${provider}-instruction-start`,
+      );
+      expect(nativeInstructions).toContain(`long-${provider}-instruction-end`);
+      expect(
+        nativeInstructions.match(
+          new RegExp(`long-${provider}-instruction-start`, "gu"),
+        ),
+      ).toHaveLength(1);
+      expect(enrollment.args.join("\n")).not.toContain(
+        `long-${provider}-instruction-start`,
+      );
+      expect(enrollment.args.join(" ").length).toBeLessThan(8_191);
+
+      const enrollmentRoot = enrollment.rootPath;
+      await enrollment.dispose();
+      await expect(stat(enrollmentRoot)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it("isolates concurrent native instruction files and cleanup", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    const firstResolution = createInstructionResolutionFixture({
+      providerId: "copilot-cli",
+      surface: "cli",
+      body: "First isolated instruction.",
+    });
+    const secondResolution = createInstructionResolutionFixture({
+      providerId: "copilot-cli",
+      surface: "cli",
+      body: "Second isolated instruction.",
+    });
+
+    const [first, second] = await Promise.all([
+      materializeCliEnrollment({
+        provider: "copilot-cli",
+        executable: process.execPath,
+        runId: "test-isolated-first",
+        workspaceRoot,
+        resolution: firstResolution,
+        deliveryPlan: createProbedPlan(firstResolution),
+      }),
+      materializeCliEnrollment({
+        provider: "copilot-cli",
+        executable: process.execPath,
+        runId: "test-isolated-second",
+        workspaceRoot,
+        resolution: secondResolution,
+        deliveryPlan: createProbedPlan(secondResolution),
+      }),
+    ]);
+    const firstPath = first.manifest.renderedFiles.find((file) =>
+      file.purpose.includes("custom-agent instructions"),
+    )!.path;
+    const secondPath = second.manifest.renderedFiles.find((file) =>
+      file.purpose.includes("custom-agent instructions"),
+    )!.path;
+
+    expect(first.rootPath).not.toBe(second.rootPath);
+    expect(firstPath).not.toBe(secondPath);
+    expect(await readFile(firstPath, "utf8")).not.toContain(
+      "Second isolated instruction.",
+    );
+    expect(await readFile(secondPath, "utf8")).not.toContain(
+      "First isolated instruction.",
+    );
+    await first.dispose();
+    await expect(stat(first.rootPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(secondPath)).resolves.toBeDefined();
+    await second.dispose();
+    await expect(stat(second.rootPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps arbitrary Codex content off Windows command wrappers", () => {
     const resolution = createInstructionResolutionFixture({
       providerId: "codex-cli",
       surface: "cli",
@@ -413,15 +743,11 @@ describe("CLI provider enrollment materializer", () => {
 
     const plan = createProbedPlan(resolution, probe);
 
-    if (process.platform === "win32") {
-      expect(plan.grade).toBe("unsupported");
-      expect(plan.blockingReasons.join(" ")).toContain("through cmd.exe");
-    } else {
-      expect(plan.grade).not.toBe("unsupported");
-    }
+    expect(plan.grade).not.toBe("unsupported");
+    expect(plan.blockingReasons.join(" ")).not.toContain("through cmd.exe");
   });
 
-  it("includes frozen MCP hints in the Codex runtime-override bound", () => {
+  it("does not put frozen MCP hints in Codex command arguments", () => {
     const base = createInstructionResolutionFixture({
       providerId: "codex-cli",
       surface: "cli",
@@ -448,8 +774,10 @@ describe("CLI provider enrollment materializer", () => {
 
     const plan = createProbedPlan(resolution);
 
-    expect(plan.grade).toBe("unsupported");
-    expect(plan.blockingReasons.join(" ")).toContain("command-argument bound");
+    expect(plan.grade).not.toBe("unsupported");
+    expect(plan.blockingReasons.join(" ")).not.toContain(
+      "command-argument bound",
+    );
   });
 
   it("isolates Copilot user state and disables unmanaged workspace MCP servers", async () => {
@@ -583,7 +911,9 @@ describe("CLI provider enrollment materializer", () => {
       deliveryPlan: createProbedPlan(resolution),
     });
 
-    expect(enrollment.promptFallback).toBe(resolution.renderedEnvelope);
+    expect(
+      enrollment.args.some((argument) => argument.startsWith("--agent=")),
+    ).toBe(true);
     await expect(
       stat(join(enrollment.env.COPILOT_HOME!, "config.json")),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -602,8 +932,8 @@ describe("CLI provider enrollment materializer", () => {
     vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
     const probe = createProbe("claude-cli", [
       "--append-system-prompt-file",
-      "--append-subagent-system-prompt",
       "--mcp-config",
+      "--setting-sources",
       "--strict-mcp-config",
       "--bare",
     ]);
@@ -615,8 +945,8 @@ describe("CLI provider enrollment materializer", () => {
     });
     const deliveryPlan = createProbedPlan(resolution, probe);
 
-    expect(deliveryPlan.capability.nativeDiscovery).toBe("unknown");
-    expect(deliveryPlan.capability.lifecycle.subagents).toBe("reattached");
+    expect(deliveryPlan.capability.nativeDiscovery).toBe("suppressed");
+    expect(deliveryPlan.capability.lifecycle.subagents).toBe("unknown");
     const enrollment = await materializeCliEnrollment({
       provider: "claude-cli",
       executable: process.execPath,
@@ -628,7 +958,9 @@ describe("CLI provider enrollment materializer", () => {
 
     expect(enrollment.args).not.toContain("--bare");
     expect(enrollment.args).toContain("--strict-mcp-config");
-    expect(enrollment.args).toContain("--append-subagent-system-prompt");
+    expect(enrollment.args.join("\n")).not.toContain(
+      resolution.renderedEnvelope,
+    );
     await enrollment.dispose();
   });
 
@@ -645,8 +977,8 @@ describe("CLI provider enrollment materializer", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-sent");
     const probe = createProbe("claude-cli", [
       "--append-system-prompt-file",
-      "--append-subagent-system-prompt",
       "--mcp-config",
+      "--setting-sources",
       "--strict-mcp-config",
       "--bare",
     ]);
@@ -672,7 +1004,7 @@ describe("CLI provider enrollment materializer", () => {
     await enrollment.dispose();
   });
 
-  it("skips a Copilot workspace MCP server that cannot be disabled portably", async () => {
+  it("fails closed for a Copilot workspace MCP server that cannot be disabled portably", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
     const userConfigRoot = join(root, "user-config");
@@ -698,21 +1030,19 @@ describe("CLI provider enrollment materializer", () => {
       providerId: "copilot-cli",
       surface: "cli",
     });
-    const enrollment = await materializeCliEnrollment({
-      provider: "copilot-cli",
-      executable: process.execPath,
-      runId: "test-copilot-unsafe-mcp-name",
-      workspaceRoot,
-      resolution,
-      deliveryPlan: createProbedPlan(resolution),
-    });
-
-    expect(enrollment.args.some((arg) => arg.includes("unsafe"))).toBe(false);
-    expect(enrollment.promptFallback).toBe(resolution.renderedEnvelope);
-    await enrollment.dispose();
+    await expect(
+      materializeCliEnrollment({
+        provider: "copilot-cli",
+        executable: process.execPath,
+        runId: "test-copilot-unsafe-mcp-name",
+        workspaceRoot,
+        resolution,
+        deliveryPlan: createProbedPlan(resolution),
+      }),
+    ).rejects.toThrow("cannot be disabled safely");
   });
 
-  it("skips linked Copilot workspace MCP configuration", async () => {
+  it("fails closed for linked Copilot workspace MCP configuration", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
     const userConfigRoot = join(root, "user-config");
@@ -741,21 +1071,19 @@ describe("CLI provider enrollment materializer", () => {
       providerId: "copilot-cli",
       surface: "cli",
     });
-    const enrollment = await materializeCliEnrollment({
-      provider: "copilot-cli",
-      executable: process.execPath,
-      runId: "test-copilot-linked-mcp",
-      workspaceRoot,
-      resolution,
-      deliveryPlan: createProbedPlan(resolution),
-    });
-
-    expect(enrollment.args.some((arg) => arg.includes("linked"))).toBe(false);
-    expect(enrollment.promptFallback).toBe(resolution.renderedEnvelope);
-    await enrollment.dispose();
+    await expect(
+      materializeCliEnrollment({
+        provider: "copilot-cli",
+        executable: process.execPath,
+        runId: "test-copilot-linked-mcp",
+        workspaceRoot,
+        resolution,
+        deliveryPlan: createProbedPlan(resolution),
+      }),
+    ).rejects.toThrow("could not inspect");
   });
 
-  it("falls back to the prompt when a probed CLI lacks native delivery flags", async () => {
+  it("fails closed when a probed CLI lacks native delivery flags", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
     const userConfigRoot = join(root, "user-config");
@@ -784,23 +1112,19 @@ describe("CLI provider enrollment materializer", () => {
     expect(blockedPlan.blockingReasons.join(" ")).toContain(
       "--append-system-prompt-file",
     );
-    const enrollment = await materializeCliEnrollment({
-      provider: "claude-cli",
-      executable: process.execPath,
-      runId: "test-missing-required-flag",
-      workspaceRoot,
-      resolution,
-      deliveryPlan: blockedPlan,
-    });
-    expect(enrollment.args).not.toContain("--append-system-prompt-file");
-    expect(enrollment.promptFallback).toBe(resolution.renderedEnvelope);
-    expect(
-      enrollment.instructionDelivery.instructionPayloadIncludedInRequest,
-    ).toBe(true);
+    await expect(
+      materializeCliEnrollment({
+        provider: "claude-cli",
+        executable: process.execPath,
+        runId: "test-missing-required-flag",
+        workspaceRoot,
+        resolution,
+        deliveryPlan: blockedPlan,
+      }),
+    ).rejects.toThrow("cannot satisfy the native instruction contract");
     await expect(stat(join(workspaceRoot, "AGENTS.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    await enrollment.dispose();
   });
 
   it("blocks Copilot when the probed executable cannot disable auto-update", () => {

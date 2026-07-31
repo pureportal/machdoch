@@ -402,7 +402,7 @@ describe("executeTask", () => {
     expect(result.executedTools).toEqual(["filesystem"]);
   });
 
-  it("does not require provider-delivery acknowledgement for deterministic offline work", async () => {
+  it("reports compatible provider delivery as telemetry for deterministic offline work", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(

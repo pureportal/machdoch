@@ -20,7 +20,10 @@ import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
 import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
-import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.ts";
+import {
+  assertWindowsCommandLineLength,
+  maybeExecuteExternalAgentProviderTask,
+} from "./external-agent-provider.ts";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -48,7 +51,10 @@ vi.mock("node:child_process", () => ({
           "--config",
           "--append-system-prompt-file",
           "--mcp-config",
+          "--setting-sources",
           "--strict-mcp-config",
+          "--agent",
+          "--attachment",
           "--no-auto-update",
           "--no-custom-instructions",
           "--additional-mcp-config",
@@ -234,10 +240,13 @@ const createExternalInstructionPlan = (
           ? [
               "--append-system-prompt-file",
               "--mcp-config",
+              "--setting-sources",
               "--strict-mcp-config",
             ]
           : resolution.providerId === "copilot-cli"
             ? [
+                "--agent",
+                "--attachment",
                 "--no-auto-update",
                 "--no-custom-instructions",
                 "--additional-mcp-config",
@@ -301,6 +310,39 @@ const createParams = (
       : {}),
     preparedConversationContext,
   };
+};
+
+const readRunScopedSystemInstructions = async (
+  provider: "codex-cli" | "claude-cli" | "copilot-cli",
+  call: SpawnCall,
+): Promise<string> => {
+  const childEnv = call.options.env as NodeJS.ProcessEnv;
+  if (provider === "codex-cli") {
+    const config = await readFile(
+      join(childEnv.CODEX_HOME!, "config.toml"),
+      "utf8",
+    );
+    const serialized = config
+      .split("\n")
+      .find((line) => line.startsWith("developer_instructions = "))
+      ?.slice("developer_instructions = ".length);
+    expect(serialized).toBeDefined();
+    return JSON.parse(serialized!) as string;
+  }
+  if (provider === "claude-cli") {
+    const instructionFlagIndex = call.args.indexOf(
+      "--append-system-prompt-file",
+    );
+    return await readFile(call.args[instructionFlagIndex + 1]!, "utf8");
+  }
+  const agentId = call.args
+    .find((argument) => argument.startsWith("--agent="))
+    ?.slice("--agent=".length);
+  expect(agentId).toBeDefined();
+  return await readFile(
+    join(childEnv.COPILOT_HOME!, "agents", `${agentId}.agent.md`),
+    "utf8",
+  );
 };
 
 beforeEach(() => {
@@ -403,32 +445,144 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(streamedChunks.every((chunk) => chunk.length <= 32_000)).toBe(true);
   });
 
-  it("bounds delegated prompt input while retaining the completion contract", async () => {
+  it.each([
+    ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
+    ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],
+    ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
+  ] as const)(
+    "delivers a command-line-sized request intact to %s over stdin",
+    async (provider, binaryKey) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryKey] = process.execPath;
+      const task = [
+        `long-request-start-${provider}`,
+        '"quotes", backslashes \\\\, shell & | < > ^ % !, CRLF\r\nand Unicode 🦊',
+        "z".repeat(96_000),
+        `long-request-end-${provider}`,
+      ].join("\n");
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider,
+          model:
+            provider === "codex-cli"
+              ? "gpt-5.5"
+              : provider === "claude-cli"
+                ? "claude-sonnet-4-6"
+                : "auto",
+          task,
+        }),
+      );
+
+      await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      await vi.waitFor(() => {
+        expect(call.child.stdinText).toContain(`long-request-end-${provider}`);
+      });
+
+      expect(call.args.join(" ").length).toBeLessThan(8_191);
+      expect(call.args.join("\n")).not.toContain(
+        `long-request-start-${provider}`,
+      );
+      expect(call.child.stdinText).toContain(task);
+      expect(
+        call.child.stdinText.match(
+          new RegExp(`long-request-start-${provider}`, "gu"),
+        ),
+      ).toHaveLength(1);
+      expect(call.child.stdinText).not.toContain(
+        "truncated after 64000 characters",
+      );
+
+      const childEnv = call.options.env as NodeJS.ProcessEnv;
+      const invocationHome =
+        provider === "codex-cli"
+          ? childEnv.CODEX_HOME
+          : provider === "claude-cli"
+            ? childEnv.CLAUDE_CONFIG_DIR
+            : childEnv.COPILOT_HOME;
+
+      call.child.stdout.write("Delegated answer.");
+      call.child.emit("close", 0, null);
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+      await expect(access(invocationHome ?? "")).rejects.toBeDefined();
+    },
+  );
+
+  it.each([
+    ["codex-cli", "MACHDOCH_CODEX_CLI_PATH", "--image"],
+    ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH", "--attachment"],
+  ] as const)(
+    "passes many attachments through %s native repeated flags without instruction duplication",
+    async (provider, binaryKey, attachmentFlag) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryKey] = process.execPath;
+      const params = createParams(workspaceRoot, {
+        provider,
+        model: provider === "codex-cli" ? "gpt-5.5" : "auto",
+        instructionBody: `attachment-instruction-${provider}`,
+      });
+      params.imageInputs = Array.from({ length: 64 }, (_, index) => ({
+        path: join(workspaceRoot, `attachment-${index}.png`),
+        mediaType: "image/png" as const,
+        data: "",
+      }));
+
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+      await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+
+      expect(
+        call.args.filter((argument) => argument === attachmentFlag),
+      ).toHaveLength(64);
+      expect(() =>
+        assertWindowsCommandLineLength(process.execPath, call.args, true),
+      ).not.toThrow();
+      expect(
+        (await readRunScopedSystemInstructions(provider, call)).match(
+          new RegExp(`attachment-instruction-${provider}`, "gu"),
+        ),
+      ).toHaveLength(1);
+
+      call.child.stdout.write("Delegated answer.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+    },
+  );
+
+  it("rejects a Windows command line above the portable wrapper bound", () => {
+    expect(() =>
+      assertWindowsCommandLineLength(
+        "C:\\tools\\copilot.cmd",
+        ["--attachment", `C:\\workspace\\${"x".repeat(8_000)}.png`],
+        true,
+      ),
+    ).toThrow("portable 7500-character cmd.exe wrapper bound");
+  });
+
+  it("fails before launch when a Claude stdin request exceeds its documented limit", async () => {
     const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
 
-    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
-
-    const resultPromise = maybeExecuteExternalAgentProviderTask(
+    const result = await maybeExecuteExternalAgentProviderTask(
       createParams(workspaceRoot, {
-        task: `Inspect this payload: ${"z".repeat(300_000)}`,
+        provider: "claude-cli",
+        model: "claude-sonnet-4-6",
+        task: "x".repeat(10 * 1024 * 1024 + 1),
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
-    const call = spawnCalls[0];
-    await vi.waitFor(() => {
-      expect(call?.child.stdinText).toContain(
-        "Final response must summarize what changed",
-      );
+    expect(spawnCalls).toHaveLength(0);
+    expect(result).toMatchObject({
+      status: "blocked",
+      reason: expect.stringContaining(
+        "Claude CLI accepts at most 10485760 bytes",
+      ),
     });
-
-    expect(call?.child.stdinText.length).toBeLessThan(257_000);
-    expect(call?.child.stdinText).toContain("truncated after 64000 characters");
-
-    call?.child.stdout.write("Codex delegated answer.");
-    call?.child.emit("close", 0, null);
-
-    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
   it("does not block delegated execution on conservative request-budget telemetry", async () => {
@@ -545,7 +699,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.options.cwd).toBe(workspaceRoot);
     expect(cdIndex).toBeGreaterThanOrEqual(0);
     expect(call?.args[cdIndex + 1]).toBe(workspaceRoot);
-    expect(call?.child.stdinText).toContain(`Workspace: ${workspaceRoot}`);
+    expect(await readRunScopedSystemInstructions("codex-cli", call!)).toContain(
+      `Workspace: ${workspaceRoot}`,
+    );
 
     call?.child.stdout.write("Codex delegated answer.");
     call?.child.emit("close", 0, null);
@@ -594,22 +750,29 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain('model_reasoning_effort="low"');
     expect(call?.args).not.toContain('model_reasoning_effort="minimal"');
     expect(call?.args).toContain('model_verbosity="low"');
-    expect(call?.child.stdinText).toContain(
+    const systemInstructions = await readRunScopedSystemInstructions(
+      "codex-cli",
+      call!,
+    );
+    expect(systemInstructions).toContain(
       "Run as a bounded artifact worker for Machdoch.",
     );
-    expect(call?.child.stdinText).toContain(
+    expect(systemInstructions).toContain(
       "Use available tools when they materially reduce uncertainty; prefer short read-only workspace inspection.",
     );
-    expect(call?.child.stdinText).toContain(
+    expect(systemInstructions).toContain(
       "Do not modify files, start or restart servers, install packages, run long-running commands, or perform broad workspace verification.",
     );
-    expect(call?.child.stdinText).toContain(
+    expect(systemInstructions).toContain(
       "Return exactly the artifact or answer requested by the user task.",
     );
-    expect(call?.child.stdinText).not.toContain("Run with full local access");
-    expect(call?.child.stdinText).not.toContain("make requested changes");
-    expect(call?.child.stdinText).not.toContain(
+    expect(systemInstructions).not.toContain("Run with full local access");
+    expect(systemInstructions).not.toContain("make requested changes");
+    expect(systemInstructions).not.toContain(
       "Final response must summarize what changed",
+    );
+    expect(call?.child.stdinText).not.toContain(
+      "Run as a bounded artifact worker for Machdoch.",
     );
 
     call?.child.stdout.write("<ralph_flow_json>{}</ralph_flow_json>");
@@ -852,7 +1015,6 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toEqual(
       expect.arrayContaining([
         "-p",
-        "Follow the Machdoch delegated task prompt supplied on stdin.",
         "--output-format",
         "text",
         "--model",
@@ -868,10 +1030,18 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         "7",
       ]),
     );
+    expect(call?.args).not.toContain(
+      "Follow the Machdoch delegated task prompt supplied on stdin.",
+    );
     expect(
       call?.args.filter((arg) => arg === "--strict-mcp-config"),
     ).toHaveLength(1);
-    expect(call?.child.stdinText).toContain(
+    expect(call?.child.stdinText).not.toContain(
+      "You are running as a delegated Claude CLI agent for Machdoch.",
+    );
+    expect(
+      await readRunScopedSystemInstructions("claude-cli", call!),
+    ).toContain(
       "You are running as a delegated Claude CLI agent for Machdoch.",
     );
     expect(call?.child.stdinText).toContain("User task:");
@@ -890,7 +1060,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],
     ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
   ] as const)(
-    "delivers the canonical Machdoch prompt for %s",
+    "delivers the canonical Machdoch instructions exactly once for %s",
     async (provider, binaryKey) => {
       const workspaceRoot = await createWorkspace();
       process.env[binaryKey] = process.execPath;
@@ -923,31 +1093,19 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       const childEnv = call.options.env as NodeJS.ProcessEnv;
-      let nativeInstructionText: string;
-      if (provider === "codex-cli") {
-        nativeInstructionText = await readFile(
-          join(childEnv.CODEX_HOME!, "config.toml"),
-          "utf8",
-        );
-      } else if (provider === "claude-cli") {
-        const instructionFlagIndex = call.args.indexOf(
-          "--append-system-prompt-file",
-        );
-        nativeInstructionText = await readFile(
-          call.args[instructionFlagIndex + 1]!,
-          "utf8",
-        );
-      } else {
-        expect(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS).toBeUndefined();
-        nativeInstructionText = call.child.stdinText;
-      }
-
-      expect(call.child.stdinText.match(new RegExp(canary, "gu"))).toHaveLength(
-        1,
+      const nativeInstructionText = await readRunScopedSystemInstructions(
+        provider,
+        call,
       );
-      expect(
-        nativeInstructionText.match(new RegExp(canary, "gu")),
-      ).toHaveLength(1);
+      expect(childEnv.COPILOT_CUSTOM_INSTRUCTIONS_DIRS).toBeUndefined();
+
+      const stdinOccurrences =
+        call.child.stdinText.match(new RegExp(canary, "gu"))?.length ?? 0;
+      const nativeOccurrences =
+        nativeInstructionText?.match(new RegExp(canary, "gu"))?.length ?? 0;
+      expect(stdinOccurrences + nativeOccurrences).toBe(1);
+      expect(stdinOccurrences).toBe(0);
+      expect(nativeOccurrences).toBe(1);
       call.child.stdout.write("Delegated answer.");
       call.child.emit("close", 0, null);
       await expect(resultPromise).resolves.toMatchObject({
@@ -1051,6 +1209,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(childEnv?.CLAUDE_CONFIG_DIR).not.toBe(
       join(workspaceRoot, ".claude-config"),
     );
+    expect(childEnv?.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe("1");
     expect(childEnv?.ANTHROPIC_MODEL).toBeUndefined();
     expect(childEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
     expect(childEnv?.PERPLEXITY_API_KEY).toBeUndefined();
@@ -1080,7 +1239,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--dangerously-skip-permissions");
     expect(call?.args).not.toContain("--permission-mode");
     expect(call?.args).not.toContain("plan");
-    expect(call?.child.stdinText).toContain("Run with full local access");
+    expect(call?.child.stdinText).not.toContain("Run with full local access");
+    expect(
+      await readRunScopedSystemInstructions("claude-cli", call!),
+    ).toContain("Run with full local access");
     expect(call?.child.stdinText).not.toContain("Run in read-only mode");
 
     call?.child.stdout.write("Claude delegated answer.");
@@ -1112,10 +1274,18 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--no-ask-user");
     expect(call?.args).toContain("--allow-all");
     expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+    expect(call?.args.some((argument) => argument.startsWith("--agent="))).toBe(
+      true,
+    );
     expect(call?.args).not.toContain("--add-dir");
     expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
     expect(call?.args).toContain("--model=auto");
-    expect(call?.child.stdinText).toContain(
+    expect(call?.child.stdinText).not.toContain(
+      "You are running as a delegated Copilot CLI agent for Machdoch.",
+    );
+    expect(
+      await readRunScopedSystemInstructions("copilot-cli", call!),
+    ).toContain(
       "You are running as a delegated Copilot CLI agent for Machdoch.",
     );
     expect(call?.child.stdinText).toContain("User task:");
@@ -1153,7 +1323,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).not.toContain("--allow-tool=read,url");
     expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
     expect(call?.args).not.toContain("-p");
-    expect(call?.child.stdinText).toContain("Run with full local access");
+    expect(call?.child.stdinText).not.toContain("Run with full local access");
+    expect(
+      await readRunScopedSystemInstructions("copilot-cli", call!),
+    ).toContain("Run with full local access");
     expect(call?.child.stdinText).not.toContain("Run in read-only mode");
 
     call?.child.stdout.write("Copilot delegated answer.");

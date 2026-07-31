@@ -156,7 +156,7 @@ export interface McpDefaultConfig {
 }
 
 export interface McpConfigFile {
-  schemaVersion?: typeof MCP_CONFIG_SCHEMA_VERSION;
+  schemaVersion: typeof MCP_CONFIG_SCHEMA_VERSION;
   defaults?: McpDefaultConfig;
   servers?: McpServerOverride[];
 }

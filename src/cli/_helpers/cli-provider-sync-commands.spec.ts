@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   loadProviderEnrollmentConfig: vi.fn(),
   setPersistentProviderSyncEnabled: vi.fn(),
-  getCompatibleProviderSyncDaemonPid: vi.fn(),
+  getCurrentProviderSyncDaemonPid: vi.fn(),
   getProviderSyncDaemonPid: vi.fn(),
   requestProviderSyncRefresh: vi.fn(),
   runProviderSyncDaemon: vi.fn(),
@@ -25,8 +25,8 @@ vi.mock("../../core/provider-enrollment/config.js", () => ({
 }));
 
 vi.mock("../../core/provider-enrollment/sync-daemon.js", () => ({
-  getCompatibleProviderSyncDaemonPid:
-    mocks.getCompatibleProviderSyncDaemonPid,
+  getCurrentProviderSyncDaemonPid:
+    mocks.getCurrentProviderSyncDaemonPid,
   getProviderSyncDaemonPid: mocks.getProviderSyncDaemonPid,
   requestProviderSyncRefresh: mocks.requestProviderSyncRefresh,
   runProviderSyncDaemon: mocks.runProviderSyncDaemon,
@@ -58,21 +58,15 @@ const createConfig = (watch: boolean) => ({
   schemaVersion: 1,
   enabled: true,
   mcp: {
-    mode: "direct-native",
-    fallback: "per-server-stdio-proxy",
-    compatibilityServerName: "machdoch-compat",
     unmanagedNative: "allow",
     approvals: "never",
-    progressiveDiscoveryThresholdPercent: 3,
   },
   persistentSync: {
     enabled: true,
     watch,
     daemonAtLogin: false,
     debounceMs: 500,
-    filesystemConvergenceTargetMs: 2_000,
     fullRescanIntervalMs: 600_000,
-    autoReloadOwnedSessions: true,
   },
   providers: {
     "codex-cli": { enabled: true },
@@ -85,7 +79,7 @@ describe("automatic provider sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isProviderSyncAutostartInstalled.mockResolvedValue(false);
-    mocks.getCompatibleProviderSyncDaemonPid.mockResolvedValue(undefined);
+    mocks.getCurrentProviderSyncDaemonPid.mockResolvedValue(undefined);
     mocks.getProviderSyncDaemonPid.mockResolvedValue(undefined);
     mocks.requestProviderSyncRefresh.mockResolvedValue(undefined);
     mocks.reconcileProviderSync.mockResolvedValue({});
@@ -128,7 +122,7 @@ describe("automatic provider sync", () => {
 
   it("delegates refresh to a running daemon instead of reconciling concurrently", async () => {
     mocks.loadProviderEnrollmentConfig.mockResolvedValue(createConfig(true));
-    mocks.getCompatibleProviderSyncDaemonPid.mockResolvedValue(4321);
+    mocks.getCurrentProviderSyncDaemonPid.mockResolvedValue(4321);
 
     await ensureAutomaticProviderSync("C:\\workspace");
 

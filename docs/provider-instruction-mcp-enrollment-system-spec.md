@@ -1,7 +1,7 @@
 # Provider Instruction Delivery and MCP Enrollment
 
 Status: implemented
-Last implementation review: 2026-07-24
+Last implementation review: 2026-07-31
 
 ## 1. Scope
 
@@ -30,14 +30,13 @@ Every provider adapter receives:
 - native-provider inventory;
 - byte and token budget;
 - invocation phase;
-- MCP initialization-hint snapshot; and
-- unattended/acknowledgement state.
+- MCP initialization-hint snapshot.
 
 The adapter must:
 
 1. publish a capability descriptor;
 2. create a twelve-dimension delivery plan;
-3. block unsupported or unacknowledged compatible execution;
+3. block unsupported execution;
 4. deliver the complete envelope without rewriting or truncation;
 5. reattach it on every provider request required by the lifecycle;
 6. verify the observed canonical digest at the request boundary;
@@ -46,18 +45,18 @@ The adapter must:
 
 ## 3. Delivery grades
 
-| Grade | Meaning | Execution |
-| --- | --- | --- |
-| `full` | Complete content, required authority/isolation, known lifecycle, budget, conformance, and receipt evidence | Allowed |
-| `compatible` | Complete content is available, but at least one non-content property is weaker or unverified | Interactive review; exact-plan acknowledgement for unattended work |
-| `unsupported` | Complete delivery cannot be guaranteed | Blocked |
+| Grade         | Meaning                                                                                                    | Execution                                  |
+| ------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `full`        | Complete content, required authority/isolation, known lifecycle, budget, conformance, and receipt evidence | Allowed                                    |
+| `compatible`  | Complete content is available, but at least one non-content property is weaker or unverified               | Allowed and reported as delivery telemetry |
+| `unsupported` | Complete delivery cannot be guaranteed                                                                     | Blocked                                    |
 
 The dimensions are content, scope, authority, native isolation, initial,
 continuation, retry, roles, subagents, budget, conformance, and receipt.
 
 No provider has a partial-content mode. A missing required CLI flag, unknown
-critical lifecycle, digest mismatch, stale acknowledgement, or oversized
-request fails before or at the delivery boundary.
+critical lifecycle, digest mismatch, or oversized request fails before or at
+the delivery boundary.
 
 ## 4. API providers
 
@@ -104,19 +103,27 @@ the root.
 ### Codex CLI
 
 - Uses an isolated `CODEX_HOME`.
-- Supplies the canonical envelope through a runtime
-  `developer_instructions` override.
+- Writes the complete system payload once to
+  `CODEX_HOME/config.toml` as `developer_instructions`.
 - Supplies the run-scoped MCP projection through isolated Codex config.
-- Accounts for repository `AGENTS.md` discovery because a supported
-  suppression guarantee is not assumed.
+- Sets project instruction discovery limits to zero and marks the workspace
+  and every ancestor untrusted so project configuration cannot re-enable it.
+- Reads the user task from stdin through `codex exec -`; instruction content
+  is absent from argv and stdin.
 - Reattaches the envelope when Machdoch starts a retry or a new role.
 
 ### Claude CLI
 
 - Uses an isolated Claude configuration directory.
 - Supplies the canonical envelope through the probed system-prompt file flag.
+- Loads no user/project/local setting sources and disables CLAUDE.md and auto
+  memory for the invocation.
 - Uses strict run-scoped MCP configuration.
-- Enables bare/subagent flags only when the actual executable proves support.
+- Uses documented bare mode only when the executable exposes it and explicit
+  API-key authentication is available. Inline subagent prompt duplication is
+  never used.
+- Reads the user task from stdin and rejects payloads above Claude's documented
+  10 MiB stdin limit without truncation.
 - Reattaches the envelope when Machdoch starts a retry or a new role.
 
 ### Copilot CLI
@@ -125,13 +132,16 @@ the root.
 - Sanitizes copied authentication state.
 - Disables auto-update, custom instructions, ambient plugins, built-in MCP,
   and other discovered MCP configuration through verified flags.
-- Supplies the canonical envelope in the complete prompt because no verified
-  higher-authority arbitrary instruction field exists.
-- Accounts for any provider configuration that cannot be proven isolated.
+- Writes the complete system payload once to a uniquely named custom-agent
+  profile in the isolated home and selects it with `--agent`.
+- Keeps the user task on piped stdin and uses repeated `--attachment` flags
+  when attachments are supplied.
+- Blocks if the CLI cannot expose the custom-agent contract; there is no user
+  prompt fallback.
 
 ## 6. Provider-native instruction inventory
 
-Provider-native files remain active provider features. Examples include
+Provider-native files can otherwise remain active provider features. Examples include
 Codex/`AGENTS.md`, Claude memory and rules, Gemini context files, and GitHub
 Copilot instruction files.
 
@@ -175,21 +185,15 @@ Persistent sync is opt-in and controlled by `providerEnrollment`:
   "providerEnrollment": {
     "enabled": true,
     "mcp": {
-      "mode": "direct-native",
-      "fallback": "per-server-stdio-proxy",
-      "compatibilityServerName": "machdoch-compat",
       "unmanagedNative": "allow",
-      "approvals": "never",
-      "progressiveDiscoveryThresholdPercent": 3
+      "approvals": "never"
     },
     "persistentSync": {
       "enabled": false,
       "watch": true,
       "daemonAtLogin": true,
       "debounceMs": 500,
-      "filesystemConvergenceTargetMs": 2000,
-      "fullRescanIntervalMs": 600000,
-      "autoReloadOwnedSessions": true
+      "fullRescanIntervalMs": 600000
     },
     "providers": {
       "codex-cli": { "enabled": true },
@@ -297,18 +301,18 @@ management and delivery preview live in the Instructions section.
 
 ## 12. Implementation map
 
-| Responsibility | Module |
-| --- | --- |
-| Capability and delivery plan | `src/core/instruction-system/delivery.ts` |
+| Responsibility                     | Module                                                |
+| ---------------------------------- | ----------------------------------------------------- |
+| Capability and delivery plan       | `src/core/instruction-system/delivery.ts`             |
 | Provider capability/probe registry | `src/core/provider-enrollment/capability-registry.ts` |
-| API instruction/MCP snapshot | `api-enrollment.ts` |
-| CLI temporary materialization | `materializer.ts` |
-| MCP provider projection | `mcp-projector.ts` |
-| TOML/JSON ownership merge | `ownership-merge.ts` |
-| Persistent reconciliation | `sync-coordinator.ts` |
-| Watch daemon | `sync-daemon.ts` |
-| Coverage and receipts | `coverage-ledger.ts` |
-| MCP initialization hints | `src/core/mcp/initialization-instructions.ts` |
+| API instruction/MCP snapshot       | `api-enrollment.ts`                                   |
+| CLI temporary materialization      | `materializer.ts`                                     |
+| MCP provider projection            | `mcp-projector.ts`                                    |
+| TOML/JSON ownership merge          | `ownership-merge.ts`                                  |
+| Persistent reconciliation          | `sync-coordinator.ts`                                 |
+| Watch daemon                       | `sync-daemon.ts`                                      |
+| Coverage and receipts              | `coverage-ledger.ts`                                  |
+| MCP initialization hints           | `src/core/mcp/initialization-instructions.ts`         |
 
 ## 13. Acceptance criteria
 
@@ -316,8 +320,8 @@ management and delivery preview live in the Instructions section.
   envelope through the documented adapter route.
 - Continuation, retry, validator, generator, and RALPH lifecycle behavior is
   digest-stable.
-- Unsupported delivery blocks; compatible unattended delivery is bound to an
-  acknowledged plan ID.
+- Unsupported delivery blocks; compatible delivery remains visible in
+  diagnostics and receipts.
 - Provider-native sources are accounted for without being imported or
   modified.
 - Run-scoped MCP projection covers every enabled canonical server or reports

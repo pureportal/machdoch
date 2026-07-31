@@ -170,11 +170,6 @@ export interface InstructionResolutionInput {
   surface: "api" | "cli";
   model?: string;
   flow?: InstructionFlowInput;
-  /**
-    * Retained for serialized-call compatibility. Delivery diagnostics do not
-    * require acknowledgement and never block execution.
-   */
-  unattended?: boolean;
 }
 
 export interface FrozenInstructionSet {
@@ -280,10 +275,7 @@ export type InstructionLifecycleSupport =
   | "session"
   | "unknown"
   | "unsupported";
-export type InstructionDeliveryGrade =
-  | "full"
-  | "compatible"
-  | "unsupported";
+export type InstructionDeliveryGrade = "full" | "compatible" | "unsupported";
 
 export interface InstructionCapabilityDescriptor {
   adapterVersion: string;
@@ -340,7 +332,6 @@ export interface InstructionDeliveryPlan {
   surface: "api" | "cli";
   grade: InstructionDeliveryGrade;
   route: string;
-  requiresAcknowledgement: boolean;
   blockingReasons: string[];
   dimensions: InstructionDeliveryDimension[];
   capability: InstructionCapabilityDescriptor;
@@ -355,12 +346,7 @@ export interface InstructionDeliveryReceipt {
   canonicalDigest: string;
   providerId: ConfiguredModelProvider;
   surface: "api" | "cli";
-  phase:
-    | "initial"
-    | "continuation"
-    | "retry"
-    | "validator"
-    | "generator";
+  phase: "initial" | "continuation" | "retry" | "validator" | "generator";
   route: string;
   deliveredAt: string;
   status: "delivered" | "indeterminate";
@@ -394,9 +380,11 @@ export interface InstructionLibraryExport {
   exportedAt: string;
   profiles: InstructionProfile[];
   defaults: { profiles: ProfileId[] };
-  workspaces?: Array<Omit<InstructionWorkspaceBinding, "root"> & {
-    root?: never;
-  }>;
+  workspaces?: Array<
+    Omit<InstructionWorkspaceBinding, "root"> & {
+      root?: never;
+    }
+  >;
 }
 
 export type InstructionImportConflictChoice =

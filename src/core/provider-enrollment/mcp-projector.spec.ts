@@ -26,7 +26,7 @@ describe("MCP projector", () => {
         schemaVersion: 1,
         servers: [
           { id: "direct", enabled: true, transport: { type: "stdio", command: "node", args: ["server.js"] } },
-          { id: "legacy", enabled: true, transport: { type: "sse", url: "https://example.test/sse" } },
+          { id: "proxied", enabled: true, transport: { type: "sse", url: "https://example.test/sse" } },
         ],
       }),
       "utf8",
@@ -36,11 +36,11 @@ describe("MCP projector", () => {
     });
     expect(projection.servers.find((server) => server.canonicalId === "direct")?.route)
       .toBe("cli-native-mcp");
-    const legacy = projection.servers.find((server) => server.canonicalId === "legacy");
-    expect(legacy?.route).toBe("cli-stdio-proxy");
-    expect(legacy?.providerConfig).toMatchObject({
+    const proxied = projection.servers.find((server) => server.canonicalId === "proxied");
+    expect(proxied?.route).toBe("cli-stdio-proxy");
+    expect(proxied?.providerConfig).toMatchObject({
       command: "machdoch-test",
-      args: ["mcp", "proxy", "legacy", "--cwd", root],
+      args: ["mcp", "proxy", "proxied", "--cwd", root],
     });
   });
 

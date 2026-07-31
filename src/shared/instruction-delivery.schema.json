@@ -139,19 +139,7 @@
           },
           "then": {
             "properties": {
-              "requiresAcknowledgement": { "const": false },
               "blockingReasons": { "type": "array", "maxItems": 0 }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "grade": { "const": "compatible" } },
-            "required": ["grade"]
-          },
-          "then": {
-            "properties": {
-              "requiresAcknowledgement": { "const": false }
             }
           }
         },
@@ -162,7 +150,6 @@
           },
           "then": {
             "properties": {
-              "requiresAcknowledgement": { "const": false },
               "blockingReasons": { "type": "array", "minItems": 1 }
             }
           }
@@ -178,7 +165,6 @@
         "surface",
         "grade",
         "route",
-        "requiresAcknowledgement",
         "blockingReasons",
         "dimensions",
         "capability",
@@ -200,7 +186,6 @@
         "surface": { "enum": ["api", "cli"] },
         "grade": { "enum": ["full", "compatible", "unsupported"] },
         "route": { "type": "string", "minLength": 1 },
-        "requiresAcknowledgement": { "type": "boolean" },
         "blockingReasons": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }

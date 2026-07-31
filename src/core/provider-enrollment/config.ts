@@ -15,21 +15,15 @@ export const DEFAULT_PROVIDER_ENROLLMENT_CONFIG: ProviderEnrollmentConfig = {
   schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
   enabled: true,
   mcp: {
-    mode: "direct-native",
-    fallback: "per-server-stdio-proxy",
-    compatibilityServerName: "machdoch-compat",
     unmanagedNative: "allow",
     approvals: "never",
-    progressiveDiscoveryThresholdPercent: 3,
   },
   persistentSync: {
     enabled: false,
     watch: true,
     daemonAtLogin: true,
     debounceMs: 500,
-    filesystemConvergenceTargetMs: 2_000,
     fullRescanIntervalMs: 600_000,
-    autoReloadOwnedSessions: true,
   },
   providers: {
     "codex-cli": { enabled: true },
@@ -50,78 +44,67 @@ const clampInteger = (
 
 export const normalizeProviderEnrollmentConfig = (
   value: ProviderEnrollmentConfigFile | undefined,
-): ProviderEnrollmentConfig => ({
-  schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
-  enabled: value?.enabled ?? DEFAULT_PROVIDER_ENROLLMENT_CONFIG.enabled,
-  mcp: {
-    mode: "direct-native",
-    fallback: "per-server-stdio-proxy",
-    compatibilityServerName:
-      value?.mcp?.compatibilityServerName?.trim() ||
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.mcp.compatibilityServerName,
-    unmanagedNative:
-      value?.mcp?.unmanagedNative ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.mcp.unmanagedNative,
-    approvals: "never",
-    progressiveDiscoveryThresholdPercent: clampInteger(
-      value?.mcp?.progressiveDiscoveryThresholdPercent,
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.mcp
-        .progressiveDiscoveryThresholdPercent,
-      1,
-      5,
-    ),
-  },
-  persistentSync: {
-    enabled:
-      value?.persistentSync?.enabled ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.enabled,
-    watch:
-      value?.persistentSync?.watch ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.watch,
-    daemonAtLogin:
-      value?.persistentSync?.daemonAtLogin ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.daemonAtLogin,
-    debounceMs: clampInteger(
-      value?.persistentSync?.debounceMs,
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.debounceMs,
-      50,
-      60_000,
-    ),
-    filesystemConvergenceTargetMs: clampInteger(
-      value?.persistentSync?.filesystemConvergenceTargetMs,
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync
-        .filesystemConvergenceTargetMs,
-      100,
-      60_000,
-    ),
-    fullRescanIntervalMs: clampInteger(
-      value?.persistentSync?.fullRescanIntervalMs,
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.fullRescanIntervalMs,
-      10_000,
-      86_400_000,
-    ),
-    autoReloadOwnedSessions:
-      value?.persistentSync?.autoReloadOwnedSessions ??
-      DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.autoReloadOwnedSessions,
-  },
-  providers: {
-    "codex-cli": {
-      enabled:
-        value?.providers?.["codex-cli"]?.enabled ??
-        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.providers["codex-cli"].enabled,
+): ProviderEnrollmentConfig => {
+  if (
+    value !== undefined &&
+    value.schemaVersion !== PROVIDER_ENROLLMENT_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `Provider enrollment schemaVersion must be ${PROVIDER_ENROLLMENT_SCHEMA_VERSION}; recreate the configuration.`,
+    );
+  }
+
+  return {
+    schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
+    enabled: value?.enabled ?? DEFAULT_PROVIDER_ENROLLMENT_CONFIG.enabled,
+    mcp: {
+      unmanagedNative:
+        value?.mcp?.unmanagedNative ??
+        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.mcp.unmanagedNative,
+      approvals: "never",
     },
-    "claude-cli": {
+    persistentSync: {
       enabled:
-        value?.providers?.["claude-cli"]?.enabled ??
-        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.providers["claude-cli"].enabled,
+        value?.persistentSync?.enabled ??
+        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.enabled,
+      watch:
+        value?.persistentSync?.watch ??
+        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.watch,
+      daemonAtLogin:
+        value?.persistentSync?.daemonAtLogin ??
+        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.daemonAtLogin,
+      debounceMs: clampInteger(
+        value?.persistentSync?.debounceMs,
+        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.debounceMs,
+        50,
+        60_000,
+      ),
+      fullRescanIntervalMs: clampInteger(
+        value?.persistentSync?.fullRescanIntervalMs,
+        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.fullRescanIntervalMs,
+        10_000,
+        86_400_000,
+      ),
     },
-    "copilot-cli": {
-      enabled:
-        value?.providers?.["copilot-cli"]?.enabled ??
-        DEFAULT_PROVIDER_ENROLLMENT_CONFIG.providers["copilot-cli"].enabled,
+    providers: {
+      "codex-cli": {
+        enabled:
+          value?.providers?.["codex-cli"]?.enabled ??
+          DEFAULT_PROVIDER_ENROLLMENT_CONFIG.providers["codex-cli"].enabled,
+      },
+      "claude-cli": {
+        enabled:
+          value?.providers?.["claude-cli"]?.enabled ??
+          DEFAULT_PROVIDER_ENROLLMENT_CONFIG.providers["claude-cli"].enabled,
+      },
+      "copilot-cli": {
+        enabled:
+          value?.providers?.["copilot-cli"]?.enabled ??
+          DEFAULT_PROVIDER_ENROLLMENT_CONFIG.providers["copilot-cli"].enabled,
+      },
     },
-  },
-});
+  };
+};
 
 const loadUserConfig = async (): Promise<UserConfigFile> => {
   try {

@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getProviderSyncAutostartPath,
@@ -39,22 +39,18 @@ describe("provider sync autostart", () => {
   });
 
   it.runIf(process.platform === "win32")(
-    "installs the hidden launcher and removes the legacy visible cmd entry",
+    "installs the hidden launcher",
     async () => {
       const appData = await mkdtemp(join(tmpdir(), "machdoch-autostart-"));
       roots.push(appData);
       vi.stubEnv("APPDATA", appData);
       const autostartPath = getProviderSyncAutostartPath();
-      const legacyPath = join(dirname(autostartPath), "machdoch-provider-sync.cmd");
-      await mkdir(dirname(legacyPath), { recursive: true });
-      await writeFile(legacyPath, "@echo off\r\nstart \"\" /b node.exe\r\n", "utf8");
 
       await expect(installProviderSyncAutostart("C:\\workspace")).resolves.toBe(
         autostartPath,
       );
 
       expect(autostartPath).toMatch(/machdoch-provider-sync\.vbs$/u);
-      await expect(stat(legacyPath)).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(autostartPath, "utf8")).resolves.toContain(
         ", 0, False",
       );

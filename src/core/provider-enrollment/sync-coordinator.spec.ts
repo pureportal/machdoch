@@ -146,6 +146,7 @@ describe("provider sync coordinator", () => {
             {
               agentCliPaths: { "codex-cli": process.execPath },
               providerEnrollment: {
+                schemaVersion: 1,
                 enabled: true,
                 persistentSync: {
                   enabled: true,
@@ -283,6 +284,7 @@ describe("provider sync coordinator", () => {
           {
             agentCliPaths: { "codex-cli": process.execPath },
             providerEnrollment: {
+              schemaVersion: 1,
               enabled: true,
               persistentSync: {
                 enabled: true,
@@ -361,6 +363,7 @@ describe("provider sync coordinator", () => {
         join(userConfigRoot, "user-config.json"),
         `${JSON.stringify({
           providerEnrollment: {
+            schemaVersion: 1,
             enabled: true,
             persistentSync: {
               enabled: false,
@@ -422,6 +425,7 @@ describe("provider sync coordinator", () => {
           {
             agentCliPaths: { "codex-cli": process.execPath },
             providerEnrollment: {
+              schemaVersion: 1,
               enabled: true,
               persistentSync: {
                 enabled: true,
@@ -471,131 +475,6 @@ describe("provider sync coordinator", () => {
     await reconcileProviderSync(workspaceRoot);
 
     await expect(stat(projectedPath)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("migrates legacy instruction ownership without changing the instruction file", async () => {
-    const root = await createRoot();
-    const workspaceRoot = join(root, "workspace");
-    const userConfigRoot = join(root, "user-config");
-    const codexHome = join(root, "codex-home");
-    const mcpDirectory = join(workspaceRoot, ".machdoch", "mcp");
-    const codexDirectory = join(workspaceRoot, ".codex");
-    const stateDirectory = join(userConfigRoot, "provider-enrollment");
-    await Promise.all([
-      mkdir(mcpDirectory, { recursive: true }),
-      mkdir(codexDirectory, { recursive: true }),
-      mkdir(codexHome, { recursive: true }),
-      mkdir(stateDirectory, { recursive: true }),
-    ]);
-    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
-    vi.stubEnv("CODEX_HOME", codexHome);
-    const instructionPath = join(workspaceRoot, "AGENTS.md");
-    const instructionContent =
-      "# User instructions\n\n" +
-      "<!-- machdoch-managed:provider-enrollment:start -->\n" +
-      "Legacy persistent instructions.\n" +
-      "<!-- machdoch-managed:provider-enrollment:end -->\n";
-    const projectedPath = join(codexDirectory, "config.toml");
-    await Promise.all([
-      writeFile(
-        join(userConfigRoot, "user-config.json"),
-        `${JSON.stringify(
-          {
-            agentCliPaths: { "codex-cli": process.execPath },
-            providerEnrollment: {
-              enabled: true,
-              persistentSync: {
-                enabled: true,
-                watch: false,
-                daemonAtLogin: false,
-              },
-              providers: {
-                "codex-cli": { enabled: true },
-                "claude-cli": { enabled: false },
-                "copilot-cli": { enabled: false },
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      ),
-      writeFile(
-        join(mcpDirectory, "mcp.json"),
-        `${JSON.stringify(
-          {
-            schemaVersion: 1,
-            servers: [
-              {
-                id: "workspace-server",
-                enabled: true,
-                transport: {
-                  type: "stdio",
-                  command: process.execPath,
-                  args: ["server.js"],
-                },
-              },
-            ],
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      ),
-      writeFile(instructionPath, instructionContent, "utf8"),
-      writeFile(projectedPath, 'model = "gpt-5"\n', "utf8"),
-      writeFile(
-        getProviderSyncOwnershipPath(),
-        `${JSON.stringify(
-          {
-            schemaVersion: 1,
-            targets: [
-              {
-                path: instructionPath,
-                provider: "codex-cli",
-                scope: "workspace",
-                format: "markdown",
-                managedDigest: "a".repeat(64),
-                installedFileDigest: "b".repeat(64),
-                createdFile: false,
-                installedAt: new Date().toISOString(),
-              },
-            ],
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      ),
-    ]);
-
-    const status = await reconcileProviderSync(workspaceRoot);
-
-    expect(status.targets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          provider: "codex-cli",
-          scope: "workspace",
-          state: "awaiting-provider-refresh",
-        }),
-      ]),
-    );
-    await expect(readFile(instructionPath, "utf8")).resolves.toBe(
-      instructionContent,
-    );
-    const projected = await readFile(projectedPath, "utf8");
-    expect(projected).toContain('model = "gpt-5"');
-    expect(projected).toContain("# machdoch-managed:provider-enrollment:start");
-    const ownership = JSON.parse(
-      await readFile(getProviderSyncOwnershipPath(), "utf8"),
-    ) as { targets: Array<{ path: string; format: string }> };
-    expect(ownership.targets).toContainEqual(
-      expect.objectContaining({ path: projectedPath, format: "toml" }),
-    );
-    expect(ownership.targets).not.toContainEqual(
-      expect.objectContaining({ path: instructionPath }),
-    );
   });
 
   it("writes exclusions to Git's actual linked-worktree exclude path", async () => {
@@ -649,6 +528,7 @@ describe("provider sync coordinator", () => {
           {
             agentCliPaths: { "codex-cli": process.execPath },
             providerEnrollment: {
+              schemaVersion: 1,
               enabled: true,
               persistentSync: {
                 enabled: true,

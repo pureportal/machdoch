@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { getUserConfigPath } from "../env.js";
-import { setPersistentProviderSyncEnabled } from "./config.js";
+import {
+  normalizeProviderEnrollmentConfig,
+  setPersistentProviderSyncEnabled,
+} from "./config.js";
 
 const roots: string[] = [];
 
@@ -26,6 +29,7 @@ describe("provider enrollment configuration", () => {
       `${JSON.stringify({
         marker: "preserve",
         providerEnrollment: {
+          schemaVersion: 1,
           enabled: true,
           persistentSync: { enabled: false },
           providers: {
@@ -71,5 +75,13 @@ describe("provider enrollment configuration", () => {
     expect(
       stored.providerEnrollment.providers["claude-cli"]?.enabled,
     ).toBe(false);
+  });
+
+  it("rejects provider enrollment state without the current schema version", () => {
+    expect(() =>
+      normalizeProviderEnrollmentConfig({
+        enabled: true,
+      } as never),
+    ).toThrow("schemaVersion must be 1");
   });
 });

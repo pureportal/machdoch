@@ -1212,26 +1212,14 @@ fn apply_agent_provider(
         .as_object()
         .ok_or_else(|| "Imported provider enrollment preferences are invalid.".to_string())?;
     let local = ensure_object_member(root, "providerEnrollment");
-    for key in [
-        "schemaVersion",
-        "enabled",
-        "instructions",
-        "mcp",
-        "providers",
-    ] {
+    for key in ["schemaVersion", "enabled", "mcp", "providers"] {
         replace_member(local, incoming, key)?;
     }
     let incoming_sync = incoming["persistentSync"]
         .as_object()
         .ok_or_else(|| "Imported provider sync preferences are invalid.".to_string())?;
     let local_sync = ensure_object_member(local, "persistentSync");
-    for key in [
-        "watch",
-        "debounceMs",
-        "filesystemConvergenceTargetMs",
-        "fullRescanIntervalMs",
-        "autoReloadOwnedSessions",
-    ] {
+    for key in ["enabled", "watch", "debounceMs", "fullRescanIntervalMs"] {
         replace_member(local_sync, incoming_sync, key)?;
     }
     Ok(())

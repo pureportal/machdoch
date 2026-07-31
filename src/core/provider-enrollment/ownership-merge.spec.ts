@@ -363,7 +363,7 @@ describe("provider ownership merge", () => {
     const target = join(root, "mcp.json");
     const record = {
       path: target,
-      provider: "copilot-cli",
+      provider: "copilot-cli" as const,
       scope: "user" as const,
       format: "json" as const,
       managedDigest: "a".repeat(64),
@@ -461,57 +461,29 @@ describe("provider ownership merge", () => {
     );
   });
 
-  it("retires legacy markdown ownership while preserving MCP ownership", async () => {
+  it("rejects ownership formats outside the current provider schema", async () => {
     const root = await createRoot();
     const path = join(root, "ownership.json");
-    const mcpRecord = {
-      path: join(root, "mcp.json"),
-      provider: "copilot-cli",
-      scope: "workspace" as const,
-      format: "json" as const,
-      managedDigest: "a".repeat(64),
-      installedFileDigest: "b".repeat(64),
-      createdFile: false,
-      managedKeys: ["managed"],
-      installedAt: new Date().toISOString(),
-    };
-    const legacyRecord = {
-      ...mcpRecord,
-      path: join(root, "AGENTS.md"),
-      format: "markdown",
-      managedKeys: undefined,
-    };
     await writeFile(
       path,
       `${JSON.stringify({
         schemaVersion: 1,
-        targets: [legacyRecord, mcpRecord],
+        targets: [
+          {
+            path: join(root, "AGENTS.md"),
+            provider: "codex-cli",
+            scope: "workspace",
+            format: "markdown",
+            managedDigest: "a".repeat(64),
+            installedFileDigest: "b".repeat(64),
+            createdFile: false,
+            installedAt: new Date().toISOString(),
+          },
+        ],
       })}\n`,
       "utf8",
     );
 
-    const loaded = await loadOwnershipManifestSnapshot(path);
-
-    expect(loaded.manifest.targets).toEqual([mcpRecord]);
-    await saveOwnershipManifest(path, loaded.manifest, {
-      expectedTargetSnapshot: loaded.targetSnapshot,
-    });
-    await expect(
-      readFile(path, "utf8").then(
-        (content) =>
-          (JSON.parse(content) as { targets: Array<{ format: string }> })
-            .targets,
-      ),
-    ).resolves.toEqual([mcpRecord]);
-
-    await writeFile(
-      path,
-      `${JSON.stringify({
-        schemaVersion: 1,
-        targets: [{ ...legacyRecord, managedDigest: "invalid" }],
-      })}\n`,
-      "utf8",
-    );
     await expect(loadOwnershipManifest(path)).rejects.toThrow("malformed");
   });
 

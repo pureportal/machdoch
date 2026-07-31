@@ -271,8 +271,13 @@ export const loadMcpLifecycleState = async (
   const raw = await readFile(statePath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
 
-  if (!isRecord(parsed)) {
-    return createEmptyLifecycleState(timestamp);
+  if (
+    !isRecord(parsed) ||
+    parsed.schemaVersion !== MCP_LIFECYCLE_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `MCP lifecycle schemaVersion must be ${MCP_LIFECYCLE_SCHEMA_VERSION}; recreate the lifecycle state.`,
+    );
   }
 
   const records: Record<string, McpLifecycleRecord> = {};

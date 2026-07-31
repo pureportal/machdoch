@@ -45,6 +45,7 @@ describe("loadMcpConfig", () => {
       join(userConfigDir, "mcp.json"),
       JSON.stringify(
         {
+          schemaVersion: 1,
           defaults: {
             securityProfile: "strict",
             directTools: false,
@@ -73,6 +74,7 @@ describe("loadMcpConfig", () => {
       join(workspaceRoot, ".machdoch", "mcp", "mcp.json"),
       JSON.stringify(
         {
+          schemaVersion: 1,
           defaults: {
             exposure: "hybrid",
             cache: {
@@ -264,6 +266,20 @@ describe("loadMcpConfig", () => {
         authorizationServerUrl: "https://github.com/login/oauth",
       },
     });
+  });
+
+  it("rejects configuration files without the current schema version", async () => {
+    const workspaceRoot = await createWorkspace();
+    const userConfigDir = join(workspaceRoot, ".user-config");
+    await mkdir(userConfigDir, { recursive: true });
+    await writeFile(
+      join(userConfigDir, "mcp.json"),
+      JSON.stringify({ servers: [] }),
+    );
+
+    await expect(loadMcpConfig(workspaceRoot)).rejects.toThrow(
+      "schemaVersion must be 1",
+    );
   });
 
   it("merges concurrent OAuth patches instead of losing one", async () => {

@@ -188,7 +188,6 @@ export const attachInstructionDeliveryMetadata = (
       surface: entry.surface,
       grade: entry.grade,
       route: entry.route,
-      requiresAcknowledgement: entry.requiresAcknowledgement,
       blockingReasons: [...entry.blockingReasons],
       dimensions: entry.dimensions.map((dimension) => ({ ...dimension })),
       capability: {

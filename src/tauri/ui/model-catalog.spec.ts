@@ -83,7 +83,7 @@ describe("provider model catalog", () => {
             {
               id: "gpt-5.1",
               label: "GPT-5.1",
-              stage: "legacy-deprecated",
+              stage: "provider-deprecated",
             },
             { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
             { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },

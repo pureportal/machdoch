@@ -292,7 +292,6 @@ export interface InstructionResolutionView {
     surface: "api" | "cli";
     grade: "full" | "compatible" | "unsupported";
     route: string;
-    requiresAcknowledgement: boolean;
     blockingReasons: string[];
     dimensions: Array<Record<string, unknown>>;
     capability: Record<string, unknown>;
@@ -2718,6 +2717,11 @@ const parseMcpConfigObject = (raw: string): Record<string, unknown> => {
 
   if (!isRecord(parsed)) {
     throw new Error("MCP config must be a JSON object.");
+  }
+  if (parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION) {
+    throw new Error(
+      `MCP config schemaVersion must be ${MCP_CONFIG_SCHEMA_VERSION}; recreate the configuration.`,
+    );
   }
 
   return parsed;

@@ -219,6 +219,13 @@ const parseDraft = (raw: string): ParsedMcpDraft => {
         error: "Config must be an object.",
       };
     }
+    if (parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION) {
+      return {
+        config: parsed,
+        servers: [],
+        error: `schemaVersion must be ${MCP_CONFIG_SCHEMA_VERSION}. Recreate this configuration.`,
+      };
+    }
 
     return {
       config: parsed,
@@ -241,10 +248,7 @@ const stringifyDraft = (
   return `${JSON.stringify(
     {
       ...config,
-      schemaVersion:
-        typeof config.schemaVersion === "number"
-          ? config.schemaVersion
-          : MCP_CONFIG_SCHEMA_VERSION,
+      schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
       servers,
     },
     null,

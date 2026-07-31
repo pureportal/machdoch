@@ -155,11 +155,11 @@ const CLI_CAPABILITIES: Record<
       subagents: "unknown",
     },
     mechanism:
-      "temporary CODEX_HOME plus runtime developer_instructions override",
+      "run-scoped CODEX_HOME config.toml developer_instructions with project configuration disabled",
     maxInstructionBytes: MAX_INSTRUCTION_ENVELOPE_BYTES,
     evidence: [
-      "Machdoch creates a run-scoped CODEX_HOME and repeats the canonical envelope through the documented runtime configuration override.",
-      "Suppression of project AGENTS.md discovery is not asserted because no supported contract proves it.",
+      "Machdoch writes the canonical envelope once to a run-scoped CODEX_HOME config.toml and marks the workspace and its ancestors untrusted so project configuration is disabled.",
+      "Runtime overrides disable project instruction-file discovery without putting instruction content on the command line.",
     ],
   },
   "claude-cli": {
@@ -185,14 +185,15 @@ const CLI_CAPABILITIES: Record<
     maxInstructionBytes: MAX_INSTRUCTION_ENVELOPE_BYTES,
     evidence: [
       "Machdoch uses the CLI's supported system-prompt file argument.",
-      "Bare-mode and subagent inheritance are only enabled after a concrete version/help probe proves the exact flags.",
+      "The run isolates provider settings and disables native CLAUDE.md discovery; bare mode is used only when compatible explicit authentication is available.",
+      "Machdoch does not copy the envelope into Claude's inline subagent argument.",
     ],
   },
   "copilot-cli": {
     adapterVersion: INSTRUCTION_ADAPTER_VERSION,
     providerId: "copilot-cli",
     surface: "cli",
-    authority: "user",
+    authority: "native",
     contentFidelity: "exact",
     scopeFidelity: "declarative-envelope",
     acceptsArbitraryContent: true,
@@ -207,11 +208,12 @@ const CLI_CAPABILITIES: Record<
       roles: "reattached",
       subagents: "unknown",
     },
-    mechanism: "prompt delivery with --no-custom-instructions",
+    mechanism:
+      "run-scoped custom-agent file selected with --agent while custom instruction discovery is disabled",
     maxInstructionBytes: MAX_INSTRUCTION_ENVELOPE_BYTES,
     evidence: [
-      "Machdoch suppresses documented custom instruction files for the invocation, but repository custom agents and other provider configuration can remain active and are not claimed isolated.",
-      "The CLI does not expose a verified higher-authority arbitrary instruction field.",
+      "Machdoch writes the canonical envelope to a uniquely named custom-agent profile in an isolated COPILOT_HOME and selects that profile explicitly.",
+      "The CLI's documented --no-custom-instructions switch suppresses repository AGENTS.md and related files so the envelope is not loaded again.",
     ],
   },
 };
@@ -465,7 +467,6 @@ export const createInstructionDeliveryPlan = (
   const blockingReasons = dimensions
     .filter((entry) => entry.status === "unsupported")
     .map((entry) => entry.detail);
-  const requiresAcknowledgement = false;
 
   const createdAt = (input.now ?? new Date()).toISOString();
   const planIdentity = {
@@ -489,19 +490,11 @@ export const createInstructionDeliveryPlan = (
     surface: resolution.surface,
     grade,
     route: capability.mechanism,
-    requiresAcknowledgement,
     blockingReasons,
     dimensions,
     capability,
     createdAt,
   }) as InstructionDeliveryPlan;
-};
-
-export const assertInstructionDeliveryAllowed = (
-  _plan: InstructionDeliveryPlan,
-): void => {
-  // Delivery grades are informational. The frozen Machdoch envelope is the
-  // source of truth and never requires user approval before execution.
 };
 
 export const assertInstructionInvocationBudget = (

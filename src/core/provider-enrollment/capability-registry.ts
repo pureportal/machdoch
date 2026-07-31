@@ -67,9 +67,8 @@ export const PROVIDER_CAPABILITY_REGISTRY = {
   },
   "copilot-cli": {
     provider: "copilot-cli",
-    instructionAuthority: "prompt",
-    instructionMechanism:
-      "complete prompt envelope with --no-custom-instructions",
+    instructionAuthority: "native-file",
+    instructionMechanism: "run-scoped custom agent selected with --agent",
     mcpMechanism: "native-config",
     supportedMcpTransports: ["stdio", "streamable-http", "sse"],
     supportsPerServerProxy: true,
@@ -125,9 +124,10 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
             "--strict-mcp-config",
             "--bare",
             "--setting-sources",
-            "--append-subagent-system-prompt",
           ]
         : [
+            "--agent",
+            "--attachment",
             "--no-auto-update",
             "--no-custom-instructions",
             "--additional-mcp-config",

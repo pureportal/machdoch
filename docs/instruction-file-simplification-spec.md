@@ -2,7 +2,7 @@
 
 Status: implemented and normative
 Schema generation: 1
-Last implementation review: 2026-07-24
+Last implementation review: 2026-07-31
 
 ## 1. Product contract
 
@@ -140,8 +140,7 @@ The resolver receives:
 - canonical workspace root;
 - provider and surface (`api` or `cli`);
 - optional model;
-- optional RALPH flow ID and guidance; and
-- whether execution is unattended.
+- optional RALPH flow ID and guidance.
 
 It loads the instruction library, local `AGENTS.md` files, provider-native
 inventory, and bounded MCP initialization hints.
@@ -254,8 +253,9 @@ Grades:
   isolation, lifecycle, or conformance properties are weaker or unverified;
 - `unsupported`: complete delivery cannot be guaranteed.
 
-Grades are informational. Compatible and unsupported plans still execute with
-the canonical prompt fallback; no acknowledgement or approval is required.
+Compatible plans execute with their limitations recorded. Unsupported plans
+block before provider launch. Machdoch never falls back to placing system
+instructions in user prompt content.
 
 ### 7.1 API surfaces
 
@@ -271,16 +271,28 @@ the canonical prompt fallback; no acknowledgement or approval is required.
 CLI enrollment is run-scoped and owner-restricted. The adapter probes the
 actual executable and refuses to assume missing flags.
 
-| Provider    | Run-scoped route                                                    |
-| ----------- | ------------------------------------------------------------------- |
-| Codex CLI   | Isolated `CODEX_HOME` and runtime `developer_instructions` override |
-| Claude CLI  | Temporary system-prompt file through the verified CLI flag          |
-| Copilot CLI | Complete prompt envelope with custom instruction discovery disabled |
+| Provider    | Run-scoped route                                                             |
+| ----------- | ---------------------------------------------------------------------------- |
+| Codex CLI   | Isolated `CODEX_HOME/config.toml` `developer_instructions`                   |
+| Claude CLI  | `--append-system-prompt-file` with isolated settings and memory discovery    |
+| Copilot CLI | Unique custom-agent file in isolated `COPILOT_HOME`, selected with `--agent` |
 
 Temporary directories contain the envelope, the projected MCP configuration,
 an enrollment manifest, and only provider state required for that invocation.
 They are removed after the run. Authentication state copied into isolation is
 sanitized and bounded.
+
+Runtime role/completion guidance is delivered in the same native instruction
+payload as the envelope. Task, conversation, resolved non-instruction context,
+and attachment references remain user input on stdin. Instruction content is
+never repeated in stdin or argv.
+
+Codex reads a `-` prompt from stdin. Claude print mode reads stdin with its
+documented 10 MiB cap; Machdoch fails before launch above that cap rather than
+truncate or change roles. Copilot uses documented piped input. Native repeated
+attachment flags are used for Codex images and Copilot attachments. Windows
+invocations are preflighted below the `cmd.exe` or `CreateProcess` command-line
+limit, including quoting overhead.
 
 ### 7.3 Receipts
 
@@ -414,7 +426,7 @@ Changes to this system must pass:
 - strict UTF-8 and Markdown validation; and
 - `git diff --check`.
 
-Acceptance requires deterministic resolution, nonblocking canonical delivery,
+Acceptance requires deterministic resolution, fail-closed canonical delivery,
 current provider integration behavior, MCP-only persistent sync, body-free
 default inspection, safe transfer/recovery, and no alternate instruction
 source pipeline.

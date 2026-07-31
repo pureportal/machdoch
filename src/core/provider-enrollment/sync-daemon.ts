@@ -18,13 +18,22 @@ const DAEMON_DIAGNOSTIC_FILE_NAME = "daemon-diagnostic.json";
 const REFRESH_REQUEST_FILE_NAME = "refresh.request";
 const DAEMON_STOP_TIMEOUT_MS = 10_000;
 const DAEMON_STOP_POLL_MS = 50;
+const DAEMON_RECORD_KEYS = new Set([
+  "schemaVersion",
+  "pid",
+  "workspaceRoot",
+  "startedAt",
+  "token",
+  "runtimeId",
+]);
 
 interface DaemonRecord {
+  schemaVersion: 1;
   pid: number;
   workspaceRoot: string;
   startedAt: string;
-  token?: string;
-  runtimeId?: string;
+  token: string;
+  runtimeId: string;
 }
 
 export interface ProviderSyncDaemonDiagnostic {
@@ -39,6 +48,15 @@ export interface ProviderSyncDaemonDiagnostic {
 
 const getDaemonPath = (): string =>
   join(getProviderEnrollmentStateDirectory(), DAEMON_PID_FILE_NAME);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const invalidDaemonRecordError = (path: string, cause?: unknown): Error =>
+  new Error(
+    `${path} is not a valid provider-sync daemon record. Stop any existing provider-sync process, delete the file, and retry.`,
+    cause === undefined ? undefined : { cause },
+  );
 
 export const getProviderSyncRefreshRequestPath = (): string =>
   join(getProviderEnrollmentStateDirectory(), REFRESH_REQUEST_FILE_NAME);
@@ -81,30 +99,47 @@ export const getProviderSyncDaemonRuntimeId = (): string => {
 };
 
 const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
+  const path = getDaemonPath();
+  let content: string;
   try {
-    const parsed = JSON.parse(
-      await readFile(getDaemonPath(), "utf8"),
-    ) as Partial<DaemonRecord>;
-    if (
-      typeof parsed.pid === "number" &&
-      parsed.pid > 0 &&
-      typeof parsed.workspaceRoot === "string" &&
-      typeof parsed.startedAt === "string"
-    ) {
-      return {
-        pid: parsed.pid,
-        workspaceRoot: parsed.workspaceRoot,
-        startedAt: parsed.startedAt,
-        ...(typeof parsed.token === "string" ? { token: parsed.token } : {}),
-        ...(typeof parsed.runtimeId === "string"
-          ? { runtimeId: parsed.runtimeId }
-          : {}),
-      };
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
     }
-  } catch {
-    // Missing and malformed stale records are treated as absent.
+    throw error;
   }
-  return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch (error) {
+    throw invalidDaemonRecordError(path, error);
+  }
+  if (
+    !isRecord(parsed) ||
+    !Object.keys(parsed).every((key) => DAEMON_RECORD_KEYS.has(key)) ||
+    parsed.schemaVersion !== 1 ||
+    typeof parsed.pid !== "number" ||
+    !Number.isInteger(parsed.pid) ||
+    parsed.pid <= 0 ||
+    typeof parsed.workspaceRoot !== "string" ||
+    typeof parsed.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(parsed.startedAt)) ||
+    typeof parsed.token !== "string" ||
+    parsed.token.length === 0 ||
+    typeof parsed.runtimeId !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(parsed.runtimeId)
+  ) {
+    throw invalidDaemonRecordError(path);
+  }
+  return {
+    schemaVersion: 1,
+    pid: parsed.pid,
+    workspaceRoot: parsed.workspaceRoot,
+    startedAt: parsed.startedAt,
+    token: parsed.token,
+    runtimeId: parsed.runtimeId,
+  };
 };
 
 export const loadProviderSyncDaemonDiagnostic = async (): Promise<
@@ -150,7 +185,7 @@ export const getProviderSyncDaemonPid = async (): Promise<
   return undefined;
 };
 
-export const getCompatibleProviderSyncDaemonPid = async (): Promise<
+export const getCurrentProviderSyncDaemonPid = async (): Promise<
   number | undefined
 > => {
   const record = await loadDaemonRecord();
@@ -260,6 +295,7 @@ const acquireDaemon = async (
         await handle.writeFile(
           `${JSON.stringify(
             {
+              schemaVersion: 1,
               pid: process.pid,
               workspaceRoot,
               startedAt: new Date().toISOString(),
@@ -520,10 +556,7 @@ export const runProviderSyncDaemon = async (
         return;
       }
       if (timer) clearTimeout(timer);
-      timer = setTimeout(
-        startReconcile,
-        config.persistentSync.debounceMs,
-      );
+      timer = setTimeout(startReconcile, config.persistentSync.debounceMs);
       timer.unref?.();
     }
 

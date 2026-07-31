@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -37,6 +37,17 @@ describe("MCP lifecycle", () => {
       "machdoch_playwright-browser",
     );
     expect(createManagedMcpId("machdoch_playwright")).toBe("machdoch_playwright");
+  });
+
+  it("rejects lifecycle state without the current schema version", async () => {
+    await writeFile(
+      getUserMcpLifecyclePath(),
+      JSON.stringify({ updatedAt: "2026-01-01T00:00:00.000Z", records: {} }),
+    );
+
+    await expect(loadMcpLifecycleState()).rejects.toThrow(
+      "schemaVersion must be 1",
+    );
   });
 
   it("parses managed MCP tool names and ignores unmanaged tools", () => {

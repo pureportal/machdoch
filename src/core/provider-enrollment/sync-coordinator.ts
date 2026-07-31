@@ -311,12 +311,7 @@ const addWorkspaceGitExclude = async (
   try {
     const { stdout } = await execFileAsync(
       "git",
-      [
-        "--no-optional-locks",
-        "rev-parse",
-        "--git-path",
-        "info/exclude",
-      ],
+      ["--no-optional-locks", "rev-parse", "--git-path", "info/exclude"],
       {
         cwd: workspaceRoot,
         encoding: "utf8",
@@ -651,9 +646,7 @@ const reconcileOnce = async (
   for (const provider of getAgentCliProviders()) {
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
-      managedPathIdentities.add(
-        getManagedTargetPathIdentity(paths.mcpPath),
-      );
+      managedPathIdentities.add(getManagedTargetPathIdentity(paths.mcpPath));
     }
     if (!config.providers[provider].enabled) {
       disabledUserProviders.add(provider);
@@ -662,9 +655,7 @@ const reconcileOnce = async (
     const binary = resolveAgentCliProviderBinary(provider, env);
     for (const scope of ["user", "workspace"] as const) {
       const paths = getProviderTargetPaths(provider, scope, workspaceRoot);
-      const hasPreviousTarget = Boolean(
-        findPrevious(ownership, paths.mcpPath),
-      );
+      const hasPreviousTarget = Boolean(findPrevious(ownership, paths.mcpPath));
       if (!binary.available && !hasPreviousTarget) {
         statuses.push({
           provider,

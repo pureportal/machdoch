@@ -673,30 +673,37 @@ const coerceServerList = (value: unknown): McpServerOverride[] => {
 const parseMcpConfigFile = (raw: string): McpConfigFile => {
   const parsed: unknown = JSON.parse(raw);
 
-  if (!isRecord(parsed)) {
-    return {};
+  if (
+    !isRecord(parsed) ||
+    parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `MCP config schemaVersion must be ${MCP_CONFIG_SCHEMA_VERSION}; recreate the configuration.`,
+    );
   }
 
   const defaults = coerceDefaults(parsed.defaults);
   const servers = coerceServerList(parsed.servers);
 
   return {
-    ...(parsed.schemaVersion === MCP_CONFIG_SCHEMA_VERSION
-      ? { schemaVersion: MCP_CONFIG_SCHEMA_VERSION }
-      : {}),
+    schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
     ...(defaults ? { defaults } : {}),
     ...(servers.length > 0 ? { servers } : {}),
   };
 };
 
+const createEmptyMcpConfigFile = (): McpConfigFile => ({
+  schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
+});
+
 const readConfigFile = async (path: string): Promise<McpConfigFile> => {
   const raw = await readStableMcpConfigurationFile(path);
-  return raw === undefined ? {} : parseMcpConfigFile(raw);
+  return raw === undefined ? createEmptyMcpConfigFile() : parseMcpConfigFile(raw);
 };
 
 const readConfigFileSync = (path: string): McpConfigFile => {
   const raw = readStableMcpConfigurationFileSync(path);
-  return raw === undefined ? {} : parseMcpConfigFile(raw);
+  return raw === undefined ? createEmptyMcpConfigFile() : parseMcpConfigFile(raw);
 };
 
 export const getUserMcpConfigPath = (): string => {
@@ -1163,7 +1170,7 @@ export const loadUserMcpConfig = async (): Promise<McpEffectiveConfig> => {
   return createEffectiveConfig(
     dirname(getUserConfigPath()),
     userConfig,
-    {},
+    createEmptyMcpConfigFile(),
   );
 };
 
@@ -1298,7 +1305,11 @@ export const saveUserMcpOAuthState = async (
 const parseDiscoveryCache = (raw: string): McpDiscoveryCacheFile => {
   const parsed: unknown = JSON.parse(raw);
 
-  if (!isRecord(parsed) || !isRecord(parsed.servers)) {
+  if (
+    !isRecord(parsed) ||
+    parsed.schemaVersion !== MCP_DISCOVERY_CACHE_SCHEMA_VERSION ||
+    !isRecord(parsed.servers)
+  ) {
     return {
       schemaVersion: MCP_DISCOVERY_CACHE_SCHEMA_VERSION,
       servers: {},

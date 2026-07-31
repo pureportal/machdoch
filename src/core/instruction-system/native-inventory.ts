@@ -452,6 +452,16 @@ const copilotSuppressesConvention = (convention: string): boolean =>
   convention === "copilot-user-agents" ||
   convention === "claude-or-copilot-nested-instructions";
 
+const codexSuppressesConvention = (convention: string): boolean =>
+  convention === "codex-project-agents-override" ||
+  convention === "codex-project-agents" ||
+  convention === "codex-project-fallback" ||
+  convention === "codex-project-configuration" ||
+  convention === "codex-fallback-configuration" ||
+  convention === "codex-user-agents-override" ||
+  convention === "codex-user-agents" ||
+  convention === "codex-user-configuration";
+
 const classifyInventoryDiagnostic = (
   record: NativeInstructionRecord,
   providerId: ConfiguredModelProvider,
@@ -470,8 +480,10 @@ const classifyInventoryDiagnostic = (
     };
   }
   if (
-    providerId === "copilot-cli" &&
-    copilotSuppressesConvention(record.convention)
+    (providerId === "codex-cli" &&
+      codexSuppressesConvention(record.convention)) ||
+    (providerId === "copilot-cli" &&
+      copilotSuppressesConvention(record.convention))
   ) {
     return {
       ...record,
@@ -493,6 +505,8 @@ const inspectCandidate = async (
   const suppressed =
     active &&
     (candidate.suppressible === true ||
+      (providerId === "codex-cli" &&
+        codexSuppressesConvention(candidate.convention)) ||
       (providerId === "copilot-cli" &&
         copilotSuppressesConvention(candidate.convention)));
   const unreadableStatus: NativeInstructionRecord["status"] = suppressed
@@ -1290,10 +1304,10 @@ export const inventoryNativeInstructions = async (input: {
             path: join(input.workspaceRoot, local.relativePath),
             location: "workspace",
             convention: "codex-project-agents",
-            status: "native-extra",
+            status: "suppressed",
             digest: local.digest,
             byteLength: local.byteLength,
-            note: "This canonical AGENTS.md is also discoverable by Codex; suppression or exact partitioning is not proven, so duplicate native loading remains possible.",
+            note: "This canonical AGENTS.md is also recognized by Codex, but the run-scoped adapter disables project instruction discovery so it is delivered only through Machdoch's developer instructions.",
           }))
       : input.surface === "cli" && input.providerId === "copilot-cli"
         ? input.locals.map((local) => ({

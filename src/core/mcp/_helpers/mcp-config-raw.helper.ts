@@ -39,8 +39,13 @@ const getMcpConfigServerArray = (
 const parseMcpConfigRaw = (raw: string): Record<string, unknown> => {
   const parsed: unknown = JSON.parse(raw);
 
-  if (!isRecord(parsed)) {
-    return {};
+  if (
+    !isRecord(parsed) ||
+    parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `MCP config schemaVersion must be ${MCP_CONFIG_SCHEMA_VERSION}; recreate the configuration.`,
+    );
   }
 
   return parsed;

@@ -13,7 +13,11 @@ export const PROVIDER_ENROLLMENT_SCHEMA_VERSION = 1;
 export const PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION = 1;
 
 export type ProviderSurface = ConfiguredModelProvider;
-export type EnrollmentFidelity = "exact" | "equivalent" | "baseline" | "degraded";
+export type EnrollmentFidelity =
+  | "exact"
+  | "equivalent"
+  | "baseline"
+  | "degraded";
 export type EnrollmentRefreshState =
   | "request-current"
   | "filesystem-current"
@@ -40,8 +44,7 @@ export interface EnrollmentEvidence {
     | "argument"
     | "environment"
     | "file-hash"
-    | "provider-probe"
-    | "fallback";
+    | "provider-probe";
   detail: string;
   digest?: string;
 }
@@ -73,10 +76,7 @@ export interface McpProjectedServer {
   id: string;
   canonicalId: string;
   digest: string;
-  route:
-    | "cli-native-mcp"
-    | "cli-stdio-proxy"
-    | "cli-aggregate-broker";
+  route: "cli-native-mcp" | "cli-stdio-proxy" | "cli-aggregate-broker";
   providerConfig: Record<string, unknown>;
   capabilities: string[];
   warnings: string[];
@@ -93,7 +93,7 @@ export interface McpProjection {
 
 export interface ProviderCapabilityProfile {
   provider: ProviderSurface;
-  instructionAuthority: "system" | "developer" | "native-file" | "prompt";
+  instructionAuthority: "system" | "developer" | "native-file";
   instructionMechanism: string;
   mcpMechanism: "application-managed" | "native-config" | "unavailable";
   supportedMcpTransports: readonly ("stdio" | "streamable-http" | "sse")[];
@@ -118,8 +118,9 @@ export interface MaterializedInstructionDelivery {
   grade: InstructionDeliveryGrade;
   planRoute: string;
   transportRoute:
-    | "cli-native-instruction"
-    | "cli-prompt-fallback";
+    | "codex-developer-config"
+    | "claude-system-prompt-file"
+    | "copilot-custom-agent";
   envelopeBytes: number;
   instructionPayloadBytes: number;
   instructionPayloadIncludedInRequest: boolean;
@@ -181,25 +182,18 @@ export interface MaterializedCliEnrollment {
   provider: AgentCliProvider;
   rootPath: string;
   instructionDelivery: MaterializedInstructionDelivery;
-  instructionRoute:
-    | "cli-native-instruction"
-    | "cli-prompt-fallback";
+  instructionRoute: MaterializedInstructionDelivery["transportRoute"];
   mcpProjection: McpProjection;
   args: string[];
   env: NodeJS.ProcessEnv;
-  promptFallback?: string;
   manifest: EnrollmentManifest;
   manifestPath: string;
   dispose(): Promise<void>;
 }
 
 export interface ProviderEnrollmentMcpConfig {
-  mode: "direct-native";
-  fallback: "per-server-stdio-proxy";
-  compatibilityServerName: string;
   unmanagedNative: "adopt" | "allow" | "fail";
   approvals: "never";
-  progressiveDiscoveryThresholdPercent: number;
 }
 
 export interface ProviderEnrollmentPersistentSyncConfig {
@@ -207,9 +201,7 @@ export interface ProviderEnrollmentPersistentSyncConfig {
   watch: boolean;
   daemonAtLogin: boolean;
   debounceMs: number;
-  filesystemConvergenceTargetMs: number;
   fullRescanIntervalMs: number;
-  autoReloadOwnedSessions: boolean;
 }
 
 export interface ProviderEnrollmentConfig {

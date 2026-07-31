@@ -21,7 +21,6 @@ interface McpProjectionOptions {
   persistent?: boolean;
   scope?: "user" | "workspace";
   machdochCommand?: string;
-  compatibilityServerName?: string;
 }
 
 const getCapabilities = (discovery: McpServerDiscovery | undefined): string[] => {

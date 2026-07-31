@@ -355,7 +355,7 @@ const getLocatorInputSchemaProperties = () => ({
   selector: {
     type: "string",
     description:
-      "Legacy raw Playwright selector. Prefer locatorType plus locatorValue when possible.",
+      "Raw Playwright selector. Prefer locatorType plus locatorValue when possible.",
   },
   locatorType: {
     type: "string",

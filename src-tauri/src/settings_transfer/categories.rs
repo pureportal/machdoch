@@ -240,20 +240,14 @@ fn normalized_provider_enrollment(value: Option<&Value>) -> Value {
         "schemaVersion": 1,
         "enabled": root.get("enabled").and_then(Value::as_bool).unwrap_or(true),
         "mcp": {
-            "mode": "direct-native",
-            "fallback": "per-server-stdio-proxy",
-            "compatibilityServerName": mcp.get("compatibilityServerName").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).unwrap_or("machdoch-compat"),
             "unmanagedNative": mcp.get("unmanagedNative").and_then(Value::as_str).filter(|value| ["adopt", "allow", "fail"].contains(value)).unwrap_or("allow"),
             "approvals": "never",
-            "progressiveDiscoveryThresholdPercent": mcp.get("progressiveDiscoveryThresholdPercent").and_then(Value::as_u64).unwrap_or(3).clamp(1, 5),
         },
         "persistentSync": {
             "enabled": sync.get("enabled").and_then(Value::as_bool).unwrap_or(false),
             "watch": sync.get("watch").and_then(Value::as_bool).unwrap_or(true),
             "debounceMs": sync.get("debounceMs").and_then(Value::as_u64).unwrap_or(500).clamp(50, 60_000),
-            "filesystemConvergenceTargetMs": sync.get("filesystemConvergenceTargetMs").and_then(Value::as_u64).unwrap_or(2_000).clamp(100, 60_000),
             "fullRescanIntervalMs": sync.get("fullRescanIntervalMs").and_then(Value::as_u64).unwrap_or(600_000).clamp(10_000, 86_400_000),
-            "autoReloadOwnedSessions": sync.get("autoReloadOwnedSessions").and_then(Value::as_bool).unwrap_or(true),
         },
         "providers": {
             "codex-cli": provider_enabled("codex-cli"),
@@ -1584,37 +1578,12 @@ fn validate_provider_enrollment(value: &Value) -> Result<(), String> {
         .get("mcp")
         .and_then(Value::as_object)
         .ok_or_else(|| "Provider MCP enrollment preferences are invalid.".to_string())?;
-    require_exact_keys(
-        mcp,
-        &[
-            "mode",
-            "fallback",
-            "compatibilityServerName",
-            "unmanagedNative",
-            "approvals",
-            "progressiveDiscoveryThresholdPercent",
-        ],
-    )?;
-    if mcp.get("mode").and_then(Value::as_str) != Some("direct-native")
-        || mcp.get("fallback").and_then(Value::as_str) != Some("per-server-stdio-proxy")
-        || !mcp
-            .get("compatibilityServerName")
-            .and_then(Value::as_str)
-            .is_some_and(|value| {
-                !value.trim().is_empty()
-                    && value.len() <= 128
-                    && !value.chars().any(char::is_control)
-            })
-        || !mcp
-            .get("unmanagedNative")
-            .and_then(Value::as_str)
-            .is_some_and(|value| ["adopt", "allow", "fail"].contains(&value))
+    require_exact_keys(mcp, &["unmanagedNative", "approvals"])?;
+    if !mcp
+        .get("unmanagedNative")
+        .and_then(Value::as_str)
+        .is_some_and(|value| ["adopt", "allow", "fail"].contains(&value))
         || mcp.get("approvals").and_then(Value::as_str) != Some("never")
-        || !(1..=5).contains(
-            &mcp.get("progressiveDiscoveryThresholdPercent")
-                .and_then(Value::as_u64)
-                .unwrap_or(0),
-        )
     {
         return Err("Provider MCP enrollment preferences are invalid.".to_string());
     }
@@ -1624,23 +1593,15 @@ fn validate_provider_enrollment(value: &Value) -> Result<(), String> {
         .ok_or_else(|| "Provider sync preferences are invalid.".to_string())?;
     require_exact_keys(
         sync,
-        &[
-            "enabled",
-            "watch",
-            "debounceMs",
-            "filesystemConvergenceTargetMs",
-            "fullRescanIntervalMs",
-            "autoReloadOwnedSessions",
-        ],
+        &["enabled", "watch", "debounceMs", "fullRescanIntervalMs"],
     )?;
-    for key in ["enabled", "watch", "autoReloadOwnedSessions"] {
+    for key in ["enabled", "watch"] {
         if !sync.get(key).is_some_and(Value::is_boolean) {
             return Err("Provider sync preferences are invalid.".to_string());
         }
     }
     let ranges = [
         ("debounceMs", 50, 60_000),
-        ("filesystemConvergenceTargetMs", 100, 60_000),
         ("fullRescanIntervalMs", 10_000, 86_400_000),
     ];
     for (key, minimum, maximum) in ranges {
@@ -2606,20 +2567,14 @@ mod tests {
                 "schemaVersion": 1,
                 "enabled": true,
                 "mcp": {
-                    "mode": "direct-native",
-                    "fallback": "per-server-stdio-proxy",
-                    "compatibilityServerName": "machdoch-compat",
                     "unmanagedNative": "allow",
-                    "approvals": "never",
-                    "progressiveDiscoveryThresholdPercent": 3
+                    "approvals": "never"
                 },
                 "persistentSync": {
                     "enabled": true,
                     "watch": true,
                     "debounceMs": 500,
-                    "filesystemConvergenceTargetMs": 2000,
-                    "fullRescanIntervalMs": 600000,
-                    "autoReloadOwnedSessions": true
+                    "fullRescanIntervalMs": 600000
                 },
                 "providers": {
                     "codex-cli": { "enabled": true },

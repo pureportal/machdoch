@@ -371,12 +371,8 @@ export interface UserReviewModelConfigFile {
 }
 
 export interface ProviderEnrollmentMcpConfigFile {
-  mode?: "direct-native";
-  fallback?: "per-server-stdio-proxy";
-  compatibilityServerName?: string;
   unmanagedNative?: "adopt" | "allow" | "fail";
   approvals?: "never";
-  progressiveDiscoveryThresholdPercent?: number;
 }
 
 export interface ProviderEnrollmentPersistentSyncConfigFile {
@@ -384,13 +380,11 @@ export interface ProviderEnrollmentPersistentSyncConfigFile {
   watch?: boolean;
   daemonAtLogin?: boolean;
   debounceMs?: number;
-  filesystemConvergenceTargetMs?: number;
   fullRescanIntervalMs?: number;
-  autoReloadOwnedSessions?: boolean;
 }
 
 export interface ProviderEnrollmentConfigFile {
-  schemaVersion?: 1;
+  schemaVersion: 1;
   enabled?: boolean;
   mcp?: ProviderEnrollmentMcpConfigFile;
   persistentSync?: ProviderEnrollmentPersistentSyncConfigFile;

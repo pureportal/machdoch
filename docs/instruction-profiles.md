@@ -145,8 +145,8 @@ machdoch instructions resolve \
   --json
 ```
 
-Add `--include-content` only when body disclosure is intentional. Delivery
-grades are telemetry and never require acknowledgement before execution.
+Add `--include-content` only when body disclosure is intentional. Compatible
+delivery needs no acknowledgement; unsupported delivery blocks before launch.
 
 Validate all current state:
 
@@ -167,9 +167,10 @@ Delivery is graded:
   authority, isolation, lifecycle, or conformance is weaker or unverified;
 - `unsupported`: complete delivery cannot be guaranteed.
 
-There is no truncation mode. Provider limitations remain visible as telemetry,
-while the complete canonical envelope is supplied through prompt fallback
-without an approval gate.
+There is no truncation or prompt-fallback mode. Provider limitations remain
+visible as telemetry, and the complete canonical envelope is delivered once
+through the provider's system/developer/native-instruction channel. If that
+contract is unavailable, execution blocks.
 
 Provider-native files such as Claude memory, Gemini context, or GitHub Copilot
 instructions remain provider-owned. Machdoch does not import or rewrite them;

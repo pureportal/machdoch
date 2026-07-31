@@ -5,7 +5,7 @@ import {
   setPersistentProviderSyncEnabled,
 } from "../../core/provider-enrollment/config.js";
 import {
-  getCompatibleProviderSyncDaemonPid,
+  getCurrentProviderSyncDaemonPid,
   getProviderSyncDaemonPid,
   requestProviderSyncRefresh,
   runProviderSyncDaemon,
@@ -39,7 +39,7 @@ const startDaemon = async (
   workspaceRoot: string,
 ): Promise<number | undefined> => {
   await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
-  const existing = await getCompatibleProviderSyncDaemonPid();
+  const existing = await getCurrentProviderSyncDaemonPid();
   if (existing) return existing;
   const script = process.argv[1];
   if (!script) return undefined;
@@ -109,7 +109,7 @@ export const ensureAutomaticProviderSync = async (
   }
   if (config.persistentSync.watch) {
     await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
-    if (await getCompatibleProviderSyncDaemonPid()) {
+    if (await getCurrentProviderSyncDaemonPid()) {
       // The daemon owns reconciliation while it is available. Asking it to
       // refresh avoids making every foreground Machdoch command contend for the
       // same global provider-enrollment lock.
@@ -219,7 +219,7 @@ export const printProviderSyncSummary = async (
       ) {
         await installProviderSyncAutostart(args.workspaceRoot);
       }
-      if (await getCompatibleProviderSyncDaemonPid()) {
+      if (await getCurrentProviderSyncDaemonPid()) {
         await requestProviderSyncRefresh();
       }
       const status = await reconcileProviderSync(args.workspaceRoot);

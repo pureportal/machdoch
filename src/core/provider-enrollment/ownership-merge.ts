@@ -3,31 +3,26 @@ import { mkdir, rm } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { readStableRegularFile } from "../_helpers/read-stable-regular-file.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
+import type { AgentCliProvider } from "../runtime-contract.generated.js";
 import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import {
-  compareCanonicalStrings,
-  digestJson,
-  sha256,
-} from "./digests.js";
+import { compareCanonicalStrings, digestJson, sha256 } from "./digests.js";
 
 const TOML_START = "# machdoch-managed:provider-enrollment:start";
 const TOML_END = "# machdoch-managed:provider-enrollment:end";
 const MAX_MANAGED_TARGET_BYTES = 16 * 1024 * 1024;
-const LEGACY_OWNERSHIP_FORMAT = "markdown";
+export type ManagedTargetFormat = "toml" | "json";
 const OWNERSHIP_FORMAT_BY_PROVIDER = {
   "codex-cli": "toml",
   "claude-cli": "json",
   "copilot-cli": "json",
-} as const;
-type OwnershipProvider = keyof typeof OWNERSHIP_FORMAT_BY_PROVIDER;
-const isOwnershipProvider = (value: unknown): value is OwnershipProvider =>
+} as const satisfies Record<AgentCliProvider, ManagedTargetFormat>;
+const isOwnershipProvider = (value: unknown): value is AgentCliProvider =>
   typeof value === "string" &&
   Object.hasOwn(OWNERSHIP_FORMAT_BY_PROVIDER, value);
-const TOML_KEY_SOURCE =
-  String.raw`("(?:\\.|[^"\\])*"|'[^']*'|[A-Za-z0-9_-]+)`;
+const TOML_KEY_SOURCE = String.raw`("(?:\\.|[^"\\])*"|'[^']*'|[A-Za-z0-9_-]+)`;
 const TOML_MCP_TABLE_PATTERN = new RegExp(
   String.raw`^\[\s*mcp_servers\s*\.\s*${TOML_KEY_SOURCE}(?:\s*\.|\s*\])`,
   "u",
@@ -37,11 +32,9 @@ const TOML_MCP_DOTTED_ASSIGNMENT_PATTERN = new RegExp(
   "u",
 );
 
-export type ManagedTargetFormat = "toml" | "json";
-
 export interface ProviderOwnershipRecord {
   path: string;
-  provider: string;
+  provider: AgentCliProvider;
   scope: "user" | "workspace";
   format: ManagedTargetFormat;
   managedDigest: string;
@@ -78,9 +71,7 @@ const hasOnlyKeys = (
 const hasAsciiControlCharacter = (value: string): boolean =>
   [...value].some((character) => {
     const codePoint = character.codePointAt(0);
-    return (
-      codePoint === undefined || codePoint <= 0x1f || codePoint === 0x7f
-    );
+    return codePoint === undefined || codePoint <= 0x1f || codePoint === 0x7f;
   });
 
 export const getManagedTargetPathIdentity = (path: string): string => {
@@ -101,9 +92,7 @@ interface ManagedTextRegion {
   payload: string;
 }
 
-const findRegion = (
-  content: string,
-): ManagedTextRegion | undefined => {
+const findRegion = (content: string): ManagedTextRegion | undefined => {
   const start = content.indexOf(TOML_START);
   if (start < 0) return undefined;
   const endMarkerIndex = content.indexOf(TOML_END, start + TOML_START.length);
@@ -118,9 +107,7 @@ const findRegion = (
   };
 };
 
-const findRegions = (
-  content: string,
-): ManagedTextRegion[] => {
+const findRegions = (content: string): ManagedTextRegion[] => {
   const regions: ManagedTextRegion[] = [];
   let offset = 0;
   while (offset < content.length) {
@@ -175,10 +162,8 @@ const selectOwnedTextRegion = (
   );
 };
 
-const removeTextRegion = (
-  content: string,
-  region: ManagedTextRegion,
-): string => `${content.slice(0, region.start)}${content.slice(region.end)}`;
+const removeTextRegion = (content: string, region: ManagedTextRegion): string =>
+  `${content.slice(0, region.start)}${content.slice(region.end)}`;
 
 const mergeTextRegion = (
   existing: string,
@@ -259,106 +244,102 @@ const parseOwnershipManifest = (
   const seenPaths = new Set<string>();
   const seenPathAuthorities = new Map<
     string,
-    { provider: string; scope: "user" | "workspace"; format: string }
+    {
+      provider: AgentCliProvider;
+      scope: "user" | "workspace";
+      format: ManagedTargetFormat;
+    }
   >();
-  const targets = value.targets.map((candidate, index): ProviderOwnershipRecord | undefined => {
-    const label = `${path} target ${index}`;
-    const format = isRecord(candidate) ? candidate.format : undefined;
-    if (
-      !isRecord(candidate) ||
-      !hasOnlyKeys(candidate, OWNERSHIP_TARGET_KEYS) ||
-      typeof candidate.path !== "string" ||
-      !isAbsolute(candidate.path) ||
-      candidate.path.length > 32_768 ||
-      !isOwnershipProvider(candidate.provider) ||
-      (candidate.scope !== "user" && candidate.scope !== "workspace") ||
-      (format !== LEGACY_OWNERSHIP_FORMAT &&
-        format !== OWNERSHIP_FORMAT_BY_PROVIDER[candidate.provider]) ||
-      typeof candidate.managedDigest !== "string" ||
-      !SHA256_PATTERN.test(candidate.managedDigest) ||
-      typeof candidate.installedFileDigest !== "string" ||
-      !SHA256_PATTERN.test(candidate.installedFileDigest) ||
-      typeof candidate.createdFile !== "boolean" ||
-      typeof candidate.installedAt !== "string" ||
-      candidate.installedAt.length > 100 ||
-      !Number.isFinite(Date.parse(candidate.installedAt))
-    ) {
-      throw new Error(`${label} is malformed.`);
-    }
-    const provider = candidate.provider;
-    const targetFormat = format as
-      | ManagedTargetFormat
-      | typeof LEGACY_OWNERSHIP_FORMAT;
-    if (seenPaths.has(candidate.path)) {
-      throw new Error(`${path} contains duplicate ownership for ${candidate.path}.`);
-    }
-    seenPaths.add(candidate.path);
-    const pathIdentity = getManagedTargetPathIdentity(candidate.path);
-    const previousAuthority = seenPathAuthorities.get(pathIdentity);
-    if (
-      previousAuthority &&
-      (previousAuthority.provider !== provider ||
-        previousAuthority.scope !== candidate.scope ||
-        previousAuthority.format !== targetFormat)
-    ) {
-      throw new Error(
-        `${path} contains ambiguous ownership for ${candidate.path}.`,
-      );
-    }
-    seenPathAuthorities.set(pathIdentity, {
-      provider,
-      scope: candidate.scope,
-      format: targetFormat,
-    });
-
-    let managedKeys: string[] | undefined;
-    if (targetFormat === "json" && candidate.managedKeys === undefined) {
-      throw new Error(`${label} has invalid managed MCP keys.`);
-    }
-    if (
-      targetFormat !== "json" &&
-      candidate.managedKeys !== undefined
-    ) {
-      throw new Error(`${label} has invalid managed MCP keys.`);
-    }
-    if (candidate.managedKeys !== undefined) {
+  const targets = value.targets.map(
+    (candidate, index): ProviderOwnershipRecord => {
+      const label = `${path} target ${index}`;
       if (
-        !Array.isArray(candidate.managedKeys) ||
-        candidate.managedKeys.length > MAX_MANAGED_KEYS_PER_RECORD ||
-        !candidate.managedKeys.every(
-          (key) =>
-            typeof key === "string" &&
-            key.length > 0 &&
-            key.length <= 1_024 &&
-            !hasAsciiControlCharacter(key),
-        )
+        !isRecord(candidate) ||
+        !hasOnlyKeys(candidate, OWNERSHIP_TARGET_KEYS) ||
+        typeof candidate.path !== "string" ||
+        !isAbsolute(candidate.path) ||
+        candidate.path.length > 32_768 ||
+        !isOwnershipProvider(candidate.provider) ||
+        (candidate.scope !== "user" && candidate.scope !== "workspace") ||
+        candidate.format !== OWNERSHIP_FORMAT_BY_PROVIDER[candidate.provider] ||
+        typeof candidate.managedDigest !== "string" ||
+        !SHA256_PATTERN.test(candidate.managedDigest) ||
+        typeof candidate.installedFileDigest !== "string" ||
+        !SHA256_PATTERN.test(candidate.installedFileDigest) ||
+        typeof candidate.createdFile !== "boolean" ||
+        typeof candidate.installedAt !== "string" ||
+        candidate.installedAt.length > 100 ||
+        !Number.isFinite(Date.parse(candidate.installedAt))
       ) {
+        throw new Error(`${label} is malformed.`);
+      }
+      const provider = candidate.provider;
+      const targetFormat = OWNERSHIP_FORMAT_BY_PROVIDER[provider];
+      if (seenPaths.has(candidate.path)) {
+        throw new Error(
+          `${path} contains duplicate ownership for ${candidate.path}.`,
+        );
+      }
+      seenPaths.add(candidate.path);
+      const pathIdentity = getManagedTargetPathIdentity(candidate.path);
+      const previousAuthority = seenPathAuthorities.get(pathIdentity);
+      if (
+        previousAuthority &&
+        (previousAuthority.provider !== provider ||
+          previousAuthority.scope !== candidate.scope ||
+          previousAuthority.format !== targetFormat)
+      ) {
+        throw new Error(
+          `${path} contains ambiguous ownership for ${candidate.path}.`,
+        );
+      }
+      seenPathAuthorities.set(pathIdentity, {
+        provider,
+        scope: candidate.scope,
+        format: targetFormat,
+      });
+
+      let managedKeys: string[] | undefined;
+      if (targetFormat === "json" && candidate.managedKeys === undefined) {
         throw new Error(`${label} has invalid managed MCP keys.`);
       }
-      managedKeys = [...new Set(candidate.managedKeys)].sort(
-        compareCanonicalStrings,
-      );
-      if (managedKeys.length !== candidate.managedKeys.length) {
-        throw new Error(`${label} has duplicate managed MCP keys.`);
+      if (targetFormat !== "json" && candidate.managedKeys !== undefined) {
+        throw new Error(`${label} has invalid managed MCP keys.`);
       }
-    }
+      if (candidate.managedKeys !== undefined) {
+        if (
+          !Array.isArray(candidate.managedKeys) ||
+          candidate.managedKeys.length > MAX_MANAGED_KEYS_PER_RECORD ||
+          !candidate.managedKeys.every(
+            (key) =>
+              typeof key === "string" &&
+              key.length > 0 &&
+              key.length <= 1_024 &&
+              !hasAsciiControlCharacter(key),
+          )
+        ) {
+          throw new Error(`${label} has invalid managed MCP keys.`);
+        }
+        managedKeys = [...new Set(candidate.managedKeys)].sort(
+          compareCanonicalStrings,
+        );
+        if (managedKeys.length !== candidate.managedKeys.length) {
+          throw new Error(`${label} has duplicate managed MCP keys.`);
+        }
+      }
 
-    // Persistent instruction targets predate MCP-only sync. Retire their
-    // ownership metadata without changing the referenced instruction file.
-    if (targetFormat === LEGACY_OWNERSHIP_FORMAT) return undefined;
-    return {
-      path: candidate.path,
-      provider,
-      scope: candidate.scope,
-      format: targetFormat,
-      managedDigest: candidate.managedDigest,
-      installedFileDigest: candidate.installedFileDigest,
-      createdFile: candidate.createdFile,
-      ...(managedKeys ? { managedKeys } : {}),
-      installedAt: candidate.installedAt,
-    };
-  }).filter(
-    (target): target is ProviderOwnershipRecord => target !== undefined,
+      return {
+        path: candidate.path,
+        provider,
+        scope: candidate.scope,
+        format: targetFormat,
+        managedDigest: candidate.managedDigest,
+        installedFileDigest: candidate.installedFileDigest,
+        createdFile: candidate.createdFile,
+        ...(managedKeys ? { managedKeys } : {}),
+        installedAt: candidate.installedAt,
+      };
+    },
   );
 
   return {
@@ -438,7 +419,7 @@ const createBackup = async (
 
 export interface InstallManagedTargetParams {
   path: string;
-  provider: string;
+  provider: AgentCliProvider;
   scope: "user" | "workspace";
   format: ManagedTargetFormat;
   payload: string | Record<string, unknown>;
@@ -543,7 +524,10 @@ const installManagedTargetUnlocked = async (
     const collisions = [...generated.names]
       .filter((name) => unmanaged.names.has(name))
       .sort(compareCanonicalStrings);
-    if (collisions.length > 0 || (generated.names.size > 0 && unmanaged.ambiguous)) {
+    if (
+      collisions.length > 0 ||
+      (generated.names.size > 0 && unmanaged.ambiguous)
+    ) {
       throw new Error(
         collisions.length > 0
           ? `Refusing to create duplicate unmanaged Codex MCP table${collisions.length === 1 ? "" : "s"} in ${params.path}: ${collisions.join(", ")}.`

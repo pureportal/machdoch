@@ -15,7 +15,6 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  assertInstructionDeliveryAllowed,
   assertInstructionDeliveryReceiptCertain,
   createInstructionDeliveryPlan,
   createInstructionDeliveryReceipt,
@@ -1294,14 +1293,13 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     expect(codexBefore.nativeInventory).toContainEqual(
       expect.objectContaining({
         convention: "codex-project-agents",
-        status: "native-extra",
-        digest: sha256("Repository agent policy.\n"),
+        status: "suppressed",
       }),
     );
     expect(codexBefore.nativeInventory).toContainEqual(
       expect.objectContaining({
         convention: "codex-project-configuration",
-        status: "native-extra",
+        status: "suppressed",
       }),
     );
 
@@ -1384,7 +1382,6 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     const fullPlan = createInstructionDeliveryPlan(apiResolution);
     expect(fullPlan.grade).toBe("full");
     expect(fullPlan.dimensions).toHaveLength(12);
-    expect(() => assertInstructionDeliveryAllowed(fullPlan)).not.toThrow();
 
     const cliResolution = await resolve(
       fixture.workspace,
@@ -1397,10 +1394,7 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     );
     const compatiblePlan = createInstructionDeliveryPlan(cliResolution);
     expect(compatiblePlan.grade).toBe("compatible");
-    expect(compatiblePlan.requiresAcknowledgement).toBe(false);
-    expect(() =>
-      assertInstructionDeliveryAllowed(compatiblePlan),
-    ).not.toThrow();
+    expect(compatiblePlan.blockingReasons).toEqual([]);
 
     const receipt = createInstructionDeliveryReceipt({
       plan: fullPlan,

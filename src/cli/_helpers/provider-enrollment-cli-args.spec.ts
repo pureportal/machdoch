@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseCliArgs } from "./cli-args.js";
 
 describe("provider enrollment CLI arguments", () => {
-  it("parses provider sync and MCP compatibility commands", () => {
+  it("parses provider sync and MCP broker commands", () => {
     expect(parseCliArgs(["provider-sync", "plan", "--provider", "codex-cli"], {
       currentWorkingDirectory: "/workspace",
     })).toMatchObject({

@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import {
-  getCompatibleProviderSyncDaemonPid,
+  getCurrentProviderSyncDaemonPid,
+  getProviderSyncDaemonPid,
   getProviderSyncDaemonRuntimeId,
   getProviderSyncDaemonDiagnosticPath,
   isProviderSyncUserWatchPath,
@@ -89,6 +90,7 @@ describe("provider sync daemon", () => {
       join(userConfigRoot, "user-config.json"),
       `${JSON.stringify({
         providerEnrollment: {
+          schemaVersion: 1,
           enabled: true,
           persistentSync: {
             enabled: true,
@@ -124,10 +126,11 @@ describe("provider sync daemon", () => {
       await expect(
         readFile(daemonPath, "utf8").then((value) => JSON.parse(value)),
       ).resolves.toMatchObject({
+        schemaVersion: 1,
         pid: process.pid,
         runtimeId: getProviderSyncDaemonRuntimeId(),
       });
-      await expect(getCompatibleProviderSyncDaemonPid()).resolves.toBe(
+      await expect(getCurrentProviderSyncDaemonPid()).resolves.toBe(
         process.pid,
       );
       await expect(runProviderSyncDaemon(workspaceRoot)).rejects.toThrow(
@@ -173,6 +176,7 @@ describe("provider sync daemon", () => {
       join(userConfigRoot, "user-config.json"),
       `${JSON.stringify({
         providerEnrollment: {
+          schemaVersion: 1,
           enabled: true,
           persistentSync: {
             enabled: true,
@@ -242,6 +246,31 @@ describe("provider sync daemon", () => {
     }
   });
 
+  it("rejects daemon records outside the current schema", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-daemon-schema-"));
+    roots.push(root);
+    const userConfigRoot = join(root, "user-config");
+    const daemonDirectory = join(userConfigRoot, "provider-enrollment");
+    await mkdir(daemonDirectory, { recursive: true });
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    await writeFile(
+      join(daemonDirectory, "daemon.json"),
+      `${JSON.stringify({
+        pid: process.pid,
+        workspaceRoot: root,
+        startedAt: new Date().toISOString(),
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(getProviderSyncDaemonPid()).rejects.toThrow(
+      "not a valid provider-sync daemon record",
+    );
+    await expect(getCurrentProviderSyncDaemonPid()).rejects.toThrow(
+      "not a valid provider-sync daemon record",
+    );
+  });
+
   it("stops a daemon launched by a different runtime", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-daemon-runtime-"));
     roots.push(root);
@@ -272,11 +301,12 @@ describe("provider sync daemon", () => {
       daemonPath,
       `${JSON.stringify(
         {
+          schemaVersion: 1,
           pid: childPid,
           workspaceRoot: root,
           startedAt: new Date().toISOString(),
           token: "different-runtime-test",
-          runtimeId: "different-runtime",
+          runtimeId: "0".repeat(64),
         },
         null,
         2,
