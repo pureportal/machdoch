@@ -210,9 +210,7 @@ describe("media video quality helpers", () => {
       durationSeconds: 3,
       exact: true,
     });
-    expect(
-      fitMediaVideoDuration(2, 16, "seamless", "framepack-i2v"),
-    ).toEqual({
+    expect(fitMediaVideoDuration(2, 16, "seamless", "framepack-i2v")).toEqual({
       targetSeconds: 2,
       sourceFrameCount: 37,
       outputFrameCount: 36,

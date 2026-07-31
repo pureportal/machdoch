@@ -28,10 +28,20 @@ describe("built-in media flow templates", () => {
     )) {
       expect(template.flow.variables.length).toBeGreaterThanOrEqual(2);
       expect(template.flow.presets.length).toBeGreaterThan(0);
-      expect(template.flow.nodes.some((node) => node.type === "output.asset")).toBe(true);
-      expect(template.flow.nodes.some((node) => node.type === "control.human-review")).toBe(true);
+      expect(
+        template.flow.nodes.some((node) => node.type === "output.asset"),
+      ).toBe(true);
+      expect(
+        template.flow.nodes.some(
+          (node) => node.type === "control.human-review",
+        ),
+      ).toBe(true);
       expect(validateMediaFlowDocument(template.flow)).toEqual([]);
-      const plan = compileMediaFlow({ flow: template.flow, models, compiledAt: CREATED_AT });
+      const plan = compileMediaFlow({
+        flow: template.flow,
+        models,
+        compiledAt: CREATED_AT,
+      });
       expect(plan.status).toBe("ready");
       expect(plan.preflight.estimatedOutputs).toBeGreaterThan(0);
       expect(plan.preflight.requiresHumanReview).toBe(true);
@@ -49,7 +59,7 @@ describe("built-in media flow templates", () => {
     }
   });
 
-  it("ships a connected generated-frame WAN loop with two publication paths", () => {
+  it("ships a connected generated-frame FramePack loop with two publication paths", () => {
     const template = listBuiltInMediaFlowTemplates().find(
       (candidate) => candidate.id === "generated-character-idle-loop",
     );
@@ -68,21 +78,20 @@ describe("built-in media flow templates", () => {
     expect(flux).toBeDefined();
     models.push({
       ...flux!,
-      id: "local:wan2.2-ti2v-5b",
-      providerId: "local-wan",
-      displayName: "WAN 2.2 TI2V 5B",
-      family: "WAN 2.2",
+      id: "local:framepack-i2v-hy-13b",
+      providerId: "local-video",
+      displayName: "FramePack I2V HY 13B",
+      family: "FramePack",
       capabilities: [
-        "text-to-video",
         "image-to-video",
         "start-end-to-video",
         "transparent-output",
         "alpha-video",
         "video-composite",
       ],
-      architecture: "wan-2.2-ti2v",
+      architecture: "framepack-i2v",
       addonCapabilities: [],
-      installedRevision: "test-revision",
+      installedRevision: "86cef4396041b6002c957852daac4c91aaa47c79",
     });
 
     const plan = compileMediaFlow({
@@ -124,9 +133,9 @@ describe("built-in media flow templates", () => {
     expect(result.flow.id).toBe("flow:product-fork");
     expect(result.flow.createdAt).toBe(CREATED_AT);
     expect(
-      listBuiltInMediaFlowTemplates()
-        .find((template) => template.id === "product-cutout-quality")
-        ?.flow.variables[0]?.name,
+      listBuiltInMediaFlowTemplates().find(
+        (template) => template.id === "product-cutout-quality",
+      )?.flow.variables[0]?.name,
     ).toBe("Creative brief");
   });
 
@@ -153,15 +162,19 @@ describe("built-in media flow templates", () => {
   });
 
   it("rejects unknown templates and empty fork identities", () => {
-    expect(() => instantiateMediaFlowTemplate({
-      templateId: "missing",
-      flowId: "flow:fork",
-      createdAt: CREATED_AT,
-    })).toThrow("was not found");
-    expect(() => instantiateMediaFlowTemplate({
-      templateId: "text-to-image-variants",
-      flowId: " ",
-      createdAt: CREATED_AT,
-    })).toThrow("stable flow id");
+    expect(() =>
+      instantiateMediaFlowTemplate({
+        templateId: "missing",
+        flowId: "flow:fork",
+        createdAt: CREATED_AT,
+      }),
+    ).toThrow("was not found");
+    expect(() =>
+      instantiateMediaFlowTemplate({
+        templateId: "text-to-image-variants",
+        flowId: " ",
+        createdAt: CREATED_AT,
+      }),
+    ).toThrow("stable flow id");
   });
 });

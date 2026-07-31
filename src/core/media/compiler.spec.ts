@@ -289,7 +289,9 @@ describe("media flow compiler", () => {
     expect(oneWindowPlan.diagnostics).toContainEqual(
       expect.objectContaining({
         code: "NODE_SCHEMA_INVALID",
-        message: expect.stringContaining("more than one native temporal window"),
+        message: expect.stringContaining(
+          "more than one native temporal window",
+        ),
       }),
     );
   });
