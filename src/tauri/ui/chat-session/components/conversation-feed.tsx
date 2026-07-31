@@ -53,7 +53,6 @@ import {
   getRenderedMessageLimitForTarget,
   getVisibleConversationMessageId,
 } from "../_helpers/message-navigation";
-import { createContextAttachmentsFromTaskBlock } from "../_helpers/session-context-attachments";
 import { MessageAttachmentsList } from "./context-attachments";
 import { ExecutionInsightRow } from "./execution-insight-row";
 import { MessageMarkdown } from "./message-markdown";
@@ -354,12 +353,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   const showCrashRecoveryActions = isRecoveredTaskCrashMessage(message);
   const messageAttachments =
     message.role === "user"
-      ? message.contextAttachments?.length
-        ? message.contextAttachments
-        : createContextAttachmentsFromTaskBlock(
-            message.content,
-            `legacy-message-context-${message.id}`,
-          )
+      ? (message.contextAttachments ?? [])
       : [];
   const canSaveMessageAsContextPack =
     message.role === "user" && Boolean(onSaveMessageAsContextPack);

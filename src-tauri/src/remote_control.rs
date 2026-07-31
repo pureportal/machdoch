@@ -91,7 +91,6 @@ struct RemoteControlInner {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteControlConfigFile {
-    #[serde(default = "config::default_remote_control_config_version")]
     version: u32,
     #[serde(default = "config::default_remote_control_port")]
     port: u16,
@@ -99,9 +98,7 @@ struct RemoteControlConfigFile {
     enabled: bool,
     #[serde(default)]
     paired_devices: Vec<RemoteControlPairedDevice>,
-    #[serde(default)]
     pending_commands: Vec<RemoteControlCommandEvent>,
-    #[serde(default)]
     completed_commands: Vec<CompletedRemoteCommandReceipt>,
 }
 

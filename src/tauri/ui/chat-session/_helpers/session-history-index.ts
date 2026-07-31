@@ -455,7 +455,8 @@ export const duplicateSessionRecord = (
     id: crypto.randomUUID(),
     createdAt: timestamp,
     updatedAt: timestamp,
-    composerUpdatedAt: timestamp,
+    draftUpdatedAt: timestamp,
+    draftAttachmentsUpdatedAt: timestamp,
     manualTitle: `${title} ${mode === "branch" ? "branch" : "copy"}`,
     draft: mode === "branch" ? "" : session.draft,
     draftContextAttachments:

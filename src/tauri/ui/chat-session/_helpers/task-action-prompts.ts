@@ -5,19 +5,13 @@ export const CONTINUE_TASK_DISPLAY_CONTENT = "Continue previous task.";
 
 const GENERATED_PROMPT_PREFIXES: Record<TaskActionPromptKind, string[]> = {
   "retry-task": [
-    "Retry this task from the failed or interrupted step.",
-    "Retry this task after the app restarted before it finished.",
     "Retry the previous task from the failed or interrupted step.",
     "Retry the task that was interrupted before it finished.",
-    "Retry the task that was interrupted by an app restart.",
     RETRY_TASK_DISPLAY_CONTENT,
   ],
   "continue-task": [
-    "Continue from this previous task.",
     "Continue the previous task.",
-    "Continue this task after the app restarted before it finished.",
     "Continue the task that was interrupted before it finished.",
-    "Continue the task that was interrupted by an app restart.",
     CONTINUE_TASK_DISPLAY_CONTENT,
   ],
 };
@@ -26,19 +20,13 @@ const SECTION_LABELS = new Set([
   "Context:",
   "Instructions:",
   "Objective:",
-  "Original task:",
-  "Plan summary:",
-  "Previous reason:",
-  "Previous status:",
-  "Previous summary:",
-  "Previous task:",
   "Reason:",
   "Status:",
   "Suggested follow-ups:",
   "Summary:",
 ]);
 
-const TASK_OBJECTIVE_LABELS = ["Objective:", "Previous task:", "Original task:"];
+const TASK_OBJECTIVE_LABELS = ["Objective:"];
 
 export const compactPromptText = (value: string, maxLength: number): string => {
   const compacted = value.replace(/\s+/gu, " ").trim();

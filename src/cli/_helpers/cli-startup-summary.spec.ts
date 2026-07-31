@@ -8,8 +8,6 @@ import {
   resolveDesktopShellStatePath,
 } from "./cli-startup-summary.ts";
 
-const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
-
 const workspacesToClean: string[] = [];
 
 const createTempDirectory = async (): Promise<string> => {
@@ -70,7 +68,7 @@ describe("resolveDesktopShellStatePath", () => {
         ".local",
         "share",
         "com.machdoch.desktop",
-        "machdoch-shell-state.json",
+        "machdoch-shell-state.snapshot.json",
       ),
     );
   });
@@ -89,13 +87,15 @@ describe("loadDesktopShellSummary", () => {
 
   it("loads open desktop sessions and marks the current active session", async () => {
     const directory = await createTempDirectory();
-    const storePath = join(directory, "machdoch-shell-state.json");
+    const storePath = join(directory, "machdoch-shell-state.snapshot.json");
 
     await writeFile(
       storePath,
       JSON.stringify(
         {
-          [SHELL_STATE_STORAGE_KEY]: {
+          revision: 4,
+          state: {
+            version: 2,
             activeSessionId: "running-session",
             sessions: [
               {
@@ -238,7 +238,7 @@ describe("createCliStartupSummaryLines", () => {
   it("keeps provider output useful when no desktop state exists", () => {
     const lines = createCliStartupSummaryLines(createConfig(), {
       status: "missing",
-      storePath: "/missing/machdoch-shell-state.json",
+      storePath: "/missing/machdoch-shell-state.snapshot.json",
     });
 
     expect(lines).toEqual([

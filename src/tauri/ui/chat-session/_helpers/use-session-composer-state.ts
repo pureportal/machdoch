@@ -23,13 +23,17 @@ interface ComposerHistoryPreview {
 const createComposerIdentity = (
   session: Pick<
     ChatSessionRecord,
-    "draft" | "draftContextAttachments" | "composerUpdatedAt"
+    | "draft"
+    | "draftContextAttachments"
+    | "draftUpdatedAt"
+    | "draftAttachmentsUpdatedAt"
   >,
 ): string =>
   JSON.stringify([
     session.draft,
     session.draftContextAttachments,
-    session.composerUpdatedAt ?? null,
+    session.draftUpdatedAt,
+    session.draftAttachmentsUpdatedAt,
   ]);
 
 const cloneAttachments = (
@@ -115,7 +119,8 @@ export const useSessionComposerState = (
           draftContextAttachments: cloneAttachments(
             preview.contextAttachments,
           ),
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
         return committedSession;
@@ -155,7 +160,8 @@ export const useSessionComposerState = (
             draftContextAttachments: cloneAttachments(
               preview.contextAttachments,
             ),
-            composerUpdatedAt: updatedAt,
+            draftUpdatedAt: updatedAt,
+            draftAttachmentsUpdatedAt: updatedAt,
             updatedAt,
           };
         });

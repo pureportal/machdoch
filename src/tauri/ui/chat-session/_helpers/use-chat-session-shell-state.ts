@@ -108,7 +108,8 @@ const getSessionPersistenceTimestamp = (
 ): number => {
   let timestamp = Math.max(
     session.updatedAt,
-    session.composerUpdatedAt ?? 0,
+    session.draftUpdatedAt,
+    session.draftAttachmentsUpdatedAt,
     session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
@@ -191,21 +192,13 @@ const isMessageVersionRegression = (
       return true;
     }
 
-    const currentTimelineEvents =
-      currentSource.thinking.timelineEvents?.length ?? 0;
+    const currentTimelineEvents = currentSource.thinking.timelineEvents.length;
     const incomingTimelineEvents =
-      incomingSource.thinking.timelineEvents?.length ?? 0;
+      incomingSource.thinking.timelineEvents.length;
 
     if (
       currentSource.thinking.status === "complete" &&
       incomingSource.thinking.status !== "complete"
-    ) {
-      return true;
-    }
-
-    if (
-      incomingSource.thinking.entries.length <
-      currentSource.thinking.entries.length
     ) {
       return true;
     }
@@ -336,9 +329,8 @@ const mergeSessionRuntimeSelection = (
 
 const getSessionComposerTimestamp = (session: ChatSessionRecord): number => {
   return Math.max(
-    session.composerUpdatedAt ?? 0,
-    session.draftUpdatedAt ?? 0,
-    session.draftAttachmentsUpdatedAt ?? 0,
+    session.draftUpdatedAt,
+    session.draftAttachmentsUpdatedAt,
     ...Object.values(session.draftAttachmentAddedAt ?? {}),
     ...Object.values(session.draftAttachmentTombstones ?? {}),
     session.createdAt,
@@ -346,19 +338,13 @@ const getSessionComposerTimestamp = (session: ChatSessionRecord): number => {
 };
 
 const getSessionDraftTimestamp = (session: ChatSessionRecord): number => {
-  return Math.max(
-    session.draftUpdatedAt ?? session.composerUpdatedAt ?? 0,
-    session.createdAt,
-  );
+  return Math.max(session.draftUpdatedAt, session.createdAt);
 };
 
 const getSessionDraftAttachmentsTimestamp = (
   session: ChatSessionRecord,
 ): number => {
-  return Math.max(
-    session.draftAttachmentsUpdatedAt ?? session.composerUpdatedAt ?? 0,
-    session.createdAt,
-  );
+  return Math.max(session.draftAttachmentsUpdatedAt, session.createdAt);
 };
 
 const getAttachmentAddTimestamp = (
@@ -446,32 +432,9 @@ interface ComposerAttachmentBranchMetadata {
   updatedAt: number;
 }
 
-const hasSubmittedBaseComposer = (
-  session: ChatSessionRecord,
-  baseSession: ChatSessionRecord,
-): boolean => {
-  if (
-    (!baseSession.draft.trim() &&
-      baseSession.draftContextAttachments.length === 0) ||
-    session.draft.trim() ||
-    session.draftContextAttachments.length > 0
-  ) {
-    return false;
-  }
-
-  const baseMessageIds = new Set(
-    baseSession.messages.map((message) => message.id),
-  );
-
-  return session.messages.some(
-    (message) => message.role === "user" && !baseMessageIds.has(message.id),
-  );
-};
-
 const createComposerAttachmentBranchMetadata = (
   session: ChatSessionRecord,
   baseSession: ChatSessionRecord,
-  allowUpdatedAtFallback = false,
 ): ComposerAttachmentBranchMetadata => {
   const baseAttachmentsById = new Map(
     baseSession.draftContextAttachments.map((attachment) => [
@@ -488,46 +451,11 @@ const createComposerAttachmentBranchMetadata = (
   const baseUpdatedAt = getSessionDraftAttachmentsTimestamp(baseSession);
   const storedUpdatedAt = getSessionDraftAttachmentsTimestamp(session);
   const storedClockAdvanced = storedUpdatedAt > baseUpdatedAt;
-  const legacyComposerAdvanced =
-    session.draftAttachmentsUpdatedAt === undefined &&
-    (session.composerUpdatedAt ?? 0) > (baseSession.composerUpdatedAt ?? 0);
-  const submittedBaseComposer = hasSubmittedBaseComposer(
-    session,
-    baseSession,
-  );
-  const updatedAtFallbackAdvanced =
-    allowUpdatedAtFallback &&
-    session.draftAttachmentsUpdatedAt === undefined &&
-    !areShellFragmentsEqual(
-      session.draftContextAttachments,
-      baseSession.draftContextAttachments,
-    ) &&
-    session.updatedAt > baseSession.updatedAt;
-  const fieldAdvanced =
-    storedClockAdvanced ||
-    legacyComposerAdvanced ||
-    submittedBaseComposer ||
-    updatedAtFallbackAdvanced;
-  const mutationTimestamp = Math.max(
-    storedClockAdvanced ? storedUpdatedAt : 0,
-    legacyComposerAdvanced ? (session.composerUpdatedAt ?? 0) : 0,
-    submittedBaseComposer ? session.updatedAt : 0,
-    updatedAtFallbackAdvanced ? session.updatedAt : 0,
-  );
+  const mutationTimestamp = storedClockAdvanced ? storedUpdatedAt : 0;
   const addedAt = mergeTimestampRecords(session.draftAttachmentAddedAt);
   const tombstones = mergeTimestampRecords(
     session.draftAttachmentTombstones,
   );
-
-  for (const attachmentId of Object.keys(addedAt)) {
-    if (
-      !sessionAttachmentsById.has(attachmentId) &&
-      tombstones[attachmentId] === undefined &&
-      (session.composerUpdatedAt ?? 0) > storedUpdatedAt
-    ) {
-      tombstones[attachmentId] = session.composerUpdatedAt ?? storedUpdatedAt;
-    }
-  }
 
   for (const attachment of session.draftContextAttachments) {
     const baseAttachment = baseAttachmentsById.get(attachment.id);
@@ -542,7 +470,7 @@ const createComposerAttachmentBranchMetadata = (
       !areShellFragmentsEqual(baseAttachment, attachment);
     const shouldSynthesizeAddTimestamp =
       attachmentChanged &&
-      fieldAdvanced &&
+      storedClockAdvanced &&
       (storedAddedAt === undefined ||
         (baseAttachment !== undefined && storedAddedAt <= baseAddedAt));
 
@@ -553,7 +481,7 @@ const createComposerAttachmentBranchMetadata = (
     );
   }
 
-  if (fieldAdvanced) {
+  if (storedClockAdvanced) {
     for (const baseAttachment of baseSession.draftContextAttachments) {
       if (!sessionAttachmentsById.has(baseAttachment.id)) {
         tombstones[baseAttachment.id] = Math.max(
@@ -582,7 +510,6 @@ interface MergedSessionComposer {
   draftAttachmentsUpdatedAt: number;
   draftAttachmentAddedAt: Record<string, number>;
   draftAttachmentTombstones: Record<string, number>;
-  composerUpdatedAt: number;
 }
 
 const mergeSessionComposerForPersistence = (
@@ -591,41 +518,8 @@ const mergeSessionComposerForPersistence = (
   latestSession: ChatSessionRecord,
 ): MergedSessionComposer => {
   const baseDraftUpdatedAt = getSessionDraftTimestamp(baseSession);
-  const localSubmittedBaseComposer = hasSubmittedBaseComposer(
-    localSession,
-    baseSession,
-  );
-  const latestSubmittedBaseComposer = hasSubmittedBaseComposer(
-    latestSession,
-    baseSession,
-  );
-  const localDraftUpdatedAtFallback =
-    localSession.draftUpdatedAt === undefined &&
-    localSession.draft !== baseSession.draft &&
-    localSession.updatedAt > baseSession.updatedAt
-      ? localSession.updatedAt
-      : 0;
-  const localDraftUpdatedAt = Math.max(
-    getSessionDraftTimestamp(localSession),
-    localSession.draftUpdatedAt === undefined &&
-    localSession.draft !== baseSession.draft &&
-      (localSession.composerUpdatedAt ?? 0) >
-        (baseSession.composerUpdatedAt ?? 0)
-      ? (localSession.composerUpdatedAt ?? 0)
-      : 0,
-    localSubmittedBaseComposer ? localSession.updatedAt : 0,
-    localDraftUpdatedAtFallback,
-  );
-  const latestDraftUpdatedAt = Math.max(
-    getSessionDraftTimestamp(latestSession),
-    latestSession.draftUpdatedAt === undefined &&
-    latestSession.draft !== baseSession.draft &&
-      (latestSession.composerUpdatedAt ?? 0) >
-        (baseSession.composerUpdatedAt ?? 0)
-      ? (latestSession.composerUpdatedAt ?? 0)
-      : 0,
-    latestSubmittedBaseComposer ? latestSession.updatedAt : 0,
-  );
+  const localDraftUpdatedAt = getSessionDraftTimestamp(localSession);
+  const latestDraftUpdatedAt = getSessionDraftTimestamp(latestSession);
   const localDraftChanged =
     localSession.draft !== baseSession.draft &&
     localDraftUpdatedAt > baseDraftUpdatedAt;
@@ -653,7 +547,6 @@ const mergeSessionComposerForPersistence = (
   const localMetadata = createComposerAttachmentBranchMetadata(
     localSession,
     baseSession,
-    true,
   );
   const latestMetadata = createComposerAttachmentBranchMetadata(
     latestSession,
@@ -774,7 +667,6 @@ const mergeSessionComposerForPersistence = (
     draftAttachmentsUpdatedAt,
     draftAttachmentAddedAt,
     draftAttachmentTombstones,
-    composerUpdatedAt: Math.max(draftUpdatedAt, draftAttachmentsUpdatedAt),
   };
 };
 
@@ -836,8 +728,7 @@ const getMessageCompletenessScore = (message: ChatSessionMessage): number => {
   if (source.kind === "thinking") {
     const thinking = source.thinking;
     score += thinking.status === "complete" ? 5_000_000 : 1_000_000;
-    score += thinking.entries.length * 10_000;
-    score += (thinking.timelineEvents?.length ?? 0) * 10_000;
+    score += thinking.timelineEvents.length * 10_000;
     score += thinking.assistantText?.trim().length ?? 0;
     return score + serializeShellFragment(thinking).length;
   }
@@ -1334,7 +1225,6 @@ const createNewSessionConcurrentBase = (
     ...session,
     draft: "",
     draftContextAttachments: [],
-    composerUpdatedAt: session.createdAt,
     draftUpdatedAt: session.createdAt,
     draftAttachmentsUpdatedAt: session.createdAt,
     draftAttachmentAddedAt: {},
@@ -1412,7 +1302,7 @@ const applyLocalMutationMetadata = (
     const mutationTimestamp = Math.max(
       Date.now(),
       session.updatedAt,
-      session.composerUpdatedAt ?? 0,
+      getSessionComposerTimestamp(session),
       getSessionComposerTimestamp(previousSession) + 1,
     );
     const draftUpdatedAt = draftChanged
@@ -1480,10 +1370,6 @@ const applyLocalMutationMetadata = (
     return {
       ...session,
       updatedAt: Math.max(session.updatedAt, mutationTimestamp),
-      composerUpdatedAt: Math.max(
-        draftUpdatedAt,
-        draftAttachmentsUpdatedAt,
-      ),
       draftUpdatedAt,
       draftAttachmentsUpdatedAt,
       draftAttachmentAddedAt,
@@ -1528,7 +1414,6 @@ const isOnlySessionComposerChanged = (
       ...localSession,
       draft: baseSession.draft,
       draftContextAttachments: baseSession.draftContextAttachments,
-      composerUpdatedAt: baseSession.composerUpdatedAt,
       draftUpdatedAt: baseSession.draftUpdatedAt,
       draftAttachmentsUpdatedAt: baseSession.draftAttachmentsUpdatedAt,
       draftAttachmentAddedAt: baseSession.draftAttachmentAddedAt,
@@ -1586,7 +1471,6 @@ const rebasePreHydrationComposerInput = (
         draft: baseActiveSession.draft,
         draftContextAttachments:
           baseActiveSession.draftContextAttachments,
-        composerUpdatedAt: 0,
         draftUpdatedAt: 0,
         draftAttachmentsUpdatedAt: 0,
         draftAttachmentAddedAt: {},
@@ -1598,7 +1482,6 @@ const rebasePreHydrationComposerInput = (
         draft: localActiveSession.draft,
         draftContextAttachments:
           localActiveSession.draftContextAttachments,
-        composerUpdatedAt: localActiveSession.composerUpdatedAt,
         draftUpdatedAt: localActiveSession.draftUpdatedAt,
         draftAttachmentsUpdatedAt:
           localActiveSession.draftAttachmentsUpdatedAt,
@@ -3403,7 +3286,7 @@ export const useChatSessionShellState = (
             ...session,
             draft: nextDraft,
             updatedAt,
-            composerUpdatedAt: updatedAt,
+            draftUpdatedAt: updatedAt,
           };
         });
 

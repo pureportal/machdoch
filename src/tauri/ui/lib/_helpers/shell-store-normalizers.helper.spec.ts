@@ -12,11 +12,18 @@ describe("Ralph and marketplace store normalizers", () => {
       DEFAULT_MCP_MARKETPLACE_STATE,
     );
     expect(normalizeRalphSettings("invalid")).toBe(DEFAULT_RALPH_SETTINGS);
+    expect(normalizeMcpMarketplaceState({ registries: [] })).toBe(
+      DEFAULT_MCP_MARKETPLACE_STATE,
+    );
+    expect(normalizeRalphSettings({ workspaceRoot: "C:\\Project" })).toBe(
+      DEFAULT_RALPH_SETTINGS,
+    );
   });
 
   it("trims valid Ralph string fields and preserves allowed modes", () => {
     expect(
       normalizeRalphSettings({
+        version: 1,
         workspaceRoot: " C:\\Project ",
         flowLibraryMode: "all",
         generationProvider: "anthropic",
@@ -42,6 +49,7 @@ describe("Ralph and marketplace store normalizers", () => {
 
   it("falls back invalid Ralph unions and models to provider defaults", () => {
     const normalized = normalizeRalphSettings({
+      version: 1,
       workspaceRoot: "   ",
       flowLibraryMode: "invalid",
       generationProvider: "invalid",
@@ -67,6 +75,7 @@ describe("Ralph and marketplace store normalizers", () => {
     );
 
     const normalized = normalizeRalphSettings({
+      version: 1,
       generationPromptHistory: [
         7,
         "",
@@ -82,22 +91,26 @@ describe("Ralph and marketplace store normalizers", () => {
 
   it("floors positive defaultMaxTransitions and omits invalid values", () => {
     expect(
-      normalizeRalphSettings({ defaultMaxTransitions: 5.9 }),
+      normalizeRalphSettings({ version: 1, defaultMaxTransitions: 5.9 }),
     ).toMatchObject({
       defaultMaxTransitions: 5,
     });
 
     expect(
-      normalizeRalphSettings({ defaultMaxTransitions: 0 }),
+      normalizeRalphSettings({ version: 1, defaultMaxTransitions: 0 }),
     ).not.toHaveProperty("defaultMaxTransitions");
     expect(
-      normalizeRalphSettings({ defaultMaxTransitions: Number.POSITIVE_INFINITY }),
+      normalizeRalphSettings({
+        version: 1,
+        defaultMaxTransitions: Number.POSITIVE_INFINITY,
+      }),
     ).not.toHaveProperty("defaultMaxTransitions");
   });
 
   it("filters marketplace registries while trimming required fields", () => {
     expect(
       normalizeMcpMarketplaceState({
+        version: 1,
         registries: [
           null,
           {

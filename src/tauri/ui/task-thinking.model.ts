@@ -49,12 +49,6 @@ const TERMINAL_EXECUTION_STATE_BY_STATUS = {
   unsupported: "unsupported",
 } satisfies Record<TaskExecutionResult["status"], TaskExecutionState>;
 
-const createThinkingEntryId = (timestamp: number, index: number): string => {
-  return `thinking-${timestamp}-${index}`;
-};
-
-const THINKING_ENTRY_LIMIT = 80;
-const THINKING_ENTRY_DETAIL_LIMIT = 600;
 const STREAM_TEXT_LIMIT = 4_000;
 const ACTION_OUTPUT_LINE_LIMIT = 50;
 const ACTION_OUTPUT_LINE_LENGTH_LIMIT = 240;
@@ -63,7 +57,7 @@ const TIMELINE_DETAIL_LIMIT = 600;
 
 const getNextGeneratedIdIndex = (
   entries: readonly { id: string }[],
-  prefix: "thinking" | "timeline" | "output",
+  prefix: "timeline" | "output",
 ): number => {
   let highestIndex = entries.length - 1;
 
@@ -82,14 +76,6 @@ const getNextGeneratedIdIndex = (
 
   return highestIndex + 1;
 };
-
-export interface TaskThinkingEntry {
-  id: string;
-  label: string;
-  detail: string;
-  tone: TaskPanelTone;
-  timestamp: number;
-}
 
 export interface TaskThinkingModelStream {
   kind: "assistant" | "tool-call" | "reasoning" | "status" | "tool-result";
@@ -130,13 +116,12 @@ export interface TaskThinkingTrace {
   startedAt: number;
   lastActivityAt?: number;
   timeout?: TaskExecutionTimeoutState;
-  entries: TaskThinkingEntry[];
+  timelineEvents: TaskThinkingTimelineEvent[];
   task?: string;
   completedAt?: number;
   assistantText?: string;
   modelStream?: TaskThinkingModelStream;
   actionOutputLines?: TaskThinkingActionOutputLine[];
-  timelineEvents?: TaskThinkingTimelineEvent[];
   tokenUsage?: TaskExecutionTokenUsage;
 }
 
@@ -154,81 +139,19 @@ export const createInitialThinkingTrace = (
     mode,
     startedAt: timestamp,
     lastActivityAt: timestamp,
-    entries: [
+    timelineEvents: [
       {
-        id: createThinkingEntryId(timestamp, 0),
+        id: createTimelineEventId(timestamp, 0),
+        kind: "state",
+        phase: "started",
         label: "Starting",
         detail: "Submitting the task to the desktop runtime.",
         tone: "info",
         timestamp,
+        elapsedMs: 0,
       },
     ],
   };
-};
-
-const createThinkingEntry = (
-  label: string,
-  detail: string,
-  tone: TaskPanelTone,
-  timestamp: number,
-  index: number,
-): TaskThinkingEntry => {
-  return {
-    id: createThinkingEntryId(timestamp, index),
-    label,
-    detail: detail.slice(0, THINKING_ENTRY_DETAIL_LIMIT),
-    tone,
-    timestamp,
-  };
-};
-
-const createThinkingEntriesFromProgress = (
-  progress: TaskExecutionProgress,
-  timestamp: number,
-  startIndex: number,
-): TaskThinkingEntry[] => {
-  const entries: TaskThinkingEntry[] = [];
-  const detail = progress.message.trim();
-
-  if (detail.length > 0 && !progress.actionOutput && !progress.timelineEvent) {
-    entries.push(
-      createThinkingEntry(
-        THINKING_STATE_LABELS[progress.state],
-        detail,
-        THINKING_STATE_TONES[progress.state],
-        timestamp,
-        startIndex + entries.length,
-      ),
-    );
-  }
-
-  const reason = progress.reason?.trim();
-
-  if (reason) {
-    entries.push(
-      createThinkingEntry(
-        "Reason",
-        reason,
-        "warning",
-        timestamp,
-        startIndex + entries.length,
-      ),
-    );
-  }
-
-  if (progress.executedTools.length > 0 && !progress.timelineEvent) {
-    entries.push(
-      createThinkingEntry(
-        "Tools",
-        progress.executedTools.join(", "),
-        "info",
-        timestamp,
-        startIndex + entries.length,
-      ),
-    );
-  }
-
-  return entries;
 };
 
 const limitStreamText = (value: string): string => {
@@ -423,8 +346,8 @@ const createTimelineEvents = (
   progress: TaskExecutionProgress,
   timestamp: number,
 ): TaskThinkingTimelineEvent[] => {
-  const startedAt = trace.startedAt ?? trace.entries[0]?.timestamp ?? timestamp;
-  const existingEvents = trace.timelineEvents ?? [];
+  const startedAt = trace.startedAt;
+  const existingEvents = trace.timelineEvents;
   const candidates: TaskThinkingTimelineEvent[] = [];
   const startIndex = getNextGeneratedIdIndex(existingEvents, "timeline");
 
@@ -630,7 +553,7 @@ export const appendThinkingProgress = (
   timestamp = Date.now(),
 ): TaskThinkingTrace => {
   const nextStatus = progress.cancellable ? trace.status : "complete";
-  const startedAt = trace.startedAt ?? trace.entries[0]?.timestamp ?? timestamp;
+  const startedAt = trace.startedAt;
   const timeout = progress.timeout
     ? progress.timeout
     : trace.timeout
@@ -648,16 +571,11 @@ export const appendThinkingProgress = (
     timeout !== trace.timeout &&
     (timeout !== undefined || trace.timeout !== undefined);
   const task = progress.task.trim() || trace.task;
-  const previousTimelineEvents = trace.timelineEvents ?? [];
+  const previousTimelineEvents = trace.timelineEvents;
   const nextTimelineEvents = createTimelineEvents(trace, progress, timestamp);
   const hasTimelineChanges =
     nextTimelineEvents !== previousTimelineEvents &&
     (nextTimelineEvents.length > 0 || previousTimelineEvents.length > 0);
-  const nextEntries = createThinkingEntriesFromProgress(
-    progress,
-    timestamp,
-    getNextGeneratedIdIndex(trace.entries, "thinking"),
-  );
   const hasProgressExtras =
     progress.assistantText !== undefined ||
     progress.modelStream !== undefined ||
@@ -668,7 +586,6 @@ export const appendThinkingProgress = (
     task !== trace.task;
 
   if (
-    nextEntries.length === 0 &&
     nextStatus === trace.status &&
     !hasProgressExtras &&
     !hasActivityChange &&
@@ -676,33 +593,6 @@ export const appendThinkingProgress = (
   ) {
     return trace;
   }
-
-  const entries = [...trace.entries];
-
-  for (const nextEntry of nextEntries) {
-    const previousEntry = entries.at(-1);
-    const hasSameToolsEntry =
-      nextEntry.label === "Tools" &&
-      entries.some(
-        (entry) =>
-          entry.label === nextEntry.label && entry.detail === nextEntry.detail,
-      );
-
-    if (
-      hasSameToolsEntry ||
-      (previousEntry?.label === nextEntry.label &&
-        previousEntry.detail === nextEntry.detail)
-    ) {
-      continue;
-    }
-
-    entries.push(nextEntry);
-  }
-
-  const limitedEntries = entries.slice(-THINKING_ENTRY_LIMIT);
-  const entriesChanged =
-    limitedEntries.length !== trace.entries.length ||
-    limitedEntries.some((entry, index) => entry !== trace.entries[index]);
 
   const nextAssistantText =
     progress.assistantText !== undefined
@@ -725,41 +615,6 @@ export const appendThinkingProgress = (
   const completedAt =
     nextStatus === "complete" ? trace.completedAt ?? timestamp : trace.completedAt;
 
-  if (!entriesChanged && nextStatus === trace.status) {
-    if (
-      nextAssistantText === trace.assistantText &&
-      nextModelStream === trace.modelStream &&
-      nextActionOutputLines === trace.actionOutputLines &&
-      !hasTimelineChanges &&
-      nextTokenUsage === trace.tokenUsage &&
-      completedAt === trace.completedAt &&
-      task === trace.task &&
-      !hasActivityChange &&
-      !hasTimeoutChange
-    ) {
-      return trace;
-    }
-
-    return {
-      ...trace,
-      status: nextStatus,
-      startedAt,
-      lastActivityAt,
-      ...(timeout ? { timeout } : {}),
-      ...(task ? { task } : {}),
-      ...(completedAt !== undefined ? { completedAt } : {}),
-      ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
-      ...(nextModelStream ? { modelStream: nextModelStream } : {}),
-      ...(nextActionOutputLines.length > 0
-        ? { actionOutputLines: nextActionOutputLines }
-        : {}),
-      ...(nextTimelineEvents.length > 0
-        ? { timelineEvents: nextTimelineEvents }
-        : {}),
-      ...(nextTokenUsage ? { tokenUsage: nextTokenUsage } : {}),
-    };
-  }
-
   return {
     ...trace,
     status: nextStatus,
@@ -768,14 +623,11 @@ export const appendThinkingProgress = (
     ...(timeout ? { timeout } : {}),
     ...(task ? { task } : {}),
     ...(completedAt !== undefined ? { completedAt } : {}),
-    entries: limitedEntries,
+    timelineEvents: nextTimelineEvents,
     ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
     ...(nextModelStream ? { modelStream: nextModelStream } : {}),
     ...(nextActionOutputLines.length > 0
       ? { actionOutputLines: nextActionOutputLines }
-      : {}),
-    ...(nextTimelineEvents.length > 0
-      ? { timelineEvents: nextTimelineEvents }
       : {}),
     ...(nextTokenUsage ? { tokenUsage: nextTokenUsage } : {}),
   };

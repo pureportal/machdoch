@@ -32,6 +32,7 @@ const createPack = (
     contextAttachments: [
       {
         id: "plan",
+        source: "path",
         path: "C:\\Project\\plan.md",
         kind: "file",
         name: "plan.md",
@@ -291,12 +292,14 @@ describe("smart context packs", () => {
         contextAttachments: [
           {
             id: "prompt-file",
+            source: "path",
             path: "C:\\Project\\.machdoch\\prompts\\debug-build.prompt.md",
             kind: "file",
             name: "debug-build.prompt.md",
           },
           {
             id: "skill-file",
+            source: "path",
             path: "C:\\Project\\.machdoch\\skills\\browser\\SKILL.md",
             kind: "file",
             name: "SKILL.md",
@@ -394,6 +397,7 @@ describe("smart context packs", () => {
         contextAttachments: [
           {
             id: "app",
+            source: "path",
             path: "C:\\Project\\src\\App.tsx",
             kind: "file",
             name: "App.tsx",
@@ -407,6 +411,7 @@ describe("smart context packs", () => {
         contextAttachments: [
           {
             id: "button",
+            source: "path",
             path: "C:\\Project\\src\\ui\\button.css",
             kind: "file",
             name: "button.css",

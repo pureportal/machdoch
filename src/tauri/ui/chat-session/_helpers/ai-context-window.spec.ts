@@ -12,6 +12,7 @@ describe("createAiContextHistory", () => {
           contextAttachments: [
             {
               id: "screen-attachment",
+              source: "path",
               path: "C:\\Docs\\screen.png",
               kind: "image",
               name: "screen.png",

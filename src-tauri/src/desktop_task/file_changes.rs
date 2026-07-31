@@ -84,9 +84,9 @@ fn initialize_connection(connection: &mut Connection) -> Result<(), String> {
     if schema_version == SCHEMA_VERSION {
         return Ok(());
     }
-    if schema_version > SCHEMA_VERSION {
+    if schema_version != 0 {
         return Err(format!(
-            "file-change database schema {schema_version} is newer than supported schema {SCHEMA_VERSION}"
+            "file-change database schema {schema_version} is unsupported; recreate it with schema {SCHEMA_VERSION}"
         ));
     }
 
@@ -95,10 +95,7 @@ fn initialize_connection(connection: &mut Connection) -> Result<(), String> {
         .map_err(|error| format!("failed to begin file-change schema transaction: {error}"))?;
     transaction
         .execute_batch(
-            "DROP TABLE IF EXISTS changed_hunks;
-             DROP TABLE IF EXISTS changed_files;
-             DROP TABLE IF EXISTS change_sets;
-             CREATE TABLE change_sets (
+            "CREATE TABLE change_sets (
                id TEXT PRIMARY KEY
              ) WITHOUT ROWID;
              CREATE TABLE changed_files (
@@ -737,25 +734,23 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_downgrade_a_newer_schema() {
+    fn rejects_state_from_another_schema_version() {
         let mut connection = Connection::open_in_memory().expect("open in-memory database");
         connection
             .execute_batch(
-                "CREATE TABLE future_file_changes(value TEXT NOT NULL);
-                 INSERT INTO future_file_changes(value) VALUES ('preserved');
-                 PRAGMA user_version = 3;",
+                "CREATE TABLE old_file_changes(value TEXT NOT NULL);
+                 INSERT INTO old_file_changes(value) VALUES ('preserved');
+                 PRAGMA user_version = 1;",
             )
-            .expect("create future schema");
+            .expect("create old schema");
 
         let error = initialize_connection(&mut connection)
-            .expect_err("a newer schema must not be overwritten");
+            .expect_err("another schema version must not be overwritten");
         let preserved: String = connection
-            .query_row("SELECT value FROM future_file_changes", [], |row| {
-                row.get(0)
-            })
-            .expect("future schema data should remain intact");
+            .query_row("SELECT value FROM old_file_changes", [], |row| row.get(0))
+            .expect("old schema data should remain intact");
 
-        assert!(error.contains("newer than supported"));
+        assert!(error.contains("schema 1 is unsupported"));
         assert_eq!(preserved, "preserved");
     }
 }

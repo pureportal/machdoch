@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteShellSnapshot {
-    #[serde(default)]
     pub(super) version: u32,
     #[serde(default)]
     pub(super) captured_at: u64,

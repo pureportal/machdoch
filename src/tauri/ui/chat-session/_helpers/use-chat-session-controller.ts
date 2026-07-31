@@ -145,7 +145,6 @@ import {
   createContextAttachment,
   createContextAttachmentFromMediaAsset,
   createContextAttachmentFromReference,
-  createContextAttachmentsFromTaskBlock,
   getImageAttachmentPaths,
   isLinkContextAttachment,
   mergeContextAttachments,
@@ -291,7 +290,6 @@ const createComposerClearGuard = (
     ChatSessionRecord,
     | "draft"
     | "draftContextAttachments"
-    | "composerUpdatedAt"
     | "draftUpdatedAt"
     | "draftAttachmentsUpdatedAt"
   >,
@@ -300,15 +298,8 @@ const createComposerClearGuard = (
   contextAttachments: session.draftContextAttachments.map((attachment) => ({
     ...attachment,
   })),
-  ...(session.composerUpdatedAt !== undefined
-    ? { composerUpdatedAt: session.composerUpdatedAt }
-    : {}),
-  ...(session.draftUpdatedAt !== undefined
-    ? { draftUpdatedAt: session.draftUpdatedAt }
-    : {}),
-  ...(session.draftAttachmentsUpdatedAt !== undefined
-    ? { draftAttachmentsUpdatedAt: session.draftAttachmentsUpdatedAt }
-    : {}),
+  draftUpdatedAt: session.draftUpdatedAt,
+  draftAttachmentsUpdatedAt: session.draftAttachmentsUpdatedAt,
 });
 
 const areComposerAttachmentsEqual = (
@@ -356,10 +347,8 @@ const isComposerClearGuardCurrent = (
       session.draftContextAttachments,
       guard.contextAttachments,
     ) &&
-    (session.draftUpdatedAt ?? session.composerUpdatedAt) ===
-      (guard.draftUpdatedAt ?? guard.composerUpdatedAt) &&
-    (session.draftAttachmentsUpdatedAt ?? session.composerUpdatedAt) ===
-      (guard.draftAttachmentsUpdatedAt ?? guard.composerUpdatedAt)
+    session.draftUpdatedAt === guard.draftUpdatedAt &&
+    session.draftAttachmentsUpdatedAt === guard.draftAttachmentsUpdatedAt
   );
 };
 
@@ -881,7 +870,7 @@ export const useChatSessionController = (
         return {
           ...session,
           draft: appendTranscriptToDraft(session.draft, normalizedTranscript),
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -2823,7 +2812,10 @@ export const useChatSessionController = (
                   }
                 : {}),
               ...(shouldRestoreComposer
-                ? { composerUpdatedAt: updatedAt }
+                ? {
+                    draftUpdatedAt: updatedAt,
+                    draftAttachmentsUpdatedAt: updatedAt,
+                  }
                 : {}),
               updatedAt,
             });
@@ -3001,7 +2993,7 @@ export const useChatSessionController = (
         return {
           ...session,
           draft,
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -3032,7 +3024,7 @@ export const useChatSessionController = (
         return {
           ...session,
           draftContextAttachments,
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -3232,7 +3224,7 @@ export const useChatSessionController = (
             session.draftContextAttachments,
             attachments,
           ),
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -3298,7 +3290,7 @@ export const useChatSessionController = (
             session.draftContextAttachments,
             attachments,
           ),
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -3347,7 +3339,6 @@ export const useChatSessionController = (
             [attachment],
           ),
           draftAttachmentsUpdatedAt: updatedAt,
-          composerUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -3879,7 +3870,8 @@ export const useChatSessionController = (
               ...session,
               draft: application.draft,
               draftContextAttachments: application.contextAttachments,
-              composerUpdatedAt: now,
+              draftUpdatedAt: now,
+              draftAttachmentsUpdatedAt: now,
               updatedAt: now,
               },
               pack,
@@ -3999,12 +3991,7 @@ export const useChatSessionController = (
         return;
       }
 
-      const contextAttachments = message.contextAttachments?.length
-        ? message.contextAttachments
-        : createContextAttachmentsFromTaskBlock(
-            message.content,
-            `message-pack-context-${message.id}`,
-          );
+      const contextAttachments = message.contextAttachments ?? [];
       const name =
         prompt.replace(/\s+/gu, " ").slice(0, 48).trim() || "Context pack";
       const messageSettings = message.settings;
@@ -4081,12 +4068,9 @@ export const useChatSessionController = (
         return;
       }
 
-      const contextAttachments = message.contextAttachments?.length
-        ? message.contextAttachments.map((attachment) => ({ ...attachment }))
-        : createContextAttachmentsFromTaskBlock(
-            message.content,
-            `message-edit-context-${message.id}`,
-          );
+      const contextAttachments = (message.contextAttachments ?? []).map(
+        (attachment) => ({ ...attachment }),
+      );
       const sessionWithSettings = applySessionMessageSettings(
         sourceSession,
         settings,
@@ -4225,7 +4209,7 @@ export const useChatSessionController = (
           draftContextAttachments: session.draftContextAttachments.filter(
             (attachment) => attachment.id !== attachmentId,
           ),
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -4282,7 +4266,7 @@ export const useChatSessionController = (
         return {
           ...session,
           draftContextAttachments: [],
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -4336,7 +4320,8 @@ export const useChatSessionController = (
           ...session,
           draft: "",
           draftContextAttachments: [],
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
 
@@ -4390,7 +4375,8 @@ export const useChatSessionController = (
           draftContextAttachments: input.contextAttachments.map(
             (attachment) => ({ ...attachment }),
           ),
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -4429,7 +4415,12 @@ export const useChatSessionController = (
                 ),
               }
             : {}),
-          ...(shouldRestoreComposer ? { composerUpdatedAt: updatedAt } : {}),
+          ...(shouldRestoreComposer
+            ? {
+                draftUpdatedAt: updatedAt,
+                draftAttachmentsUpdatedAt: updatedAt,
+              }
+            : {}),
           updatedAt,
         });
       });
@@ -4472,7 +4463,8 @@ export const useChatSessionController = (
           ...session,
           draft,
           draftContextAttachments,
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -5648,7 +5640,7 @@ export const useChatSessionController = (
         return {
           ...session,
           draft,
-          composerUpdatedAt: updatedAt,
+          draftUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -5854,7 +5846,7 @@ export const useChatSessionController = (
           draftContextAttachments: session.draftContextAttachments.filter(
             (attachment) => attachment.id !== attachmentId,
           ),
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -5880,7 +5872,7 @@ export const useChatSessionController = (
         return {
           ...session,
           draftContextAttachments: [],
-          composerUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
           updatedAt,
         };
       });
@@ -5961,7 +5953,8 @@ export const useChatSessionController = (
               ...session,
               draft: application.draft,
               draftContextAttachments: application.contextAttachments,
-              composerUpdatedAt: now,
+              draftUpdatedAt: now,
+              draftAttachmentsUpdatedAt: now,
               updatedAt: now,
               },
               pack,

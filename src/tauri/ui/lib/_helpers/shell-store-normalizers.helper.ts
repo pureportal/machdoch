@@ -179,7 +179,7 @@ export const normalizeRunningTaskMessageAction = (
 };
 
 export const normalizeAppShellState = (value: unknown): AppShellState => {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || value.version !== 1) {
     return DEFAULT_APP_SHELL_STATE;
   }
 
@@ -235,7 +235,7 @@ const normalizeMarketplaceRegistrySource = (
 export const normalizeMcpMarketplaceState = (
   value: unknown,
 ): McpMarketplaceState => {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || value.version !== 1) {
     return DEFAULT_MCP_MARKETPLACE_STATE;
   }
 
@@ -272,7 +272,7 @@ const normalizeRalphFlowLibraryMode = (
 };
 
 export const normalizeRalphSettings = (value: unknown): RalphSettings => {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || value.version !== 1) {
     return DEFAULT_RALPH_SETTINGS;
   }
 
@@ -313,7 +313,7 @@ export const normalizeRalphSettings = (value: unknown): RalphSettings => {
 export const normalizeAppearanceSettings = (
   value: unknown,
 ): AppearanceSettings => {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || value.version !== 1) {
     return DEFAULT_APPEARANCE_SETTINGS;
   }
 

@@ -4,20 +4,22 @@ import {
 } from "./task-action-prompts";
 
 describe("task action prompt helpers", () => {
-  it("extracts the original objective from nested legacy continuation prompts", () => {
+  it("extracts the original objective from nested continuation prompts", () => {
     const nestedPrompt = [
-      "Continue from this previous task.",
+      "Continue the previous task.",
       "",
-      "Previous task:",
-      "Continue from this previous task.",
+      "Context:",
+      "Objective:",
+      "Continue the previous task.",
       "",
-      "Previous task:",
+      "Context:",
+      "Objective:",
       "Wie viel Uhr haben wir es?",
       "",
-      "Previous status:",
+      "Status:",
       "executed",
       "",
-      "Previous summary:",
+      "Summary:",
       "Aktuelle Uhrzeit fuer Europa/Berlin abgefragt.",
       "",
       "Use the conversation and execution details above as context, then take the next useful step.",

@@ -30,13 +30,16 @@ const createThinkingTrace = (
   mode: "machdoch",
   startedAt: 1_000,
   completedAt: 1_200,
-  entries: [
+  timelineEvents: [
     {
-      id: "thinking-1",
+      id: "timeline-1",
+      kind: "state",
+      phase: "completed",
       label: "Executing",
       detail: "Working on the task.",
       tone: "info",
       timestamp: 1_100,
+      elapsedMs: 100,
     },
   ],
   modelStream,

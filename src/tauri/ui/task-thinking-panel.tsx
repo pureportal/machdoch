@@ -195,23 +195,6 @@ const createReplayExport = (
   );
 };
 
-const createLegacyTimelineEvents = (
-  thinking: TaskThinkingTrace,
-): TaskThinkingTimelineEvent[] => {
-  const startedAt = thinking.startedAt ?? thinking.entries[0]?.timestamp ?? 0;
-
-  return thinking.entries.map((entry, index) => ({
-    id: `legacy-${entry.id}`,
-    kind: "state",
-    phase: index === thinking.entries.length - 1 ? "completed" : "started",
-    label: entry.label,
-    detail: entry.detail,
-    tone: entry.tone,
-    timestamp: entry.timestamp,
-    elapsedMs: Math.max(0, entry.timestamp - startedAt),
-  }));
-};
-
 const createUniqueRenderKeys = (
   entries: readonly { id: string }[],
 ): string[] => {
@@ -239,20 +222,13 @@ export const TaskThinkingPanel = ({
   thinking,
 }: TaskThinkingPanelProps): JSX.Element => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const entries = thinking.entries;
-  const latestEntry = entries.at(-1);
   const isRunning = thinking.status === "running";
-  const statusTone: TaskPanelTone = latestEntry?.tone ?? "neutral";
   const assistantText = thinking.assistantText?.trim();
   const modelStream = thinking.modelStream;
   const actionOutputLines = thinking.actionOutputLines ?? [];
-  const timelineEvents = useMemo(
-    () =>
-      thinking.timelineEvents && thinking.timelineEvents.length > 0
-        ? thinking.timelineEvents
-        : createLegacyTimelineEvents(thinking),
-    [thinking.entries, thinking.startedAt, thinking.timelineEvents],
-  );
+  const timelineEvents = thinking.timelineEvents;
+  const statusTone: TaskPanelTone =
+    timelineEvents.at(-1)?.tone ?? "neutral";
   const timelineEventKeys = useMemo(
     () => createUniqueRenderKeys(timelineEvents),
     [timelineEvents],
@@ -315,7 +291,7 @@ export const TaskThinkingPanel = ({
     }
 
     node.scrollTop = node.scrollHeight;
-  }, [timelineEvents.length, entries.length, activeView, isRunning]);
+  }, [timelineEvents.length, activeView, isRunning]);
 
   useEffect(() => {
     if (!isRunning) {

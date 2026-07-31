@@ -8,6 +8,8 @@ const createSession = (
   id: "session-1",
   createdAt: 1,
   updatedAt: 1,
+  draftUpdatedAt: 1,
+  draftAttachmentsUpdatedAt: 1,
   workspace: "C:/workspace",
   provider: "openai",
   model: "gpt-5.5",
@@ -53,6 +55,7 @@ describe("createTaskInterviewContextNotes", () => {
         contextAttachments: [
           {
             id: "attachment-1",
+            source: "path",
             kind: "file",
             name: "settings.tsx",
             path: "src/settings.tsx",

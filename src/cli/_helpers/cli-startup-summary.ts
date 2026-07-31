@@ -11,8 +11,7 @@ import type {
 } from "../../core/runtime-contract.generated.js";
 
 const DESKTOP_APP_IDENTIFIER = "com.machdoch.desktop";
-const DESKTOP_STORE_FILE_NAME = "machdoch-shell-state.json";
-const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
+const DESKTOP_STORE_FILE_NAME = "machdoch-shell-state.snapshot.json";
 const MAX_ACTIVE_SESSION_LINES = 8;
 const SESSION_TITLE_LIMIT = 48;
 
@@ -207,9 +206,14 @@ const normalizeRawShellState = (
     return undefined;
   }
 
-  const shellStateValue = value[SHELL_STATE_STORAGE_KEY];
+  const shellStateValue = value.state;
 
-  if (!isRecord(shellStateValue)) {
+  if (
+    !isRecord(shellStateValue) ||
+    shellStateValue.version !== 2 ||
+    !Number.isSafeInteger(value.revision) ||
+    (value.revision as number) < 0
+  ) {
     return undefined;
   }
 
@@ -476,7 +480,7 @@ export const loadDesktopShellSummary = async (
       return {
         status: "unreadable",
         storePath,
-        reason: "desktop shell state was not found in the store",
+        reason: "desktop shell-state snapshot is invalid",
       };
     }
 

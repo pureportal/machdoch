@@ -3,7 +3,6 @@ import {
   appendContextAttachmentsToTask,
   createContextAttachmentFromMediaAsset,
   createContextAttachmentFromReference,
-  createContextAttachmentsFromTaskBlock,
   getImageAttachmentMediaReferences,
   isLinkContextAttachment,
   stripContextAttachmentsTaskBlock,
@@ -30,13 +29,6 @@ describe("session context attachments", () => {
       'Review this\n\nUse this link: "https://example.com/docs/intro"',
     );
     expect(stripContextAttachmentsTaskBlock(task)).toBe("Review this");
-    expect(createContextAttachmentsFromTaskBlock(task)).toMatchObject([
-      {
-        path: "https://example.com/docs/intro",
-        kind: "other",
-        name: "example.com/docs/intro",
-      },
-    ]);
   });
 
   it("keeps Media Studio image references path-free and model-ready", () => {

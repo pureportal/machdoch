@@ -9,8 +9,7 @@ use super::{
     config::write_remote_control_config_file,
     now_millis,
     pairing::{create_secure_token, refresh_server_pairing_url},
-    RemoteControlPairedDevice, RemoteControlShared, MAX_PAIRED_DEVICES,
-    REMOTE_CONTROL_CONFIG_VERSION, WEB_SESSION_TTL_MS,
+    RemoteControlPairedDevice, RemoteControlShared, MAX_PAIRED_DEVICES, WEB_SESSION_TTL_MS,
 };
 
 pub(super) fn create_remote_web_session_token(
@@ -32,7 +31,6 @@ pub(super) fn create_remote_web_session_token(
         .config
         .paired_devices
         .push(create_paired_device(&session_token, user_agent, now));
-    inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
 
     if let Some(server) = inner.server.as_mut() {
         refresh_server_pairing_url(server, next_pairing_token)?;

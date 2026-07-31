@@ -120,15 +120,7 @@ fn load_observed_owner(path: &Path) -> Option<ObservedFileLockOwner> {
         }
     }
 
-    // Versions before the token-directory protocol wrote owner.json directly
-    // inside the canonical lock directory. Keep recognizing that layout so an
-    // abandoned lock from an older binary cannot block startup forever.
-    let raw = fs::read_to_string(owner_path(path)).ok()?;
-    let owner = serde_json::from_str::<FileLockOwner>(&raw).ok()?;
-    Some(ObservedFileLockOwner {
-        owner,
-        path: path.to_path_buf(),
-    })
+    None
 }
 
 #[cfg(windows)]
@@ -261,20 +253,14 @@ fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), 
                 let Ok(file_type) = entry.file_type() else {
                     continue;
                 };
-                let is_token_owner = file_type.is_dir() && name.starts_with(OWNER_DIRECTORY_PREFIX);
-                let is_legacy_owner = file_type.is_file() && name == OWNER_FILE_NAME;
-                if !is_token_owner && !is_legacy_owner {
+                if !file_type.is_dir() || !name.starts_with(OWNER_DIRECTORY_PREFIX) {
                     continue;
                 }
 
                 let stale_path = entry.path();
-                let metadata_path = if is_token_owner {
-                    let owner_file = owner_path(&stale_path);
-                    if owner_file.exists() {
-                        owner_file
-                    } else {
-                        stale_path.clone()
-                    }
+                let owner_file = owner_path(&stale_path);
+                let metadata_path = if owner_file.exists() {
+                    owner_file
                 } else {
                     stale_path.clone()
                 };
@@ -284,22 +270,18 @@ fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), 
 
                 let token = name
                     .strip_prefix(OWNER_DIRECTORY_PREFIX)
-                    .unwrap_or("legacy-malformed-owner");
+                    .expect("token owner prefix was checked");
                 let quarantine_path = create_quarantine_path(path, token);
                 match fs::rename(&stale_path, &quarantine_path) {
                     Ok(()) => {
-                        let cleanup = if is_token_owner {
-                            cleanup_quarantined_owner(path, &quarantine_path, runtime)
-                        } else {
-                            let _ = fs::remove_dir(path);
-                            fs::remove_file(&quarantine_path)
-                        };
-                        cleanup.map_err(|error| {
-                            format!(
+                        cleanup_quarantined_owner(path, &quarantine_path, runtime).map_err(
+                            |error| {
+                                format!(
                                 "Failed to remove malformed stale configuration lock {}: {error}",
                                 quarantine_path.display()
                             )
-                        })?;
+                            },
+                        )?;
                     }
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                     Err(error)
@@ -757,37 +739,6 @@ mod tests {
         }
 
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
-        assert!(!path.exists());
-        remove_directory_tree(&directory, &SystemLockRuntime)
-            .expect("test directory should be removable");
-    }
-
-    #[test]
-    fn recovers_a_stale_owner_from_the_legacy_flat_layout() {
-        let (destination, directory) = test_destination();
-        let path = lock_path(&destination);
-        fs::create_dir(&path).expect("legacy lock directory should be created");
-        fs::write(
-            owner_path(&path),
-            serde_json::to_vec(&FileLockOwner {
-                token: "legacy-dead-owner".to_string(),
-                pid: 2_000_000_000,
-            })
-            .expect("legacy owner should serialize"),
-        )
-        .expect("legacy owner should write");
-        let owner_file = OpenOptions::new()
-            .write(true)
-            .open(owner_path(&path))
-            .expect("legacy owner should open");
-        owner_file
-            .set_times(FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(180)))
-            .expect("legacy owner timestamp should update");
-        drop(owner_file);
-
-        with_cooperative_file_lock(&destination, || Ok(()))
-            .expect("legacy stale lock should be recovered");
-
         assert!(!path.exists());
         remove_directory_tree(&directory, &SystemLockRuntime)
             .expect("test directory should be removable");

@@ -15,10 +15,6 @@ use super::{
     MIN_REMOTE_CONTROL_PORT, REMOTE_CONTROL_CONFIG_FILE_NAME, REMOTE_CONTROL_CONFIG_VERSION,
 };
 
-pub(super) fn default_remote_control_config_version() -> u32 {
-    REMOTE_CONTROL_CONFIG_VERSION
-}
-
 pub(super) fn default_remote_control_port() -> u16 {
     DEFAULT_REMOTE_CONTROL_PORT
 }
@@ -55,11 +51,17 @@ pub(super) fn load_remote_control_config_file() -> Result<RemoteControlConfigFil
     let parsed = serde_json::from_str::<RemoteControlConfigFile>(&raw)
         .map_err(|error| format!("Failed to parse {}: {error}", config_path.display()))?;
 
-    Ok(normalize_remote_control_config(parsed))
+    normalize_remote_control_config(parsed)
 }
 
-fn normalize_remote_control_config(mut config: RemoteControlConfigFile) -> RemoteControlConfigFile {
-    config.version = REMOTE_CONTROL_CONFIG_VERSION;
+fn normalize_remote_control_config(
+    mut config: RemoteControlConfigFile,
+) -> Result<RemoteControlConfigFile, String> {
+    if config.version != REMOTE_CONTROL_CONFIG_VERSION {
+        return Err(format!(
+            "The Mission Control settings do not match schema version {REMOTE_CONTROL_CONFIG_VERSION}."
+        ));
+    }
 
     if validate_remote_control_port(config.port).is_err() {
         config.port = DEFAULT_REMOTE_CONTROL_PORT;
@@ -94,7 +96,7 @@ fn normalize_remote_control_config(mut config: RemoteControlConfigFile) -> Remot
         .pending_commands
         .truncate(super::MAX_PENDING_COMMAND_ENTRIES);
 
-    config
+    Ok(config)
 }
 
 pub(super) fn write_remote_control_config_file(
@@ -194,7 +196,7 @@ mod tests {
     fn normalize_config_resets_invalid_port_and_keeps_recent_devices_first() {
         let now = now_millis();
         let mut config = RemoteControlConfigFile {
-            version: 0,
+            version: REMOTE_CONTROL_CONFIG_VERSION,
             port: 12,
             enabled: true,
             paired_devices: vec![
@@ -239,7 +241,8 @@ mod tests {
             completed_commands: Vec::new(),
         };
 
-        config = normalize_remote_control_config(config);
+        config =
+            normalize_remote_control_config(config).expect("the current config should normalize");
 
         assert_eq!(config.version, REMOTE_CONTROL_CONFIG_VERSION);
         assert_eq!(config.port, DEFAULT_REMOTE_CONTROL_PORT);
@@ -251,6 +254,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["newer", "older"]
         );
+    }
+
+    #[test]
+    fn normalize_config_rejects_noncurrent_schema_versions() {
+        let error = normalize_remote_control_config(RemoteControlConfigFile {
+            version: 0,
+            ..RemoteControlConfigFile::default()
+        })
+        .expect_err("noncurrent config should be rejected");
+
+        assert!(error.contains("schema version 1"));
     }
 
     #[test]

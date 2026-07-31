@@ -15,8 +15,10 @@ use super::{
 pub(super) fn sanitize_shell_snapshot(
     mut snapshot: RemoteShellSnapshot,
 ) -> Result<RemoteShellSnapshot, String> {
-    if snapshot.version == 0 {
-        snapshot.version = 1;
+    if snapshot.version != 1 {
+        return Err(
+            "The Mission Control shell snapshot does not match schema version 1.".to_string(),
+        );
     }
 
     if snapshot.captured_at == 0 {

@@ -32,7 +32,6 @@ import {
 import {
   appendContextAttachmentsToTask,
   areContextAttachmentRecordsEqual,
-  createContextAttachmentsFromTaskBlock,
   createPromptHistoryUpdate,
   getImageAttachmentMediaReferences,
   getImageAttachmentPaths,
@@ -92,9 +91,8 @@ const SESSION_OPERATION_ALREADY_ACTIVE_ERROR_PREFIX =
 export interface ComposerClearGuard {
   draft: string;
   contextAttachments: ChatSessionContextAttachment[];
-  composerUpdatedAt?: number;
-  draftUpdatedAt?: number;
-  draftAttachmentsUpdatedAt?: number;
+  draftUpdatedAt: number;
+  draftAttachmentsUpdatedAt: number;
 }
 
 const areContextAttachmentsEqual = (
@@ -128,10 +126,8 @@ const isComposerClearGuardCurrent = (
       session.draftContextAttachments,
       guard.contextAttachments,
     ) &&
-    (session.draftUpdatedAt ?? session.composerUpdatedAt) ===
-      (guard.draftUpdatedAt ?? guard.composerUpdatedAt) &&
-    (session.draftAttachmentsUpdatedAt ?? session.composerUpdatedAt) ===
-      (guard.draftAttachmentsUpdatedAt ?? guard.composerUpdatedAt)
+    session.draftUpdatedAt === guard.draftUpdatedAt &&
+    session.draftAttachmentsUpdatedAt === guard.draftAttachmentsUpdatedAt
   );
 };
 
@@ -232,14 +228,9 @@ const getMessageTaskId = (message: ChatSessionMessage): string =>
 const getUserMessageContextAttachments = (
   message: ChatSessionMessage,
 ): ChatSessionContextAttachment[] => {
-  if (message.contextAttachments?.length) {
-    return message.contextAttachments.map((attachment) => ({ ...attachment }));
-  }
-
-  return createContextAttachmentsFromTaskBlock(
-    message.content,
-    `message-resubmission-context-${message.id}`,
-  );
+  return (message.contextAttachments ?? []).map((attachment) => ({
+    ...attachment,
+  }));
 };
 
 const rebuildPromptHistory = (
@@ -879,15 +870,16 @@ export const useSessionTaskSubmission = (options: {
                 return session;
               }
 
-              const composerUpdatedAt = Date.now();
+              const updatedAt = Date.now();
               return {
                 ...session,
                 draft: normalizedTask,
                 draftContextAttachments: contextAttachments.map(
                   (attachment) => ({ ...attachment }),
                 ),
-                composerUpdatedAt,
-                updatedAt: composerUpdatedAt,
+                draftUpdatedAt: updatedAt,
+                draftAttachmentsUpdatedAt: updatedAt,
+                updatedAt,
               };
             });
           }
@@ -1029,7 +1021,10 @@ export const useSessionTaskSubmission = (options: {
               ? []
               : sessionWithoutArchive.draftContextAttachments,
             ...(shouldClearComposer
-              ? { composerUpdatedAt: nextUpdatedAt }
+              ? {
+                  draftUpdatedAt: nextUpdatedAt,
+                  draftAttachmentsUpdatedAt: nextUpdatedAt,
+                }
               : {}),
             sessionMemoryEnabled: isQuickVoiceSession(sessionWithoutArchive)
               ? false
@@ -1078,7 +1073,10 @@ export const useSessionTaskSubmission = (options: {
               ? []
               : sessionSnapshot.draftContextAttachments,
             ...(submitOptions.clearDraft
-              ? { composerUpdatedAt: nextUpdatedAt }
+              ? {
+                  draftUpdatedAt: nextUpdatedAt,
+                  draftAttachmentsUpdatedAt: nextUpdatedAt,
+                }
               : {}),
             updatedAt: nextUpdatedAt,
             messages: [

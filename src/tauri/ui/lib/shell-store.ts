@@ -65,7 +65,7 @@ export type {
   ShellStateChangedPayload,
 } from "./_helpers/shell-store-storage.helper";
 
-const STORAGE_KEY = "machdoch.desktop.shell-state";
+const SHELL_STATE_WRITE_LOCK_KEY = "machdoch.desktop.shell-state-snapshot";
 const BROWSER_SHELL_SNAPSHOT_STORAGE_KEY =
   "machdoch.desktop.shell-state-snapshot";
 const BROWSER_SHELL_REVISION_STORAGE_KEY =
@@ -216,12 +216,7 @@ const loadBrowserShellStateSnapshot = async <T>(
   }
 
   return {
-    state: await loadStoredValue<T>({
-      storageKey: STORAGE_KEY,
-      fallback,
-      tauriErrorMessage: "Failed to load shell state from Tauri store",
-      localStorageErrorMessage: "Failed to load shell state from localStorage",
-    }),
+    state: fallback,
     revision: 0,
   };
 };
@@ -272,7 +267,7 @@ export const compareAndSwapShellState = async <T>(
   state: T,
 ): Promise<ShellStateCompareAndSwapResult<T>> => {
   if (canUseTauriStore()) {
-    return withStoredValueWriteLock(STORAGE_KEY, () =>
+    return withStoredValueWriteLock(SHELL_STATE_WRITE_LOCK_KEY, () =>
       invoke<ShellStateCompareAndSwapResult<T>>(
         "compare_and_swap_shell_state",
         {
@@ -321,7 +316,7 @@ export const compareAndSwapShellStatePatch = async <T>(
   browserState: T,
 ): Promise<ShellStateCompareAndSwapResult<T>> => {
   if (canUseTauriStore()) {
-    return withStoredValueWriteLock(STORAGE_KEY, () =>
+    return withStoredValueWriteLock(SHELL_STATE_WRITE_LOCK_KEY, () =>
       invoke<ShellStateCompareAndSwapResult<T>>(
         "compare_and_swap_shell_state_patch",
         {

@@ -290,7 +290,7 @@ const CopyableCodeBlock = ({ children }: { children?: ReactNode }): JSX.Element 
 
 const createExecutionThinkingTone = (
   status: TaskExecutionResult["status"],
-): TaskThinkingTrace["entries"][number]["tone"] => {
+): TaskThinkingTrace["timelineEvents"][number]["tone"] => {
   switch (status) {
     case "planned":
       return "info";
@@ -330,14 +330,14 @@ export const createExecutionThinkingTrace = (
   execution: TaskExecutionResult,
 ): TaskThinkingTrace => {
   const summaryTone = createExecutionThinkingTone(execution.status);
-  const entries: TaskThinkingTrace["entries"] = [];
+  const timelineEvents: TaskThinkingTrace["timelineEvents"] = [];
   const normalizedSummary = execution.summary.trim();
   let omittedEntryCount = 0;
 
   const appendEntry = (
     label: string,
     detail: string,
-    tone: TaskThinkingTrace["entries"][number]["tone"],
+    tone: TaskThinkingTrace["timelineEvents"][number]["tone"],
   ): void => {
     const normalizedDetail = detail.trim();
 
@@ -345,17 +345,20 @@ export const createExecutionThinkingTrace = (
       return;
     }
 
-    if (entries.length >= COMPACT_TRACE_ENTRY_LIMIT) {
+    if (timelineEvents.length >= COMPACT_TRACE_ENTRY_LIMIT) {
       omittedEntryCount += 1;
       return;
     }
 
-    entries.push({
-      id: `${execution.task}-${entries.length}`,
+    timelineEvents.push({
+      id: `${execution.task}-${timelineEvents.length}`,
+      kind: "state",
+      phase: "completed",
       label,
       detail: normalizedDetail,
       tone,
-      timestamp: entries.length,
+      timestamp: timelineEvents.length,
+      elapsedMs: timelineEvents.length,
     });
   };
 
@@ -387,8 +390,8 @@ export const createExecutionThinkingTrace = (
     });
 
   if (omittedEntryCount > 0) {
-    if (entries.length >= COMPACT_TRACE_ENTRY_LIMIT) {
-      entries.pop();
+    if (timelineEvents.length >= COMPACT_TRACE_ENTRY_LIMIT) {
+      timelineEvents.pop();
     }
 
     appendEntry(
@@ -398,23 +401,26 @@ export const createExecutionThinkingTrace = (
     );
   }
 
-  if (entries.length === 0) {
-    entries.push({
+  if (timelineEvents.length === 0) {
+    timelineEvents.push({
       id: `${execution.task}-empty`,
+      kind: "state",
+      phase: "completed",
       label: createExecutionThinkingLabel(execution.status),
       detail: "Task finished without additional execution trace details.",
       tone: summaryTone,
       timestamp: 0,
+      elapsedMs: 0,
     });
   }
 
   return {
     status: "complete",
     mode: execution.mode,
-    startedAt: entries[0]?.timestamp ?? 0,
+    startedAt: timelineEvents[0]?.timestamp ?? 0,
     task: execution.task,
-    completedAt: entries.at(-1)?.timestamp ?? 0,
-    entries,
+    completedAt: timelineEvents.at(-1)?.timestamp ?? 0,
+    timelineEvents,
   };
 };
 

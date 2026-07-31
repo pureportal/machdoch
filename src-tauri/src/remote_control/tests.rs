@@ -111,14 +111,14 @@ fn state_status_loads_default_config_when_file_is_missing() {
 }
 
 #[test]
-fn state_status_loads_stored_pairings_from_config_file() {
+fn state_status_loads_current_stored_pairings_from_config_file() {
     let directory = temp_test_directory("stored-pairings");
     fs::create_dir_all(&directory).expect("config directory should be created");
     fs::write(
         directory.join("remote-control.json"),
         format!(
             r#"{{
-  "version": 0,
+  "version": 1,
   "port": 43188,
   "enabled": false,
   "pairedDevices": [
@@ -130,7 +130,9 @@ fn state_status_loads_stored_pairings_from_config_file() {
       "lastSeenAt": 2,
       "expiresAt": {}
     }}
-  ]
+  ],
+  "pendingCommands": [],
+  "completedCommands": []
 }}
 "#,
             now_millis().saturating_add(WEB_SESSION_TTL_MS)
@@ -565,6 +567,25 @@ fn shell_snapshot_preserves_reasoning_fields_after_sanitization() {
     );
 
     drop(inner);
+    let _ = fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn noncurrent_shell_snapshot_is_rejected() {
+    let directory = temp_test_directory("shell-version");
+    let _env = use_user_config_dir(&directory);
+    let state = RemoteControlState::default();
+    let snapshot = serde_json::from_value(json!({
+        "version": 0,
+        "capturedAt": 123
+    }))
+    .expect("shell snapshot should deserialize");
+
+    let error = state
+        .update_shell_snapshot(snapshot)
+        .expect_err("noncurrent shell snapshot should be rejected");
+
+    assert!(error.contains("schema version 1"));
     let _ = fs::remove_dir_all(&directory);
 }
 

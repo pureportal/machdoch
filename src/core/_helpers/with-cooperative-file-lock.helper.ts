@@ -105,11 +105,7 @@ const loadObservedOwner = async (
     }
   }
 
-  // Versions before the token-directory protocol wrote owner.json directly
-  // inside the canonical lock directory. Keep recognizing that layout so an
-  // abandoned lock from an older binary cannot block startup forever.
-  const legacyOwner = await loadOwnerRecord(lockPath);
-  return legacyOwner ? { ...legacyOwner, ownerPath: lockPath } : null;
+  return null;
 };
 
 const isProcessAlive = (pid: number): boolean => {
@@ -214,17 +210,16 @@ const quarantineStaleLock = async (
     const entries = await readdir(lockPath, { withFileTypes: true }).catch(
       () => [],
     );
-    const malformedOwnerEntries = entries.filter((entry) =>
-      (entry.isDirectory() && entry.name.startsWith(OWNER_DIRECTORY_PREFIX)) ||
-      (entry.isFile() && entry.name === OWNER_FILE_NAME)
+    const malformedOwnerEntries = entries.filter(
+      (entry) =>
+        entry.isDirectory() &&
+        entry.name.startsWith(OWNER_DIRECTORY_PREFIX),
     );
 
     for (const entry of malformedOwnerEntries) {
       const stalePath = join(lockPath, entry.name);
       const staleMetadata = await stat(
-        entry.isDirectory()
-          ? join(stalePath, OWNER_FILE_NAME)
-          : stalePath,
+        join(stalePath, OWNER_FILE_NAME),
       ).catch(() => stat(stalePath).catch(() => null));
       if (
         !staleMetadata ||
@@ -233,9 +228,7 @@ const quarantineStaleLock = async (
         continue;
       }
 
-      const token = entry.name.startsWith(OWNER_DIRECTORY_PREFIX)
-        ? entry.name.slice(OWNER_DIRECTORY_PREFIX.length)
-        : "legacy-malformed-owner";
+      const token = entry.name.slice(OWNER_DIRECTORY_PREFIX.length);
       const quarantinePath = createQuarantinePath(lockPath, token);
       try {
         // The exact malformed owner child is the compare-and-swap target. A

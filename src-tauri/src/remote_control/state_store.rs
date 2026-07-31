@@ -3,7 +3,7 @@ use super::{
         load_remote_control_config_file, validate_remote_control_port,
         write_remote_control_config_file,
     },
-    RemoteControlConfigFile, RemoteControlInner, RemoteControlState, REMOTE_CONTROL_CONFIG_VERSION,
+    RemoteControlConfigFile, RemoteControlInner, RemoteControlState,
 };
 
 impl RemoteControlState {
@@ -59,7 +59,6 @@ fn apply_loaded_config(inner: &mut RemoteControlInner, config: RemoteControlConf
 }
 
 pub(super) fn persist_config_locked(inner: &mut RemoteControlInner) -> Result<(), String> {
-    inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
     write_remote_control_config_file(&inner.config)
 }
 
@@ -97,24 +96,5 @@ mod tests {
         assert_eq!(inner.config.port, 43190);
         assert_eq!(inner.config.paired_devices.len(), 1);
         assert_eq!(inner.config.paired_devices[0].id, "device-1");
-    }
-
-    #[test]
-    fn persist_config_locked_stamps_current_config_version() {
-        let directory = crate::remote_control::test_support::temp_test_directory("persist-config");
-        let _env = crate::remote_control::test_support::use_user_config_dir(&directory);
-        let mut inner = RemoteControlInner {
-            config: RemoteControlConfigFile {
-                version: 0,
-                ..RemoteControlConfigFile::default()
-            },
-            ..RemoteControlInner::default()
-        };
-
-        persist_config_locked(&mut inner).expect("config should persist");
-
-        assert_eq!(inner.config.version, REMOTE_CONTROL_CONFIG_VERSION);
-
-        let _ = std::fs::remove_dir_all(&directory);
     }
 }

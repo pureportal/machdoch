@@ -24,7 +24,7 @@ describe("chat input-needed placeholders", () => {
     ]);
   });
 
-  it("ignores legacy double-brace placeholders", () => {
+  it("leaves Ralph double-brace placeholders untouched", () => {
     expect(
       extractChatInputNeededPlaceholders(
         "Use {{FIRST}} before {{ second }} and then [[THIRD]].",

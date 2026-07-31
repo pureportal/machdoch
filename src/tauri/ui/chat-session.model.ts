@@ -40,7 +40,6 @@ import type { TaskPanelTone } from "./task-panel";
 import {
   appendTerminalExecutionToThinkingTrace,
   type TaskThinkingActionOutputLine,
-  type TaskThinkingEntry,
   type TaskThinkingModelStream,
   type TaskThinkingSource,
   type TaskThinkingTimelineEvent,
@@ -68,7 +67,7 @@ export type ChatSessionContextAttachmentKind =
 
 export interface ChatSessionPathContextAttachment {
   id: string;
-  source?: "path";
+  source: "path";
   path: string;
   kind: ChatSessionContextAttachmentKind;
   name: string;
@@ -87,7 +86,7 @@ export type ChatSessionContextAttachment =
 export const isPathContextAttachment = (
   attachment: ChatSessionContextAttachment,
 ): attachment is ChatSessionPathContextAttachment =>
-  attachment.source === undefined || attachment.source === "path";
+  attachment.source === "path";
 
 export const isMediaAssetContextAttachment = (
   attachment: ChatSessionContextAttachment,
@@ -137,10 +136,8 @@ export interface ChatSessionRecord {
   id: string;
   createdAt: number;
   updatedAt: number;
-  /** Legacy aggregate composer clock retained for persisted-state migration. */
-  composerUpdatedAt?: number;
-  draftUpdatedAt?: number;
-  draftAttachmentsUpdatedAt?: number;
+  draftUpdatedAt: number;
+  draftAttachmentsUpdatedAt: number;
   draftAttachmentAddedAt?: Record<string, number>;
   draftAttachmentTombstones?: Record<string, number>;
   messageTombstones?: Record<string, number>;
@@ -317,10 +314,7 @@ const THINKING_TIMELINE_EVENT_PHASES: TaskThinkingTimelineEvent["phase"][] = [
   "requested-continuation",
   "rejected",
 ];
-const THINKING_ENTRY_LIMIT = 80;
-const THINKING_ENTRY_DETAIL_LIMIT = 600;
 const THINKING_TIMELINE_EVENT_LIMIT = 120;
-const COMPLETED_THINKING_ENTRY_LIMIT = 8;
 const COMPLETED_THINKING_ACTION_OUTPUT_LINE_LIMIT = 20;
 const COMPLETED_THINKING_TIMELINE_EVENT_LIMIT = 40;
 const EXECUTION_SECTION_LIMIT = 40;
@@ -377,50 +371,10 @@ const isRunMode = (value: unknown): value is RunMode => {
 const normalizeStoredRunMode = (
   value: unknown,
   fallback: RunMode = "machdoch",
-): RunMode => {
-  if (isRunMode(value)) {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return fallback;
-  }
-
-  switch (value.toLowerCase()) {
-    case "auto":
-    case "autopilot":
-      return "machdoch";
-    case "read-only":
-    case "readonly":
-    case "safe":
-    case "plan":
-      return "ask";
-    default:
-      return fallback;
-  }
-};
+): RunMode => (isRunMode(value) ? value : fallback);
 
 const normalizeOptionalStoredRunMode = (value: unknown): RunMode | undefined => {
-  if (isRunMode(value)) {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  switch (value.toLowerCase()) {
-    case "auto":
-    case "autopilot":
-      return "machdoch";
-    case "read-only":
-    case "readonly":
-    case "safe":
-    case "plan":
-      return "ask";
-    default:
-      return undefined;
-  }
+  return isRunMode(value) ? value : undefined;
 };
 
 const normalizeOptionalStoredReasoningMode = (
@@ -812,6 +766,9 @@ const normalizeContextAttachments = (
       });
       continue;
     }
+    if (candidate.source !== "path") {
+      continue;
+    }
     const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
 
     if (!path) {
@@ -1108,19 +1065,15 @@ export const createSession = (
   const provider = overrides.provider ?? DEFAULT_PROVIDER;
   const requestedUpdatedAt = overrides.updatedAt ?? Date.now();
   const createdAt = overrides.createdAt ?? requestedUpdatedAt;
-  const legacyComposerUpdatedAt = Math.max(
-    createdAt,
-    normalizeFiniteNumber(overrides.composerUpdatedAt, requestedUpdatedAt),
-  );
   const draftUpdatedAt = Math.max(
     createdAt,
-    normalizeFiniteNumber(overrides.draftUpdatedAt, legacyComposerUpdatedAt),
+    normalizeFiniteNumber(overrides.draftUpdatedAt, requestedUpdatedAt),
   );
   const draftAttachmentsUpdatedAt = Math.max(
     createdAt,
     normalizeFiniteNumber(
       overrides.draftAttachmentsUpdatedAt,
-      legacyComposerUpdatedAt,
+      requestedUpdatedAt,
     ),
   );
   const draftContextAttachments = overrides.draftContextAttachments ?? [];
@@ -1140,14 +1093,13 @@ export const createSession = (
   const messageTombstones = normalizeTimestampRecord(
     overrides.messageTombstones,
   );
-  const composerUpdatedAt = Math.max(
-    legacyComposerUpdatedAt,
+  const now = Math.max(
+    requestedUpdatedAt,
     draftUpdatedAt,
     draftAttachmentsUpdatedAt,
     ...Object.values(draftAttachmentAddedAt),
     ...Object.values(draftAttachmentTombstones),
   );
-  const now = Math.max(requestedUpdatedAt, composerUpdatedAt);
   const historyClearedAt = normalizeOptionalFiniteNumber(
     overrides.historyClearedAt,
   );
@@ -1162,7 +1114,6 @@ export const createSession = (
     id: overrides.id ?? crypto.randomUUID(),
     createdAt,
     updatedAt: now,
-    composerUpdatedAt,
     draftUpdatedAt,
     draftAttachmentsUpdatedAt,
     draftAttachmentAddedAt,
@@ -1864,26 +1815,6 @@ const normalizeTaskExecutionResult = (
   };
 };
 
-const normalizeThinkingEntry = (
-  value: unknown,
-  index: number,
-): TaskThinkingEntry | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  return {
-    id: normalizeString(value.id, `thinking-entry-${index}`),
-    label: normalizeString(value.label, "Progress"),
-    detail: normalizeString(value.detail).slice(
-      0,
-      THINKING_ENTRY_DETAIL_LIMIT,
-    ),
-    tone: isTaskPanelTone(value.tone) ? value.tone : "info",
-    timestamp: normalizeFiniteNumber(value.timestamp, index),
-  };
-};
-
 const normalizeThinkingModelStream = (
   value: unknown,
 ): TaskThinkingModelStream | undefined => {
@@ -2057,12 +1988,6 @@ const normalizeThinkingTrace = (
     THINKING_STATUSES.includes(value.status as TaskThinkingTrace["status"])
       ? (value.status as TaskThinkingTrace["status"])
       : "complete";
-  const entries = Array.isArray(value.entries)
-    ? value.entries
-        .map(normalizeThinkingEntry)
-        .filter((entry): entry is TaskThinkingEntry => entry !== undefined)
-        .slice(-THINKING_ENTRY_LIMIT)
-    : [];
   const modelStream = normalizeThinkingModelStream(value.modelStream);
   const actionOutputLines = normalizeThinkingActionOutputLines(
     value.actionOutputLines,
@@ -2071,7 +1996,7 @@ const normalizeThinkingTrace = (
   const tokenUsage = normalizeThinkingTokenUsage(value.tokenUsage);
   const startedAt = normalizeFiniteNumber(
     value.startedAt,
-    entries[0]?.timestamp ?? 0,
+    timelineEvents[0]?.timestamp ?? 0,
   );
   const lastActivityAt = normalizeOptionalFiniteNumber(value.lastActivityAt);
   const timeout = normalizeTaskExecutionTimeoutState(value.timeout);
@@ -2085,10 +2010,10 @@ const normalizeThinkingTrace = (
       ? { lastActivityAt: Math.max(startedAt, lastActivityAt) }
       : {}),
     ...(timeout ? { timeout } : {}),
-    entries:
+    timelineEvents:
       status === "complete"
-        ? entries.slice(-COMPLETED_THINKING_ENTRY_LIMIT)
-        : entries,
+        ? timelineEvents.slice(-COMPLETED_THINKING_TIMELINE_EVENT_LIMIT)
+        : timelineEvents,
     ...(normalizeChatSessionOptionalString(value.task)
       ? { task: normalizeChatSessionOptionalString(value.task) }
       : {}),
@@ -2105,16 +2030,6 @@ const normalizeThinkingTrace = (
                   -COMPLETED_THINKING_ACTION_OUTPUT_LINE_LIMIT,
                 )
               : actionOutputLines,
-        }
-      : {}),
-    ...(timelineEvents.length > 0
-      ? {
-          timelineEvents:
-            status === "complete"
-              ? timelineEvents.slice(
-                  -COMPLETED_THINKING_TIMELINE_EVENT_LIMIT,
-                )
-              : timelineEvents,
         }
       : {}),
     ...(tokenUsage ? { tokenUsage } : {}),
@@ -2246,8 +2161,7 @@ const getExecutionTraceCompletionTimestamp = (
 ): number => {
   return Math.max(
     thinking.startedAt,
-    thinking.entries.at(-1)?.timestamp ?? thinking.startedAt,
-    thinking.timelineEvents?.at(-1)?.timestamp ?? thinking.startedAt,
+    thinking.timelineEvents.at(-1)?.timestamp ?? thinking.startedAt,
     thinking.completedAt ?? thinking.startedAt,
     message.createdAt ?? thinking.startedAt,
   );
@@ -2470,9 +2384,13 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.createdAt === "number" ? session.createdAt : undefined,
     updatedAt:
       typeof session.updatedAt === "number" ? session.updatedAt : undefined,
-    composerUpdatedAt:
-      typeof session.composerUpdatedAt === "number"
-        ? session.composerUpdatedAt
+    draftUpdatedAt:
+      typeof session.draftUpdatedAt === "number"
+        ? session.draftUpdatedAt
+        : session.updatedAt,
+    draftAttachmentsUpdatedAt:
+      typeof session.draftAttachmentsUpdatedAt === "number"
+        ? session.draftAttachmentsUpdatedAt
         : session.updatedAt,
     lastReadAt:
       typeof session.lastReadAt === "number"
@@ -2503,9 +2421,8 @@ const getSessionNormalizationTimestamp = (
 ): number => {
   let timestamp = Math.max(
     session.updatedAt,
-    session.composerUpdatedAt ?? 0,
-    session.draftUpdatedAt ?? 0,
-    session.draftAttachmentsUpdatedAt ?? 0,
+    session.draftUpdatedAt,
+    session.draftAttachmentsUpdatedAt,
     session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
@@ -2530,7 +2447,6 @@ const normalizeQueuedSessionMessages = (
 
   const sessionIds = new Set(sessions.map((session) => session.id));
   const seenMessageIds = new Set<string>();
-  const nextLegacyOrderRankBySession = new Map<string, number>();
   const queuedMessages: ChatSessionQueuedMessage[] = [];
 
   for (const [index, entry] of value.entries()) {
@@ -2574,34 +2490,40 @@ const normalizeQueuedSessionMessages = (
       createdAt,
       normalizeFiniteNumber(entry.updatedAt, createdAt),
     );
-    const legacyOrderRank = nextLegacyOrderRankBySession.get(sessionId) ?? 0;
-    const orderRank = normalizeOptionalFiniteNumber(entry.orderRank) ??
-      legacyOrderRank;
-    const orderUpdatedAt =
-      normalizeOptionalFiniteNumber(entry.orderUpdatedAt) ?? updatedAt;
-    const contentUpdatedAt =
-      normalizeOptionalFiniteNumber(entry.contentUpdatedAt) ?? updatedAt;
-    const attachmentsUpdatedAt =
-      normalizeOptionalFiniteNumber(entry.attachmentsUpdatedAt) ?? updatedAt;
-    const blockerUpdatedAt =
-      normalizeOptionalFiniteNumber(entry.blockerUpdatedAt) ?? updatedAt;
-    const attachmentTombstones = isRecord(entry.attachmentTombstones)
-      ? Object.fromEntries(
-          Object.entries(entry.attachmentTombstones)
-            .flatMap(([attachmentId, deletedAt]) => {
-              const normalizedId = attachmentId.trim();
-              const normalizedDeletedAt =
-                normalizeOptionalFiniteNumber(deletedAt);
+    const orderRank = normalizeOptionalFiniteNumber(entry.orderRank);
+    const orderUpdatedAt = normalizeOptionalFiniteNumber(entry.orderUpdatedAt);
+    const contentUpdatedAt = normalizeOptionalFiniteNumber(
+      entry.contentUpdatedAt,
+    );
+    const attachmentsUpdatedAt = normalizeOptionalFiniteNumber(
+      entry.attachmentsUpdatedAt,
+    );
+    const blockerUpdatedAt = normalizeOptionalFiniteNumber(
+      entry.blockerUpdatedAt,
+    );
+    if (
+      orderRank === undefined ||
+      orderUpdatedAt === undefined ||
+      contentUpdatedAt === undefined ||
+      attachmentsUpdatedAt === undefined ||
+      blockerUpdatedAt === undefined ||
+      !isRecord(entry.attachmentTombstones)
+    ) {
+      continue;
+    }
+    const attachmentTombstones = Object.fromEntries(
+      Object.entries(entry.attachmentTombstones)
+        .flatMap(([attachmentId, deletedAt]) => {
+          const normalizedId = attachmentId.trim();
+          const normalizedDeletedAt = normalizeOptionalFiniteNumber(deletedAt);
 
-              return normalizedId && normalizedDeletedAt !== undefined
-                ? [[normalizedId, normalizedDeletedAt] as const]
-                : [];
-            })
-            .sort((left, right) => right[1] - left[1])
-            .slice(0, 512),
-        )
-      : {};
-    nextLegacyOrderRankBySession.set(sessionId, legacyOrderRank + 1);
+          return normalizedId && normalizedDeletedAt !== undefined
+            ? [[normalizedId, normalizedDeletedAt] as const]
+            : [];
+        })
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 512),
+    );
 
     queuedMessages.push({
       id,
@@ -2635,7 +2557,7 @@ const normalizeQueuedSessionMessages = (
 export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const fallback = createInitialShellState();
 
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value) || value.version !== 2) {
     return fallback;
   }
 

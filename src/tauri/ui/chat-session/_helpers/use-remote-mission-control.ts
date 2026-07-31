@@ -175,7 +175,7 @@ const createMessageSourceSnapshot = (
       summary: source.execution.summary,
       mode: source.execution.mode,
       entries: thinking
-        ? thinking.entries.slice(-24).map((entry) => ({
+        ? thinking.timelineEvents.slice(-24).map((entry) => ({
             label: entry.label,
             detail: entry.detail,
             tone: entry.tone,
@@ -223,13 +223,13 @@ const createMessageSourceSnapshot = (
         ? { summary: source.thinking.assistantText }
         : {}),
       mode: source.thinking.mode,
-      entries: source.thinking.entries.slice(-24).map((entry) => ({
+      entries: source.thinking.timelineEvents.slice(-24).map((entry) => ({
         label: entry.label,
         detail: entry.detail,
         tone: entry.tone,
         timestamp: entry.timestamp,
       })),
-      timeline: (source.thinking.timelineEvents ?? []).slice(-40).map((entry) => ({
+      timeline: source.thinking.timelineEvents.slice(-40).map((entry) => ({
         label: entry.label,
         detail: entry.detail,
         tone: entry.tone,

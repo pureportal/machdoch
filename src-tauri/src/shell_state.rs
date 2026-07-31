@@ -6,17 +6,13 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tauri::{path::BaseDirectory, AppHandle, Manager, Runtime};
-use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
 use crate::cooperative_file_lock::with_cooperative_file_lock;
 
-const STORE_FILE: &str = "machdoch-shell-state.json";
 const SNAPSHOT_FILE: &str = "machdoch-shell-state.snapshot.json";
 const SNAPSHOT_REVISION_FILE: &str = "machdoch-shell-state.snapshot.revision";
-const SHELL_STATE_STORAGE_KEY: &str = "machdoch.desktop.shell-state";
-const SHELL_STATE_REVISION_KEY: &str = "machdoch.desktop.shell-state-revision";
 const TOMBSTONES_KEY: &str = "__machdochTombstones";
 const MAX_TOMBSTONES_PER_KIND: usize = 50_000;
 const CHAT_VOICE_OWNED_SHELL_KEYS: [&str; 7] = [
@@ -161,10 +157,6 @@ fn load_cached_snapshot_blocking<R: Runtime>(
     let snapshot = with_cooperative_file_lock(&path, || load_snapshot(app_handle, fallback))?;
     *cache = Some(snapshot.clone());
     Ok(snapshot)
-}
-
-fn read_revision(value: Option<Value>) -> u64 {
-    value.and_then(|entry| entry.as_u64()).unwrap_or(0)
 }
 
 fn collect_ids(state: &Value, field: &str) -> HashSet<String> {
@@ -657,16 +649,9 @@ fn load_snapshot<R: Runtime>(
         });
     }
 
-    // One-time migration from the previous plugin-store representation. The
-    // dedicated snapshot file is used for every later compare-and-swap so a
-    // failed store save cannot expose an uncommitted cache mutation.
-    let store = app_handle
-        .store(STORE_FILE)
-        .map_err(|error| format!("Failed to open the legacy shell-state store: {error}"))?;
-
     Ok(ShellStateSnapshot {
-        state: store.get(SHELL_STATE_STORAGE_KEY).unwrap_or(fallback),
-        revision: read_revision(store.get(SHELL_STATE_REVISION_KEY)),
+        state: fallback,
+        revision: 0,
     })
 }
 
@@ -702,24 +687,7 @@ fn persist_snapshot<R: Runtime>(
     })?;
 
     persist_snapshot_revision(app_handle, snapshot.revision)?;
-    let _ = remove_migrated_legacy_shell_state(app_handle);
     Ok(())
-}
-
-fn remove_migrated_legacy_shell_state<R: Runtime>(app_handle: &AppHandle<R>) -> Result<(), String> {
-    let store = app_handle
-        .store(STORE_FILE)
-        .map_err(|error| format!("Failed to open the legacy shell-state store: {error}"))?;
-
-    if !store.has(SHELL_STATE_STORAGE_KEY) && !store.has(SHELL_STATE_REVISION_KEY) {
-        return Ok(());
-    }
-
-    store.delete(SHELL_STATE_STORAGE_KEY);
-    store.delete(SHELL_STATE_REVISION_KEY);
-    store
-        .save()
-        .map_err(|error| format!("Failed to compact the legacy shell-state store: {error}"))
 }
 
 /// Reads the authoritative shell state from a settings-transfer worker thread.
@@ -883,10 +851,9 @@ async fn commit_state_change(
     expected_revision: u64,
     prepare_requested: impl FnOnce(&Value) -> Value + Send + 'static,
 ) -> Result<ShellStateCompareAndSwapResponse, String> {
-    // Before the first dedicated snapshot is persisted, the cache may contain
-    // the frontend fallback returned by load_shell_state_snapshot. Preserve
-    // that state only as the no-file fallback; load_snapshot still prefers an
-    // authoritative snapshot or the legacy store when either exists.
+    // Before the first snapshot is persisted, the cache may contain the
+    // frontend fallback returned by load_shell_state_snapshot. Preserve that
+    // state as the no-file fallback.
     let fallback = cache
         .as_ref()
         .map(|snapshot| snapshot.state.clone())
@@ -919,8 +886,8 @@ mod tests {
     use super::{
         apply_shell_state_patch, capture_chat_voice_owned_fields, commit_snapshot_with_lock,
         prepare_chat_voice_owned_fields_restore, prepare_chat_voice_preference_replacement,
-        prepare_context_pack_replacement, prepare_next_state, read_revision,
-        ShellStatePatchRequest, ShellStateSnapshot, TOMBSTONES_KEY,
+        prepare_context_pack_replacement, prepare_next_state, ShellStatePatchRequest,
+        ShellStateSnapshot, TOMBSTONES_KEY,
     };
     use serde_json::json;
     use std::{
@@ -962,13 +929,6 @@ mod tests {
             crate::atomic_file::AtomicWriteOptions::with_unix_mode(0o600),
         )
         .map_err(|error| error.to_string())
-    }
-
-    #[test]
-    fn revisions_default_to_zero_and_accept_unsigned_numbers() {
-        assert_eq!(read_revision(None), 0);
-        assert_eq!(read_revision(Some(json!("invalid"))), 0);
-        assert_eq!(read_revision(Some(json!(42))), 42);
     }
 
     #[test]

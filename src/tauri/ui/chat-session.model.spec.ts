@@ -22,7 +22,7 @@ import { createInitialThinkingTrace } from "./task-thinking.model";
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 describe("normalizeTaskExecutionFileChange", () => {
-  it("rejects the removed legacy file-change shape", () => {
+  it("rejects the unsupported file-change shape", () => {
     expect(
       normalizeTaskExecutionFileChange({
         path: "src/source.ts",
@@ -37,6 +37,7 @@ describe("normalizeTaskExecutionFileChange", () => {
 describe("normalizeShellState", () => {
   it("preserves the active timeout state across session restoration", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "timeout-session",
       sessions: [
         {
@@ -86,6 +87,7 @@ describe("normalizeShellState", () => {
 
   it("repairs duplicate persisted message ids without dropping either message", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "duplicate-message-session",
       sessions: [
         {
@@ -115,6 +117,7 @@ describe("normalizeShellState", () => {
 
   it("repairs invalid persisted sessions while preserving valid overrides", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "session-1",
       sessions: [
         null,
@@ -122,7 +125,7 @@ describe("normalizeShellState", () => {
           id: "session-1",
           provider: "invalid",
           model: "",
-          mode: "auto",
+          mode: "machdoch",
           draft: 12,
           workspace: 42,
           promptHistory: ["first", 7, "second"],
@@ -133,7 +136,7 @@ describe("normalizeShellState", () => {
           updatedAt: 456,
         },
       ],
-      lastSelectedMode: "auto",
+      lastSelectedMode: "machdoch",
       lastSelectedProvider: "invalid",
       lastSelectedModelByProvider: {
         openai: "gpt-custom",
@@ -180,6 +183,7 @@ describe("normalizeShellState", () => {
 
   it("preserves persisted Codex CLI model selections", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "codex-session",
       sessions: [
         {
@@ -254,10 +258,11 @@ describe("normalizeShellState", () => {
 
   it("repairs persisted execution contract data", () => {
     const normalized = normalizeShellState({
-      activeSessionId: "legacy-session",
+      version: 2,
+      activeSessionId: "execution-session",
       sessions: [
         {
-          id: "legacy-session",
+          id: "execution-session",
           provider: "openai",
           model: "gpt-5.5",
           workspace: null,
@@ -265,14 +270,14 @@ describe("normalizeShellState", () => {
           updatedAt: 2,
           messages: [
             {
-              id: "legacy-execution",
+              id: "execution-result",
               role: "agent",
-              content: "legacy result",
+              content: "execution result",
               source: {
                 kind: "execution",
                 execution: {
-                  task: "legacy execution",
-                  mode: "safe",
+                  task: "execution",
+                  mode: "ask",
                   status: "executed",
                   metadata: {
                     instructionResolutionId: "resolution-1",
@@ -443,6 +448,7 @@ describe("normalizeShellState", () => {
 
   it("preserves valid sent-message context attachments", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "attachment-session",
       sessions: [
         {
@@ -460,12 +466,14 @@ describe("normalizeShellState", () => {
               contextAttachments: [
                 {
                   id: "screen-attachment",
+                  source: "path",
                   path: "C:\\Docs\\screen.png",
                   kind: "image",
                   name: "screen.png",
                   parent: "C:\\Docs",
                 },
                 {
+                  source: "path",
                   path: "",
                   kind: "file",
                   name: "invalid.txt",
@@ -497,6 +505,7 @@ describe("normalizeShellState", () => {
 
   it("preserves the composer settings used by a sent message", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "message-settings-session",
       sessions: [
         {
@@ -543,7 +552,7 @@ describe("normalizeShellState", () => {
     });
   });
 
-  it("migrates durable Media Studio attachments without inventing paths", () => {
+  it("rejects shell state from an older schema version", () => {
     const normalized = normalizeShellState({
       version: 1,
       activeSessionId: "media-attachment-session",
@@ -573,22 +582,16 @@ describe("normalizeShellState", () => {
     });
 
     expect(normalized.version).toBe(2);
-    expect(normalized.sessions[0]?.draftContextAttachments).toEqual([
-      {
-        id: "media-attachment",
-        source: "media-asset",
-        workspaceRoot: "C:\\Project",
-        assetId: "asset:approved-image",
-        kind: "image",
-        name: "Approved cutout",
-        displayName: "Approved cutout",
-        rendition: "original",
-      },
-    ]);
+    expect(
+      normalized.sessions.some(
+        (session) => session.id === "media-attachment-session",
+      ),
+    ).toBe(false);
   });
 
   it("repairs persisted context packs", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "pack-session",
       sessions: [
         {
@@ -610,7 +613,7 @@ describe("normalizeShellState", () => {
           prompt: " Review staged changes. ",
           provider: "invalid",
           model: "gpt-5.5",
-          mode: "auto",
+          mode: "invalid",
           createdAt: -1,
           updatedAt: 12,
           lastUsedAt: 18,
@@ -632,11 +635,13 @@ describe("normalizeShellState", () => {
           },
           contextAttachments: [
             {
+              source: "path",
               path: "C:\\Project\\plan.md",
               kind: "file",
               name: "",
             },
             {
+              source: "path",
               path: "",
               kind: "file",
               name: "invalid.md",
@@ -653,7 +658,6 @@ describe("normalizeShellState", () => {
         name: "Review PR",
         instructions: "Focus on regressions.",
         prompt: "Review staged changes.",
-        mode: "machdoch",
         createdAt: 0,
         updatedAt: 12,
         lastUsedAt: 18,
@@ -682,6 +686,7 @@ describe("normalizeShellState", () => {
       },
     ]);
     expect(normalized.contextPacks[0]?.provider).toBeUndefined();
+    expect(normalized.contextPacks[0]?.mode).toBeUndefined();
     expect(normalized.contextPacks[0]?.model).toBeUndefined();
     expect(normalized.contextPacks[0]?.promptEnhancementMode).toBeUndefined();
     expect(normalized.contextPacks[0]?.interviewEnabled).toBeUndefined();
@@ -692,6 +697,7 @@ describe("normalizeShellState", () => {
 
   it("preserves explicit context pack setting overrides", () => {
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "pack-settings-session",
       sessions: [
         {
@@ -742,6 +748,7 @@ describe("normalizeShellState", () => {
   it("bounds persisted message count, message text, and prompt history", () => {
     const oversizedContent = "x".repeat(140_000);
     const normalized = normalizeShellState({
+      version: 2,
       activeSessionId: "bounded-session",
       sessions: [
         {
