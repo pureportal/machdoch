@@ -34,6 +34,7 @@ export const RALPH_UTILITY_TYPES = [
   "LOOP_COUNTER",
   "PROMPT_JSON",
   "VALIDATOR_JSON",
+  "ASSESS_JSON_TASKS",
   "SELECT_JSON_TASK",
   "MARK_JSON_TASK",
   "CHANGE_SCOPE_GUARD",
@@ -97,8 +98,8 @@ const coerceNumberArray = (value: unknown): number[] | undefined => {
     return undefined;
   }
 
-  const numbers = value.filter(
-    (entry): entry is number => Number.isInteger(entry),
+  const numbers = value.filter((entry): entry is number =>
+    Number.isInteger(entry),
   );
 
   return numbers.length > 0 ? numbers : undefined;
@@ -239,7 +240,9 @@ const coerceUiAnalyzeServer = (
 
   return {
     ...(mode ? { mode } : {}),
-    ...(typeof value.healthUrl === "string" ? { healthUrl: value.healthUrl } : {}),
+    ...(typeof value.healthUrl === "string"
+      ? { healthUrl: value.healthUrl }
+      : {}),
     ...(typeof value.command === "string" ? { command: value.command } : {}),
     ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
     ...(typeof value.reuseExisting === "boolean"
@@ -260,8 +263,10 @@ const coerceUiAnalyzeViewports = (
       return [];
     }
 
-    const width = typeof entry.width === "number" ? Math.trunc(entry.width) : NaN;
-    const height = typeof entry.height === "number" ? Math.trunc(entry.height) : NaN;
+    const width =
+      typeof entry.width === "number" ? Math.trunc(entry.width) : NaN;
+    const height =
+      typeof entry.height === "number" ? Math.trunc(entry.height) : NaN;
 
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
       return [];
@@ -304,16 +309,16 @@ const coerceUiAnalyzeChecks = (
   return Object.keys(checks).length > 0 ? checks : undefined;
 };
 
-const coerceUtilityEncoding = (
-  value: unknown,
-): BufferEncoding | undefined => {
+const coerceUtilityEncoding = (value: unknown): BufferEncoding | undefined => {
   return value === "utf8" ||
     value === "utf-8" ||
     value === "base64" ||
     value === "hex" ||
     value === "latin1" ||
     value === "ascii"
-    ? (value === "utf-8" ? "utf8" : value)
+    ? value === "utf-8"
+      ? "utf8"
+      : value
     : undefined;
 };
 
@@ -410,7 +415,9 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.registryPath === "string"
       ? { registryPath: record.registryPath }
       : {}),
-    ...(typeof record.jsonPath === "string" ? { jsonPath: record.jsonPath } : {}),
+    ...(typeof record.jsonPath === "string"
+      ? { jsonPath: record.jsonPath }
+      : {}),
     ...(rootPath ? { rootPath } : {}),
     ...(typeof record.content === "string" ? { content: record.content } : {}),
     ...(typeof record.append === "boolean" ? { append: record.append } : {}),
@@ -437,7 +444,9 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.includeMarkdown === "boolean"
       ? { includeMarkdown: record.includeMarkdown }
       : {}),
-    ...(typeof record.forceNew === "boolean" ? { forceNew: record.forceNew } : {}),
+    ...(typeof record.forceNew === "boolean"
+      ? { forceNew: record.forceNew }
+      : {}),
     ...(typeof record.reset === "boolean" ? { reset: record.reset } : {}),
     ...(typeof record.enforce === "boolean" ? { enforce: record.enforce } : {}),
     ...(jsonPatchMode ? { jsonPatchMode } : {}),
@@ -451,6 +460,17 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.fallbackCommand === "string"
       ? { fallbackCommand: record.fallbackCommand }
       : {}),
+    ...(record.verificationRole === "baseline" ||
+    record.verificationRole === "candidate" ||
+    record.verificationRole === "supplemental"
+      ? { verificationRole: record.verificationRole }
+      : {}),
+    ...(typeof record.baselineBlockId === "string"
+      ? { baselineBlockId: record.baselineBlockId }
+      : {}),
+    ...(typeof record.verificationPlanId === "string"
+      ? { verificationPlanId: record.verificationPlanId }
+      : {}),
     ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
     ...(env ? { env } : {}),
     ...(adapter ? { adapter } : {}),
@@ -463,7 +483,9 @@ export const coerceRalphUtilityConfig = (
     ...(server ? { server } : {}),
     ...(viewports ? { viewports } : {}),
     ...(checks ? { checks } : {}),
-    ...(typeof record.fullPage === "boolean" ? { fullPage: record.fullPage } : {}),
+    ...(typeof record.fullPage === "boolean"
+      ? { fullPage: record.fullPage }
+      : {}),
     ...(waitUntil ? { waitUntil } : {}),
     ...(typeof record.mcpServerId === "string"
       ? { mcpServerId: record.mcpServerId }
@@ -484,7 +506,9 @@ export const coerceRalphUtilityConfig = (
       : {}),
     ...(typeof record.value === "string" ? { value: record.value } : {}),
     ...(typeof record.input === "string" ? { input: record.input } : {}),
-    ...(typeof record.baseline === "string" ? { baseline: record.baseline } : {}),
+    ...(typeof record.baseline === "string"
+      ? { baseline: record.baseline }
+      : {}),
     ...(typeof record.expression === "string"
       ? { expression: record.expression }
       : {}),

@@ -2,16 +2,15 @@
 
 ## Goal
 
-Replace the current linear Ralph template implementation with a graph-based self-executing prompt flow system. A Ralph flow is a saved, editable flow chart where prompt, validator, decision, pack, start, and end blocks are connected by rule-labeled edges. The runner executes blocks autonomously with model, workspace, file, web, memory, attachment, retry, and variable support per block.
-
-Ralph is not currently in production use, so the existing linear template model can be removed instead of migrated.
+Define Ralph as a graph-based self-executing prompt flow system. A Ralph flow is a saved, editable flow chart where prompt, validator, decision, pack, start, and end blocks are connected by rule-labeled edges. The runner executes blocks autonomously with model, workspace, file, web, memory, attachment, retry, and variable support per block.
 
 ## Product Principles
 
 - Ralph flows run inside machdoch and default to the active chat workspace.
 - Ralph should be able to execute without human approval. Manual stop is always available.
 - Normal chat ask mode remains separate. Ralph runs use machdoch execution mode.
-- Flows may loop indefinitely at graph level. Individual block execution has retry controls.
+- Flows may contain graph cycles, but autonomy execution is bounded by
+  transition, recovery, stagnation, and repeated-cycle controls.
 - Users can build flows manually, generate complete flows, generate single prompt blocks, or ask AI to refactor/improve existing flows.
 - AI edits mutate the current flow directly in "Do it" mode and create restorable revisions.
 - "Interview" mode asks clarifying questions first and applies changes only after the interview is complete.
@@ -22,7 +21,12 @@ Use filesystem-backed JSON artifacts:
 
 ```text
 .machdoch/ralph/flows/<flow-id>.json
-.machdoch/ralph/runs/<run-id>.json
+.machdoch/ralph/runs/.workspace-writer.ralph.lock
+.machdoch/ralph/runs/<run-id>/run.json
+.machdoch/ralph/runs/<run-id>/checkpoints/*.json
+.machdoch/ralph/runs/<run-id>/journal.jsonl
+.machdoch/ralph/runs/<run-id>/run-lease.json
+.machdoch/ralph/runs/<run-id>/autonomy-evidence.json
 .machdoch/ralph/revisions/<flow-id>/<revision-id>.json
 ```
 
@@ -36,14 +40,14 @@ Each flow has exactly one `START` block and any number of `END` blocks. Blocks a
 
 ### Block Types
 
-| Type | Purpose | Default outputs |
-| --- | --- | --- |
-| `START` | Entry point. Only one per flow. | `SUCCESS` |
-| `PROMPT` | Runs a normal agent prompt. No required decision marker. | `SUCCESS`, `ERROR` |
-| `VALIDATOR` | Evaluates prior work or a configured scope. Must return a decision marker. | `DONE`, `CONTINUE`, `RETRY`, `ERROR` |
-| `DECISION` | AI classifier/router. Initially supports configured labels such as `YES` and `NO`. | configured labels, `ERROR` |
-| `PACK` | Injects an existing context pack into downstream execution. | `SUCCESS`, `ERROR` |
-| `END` | Terminal status node. Multiple end blocks are allowed. | none |
+| Type        | Purpose                                                                            | Default outputs                      |
+| ----------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
+| `START`     | Entry point. Only one per flow.                                                    | `SUCCESS`                            |
+| `PROMPT`    | Runs a normal agent prompt. No required decision marker.                           | `SUCCESS`, `ERROR`                   |
+| `VALIDATOR` | Evaluates prior work or a configured scope. Must return a decision marker.         | `DONE`, `CONTINUE`, `RETRY`, `ERROR` |
+| `DECISION`  | AI classifier/router. Initially supports configured labels such as `YES` and `NO`. | configured labels, `ERROR`           |
+| `PACK`      | Injects an existing context pack into downstream execution.                        | `SUCCESS`, `ERROR`                   |
+| `END`       | Terminal status node. Multiple end blocks are allowed.                             | none                                 |
 
 Validator blocks use fixed decisions for now. Custom decision labels are reserved for `DECISION` blocks and possible future extensibility.
 
@@ -58,7 +62,15 @@ Validator blocks use fixed decisions for now. Custom decision labels are reserve
 - `DECISION` outputs must be connected explicitly when the label is possible. Missing labels are warnings and crash at runtime if returned.
 - `PACK.SUCCESS` continues to the next block. `PACK.ERROR` follows the error retry behavior.
 
-`BLOCKED` is not a normal flow decision. Runtime or guardrail failures are represented as `ERROR`.
+`BLOCKED` is not a normal block decision. Runtime or guardrail failures are
+represented as `ERROR`, while the run-level semantic outcome can be `blocked`,
+`deferred`, `stalled`, `verification-inconclusive`, or another non-success
+state.
+
+An `END` block requests an outcome; it does not prove one. Strict autonomy runs
+derive a separate machine-readable outcome from repository, scope,
+verification, work-journal, and final-report evidence. Lifecycle completion is
+reported separately from semantic success.
 
 ## Validation Scope And Groups
 
@@ -79,7 +91,9 @@ If `Validate Both` returns `RETRY` and no `RETRY` edge is connected, Ralph rerun
 
 ## Retry And Loop Semantics
 
-Ralph-level graph loops are allowed and can be endless. This is the main Ralph behavior.
+Ralph-level graph loops are allowed. Unattended runs stop with a resumable
+checkpoint when they repeat the same semantic cycle or exceed their configured
+no-progress or transition budget.
 
 Each executable block has a retry policy:
 
@@ -367,17 +381,36 @@ Users can add `START` and `END` blocks manually. The editor must prevent adding 
     }
   ],
   "edges": [
-    { "id": "start-to-fix", "from": "start", "fromOutput": "SUCCESS", "to": "fix-tsc" },
-    { "id": "fix-to-validate", "from": "fix-tsc", "fromOutput": "SUCCESS", "to": "validate" },
-    { "id": "validate-done", "from": "validate", "fromOutput": "DONE", "to": "success" },
-    { "id": "validate-continue", "from": "validate", "fromOutput": "CONTINUE", "to": "fix-tsc" }
+    {
+      "id": "start-to-fix",
+      "from": "start",
+      "fromOutput": "SUCCESS",
+      "to": "fix-tsc"
+    },
+    {
+      "id": "fix-to-validate",
+      "from": "fix-tsc",
+      "fromOutput": "SUCCESS",
+      "to": "validate"
+    },
+    {
+      "id": "validate-done",
+      "from": "validate",
+      "fromOutput": "DONE",
+      "to": "success"
+    },
+    {
+      "id": "validate-continue",
+      "from": "validate",
+      "fromOutput": "CONTINUE",
+      "to": "fix-tsc"
+    }
   ]
 }
 ```
 
 ## Implementation Notes
 
-- Remove old linear Ralph template types, CLI commands, and UI concepts instead of migrating them.
 - Keep CLI and GUI support. CLI can run, list, show, validate, and generate flows from the same flow JSON.
 - The graph runner should be pure core logic where possible, with CLI/Tauri wrappers for IO and UI.
 - Validation should be available without running the flow.

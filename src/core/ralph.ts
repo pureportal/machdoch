@@ -197,6 +197,37 @@ import {
   type RalphGitChangeSnapshot,
   type RalphGitChangedFileSnapshot,
 } from "./_helpers/ralph-git-change-snapshot.helper.js";
+import {
+  compareRalphVerificationObservations,
+  createRalphVerificationObservation,
+  type RalphVerificationObservation,
+} from "./_helpers/ralph-verification.helper.js";
+import {
+  assessRalphProgress,
+  createRalphProgressState,
+  createRalphRepositoryProgressFingerprint,
+  type RalphProgressState,
+} from "./_helpers/ralph-progress.helper.js";
+import {
+  deriveRalphRunOutcome,
+  type RalphRepositoryOutcomeEvidence,
+  type RalphRunOutcome,
+} from "./_helpers/ralph-autonomy-outcome.helper.js";
+export type {
+  RalphRepositoryOutcomeEvidence,
+  RalphRunOutcome,
+  RalphRunOutcomeEvidence,
+  RalphRunOutcomeStatus,
+} from "./_helpers/ralph-autonomy-outcome.helper.js";
+import {
+  assertRalphRepositoryContextUnchanged,
+  resolveRalphRepositoryContext,
+  type RalphRepositoryContext,
+} from "./_helpers/ralph-repository-context.helper.js";
+import {
+  RalphRunStore,
+  RalphRunStoreOwnershipError,
+} from "./_helpers/ralph-run-store.helper.js";
 import { executeTask } from "./execution.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
@@ -271,7 +302,10 @@ const DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS = 30;
 const DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS = 100;
 const DEFAULT_RALPH_REPEATED_FAILURE_LIMIT = 3;
 const DEFAULT_RALPH_RUN_LEASE_DURATION_MS = 2 * 60_000;
+const RALPH_RUN_PROJECTION_INTERVAL_MS = 15_000;
+const RALPH_WORKSPACE_WRITER_LEASE_NAME = ".workspace-writer";
 const MAX_RALPH_WORK_ITEM_STATE_HISTORY = 100;
+const MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS = 100;
 const MAX_RALPH_OPERATION_LEDGER_ENTRIES = 2_000;
 const DEFAULT_RALPH_MCP_TIMEOUT_MS = 5 * 60_000;
 const RALPH_MEDIA_BRIDGE_POLL_MS = 250;
@@ -568,6 +602,8 @@ export interface RalphAutonomyPolicy {
   transitionExhaustion?: "checkpoint" | "crash";
   recoveryExhaustion?: "defer" | "block";
   deferToBlockId?: string;
+  maxStagnantTransitions?: number;
+  maxRepeatedCycle?: number;
 }
 
 export type RalphAutonomySetting = boolean | RalphAutonomyPolicy;
@@ -598,7 +634,7 @@ export interface RalphAutonomyDeferredWork {
 }
 
 export interface RalphAutonomyExhaustion {
-  kind: "max-transitions" | "recovery" | "repeated-failure";
+  kind: "max-transitions" | "recovery" | "repeated-failure" | "stagnation";
   blockId: string;
   recoverable: boolean;
   limit: number;
@@ -620,6 +656,8 @@ export interface RalphRunAutonomyMetadata {
     transitionExhaustion: "checkpoint" | "crash";
     recoveryExhaustion: "defer" | "block";
     deferToBlockId?: string;
+    maxStagnantTransitions: number;
+    maxRepeatedCycle: number;
   };
   recoveryAttempts: RalphAutonomyRecoveryAttempt[];
   recovered: RalphAutonomyRecoveredBlock[];
@@ -711,6 +749,9 @@ export interface RalphUtilityConfig {
   counterKey?: string;
   command?: string;
   fallbackCommand?: string;
+  verificationRole?: "baseline" | "candidate" | "supplemental";
+  baselineBlockId?: string;
+  verificationPlanId?: string;
   cwd?: string;
   env?: Record<string, string>;
   adapter?: RalphUiAnalyzeAdapter;
@@ -880,6 +921,13 @@ export interface RalphGroupBlock extends RalphBaseBlock {
 export interface RalphEndBlock extends RalphBaseBlock {
   type: "END";
   status?: "success" | "failed" | "cancelled" | "review";
+  outcome?:
+    | "succeeded"
+    | "no-op"
+    | "deferred"
+    | "blocked"
+    | "failed"
+    | "cancelled";
 }
 
 export type RalphFlowBlock =
@@ -1100,6 +1148,14 @@ export type RalphRunEvent =
       reason: string;
     }
   | {
+      type: "progress";
+      blockId: string;
+      meaningful: boolean;
+      channel: string;
+      consecutiveNoProgress: number;
+      summary: string;
+    }
+  | {
       type: "end";
       blockId: string;
       status: RalphRunStatus;
@@ -1238,6 +1294,8 @@ export interface RalphRunResult {
   pendingInput?: RalphInputRequest;
   checkpoint?: RalphRunCheckpoint;
   autonomy?: RalphRunAutonomyMetadata;
+  outcome?: RalphRunOutcome;
+  progress?: RalphProgressState;
   durability?: RalphRunDurability;
 }
 
@@ -1348,6 +1406,9 @@ export interface RalphRunCheckpoint {
   totalTransitions?: number;
   transitionBase?: number;
   autonomy?: RalphRunAutonomyMetadata;
+  progress?: RalphProgressState;
+  repositoryContext?: RalphRepositoryContext;
+  repositoryBaseline?: RalphGitChangeSnapshot;
   pendingInput?: RalphInputRequest;
   interviewStates?: Record<string, RalphInterviewState>;
   runId?: string;
@@ -1391,6 +1452,9 @@ export interface RalphRunRecord {
   checkpoint?: RalphRunCheckpoint;
   validation: Pick<RalphValidationResult, "valid" | "errors" | "warnings">;
   durability?: RalphRunDurability;
+  autonomy?: RalphRunAutonomyMetadata;
+  outcome?: RalphRunOutcome;
+  progress?: RalphProgressState;
 }
 
 export interface RalphRunRecordWriteResult {
@@ -1408,6 +1472,7 @@ export interface RalphRunSummary {
   flowId: string;
   flowName: string;
   status: RalphRunSummaryStatus;
+  outcome?: RalphRunOutcome;
   summary: string;
   simpleLogPath?: string;
   traceLogPath?: string;
@@ -1446,6 +1511,9 @@ interface RalphResultContext {
   executionHistory?: RalphBlockExecutionResult[];
   events?: RalphRunEvent[];
   autonomy?: RalphRunAutonomyMetadata;
+  progress?: RalphProgressState;
+  repositoryContext?: RalphRepositoryContext;
+  repositoryBaseline?: RalphGitChangeSnapshot;
   finalReports?: RalphFinalReportArtifact[];
   operationLedger?: Map<string, RalphOperationLedgerEntry>;
   mediaRuns?: Map<string, RalphMediaRunCheckpoint>;
@@ -2309,6 +2377,42 @@ export interface RalphFileMutationLock {
   release(): Promise<void>;
 }
 
+const RALPH_TRANSIENT_MUTATION_LEASE_ERROR_CODES = new Set([
+  "EACCES",
+  "EBUSY",
+  "EPERM",
+]);
+
+const retryRalphMutationLeaseOperation = async <T>(
+  operation: () => Promise<T>,
+  retryWindowMs: number,
+): Promise<T> => {
+  const deadline = Date.now() + retryWindowMs;
+  let retryDelayMs = 20;
+
+  for (;;) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (
+        !RALPH_TRANSIENT_MUTATION_LEASE_ERROR_CODES.has(
+          (error as NodeJS.ErrnoException).code ?? "",
+        ) ||
+        Date.now() >= deadline
+      ) {
+        throw error;
+      }
+      await new Promise((resolveDelay) =>
+        setTimeout(
+          resolveDelay,
+          Math.min(retryDelayMs, Math.max(0, deadline - Date.now())),
+        ),
+      );
+      retryDelayMs = Math.min(250, retryDelayMs * 2);
+    }
+  }
+};
+
 const isRalphMutationLockProcessAlive = (pid: unknown): boolean => {
   if (!Number.isInteger(pid) || Number(pid) <= 0) {
     return false;
@@ -2351,20 +2455,25 @@ export const acquireRalphFileMutationLock = async (
         await handle.close().catch(() => undefined);
       }
       let compromiseError: unknown;
+      const retryWindowMs = Math.max(
+        250,
+        Math.min(5_000, Math.floor(staleAfterMs / 6)),
+      );
       const assertOwnership = async (): Promise<void> => {
         if (compromiseError) {
           throw compromiseError;
         }
-        const record = await readFile(lockPath, "utf8")
-          .then((text) => JSON.parse(text) as { token?: unknown })
-          .catch((error: unknown) => {
-            throw new Error(
-              `Ralph mutation lease was lost for ${targetPath}.`,
-              {
-                cause: error,
-              },
-            );
+        const record = await retryRalphMutationLeaseOperation(
+          async () =>
+            JSON.parse(await readFile(lockPath, "utf8")) as {
+              token?: unknown;
+            },
+          retryWindowMs,
+        ).catch((error: unknown) => {
+          throw new Error(`Ralph mutation lease was lost for ${targetPath}.`, {
+            cause: error,
           });
+        });
         if (record.token !== token) {
           throw new Error(
             `Ralph mutation lease was replaced for ${targetPath}.`,
@@ -2372,18 +2481,16 @@ export const acquireRalphFileMutationLock = async (
         }
       };
       await assertOwnership();
+      let heartbeatPending = Promise.resolve();
       const heartbeatHandle = setInterval(
         () => {
-          void readFile(lockPath, "utf8")
-            .then((text) => JSON.parse(text) as { token?: unknown })
-            .then((record) => {
-              if (record.token === token) {
+          heartbeatPending = heartbeatPending
+            .then(async () => {
+              await assertOwnership();
+              await retryRalphMutationLeaseOperation(async () => {
                 const now = new Date();
-                return utimes(lockPath, now, now);
-              }
-              throw new Error(
-                `Ralph mutation lease was replaced for ${targetPath}.`,
-              );
+                await utimes(lockPath, now, now);
+              }, retryWindowMs);
             })
             .catch((error: unknown) => {
               compromiseError ??= error;
@@ -2397,11 +2504,24 @@ export const acquireRalphFileMutationLock = async (
         assertOwnership,
         release: async () => {
           clearInterval(heartbeatHandle);
-          const record = await readFile(lockPath, "utf8")
-            .then((text) => JSON.parse(text) as { token?: unknown })
-            .catch(() => undefined);
+          await heartbeatPending.catch(() => undefined);
+          const record = await retryRalphMutationLeaseOperation(
+            async () =>
+              JSON.parse(await readFile(lockPath, "utf8")) as {
+                token?: unknown;
+              },
+            retryWindowMs,
+          ).catch((error: unknown) => {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+              return undefined;
+            }
+            throw error;
+          });
           if (record?.token === token) {
-            await rm(lockPath, { force: true });
+            await retryRalphMutationLeaseOperation(
+              () => rm(lockPath, { force: true }),
+              retryWindowMs,
+            );
           }
         },
       };
@@ -3311,15 +3431,26 @@ const delay = async (
 const createBlockConfig = (
   baseConfig: RuntimeConfig,
   block: RalphFlowBlock,
+  context?: RalphResultContext,
 ): RuntimeConfig => {
   const settings = block.settings;
+  const usesProjectWorkspace =
+    block.type === "PROMPT" ||
+    block.type === "VALIDATOR" ||
+    block.type === "DECISION" ||
+    block.type === "INTERVIEW" ||
+    (block.type === "UTILITY" &&
+      (block.utility.type === "PROMPT_JSON" ||
+        block.utility.type === "VALIDATOR_JSON"));
 
   return {
     ...baseConfig,
     workspaceRoot:
       settings?.workspace?.mode === "custom" && settings.workspace.path
         ? settings.workspace.path
-        : baseConfig.workspaceRoot,
+        : usesProjectWorkspace && context?.repositoryContext
+          ? context.repositoryContext.projectRoot
+          : baseConfig.workspaceRoot,
     provider:
       settings?.provider && settings.provider !== "default"
         ? settings.provider
@@ -3375,9 +3506,7 @@ const parseRalphPromptIterationDecision = (
   ];
   const decision = matches.at(-1)?.[1]?.toUpperCase();
 
-  return decision === "DONE" || decision === "CONTINUE"
-    ? decision
-    : undefined;
+  return decision === "DONE" || decision === "CONTINUE" ? decision : undefined;
 };
 
 const createValidatorTask = (
@@ -3650,7 +3779,6 @@ const preflightRalphInstructionBoundaries = async (
         id: flow.id,
         ...(flow.guidance === undefined ? {} : { guidance: flow.guidance }),
       },
-      unattended: true,
     }));
   const configs = executionConfigs.flatMap((blockConfig) => [
     blockConfig,
@@ -3948,7 +4076,7 @@ const executePromptBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   const maxIterations = block.settings?.maxIterations ?? 1;
   let result: TaskExecutionResult | undefined;
   const blockProgressEvents: RalphRunRecordBlockProgressEvent[] = [];
@@ -4034,7 +4162,7 @@ const executeValidatorBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   let result: TaskExecutionResult;
   const task = createValidatorTask(flow, block, context);
   logBlockInput(options.logger, flow, block, blockConfig, task);
@@ -4075,7 +4203,7 @@ const executeDecisionBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   let result: TaskExecutionResult;
   const task = createDecisionTask(flow, block, context);
   logBlockInput(options.logger, flow, block, blockConfig, task);
@@ -4514,7 +4642,7 @@ const executeInterviewBlock = async (
     };
   }
 
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   const task = createRalphInterviewQuestionTask({
     flow,
     block,
@@ -5176,28 +5304,86 @@ const createVerificationCommand = (commands: string[]): string => {
   return createPowerShellFailFastCommand(uniqueCommands);
 };
 
-const normalizeLegacyWindowsPowerShellCommand = (
-  command: string,
-  executable: string,
-): string => {
-  if (
-    process.platform !== "win32" ||
-    executable.toLowerCase() !== "powershell.exe" ||
-    !command.includes("&&")
-  ) {
-    return command;
+const attachRalphVerificationEvidence = (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  context: RalphResultContext | undefined,
+  observation: RalphVerificationObservation,
+  data: Record<string, unknown>,
+): RalphBlockExecutionResult | undefined => {
+  if (!utility.verificationRole) {
+    return undefined;
+  }
+  const verification: Record<string, unknown> = {
+    role: utility.verificationRole,
+    planId: utility.verificationPlanId ?? block.id,
+    observation,
+  };
+  data.verification = verification;
+  if (utility.verificationRole !== "candidate") {
+    return undefined;
   }
 
-  // Repair legacy generated verification commands saved in checkpoints before
-  // Windows PowerShell-compatible chaining was emitted by DETECT_PROJECT_COMMANDS.
-  const chainedCommands = command
-    .split(/\s+&&\s+/u)
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const baselineBlockId = utility.baselineBlockId;
+  const baselineResult = baselineBlockId
+    ? context?.resultsByBlock.get(baselineBlockId)
+    : undefined;
+  const baselineVerification = isRecord(baselineResult?.data)
+    ? baselineResult.data.verification
+    : undefined;
+  const baselineObservation =
+    isRecord(baselineVerification) && isRecord(baselineVerification.observation)
+      ? (baselineVerification.observation as unknown as RalphVerificationObservation)
+      : undefined;
 
-  return chainedCommands.length > 1
-    ? createPowerShellFailFastCommand(chainedCommands)
-    : command;
+  if (!baselineObservation) {
+    verification.comparison = {
+      disposition: "INCONCLUSIVE",
+      reason: `No frozen baseline observation was available from \`${baselineBlockId ?? "an unspecified block"}\`.`,
+      candidateFingerprint: observation.semanticFingerprint,
+    };
+    return createUtilityResult(
+      block,
+      "INCONCLUSIVE",
+      `${block.title} could not be compared with its frozen baseline.`,
+      data,
+    );
+  }
+
+  const baselinePlanId =
+    isRecord(baselineVerification) &&
+    typeof baselineVerification.planId === "string"
+      ? baselineVerification.planId
+      : undefined;
+  const candidatePlanId = utility.verificationPlanId ?? block.id;
+  const comparison =
+    baselinePlanId && baselinePlanId !== candidatePlanId
+      ? {
+          disposition: "INCONCLUSIVE" as const,
+          reason: "Baseline and candidate used different verification plans.",
+          baselineFingerprint: baselineObservation.semanticFingerprint,
+          candidateFingerprint: observation.semanticFingerprint,
+          newFailureIds: [],
+          resolvedFailureIds: [],
+          newMissingDependencies: [],
+        }
+      : compareRalphVerificationObservations(baselineObservation, observation);
+  verification.comparison = comparison;
+  const output =
+    comparison.disposition === "REGRESSION"
+      ? "FAILED"
+      : comparison.disposition === "INCONCLUSIVE" ||
+          comparison.disposition === "ENVIRONMENT_UNAVAILABLE" ||
+          comparison.disposition === "TIMEOUT"
+        ? "INCONCLUSIVE"
+        : "SUCCESS";
+  return createUtilityResult(
+    block,
+    output,
+    `${block.title}: ${comparison.reason}`,
+    data,
+    output === "FAILED" ? "error" : "completed",
+  );
 };
 
 const executeCommandUtilityBlock = async (
@@ -5207,6 +5393,7 @@ const executeCommandUtilityBlock = async (
   checkMode: boolean,
   signal?: AbortSignal,
   operationId?: string,
+  context?: RalphResultContext,
 ): Promise<RalphBlockExecutionResult> => {
   const command = utility.command?.trim() || utility.fallbackCommand?.trim();
 
@@ -5219,11 +5406,6 @@ const executeCommandUtilityBlock = async (
   }
 
   const invocation = getShellInvocation(command);
-  const executableCommand = normalizeLegacyWindowsPowerShellCommand(
-    command,
-    invocation.executable,
-  );
-  const executableInvocation = getShellInvocation(executableCommand);
   const cwd = normalizeLocalCommandCwd(
     resolveUtilityPath(utility.cwd, config.workspaceRoot),
   );
@@ -5233,8 +5415,8 @@ const executeCommandUtilityBlock = async (
 
   try {
     const result = await executeLocalCommand(
-      executableInvocation.executable,
-      executableInvocation.args,
+      invocation.executable,
+      invocation.args,
       {
         cwd,
         timeoutMs: getUtilityTimeoutMs(
@@ -5258,13 +5440,33 @@ const executeCommandUtilityBlock = async (
           : {}),
       },
     );
-    const data = {
-      command: executableCommand,
+    const data: Record<string, unknown> = {
+      command,
       cwd,
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,
     };
+
+    if (checkMode && utility.verificationRole) {
+      const observation = createRalphVerificationObservation({
+        command,
+        cwd,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+      const verificationResult = attachRalphVerificationEvidence(
+        block,
+        utility,
+        context,
+        observation,
+        data,
+      );
+      if (verificationResult) {
+        return verificationResult;
+      }
+    }
 
     if (checkMode && result.exitCode !== 0) {
       return createUtilityResult(
@@ -5282,16 +5484,36 @@ const executeCommandUtilityBlock = async (
       data,
     );
   } catch (error) {
-    return createUtilityResult(
-      block,
-      "ERROR",
-      formatLocalCommandError(`${block.title} failed.`, error),
-      {
-        command: executableCommand,
+    const details = getLocalCommandErrorDetails(error);
+    const summary = formatLocalCommandError(`${block.title} failed.`, error);
+    const data: Record<string, unknown> = {
+      command,
+      cwd,
+      ...details,
+    };
+    if (checkMode && utility.verificationRole) {
+      const observation = createRalphVerificationObservation({
+        command,
         cwd,
-        ...getLocalCommandErrorDetails(error),
-      },
-    );
+        exitCode: details.exitCode ?? null,
+        stdout: details.stdout,
+        stderr: details.stderr,
+        executionError: summary,
+        ...(details.timedOut ? { timedOut: true } : {}),
+      });
+      const verificationResult = attachRalphVerificationEvidence(
+        block,
+        utility,
+        context,
+        observation,
+        data,
+      );
+      if (verificationResult) {
+        return verificationResult;
+      }
+      return createUtilityResult(block, "INCONCLUSIVE", summary, data);
+    }
+    return createUtilityResult(block, "ERROR", summary, data);
   }
 };
 
@@ -6118,13 +6340,38 @@ const getJsonTaskArray = (
 };
 
 const getJsonTaskStatus = (task: Record<string, unknown>): string => {
-  return typeof task.status === "string" ? task.status.toLowerCase() : "todo";
+  return typeof task.status === "string"
+    ? task.status.trim().toLowerCase()
+    : "";
 };
 
 const getJsonTaskId = (task: Record<string, unknown>): string | undefined => {
   return typeof task.id === "string" && task.id.trim()
     ? task.id.trim()
     : undefined;
+};
+
+const getJsonTaskContractError = (
+  tasks: readonly Record<string, unknown>[],
+): string | undefined => {
+  const taskIds = new Set<string>();
+
+  for (const [index, task] of tasks.entries()) {
+    const taskId = getJsonTaskId(task);
+    if (!taskId) {
+      return `Task at index ${index} must have a non-empty id.`;
+    }
+    if (taskIds.has(taskId)) {
+      return `Task id ${taskId} is duplicated.`;
+    }
+    taskIds.add(taskId);
+
+    if (!normalizeRalphWorkItemState(task.status)) {
+      return `Task ${taskId} has unsupported status \`${String(task.status)}\`.`;
+    }
+  }
+
+  return undefined;
 };
 
 const getJsonTaskStringList = (
@@ -6155,40 +6402,25 @@ const getJsonTaskStringList = (
 };
 
 const getJsonTaskDependencies = (task: Record<string, unknown>): string[] => {
-  return getJsonTaskStringList(task, [
-    "dependsOn",
-    "dependencies",
-    "prerequisites",
-  ]);
+  return getJsonTaskStringList(task, ["dependencies"]);
 };
 
 const getJsonTaskBatchKey = (
   task: Record<string, unknown>,
 ): string | undefined => {
-  const [batchKey] = getJsonTaskStringList(task, [
-    "batchKey",
-    "batch",
-    "phase",
-    "area",
-    "scope",
-    "epic",
-    "module",
-  ]);
+  const [batchKey] = getJsonTaskStringList(task, ["batchKey"]);
 
   return batchKey?.toLowerCase();
 };
 
 const getJsonTaskLikelyFiles = (task: Record<string, unknown>): string[] => {
-  return getJsonTaskStringList(task, [
-    "files",
-    "affectedFiles",
-    "likelyFiles",
-    "paths",
-  ]).map((value) => value.replace(/\\/gu, "/").toLowerCase());
+  return getJsonTaskStringList(task, ["likelyFiles"]).map((value) =>
+    value.replace(/\\/gu, "/").toLowerCase(),
+  );
 };
 
 const isCompletedJsonTask = (task: Record<string, unknown>): boolean => {
-  return ["done", "completed"].includes(getJsonTaskStatus(task));
+  return getJsonTaskStatus(task) === "completed";
 };
 
 interface RalphJsonTaskLease {
@@ -6249,25 +6481,13 @@ const appendJsonTaskStateHistory = (
 };
 
 const isInProgressJsonTask = (task: Record<string, unknown>): boolean => {
-  return [
-    "in_progress",
-    "in-progress",
-    "implementing",
-    "verifying",
-    "repairing",
-  ].includes(getJsonTaskStatus(task));
+  return ["implementing", "verifying", "repairing"].includes(
+    getJsonTaskStatus(task),
+  );
 };
 
 const isSelectableJsonTask = (task: Record<string, unknown>): boolean => {
-  return ![
-    "done",
-    "completed",
-    "skipped",
-    "cancelled",
-    "blocked",
-    "no_action",
-    "no-action",
-  ].includes(getJsonTaskStatus(task));
+  return getJsonTaskStatus(task) !== "completed";
 };
 
 interface JsonTaskCandidate {
@@ -6502,6 +6722,33 @@ const selectJsonTaskCandidates = (
   return selected;
 };
 
+const getJsonTaskMaxTasks = (utility: RalphUtilityConfig): number => {
+  return typeof utility.maxTasks === "number" &&
+    Number.isFinite(utility.maxTasks)
+    ? Math.max(1, Math.trunc(utility.maxTasks))
+    : 1;
+};
+
+const getJsonTaskCandidatesForRun = (
+  tasks: Record<string, unknown>[],
+  strategy: string | undefined,
+  maxTasks: number,
+  runId: string,
+  now = Date.now(),
+): JsonTaskCandidate[] => {
+  const sameRunLeasedTasks = tasks
+    .map((task, index) => ({ task, index }))
+    .filter(
+      ({ task }) =>
+        isSelectableJsonTask(task) &&
+        readJsonTaskLease(task)?.ownerId === runId,
+    );
+
+  return sameRunLeasedTasks.length > 0
+    ? sameRunLeasedTasks
+    : selectJsonTaskCandidates(tasks, strategy, maxTasks, runId, now);
+};
+
 const createJsonTaskSelectionBlockers = (
   tasks: readonly Record<string, unknown>[],
   runId: string,
@@ -6551,8 +6798,8 @@ const createJsonTaskSelectionBlockers = (
     visit(id);
   }
 
-  const blockers = tasks.filter(isSelectableJsonTask).map((task, index) => {
-    const id = getJsonTaskId(task) ?? String(index);
+  const blockers = tasks.filter(isSelectableJsonTask).map((task) => {
+    const id = getJsonTaskId(task)!;
     const dependencies = getJsonTaskDependencies(task);
     const missingDependencyIds = dependencies.filter(
       (dependency) => !tasksById.has(dependency),
@@ -6570,14 +6817,22 @@ const createJsonTaskSelectionBlockers = (
     const lease = readJsonTaskLease(task);
     const nextEligibleAt =
       typeof task.nextEligibleAt === "string" ? task.nextEligibleAt : undefined;
+    const nextEligibleTimestamp = nextEligibleAt
+      ? Date.parse(nextEligibleAt)
+      : Number.NaN;
+    const hasInvalidNextEligibleAt =
+      getJsonTaskStatus(task) === "deferred" &&
+      nextEligibleAt !== undefined &&
+      !Number.isFinite(nextEligibleTimestamp);
     const reasons = [
       ...(missingDependencyIds.length > 0 ? ["missing-dependency"] : []),
       ...(incompleteDependencyIds.length > 0 ? ["incomplete-dependency"] : []),
       ...(deferredDependencyIds.length > 0 ? ["deferred-dependency"] : []),
       ...(getJsonTaskStatus(task) === "deferred" &&
-      (!nextEligibleAt || Date.parse(nextEligibleAt) > now)
+      (!Number.isFinite(nextEligibleTimestamp) || nextEligibleTimestamp > now)
         ? ["deferred"]
         : []),
+      ...(hasInvalidNextEligibleAt ? ["invalid-next-eligible-at"] : []),
       ...(isJsonTaskLeaseActive(lease, now) && lease?.ownerId !== runId
         ? ["foreign-lease"]
         : []),
@@ -6600,6 +6855,308 @@ const createJsonTaskSelectionBlockers = (
   });
 
   return { blockers, dependencyCycles };
+};
+
+const createJsonTaskAssessmentItem = (
+  task: Record<string, unknown>,
+): Record<string, unknown> => {
+  const dependencies = getJsonTaskDependencies(task);
+  const lease = readJsonTaskLease(task);
+
+  return {
+    id: getJsonTaskId(task)!,
+    status: getJsonTaskStatus(task),
+    ...(dependencies.length > 0
+      ? {
+          dependencies: dependencies.slice(
+            0,
+            MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+          ),
+          ...(dependencies.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS
+            ? {
+                omittedDependencyCount:
+                  dependencies.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+              }
+            : {}),
+        }
+      : {}),
+    ...(typeof task.nextEligibleAt === "string"
+      ? { nextEligibleAt: task.nextEligibleAt }
+      : {}),
+    ...(lease
+      ? {
+          lease: {
+            ownerId: lease.ownerId,
+            expiresAt: lease.expiresAt,
+          },
+        }
+      : {}),
+  };
+};
+
+const executeAssessJsonTasksUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Assess JSON tasks utility requires path.",
+    );
+  }
+
+  const path = resolveWorkspaceContainedUtilityPath(
+    rawPath,
+    config.workspaceRoot,
+  );
+
+  try {
+    const json = await readJsonFile(path);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} JSON did not match schema.`,
+        { path, validation },
+      );
+    }
+
+    const taskArray = getJsonTaskArray(json, utility.jsonPath);
+    if (!taskArray) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not find a task array at ${utility.jsonPath ?? "tasks"}.`,
+        { path, jsonPath: utility.jsonPath ?? "tasks" },
+      );
+    }
+
+    const contractError = getJsonTaskContractError(taskArray.tasks);
+    if (contractError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} found an invalid task record: ${contractError}`,
+        {
+          path,
+          jsonPath: taskArray.normalizedPath,
+          error: contractError,
+        },
+      );
+    }
+
+    const statusCounts: Record<string, number> = {};
+    for (const task of taskArray.tasks) {
+      const status = getJsonTaskStatus(task);
+      statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+    }
+    const completedCount = taskArray.tasks.filter(isCompletedJsonTask).length;
+    const unfinishedCount = taskArray.tasks.length - completedCount;
+    const maxTasks = getJsonTaskMaxTasks(utility);
+    const assessmentStrategy =
+      utility.strategy === "random" ? "random-seeded" : utility.strategy;
+    const now = Date.now();
+    const candidates = getJsonTaskCandidatesForRun(
+      taskArray.tasks,
+      assessmentStrategy,
+      maxTasks,
+      context.runId,
+      now,
+    );
+    const blockerState = createJsonTaskSelectionBlockers(
+      taskArray.tasks,
+      context.runId,
+      now,
+    );
+    const blockers = blockerState.blockers.filter(
+      (entry) => Array.isArray(entry.reasons) && entry.reasons.length > 0,
+    );
+    const retryTimes = taskArray.tasks.flatMap((task) => {
+      if (!isSelectableJsonTask(task)) {
+        return [];
+      }
+      const retryAt: number[] = [];
+      if (typeof task.nextEligibleAt === "string") {
+        const parsed = Date.parse(task.nextEligibleAt);
+        if (Number.isFinite(parsed) && parsed > now) {
+          retryAt.push(parsed);
+        }
+      }
+      const lease = readJsonTaskLease(task);
+      if (
+        lease &&
+        lease.ownerId !== context.runId &&
+        isJsonTaskLeaseActive(lease, now)
+      ) {
+        retryAt.push(Date.parse(lease.expiresAt));
+      }
+      return retryAt;
+    });
+    const structurallyBlocked = blockers.some((entry) => {
+      const reasons = Array.isArray(entry.reasons) ? entry.reasons : [];
+      return (
+        reasons.includes("missing-dependency") ||
+        reasons.includes("dependency-cycle") ||
+        reasons.includes("invalid-next-eligible-at") ||
+        (reasons.includes("deferred") &&
+          typeof entry.nextEligibleAt !== "string")
+      );
+    });
+    const nextRetryTimestamp =
+      retryTimes.length > 0 ? Math.min(...retryTimes) : undefined;
+    const tasks = taskArray.tasks
+      .slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS)
+      .map(createJsonTaskAssessmentItem);
+    const boundedCandidates = candidates.slice(
+      0,
+      MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+    );
+    const boundedBlockers = blockers
+      .slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS)
+      .map((entry) => {
+        const boundedEntry: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(entry)) {
+          if (Array.isArray(value)) {
+            boundedEntry[key] = value.slice(
+              0,
+              MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+            );
+            if (value.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS) {
+              boundedEntry[
+                `omitted${key[0]!.toUpperCase()}${key.slice(1)}Count`
+              ] = value.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS;
+            }
+            continue;
+          }
+          boundedEntry[key] = value;
+        }
+        return boundedEntry;
+      });
+    const boundedDependencyCycles = blockerState.dependencyCycles
+      .slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS)
+      .map((cycle) => cycle.slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS));
+    const data = {
+      path,
+      jsonPath: taskArray.normalizedPath,
+      totalCount: taskArray.tasks.length,
+      completedCount,
+      unfinishedCount,
+      completionRatio:
+        taskArray.tasks.length > 0
+          ? completedCount / taskArray.tasks.length
+          : 0,
+      statusCounts,
+      tasks,
+      tasksTruncated:
+        taskArray.tasks.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      omittedTaskCount: Math.max(
+        0,
+        taskArray.tasks.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      ),
+      nextTaskIds: boundedCandidates.map((candidate) =>
+        getJsonTaskId(candidate.task)!,
+      ),
+      nextTaskIndexes: boundedCandidates.map((candidate) => candidate.index),
+      nextTasksTruncated:
+        candidates.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      omittedNextTaskCount: Math.max(
+        0,
+        candidates.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      ),
+      maxTasks,
+      blockers: boundedBlockers,
+      blockersTruncated: blockers.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      omittedBlockerCount: Math.max(
+        0,
+        blockers.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      ),
+      dependencyCycles: boundedDependencyCycles,
+      dependencyCyclesTruncated:
+        blockerState.dependencyCycles.length >
+          MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS ||
+        blockerState.dependencyCycles.some(
+          (cycle) => cycle.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+        ),
+      omittedDependencyCycleCount: Math.max(
+        0,
+        blockerState.dependencyCycles.length -
+          MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      ),
+      structurallyBlocked,
+      retryable: !structurallyBlocked && nextRetryTimestamp !== undefined,
+      ...(nextRetryTimestamp !== undefined
+        ? { nextRetryAt: new Date(nextRetryTimestamp).toISOString() }
+        : {}),
+    };
+
+    if (taskArray.tasks.length === 0) {
+      return createUtilityResult(
+        block,
+        "EMPTY",
+        `${block.title} found an empty task plan; empty plans are not complete.`,
+        data,
+        "completed",
+      );
+    }
+    if (unfinishedCount === 0) {
+      return createUtilityResult(
+        block,
+        "COMPLETE",
+        `${block.title} confirmed all ${completedCount} task(s) are complete.`,
+        data,
+        "completed",
+      );
+    }
+    if (candidates.length > 0) {
+      return createUtilityResult(
+        block,
+        "READY",
+        `${block.title} found ${candidates.length} task(s) ready for the next bounded claim.`,
+        data,
+        "completed",
+      );
+    }
+
+    return createUtilityResult(
+      block,
+      "BLOCKED",
+      structurallyBlocked
+        ? `${block.title} found ${unfinishedCount} unfinished task(s) with structural blockers.`
+        : nextRetryTimestamp !== undefined
+          ? `${block.title} found ${unfinishedCount} temporarily blocked task(s); retry after ${new Date(nextRetryTimestamp).toISOString()}.`
+          : `${block.title} found ${unfinishedCount} unfinished task(s), but none can be selected.`,
+      data,
+      "completed",
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    if (error instanceof SyntaxError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not parse JSON at ${path}.`,
+        { path, error: error.message },
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
 };
 
 const executeSelectJsonTaskUtilityBlock = async (
@@ -6649,26 +7206,27 @@ const executeSelectJsonTaskUtilityBlock = async (
       );
     }
 
-    const maxTasks =
-      typeof utility.maxTasks === "number" && Number.isFinite(utility.maxTasks)
-        ? utility.maxTasks
-        : 1;
-    const sameRunLeasedTasks = taskArray.tasks
-      .map((task, index) => ({ task, index }))
-      .filter(
-        ({ task }) =>
-          isSelectableJsonTask(task) &&
-          readJsonTaskLease(task)?.ownerId === context.runId,
+    const contractError = getJsonTaskContractError(taskArray.tasks);
+    if (contractError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} found an invalid task record: ${contractError}`,
+        {
+          path,
+          jsonPath: taskArray.normalizedPath,
+          error: contractError,
+        },
       );
-    const selectedTasks =
-      sameRunLeasedTasks.length > 0
-        ? sameRunLeasedTasks
-        : selectJsonTaskCandidates(
-            taskArray.tasks,
-            utility.strategy,
-            maxTasks,
-            context.runId,
-          );
+    }
+
+    const maxTasks = getJsonTaskMaxTasks(utility);
+    const selectedTasks = getJsonTaskCandidatesForRun(
+      taskArray.tasks,
+      utility.strategy,
+      maxTasks,
+      context.runId,
+    );
 
     if (selectedTasks.length === 0) {
       const unfinishedTasks = taskArray.tasks.filter(isSelectableJsonTask);
@@ -6715,7 +7273,7 @@ const executeSelectJsonTaskUtilityBlock = async (
         selected.task.status,
         selectedState,
       );
-      const workItemId = getJsonTaskId(selected.task) ?? String(selected.index);
+      const workItemId = getJsonTaskId(selected.task)!;
       const priorLease = readJsonTaskLease(selected.task);
       const isNewClaim =
         priorLease?.ownerId !== context.runId ||
@@ -6750,9 +7308,8 @@ const executeSelectJsonTaskUtilityBlock = async (
 
     await writeUtilityJsonOutput(path, json);
 
-    const primary = selectedTasks[0]!;
-    const taskIds = selectedTasks.map(
-      (selected) => getJsonTaskId(selected.task) ?? String(selected.index),
+    const taskIds = selectedTasks.map((selected) =>
+      getJsonTaskId(selected.task)!,
     );
 
     return createUtilityResult(
@@ -6764,17 +7321,11 @@ const executeSelectJsonTaskUtilityBlock = async (
       {
         path,
         jsonPath: taskArray.normalizedPath,
-        task: primary.task,
-        index: primary.index,
         tasks: selectedTasks.map((selected) => selected.task),
         indexes: selectedTasks.map((selected) => selected.index),
+        taskIds,
         count: selectedTasks.length,
-        maxTasks: Math.max(1, Math.trunc(maxTasks)),
-        batch: {
-          tasks: selectedTasks.map((selected) => selected.task),
-          indexes: selectedTasks.map((selected) => selected.index),
-          taskIds,
-        },
+        maxTasks,
         remainingCount: taskArray.tasks.filter(
           (task) =>
             isSelectableJsonTask(task) &&
@@ -6832,32 +7383,8 @@ const getJsonTaskIdsFromInput = (
       ids.push(value.trim());
     }
   };
-  addId(input.taskId);
-  addId(input.id);
-  if (isRecord(input.task)) {
-    addId(input.task.id);
-  }
   for (const value of Array.isArray(input.taskIds) ? input.taskIds : []) {
     addId(value);
-  }
-  for (const task of Array.isArray(input.tasks) ? input.tasks : []) {
-    if (isRecord(task)) {
-      addId(task.id);
-    }
-  }
-  if (isRecord(input.batch)) {
-    for (const value of Array.isArray(input.batch.taskIds)
-      ? input.batch.taskIds
-      : []) {
-      addId(value);
-    }
-    for (const task of Array.isArray(input.batch.tasks)
-      ? input.batch.tasks
-      : []) {
-      if (isRecord(task)) {
-        addId(task.id);
-      }
-    }
   }
 
   return [...new Set(ids)];
@@ -6910,6 +7437,20 @@ const executeMarkJsonTaskUtilityBlock = async (
       );
     }
 
+    const contractError = getJsonTaskContractError(taskArray.tasks);
+    if (contractError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} found an invalid task record: ${contractError}`,
+        {
+          path,
+          jsonPath: taskArray.normalizedPath,
+          error: contractError,
+        },
+      );
+    }
+
     const requestedTaskIds = getJsonTaskIdsFromInput(utility, context);
     const candidates =
       requestedTaskIds.length > 0
@@ -6949,7 +7490,14 @@ const executeMarkJsonTaskUtilityBlock = async (
     }
 
     const now = new Date().toISOString();
-    const status = utility.status ?? utility.result ?? "done";
+    const status = utility.status?.trim();
+    if (!status) {
+      return createUtilityResult(
+        block,
+        "ERROR",
+        "Mark JSON task utility requires status.",
+      );
+    }
 
     const activeForeignLease = candidates.find((candidate) => {
       const lease = readJsonTaskLease(candidate);
@@ -6968,100 +7516,70 @@ const executeMarkJsonTaskUtilityBlock = async (
       );
     }
 
-    let transitions: ReturnType<typeof transitionRalphWorkItemState>[] = [];
+    let transitions: ReturnType<typeof transitionRalphWorkItemState>[];
+    try {
+      transitions = candidates.map((candidate) =>
+        transitionRalphWorkItemState(candidate.status, status),
+      );
+    } catch (error) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        error instanceof Error ? error.message : String(error),
+        {
+          path,
+          jsonPath: taskArray.normalizedPath,
+          taskIds: candidates.map((candidate) => candidate.id),
+          requestedStatus: status,
+        },
+      );
+    }
 
-    if (utility.enforce) {
-      try {
-        transitions = candidates.map((candidate) =>
-          transitionRalphWorkItemState(candidate.status, status),
-        );
-      } catch (error) {
-        return createUtilityResult(
-          block,
-          "INVALID",
-          error instanceof Error ? error.message : String(error),
-          {
-            path,
-            jsonPath: taskArray.normalizedPath,
-            taskIds: candidates.map((candidate) => candidate.id),
-            requestedStatus: status,
-          },
-        );
+    for (const [index, candidate] of candidates.entries()) {
+      const transition = transitions[index]!;
+      const workItemId = getJsonTaskId(candidate)!;
+      candidate.status = transition.to;
+      candidate.workItemId = workItemId;
+      candidate.runId = context.runId;
+      candidate.updatedAt = now;
+      if (transition.changed) {
+        appendJsonTaskStateHistory(candidate, {
+          from: transition.from,
+          to: transition.to,
+          changed: true,
+          at: now,
+          runId: context.runId,
+          blockId: block.id,
+        });
       }
-
-      for (const [index, candidate] of candidates.entries()) {
-        const transition = transitions[index]!;
-        const workItemId =
-          getJsonTaskId(candidate) ??
-          String(taskArray.tasks.indexOf(candidate));
-        candidate.status = transition.to;
-        candidate.workItemId = workItemId;
-        candidate.runId = context.runId;
-        candidate.updatedAt = now;
-        if (transition.changed) {
-          appendJsonTaskStateHistory(candidate, {
-            from: transition.from,
-            to: transition.to,
-            changed: true,
-            at: now,
-            runId: context.runId,
-            blockId: block.id,
-          });
-        }
-        if (transition.to === "completed") {
-          candidate.completedAt = now;
-          delete candidate.deferredAt;
-          delete candidate.nextEligibleAt;
-          delete candidate.lease;
-        } else if (transition.to === "deferred") {
-          candidate.deferredAt = now;
-          const deferMs = Math.max(
-            0,
-            Number.isFinite(utility.delaySeconds)
-              ? Number(utility.delaySeconds) * 1_000
-              : DEFAULT_RALPH_WORK_ITEM_DEFER_MS,
-          );
-          candidate.nextEligibleAt = new Date(
-            Date.now() + deferMs,
-          ).toISOString();
-          delete candidate.lease;
-        } else {
-          delete candidate.deferredAt;
-          delete candidate.nextEligibleAt;
-          const lease = readJsonTaskLease(candidate);
-          candidate.lease = {
-            ownerId: context.runId,
-            generation: lease?.generation ?? 1,
-            acquiredAt: lease?.acquiredAt ?? now,
-            heartbeatAt: now,
-            expiresAt: new Date(
-              Date.now() + DEFAULT_RALPH_WORK_ITEM_LEASE_MS,
-            ).toISOString(),
-          } satisfies RalphJsonTaskLease;
-        }
-      }
-    } else {
-      for (const candidate of candidates) {
-        candidate.status = status;
-        candidate.updatedAt = now;
-        if (["done", "completed"].includes(status.toLowerCase())) {
-          candidate.completedAt = now;
-          delete candidate.deferredAt;
-          delete candidate.nextEligibleAt;
-          delete candidate.lease;
-        } else if (status.toLowerCase() === "deferred") {
-          candidate.deferredAt = now;
-          const deferMs = Math.max(
-            0,
-            Number.isFinite(utility.delaySeconds)
-              ? Number(utility.delaySeconds) * 1_000
-              : DEFAULT_RALPH_WORK_ITEM_DEFER_MS,
-          );
-          candidate.nextEligibleAt = new Date(
-            Date.now() + deferMs,
-          ).toISOString();
-          delete candidate.lease;
-        }
+      if (transition.to === "completed") {
+        candidate.completedAt = now;
+        delete candidate.deferredAt;
+        delete candidate.nextEligibleAt;
+        delete candidate.lease;
+      } else if (transition.to === "deferred") {
+        candidate.deferredAt = now;
+        const deferMs = Math.max(
+          0,
+          Number.isFinite(utility.delaySeconds)
+            ? Number(utility.delaySeconds) * 1_000
+            : DEFAULT_RALPH_WORK_ITEM_DEFER_MS,
+        );
+        candidate.nextEligibleAt = new Date(Date.now() + deferMs).toISOString();
+        delete candidate.lease;
+      } else {
+        delete candidate.deferredAt;
+        delete candidate.nextEligibleAt;
+        const lease = readJsonTaskLease(candidate);
+        candidate.lease = {
+          ownerId: context.runId,
+          generation: lease?.generation ?? 1,
+          acquiredAt: lease?.acquiredAt ?? now,
+          heartbeatAt: now,
+          expiresAt: new Date(
+            Date.now() + DEFAULT_RALPH_WORK_ITEM_LEASE_MS,
+          ).toISOString(),
+        } satisfies RalphJsonTaskLease;
       }
     }
 
@@ -7087,8 +7605,6 @@ const executeMarkJsonTaskUtilityBlock = async (
       {
         path,
         jsonPath: taskArray.normalizedPath,
-        task: primary,
-        taskId: primary.id,
         tasks: candidates,
         taskIds,
         status: finalStatus,
@@ -7164,18 +7680,10 @@ const collectRalphJsonTaskClaims = (
         claim.taskIds.add(value);
       }
     };
-    addId(result.data.taskId);
     for (const id of Array.isArray(result.data.taskIds)
       ? result.data.taskIds
       : []) {
       addId(id);
-    }
-    if (isRecord(result.data.batch)) {
-      for (const id of Array.isArray(result.data.batch.taskIds)
-        ? result.data.batch.taskIds
-        : []) {
-        addId(id);
-      }
     }
     claims.set(key, claim);
   }
@@ -9736,17 +10244,6 @@ const extractScopeGuardRules = (
   };
 };
 
-const normalizeScopeGuardChangedFiles = (
-  files: readonly string[],
-  workspaceRoot: string,
-): string[] => {
-  return files
-    .map((path) => path.trim())
-    .filter(Boolean)
-    .map((path) => normalizeWorkspaceRelativePath(path, workspaceRoot))
-    .filter((path, index, all) => all.indexOf(path) === index);
-};
-
 const extractGitSummaryFiles = (
   value: unknown,
   workspaceRoot: string,
@@ -9802,24 +10299,62 @@ const extractGitSummaryFiles = (
     });
   }
 
-  return normalizeScopeGuardChangedFiles(
-    [
-      ...extractStringListField(value, "changedFiles"),
-      ...extractStringListField(value, "diffFiles"),
-      ...extractStringListField(value, "stagedDiffFiles"),
-    ],
-    workspaceRoot,
-  ).map((path) => ({
-    path,
-    status: "??",
-    indexStatus: "?",
-    worktreeStatus: "?",
-    staged: false,
-    unstaged: false,
-    untracked: true,
-    deleted: false,
-    signature: `legacy-path=${path}`,
-  }));
+  return [];
+};
+
+const extractGitChangeSnapshot = (
+  value: unknown,
+  workspaceRoot: string,
+): RalphGitChangeSnapshot | undefined => {
+  if (
+    !isRecord(value) ||
+    typeof value.cwd !== "string" ||
+    typeof value.root !== "string" ||
+    typeof value.head !== "string" ||
+    typeof value.capturedAt !== "string" ||
+    typeof value.status !== "string" ||
+    typeof value.diffStat !== "string" ||
+    typeof value.stagedDiffStat !== "string" ||
+    !Array.isArray(value.changedFiles) ||
+    !Array.isArray(value.diffFiles) ||
+    !Array.isArray(value.stagedDiffFiles) ||
+    !Array.isArray(value.files) ||
+    typeof value.outputPath === "string"
+  ) {
+    return undefined;
+  }
+
+  const files = extractGitSummaryFiles(value, workspaceRoot);
+  if (files.length !== value.files.length) {
+    return undefined;
+  }
+
+  const stringList = (entries: unknown[]): string[] | undefined => {
+    return entries.every((entry) => typeof entry === "string")
+      ? entries
+      : undefined;
+  };
+  const changedFiles = stringList(value.changedFiles);
+  const diffFiles = stringList(value.diffFiles);
+  const stagedDiffFiles = stringList(value.stagedDiffFiles);
+
+  if (!changedFiles || !diffFiles || !stagedDiffFiles) {
+    return undefined;
+  }
+
+  return {
+    cwd: value.cwd,
+    root: value.root,
+    head: value.head,
+    capturedAt: value.capturedAt,
+    status: value.status,
+    changedFiles,
+    diffStat: value.diffStat,
+    stagedDiffStat: value.stagedDiffStat,
+    diffFiles,
+    stagedDiffFiles,
+    files,
+  };
 };
 
 interface ScopeGuardBaseline {
@@ -9939,19 +10474,35 @@ const executeChangeScopeGuardUtilityBlock = async (
   );
 
   try {
-    const snapshot = await collectRalphGitChangeSnapshot({
-      cwd,
-      workspaceRoot: config.workspaceRoot,
-      timeoutMs: getUtilityTimeoutMs(
-        utility,
-        DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
-      ),
-      maxOutputBytes:
-        utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
-      includeDiffs: false,
-      includeHead: false,
-      ...(signal ? { signal } : {}),
-    });
+    const previousSnapshot = extractGitChangeSnapshot(
+      context.lastResult?.data,
+      config.workspaceRoot,
+    );
+    const reusablePreviousSnapshot =
+      previousSnapshot && resolve(previousSnapshot.cwd) === resolve(cwd)
+        ? previousSnapshot
+        : undefined;
+    const snapshot =
+      reusablePreviousSnapshot ??
+      (await collectRalphGitChangeSnapshot({
+        cwd,
+        workspaceRoot: config.workspaceRoot,
+        timeoutMs: getUtilityTimeoutMs(
+          utility,
+          DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+        ),
+        maxOutputBytes:
+          utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+        includeDiffs: false,
+        includeHead: false,
+        ...(signal ? { signal } : {}),
+      }));
+    const snapshotEvidence = {
+      snapshotCapturedAt: snapshot.capturedAt,
+      ...(reusablePreviousSnapshot && context.lastResult
+        ? { snapshotReusedFromBlockId: context.lastResult.blockId }
+        : {}),
+    };
     const changedFileEntries = snapshot.files;
     const changedFiles = changedFileEntries.map((file) => file.path);
 
@@ -9960,7 +10511,7 @@ const executeChangeScopeGuardUtilityBlock = async (
         block,
         "EMPTY",
         `${block.title} found no changed files.`,
-        { cwd, changedFiles },
+        { cwd, changedFiles, ...snapshotEvidence },
         "completed",
       );
     }
@@ -10009,6 +10560,7 @@ const executeChangeScopeGuardUtilityBlock = async (
           ignoredBaselineFiles,
           changedSinceBaselineFiles,
           files: changedFileEntries,
+          ...snapshotEvidence,
         },
         "completed",
       );
@@ -10035,6 +10587,7 @@ const executeChangeScopeGuardUtilityBlock = async (
           files: changedFileEntries,
           allowedPaths: [],
           allowedGlobs: [],
+          ...snapshotEvidence,
         },
         "completed",
       );
@@ -10081,6 +10634,7 @@ const executeChangeScopeGuardUtilityBlock = async (
         allowedPaths: rules.paths,
         allowedGlobs: rules.globs,
         enforcement: isEnforced ? "blocking" : "advisory",
+        ...snapshotEvidence,
       },
       output === "IN_SCOPE" ? "completed" : "error",
     );
@@ -10224,6 +10778,28 @@ const executeDetectProjectCommandsUtilityBlock = async (
       requestedRootPath,
       config.workspaceRoot,
     );
+    const repositoryContext = await resolveRalphRepositoryContext({
+      workspaceRoot: config.workspaceRoot,
+      projectPath: rootPath,
+      timeoutMs: getUtilityTimeoutMs(
+        utility,
+        DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+      ),
+    }).catch(() => undefined);
+    const repositoryBaseline = repositoryContext
+      ? await collectRalphGitChangeSnapshot({
+          cwd: repositoryContext.worktreeRoot,
+          workspaceRoot: config.workspaceRoot,
+          timeoutMs: getUtilityTimeoutMs(
+            utility,
+            DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+          ),
+          maxOutputBytes:
+            utility.maxOutputBytes ??
+            DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+          includeDiffs: false,
+        }).catch(() => undefined)
+      : undefined;
     const manifests: string[] = [];
     const commands: Array<{
       kind: "typecheck" | "lint" | "test" | "build" | "format";
@@ -10379,8 +10955,7 @@ const executeDetectProjectCommandsUtilityBlock = async (
       ...(lintCommands.length > 0 ? lintCommands : testCommands.slice(0, 1)),
     ];
     let broadVerificationCommands = verificationCommands;
-    const cargoOnly =
-      manifests.length === 1 && manifests[0] === "Cargo.toml";
+    const cargoOnly = manifests.length === 1 && manifests[0] === "Cargo.toml";
     if (cargoOnly) {
       standardVerificationCommands = ["cargo test"];
       broadVerificationCommands = ["cargo test --all-targets"];
@@ -10397,6 +10972,8 @@ const executeDetectProjectCommandsUtilityBlock = async (
     const data = {
       rootPath,
       requestedRootPath,
+      ...(repositoryContext ? { repositoryContext } : {}),
+      ...(repositoryBaseline ? { repositoryBaseline } : {}),
       manifests,
       commands,
       ...(serveCommand ? { serveCommand } : {}),
@@ -10699,6 +11276,9 @@ const RALPH_RESERVED_RUN_ARTIFACT_NAMES = new Set([
   "simple.md",
   "trace.jsonl",
   "execution-history.jsonl",
+  "journal.jsonl",
+  "run-lease.json",
+  "autonomy-evidence.json",
 ]);
 
 const assertRalphFinalReportPathAvailable = (
@@ -10882,13 +11462,13 @@ const executeFinalReportUtilityBlock = async (
         markdownPath,
         config.workspaceRoot,
       );
+      assertRalphFinalReportPathAvailable(resolvedMarkdownPath, context);
       await mkdir(dirname(resolvedMarkdownPath), { recursive: true });
       await writeFileAtomically(
         resolvedMarkdownPath,
         createFinalReportMarkdown(flow, block, report),
         "utf8",
       );
-      assertRalphFinalReportPathAvailable(resolvedMarkdownPath, context);
     }
 
     context.finalReports?.push({
@@ -10935,9 +11515,12 @@ const finalizeRalphFinalReportArtifacts = async (
       executionHistory,
       runLog: [...context.runLog],
       events: [...runResult.events],
-      outcome: {
+      outcome: runResult.outcome ?? {
         status: runResult.status,
         summary: runResult.summary,
+      },
+      lifecycle: {
+        status: runResult.status,
         startedAt: runResult.startedAt,
         ...(runResult.finishedAt ? { finishedAt: runResult.finishedAt } : {}),
         ...(runResult.pendingInput
@@ -11005,9 +11588,12 @@ const writeRalphFallbackFinalReportArtifact = async (
     executionHistory,
     runLog: [...context.runLog],
     events: [...runResult.events],
-    outcome: {
+    outcome: runResult.outcome ?? {
       status: runResult.status,
       summary: runResult.summary,
+    },
+    lifecycle: {
+      status: runResult.status,
       startedAt: runResult.startedAt,
       ...(runResult.finishedAt ? { finishedAt: runResult.finishedAt } : {}),
     },
@@ -11639,7 +12225,7 @@ const executeUtilityBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   let utility: RalphUtilityConfig;
   try {
     utility = resolveUtilityConfig(block.utility, context);
@@ -11708,6 +12294,7 @@ const executeUtilityBlock = async (
         true,
         options.signal,
         context.currentOperationId,
+        context,
       );
     case "UI_ANALYZE":
       return executeUiAnalyzeUtilityBlock(
@@ -11777,6 +12364,13 @@ const executeUtilityBlock = async (
         customizations,
         context,
         options,
+      );
+    case "ASSESS_JSON_TASKS":
+      return executeAssessJsonTasksUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
       );
     case "SELECT_JSON_TASK":
       return executeSelectJsonTaskUtilityBlock(
@@ -11948,7 +12542,7 @@ const executeMcpToolBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   const serverId = resolveTemplateText(block.serverId, context).trim();
   const toolName = resolveTemplateText(block.toolName, context).trim();
   const argumentsValue = resolveMcpArguments(block.arguments, context);
@@ -12025,7 +12619,7 @@ const executeMcpResourceBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   const serverId = resolveTemplateText(block.serverId, context).trim();
   const uri = resolveTemplateText(block.uri, context).trim();
   options.logger?.trace({
@@ -12088,7 +12682,7 @@ const executeMcpPromptBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
-  const blockConfig = createBlockConfig(config, block);
+  const blockConfig = createBlockConfig(config, block, context);
   const serverId = resolveTemplateText(block.serverId, context).trim();
   const promptName = resolveTemplateText(block.promptName, context).trim();
   const argumentsValue = resolveMcpPromptArguments(block.arguments, context);
@@ -12748,6 +13342,36 @@ const updateResultContext = (
   context: RalphResultContext,
   result: RalphBlockExecutionResult,
 ): void => {
+  const repositoryContext =
+    isRecord(result.data) && isRecord(result.data.repositoryContext)
+      ? (result.data.repositoryContext as unknown as RalphRepositoryContext)
+      : undefined;
+  if (repositoryContext?.digest) {
+    if (context.repositoryContext) {
+      assertRalphRepositoryContextUnchanged(
+        context.repositoryContext,
+        repositoryContext,
+      );
+    } else {
+      context.repositoryContext = repositoryContext;
+    }
+  }
+  const repositoryBaseline =
+    isRecord(result.data) && isRecord(result.data.repositoryBaseline)
+      ? (result.data.repositoryBaseline as unknown as RalphGitChangeSnapshot)
+      : undefined;
+  if (
+    repositoryBaseline?.root &&
+    (!context.repositoryBaseline ||
+      normalizeComparableRepositoryPath(context.repositoryBaseline.root) !==
+        normalizeComparableRepositoryPath(repositoryBaseline.root))
+  ) {
+    context.repositoryBaseline = repositoryBaseline;
+    if (context.progress) {
+      context.progress.channelFingerprints.repository =
+        createRalphRepositoryProgressFingerprint(repositoryBaseline);
+    }
+  }
   context.lastResult = result;
   context.resultsByBlock.set(result.blockId, result);
   context.runLog.push(
@@ -12755,7 +13379,171 @@ const updateResultContext = (
   );
 };
 
+const normalizeComparableRepositoryPath = (value: string): string => {
+  const normalized = resolve(value).replace(/\\/gu, "/").replace(/\/+$/u, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+};
+
+const hasRalphGitMetadata = (path: string, workspaceRoot: string): boolean => {
+  const normalizedWorkspace = resolve(workspaceRoot);
+  let current = resolve(path);
+  while (isResolvedPathInsideWorkspace(current, normalizedWorkspace)) {
+    if (existsSync(join(current, ".git"))) {
+      return true;
+    }
+    if (current === normalizedWorkspace) {
+      break;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return false;
+};
+
+const createRalphRepositorySnapshotFingerprint = (
+  snapshot: RalphGitChangeSnapshot,
+): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        root: normalizeComparableRepositoryPath(snapshot.root),
+        head: snapshot.head,
+        files: [...snapshot.files]
+          .map((file) => ({ path: file.path, signature: file.signature }))
+          .sort((left, right) => left.path.localeCompare(right.path)),
+      }),
+    )
+    .digest("hex");
+
+const compareRalphRepositorySnapshots = (
+  baseline: RalphGitChangeSnapshot,
+  final: RalphGitChangeSnapshot,
+): RalphRepositoryOutcomeEvidence => {
+  const baselineFingerprint =
+    createRalphRepositorySnapshotFingerprint(baseline);
+  const finalFingerprint = createRalphRepositorySnapshotFingerprint(final);
+  if (
+    normalizeComparableRepositoryPath(baseline.root) !==
+    normalizeComparableRepositoryPath(final.root)
+  ) {
+    return {
+      known: false,
+      root: baseline.root,
+      changedFiles: [],
+      headChanged: false,
+      baselineFingerprint,
+      finalFingerprint,
+      reason: `Repository evidence root changed from ${baseline.root} to ${final.root}.`,
+    };
+  }
+
+  const baselineFiles = new Map(
+    baseline.files.map((file) => [file.path, file.signature]),
+  );
+  const finalFiles = new Map(
+    final.files.map((file) => [file.path, file.signature]),
+  );
+  const changedFiles = [
+    ...new Set([...baselineFiles.keys(), ...finalFiles.keys()]),
+  ]
+    .filter((path) => baselineFiles.get(path) !== finalFiles.get(path))
+    .sort();
+
+  return {
+    known: true,
+    root: baseline.root,
+    changedFiles,
+    headChanged: baseline.head !== final.head,
+    baselineFingerprint,
+    finalFingerprint,
+  };
+};
+
+const doesBlockPreserveRepositorySnapshot = (
+  block: RalphFlowBlock,
+): boolean => {
+  if (
+    block.type === "START" ||
+    block.type === "END" ||
+    block.type === "NOTE" ||
+    block.type === "GROUP" ||
+    block.type === "PACK"
+  ) {
+    return true;
+  }
+
+  if (block.type !== "UTILITY") {
+    return false;
+  }
+
+  if (block.utility.type === "CHANGE_SCOPE_GUARD") {
+    return true;
+  }
+  if (block.utility.type === "FINAL_REPORT") {
+    return (
+      !block.utility.path?.trim() &&
+      !block.utility.markdownPath?.trim() &&
+      !block.utility.outputPath?.trim()
+    );
+  }
+  if (
+    block.utility.type === "GIT_STATUS" ||
+    block.utility.type === "GIT_SNAPSHOT" ||
+    block.utility.type === "GIT_DIFF_SUMMARY"
+  ) {
+    return !block.utility.outputPath?.trim();
+  }
+
+  return false;
+};
+
+const findReusableFinalRepositorySnapshot = (
+  flow: RalphFlow,
+  blockResults: readonly RalphBlockExecutionResult[],
+  repositoryRoot: string,
+  workspaceRoot: string,
+): { blockId: string; snapshot: RalphGitChangeSnapshot } | undefined => {
+  const blocksById = new Map(flow.blocks.map((block) => [block.id, block]));
+
+  for (let index = blockResults.length - 1; index >= 0; index -= 1) {
+    const result = blockResults[index];
+    const snapshot = extractGitChangeSnapshot(result?.data, workspaceRoot);
+
+    if (
+      !result ||
+      !snapshot ||
+      normalizeComparableRepositoryPath(snapshot.root) !==
+        normalizeComparableRepositoryPath(repositoryRoot)
+    ) {
+      continue;
+    }
+
+    const laterResults = blockResults.slice(index + 1);
+    if (
+      laterResults.every((laterResult) => {
+        const block = blocksById.get(laterResult.blockId);
+        return block ? doesBlockPreserveRepositorySnapshot(block) : false;
+      })
+    ) {
+      return { blockId: result.blockId, snapshot };
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+};
+
 const getRunStatusForEndBlock = (block: RalphEndBlock): RalphRunStatus => {
+  if (block.outcome === "deferred" || block.outcome === "blocked") {
+    return "blocked";
+  }
+  if (block.outcome === "cancelled") {
+    return "stopped";
+  }
   switch (block.status) {
     case "failed":
     case "review":
@@ -12843,7 +13631,9 @@ const isRalphBlockReplaySafe = (block: RalphFlowBlock): boolean => {
     block.type === "END" ||
     block.type === "NOTE" ||
     block.type === "GROUP" ||
-    block.type === "PACK"
+    block.type === "PACK" ||
+    block.type === "ASK_USER" ||
+    block.type === "INTERVIEW"
   ) {
     return true;
   }
@@ -12873,6 +13663,7 @@ const isRalphBlockReplaySafe = (block: RalphFlowBlock): boolean => {
     "READ_JSON",
     "READ_JSONL",
     "QUERY_JSONL",
+    "ASSESS_JSON_TASKS",
     "APPEND_JSONL",
     "FILE_EXISTS",
     "SCAN_SCOPE_EVIDENCE",
@@ -12926,6 +13717,8 @@ const createRalphRunAutonomyMetadata = (
           backoff: { ...policy.backoff },
           transitionExhaustion: policy.transitionExhaustion,
           recoveryExhaustion: policy.recoveryExhaustion,
+          maxStagnantTransitions: policy.maxStagnantTransitions,
+          maxRepeatedCycle: policy.maxRepeatedCycle,
           ...(policy.deferToBlockId
             ? { deferToBlockId: policy.deferToBlockId }
             : {}),
@@ -12942,6 +13735,8 @@ const createRalphRunAutonomyMetadata = (
     backoff: { ...policy.backoff },
     transitionExhaustion: policy.transitionExhaustion,
     recoveryExhaustion: policy.recoveryExhaustion,
+    maxStagnantTransitions: policy.maxStagnantTransitions,
+    maxRepeatedCycle: policy.maxRepeatedCycle,
     ...(policy.deferToBlockId ? { deferToBlockId: policy.deferToBlockId } : {}),
   };
 
@@ -13075,8 +13870,40 @@ export const runRalphFlow = async (
   options: RalphRunOptions = {},
 ): Promise<RalphRunResult> => {
   options = { ...options };
-  const checkpoint = options.checkpoint;
   const logger = options.logger;
+  const runStore = logger?.paths
+    ? new RalphRunStore(dirname(logger.paths.recordPath))
+    : undefined;
+  let runStoreInitializationError: unknown;
+  let checkpoint = options.checkpoint;
+  let checkpointRestoredFromRunStore = false;
+  if (runStore) {
+    try {
+      await runStore.initialize();
+      const restored = await runStore.readLatestCheckpoint();
+      const restoredTransitions =
+        restored?.checkpoint.totalTransitions ??
+        (restored?.checkpoint.transitionBase ?? 0) +
+          (restored?.checkpoint.transitions ?? 0);
+      const suppliedTransitions =
+        checkpoint?.totalTransitions ??
+        (checkpoint?.transitionBase ?? 0) + (checkpoint?.transitions ?? 0);
+      if (
+        restored?.checkpoint.flowId === flow.id &&
+        (!options.runId || restored.checkpoint.runId === options.runId) &&
+        (!checkpoint ||
+          (checkpoint.flowId === restored.checkpoint.flowId &&
+            checkpoint.runId === restored.checkpoint.runId &&
+            restoredTransitions >= suppliedTransitions))
+      ) {
+        checkpoint = restored.checkpoint;
+        options.checkpoint = checkpoint;
+        checkpointRestoredFromRunStore = true;
+      }
+    } catch (error) {
+      runStoreInitializationError = error;
+    }
+  }
   const runId =
     logger?.runId ??
     options.runId ??
@@ -13188,6 +14015,13 @@ export const runRalphFlow = async (
     autonomyPolicy,
     checkpoint?.autonomy,
   );
+  const requiresRepositoryEvidence = flow.blocks.some(
+    (block) =>
+      (block.type === "UTILITY" &&
+        block.utility.type === "RUN_CHECK" &&
+        block.utility.verificationRole === "candidate") ||
+      (block.type === "END" && block.outcome !== undefined),
+  );
   const runtimeState: {
     resultContext?: RalphResultContext;
     latestCheckpoint?: RalphRunCheckpoint;
@@ -13196,8 +14030,13 @@ export const runRalphFlow = async (
     durability.status = "degraded";
     durability.error = error instanceof Error ? error.message : String(error);
   };
+  if (runStoreInitializationError) {
+    markDurabilityDegraded(runStoreInitializationError);
+  }
   let ownedLeaseGeneration: number | undefined;
+  let storedLeaseGeneration: number | undefined;
   let ownershipLost: RalphRunOwnershipLostError | undefined;
+  let workspaceWriterLease: RalphFileMutationLock | undefined;
   const markOwnershipLost = (error: unknown): RalphRunOwnershipLostError => {
     const message = error instanceof Error ? error.message : String(error);
     const ownershipError =
@@ -13212,6 +14051,39 @@ export const runRalphFlow = async (
     durability.status = "degraded";
     durability.error = ownershipError.message;
     return ownershipError;
+  };
+  const assertWorkspaceWriterOwnership = async (): Promise<void> => {
+    if (!workspaceWriterLease) {
+      return;
+    }
+
+    try {
+      await workspaceWriterLease.assertOwnership();
+    } catch (error) {
+      throw markOwnershipLost(
+        new RalphRunOwnershipLostError(
+          `Ralph durable run ownership lost: workspace writer lease was lost for ${config.workspaceRoot}.`,
+          error instanceof Error ? { cause: error } : undefined,
+        ),
+      );
+    }
+  };
+  const releaseWorkspaceWriterLease = async (
+    assertOwnership = true,
+  ): Promise<void> => {
+    const lease = workspaceWriterLease;
+    workspaceWriterLease = undefined;
+    if (!lease) {
+      return;
+    }
+
+    try {
+      if (assertOwnership) {
+        await lease.assertOwnership();
+      }
+    } finally {
+      await lease.release();
+    }
   };
   const getOwnershipLostMessage = (): string =>
     ownershipLost?.message ??
@@ -13294,7 +14166,8 @@ export const runRalphFlow = async (
       }
       if (
         createRalphCheckpointFence(current.checkpoint) !==
-        createRalphCheckpointFence(checkpoint)
+          createRalphCheckpointFence(checkpoint) &&
+        !checkpointRestoredFromRunStore
       ) {
         throw new RalphRunOwnershipLostError(
           `Ralph durable run ${runId} advanced after its resume checkpoint was read.`,
@@ -13346,7 +14219,30 @@ export const runRalphFlow = async (
 
     try {
       const current = await readCurrentDurableRunRecord();
+      const independentLease = await runStore?.readLease();
+      if (
+        independentLease?.active &&
+        independentLease.lease.ownerId !== leaseOwnerId &&
+        !options.forceLeaseTakeover
+      ) {
+        throw new RalphRunOwnershipLostError(
+          `Ralph run is actively leased by ${independentLease.lease.ownerId}; the independent heartbeat was renewed at ${independentLease.heartbeatAt}.`,
+        );
+      }
       assertOrAcquireDurableRunOwnership(current);
+      if (runStore && storedLeaseGeneration !== runLease.generation) {
+        await runStore.acquireLease(
+          {
+            runId,
+            flowId: flow.id,
+            ownerId: leaseOwnerId,
+            generation: runLease.generation,
+            acquiredAt: runLease.acquiredAt,
+          },
+          leaseDurationMs,
+        );
+        storedLeaseGeneration = runLease.generation;
+      }
       await mutationLock.assertOwnership();
       const result = await operation(current, mutationLock.assertOwnership);
       await mutationLock.assertOwnership();
@@ -13374,7 +14270,9 @@ export const runRalphFlow = async (
           },
         }
       : value;
-  const finishRun = async (result: RalphRunResult): Promise<RalphRunResult> => {
+  const finishRunWithWorkspaceWriterLease = async (
+    result: RalphRunResult,
+  ): Promise<RalphRunResult> => {
     const createOwnershipLostResult = (): RalphRunResult => {
       const unfencedResult = { ...result };
       delete unfencedResult.checkpoint;
@@ -13392,23 +14290,102 @@ export const runRalphFlow = async (
     if (ownershipLost) {
       return createOwnershipLostResult();
     }
+    try {
+      await assertWorkspaceWriterOwnership();
+    } catch {
+      return createOwnershipLostResult();
+    }
 
+    const terminalBlockId = [...result.events]
+      .reverse()
+      .find((event) => event.type === "end")?.blockId;
+    let repositoryEvidence: RalphRepositoryOutcomeEvidence | undefined;
+    const repositoryBaseline = runtimeState.resultContext?.repositoryBaseline;
+    if (repositoryBaseline) {
+      const baselineFingerprint =
+        createRalphRepositorySnapshotFingerprint(repositoryBaseline);
+      try {
+        const reusableSnapshot = findReusableFinalRepositorySnapshot(
+          flow,
+          result.blockResults,
+          repositoryBaseline.root,
+          config.workspaceRoot,
+        );
+        const finalSnapshot =
+          reusableSnapshot?.snapshot ??
+          (await collectRalphGitChangeSnapshot({
+            cwd: repositoryBaseline.root,
+            workspaceRoot: config.workspaceRoot,
+            timeoutMs: DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+            maxOutputBytes: DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+            includeDiffs: false,
+          }));
+        repositoryEvidence = {
+          ...compareRalphRepositorySnapshots(repositoryBaseline, finalSnapshot),
+          finalCapturedAt: finalSnapshot.capturedAt,
+          ...(reusableSnapshot
+            ? { finalSnapshotBlockId: reusableSnapshot.blockId }
+            : {}),
+        };
+      } catch (error) {
+        repositoryEvidence = {
+          known: false,
+          root: repositoryBaseline.root,
+          changedFiles: [],
+          headChanged: false,
+          baselineFingerprint,
+          reason: `Final repository evidence could not be captured: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+    let outcome =
+      result.outcome ??
+      deriveRalphRunOutcome({
+        flow,
+        lifecycleStatus: result.status,
+        ...(terminalBlockId ? { terminalBlockId } : {}),
+        blockResults: result.blockResults,
+        ...(autonomyMetadata
+          ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
+          : {}),
+        ...(runtimeState.resultContext?.progress
+          ? { progress: runtimeState.resultContext.progress }
+          : {}),
+        ...(repositoryEvidence ? { repositoryEvidence } : {}),
+      });
+    const lifecycleStatus =
+      result.status === "completed" &&
+      outcome.status !== "succeeded" &&
+      outcome.status !== "no-op"
+        ? "blocked"
+        : result.status;
     const finishedAt =
-      result.status === "waiting-for-input" ? undefined : createLogTimestamp();
+      lifecycleStatus === "waiting-for-input"
+        ? undefined
+        : createLogTimestamp();
     let retainedCheckpoint =
       result.checkpoint ??
-      (result.status !== "completed"
+      (lifecycleStatus !== "completed" || outcome.retryable
         ? (runtimeState.latestCheckpoint ?? checkpoint)
         : undefined);
     retainedCheckpoint = releaseOwnedCheckpoint(retainedCheckpoint);
     let runResult: RalphRunResult = {
       ...result,
+      status: lifecycleStatus,
       runId,
       startedAt,
       ...(finishedAt ? { finishedAt } : {}),
       ...(retainedCheckpoint ? { checkpoint: retainedCheckpoint } : {}),
       ...(autonomyMetadata
         ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
+        : {}),
+      outcome,
+      ...(runtimeState.resultContext?.progress
+        ? {
+            progress: createRalphProgressState(
+              runtimeState.resultContext.progress,
+            ),
+          }
         : {}),
       durability: { ...durability },
     };
@@ -13419,6 +14396,27 @@ export const runRalphFlow = async (
       );
       if (persistedHistory.length > runResult.blockResults.length) {
         runResult.blockResults = persistedHistory;
+        outcome = deriveRalphRunOutcome({
+          flow,
+          lifecycleStatus: runResult.status,
+          ...(terminalBlockId ? { terminalBlockId } : {}),
+          blockResults: persistedHistory,
+          ...(autonomyMetadata
+            ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
+            : {}),
+          ...(runtimeState.resultContext?.progress
+            ? { progress: runtimeState.resultContext.progress }
+            : {}),
+          ...(repositoryEvidence ? { repositoryEvidence } : {}),
+        });
+        runResult.outcome = outcome;
+        if (
+          runResult.status === "completed" &&
+          outcome.status !== "succeeded" &&
+          outcome.status !== "no-op"
+        ) {
+          runResult.status = "blocked";
+        }
       }
     } catch (error) {
       markDurabilityDegraded(error);
@@ -13497,6 +14495,9 @@ export const runRalphFlow = async (
           }
         }
       }
+      await assertLockOwnership();
+      await assertWorkspaceWriterOwnership();
+      await releaseWorkspaceWriterLease(false);
       if (runResult.checkpoint && ownedLeaseGeneration !== undefined) {
         runResult.checkpoint = {
           ...runResult.checkpoint,
@@ -13520,8 +14521,48 @@ export const runRalphFlow = async (
           logger.paths,
         );
         await assertLockOwnership();
+        if (runStore && runResult.checkpoint) {
+          await runStore.persistCheckpoint(
+            runResult.checkpoint,
+            `Final ${runResult.status} checkpoint: ${runResult.summary}`,
+          );
+          await assertLockOwnership();
+        }
+        await runStore?.appendJournal({
+          kind: "outcome",
+          summary: `${runResult.outcome?.status ?? runResult.status}: ${runResult.summary}`,
+          ...(terminalBlockId ? { blockId: terminalBlockId } : {}),
+        });
+        await assertLockOwnership();
+        await writeJsonAtomically(
+          join(dirname(logger.paths.recordPath), "autonomy-evidence.json"),
+          {
+            schemaVersion: 1,
+            runId,
+            flowId: flow.id,
+            recordedAt: createLogTimestamp(),
+            outcome: runResult.outcome,
+            ...(runResult.progress ? { progress: runResult.progress } : {}),
+            ...(runtimeState.resultContext?.repositoryContext
+              ? {
+                  repositoryContext:
+                    runtimeState.resultContext.repositoryContext,
+                }
+              : {}),
+            ...(repositoryEvidence ? { repositoryEvidence } : {}),
+          },
+        );
+        await assertLockOwnership();
         await writeJsonAtomically(logger.paths.recordPath, record);
         await assertLockOwnership();
+        if (runStore && ownedLeaseGeneration !== undefined) {
+          await runStore.releaseLease({
+            runId,
+            flowId: flow.id,
+            ownerId: leaseOwnerId,
+            generation: ownedLeaseGeneration,
+          });
+        }
         durability.lastPersistedAt = createLogTimestamp();
       }
     };
@@ -13561,6 +14602,13 @@ export const runRalphFlow = async (
     }
 
     return runResult;
+  };
+  const finishRun = async (result: RalphRunResult): Promise<RalphRunResult> => {
+    try {
+      return await finishRunWithWorkspaceWriterLease(result);
+    } finally {
+      await releaseWorkspaceWriterLease(false).catch(() => undefined);
+    }
   };
 
   if (
@@ -13744,11 +14792,114 @@ export const runRalphFlow = async (
     executionHistory: blockResults,
     events,
     ...(autonomyMetadata ? { autonomy: autonomyMetadata } : {}),
+    ...(autonomyMetadata
+      ? { progress: createRalphProgressState(checkpoint?.progress) }
+      : {}),
+    ...(checkpoint?.repositoryContext
+      ? { repositoryContext: { ...checkpoint.repositoryContext } }
+      : {}),
+    ...(checkpoint?.repositoryBaseline
+      ? { repositoryBaseline: { ...checkpoint.repositoryBaseline } }
+      : {}),
     finalReports: restoredFinalReports,
     operationLedger: new Map(Object.entries(checkpoint?.operationLedger ?? {})),
     mediaRuns: new Map(Object.entries(checkpoint?.mediaRuns ?? {})),
   };
+  if (
+    resultContext.progress &&
+    resultContext.repositoryBaseline &&
+    !resultContext.progress.channelFingerprints.repository
+  ) {
+    resultContext.progress.channelFingerprints.repository =
+      createRalphRepositoryProgressFingerprint(
+        resultContext.repositoryBaseline,
+      );
+  }
+  if (autonomyMetadata) {
+    try {
+      workspaceWriterLease = await acquireRalphFileMutationLock(
+        join(
+          getRalphRunDirectory(config.workspaceRoot, "workspace"),
+          RALPH_WORKSPACE_WRITER_LEASE_NAME,
+        ),
+        `${runId}:${leaseOwnerId}`,
+        leaseDurationMs,
+        { reapLiveOwner: false },
+      );
+      logger?.trace({
+        kind: "trace",
+        message: "Acquired the Ralph workspace writer lease.",
+        flowId: flow.id,
+        provider: config.provider,
+        model: config.model,
+        details: { path: workspaceWriterLease.path },
+      });
+    } catch (error) {
+      return finishRun(
+        createBlockedRunResult(
+          flow,
+          validation,
+          `RALPH could not acquire the workspace writer lease. Another autonomous run may be changing this workspace: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
+  }
   runtimeState.resultContext = resultContext;
+  if (
+    !checkpoint &&
+    autonomyMetadata &&
+    requiresRepositoryEvidence &&
+    !resultContext.repositoryBaseline &&
+    hasRalphGitMetadata(
+      resultContext.repositoryContext?.worktreeRoot ?? config.workspaceRoot,
+      config.workspaceRoot,
+    )
+  ) {
+    try {
+      resultContext.repositoryBaseline = await collectRalphGitChangeSnapshot({
+        cwd:
+          resultContext.repositoryContext?.worktreeRoot ?? config.workspaceRoot,
+        workspaceRoot: config.workspaceRoot,
+        timeoutMs: DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+        maxOutputBytes: DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+        includeDiffs: false,
+      });
+      if (resultContext.progress) {
+        resultContext.progress.channelFingerprints.repository =
+          createRalphRepositoryProgressFingerprint(
+            resultContext.repositoryBaseline,
+          );
+      }
+    } catch {
+      // Non-repository autonomy flows can still provide explicit graph evidence.
+    }
+  }
+  if (checkpoint?.repositoryContext) {
+    try {
+      const currentRepositoryContext = await resolveRalphRepositoryContext({
+        workspaceRoot: config.workspaceRoot,
+        projectPath: checkpoint.repositoryContext.projectRoot,
+        timeoutMs: DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+      });
+      assertRalphRepositoryContextUnchanged(
+        checkpoint.repositoryContext,
+        currentRepositoryContext,
+      );
+      resultContext.repositoryContext = currentRepositoryContext;
+    } catch (error) {
+      return finishRun({
+        flow: flow.id,
+        status: "blocked",
+        summary: `RALPH refused to resume in a different repository context: ${error instanceof Error ? error.message : String(error)}`,
+        events,
+        blockResults,
+        missingVariables: [],
+        unknownVariables: [],
+        validation,
+        checkpoint,
+      });
+    }
+  }
   const errorCounts = restoreRalphNumberMap(checkpoint?.errorCounts);
   const attemptCounts = restoreRalphNumberMap(checkpoint?.attemptCounts);
   const repeatedFailures = restoreRalphRepeatedFailureMap(
@@ -13858,13 +15009,24 @@ export const runRalphFlow = async (
       ...(autonomyMetadata
         ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
         : {}),
+      ...(resultContext.progress
+        ? { progress: createRalphProgressState(resultContext.progress) }
+        : {}),
+      ...(resultContext.repositoryContext
+        ? { repositoryContext: { ...resultContext.repositoryContext } }
+        : {}),
+      ...(resultContext.repositoryBaseline
+        ? { repositoryBaseline: { ...resultContext.repositoryBaseline } }
+        : {}),
     };
   };
 
+  let lastRunProjectionAt = 0;
   const persistRunBoundary = async (
     blockId: string,
     summary: string,
     beforeCheckpoint?: () => Promise<void>,
+    forceProjection = false,
   ): Promise<void> => {
     const refreshTaskLeases = async (): Promise<void> => {
       try {
@@ -13889,42 +15051,51 @@ export const runRalphFlow = async (
     }
 
     try {
-      await withDurableRunOwnership(async (_current, assertLockOwnership) => {
+      await withDurableRunOwnership(async (current, assertLockOwnership) => {
         await refreshTaskLeases();
         await assertLockOwnership();
         await beforeCheckpoint?.();
         await assertLockOwnership();
         runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
         const checkpoint = createCheckpoint(blockId);
-        const partialResult: RalphRunResult = {
-          runId,
-          startedAt,
-          flow: flow.id,
-          status: "running",
-          summary,
-          events: checkpoint.events,
-          blockResults: checkpoint.blockResults,
-          missingVariables: [],
-          unknownVariables: [],
-          validation,
-          checkpoint,
-          ...(autonomyMetadata
-            ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
-            : {}),
-          durability: { ...durability },
-        };
-        const record = createRalphRunRecord(
-          RALPH_FLOW_SCHEMA_VERSION,
-          logger.runId,
-          startedAt,
-          flow,
-          partialResult,
-          resultContext.variables,
-          logger.paths!,
-        );
         await assertLockOwnership();
-        await writeJsonAtomically(logger.paths!.recordPath, record);
+        await runStore?.persistCheckpoint(checkpoint, summary);
         await assertLockOwnership();
+        if (
+          forceProjection ||
+          !current ||
+          Date.now() - lastRunProjectionAt >= RALPH_RUN_PROJECTION_INTERVAL_MS
+        ) {
+          const partialResult: RalphRunResult = {
+            runId,
+            startedAt,
+            flow: flow.id,
+            status: "running",
+            summary,
+            events: checkpoint.events,
+            blockResults: checkpoint.blockResults,
+            missingVariables: [],
+            unknownVariables: [],
+            validation,
+            checkpoint,
+            ...(autonomyMetadata
+              ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
+              : {}),
+            durability: { ...durability },
+          };
+          const record = createRalphRunRecord(
+            RALPH_FLOW_SCHEMA_VERSION,
+            logger.runId,
+            startedAt,
+            flow,
+            partialResult,
+            resultContext.variables,
+            logger.paths!,
+          );
+          await writeJsonAtomically(logger.paths!.recordPath, record);
+          lastRunProjectionAt = Date.now();
+          await assertLockOwnership();
+        }
         runtimeState.latestCheckpoint = checkpoint;
       });
       durability.lastPersistedAt = createLogTimestamp();
@@ -13942,6 +15113,22 @@ export const runRalphFlow = async (
         });
       }
     }
+  };
+  const heartbeatRunOwnership = async (): Promise<void> => {
+    await refreshRalphJsonTaskLeases(flow, resultContext);
+    if (runStore && ownedLeaseGeneration !== undefined) {
+      await runStore.heartbeat(
+        {
+          runId,
+          flowId: flow.id,
+          ownerId: leaseOwnerId,
+          generation: ownedLeaseGeneration,
+        },
+        Math.min(55_000, Math.max(250, Math.floor(leaseDurationMs / 2))),
+      );
+    }
+    runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
+    durability.lastPersistedAt = createLogTimestamp();
   };
 
   const markOperationRouted = (
@@ -14093,6 +15280,22 @@ export const runRalphFlow = async (
       delete autonomyMetadata.exhaustion;
     }
 
+    try {
+      await assertWorkspaceWriterOwnership();
+    } catch {
+      return finishRun({
+        flow: flow.id,
+        status: "crashed",
+        summary: getOwnershipLostMessage(),
+        events,
+        blockResults,
+        missingVariables: [],
+        unknownVariables: [],
+        validation,
+        checkpoint: runtimeState.latestCheckpoint,
+      });
+    }
+
     const block = blockMap.get(currentBlockId);
     if (!block) {
       const summary = `Ralph flow routed to missing block \`${currentBlockId}\`.`;
@@ -14142,6 +15345,7 @@ export const runRalphFlow = async (
         )
         .digest("hex");
     const operationWasPending = pendingOperation?.state === "started";
+    const replaySafe = isRalphBlockReplaySafe(block);
     if (!resumableOperation) {
       attemptCounts.set(block.id, attempt);
       resultContext.operationLedger?.set(operationId, {
@@ -14151,12 +15355,16 @@ export const runRalphFlow = async (
         state: "started",
         startedAt: createLogTimestamp(),
       });
-      await persistRunBoundary(
-        block.id,
-        `Persisted operation intent ${operationId} for \`${block.id}\`.`,
-      );
-      if (durability.status === "degraded" && durability.required) {
-        continue;
+      if (!replaySafe) {
+        await persistRunBoundary(
+          block.id,
+          `Persisted operation intent ${operationId} for \`${block.id}\`.`,
+          undefined,
+          true,
+        );
+        if (durability.status === "degraded" && durability.required) {
+          continue;
+        }
       }
     }
     resultContext.currentOperationId = operationId;
@@ -14208,20 +15416,18 @@ export const runRalphFlow = async (
       () => {
         heartbeatPending = heartbeatPending
           .then(async () => {
-            await persistRunBoundary(
-              block.id,
-              `Heartbeat for operation ${operationId} in \`${block.id}\`.`,
-            );
-            if (durability.status === "degraded" && durability.required) {
-              blockAbortController.abort(
-                new Error(
-                  `Ralph aborted ${block.id} because its durable lease heartbeat failed: ${durability.error ?? "unknown persistence error"}.`,
-                ),
-              );
-            }
+            await assertWorkspaceWriterOwnership();
+            await heartbeatRunOwnership();
           })
           .catch((error: unknown) => {
-            markDurabilityDegraded(error);
+            if (
+              error instanceof RalphRunOwnershipLostError ||
+              error instanceof RalphRunStoreOwnershipError
+            ) {
+              markOwnershipLost(error);
+            } else {
+              markDurabilityDegraded(error);
+            }
             if (durability.required) {
               blockAbortController.abort(error);
             }
@@ -14262,7 +15468,7 @@ export const runRalphFlow = async (
     }
 
     if (durability.status === "degraded" && durability.required) {
-      const summary = `Ralph aborted \`${block.id}\` after its durable lease heartbeat failed: ${durability.error ?? "unknown persistence error"}.`;
+      const summary = `Ralph aborted \`${block.id}\` after its durable lease heartbeat failed: ${durability.error ?? "unknown persistence error"}`;
       await emitRunEvent(
         events,
         { type: "crash", blockId: block.id, output: "ERROR", reason: summary },
@@ -14374,19 +15580,105 @@ export const runRalphFlow = async (
       summary: result.summary,
     });
     updateResultContext(resultContext, result);
-    await persistRunBoundary(
-      block.id,
-      `Persisted completion of operation ${operationId} for \`${block.id}\`.`,
-      appendResultToHistory && logger?.paths
-        ? async () => {
-            try {
-              await appendRalphExecutionHistoryResult(logger.paths!, result);
-            } catch (error) {
-              markDurabilityDegraded(error);
-            }
-          }
-        : undefined,
-    );
+    let progressAssessment =
+      autonomyMetadata && block.type !== "END" && resultContext.progress
+        ? assessRalphProgress(
+            resultContext.progress,
+            block,
+            result,
+            syncTotalTransitions() + 1,
+            {
+              maxStagnantTransitions: autonomyPolicy.maxStagnantTransitions,
+              maxRepeatedCycle: autonomyPolicy.maxRepeatedCycle,
+            },
+          )
+        : undefined;
+    if (
+      progressAssessment?.stalled &&
+      resultContext.progress &&
+      resultContext.repositoryBaseline
+    ) {
+      try {
+        const repositorySnapshot = await collectRalphGitChangeSnapshot({
+          cwd: resultContext.repositoryBaseline.root,
+          workspaceRoot: config.workspaceRoot,
+          timeoutMs: DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+          maxOutputBytes: DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+          includeDiffs: false,
+        });
+        const repositoryAssessment = assessRalphProgress(
+          resultContext.progress,
+          {
+            id: block.id,
+            type: "UTILITY",
+            title: block.title,
+            utility: { type: "GIT_SNAPSHOT" },
+          },
+          {
+            ...result,
+            data: {
+              files: repositorySnapshot.files,
+              head: repositorySnapshot.head,
+            },
+          },
+          syncTotalTransitions() + 1,
+          {
+            maxStagnantTransitions: autonomyPolicy.maxStagnantTransitions,
+            maxRepeatedCycle: autonomyPolicy.maxRepeatedCycle,
+          },
+        );
+        if (repositoryAssessment.evidence.meaningful) {
+          progressAssessment = repositoryAssessment;
+        }
+      } catch (error) {
+        logger?.trace({
+          kind: "trace",
+          message:
+            "RALPH could not inspect repository progress before declaring stagnation.",
+          flowId: flow.id,
+          blockId: block.id,
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (progressAssessment) {
+      resultContext.progress = progressAssessment.state;
+      await emitRunEvent(
+        events,
+        {
+          type: "progress",
+          blockId: block.id,
+          meaningful: progressAssessment.evidence.meaningful,
+          channel: progressAssessment.evidence.channel,
+          consecutiveNoProgress: progressAssessment.state.consecutiveNoProgress,
+          summary: progressAssessment.evidence.reason,
+        },
+        options.onEvent,
+      );
+      logger?.simple({
+        kind: "progress",
+        message: progressAssessment.evidence.reason,
+        ...getBlockLogFields(flow, block, config),
+        output: progressAssessment.evidence.meaningful
+          ? "PROGRESS"
+          : "NO_PROGRESS",
+      });
+    }
+    if (appendResultToHistory && logger?.paths) {
+      try {
+        await appendRalphExecutionHistoryResult(logger.paths, result);
+      } catch (error) {
+        markDurabilityDegraded(error);
+      }
+    }
+    if (!replaySafe) {
+      await persistRunBoundary(
+        block.id,
+        `Persisted completion of operation ${operationId} for \`${block.id}\`.`,
+        undefined,
+        true,
+      );
+    }
     if (ownershipLost) {
       return finishRun({
         flow: flow.id,
@@ -14431,6 +15723,30 @@ export const runRalphFlow = async (
       },
       options.onEvent,
     );
+    if (progressAssessment?.stalled) {
+      const summary =
+        progressAssessment.state.stalledReason ??
+        "RALPH stopped after detecting stagnation.";
+      autonomyMetadata!.exhaustion = {
+        kind: "stagnation",
+        blockId: block.id,
+        recoverable: true,
+        limit: autonomyPolicy.maxStagnantTransitions,
+        output: result.output,
+        reason: summary,
+      };
+      return finishRun({
+        flow: flow.id,
+        status: "blocked",
+        summary,
+        events,
+        blockResults,
+        missingVariables: [],
+        unknownVariables: [],
+        validation,
+        checkpoint: createCheckpoint(block.id),
+      });
+    }
 
     const directFailedEnd =
       autonomyMetadata && autonomyPolicy.recoverFailedEnd

@@ -1,6 +1,4 @@
-import {
-  truncateRalphResultText,
-} from "./parse-ralph-decision.helper.js";
+import { truncateRalphResultText } from "./parse-ralph-decision.helper.js";
 import type {
   RalphBlockExecutionResult,
   RalphFlow,
@@ -11,10 +9,7 @@ import type {
   RalphRunResult,
   RalphRunSummary,
 } from "../ralph.js";
-import type {
-  TaskExecutionNarrative,
-  TaskExecutionSection,
-} from "../types.js";
+import type { TaskExecutionNarrative, TaskExecutionSection } from "../types.js";
 
 const MAX_RALPH_RUN_RECORD_DEPTH = 4;
 const MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES = 100;
@@ -43,10 +38,7 @@ const capRunRecordTextArray = (
     .map((value) => truncateRalphResultText(value));
 };
 
-export const capRalphRunRecordValue = (
-  value: unknown,
-  depth = 0,
-): unknown => {
+export const capRalphRunRecordValue = (value: unknown, depth = 0): unknown => {
   if (typeof value === "string") {
     return truncateRalphResultText(value);
   }
@@ -73,10 +65,7 @@ export const capRalphRunRecordValue = (
     return Object.fromEntries(
       Object.entries(value)
         .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
-        .map(([key, entry]) => [
-          key,
-          capRalphRunRecordValue(entry, depth + 1),
-        ]),
+        .map(([key, entry]) => [key, capRalphRunRecordValue(entry, depth + 1)]),
     );
   }
 
@@ -150,7 +139,9 @@ const capRalphRunRecordProgressEvents = (
       ...(event.content
         ? { content: truncateRalphResultText(event.content) }
         : {}),
-      ...(event.detail ? { detail: truncateRalphResultText(event.detail) } : {}),
+      ...(event.detail
+        ? { detail: truncateRalphResultText(event.detail) }
+        : {}),
       ...(event.tokenUsage ? { tokenUsage: event.tokenUsage } : {}),
       ...(event.metadata ? { metadata: event.metadata } : {}),
     }));
@@ -164,8 +155,10 @@ export const createRalphRunRecordBlock = (
   const markdown = capRunRecordText(blockResult.markdown);
   const error = capRunRecordText(blockResult.error);
   const executedTools = blockResult.result?.executedTools.length
-    ? blockResult.result.executedTools
-        .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+    ? blockResult.result.executedTools.slice(
+        0,
+        MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES,
+      )
     : undefined;
   const outputSections = capRalphRunRecordOutputSections(
     blockResult.result?.outputSections,
@@ -207,16 +200,12 @@ export const createRalphRunRecordBlock = (
                 instructionMetadata.instructionMcpInitializationInstructions,
               ) as unknown[])
             : [],
-          diagnostics: Array.isArray(
-            instructionMetadata.instructionDiagnostics,
-          )
+          diagnostics: Array.isArray(instructionMetadata.instructionDiagnostics)
             ? (capRalphRunRecordValue(
                 instructionMetadata.instructionDiagnostics,
               ) as unknown[])
             : [],
-          plans: Array.isArray(
-            instructionMetadata.instructionDeliveryPlans,
-          )
+          plans: Array.isArray(instructionMetadata.instructionDeliveryPlans)
             ? (capRalphRunRecordValue(
                 instructionMetadata.instructionDeliveryPlans,
               ) as unknown[])
@@ -240,7 +229,9 @@ export const createRalphRunRecordBlock = (
 
   return {
     blockId: blockResult.blockId,
-    ...(blockResult.operationId ? { operationId: blockResult.operationId } : {}),
+    ...(blockResult.operationId
+      ? { operationId: blockResult.operationId }
+      : {}),
     output: blockResult.output,
     status: blockResult.status,
     attempt: blockResult.attempt,
@@ -303,6 +294,9 @@ export const createRalphRunRecord = (
     events: result.events,
     blockResults: result.blockResults.map(createRalphRunRecordBlock),
     ...(result.checkpoint ? { checkpoint: result.checkpoint } : {}),
+    ...(result.autonomy ? { autonomy: result.autonomy } : {}),
+    ...(result.outcome ? { outcome: result.outcome } : {}),
+    ...(result.progress ? { progress: result.progress } : {}),
     ...(result.durability ? { durability: { ...result.durability } } : {}),
     validation: {
       valid: result.validation.valid,
@@ -342,6 +336,7 @@ export const createRalphRunSummaryFromRecord = (
     flowId: record.flowId,
     flowName: record.flowName,
     status: record.status,
+    ...(record.outcome ? { outcome: record.outcome } : {}),
     summary: record.summary,
     ...(record.logPaths?.simpleMarkdownPath
       ? { simpleLogPath: record.logPaths.simpleMarkdownPath }

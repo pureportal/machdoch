@@ -50,6 +50,16 @@ export const getRalphUtilityOutputs = (
       return ["SUCCESS", "INVALID", "ERROR"];
     case "VALIDATOR_JSON":
       return ["DONE", "CONTINUE", "RETRY", "ERROR", "INVALID"];
+    case "ASSESS_JSON_TASKS":
+      return [
+        "READY",
+        "COMPLETE",
+        "BLOCKED",
+        "EMPTY",
+        "NOT_FOUND",
+        "INVALID",
+        "ERROR",
+      ];
     case "SELECT_JSON_TASK":
       return ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"];
     case "MARK_JSON_TASK":
@@ -68,7 +78,7 @@ export const getRalphUtilityOutputs = (
     case "DETECT_PROJECT_COMMANDS":
       return ["SUCCESS", "EMPTY", "ERROR"];
     case "RUN_CHECK":
-      return ["SUCCESS", "FAILED", "ERROR"];
+      return ["SUCCESS", "FAILED", "INCONCLUSIVE", "ERROR"];
     case "UI_ANALYZE":
       return ["SUCCESS", "UNAVAILABLE", "ERROR"];
     case "VALIDATE_JSON":
@@ -76,7 +86,9 @@ export const getRalphUtilityOutputs = (
   }
 };
 
-export const getRalphBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutput[] => {
+export const getRalphBlockOutputs = (
+  block: RalphFlowBlock,
+): RalphExecutionOutput[] => {
   switch (block.type) {
     case "START":
       return ["SUCCESS"];
@@ -110,5 +122,7 @@ export const isVisualRalphBlock = (block: RalphFlowBlock): boolean => {
 };
 
 export const isExecutableRalphBlock = (block: RalphFlowBlock): boolean => {
-  return block.type !== "START" && block.type !== "END" && !isVisualRalphBlock(block);
+  return (
+    block.type !== "START" && block.type !== "END" && !isVisualRalphBlock(block)
+  );
 };

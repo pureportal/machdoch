@@ -14,8 +14,34 @@ import {
 } from "./ralph.js";
 
 describe("persisted Ralph starter upgrades", () => {
+  it("requires the current starter metadata before upgrading", () => {
+    const starter = STARTER_RALPH_FLOWS[0]!;
+    const imported = createImportedRalphStarterFlow(starter, {
+      id: "incomplete-import",
+      alias: "incomplete-import",
+      importedAt: "2026-07-10T00:00:00.000Z",
+    });
+    delete imported.source?.templateSnapshot;
+
+    const upgrade = createUpgradedRalphStarterFlowWithReport(
+      imported,
+      starter,
+      "2026-07-10T01:00:00.000Z",
+    );
+
+    expect(upgrade.report).toMatchObject({
+      applied: false,
+      strategy: "blocked",
+      conflicts: [
+        "The imported starter metadata is incomplete. Re-import the latest starter before upgrading.",
+      ],
+    });
+  });
+
   it("recognizes every unmodified starter after a write/read round trip", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-starter-upgrade-"));
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-starter-upgrade-"),
+    );
 
     try {
       for (const starter of STARTER_RALPH_FLOWS) {
@@ -42,7 +68,9 @@ describe("persisted Ralph starter upgrades", () => {
   });
 
   it("three-way merges upstream structure while preserving conflicting local edits", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-starter-merge-"));
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-starter-merge-"),
+    );
     const starter = STARTER_RALPH_FLOWS.find(
       (candidate) => candidate.id === "autonomous-code-improvement-loop",
     )!;
@@ -61,7 +89,9 @@ describe("persisted Ralph starter upgrades", () => {
         expectedFingerprint: importedFingerprint,
       });
       const persistedLocal = await readRalphFlow(workspaceRoot, local.id);
-      const nextStarter = JSON.parse(JSON.stringify(starter)) as RalphStarterFlow;
+      const nextStarter = JSON.parse(
+        JSON.stringify(starter),
+      ) as RalphStarterFlow;
       nextStarter.version += 1;
       nextStarter.flow.name = "Upstream Improved Name";
       nextStarter.flow.description = "Upstream changed description";
@@ -93,7 +123,9 @@ describe("persisted Ralph starter upgrades", () => {
       await writeRalphFlow(workspaceRoot, upgrade.flow, {
         expectedFingerprint: createRalphFlowFingerprint(persistedLocal),
       });
-      await expect(readRalphFlow(workspaceRoot, local.id)).resolves.toMatchObject({
+      await expect(
+        readRalphFlow(workspaceRoot, local.id),
+      ).resolves.toMatchObject({
         name: "Upstream Improved Name",
         source: { version: nextStarter.version },
       });

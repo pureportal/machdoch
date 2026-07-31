@@ -10,7 +10,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import type { RalphRunSummaryStatus } from "../../../../core/ralph.js";
+import type {
+  RalphRunOutcomeStatus,
+  RalphRunSummaryStatus,
+} from "../../../../core/ralph.js";
 import type {
   ActiveRalphRun,
   ActiveRalphRunStatus,
@@ -86,7 +89,78 @@ export const getFlowStatusPresentation = (
 
 export const getRunStatusPresentation = (
   status: RalphRunSummaryStatus | ActiveRalphRunStatus,
+  outcomeStatus?: RalphRunOutcomeStatus,
 ): RalphRunStatusPresentation => {
+  if (outcomeStatus) {
+    switch (outcomeStatus) {
+      case "succeeded":
+        return {
+          label: "Verified",
+          icon: CheckCircle2,
+          className: "text-emerald-200",
+          chipClassName:
+            "border-emerald-400/30 bg-emerald-500/10 text-emerald-100",
+        };
+      case "no-op":
+        return {
+          label: "Verified no-op",
+          icon: Check,
+          className: "text-slate-300",
+          chipClassName: "border-slate-700 bg-slate-900 text-slate-300",
+        };
+      case "deferred":
+        return {
+          label: "Deferred",
+          icon: AlertTriangle,
+          className: "text-amber-200",
+          chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
+        };
+      case "stalled":
+        return {
+          label: "Stalled",
+          icon: Octagon,
+          className: "text-orange-200",
+          chipClassName:
+            "border-orange-400/30 bg-orange-500/10 text-orange-100",
+        };
+      case "budget-exhausted":
+        return {
+          label: "Budget exhausted",
+          icon: AlertTriangle,
+          className: "text-amber-200",
+          chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
+        };
+      case "verification-inconclusive":
+        return {
+          label: "Unverified",
+          icon: AlertTriangle,
+          className: "text-amber-200",
+          chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
+        };
+      case "blocked":
+        return {
+          label: "Blocked",
+          icon: AlertTriangle,
+          className: "text-amber-200",
+          chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
+        };
+      case "failed":
+        return {
+          label: "Failed",
+          icon: Octagon,
+          className: "text-rose-200",
+          chipClassName: "border-rose-400/30 bg-rose-500/10 text-rose-100",
+        };
+      case "cancelled":
+        return {
+          label: "Cancelled",
+          icon: Octagon,
+          className: "text-slate-300",
+          chipClassName: "border-slate-700 bg-slate-900 text-slate-300",
+        };
+    }
+  }
+
   switch (status) {
     case "running":
       return {
@@ -106,11 +180,10 @@ export const getRunStatusPresentation = (
       };
     case "completed":
       return {
-        label: "Completed",
-        icon: CheckCircle2,
-        className: "text-emerald-200",
-        chipClassName:
-          "border-emerald-400/30 bg-emerald-500/10 text-emerald-100",
+        label: "Unverified",
+        icon: AlertTriangle,
+        className: "text-amber-200",
+        chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
       };
     case "blocked":
       return {

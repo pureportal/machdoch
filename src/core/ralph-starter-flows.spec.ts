@@ -13,6 +13,7 @@ import {
   validateRalphFlow,
   type RalphFlowBlock,
   type RalphFlow,
+  type RalphUtilityBlock,
 } from "./ralph.js";
 
 function calculateReachableDominators(flow: RalphFlow): {
@@ -125,6 +126,73 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("applies one evidence and autonomy contract consistently to every starter", () => {
+    for (const starter of STARTER_RALPH_FLOWS) {
+      const flow = starter.flow;
+      const runChecks = flow.blocks.filter(
+        (block): block is RalphUtilityBlock =>
+          block.type === "UTILITY" && block.utility.type === "RUN_CHECK",
+      );
+      const baseline = runChecks.find(
+        (block) => block.utility.verificationRole === "baseline",
+      );
+      const candidate = runChecks.find(
+        (block) => block.utility.verificationRole === "candidate",
+      );
+      const { dominators, reachable } = calculateReachableDominators(flow);
+
+      expect(baseline, `${starter.id} baseline`).toBeTruthy();
+      expect(candidate, `${starter.id} candidate`).toBeTruthy();
+      expect(reachable.has(baseline!.id), starter.id).toBe(true);
+      expect(reachable.has(candidate!.id), starter.id).toBe(true);
+      expect(dominators.get(candidate!.id)?.has(baseline!.id), starter.id).toBe(
+        true,
+      );
+      expect(candidate!.utility.baselineBlockId, starter.id).toBe(baseline!.id);
+      expect(candidate!.utility.verificationPlanId, starter.id).toBe(
+        baseline!.utility.verificationPlanId,
+      );
+      expect(candidate!.utility.command, starter.id).toBe(
+        baseline!.utility.command,
+      );
+      expect(candidate!.utility.fallbackCommand, starter.id).toBe(
+        baseline!.utility.fallbackCommand,
+      );
+      expect(candidate!.utility.cwd, starter.id).toBe(baseline!.utility.cwd);
+      expect(
+        flow.edges.some(
+          (edge) =>
+            edge.from === candidate!.id && edge.fromOutput === "INCONCLUSIVE",
+        ),
+        starter.id,
+      ).toBe(true);
+
+      for (const block of flow.blocks) {
+        if (block.type === "END") {
+          expect(block.outcome, `${starter.id}:${block.id}`).toBeTruthy();
+        }
+        if (
+          block.type === "UTILITY" &&
+          (block.utility.type === "GIT_SNAPSHOT" ||
+            block.utility.type === "GIT_DIFF_SUMMARY" ||
+            block.utility.type === "CHANGE_SCOPE_GUARD")
+        ) {
+          expect(block.utility.cwd, `${starter.id}:${block.id}`).toBe(
+            "{{data:detect-project-commands:repositoryContext.worktreeRoot}}",
+          );
+        }
+      }
+
+      expect(flow.settings?.autonomy).toMatchObject({
+        maxStagnantTransitions: 48,
+        maxRepeatedCycle: 3,
+      });
+      expect(flow.guidance).toContain(
+        "Reaching an END block alone never proves completion",
+      );
+    }
+  });
+
   it("persists every autonomous outcome before retiring active state", () => {
     const archivePolicies = [
       {
@@ -222,7 +290,9 @@ describe("Ralph starter flows", () => {
 
     for (const policy of archivePolicies) {
       const flow = getRalphStarterFlow(policy.flowId)!.flow;
-      const incoming = flow.edges.filter((edge) => edge.to === policy.archiveId);
+      const incoming = flow.edges.filter(
+        (edge) => edge.to === policy.archiveId,
+      );
       expect(incoming).toHaveLength(policy.sources.length);
       expect(incoming.map((edge) => edge.from).sort()).toEqual(
         [...policy.sources].sort(),
@@ -296,7 +366,9 @@ describe("Ralph starter flows", () => {
     const archiveGate = featureFlow.blocks.find(
       (block) => block.id === "outcome-ledger-persisted",
     );
-    expect(JSON.stringify(archiveGate)).not.toContain("record-deferred-outcome");
+    expect(JSON.stringify(archiveGate)).not.toContain(
+      "record-deferred-outcome",
+    );
 
     const generationFlow = getRalphStarterFlow(
       "autonomous-feature-generation-loop",
@@ -332,15 +404,16 @@ describe("Ralph starter flows", () => {
 
   it("routes every reachable terminal through a final report", () => {
     for (const starterFlow of STARTER_RALPH_FLOWS) {
-      const { reachable } = calculateReachableDominators(
-        starterFlow.flow,
-      );
+      const { reachable } = calculateReachableDominators(starterFlow.flow);
       const finalReports = starterFlow.flow.blocks.filter(
-        (block) => block.type === "UTILITY" && block.utility.type === "FINAL_REPORT",
+        (block) =>
+          block.type === "UTILITY" && block.utility.type === "FINAL_REPORT",
       );
       expect(finalReports.length).toBeGreaterThan(0);
       const reportIds = new Set(finalReports.map((report) => report.id));
-      const start = starterFlow.flow.blocks.find((block) => block.type === "START")!;
+      const start = starterFlow.flow.blocks.find(
+        (block) => block.type === "START",
+      )!;
       const reachableWithoutReports = new Set<string>();
       const pending = [start.id];
       while (pending.length > 0) {
@@ -373,7 +446,9 @@ describe("Ralph starter flows", () => {
       const { dominators, reachable } = calculateReachableDominators(
         starterFlow.flow,
       );
-      const blockIds = new Set(starterFlow.flow.blocks.map((block) => block.id));
+      const blockIds = new Set(
+        starterFlow.flow.blocks.map((block) => block.id),
+      );
 
       for (const block of starterFlow.flow.blocks) {
         if (block.type !== "UTILITY" || !reachable.has(block.id)) {
@@ -404,36 +479,54 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("keeps multi-task feature completion deterministic across task batches", () => {
+  it("assesses multi-task feature state before deterministic selection", () => {
     const taskFlows = [
       {
         flowId: "autonomous-feature-generation-loop",
         validatorId: "validate-goal",
-        completionConditionId: "goal-is-complete",
+        assessmentId: "assess-goal-tasks",
         completedOutcomeId: "read-completed-goal",
+        blockedOutcomeId: "record-blocked-goal-outcome",
+        invalidOutcomeId: "record-invalid-goal-outcome",
+        retainedReportId: "retained-goal-report",
       },
       {
         flowId: "full-feature-implementation",
         validatorId: "validate-progress",
-        completionConditionId: "checklist-is-complete",
+        assessmentId: "assess-checklist-tasks",
         completedOutcomeId: "record-done-outcome",
+        blockedOutcomeId: "record-blocked-outcome",
+        invalidOutcomeId: "record-invalid-outcome",
+        retainedReportId: "retained-checklist-report",
       },
     ] as const;
 
     for (const taskFlow of taskFlows) {
       const flow = getRalphStarterFlow(taskFlow.flowId)!.flow;
-      const completionCondition = flow.blocks.find(
-        (block) => block.id === taskFlow.completionConditionId,
+      const assessment = flow.blocks.find(
+        (block) => block.id === taskFlow.assessmentId,
       );
-      expect(completionCondition).toMatchObject({
+      expect(assessment).toMatchObject({
         type: "UTILITY",
         utility: {
-          type: "CONDITION",
-          condition: {
-            expression: expect.stringContaining("tasks.every"),
-          },
+          type: "ASSESS_JSON_TASKS",
+          strategy: "start-to-end",
+          maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
         },
       });
+      const blockedOutcome = flow.blocks.find(
+        (block) => block.id === taskFlow.blockedOutcomeId,
+      );
+      expect(blockedOutcome).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "APPEND_JSONL",
+          input: expect.stringContaining('"outcome":"BLOCKED"'),
+        },
+      });
+      expect(JSON.stringify(blockedOutcome)).toContain(
+        `{{data:${taskFlow.assessmentId}}}`,
+      );
       expect(flow.edges).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -449,53 +542,48 @@ describe("Ralph starter flows", () => {
           expect.objectContaining({
             from: "mark-tasks-completed",
             fromOutput: "SUCCESS",
-            to: "select-next-task",
+            to: taskFlow.assessmentId,
           }),
           expect.objectContaining({
             from: "select-next-task",
             fromOutput: "EMPTY",
-            to: taskFlow.completionConditionId,
+            to: taskFlow.assessmentId,
           }),
           expect.objectContaining({
-            from: taskFlow.completionConditionId,
-            fromOutput: "MATCH",
+            from: taskFlow.assessmentId,
+            fromOutput: "READY",
+            to: "select-next-task",
+          }),
+          expect.objectContaining({
+            from: taskFlow.assessmentId,
+            fromOutput: "COMPLETE",
             to: taskFlow.completedOutcomeId,
+          }),
+          expect.objectContaining({
+            from: taskFlow.assessmentId,
+            fromOutput: "BLOCKED",
+            to: taskFlow.blockedOutcomeId,
+          }),
+          expect.objectContaining({
+            from: taskFlow.assessmentId,
+            fromOutput: "EMPTY",
+            to: taskFlow.invalidOutcomeId,
+          }),
+          expect.objectContaining({
+            from: taskFlow.blockedOutcomeId,
+            fromOutput: "SUCCESS",
+            to: taskFlow.retainedReportId,
           }),
         ]),
       );
 
-      let simulatedTasks = [
-        { id: "task-a", status: "verifying" },
-        { id: "task-b", status: "planned" },
-      ];
-      simulatedTasks = simulatedTasks.map((task) =>
-        task.id === "task-a" ? { ...task, status: "completed" } : task,
-      );
-      expect(simulatedTasks.every((task) => task.status === "completed")).toBe(
-        false,
-      );
-      simulatedTasks = simulatedTasks.map((task) => ({
-        ...task,
-        status: "completed",
-      }));
-      expect(simulatedTasks.every((task) => task.status === "completed")).toBe(
-        true,
-      );
-
       if (taskFlow.flowId === "autonomous-feature-generation-loop") {
-        const mixedTerminalTasks = [
-          { id: "task-a", status: "completed" },
-          { id: "task-b", status: "deferred" },
-        ];
-        expect(
-          mixedTerminalTasks.every((task) => task.status === "completed"),
-        ).toBe(false);
         expect(flow.edges).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              from: "goal-is-complete",
-              fromOutput: "NO_MATCH",
-              to: "record-deferred-goal-outcome",
+              from: "assess-goal-tasks",
+              fromOutput: "BLOCKED",
+              to: "record-blocked-goal-outcome",
             }),
             expect.objectContaining({
               from: "select-next-task",
@@ -507,7 +595,7 @@ describe("Ralph starter flows", () => {
         expect(flow.edges).not.toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              from: "goal-is-complete",
+              from: "assess-goal-tasks",
               to: "mark-tasks-deferred",
             }),
             expect.objectContaining({
@@ -614,13 +702,19 @@ describe("Ralph starter flows", () => {
       },
     ] as const;
 
-    for (const { starterFlowId, runCheckBlockId, minimumVersion } of scopedFlows) {
+    for (const {
+      starterFlowId,
+      runCheckBlockId,
+      minimumVersion,
+    } of scopedFlows) {
       const starterFlow = getRalphStarterFlow(starterFlowId);
       const flow = starterFlow?.flow;
       const detectCommands = flow?.blocks.find(
         (block) => block.id === "detect-project-commands",
       );
-      const runCheck = flow?.blocks.find((block) => block.id === runCheckBlockId);
+      const runCheck = flow?.blocks.find(
+        (block) => block.id === runCheckBlockId,
+      );
 
       expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
       expect(detectCommands).toMatchObject({
@@ -654,13 +748,19 @@ describe("Ralph starter flows", () => {
       },
     ] as const;
 
-    for (const { starterFlowId, runCheckBlockId, minimumVersion } of featureFlows) {
+    for (const {
+      starterFlowId,
+      runCheckBlockId,
+      minimumVersion,
+    } of featureFlows) {
       const starterFlow = getRalphStarterFlow(starterFlowId);
       const flow = starterFlow?.flow;
       const detectCommands = flow?.blocks.find(
         (block) => block.id === "detect-project-commands",
       );
-      const runCheck = flow?.blocks.find((block) => block.id === runCheckBlockId);
+      const runCheck = flow?.blocks.find(
+        (block) => block.id === runCheckBlockId,
+      );
 
       expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
       expect(detectCommands).toMatchObject({
@@ -747,7 +847,9 @@ describe("Ralph starter flows", () => {
   });
 
   it("includes an autonomous feature-generation loop with bounded goal selection", () => {
-    const starterFlow = getRalphStarterFlow("autonomous-feature-generation-loop");
+    const starterFlow = getRalphStarterFlow(
+      "autonomous-feature-generation-loop",
+    );
     const flow = starterFlow?.flow;
     const passCounter = flow?.blocks.find(
       (block) => block.id === "count-implementation-pass",
@@ -776,11 +878,16 @@ describe("Ralph starter flows", () => {
     const selectNextTask = flow?.blocks.find(
       (block) => block.id === "select-next-task",
     );
+    const assessGoalTasks = flow?.blocks.find(
+      (block) => block.id === "assess-goal-tasks",
+    );
     const maxTasksPerImplementationPass = flow?.variables?.find(
       (variable) => variable.name === "maxTasksPerImplementationPass",
     );
 
-    expect(starterFlow?.defaultAlias).toBe("autonomous-feature-generation-loop");
+    expect(starterFlow?.defaultAlias).toBe(
+      "autonomous-feature-generation-loop",
+    );
     expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
     expect(maxTasksPerImplementationPass).toMatchObject({
       type: "number",
@@ -820,7 +927,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "LOOP_COUNTER",
         counterName: expect.stringContaining(
-          "{{data:select-next-task:task.id}}",
+          "{{data:select-next-task:tasks.0.id}}",
         ),
         maxAttempts: "{{maxImplementationPasses:number=10}}",
       },
@@ -829,6 +936,13 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "SELECT_JSON_TASK",
+        maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
+      },
+    });
+    expect(assessGoalTasks).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "ASSESS_JSON_TASKS",
         maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
       },
     });
@@ -1011,6 +1125,9 @@ describe("Ralph starter flows", () => {
     const selectNextTask = flow?.blocks.find(
       (block) => block.id === "select-next-task",
     );
+    const assessChecklistTasks = flow?.blocks.find(
+      (block) => block.id === "assess-checklist-tasks",
+    );
     const maxTasksPerImplementationPass = flow?.variables?.find(
       (variable) => variable.name === "maxTasksPerImplementationPass",
     );
@@ -1021,7 +1138,9 @@ describe("Ralph starter flows", () => {
       required: false,
       default: expect.stringContaining("Autonomously identify"),
     });
-    expect(flow?.blocks.some((block) => block.type === "INTERVIEW")).toBe(false);
+    expect(flow?.blocks.some((block) => block.type === "INTERVIEW")).toBe(
+      false,
+    );
     expect(maxTasksPerImplementationPass).toMatchObject({
       type: "number",
       default: "3",
@@ -1034,7 +1153,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "LOOP_COUNTER",
         counterName: expect.stringContaining(
-          "{{data:select-next-task:task.id}}",
+          "{{data:select-next-task:tasks.0.id}}",
         ),
         maxAttempts: "{{maxImplementationPasses:number=8}}",
       },
@@ -1043,6 +1162,13 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "SELECT_JSON_TASK",
+        maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
+      },
+    });
+    expect(assessChecklistTasks).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "ASSESS_JSON_TASKS",
         maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
       },
     });
@@ -1248,7 +1374,8 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "RUN_CHECK",
         command: "{{data:select-validation-command:output.command}}",
-        fallbackCommand: "{{data:detect-project-commands:focusedVerificationCommand}}",
+        fallbackCommand:
+          "{{data:detect-project-commands:focusedVerificationCommand}}",
         cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: 1800,
       },
@@ -1266,7 +1393,9 @@ describe("Ralph starter flows", () => {
     expect(fixValidationFailures).toMatchObject({
       type: "PROMPT",
     });
-    expect(fixValidationFailures?.settings).not.toHaveProperty("timeoutSeconds");
+    expect(fixValidationFailures?.settings).not.toHaveProperty(
+      "timeoutSeconds",
+    );
     expect(finalRefactorScan).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -1289,13 +1418,17 @@ describe("Ralph starter flows", () => {
         expression: expect.stringContaining("previous.diffSignature"),
       },
     });
-    expect(flow?.blocks.some((block) => block.id === "change-scope-guard")).toBe(
-      false,
-    );
-    expect(flow?.blocks.some((block) => block.id === "scope-change-guard")).toBe(
-      true,
-    );
-    expect(flow?.blocks.some((block) => block.type === "END" && block.status === "failed")).toBe(false);
+    expect(
+      flow?.blocks.some((block) => block.id === "change-scope-guard"),
+    ).toBe(false);
+    expect(
+      flow?.blocks.some((block) => block.id === "scope-change-guard"),
+    ).toBe(true);
+    expect(
+      flow?.blocks.some(
+        (block) => block.type === "END" && block.status === "failed",
+      ),
+    ).toBe(false);
     expect(flow?.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1326,6 +1459,11 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "git-snapshot-before",
           fromOutput: "SUCCESS",
+          to: "select-validation-command",
+        }),
+        expect.objectContaining({
+          from: "select-validation-command",
+          fromOutput: "SUCCESS",
           to: "baseline-validation",
         }),
         expect.objectContaining({
@@ -1346,7 +1484,7 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "refactor-pass",
           fromOutput: "SUCCESS",
-          to: "select-validation-command",
+          to: "validation-decision",
         }),
         expect.objectContaining({
           from: "final-refactor-scan",
@@ -1395,7 +1533,9 @@ describe("Ralph starter flows", () => {
     const updateScopeRegistry = flow?.blocks.find(
       (block) => block.id === "update-scope-registry",
     );
-    const selectScope = flow?.blocks.find((block) => block.id === "select-scope");
+    const selectScope = flow?.blocks.find(
+      (block) => block.id === "select-scope",
+    );
     const securityResearch = flow?.blocks.find(
       (block) => block.id === "security-research",
     );
@@ -1504,9 +1644,7 @@ describe("Ralph starter flows", () => {
   });
 
   it("includes an autonomous code improvement loop with evidence-backed stop behavior", () => {
-    const starterFlow = getRalphStarterFlow(
-      "autonomous-code-improvement-loop",
-    );
+    const starterFlow = getRalphStarterFlow("autonomous-code-improvement-loop");
     const flow = starterFlow?.flow;
     const chooseImprovement = flow?.blocks.find(
       (block) => block.id === "choose-improvement",
@@ -1650,7 +1788,17 @@ describe("Ralph starter flows", () => {
         }),
         expect.objectContaining({
           from: "git-snapshot-before",
+          to: "select-verification-command",
+        }),
+        expect.objectContaining({
+          from: "select-verification-command",
+          fromOutput: "SUCCESS",
           to: "baseline-verification",
+        }),
+        expect.objectContaining({
+          from: "implement-improvement",
+          fromOutput: "SUCCESS",
+          to: "verification-decision",
         }),
         expect.objectContaining({
           from: "baseline-verification",
@@ -1736,7 +1884,10 @@ describe("Ralph starter flows", () => {
         expect(serializedFlow).toContain("scope-change-guard");
       }
       for (const block of starterFlow.flow.blocks) {
-        if (block.type === "UTILITY" && block.utility.type === "GIT_DIFF_SUMMARY") {
+        if (
+          block.type === "UTILITY" &&
+          block.utility.type === "GIT_DIFF_SUMMARY"
+        ) {
           expect(block.utility.baseline).toBeUndefined();
         }
       }
@@ -1783,7 +1934,11 @@ describe("Ralph starter flows", () => {
       },
     ] as const;
 
-    for (const { starterFlowId, minimumVersion, researchBlockId } of researchBlocks) {
+    for (const {
+      starterFlowId,
+      minimumVersion,
+      researchBlockId,
+    } of researchBlocks) {
       const starterFlow = getRalphStarterFlow(starterFlowId);
       const flow = starterFlow?.flow;
       const enableOnlineResearch = flow?.variables?.find(
@@ -1829,7 +1984,9 @@ describe("Ralph starter flows", () => {
         starterFlow.flow.blocks.some((block) => block.type === "ASK_USER"),
       ).toBe(false);
       expect(
-        starterFlow.flow.blocks.some((block) => block.id === "configure-template"),
+        starterFlow.flow.blocks.some(
+          (block) => block.id === "configure-template",
+        ),
       ).toBe(false);
       expect(JSON.stringify(starterFlow.flow.edges)).not.toContain(
         "configure-template",
@@ -1861,7 +2018,9 @@ describe("Ralph starter flows", () => {
       expect(JSON.stringify(starterFlow.flow)).not.toContain("HUMAN_APPROVAL");
     }
 
-    const featureFlow = getRalphStarterFlow("full-feature-implementation")?.flow;
+    const featureFlow = getRalphStarterFlow(
+      "full-feature-implementation",
+    )?.flow;
     const featureRequest = featureFlow?.variables?.find(
       (variable) => variable.name === "featureRequest",
     );
@@ -1870,8 +2029,9 @@ describe("Ralph starter flows", () => {
       required: false,
       default: expect.stringContaining("Autonomously identify"),
     });
-    expect(featureFlow?.blocks.some((block) => block.type === "INTERVIEW"))
-      .toBe(false);
+    expect(
+      featureFlow?.blocks.some((block) => block.type === "INTERVIEW"),
+    ).toBe(false);
   });
 
   it("creates import copies with caller-owned identity and timestamps", () => {
@@ -1900,7 +2060,9 @@ describe("Ralph starter flows", () => {
       name: "Feature Implementation Checklist Loop",
     });
     expect(imported.id).not.toBe(starterFlow!.flow.id);
-    expect(starterFlow!.flow.alias).toBe("feature-implementation-checklist-loop");
+    expect(starterFlow!.flow.alias).toBe(
+      "feature-implementation-checklist-loop",
+    );
     expect(validateRalphFlow(imported).valid).toBe(true);
   });
 
@@ -1979,9 +2141,7 @@ describe("Ralph starter flows", () => {
           record.properties as Record<string, unknown>,
         ).length;
         if (propertyCount === 0) {
-          expect(path.join(".")).toMatch(
-            /selectedCandidate\.anyOf\.1$/u,
-          );
+          expect(path.join(".")).toMatch(/selectedCandidate\.anyOf\.1$/u);
           expect(record.additionalProperties).toBe(false);
         }
       }
@@ -2138,9 +2298,7 @@ describe("Ralph starter flows", () => {
           }),
         ]),
       );
-      expect(
-        flow.edges.filter((edge) => edge.to === "select-scope"),
-      ).toEqual([
+      expect(flow.edges.filter((edge) => edge.to === "select-scope")).toEqual([
         expect.objectContaining({
           from: "update-scope-registry",
           fromOutput: "SUCCESS",
@@ -2207,8 +2365,9 @@ describe("Ralph starter flows", () => {
 
     for (const expectation of expectations) {
       const flow = getRalphStarterFlow(expectation.id)?.flow;
-      expect(flow?.blocks.find((block) => block.id === expectation.propose))
-        .toMatchObject({ type: "UTILITY", utility: { type: "PROMPT_JSON" } });
+      expect(
+        flow?.blocks.find((block) => block.id === expectation.propose),
+      ).toMatchObject({ type: "UTILITY", utility: { type: "PROMPT_JSON" } });
       expect(flow?.edges).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -2310,7 +2469,9 @@ describe("Ralph starter flows", () => {
       getRalphStarterFlow("autonomous-code-improvement-loop")!,
     );
 
-    expect(featureSummary.requiredVariableNames).not.toContain("featureRequest");
+    expect(featureSummary.requiredVariableNames).not.toContain(
+      "featureRequest",
+    );
     expect(featureSummary.autonomyReady).toBe(true);
     expect(featureSummary.hasHumanInputBlocks).toBe(false);
     expect(codeSummary.autonomyReady).toBe(true);

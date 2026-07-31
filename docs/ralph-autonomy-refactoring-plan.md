@@ -1,6 +1,13 @@
 # RALPH autonomous execution refactoring and hardening plan
 
-Status: planning only; no implementation changes are included
+Original status: investigation and implementation plan
+
+Implementation status (2026-07-30): the P0 outcome, repository-context,
+workspace-writer fencing, comparative-verification, progress,
+journal/checkpoint, lease, consumer, and starter-flow contracts are implemented.
+See
+[RALPH autonomy system](./ralph-autonomy-system.md) for the resulting behavior,
+research reassessment, verification, and residual risks.
 
 Investigation date: 2026-07-29
 
@@ -29,15 +36,15 @@ current false-success, wrong-repository, and recovery risks.
 
 The recommended delivery order is:
 
-| Order | Workstream | Why it comes here |
-| --- | --- | --- |
-| 0 | Freeze incident fixtures and outcome vocabulary | Prevents fixes from silently redefining the failures |
-| 1 | Truthful outcomes and consumer propagation | Stops deferred or inconclusive work from appearing successful |
-| 2 | Repository context and write coordination | Ensures all later evidence describes the repository actually changed |
-| 3 | Comparative verification and mandatory finalization | Makes repair decisions evidence-based and prevents guard bypass |
-| 4 | Journal, lease, checkpoint, and reconciliation redesign | Makes long autonomous work recoverable under real filesystem faults |
-| 5 | Explicit single-scope and campaign run modes | Restores broader autonomy with visible budgets and correct continuation |
-| 6 | Incremental engine extraction and performance hardening | Simplifies the now-stable contracts without a risky big-bang rewrite |
+| Order | Workstream                                              | Why it comes here                                                       |
+| ----- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 0     | Freeze incident fixtures and outcome vocabulary         | Prevents fixes from silently redefining the failures                    |
+| 1     | Truthful outcomes and consumer propagation              | Stops deferred or inconclusive work from appearing successful           |
+| 2     | Repository context and write coordination               | Ensures all later evidence describes the repository actually changed    |
+| 3     | Comparative verification and mandatory finalization     | Makes repair decisions evidence-based and prevents guard bypass         |
+| 4     | Journal, lease, checkpoint, and reconciliation redesign | Makes long autonomous work recoverable under real filesystem faults     |
+| 5     | Explicit single-scope and campaign run modes            | Restores broader autonomy with visible budgets and correct continuation |
+| 6     | Incremental engine extraction and performance hardening | Simplifies the now-stable contracts without a risky big-bang rewrite    |
 
 ## Scope and method
 
@@ -59,10 +66,10 @@ Its changes are preserved exactly as found.
 
 ### Persisted run outcomes
 
-| Run | Flow | Persisted result | Material evidence |
-| --- | --- | --- | --- |
-| `2026-07-29T16-35-53-209Z` | Autonomous Code Improvement Loop | `crashed`; 21 results, 65 events, checkpoint retained | A heartbeat failed while replacing `run.json` with `EPERM`; `run.json` is 2,780,975 bytes and `trace.jsonl` is 4,953,525 bytes |
-| `2026-07-29T16-35-57-304Z` | Repository Refactor & Validation Loop | `completed` at END block `deferred`; 29 results, 87 events, no checkpoint | Selected nested ComfyUI scope, ran three baseline-equivalent collection failures, bypassed all downstream change analysis |
+| Run                        | Flow                                  | Persisted result                                                          | Material evidence                                                                                                                                 |
+| -------------------------- | ------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `2026-07-29T16-35-53-209Z` | Autonomous Code Improvement Loop      | `crashed`; 21 results, 65 events, checkpoint retained                     | A heartbeat failed while replacing `run.json` with `EPERM`; `run.json` is 2,780,975 bytes and `trace.jsonl` is 4,953,525 bytes                    |
+| `2026-07-29T16-35-57-304Z` | Repository Refactor & Validation Loop | `completed` at END block `deferred`; 29 results, 87 events, no checkpoint | Selected nested ComfyUI scope, ran three baseline-equivalent collection failures, bypassed all downstream change analysis                         |
 | `2026-07-29T17-01-42-289Z` | Repository Refactor & Validation Loop | `completed` at END block `deferred`; 29 results, 87 events, no checkpoint | Repeated the same behavior for a second nested ComfyUI scope; its parent-repository snapshot also captured another RALPH run's concurrent changes |
 
 The local evidence files are:
@@ -555,7 +562,8 @@ Required contract:
 
 - Extract by domain ownership and dependency direction, one behavior slice at a
   time.
-- Keep `ralph.ts` as a compatibility facade during migration.
+- Update callers with each extraction and delete superseded entry points rather
+  than retaining compatibility facades.
 
 ## Existing capabilities to preserve and reuse
 
@@ -642,26 +650,23 @@ interface RalphRunOutcome {
 
 Recommended meanings:
 
-| Outcome | Meaning | Checkpoint |
-| --- | --- | --- |
-| `succeeded` | Objective met; mandatory evidence gates passed under policy | Normally discard after final durable commit |
-| `no-op` | Scope was inspected and no justified change was needed | Discard |
-| `deferred` | Work remains valid but should be retried later | Required |
-| `blocked` | External prerequisite or operator decision is required | Required when resumable |
-| `failed` | Objective was attempted but could not be met safely | Retain when recovery is possible |
-| `cancelled` | User or scheduler intentionally stopped the run | Retain if resumable |
-| `crashed` | Runner, provider, or durability infrastructure failed | Retain last proven checkpoint |
-| `budget-exhausted` | Visible campaign/work-unit budget ended | Required |
+| Outcome            | Meaning                                                     | Checkpoint                                  |
+| ------------------ | ----------------------------------------------------------- | ------------------------------------------- |
+| `succeeded`        | Objective met; mandatory evidence gates passed under policy | Normally discard after final durable commit |
+| `no-op`            | Scope was inspected and no justified change was needed      | Discard                                     |
+| `deferred`         | Work remains valid but should be retried later              | Required                                    |
+| `blocked`          | External prerequisite or operator decision is required      | Required when resumable                     |
+| `failed`           | Objective was attempted but could not be met safely         | Retain when recovery is possible            |
+| `cancelled`        | User or scheduler intentionally stopped the run             | Retain if resumable                         |
+| `crashed`          | Runner, provider, or durability infrastructure failed       | Retain last proven checkpoint               |
+| `budget-exhausted` | Visible campaign/work-unit budget ended                     | Required                                    |
 
-Migration rules:
+Run-record schema rules:
 
 - Add a run-record schema version independent of the flow schema version.
-- Keep legacy `status` while old readers exist, but mark it derived and
-  non-authoritative.
-- Map retryable deferred or budget outcomes to legacy `blocked`, never
-  `completed`, so an old UI fails conservatively.
-- Infer old outcomes from the last END event, autonomy exhaustion, block ID,
-  summary, and checkpoint. Mark uncertain inference explicitly.
+- Require the exact current run-record schema version. Unsupported alpha
+  records must be rejected and recreated rather than inferred or migrated.
+- Persist one authoritative outcome instead of parallel status representations.
 - Persist autonomy, exhaustion, durability, verification disposition, and
   checkpoint reference at the run-record top level.
 - Only discard a checkpoint after a non-retryable successful/no-op outcome is
@@ -741,7 +746,11 @@ interface RalphVerificationObservation {
   phase: "collection" | "execution" | "unknown";
   passedTests: string[];
   failedTests: Array<{ id: string; category: string; fingerprint: string }>;
-  collectionErrors: Array<{ id: string; category: string; fingerprint: string }>;
+  collectionErrors: Array<{
+    id: string;
+    category: string;
+    fingerprint: string;
+  }>;
   diagnostics: Array<{ category: string; fingerprint: string }>;
   artifactRefs: string[];
 }
@@ -749,15 +758,15 @@ interface RalphVerificationObservation {
 
 The comparator should produce one of:
 
-| Classification | Meaning | Default route |
-| --- | --- | --- |
-| `PASS` | Required post checks pass | Final assessment |
-| `REGRESSION` | New/worsened deterministic failures relative to the same baseline checks | Bounded repair |
-| `IMPROVED_WITH_BASELINE_FAILURES` | Some baseline failures were removed and none were added | Final assessment with limitation |
-| `BASELINE_EQUIVALENT_FAILURE` | Same normalized failures before and after | Do not repair; final assessment with known baseline |
-| `ENVIRONMENT_UNAVAILABLE` | Missing executable/dependency, collection failure, or incompatible environment prevents the check | Do not repair source; defer by default if required |
-| `FLAKY_OR_INCONCLUSIVE` | Controlled repeats disagree or attribution is ambiguous | Targeted retry, then defer/inconclusive |
-| `TIMEOUT` | Check exceeded its budget | Compare with baseline timeout; otherwise infrastructure/deferred, not automatic source repair |
+| Classification                    | Meaning                                                                                           | Default route                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `PASS`                            | Required post checks pass                                                                         | Final assessment                                                                              |
+| `REGRESSION`                      | New/worsened deterministic failures relative to the same baseline checks                          | Bounded repair                                                                                |
+| `IMPROVED_WITH_BASELINE_FAILURES` | Some baseline failures were removed and none were added                                           | Final assessment with limitation                                                              |
+| `BASELINE_EQUIVALENT_FAILURE`     | Same normalized failures before and after                                                         | Do not repair; final assessment with known baseline                                           |
+| `ENVIRONMENT_UNAVAILABLE`         | Missing executable/dependency, collection failure, or incompatible environment prevents the check | Do not repair source; defer by default if required                                            |
+| `FLAKY_OR_INCONCLUSIVE`           | Controlled repeats disagree or attribution is ambiguous                                           | Targeted retry, then defer/inconclusive                                                       |
+| `TIMEOUT`                         | Check exceeded its budget                                                                         | Compare with baseline timeout; otherwise infrastructure/deferred, not automatic source repair |
 
 Important rules:
 
@@ -896,10 +905,10 @@ operator policy rather than replay blindly.
 
 Keep two explicit modes:
 
-| Mode | Behavior | Recommended default |
-| --- | --- | --- |
-| `single-scope` | Select, attempt, validate, and finalize one scope | Backward-compatible default for direct starter invocation |
-| `campaign` | Repeatedly invoke isolated work units until a visible stop condition | Explicit UI/scheduler choice |
+| Mode           | Behavior                                                             | Recommended default                   |
+| -------------- | -------------------------------------------------------------------- | ------------------------------------- |
+| `single-scope` | Select, attempt, validate, and finalize one scope                    | Default for direct starter invocation |
+| `campaign`     | Repeatedly invoke isolated work units until a visible stop condition | Explicit UI/scheduler choice          |
 
 Campaign state includes:
 
@@ -971,8 +980,8 @@ Core changes:
 
 - Introduce independent run-record schema version, lifecycle, outcome, and
   verification disposition.
-- Extend END blocks with semantic outcome. Preserve old `status` parsing through
-  a versioned upgrader.
+- Extend END blocks with semantic outcome. Reject run records that do not use
+  the current contract.
 - Change both deferred starter END blocks to semantic `deferred`.
 - Persist top-level autonomy, exhaustion, durability, retryability, and
   checkpoint reference.
@@ -991,15 +1000,15 @@ Boundary changes:
   - `130`: cancelled/stopped.
 - Desktop parses structured JSON even for a logical nonzero result and presents
   the outcome; only transport/protocol failures become command errors.
-- Scheduler maps `outcome.retryable` and `nextEligibleAt`, not legacy status.
+- Scheduler maps `outcome.retryable` and `nextEligibleAt`.
 - UI adds distinct deferred, no-op, completed-with-limitations,
   budget-exhausted, and failed presentations.
 
-Compatibility:
+Alpha contract:
 
-- Old records are read with conservative inference.
-- Old consumers see retryable non-success as legacy `blocked`.
-- Current flow aliases and starter IDs remain stable.
+- Persisted records must use the exact current schema and outcome model.
+- Unsupported records are rejected with a recreation path.
+- Current starter IDs remain stable.
 
 Acceptance:
 
@@ -1184,9 +1193,9 @@ src/core/ralph/
   reporting/      evidence bundle and final outcome reports
 ```
 
-Migration strategy:
+Extraction strategy:
 
-- Keep exports and public entry points in `src/core/ralph.ts`.
+- Keep only current exports and public entry points in `src/core/ralph.ts`.
 - Extract only code changed by each preceding phase.
 - Establish dependency direction: model → repository/verification primitives →
   execution/durability → engine → campaign/adapters.
@@ -1218,15 +1227,16 @@ Acceptance:
 - `ralph.ts` becomes a facade/coordinator rather than the owner of every
   domain.
 - Domain tests import domain modules directly.
-- No public flow ID, node name, CLI command, or stored-flow behavior changes
-  without an explicit migration.
+- No current flow ID, node name, CLI command, or stored-flow behavior changes
+  without an explicit contract change and matching tests.
 - Local benchmark budgets are enforced in tests.
 
 ## Test and verification strategy
 
 ### Unit tests
 
-- Outcome derivation, legacy migration, checkpoint retention, and exit mapping.
+- Outcome derivation, current-schema rejection, checkpoint retention, and exit
+  mapping.
 - Repository path canonicalization, most-specific nested repository mapping,
   ignored-path policy, and multi-repository rejection.
 - Verification parsers and normalization with ANSI, reordered tests,
@@ -1312,14 +1322,14 @@ RALPH should not be declared hardened until all of these are true:
 10. Crash recovery is deterministic at every operation boundary and never
     blindly replays an at-most-once effect.
 11. Campaign continuation is explicit, budgeted, observable, and resumable.
-12. Existing aliases, flows, and local-only behavior remain compatible through
-    tested migrations.
+12. Current aliases, flows, and local-only behavior remain covered by tests;
+    noncurrent schema records are rejected.
 
 ## Recommended review slices
 
 Keep implementation reviewable as these coherent changes:
 
-1. Outcome types, run-record migration, END mapping, checkpoint retention.
+1. Outcome types, current run-record schema, END mapping, checkpoint retention.
 2. CLI/scheduler/desktop/UI outcome propagation.
 3. Repository-context resolver and nested-repository regression tests.
 4. Starter Git/agent/command consumers switched to repository context.

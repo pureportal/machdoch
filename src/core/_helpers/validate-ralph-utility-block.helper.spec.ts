@@ -60,13 +60,22 @@ describe("validateRalphUtilityBlock", () => {
       { type: "QUERY_JSONL", path: "tmp/events.jsonl" },
       { type: "FILE_EXISTS", path: "src/core/ralph.ts" },
       { type: "DELETE_FILE", path: "tmp/result.txt" },
-      { type: "MOVE_FILE", path: "tmp/result.txt", outputPath: "tmp/archive/result.txt" },
+      {
+        type: "MOVE_FILE",
+        path: "tmp/result.txt",
+        outputPath: "tmp/archive/result.txt",
+      },
       { type: "ARCHIVE_FILE", path: "tmp/result.txt" },
       { type: "LOOP_COUNTER", maxAttempts: 10 },
       { type: "PROMPT_JSON", prompt: "Return JSON.", schema: null },
       { type: "VALIDATOR_JSON", prompt: "Return decision JSON." },
+      { type: "ASSESS_JSON_TASKS", path: "tmp/tasks.json" },
       { type: "SELECT_JSON_TASK", path: "tmp/tasks.json" },
-      { type: "MARK_JSON_TASK", path: "tmp/tasks.json" },
+      {
+        type: "MARK_JSON_TASK",
+        path: "tmp/tasks.json",
+        status: "verifying",
+      },
       { type: "CHANGE_SCOPE_GUARD" },
       { type: "SCAN_SCOPE_EVIDENCE", rootPath: "." },
       { type: "UPDATE_SCOPE_REGISTRY", flowAlias: "security-review-fix-loop" },
@@ -108,10 +117,7 @@ describe("validateRalphUtilityBlock", () => {
       },
       {
         utility: { type: "POLL", url: "" },
-        expectedCodes: [
-          "utility-url-required",
-          "utility-condition-required",
-        ],
+        expectedCodes: ["utility-url-required", "utility-condition-required"],
       },
       {
         utility: { type: "CONDITION" },
@@ -123,10 +129,7 @@ describe("validateRalphUtilityBlock", () => {
       },
       {
         utility: { type: "WRITE_FILE", path: "" },
-        expectedCodes: [
-          "utility-path-required",
-          "utility-content-required",
-        ],
+        expectedCodes: ["utility-path-required", "utility-content-required"],
       },
       {
         utility: { type: "FILE_EXISTS", path: "" },
@@ -161,12 +164,24 @@ describe("validateRalphUtilityBlock", () => {
         expectedCodes: ["utility-path-required"],
       },
       {
+        utility: { type: "ASSESS_JSON_TASKS", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
         utility: { type: "SELECT_JSON_TASK", path: "" },
         expectedCodes: ["utility-path-required"],
       },
       {
-        utility: { type: "MARK_JSON_TASK", path: "" },
+        utility: {
+          type: "MARK_JSON_TASK",
+          path: "",
+          status: "verifying",
+        },
         expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "MARK_JSON_TASK", path: "tmp/tasks.json" },
+        expectedCodes: ["utility-status-required"],
       },
       {
         utility: { type: "MOVE_FILE", path: "a.txt" },
@@ -197,7 +212,11 @@ describe("validateRalphUtilityBlock", () => {
         expectedCodes: ["utility-schema-required"],
       },
       {
-        utility: { type: "SELECT_JSON_TASK", path: "tmp/tasks.json", maxTasks: 0 },
+        utility: {
+          type: "SELECT_JSON_TASK",
+          path: "tmp/tasks.json",
+          maxTasks: 0,
+        },
         expectedCodes: ["utility-max-tasks-invalid"],
       },
     ];
@@ -274,5 +293,4 @@ describe("validateRalphUtilityBlock", () => {
       ),
     ).toContain("utility-condition-path-required");
   });
-
 });

@@ -36,7 +36,9 @@ describe("Ralph flow storage", () => {
 
   afterEach(async () => {
     await Promise.all(
-      rootsToClean.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+      rootsToClean
+        .splice(0)
+        .map((root) => rm(root, { recursive: true, force: true })),
     );
   });
 
@@ -46,7 +48,9 @@ describe("Ralph flow storage", () => {
     const path = await writeRalphFlow(workspaceRoot, flow);
 
     expect(path).toBe(getRalphFlowPath(workspaceRoot, "refactor-flow"));
-    await expect(readRalphFlow(workspaceRoot, "refactor-flow")).resolves.toMatchObject({
+    await expect(
+      readRalphFlow(workspaceRoot, "refactor-flow"),
+    ).resolves.toMatchObject({
       id: "refactor-flow",
       alias: "refactor-codebase",
       variables: [
@@ -58,7 +62,9 @@ describe("Ralph flow storage", () => {
         },
       ],
     });
-    await expect(readRalphFlow(workspaceRoot, "refactor-codebase")).resolves.toMatchObject({
+    await expect(
+      readRalphFlow(workspaceRoot, "refactor-codebase"),
+    ).resolves.toMatchObject({
       id: "refactor-flow",
       alias: "refactor-codebase",
     });
@@ -75,7 +81,9 @@ describe("Ralph flow storage", () => {
 
   it("writes, lists, and reads user-scoped flows from the user config directory", async () => {
     const workspaceRoot = await createWorkspace();
-    const userConfigRoot = await mkdtemp(join(tmpdir(), "machdoch-ralph-user-"));
+    const userConfigRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-ralph-user-"),
+    );
     const previousUserConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;
     rootsToClean.push(userConfigRoot);
     process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
@@ -88,23 +96,27 @@ describe("Ralph flow storage", () => {
       });
       const path = await writeRalphFlow(workspaceRoot, flow, { scope: "user" });
 
-      expect(path).toBe(getRalphFlowPath(workspaceRoot, "global-refactor", "user"));
+      expect(path).toBe(
+        getRalphFlowPath(workspaceRoot, "global-refactor", "user"),
+      );
       await expect(
         readRalphFlow(workspaceRoot, "global-refactor", { scope: "user" }),
       ).resolves.toMatchObject({
         id: "global-refactor",
         alias: "global-refactor",
       });
-      await expect(listRalphFlows(workspaceRoot, { scope: "user" })).resolves.toEqual([
+      await expect(
+        listRalphFlows(workspaceRoot, { scope: "user" }),
+      ).resolves.toEqual([
         expect.objectContaining({
           id: "global-refactor",
           scope: "user",
           blockCount: 4,
         }),
       ]);
-      await expect(readRalphFlow(workspaceRoot, "global-refactor")).rejects.toThrow(
-        "was not found",
-      );
+      await expect(
+        readRalphFlow(workspaceRoot, "global-refactor"),
+      ).rejects.toThrow("was not found");
     } finally {
       if (previousUserConfigRoot === undefined) {
         delete process.env.MACHDOCH_USER_CONFIG_DIR;
@@ -116,7 +128,9 @@ describe("Ralph flow storage", () => {
 
   it("serializes user flow writes with the settings transfer boundary", async () => {
     const workspaceRoot = await createWorkspace();
-    const userConfigRoot = await mkdtemp(join(tmpdir(), "machdoch-ralph-user-"));
+    const userConfigRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-ralph-user-"),
+    );
     const previousUserConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;
     rootsToClean.push(userConfigRoot);
     process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
@@ -208,10 +222,7 @@ describe("Ralph flow storage", () => {
     );
 
     await expect(
-      writeRalphFlow(
-        workspaceRoot,
-        createFlow({ alias: "refactor-codebase" }),
-      ),
+      writeRalphFlow(workspaceRoot, createFlow({ alias: "refactor-codebase" })),
     ).resolves.toBe(getRalphFlowPath(workspaceRoot, "refactor-flow"));
     await expect(listRalphFlows(workspaceRoot)).resolves.toEqual([
       expect.objectContaining({
@@ -333,7 +344,7 @@ describe("Ralph flow storage", () => {
     ).resolves.toEqual([]);
   });
 
-  it("normalizes missing or null flow schema versions to the current schema", () => {
+  it("rejects missing or null flow schema versions", () => {
     const baseFlow = createFlow();
     const withoutSchemaVersion: Partial<RalphFlow> = { ...baseFlow };
     delete withoutSchemaVersion.schemaVersion;
@@ -347,10 +358,14 @@ describe("Ralph flow storage", () => {
       }),
     );
 
-    expect(validateRalphFlow(missingSchemaVersionFlow).valid).toBe(true);
-    expect(missingSchemaVersionFlow.schemaVersion).toBe(1);
-    expect(validateRalphFlow(nullSchemaVersionFlow).valid).toBe(true);
-    expect(nullSchemaVersionFlow.schemaVersion).toBe(1);
+    expect(validateRalphFlow(missingSchemaVersionFlow)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining(["schemaVersion must be 1."]),
+    });
+    expect(validateRalphFlow(nullSchemaVersionFlow)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining(["schemaVersion must be 1."]),
+    });
   });
 
   it("keeps unsupported numeric flow schema versions invalid", () => {
@@ -438,7 +453,10 @@ describe("Ralph flow storage", () => {
       allowInvalid: true,
     });
 
-    const revisions = await listRalphFlowRevisions(workspaceRoot, "refactor-flow");
+    const revisions = await listRalphFlowRevisions(
+      workspaceRoot,
+      "refactor-flow",
+    );
     expect(revisions).toEqual([
       expect.objectContaining({
         flowName: "Initial flow",
@@ -468,9 +486,9 @@ describe("Ralph flow storage", () => {
       flowName: "Initial flow",
       valid: true,
     });
-    await expect(listRalphFlowRevisions(workspaceRoot, "refactor-flow")).resolves.toHaveLength(
-      2,
-    );
+    await expect(
+      listRalphFlowRevisions(workspaceRoot, "refactor-flow"),
+    ).resolves.toHaveLength(2);
   });
 
   it("writes capped Ralph run records under .machdoch/ralph/runs", async () => {
@@ -531,10 +549,9 @@ describe("Ralph flow storage", () => {
         scope: "src/core",
       },
     });
-    const rawRecord = JSON.parse(await readFile(written.path, "utf8")) as Record<
-      string,
-      unknown
-    >;
+    const rawRecord = JSON.parse(
+      await readFile(written.path, "utf8"),
+    ) as Record<string, unknown>;
 
     expect(written.path).toContain(".machdoch");
     expect(rawRecord).toMatchObject({
@@ -617,7 +634,9 @@ describe("Ralph flow storage", () => {
       },
     });
 
-    await expect(readRalphRunRecord(workspaceRoot, written.id)).resolves.toMatchObject({
+    await expect(
+      readRalphRunRecord(workspaceRoot, written.id),
+    ).resolves.toMatchObject({
       path: written.path,
       record: {
         id: written.id,
@@ -639,7 +658,9 @@ describe("Ralph flow storage", () => {
     await expect(
       listRalphRunRecords(workspaceRoot, { flowId: "missing-flow" }),
     ).resolves.toEqual([]);
-    await expect(readRalphRunLog(workspaceRoot, written.id)).resolves.toMatchObject({
+    await expect(
+      readRalphRunLog(workspaceRoot, written.id),
+    ).resolves.toMatchObject({
       kind: "simple",
       content: expect.stringContaining("Fixed."),
     });
@@ -658,10 +679,7 @@ describe("Ralph flow storage", () => {
 
     await writeRalphFlow(workspaceRoot, initial);
     await writeRalphFlow(workspaceRoot, edited, { createRevision: true });
-    const [revision] = await listRalphFlowRevisions(
-      workspaceRoot,
-      initial.id,
-    );
+    const [revision] = await listRalphFlowRevisions(workspaceRoot, initial.id);
     const editedFingerprint = createRalphFlowFingerprint(
       await readRalphFlow(workspaceRoot, initial.id),
     );
@@ -671,14 +689,13 @@ describe("Ralph flow storage", () => {
     });
 
     await expect(
-      restoreRalphFlowRevision(
-        workspaceRoot,
-        initial.id,
-        revision?.id ?? "",
-        { expectedFingerprint: editedFingerprint },
-      ),
+      restoreRalphFlowRevision(workspaceRoot, initial.id, revision?.id ?? "", {
+        expectedFingerprint: editedFingerprint,
+      }),
     ).rejects.toThrow("Ralph flow CAS conflict");
-    await expect(readRalphFlow(workspaceRoot, initial.id)).resolves.toMatchObject({
+    await expect(
+      readRalphFlow(workspaceRoot, initial.id),
+    ).resolves.toMatchObject({
       name: "Concurrent edit",
     });
   });
@@ -732,7 +749,9 @@ describe("Ralph flow storage", () => {
         flowId: flow.id,
         flowName: flow.name,
         status: "partial",
-        summary: expect.stringContaining("Partial block completed before interruption."),
+        summary: expect.stringContaining(
+          "Partial block completed before interruption.",
+        ),
         simpleLogPath: paths.simpleMarkdownPath,
         traceLogPath: paths.traceJsonlPath,
         blockCount: 1,
@@ -745,14 +764,18 @@ describe("Ralph flow storage", () => {
     await expect(
       listRalphRunRecords(workspaceRoot, { flowId: "missing-flow" }),
     ).resolves.toEqual([]);
-    await expect(readRalphRunRecord(workspaceRoot, "partial-run")).rejects.toThrow(
-      "was not found",
-    );
-    await expect(readRalphRunLog(workspaceRoot, "partial-run")).resolves.toMatchObject({
+    await expect(
+      readRalphRunRecord(workspaceRoot, "partial-run"),
+    ).rejects.toThrow("was not found");
+    await expect(
+      readRalphRunLog(workspaceRoot, "partial-run"),
+    ).resolves.toMatchObject({
       id: "partial-run",
       kind: "simple",
       path: paths.simpleMarkdownPath,
-      content: expect.stringContaining("Partial block completed before interruption."),
+      content: expect.stringContaining(
+        "Partial block completed before interruption.",
+      ),
     });
     await expect(
       readRalphRunLog(workspaceRoot, "partial-run", "trace"),
@@ -776,37 +799,45 @@ describe("Ralph flow storage", () => {
       throw new Error("Expected file-backed Ralph run logger paths.");
     }
     const now = new Date().toISOString();
-    await writeFile(paths.recordPath, `${JSON.stringify({
-      schemaVersion: 1,
-      id: paths.id,
-      createdAt: now,
-      flowId: flow.id,
-      flowName: flow.name,
-      status: "running",
-      summary: "Still running.",
-      variableValues: {},
-      events: [],
-      blockResults: [],
-      validation: { valid: true, errors: [], warnings: [] },
-      checkpoint: {
-        currentBlockId: "start",
-        transitions: 0,
-        variables: {},
-        resultsByBlock: {},
-        runLog: [],
-        blockResults: [],
-        events: [],
-        errorCounts: {},
-        repeatedFailures: {},
-        lease: {
-          ownerId: "foreign-owner",
-          generation: 1,
-          acquiredAt: now,
-          heartbeatAt: now,
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    await writeFile(
+      paths.recordPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          id: paths.id,
+          createdAt: now,
+          flowId: flow.id,
+          flowName: flow.name,
+          status: "running",
+          summary: "Still running.",
+          variableValues: {},
+          events: [],
+          blockResults: [],
+          validation: { valid: true, errors: [], warnings: [] },
+          checkpoint: {
+            currentBlockId: "start",
+            transitions: 0,
+            variables: {},
+            resultsByBlock: {},
+            runLog: [],
+            blockResults: [],
+            events: [],
+            errorCounts: {},
+            repeatedFailures: {},
+            lease: {
+              ownerId: "foreign-owner",
+              generation: 1,
+              acquiredAt: now,
+              heartbeatAt: now,
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+          },
         },
-      },
-    }, null, 2)}\n`, "utf8");
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
     const artifactPaths = [
       paths.recordPath,
       paths.simpleJsonlPath,
@@ -814,14 +845,20 @@ describe("Ralph flow storage", () => {
       paths.traceJsonlPath,
       join(paths.directory, "execution-history.jsonl"),
     ];
-    const before = await Promise.all(artifactPaths.map((path) => readFile(path)));
+    const before = await Promise.all(
+      artifactPaths.map((path) => readFile(path)),
+    );
 
-    await expect(createRalphRunLogger(workspaceRoot, flow, {
-      runId: "live-run",
-      paths,
-    })).rejects.toThrow("refused to overwrite active run");
+    await expect(
+      createRalphRunLogger(workspaceRoot, flow, {
+        runId: "live-run",
+        paths,
+      }),
+    ).rejects.toThrow("refused to overwrite active run");
 
-    const after = await Promise.all(artifactPaths.map((path) => readFile(path)));
+    const after = await Promise.all(
+      artifactPaths.map((path) => readFile(path)),
+    );
     expect(after).toEqual(before);
   });
 
@@ -829,12 +866,24 @@ describe("Ralph flow storage", () => {
     const workspaceRoot = await createWorkspace();
     const base = createFlow({ alias: "shared-alias" });
     const outcomes = await Promise.allSettled([
-      writeRalphFlow(workspaceRoot, { ...base, id: "flow-one", name: "Flow one" }),
-      writeRalphFlow(workspaceRoot, { ...base, id: "flow-two", name: "Flow two" }),
+      writeRalphFlow(workspaceRoot, {
+        ...base,
+        id: "flow-one",
+        name: "Flow one",
+      }),
+      writeRalphFlow(workspaceRoot, {
+        ...base,
+        id: "flow-two",
+        name: "Flow two",
+      }),
     ]);
 
-    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
-    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+    expect(
+      outcomes.filter((outcome) => outcome.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      outcomes.filter((outcome) => outcome.status === "rejected"),
+    ).toHaveLength(1);
     const [stored] = await listRalphFlows(workspaceRoot);
     if (!stored) {
       throw new Error("Expected one stored flow.");
@@ -846,17 +895,21 @@ describe("Ralph flow storage", () => {
       description: "Changed after the delete view loaded.",
     });
 
-    await expect(deleteRalphFlow(workspaceRoot, stored.id, {
-      expectedFingerprint: fingerprint,
-    })).rejects.toThrow("Ralph flow CAS conflict");
-    await expect(readRalphFlow(workspaceRoot, stored.id)).resolves.toMatchObject({
+    await expect(
+      deleteRalphFlow(workspaceRoot, stored.id, {
+        expectedFingerprint: fingerprint,
+      }),
+    ).rejects.toThrow("Ralph flow CAS conflict");
+    await expect(
+      readRalphFlow(workspaceRoot, stored.id),
+    ).resolves.toMatchObject({
       description: "Changed after the delete view loaded.",
     });
     const current = await readRalphFlow(workspaceRoot, stored.id);
-    await expect(deleteRalphFlow(workspaceRoot, stored.id, {
-      expectedFingerprint: createRalphFlowFingerprint(current),
-    })).resolves.toMatchObject({ id: stored.id });
+    await expect(
+      deleteRalphFlow(workspaceRoot, stored.id, {
+        expectedFingerprint: createRalphFlowFingerprint(current),
+      }),
+    ).resolves.toMatchObject({ id: stored.id });
   });
 });
-
-

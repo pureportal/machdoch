@@ -37,6 +37,15 @@ import {
   readSchedulerPromptFile,
 } from "./cli-scheduler-commands.ts";
 
+const verifiedOutcome = {
+  status: "succeeded" as const,
+  verified: true,
+  retryable: false,
+  reason: "Durable evidence verified completion.",
+  evidence: [],
+  limitations: [],
+};
+
 const createWorkspaceFixture = async (): Promise<{
   root: string;
   workspaceRoot: string;
@@ -158,9 +167,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
       schemaVersion: 1,
       id: "autonomous-improvement",
       name: "Autonomous improvement",
-      variables: [
-        { name: "goal", type: "string", required: false },
-      ],
+      variables: [{ name: "goal", type: "string", required: false }],
       blocks: [
         { id: "start", type: "START", title: "Start" },
         { id: "done", type: "END", title: "Done", status: "success" },
@@ -234,7 +241,9 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
     const paths = {
       id: runId,
       directory: resolve(`C:/workspace/.machdoch/ralph/runs/${runId}`),
-      recordPath: resolve(`C:/workspace/.machdoch/ralph/runs/${runId}/run.json`),
+      recordPath: resolve(
+        `C:/workspace/.machdoch/ralph/runs/${runId}/run.json`,
+      ),
       simpleJsonlPath: resolve(
         `C:/workspace/.machdoch/ralph/runs/${runId}/simple.jsonl`,
       ),
@@ -266,6 +275,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
       flow: "autonomous-improvement",
       status: "completed",
       summary: "Recovered and completed.",
+      outcome: verifiedOutcome,
       events: [],
       blockResults: [],
       missingVariables: [],
@@ -333,6 +343,14 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
         variableValues: {},
         events: [],
         blockResults: [],
+        outcome: {
+          status: "succeeded",
+          verified: true,
+          retryable: false,
+          reason: "Durable evidence verified completion.",
+          evidence: [],
+          limitations: [],
+        },
         validation: { valid: true, errors: [], warnings: [] },
       },
     });
@@ -363,9 +381,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
   it("resumes a stopped checkpoint after a timed-out scheduler attempt", async () => {
     const workspaceRoot = resolve("C:/workspace");
     const runId = "scheduled-run-1-autonomous-improvement";
-    const directory = resolve(
-      `C:/workspace/.machdoch/ralph/runs/${runId}`,
-    );
+    const directory = resolve(`C:/workspace/.machdoch/ralph/runs/${runId}`);
     const checkpoint = {
       currentBlockId: "verify",
       transitions: 9,
@@ -406,6 +422,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
       flow: "autonomous-improvement",
       status: "completed",
       summary: "Resumed after the timeout.",
+      outcome: verifiedOutcome,
       events: [],
       blockResults: [],
       missingVariables: [],
@@ -486,6 +503,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
       flow: "autonomous-improvement",
       status: "completed",
       summary: "Recovered and completed.",
+      outcome: verifiedOutcome,
       events: [],
       blockResults: [],
       missingVariables: [],
@@ -549,6 +567,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
       flow: "autonomous-improvement",
       status: "completed",
       summary: "The intentional retry completed.",
+      outcome: verifiedOutcome,
       events: [],
       blockResults: [],
       missingVariables: [],

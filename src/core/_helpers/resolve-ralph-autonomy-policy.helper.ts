@@ -1,7 +1,4 @@
-import type {
-  RalphAutonomyPolicy,
-  RalphAutonomySetting,
-} from "../ralph.js";
+import type { RalphAutonomyPolicy, RalphAutonomySetting } from "../ralph.js";
 
 export interface ResolvedRalphAutonomyPolicy {
   enabled: boolean;
@@ -15,20 +12,25 @@ export interface ResolvedRalphAutonomyPolicy {
   transitionExhaustion: "checkpoint" | "crash";
   recoveryExhaustion: "defer" | "block";
   deferToBlockId?: string;
+  maxStagnantTransitions: number;
+  maxRepeatedCycle: number;
 }
 
-export const DEFAULT_RALPH_AUTONOMY_POLICY: Readonly<ResolvedRalphAutonomyPolicy> = {
-  enabled: false,
-  recoverFailedEnd: true,
-  maxRecoveryAttempts: 3,
-  backoff: {
-    initialDelaySeconds: 1,
-    multiplier: 2,
-    maxDelaySeconds: 30,
-  },
-  transitionExhaustion: "checkpoint",
-  recoveryExhaustion: "defer",
-};
+export const DEFAULT_RALPH_AUTONOMY_POLICY: Readonly<ResolvedRalphAutonomyPolicy> =
+  {
+    enabled: false,
+    recoverFailedEnd: true,
+    maxRecoveryAttempts: 3,
+    backoff: {
+      initialDelaySeconds: 1,
+      multiplier: 2,
+      maxDelaySeconds: 30,
+    },
+    transitionExhaustion: "checkpoint",
+    recoveryExhaustion: "defer",
+    maxStagnantTransitions: 80,
+    maxRepeatedCycle: 3,
+  };
 
 const toNonNegativeFiniteNumber = (
   value: unknown,
@@ -80,7 +82,8 @@ export const resolveRalphAutonomyPolicy = (
   const maxDelaySeconds = Math.max(
     initialDelaySeconds,
     toNonNegativeFiniteNumber(
-      runPolicy?.backoff?.maxDelaySeconds ?? flowPolicy?.backoff?.maxDelaySeconds,
+      runPolicy?.backoff?.maxDelaySeconds ??
+        flowPolicy?.backoff?.maxDelaySeconds,
       DEFAULT_RALPH_AUTONOMY_POLICY.backoff.maxDelaySeconds,
     ),
   );
@@ -95,7 +98,8 @@ export const resolveRalphAutonomyPolicy = (
       getSettingEnabled(flowSetting, DEFAULT_RALPH_AUTONOMY_POLICY.enabled),
     ),
     recoverFailedEnd:
-      runPolicy?.recoverFailedEnd ?? flowPolicy?.recoverFailedEnd ??
+      runPolicy?.recoverFailedEnd ??
+      flowPolicy?.recoverFailedEnd ??
       DEFAULT_RALPH_AUTONOMY_POLICY.recoverFailedEnd,
     maxRecoveryAttempts: toNonNegativeInteger(
       runPolicy?.maxRecoveryAttempts ?? flowPolicy?.maxRecoveryAttempts,
@@ -107,15 +111,30 @@ export const resolveRalphAutonomyPolicy = (
       maxDelaySeconds,
     },
     transitionExhaustion:
-      runPolicy?.transitionExhaustion ?? flowPolicy?.transitionExhaustion ??
+      runPolicy?.transitionExhaustion ??
+      flowPolicy?.transitionExhaustion ??
       DEFAULT_RALPH_AUTONOMY_POLICY.transitionExhaustion,
     recoveryExhaustion:
-      runPolicy?.recoveryExhaustion ?? flowPolicy?.recoveryExhaustion ??
+      runPolicy?.recoveryExhaustion ??
+      flowPolicy?.recoveryExhaustion ??
       DEFAULT_RALPH_AUTONOMY_POLICY.recoveryExhaustion,
+    maxStagnantTransitions: toNonNegativeInteger(
+      runPolicy?.maxStagnantTransitions ?? flowPolicy?.maxStagnantTransitions,
+      DEFAULT_RALPH_AUTONOMY_POLICY.maxStagnantTransitions,
+    ),
+    maxRepeatedCycle: Math.max(
+      2,
+      toNonNegativeInteger(
+        runPolicy?.maxRepeatedCycle ?? flowPolicy?.maxRepeatedCycle,
+        DEFAULT_RALPH_AUTONOMY_POLICY.maxRepeatedCycle,
+      ),
+    ),
     ...((runPolicy?.deferToBlockId ?? flowPolicy?.deferToBlockId)?.trim()
       ? {
           deferToBlockId: (
-            runPolicy?.deferToBlockId ?? flowPolicy?.deferToBlockId ?? ""
+            runPolicy?.deferToBlockId ??
+            flowPolicy?.deferToBlockId ??
+            ""
           ).trim(),
         }
       : {}),

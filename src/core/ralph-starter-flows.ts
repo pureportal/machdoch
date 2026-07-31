@@ -1,6 +1,6 @@
 import { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
 import { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
-import type { RalphFlow, RalphFlowBlock } from "./ralph.js";
+import type { RalphFlow, RalphFlowBlock, RalphUtilityBlock } from "./ralph.js";
 import { autonomousCodeImprovementLoopStarterFlow } from "./ralph-starter-flows/autonomous-code-improvement-loop.js";
 import { autonomousFeatureGenerationLoopStarterFlow } from "./ralph-starter-flows/autonomous-feature-generation-loop.js";
 import { autonomousUiImprovementLoopStarterFlow } from "./ralph-starter-flows/autonomous-ui-improvement-loop.js";
@@ -248,6 +248,159 @@ const isModelBackedBlock = (block: RalphFlowBlock): boolean => {
   );
 };
 
+const RALPH_REPOSITORY_ROOT =
+  "{{data:detect-project-commands:repositoryContext.worktreeRoot}}";
+
+const configureAutonomyEvidence = (flow: RalphFlow): void => {
+  const runChecks = flow.blocks.filter(
+    (block): block is RalphUtilityBlock =>
+      block.type === "UTILITY" && block.utility.type === "RUN_CHECK",
+  );
+  const baseline =
+    runChecks.find((block) => /baseline/iu.test(block.id)) ?? runChecks[0];
+  const candidate = runChecks.find((block) => block.id !== baseline?.id);
+  const verificationPlanId = `${flow.id}:frozen-verification`;
+
+  if (baseline && candidate) {
+    const selectorId =
+      candidate.utility.command?.match(/\{\{data:([^:}]+):/u)?.[1];
+    if (selectorId && flow.blocks.some((block) => block.id === selectorId)) {
+      const selectorSuccessTarget =
+        flow.edges.find(
+          (edge) => edge.from === selectorId && edge.fromOutput === "SUCCESS",
+        )?.to ?? flow.edges.find((edge) => edge.from === selectorId)?.to;
+      if (selectorSuccessTarget) {
+        flow.edges = flow.edges.map((edge) => {
+          if (edge.to === baseline.id) {
+            return { ...edge, to: selectorId };
+          }
+          if (edge.from === selectorId) {
+            return { ...edge, to: baseline.id };
+          }
+          if (edge.to === selectorId) {
+            return { ...edge, to: selectorSuccessTarget };
+          }
+          return edge;
+        });
+      }
+    }
+
+    const baselineUtility: RalphUtilityBlock["utility"] = {
+      ...baseline.utility,
+      verificationRole: "baseline",
+      verificationPlanId,
+    };
+    delete baselineUtility.command;
+    delete baselineUtility.fallbackCommand;
+    delete baselineUtility.cwd;
+    if (candidate.utility.command !== undefined) {
+      baselineUtility.command = candidate.utility.command;
+    }
+    if (candidate.utility.fallbackCommand !== undefined) {
+      baselineUtility.fallbackCommand = candidate.utility.fallbackCommand;
+    }
+    if (candidate.utility.cwd !== undefined) {
+      baselineUtility.cwd = candidate.utility.cwd;
+    }
+    baseline.utility = baselineUtility;
+    candidate.utility = {
+      ...candidate.utility,
+      verificationRole: "candidate",
+      baselineBlockId: baseline.id,
+      verificationPlanId,
+    };
+    const successEdge = flow.edges.find(
+      (edge) => edge.from === candidate.id && edge.fromOutput === "SUCCESS",
+    );
+    const baselineSuccessEdge = flow.edges.find(
+      (edge) => edge.from === baseline.id && edge.fromOutput === "SUCCESS",
+    );
+    if (
+      baselineSuccessEdge &&
+      !flow.edges.some(
+        (edge) =>
+          edge.from === baseline.id && edge.fromOutput === "INCONCLUSIVE",
+      )
+    ) {
+      flow.edges.push({
+        id: `${baseline.id}-inconclusive-to-work`,
+        from: baseline.id,
+        fromOutput: "INCONCLUSIVE",
+        to: baselineSuccessEdge.to,
+      });
+    }
+    if (
+      successEdge &&
+      !flow.edges.some(
+        (edge) =>
+          edge.from === candidate.id && edge.fromOutput === "INCONCLUSIVE",
+      )
+    ) {
+      flow.edges.push({
+        id: `${candidate.id}-inconclusive-to-evidence`,
+        from: candidate.id,
+        fromOutput: "INCONCLUSIVE",
+        to: successEdge.to,
+      });
+    }
+  }
+
+  for (const block of runChecks) {
+    if (block.id !== baseline?.id && block.id !== candidate?.id) {
+      block.utility = {
+        ...block.utility,
+        verificationRole: "supplemental",
+        verificationPlanId,
+      };
+    }
+  }
+
+  flow.blocks = flow.blocks.map((block) => {
+    if (
+      block.type === "UTILITY" &&
+      (block.utility.type === "GIT_SNAPSHOT" ||
+        block.utility.type === "GIT_DIFF_SUMMARY" ||
+        block.utility.type === "CHANGE_SCOPE_GUARD")
+    ) {
+      return {
+        ...block,
+        utility: { ...block.utility, cwd: RALPH_REPOSITORY_ROOT },
+      };
+    }
+    if (block.type === "END") {
+      const outcome =
+        block.status === "cancelled"
+          ? ("cancelled" as const)
+          : block.status === "failed" || block.status === "review"
+            ? ("blocked" as const)
+            : /defer/iu.test(`${block.id} ${block.title}`)
+              ? ("deferred" as const)
+              : ("succeeded" as const);
+      return { ...block, outcome };
+    }
+    return block;
+  });
+
+  const autonomy =
+    typeof flow.settings?.autonomy === "object"
+      ? flow.settings.autonomy
+      : { enabled: flow.settings?.autonomy !== false };
+  flow.settings = {
+    ...flow.settings,
+    autonomy: {
+      ...autonomy,
+      maxStagnantTransitions: 48,
+      maxRepeatedCycle: 3,
+    },
+  };
+  flow.guidance = [
+    flow.guidance,
+    "Autonomy contract: repository changes, scope, and a frozen baseline/candidate verification plan are engine-owned evidence. Reaching an END block alone never proves completion. Deferred, blocked, stagnant, and inconclusive outcomes retain a resumable checkpoint.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+};
+
 const hardenStarterFlow = (starterFlow: RalphStarterFlow): RalphStarterFlow => {
   const flow = cloneRalphFlow(starterFlow.flow);
 
@@ -295,7 +448,9 @@ const hardenStarterFlow = (starterFlow: RalphStarterFlow): RalphStarterFlow => {
     return settings ? { ...block, settings } : block;
   });
 
-  return { ...starterFlow, flow };
+  configureAutonomyEvidence(flow);
+
+  return { ...starterFlow, version: starterFlow.version + 1, flow };
 };
 
 export const STARTER_RALPH_FLOWS: readonly RalphStarterFlow[] =
@@ -316,16 +471,16 @@ export const createRalphStarterFlowSummary = (
   const hasHumanInputBlocks = starterFlow.flow.blocks.some(
     (block) => block.type === "ASK_USER" || block.type === "INTERVIEW",
   );
-  const hasBlockingHumanInput = starterFlow.flow.blocks.some(
-    (block) => block.type === "ASK_USER",
-  ) ||
+  const hasBlockingHumanInput =
+    starterFlow.flow.blocks.some((block) => block.type === "ASK_USER") ||
     (starterFlow.flow.blocks.some((block) => block.type === "INTERVIEW") &&
       starterFlow.flow.variables?.find(
         (variable) => variable.name === "enableInterview",
       )?.default === "true");
   const autonomyReady =
     requiredVariableNames.length === 0 && !hasBlockingHumanInput;
-  const modelBlockCount = starterFlow.flow.blocks.filter(isModelBackedBlock).length;
+  const modelBlockCount =
+    starterFlow.flow.blocks.filter(isModelBackedBlock).length;
   const runCheckCount = starterFlow.flow.blocks.filter(
     (block) => block.type === "UTILITY" && block.utility.type === "RUN_CHECK",
   ).length;
@@ -345,7 +500,8 @@ export const createRalphStarterFlowSummary = (
     visualReviewConfigured ? "visual-review" : undefined,
     artifactPathCount > 0 ? "persistent-artifacts" : undefined,
     starterFlow.flow.blocks.some(
-      (block) => block.type === "UTILITY" && block.utility.type === "QUERY_JSONL",
+      (block) =>
+        block.type === "UTILITY" && block.utility.type === "QUERY_JSONL",
     )
       ? "bounded-history"
       : undefined,
@@ -393,7 +549,9 @@ export const createImportedRalphStarterFlow = (
       version: starterFlow.version,
       importedAt: options.importedAt,
       templateFingerprint: createTemplateFingerprint(starterFlow.flow),
-      templateVariableDefaults: createTemplateVariableDefaults(starterFlow.flow),
+      templateVariableDefaults: createTemplateVariableDefaults(
+        starterFlow.flow,
+      ),
       templateSnapshot: createTemplateSnapshot(starterFlow.flow),
     },
   };
@@ -442,8 +600,10 @@ const templateValuesEqual = (
     return left === right;
   }
 
-  return JSON.stringify(canonicalizeTemplateValue(left)) ===
-    JSON.stringify(canonicalizeTemplateValue(right));
+  return (
+    JSON.stringify(canonicalizeTemplateValue(left)) ===
+    JSON.stringify(canonicalizeTemplateValue(right))
+  );
 };
 
 const getMergeArrayKey = (arrays: unknown[][]): "id" | "name" | undefined => {
@@ -477,7 +637,10 @@ const mergeTemplateValue = (
   if (templateValuesEqual(local, base)) {
     return upstream;
   }
-  if (templateValuesEqual(upstream, base) || templateValuesEqual(local, upstream)) {
+  if (
+    templateValuesEqual(upstream, base) ||
+    templateValuesEqual(local, upstream)
+  ) {
     return local;
   }
 
@@ -517,17 +680,23 @@ const mergeTemplateValue = (
     const keyName = getMergeArrayKey([base, local, upstream]);
 
     if (keyName) {
-      const toMap = (values: unknown[]): Map<string, unknown> => new Map(
-        values.map((value) => [String((value as Record<string, unknown>)[keyName]), value]),
-      );
+      const toMap = (values: unknown[]): Map<string, unknown> =>
+        new Map(
+          values.map((value) => [
+            String((value as Record<string, unknown>)[keyName]),
+            value,
+          ]),
+        );
       const baseByKey = toMap(base);
       const localByKey = toMap(local);
       const upstreamByKey = toMap(upstream);
-      const orderedKeys = Array.from(new Set([
-        ...upstreamByKey.keys(),
-        ...localByKey.keys(),
-        ...baseByKey.keys(),
-      ]));
+      const orderedKeys = Array.from(
+        new Set([
+          ...upstreamByKey.keys(),
+          ...localByKey.keys(),
+          ...baseByKey.keys(),
+        ]),
+      );
 
       return orderedKeys.flatMap((key) => {
         const merged = mergeTemplateValue(
@@ -582,17 +751,16 @@ export const createUpgradedRalphStarterFlowWithReport = (
   const fingerprintMatches =
     Boolean(expectedTemplateFingerprint) &&
     importedTemplateFingerprint === expectedTemplateFingerprint;
-  const legacyPersistedRoundTripMatches =
-    existingFlow.source?.version === starterFlow.version &&
-    importedTemplateFingerprint === createTemplateFingerprint(starterFlow.flow);
   const baseTemplateSnapshot = existingFlow.source?.templateSnapshot;
-  const graphUpgradeConflict = !expectedTemplateFingerprint
-    ? "The imported starter has no template fingerprint, so its graph cannot be upgraded without risking local changes. Re-import the latest starter or restore the original graph before upgrading."
-    : !fingerprintMatches && !legacyPersistedRoundTripMatches && !baseTemplateSnapshot
-      ? "The imported starter graph has local changes but its legacy metadata has no base snapshot for a structural three-way merge. Re-import once to enable mergeable upgrades."
-      : null;
-
-  if (graphUpgradeConflict) {
+  const previousTemplateDefaults =
+    existingFlow.source?.templateVariableDefaults;
+  if (
+    !expectedTemplateFingerprint ||
+    !baseTemplateSnapshot ||
+    !previousTemplateDefaults
+  ) {
+    const conflict =
+      "The imported starter metadata is incomplete. Re-import the latest starter before upgrading.";
     return {
       flow: cloneRalphFlow(existingFlow),
       report: {
@@ -606,20 +774,17 @@ export const createUpgradedRalphStarterFlowWithReport = (
         adoptedVariableDefaultNames: [],
         addedVariableNames: [],
         removedVariableNames: [],
-        conflicts: [graphUpgradeConflict],
+        conflicts: [conflict],
       },
     };
   }
 
-  const upgraded = fingerprintMatches || legacyPersistedRoundTripMatches
+  const upgraded = fingerprintMatches
     ? cloneRalphFlow(starterFlow.flow)
     : cloneRalphFlow(
         mergeTemplateValue(
-          baseTemplateSnapshot ?? latestTemplateSnapshot,
-          createComparableImportedSnapshot(
-            existingFlow,
-            baseTemplateSnapshot ?? latestTemplateSnapshot,
-          ),
+          baseTemplateSnapshot,
+          createComparableImportedSnapshot(existingFlow, baseTemplateSnapshot),
           latestTemplateSnapshot,
           [],
           structuralConflicts,
@@ -632,8 +797,6 @@ export const createUpgradedRalphStarterFlowWithReport = (
   const latestVariableNames = new Set(
     (starterFlow.flow.variables ?? []).map((variable) => variable.name),
   );
-  const previousTemplateDefaults = existingFlow.source?.templateVariableDefaults;
-  const hasPreviousTemplateDefaults = previousTemplateDefaults !== undefined;
   const preservedVariableDefaultNames: string[] = [];
   const adoptedVariableDefaultNames: string[] = [];
 
@@ -646,7 +809,6 @@ export const createUpgradedRalphStarterFlowWithReport = (
 
       const previousTemplateDefault = previousTemplateDefaults?.[variable.name];
       const isUserOverride =
-        !hasPreviousTemplateDefaults ||
         existingVariable.default !== previousTemplateDefault;
 
       if (isUserOverride) {
@@ -676,20 +838,17 @@ export const createUpgradedRalphStarterFlowWithReport = (
     const existingVariable = existingVariables.get(name);
     const hadLocalOverride =
       existingVariable !== undefined &&
-      (!hasPreviousTemplateDefaults || existingVariable.default !== previousTemplateDefault);
+      existingVariable.default !== previousTemplateDefault;
 
-    if (hadLocalOverride || upgraded.variables?.some((variable) => variable.name === name)) {
+    if (
+      hadLocalOverride ||
+      upgraded.variables?.some((variable) => variable.name === name)
+    ) {
       conflicts.push(
         `Variable ${name} was removed in starter version ${starterFlow.version}; its locally changed definition was preserved and needs review.`,
       );
     }
   }
-  if (!hasPreviousTemplateDefaults) {
-    conflicts.unshift(
-      "Legacy import has no starter base snapshot; all matching variable defaults were conservatively treated as user overrides.",
-    );
-  }
-
   const flow: RalphFlow = {
     ...upgraded,
     id: existingFlow.id,
@@ -706,7 +865,9 @@ export const createUpgradedRalphStarterFlowWithReport = (
         ? { importedAt: existingFlow.source.importedAt }
         : {}),
       templateFingerprint: createTemplateFingerprint(starterFlow.flow),
-      templateVariableDefaults: createTemplateVariableDefaults(starterFlow.flow),
+      templateVariableDefaults: createTemplateVariableDefaults(
+        starterFlow.flow,
+      ),
       templateSnapshot: createTemplateSnapshot(starterFlow.flow),
     },
   };
@@ -715,10 +876,7 @@ export const createUpgradedRalphStarterFlowWithReport = (
     flow,
     report: {
       applied: true,
-      strategy:
-        fingerprintMatches || legacyPersistedRoundTripMatches
-          ? "replace-unmodified"
-          : "three-way-merge",
+      strategy: fingerprintMatches ? "replace-unmodified" : "three-way-merge",
       ...(existingFlow.source?.version !== undefined
         ? { fromVersion: existingFlow.source.version }
         : {}),

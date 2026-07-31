@@ -288,6 +288,14 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         miniMapColor: "#7a9a61",
         badgeLabel: "JSON VALID",
       };
+    case "ASSESS_JSON_TASKS":
+      return {
+        icon: ClipboardCheck,
+        nodeClassName: "border-blue-400/60 bg-blue-950 text-blue-50",
+        badgeClassName: "text-blue-200",
+        miniMapColor: "#60a5fa",
+        badgeLabel: "TASK STATE",
+      };
     case "SELECT_JSON_TASK":
       return {
         icon: ClipboardCheck,

@@ -27,13 +27,36 @@ import type {
 import type { ModelProvider } from "../runtime-contract.generated.js";
 
 const RALPH_FLOW_BLOCK_TYPES = [
-  "START", "PROMPT", "VALIDATOR", "DECISION", "PACK", "ASK_USER", "INTERVIEW", "UTILITY",
-  "MCP_TOOL", "MCP_RESOURCE", "MCP_PROMPT", "MEDIA_FLOW", "NOTE", "GROUP", "END",
+  "START",
+  "PROMPT",
+  "VALIDATOR",
+  "DECISION",
+  "PACK",
+  "ASK_USER",
+  "INTERVIEW",
+  "UTILITY",
+  "MCP_TOOL",
+  "MCP_RESOURCE",
+  "MCP_PROMPT",
+  "MEDIA_FLOW",
+  "NOTE",
+  "GROUP",
+  "END",
 ] as const satisfies readonly RalphBlockType[];
 
 const RALPH_INPUT_FIELD_TYPES = [
-  "text", "textarea", "number", "boolean", "select", "multiselect", "url",
-  "path", "file", "files", "image", "images",
+  "text",
+  "textarea",
+  "number",
+  "boolean",
+  "select",
+  "multiselect",
+  "url",
+  "path",
+  "file",
+  "files",
+  "image",
+  "images",
 ] as const satisfies readonly RalphInputFieldType[];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -47,7 +70,9 @@ const isRalphFlowBlockType = (value: unknown): value is RalphBlockType => {
   );
 };
 
-const isRalphInputFieldType = (value: unknown): value is RalphInputFieldType => {
+const isRalphInputFieldType = (
+  value: unknown,
+): value is RalphInputFieldType => {
   return (
     typeof value === "string" &&
     RALPH_INPUT_FIELD_TYPES.includes(value as RalphInputFieldType)
@@ -92,7 +117,8 @@ const coerceInputOptions = (value: unknown): RalphInputOption[] => {
     }
 
     const optionValue = typeof entry.value === "string" ? entry.value : "";
-    const optionLabel = typeof entry.label === "string" ? entry.label : optionValue;
+    const optionLabel =
+      typeof entry.label === "string" ? entry.label : optionValue;
 
     return optionValue ? [{ value: optionValue, label: optionLabel }] : [];
   });
@@ -129,7 +155,7 @@ const coerceInputFields = (value: unknown): RalphInputField[] => {
       return [];
     }
 
-    const defaultValue = coerceInputValue(entry.defaultValue ?? entry.default);
+    const defaultValue = coerceInputValue(entry.defaultValue);
     const validation = coerceInputFieldValidation(entry.validation);
 
     return [
@@ -137,9 +163,15 @@ const coerceInputFields = (value: unknown): RalphInputField[] => {
         id: typeof entry.id === "string" ? entry.id : "",
         label: typeof entry.label === "string" ? entry.label : "",
         type: isRalphInputFieldType(entry.type) ? entry.type : "text",
-        ...(typeof entry.required === "boolean" ? { required: entry.required } : {}),
-        ...(typeof entry.skippable === "boolean" ? { skippable: entry.skippable } : {}),
-        ...(typeof entry.placeholder === "string" ? { placeholder: entry.placeholder } : {}),
+        ...(typeof entry.required === "boolean"
+          ? { required: entry.required }
+          : {}),
+        ...(typeof entry.skippable === "boolean"
+          ? { skippable: entry.skippable }
+          : {}),
+        ...(typeof entry.placeholder === "string"
+          ? { placeholder: entry.placeholder }
+          : {}),
         ...(typeof entry.help === "string" ? { help: entry.help } : {}),
         ...(defaultValue !== undefined ? { defaultValue } : {}),
         options: coerceInputOptions(entry.options),
@@ -153,32 +185,11 @@ const coerceInputFields = (value: unknown): RalphInputField[] => {
 };
 
 const coerceAskUserMode = (value: unknown): RalphAskUserMode | undefined => {
-  return value === "alwaysAsk" || value === "confirmOnly" || value === "missingOnly"
+  return value === "alwaysAsk" ||
+    value === "confirmOnly" ||
+    value === "missingOnly"
     ? value
     : undefined;
-};
-
-const coerceStringAlias = (
-  record: Record<string, unknown>,
-  keys: readonly string[],
-): string | undefined => {
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-  }
-
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === "string") {
-      return value;
-    }
-  }
-
-  return undefined;
 };
 
 const coercePosition = (value: unknown): RalphPosition | undefined => {
@@ -200,7 +211,9 @@ const coerceSize = (value: unknown): RalphSize | undefined => {
   const width = typeof value.width === "number" ? value.width : undefined;
   const height = typeof value.height === "number" ? value.height : undefined;
 
-  return width !== undefined && height !== undefined ? { width, height } : undefined;
+  return width !== undefined && height !== undefined
+    ? { width, height }
+    : undefined;
 };
 
 const coerceAnnotationTone = (
@@ -291,8 +304,14 @@ const coerceMediaInputBindings = (
     if (!isRecord(binding)) {
       continue;
     }
-    if (binding.source === "variable" && typeof binding.variableName === "string") {
-      bindings.push([inputId, { source: "variable", variableName: binding.variableName }]);
+    if (
+      binding.source === "variable" &&
+      typeof binding.variableName === "string"
+    ) {
+      bindings.push([
+        inputId,
+        { source: "variable", variableName: binding.variableName },
+      ]);
     } else if (
       binding.source === "literal" &&
       (typeof binding.value === "string" ||
@@ -306,7 +325,10 @@ const coerceMediaInputBindings = (
       binding.source === "media-asset" &&
       typeof binding.assetId === "string"
     ) {
-      bindings.push([inputId, { source: "media-asset", assetId: binding.assetId }]);
+      bindings.push([
+        inputId,
+        { source: "media-asset", assetId: binding.assetId },
+      ]);
     }
   }
   return Object.fromEntries(bindings);
@@ -507,7 +529,8 @@ export const coerceRalphFlowBlockRecord = (
         ...(typeof record.cancelLabel === "string"
           ? { cancelLabel: record.cancelLabel }
           : {}),
-        ...(typeof record.timeoutSeconds === "number" || record.timeoutSeconds === null
+        ...(typeof record.timeoutSeconds === "number" ||
+        record.timeoutSeconds === null
           ? { timeoutSeconds: record.timeoutSeconds }
           : {}),
       };
@@ -596,8 +619,7 @@ export const coerceRalphFlowBlockRecord = (
       return {
         ...base,
         type,
-        text:
-          coerceStringAlias(record, ["text", "note", "content", "body"]) ?? "",
+        text: typeof record.text === "string" ? record.text : "",
         ...(tone ? { tone } : {}),
         tags: coerceStringArray(record.tags),
         ...(typeof record.collapsed === "boolean"
@@ -647,6 +669,14 @@ export const coerceRalphFlowBlockRecord = (
           record.status === "review"
             ? record.status
             : "success",
+        ...(record.outcome === "succeeded" ||
+        record.outcome === "no-op" ||
+        record.outcome === "deferred" ||
+        record.outcome === "blocked" ||
+        record.outcome === "failed" ||
+        record.outcome === "cancelled"
+          ? { outcome: record.outcome }
+          : {}),
       };
   }
 };

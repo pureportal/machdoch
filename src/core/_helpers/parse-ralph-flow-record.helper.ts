@@ -1,30 +1,44 @@
 import { coerceRalphFlowBlockRecord } from "./coerce-ralph-flow-block-record.helper.js";
 import { RALPH_FLOW_SCHEMA_VERSION } from "./create-ralph-validation-result.helper.js";
 import type {
-  RalphAnnotationLink, RalphAnnotationLinkKind, RalphAutonomyPolicy,
-  RalphAutonomySetting, RalphFlow, RalphFlowBlock,
-  RalphFlowEdge, RalphFlowSettings, RalphFlowSource, RalphFlowVariable,
+  RalphAnnotationLink,
+  RalphAnnotationLinkKind,
+  RalphAutonomyPolicy,
+  RalphAutonomySetting,
+  RalphFlow,
+  RalphFlowBlock,
+  RalphFlowEdge,
+  RalphFlowSettings,
+  RalphFlowSource,
+  RalphFlowVariable,
   RalphVariableType,
 } from "../ralph.js";
 
 const RALPH_FLOW_VARIABLE_TYPES = [
-  "string", "text", "path", "file", "files", "url", "number", "boolean",
-  "image", "images", "model", "provider", "pack",
+  "string",
+  "text",
+  "path",
+  "file",
+  "files",
+  "url",
+  "number",
+  "boolean",
+  "image",
+  "images",
+  "model",
+  "provider",
+  "pack",
 ] as const satisfies readonly RalphVariableType[];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const isRalphFlowVariableType = (
-  value: string,
-): value is RalphVariableType => {
+const isRalphFlowVariableType = (value: string): value is RalphVariableType => {
   return RALPH_FLOW_VARIABLE_TYPES.includes(value as RalphVariableType);
 };
 
-const coerceAnnotationLinkKind = (
-  value: unknown,
-): RalphAnnotationLinkKind => {
+const coerceAnnotationLinkKind = (value: unknown): RalphAnnotationLinkKind => {
   return value === "evidence" ||
     value === "todo" ||
     value === "related" ||
@@ -102,6 +116,18 @@ const coerceAutonomySetting = (
     policy.maxRecoveryAttempts = Math.trunc(value.maxRecoveryAttempts);
   }
   if (
+    typeof value.maxStagnantTransitions === "number" &&
+    Number.isFinite(value.maxStagnantTransitions)
+  ) {
+    policy.maxStagnantTransitions = Math.trunc(value.maxStagnantTransitions);
+  }
+  if (
+    typeof value.maxRepeatedCycle === "number" &&
+    Number.isFinite(value.maxRepeatedCycle)
+  ) {
+    policy.maxRepeatedCycle = Math.trunc(value.maxRepeatedCycle);
+  }
+  if (
     value.transitionExhaustion === "checkpoint" ||
     value.transitionExhaustion === "crash"
   ) {
@@ -162,10 +188,11 @@ const coerceFlowSource = (value: unknown): RalphFlowSource | undefined => {
       : undefined;
   const templateVariableDefaults = isRecord(value.templateVariableDefaults)
     ? Object.fromEntries(
-        Object.entries(value.templateVariableDefaults).flatMap(([key, entry]) =>
-          typeof entry === "string" || entry === null
-            ? [[key, entry === null ? undefined : entry] as const]
-            : [],
+        Object.entries(value.templateVariableDefaults).flatMap(
+          ([key, entry]) =>
+            typeof entry === "string" || entry === null
+              ? [[key, entry === null ? undefined : entry] as const]
+              : [],
         ),
       )
     : undefined;
@@ -185,10 +212,7 @@ const coerceFlowSource = (value: unknown): RalphFlowSource | undefined => {
     version: Math.trunc(value.version),
     ...(importedAt ? { importedAt } : {}),
     ...(templateFingerprint ? { templateFingerprint } : {}),
-    ...(templateVariableDefaults &&
-    Object.keys(templateVariableDefaults).length > 0
-      ? { templateVariableDefaults }
-      : {}),
+    ...(templateVariableDefaults ? { templateVariableDefaults } : {}),
     ...(templateSnapshot ? { templateSnapshot } : {}),
   };
 };
@@ -225,7 +249,8 @@ const coerceFlowVariables = (value: unknown): RalphFlowVariable[] => {
     }
 
     const type =
-      typeof variable.type === "string" && isRalphFlowVariableType(variable.type)
+      typeof variable.type === "string" &&
+      isRalphFlowVariableType(variable.type)
         ? variable.type
         : "string";
     const name = typeof variable.name === "string" ? variable.name : "";
@@ -252,11 +277,7 @@ export const parseRalphFlowRecord = (value: unknown): RalphFlow => {
   }
 
   const schemaVersion =
-    typeof value.schemaVersion === "number"
-      ? value.schemaVersion
-      : value.schemaVersion === undefined || value.schemaVersion === null
-        ? RALPH_FLOW_SCHEMA_VERSION
-        : Number.NaN;
+    typeof value.schemaVersion === "number" ? value.schemaVersion : Number.NaN;
   const blocks = Array.isArray(value.blocks)
     ? value.blocks.flatMap((block): RalphFlowBlock[] =>
         isRecord(block) ? [coerceRalphFlowBlockRecord(block)] : [],
@@ -275,8 +296,12 @@ export const parseRalphFlowRecord = (value: unknown): RalphFlow => {
       ? { description: value.description }
       : {}),
     ...(typeof value.guidance === "string" ? { guidance: value.guidance } : {}),
-    ...(typeof value.createdAt === "string" ? { createdAt: value.createdAt } : {}),
-    ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    ...(typeof value.createdAt === "string"
+      ? { createdAt: value.createdAt }
+      : {}),
+    ...(typeof value.updatedAt === "string"
+      ? { updatedAt: value.updatedAt }
+      : {}),
     ...(source ? { source } : {}),
     ...(settings ? { settings } : {}),
     variables: coerceFlowVariables(value.variables),

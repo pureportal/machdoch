@@ -61,7 +61,10 @@ import {
   type RalphUtilityType,
   type RalphValidationResult,
 } from "./ralph.js";
-import type { ModelProvider, RuntimeConfig } from "./runtime-contract.generated.js";
+import type {
+  ModelProvider,
+  RuntimeConfig,
+} from "./runtime-contract.generated.js";
 import type {
   CustomizationDiscoveryResult,
   TaskActionOutput,
@@ -307,7 +310,13 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     type: "VALIDATOR",
     role: "LLM validation gate that decides whether the flow should finish, continue, retry, or error.",
     requiredFields: ["id", "type", "title", "prompt"],
-    optionalFields: ["position", "size", "settings", "validationScope", "parentGroupId"],
+    optionalFields: [
+      "position",
+      "size",
+      "settings",
+      "validationScope",
+      "parentGroupId",
+    ],
     outputs: ["DONE", "CONTINUE", "RETRY", "ERROR"],
     generationNotes: [
       "The validator prompt must instruct the model to end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
@@ -330,7 +339,13 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     type: "PACK",
     role: "Context-pack selection block for workspaces that expose packs.",
     requiredFields: ["id", "type", "title", "packIds"],
-    optionalFields: ["position", "size", "settings", "propagationMode", "parentGroupId"],
+    optionalFields: [
+      "position",
+      "size",
+      "settings",
+      "propagationMode",
+      "parentGroupId",
+    ],
     outputs: ["SUCCESS", "ERROR"],
     generationNotes: [
       "Do not use PACK blocks unless workspace context lists available pack ids.",
@@ -398,7 +413,13 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     type: "MCP_TOOL",
     role: "Call an enabled MCP server tool.",
     requiredFields: ["id", "type", "title", "serverId", "toolName"],
-    optionalFields: ["arguments", "position", "size", "settings", "parentGroupId"],
+    optionalFields: [
+      "arguments",
+      "position",
+      "size",
+      "settings",
+      "parentGroupId",
+    ],
     outputs: ["SUCCESS", "ERROR"],
     generationNotes: [
       "Use only MCP capabilities that are available in workspace hints or tool contract output.",
@@ -418,7 +439,13 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     type: "MCP_PROMPT",
     role: "Run an enabled MCP server prompt.",
     requiredFields: ["id", "type", "title", "serverId", "promptName"],
-    optionalFields: ["arguments", "position", "size", "settings", "parentGroupId"],
+    optionalFields: [
+      "arguments",
+      "position",
+      "size",
+      "settings",
+      "parentGroupId",
+    ],
     outputs: ["SUCCESS", "ERROR"],
     generationNotes: [
       "Use only when a discovered MCP prompt materially helps the requested flow.",
@@ -450,7 +477,15 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     type: "NOTE",
     role: "Visual annotation only.",
     requiredFields: ["id", "type", "title", "text"],
-    optionalFields: ["position", "size", "tone", "tags", "collapsed", "pinnedBlockIds", "parentGroupId"],
+    optionalFields: [
+      "position",
+      "size",
+      "tone",
+      "tags",
+      "collapsed",
+      "pinnedBlockIds",
+      "parentGroupId",
+    ],
     outputs: [],
     generationNotes: [
       "Never route execution through NOTE blocks.",
@@ -486,7 +521,9 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     requiredFields: ["id", "type", "title"],
     optionalFields: ["position", "size", "status"],
     outputs: [],
-    generationNotes: ["Use one or more END blocks for terminal success/failure/review outcomes."],
+    generationNotes: [
+      "Use one or more END blocks for terminal success/failure/review outcomes.",
+    ],
   },
 };
 
@@ -506,7 +543,13 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     type: "HTTP_FETCH",
     role: "Fetch an HTTP resource.",
     requiredFields: ["type", "url"],
-    optionalFields: ["method", "headers", "body", "timeoutSeconds", "maxOutputBytes"],
+    optionalFields: [
+      "method",
+      "headers",
+      "body",
+      "timeoutSeconds",
+      "maxOutputBytes",
+    ],
     outputs: ["SUCCESS", "HTTP_ERROR", "TIMEOUT", "ERROR"],
     generationNotes: ["Use for deterministic HTTP checks or API evidence."],
   },
@@ -536,9 +579,17 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     type: "RUN_COMMAND",
     role: "Run a configured local command.",
     requiredFields: ["type", "command or fallbackCommand"],
-    optionalFields: ["fallbackCommand", "cwd", "env", "timeoutSeconds", "maxOutputBytes"],
+    optionalFields: [
+      "fallbackCommand",
+      "cwd",
+      "env",
+      "timeoutSeconds",
+      "maxOutputBytes",
+    ],
     outputs: ["SUCCESS", "ERROR"],
-    generationNotes: ["Use only when the flow intentionally needs command execution."],
+    generationNotes: [
+      "Use only when the flow intentionally needs command execution.",
+    ],
   },
   READ_FILE: {
     type: "READ_FILE",
@@ -546,7 +597,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "path"],
     optionalFields: ["encoding", "maxOutputBytes"],
     outputs: ["SUCCESS", "ERROR"],
-    generationNotes: ["Use for deterministic runtime evidence from known file paths."],
+    generationNotes: [
+      "Use for deterministic runtime evidence from known file paths.",
+    ],
   },
   WRITE_FILE: {
     type: "WRITE_FILE",
@@ -554,7 +607,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "path", "content"],
     optionalFields: ["append", "encoding"],
     outputs: ["SUCCESS", "ERROR"],
-    generationNotes: ["Use only when the requested flow needs a file artifact."],
+    generationNotes: [
+      "Use only when the requested flow needs a file artifact.",
+    ],
   },
   READ_JSON: {
     type: "READ_JSON",
@@ -562,7 +617,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "path"],
     optionalFields: ["schema"],
     outputs: ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"],
-    generationNotes: ["Use for resumable state files and canonical flow artifacts."],
+    generationNotes: [
+      "Use for resumable state files and canonical flow artifacts.",
+    ],
   },
   WRITE_JSON: {
     type: "WRITE_JSON",
@@ -578,7 +635,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "path"],
     optionalFields: ["input", "content", "schema", "jsonPatchMode"],
     outputs: ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"],
-    generationNotes: ["Use jsonPatchMode=merge for state updates unless replacement is intentional."],
+    generationNotes: [
+      "Use jsonPatchMode=merge for state updates unless replacement is intentional.",
+    ],
   },
   APPEND_JSONL: {
     type: "APPEND_JSONL",
@@ -636,7 +695,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "path", "outputPath"],
     optionalFields: [],
     outputs: ["SUCCESS", "NOT_FOUND", "ERROR"],
-    generationNotes: ["Use for deterministic handoff between known state paths."],
+    generationNotes: [
+      "Use for deterministic handoff between known state paths.",
+    ],
   },
   ARCHIVE_FILE: {
     type: "ARCHIVE_FILE",
@@ -644,15 +705,25 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "path"],
     optionalFields: ["outputPath", "rootPath"],
     outputs: ["SUCCESS", "NOT_FOUND", "ERROR"],
-    generationNotes: ["Prefer over DELETE_FILE for completed autonomous state."],
+    generationNotes: [
+      "Prefer over DELETE_FILE for completed autonomous state.",
+    ],
   },
   LOOP_COUNTER: {
     type: "LOOP_COUNTER",
     role: "Increment a persisted counter and route when a loop limit is reached.",
     requiredFields: ["type"],
-    optionalFields: ["path", "counterName", "counterKey", "maxAttempts", "reset"],
+    optionalFields: [
+      "path",
+      "counterName",
+      "counterKey",
+      "maxAttempts",
+      "reset",
+    ],
     outputs: ["CONTINUE", "LIMIT_REACHED", "ERROR"],
-    generationNotes: ["Use to bound autonomous or retry loops without AI judgment."],
+    generationNotes: [
+      "Use to bound autonomous or retry loops without AI judgment.",
+    ],
   },
   PROMPT_JSON: {
     type: "PROMPT_JSON",
@@ -676,25 +747,47 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
       "Prefer VALIDATE_JSON or CONDITION when code can decide without model judgment.",
     ],
   },
+  ASSESS_JSON_TASKS: {
+    type: "ASSESS_JSON_TASKS",
+    role: "Read a persisted JSON checklist without mutation and classify its execution state.",
+    requiredFields: ["type", "path"],
+    optionalFields: ["jsonPath", "strategy", "maxTasks", "schema"],
+    outputs: [
+      "READY",
+      "COMPLETE",
+      "BLOCKED",
+      "EMPTY",
+      "NOT_FOUND",
+      "INVALID",
+      "ERROR",
+    ],
+    generationNotes: [
+      "Use before SELECT_JSON_TASK when completion and blocked work need distinct deterministic routes.",
+      "EMPTY means the checklist contains no tasks and must not be treated as completion.",
+      "BLOCKED data identifies structural or temporary blockers and the earliest safe retry time when one exists.",
+      "The result is a bounded read-only assessment; SELECT_JSON_TASK still owns task claims and lifecycle mutation.",
+    ],
+  },
   SELECT_JSON_TASK: {
     type: "SELECT_JSON_TASK",
-    role: "Select and mark the next task from a persisted JSON checklist.",
+    role: "Select and mark the next task batch from a persisted JSON checklist.",
     requiredFields: ["type", "path"],
-    optionalFields: ["jsonPath", "strategy", "schema"],
+    optionalFields: ["jsonPath", "strategy", "maxTasks", "schema"],
     outputs: ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"],
     generationNotes: [
-      "Use before implementation prompts so long-running feature loops work one concrete task at a time.",
-      "Keep task ids stable and use statuses todo/in_progress/done/blocked.",
+      "Use before implementation prompts so long-running feature loops work on one bounded task batch at a time.",
+      "Keep task ids stable and use statuses planned/implementing/verifying/repairing/completed/deferred.",
     ],
   },
   MARK_JSON_TASK: {
     type: "MARK_JSON_TASK",
     role: "Mark a selected or configured JSON checklist task with a new status.",
-    requiredFields: ["type", "path"],
-    optionalFields: ["jsonPath", "taskId", "status", "result", "input", "schema"],
+    requiredFields: ["type", "path", "status"],
+    optionalFields: ["jsonPath", "taskId", "input", "schema"],
     outputs: ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"],
     generationNotes: [
       "Use after verification or structured validation to persist task progress.",
+      "Use only canonical lifecycle transitions: planned, implementing, verifying, repairing, completed, or deferred.",
     ],
   },
   CHANGE_SCOPE_GUARD: {
@@ -832,7 +925,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type"],
     optionalFields: ["cwd", "outputPath", "maxOutputBytes"],
     outputs: ["SUCCESS", "ERROR"],
-    generationNotes: ["Use before autonomous edits to create a comparable baseline."],
+    generationNotes: [
+      "Use before autonomous edits to create a comparable baseline.",
+    ],
   },
   GIT_DIFF_SUMMARY: {
     type: "GIT_DIFF_SUMMARY",
@@ -840,7 +935,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type"],
     optionalFields: ["cwd", "outputPath", "maxOutputBytes"],
     outputs: ["SUCCESS", "EMPTY", "ERROR"],
-    generationNotes: ["Use before validation/reporting so final output names actual changed files."],
+    generationNotes: [
+      "Use before validation/reporting so final output names actual changed files.",
+    ],
   },
   DETECT_PROJECT_COMMANDS: {
     type: "DETECT_PROJECT_COMMANDS",
@@ -867,7 +964,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "input", "expression"],
     optionalFields: [],
     outputs: ["SUCCESS", "ERROR"],
-    generationNotes: ["Use for small structured transformations, not arbitrary code execution."],
+    generationNotes: [
+      "Use for small structured transformations, not arbitrary code execution.",
+    ],
   },
   VALIDATE_JSON: {
     type: "VALIDATE_JSON",
@@ -875,7 +974,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type", "input", "schema"],
     optionalFields: [],
     outputs: ["SUCCESS", "INVALID", "ERROR"],
-    generationNotes: ["Use when the flow needs deterministic schema validation."],
+    generationNotes: [
+      "Use when the flow needs deterministic schema validation.",
+    ],
   },
   FINAL_REPORT: {
     type: "FINAL_REPORT",
@@ -883,7 +984,9 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     requiredFields: ["type"],
     optionalFields: ["path", "outputPath", "markdownPath"],
     outputs: ["SUCCESS", "ERROR"],
-    generationNotes: ["Use before terminal success in starter-quality autonomous workflows."],
+    generationNotes: [
+      "Use before terminal success in starter-quality autonomous workflows.",
+    ],
   },
   NOTIFY: {
     type: "NOTIFY",
@@ -1204,7 +1307,13 @@ const RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA: RalphGenerationJsonSchema = {
               env: RALPH_GENERATION_STRING_RECORD_SCHEMA,
               adapter: {
                 type: "string",
-                enum: ["auto", "browser", "image", "playwright-mcp", "tauri-mcp"],
+                enum: [
+                  "auto",
+                  "browser",
+                  "image",
+                  "playwright-mcp",
+                  "tauri-mcp",
+                ],
               },
               targetUrl: { type: "string" },
               screenshotPath: { type: "string" },
@@ -1258,7 +1367,10 @@ const RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA: RalphGenerationJsonSchema = {
           locked: { type: "boolean" },
           moveChildren: { type: "boolean" },
           maxDepth: { type: "integer" },
-          layoutMode: { type: "string", enum: ["freeform", "stack", "swimlane"] },
+          layoutMode: {
+            type: "string",
+            enum: ["freeform", "stack", "swimlane"],
+          },
           executionBoundary: {
             type: "object",
             additionalProperties: false,
@@ -1271,7 +1383,10 @@ const RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA: RalphGenerationJsonSchema = {
             },
             required: ["mode"],
           },
-          status: { type: "string", enum: ["success", "failed", "cancelled", "review"] },
+          status: {
+            type: "string",
+            enum: ["success", "failed", "cancelled", "review"],
+          },
         },
         required: ["id", "type", "title"],
       },
@@ -1384,7 +1499,13 @@ const createRalphGenerationToolDefinitions = (
               items: { type: "string" },
             },
           },
-          required: ["intent", "evidence", "selectedNodes", "variables", "risks"],
+          required: [
+            "intent",
+            "evidence",
+            "selectedNodes",
+            "variables",
+            "risks",
+          ],
         },
       },
       backingTool: "utilities",
@@ -1437,7 +1558,8 @@ const createRalphGenerationToolDefinitions = (
     {
       spec: {
         name: "ralph_list_node_types",
-        description: "List Ralph graph node types and short generation contracts.",
+        description:
+          "List Ralph graph node types and short generation contracts.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -1461,7 +1583,8 @@ const createRalphGenerationToolDefinitions = (
     {
       spec: {
         name: "ralph_get_node_contract",
-        description: "Get the full generation contract for one Ralph node type.",
+        description:
+          "Get the full generation contract for one Ralph node type.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -1513,19 +1636,24 @@ const createRalphGenerationToolDefinitions = (
       riskLevel: "low",
       effect: "read",
       execute: async () =>
-        createContractToolResult("ralph_list_utility_types", "Ralph utility types", {
-          utilityTypes: RALPH_UTILITY_TYPES,
-          contracts: RALPH_UTILITY_TYPES.map((type) => ({
-            type,
-            role: RALPH_GENERATION_UTILITY_CONTRACTS[type].role,
-            outputs: RALPH_GENERATION_UTILITY_CONTRACTS[type].outputs,
-          })),
-        }),
+        createContractToolResult(
+          "ralph_list_utility_types",
+          "Ralph utility types",
+          {
+            utilityTypes: RALPH_UTILITY_TYPES,
+            contracts: RALPH_UTILITY_TYPES.map((type) => ({
+              type,
+              role: RALPH_GENERATION_UTILITY_CONTRACTS[type].role,
+              outputs: RALPH_GENERATION_UTILITY_CONTRACTS[type].outputs,
+            })),
+          },
+        ),
     },
     {
       spec: {
         name: "ralph_get_utility_contract",
-        description: "Get the full generation contract for one Ralph UTILITY type.",
+        description:
+          "Get the full generation contract for one Ralph UTILITY type.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -1595,7 +1723,13 @@ const createRalphGenerationToolDefinitions = (
               output: json,
               ...(summary.valid ? {} : { isError: true }),
             },
-            sections: [{ title: "Ralph candidate validation", audience: "internal", lines: json.split("\n") }],
+            sections: [
+              {
+                title: "Ralph candidate validation",
+                audience: "internal",
+                lines: json.split("\n"),
+              },
+            ],
             traceLines: [
               `ralph_validate_candidate_flow -> ${summary.valid ? "valid" : "invalid"} (${flow.blocks.length} blocks, ${flow.edges.length} edges)`,
             ],
@@ -1630,7 +1764,13 @@ const createRalphGenerationToolDefinitions = (
               name: "ralph_normalize_layout",
               output: json,
             },
-            sections: [{ title: "Normalized Ralph candidate", audience: "internal", lines: json.split("\n") }],
+            sections: [
+              {
+                title: "Normalized Ralph candidate",
+                audience: "internal",
+                lines: json.split("\n"),
+              },
+            ],
             traceLines: [
               `ralph_normalize_layout -> normalized ${flow.blocks.length} blocks and ${flow.edges.length} edges`,
             ],
@@ -1720,7 +1860,9 @@ const createRalphGenerationToolDefinitions = (
                 audience: "internal",
                 lines: [
                   rationale,
-                  ...(evidence.length > 0 ? ["", "Evidence:", ...evidence] : []),
+                  ...(evidence.length > 0
+                    ? ["", "Evidence:", ...evidence]
+                    : []),
                   ...(assumptions.length > 0
                     ? ["", "Assumptions:", ...assumptions]
                     : []),
@@ -1729,7 +1871,11 @@ const createRalphGenerationToolDefinitions = (
               {
                 title: "Submitted Ralph flow candidate",
                 audience: "internal",
-                lines: ["<ralph_flow_json>", ...json.split("\n"), "</ralph_flow_json>"],
+                lines: [
+                  "<ralph_flow_json>",
+                  ...json.split("\n"),
+                  "</ralph_flow_json>",
+                ],
               },
             ],
             traceLines: [
@@ -1958,7 +2104,9 @@ const formatRalphGenerationInterviewTranscript = (
     `Turn ${turn.turn}:`,
     ...(turn.questionScope ? [`Question scope: ${turn.questionScope}`] : []),
     ...(turn.summary ? [`Summary: ${turn.summary}`] : []),
-    ...turn.questions.map((field) => `Question: ${field.label} (${field.type})`),
+    ...turn.questions.map(
+      (field) => `Question: ${field.label} (${field.type})`,
+    ),
     ...(turn.answers.length > 0
       ? turn.answers.flatMap((answer) => [
           `Answer: ${answer.label} = ${formatRalphGenerationInterviewValue(answer.value)}`,
@@ -1966,8 +2114,7 @@ const formatRalphGenerationInterviewTranscript = (
             ? [`Answer comment for ${answer.label}: ${answer.comment}`]
             : []),
         ])
-      : ["Answers: pending"]
-    ),
+      : ["Answers: pending"]),
     "",
   ]);
 };
@@ -1981,7 +2128,7 @@ const createRalphGenerationInterviewSystemPrompt = (): string => {
     "Do not edit files, start servers, run destructive commands, mutate external systems, or perform broad scans unrelated to the request.",
     "Ask questions only when the answer would materially change the generated flow, improve an existing flow, or improve the selected prompt block.",
     "Ask multiple concise questions in one round when useful. Use rich field types: select, multiselect, number, boolean, text, textarea, url, path, file, files, image, or images.",
-    "When asking questions, optionally set questionScope to a short group name such as \"UI Questions\", \"Data Inputs\", or \"Deployment\".",
+    'When asking questions, optionally set questionScope to a short group name such as "UI Questions", "Data Inputs", or "Deployment".',
     "For every question, set help to one short reason phrase explaining why the answer matters. Keep help under 140 characters; do not write paragraphs.",
     "For string answers that need a format, include validation.pattern. For numbers, include min, max, or step when helpful.",
     "Keep questions skippable unless missing information would block correctness.",
@@ -2027,7 +2174,9 @@ const createRalphGenerationInterviewTask = (
     ...(session.assumptions.length > 0 ? session.assumptions : ["None yet."]),
     "",
     "Relevant files:",
-    ...(session.relevantFiles.length > 0 ? session.relevantFiles : ["None yet."]),
+    ...(session.relevantFiles.length > 0
+      ? session.relevantFiles
+      : ["None yet."]),
     "",
     "Interview transcript so far:",
     ...formatRalphGenerationInterviewTranscript(session),
@@ -2050,38 +2199,43 @@ const createRalphGenerationInterviewTask = (
 const createRalphGenerationPromptFromInterview = (
   session: RalphGenerationInterviewSession,
   finalSummary?: string,
-): string => [
-  session.prompt,
-  "",
-  "Interview context for generation:",
-  finalSummary ?? session.finalSummary ?? session.contextSummary ?? "No final summary.",
-  "",
-  "Findings:",
-  ...(session.findings.length > 0 ? session.findings.map((entry) => `- ${entry}`) : ["- None"]),
-  "",
-  "Assumptions:",
-  ...(session.assumptions.length > 0
-    ? session.assumptions.map((entry) => `- ${entry}`)
-    : ["- None"]),
-  "",
-  "Relevant files/config:",
-  ...(session.relevantFiles.length > 0
-    ? session.relevantFiles.map((entry) => `- ${entry}`)
-    : ["- None"]),
-  "",
-  "Interview answers:",
-  ...session.transcript.flatMap((turn) => [
-    turn.questionScope ? `${turn.questionScope}:` : `Turn ${turn.turn}:`,
-    ...turn.answers.map(
-      (answer) =>
+): string =>
+  [
+    session.prompt,
+    "",
+    "Interview context for generation:",
+    finalSummary ??
+      session.finalSummary ??
+      session.contextSummary ??
+      "No final summary.",
+    "",
+    "Findings:",
+    ...(session.findings.length > 0
+      ? session.findings.map((entry) => `- ${entry}`)
+      : ["- None"]),
+    "",
+    "Assumptions:",
+    ...(session.assumptions.length > 0
+      ? session.assumptions.map((entry) => `- ${entry}`)
+      : ["- None"]),
+    "",
+    "Relevant files/config:",
+    ...(session.relevantFiles.length > 0
+      ? session.relevantFiles.map((entry) => `- ${entry}`)
+      : ["- None"]),
+    "",
+    "Interview answers:",
+    ...session.transcript.flatMap((turn) => [
+      turn.questionScope ? `${turn.questionScope}:` : `Turn ${turn.turn}:`,
+      ...turn.answers.map((answer) =>
         [
           `- ${answer.label}: ${formatRalphGenerationInterviewValue(answer.value)}`,
           ...(answer.comment ? [`  Comment: ${answer.comment}`] : []),
         ].join("\n"),
-    ),
-    ...(turn.answers.length === 0 ? ["- No answers collected."] : []),
-  ]),
-].join("\n");
+      ),
+      ...(turn.answers.length === 0 ? ["- No answers collected."] : []),
+    ]),
+  ].join("\n");
 
 const createRalphGeneratorSystemPrompt = (): string => {
   return [
@@ -2139,7 +2293,7 @@ const createFlowGenerationTask = (
     "- VALIDATOR.RETRY may omit an edge; Ralph falls back to the validator group start.",
     "- DECISION blocks must define labels and end with RALPH_DECISION: <LABEL>.",
     "- UTILITY blocks usually run deterministic operations without an LLM. PROMPT_JSON is the explicit exception and must be used only when structured AI output is genuinely needed. Available utility.type values come from the utilityTypes contract list.",
-    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; SELECT_JSON_TASK uses SELECTED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR, but OUT_OF_SCOPE requires enforce=true; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; SELECT_SCOPE uses SELECTED, EMPTY, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
+    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, INCONCLUSIVE, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; ASSESS_JSON_TASKS uses READY, COMPLETE, BLOCKED, EMPTY, NOT_FOUND, INVALID, ERROR; SELECT_JSON_TASK uses SELECTED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR, but OUT_OF_SCOPE requires enforce=true; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; SELECT_SCOPE uses SELECTED, EMPTY, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
     "- Add variables directly in prompts using {{name:type=default}}, for example {{scope:path=ALL}}.",
     "- Use block result placeholders such as {{lastResult}}, {{summary:block-id}}, and {{result:block-id}} where useful.",
     "- Use structured utility data placeholders such as {{data:block-id:path.to.value}} where useful.",
@@ -2185,10 +2339,16 @@ const createFlowGenerationTask = (
         ...(alias ? { alias } : {}),
         name,
         description: "Short description",
-        guidance: "Optional flow-wide guidance delivered after profiles and project-local instructions.",
+        guidance:
+          "Optional flow-wide guidance delivered after profiles and project-local instructions.",
         settings: { maxTransitions: 30 },
         blocks: [
-          { id: "start", type: "START", title: "Start", position: { x: 0, y: 0 } },
+          {
+            id: "start",
+            type: "START",
+            title: "Start",
+            position: { x: 0, y: 0 },
+          },
           {
             id: "main-task",
             type: "PROMPT",
@@ -2219,10 +2379,30 @@ const createFlowGenerationTask = (
           },
         ],
         edges: [
-          { id: "start-to-main-task", from: "start", fromOutput: "SUCCESS", to: "main-task" },
-          { id: "main-task-to-review", from: "main-task", fromOutput: "SUCCESS", to: "review-result" },
-          { id: "review-done", from: "review-result", fromOutput: "DONE", to: "success" },
-          { id: "review-continue", from: "review-result", fromOutput: "CONTINUE", to: "main-task" },
+          {
+            id: "start-to-main-task",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "main-task",
+          },
+          {
+            id: "main-task-to-review",
+            from: "main-task",
+            fromOutput: "SUCCESS",
+            to: "review-result",
+          },
+          {
+            id: "review-done",
+            from: "review-result",
+            fromOutput: "DONE",
+            to: "success",
+          },
+          {
+            id: "review-continue",
+            from: "review-result",
+            fromOutput: "CONTINUE",
+            to: "main-task",
+          },
         ],
       },
       null,
@@ -2292,10 +2472,14 @@ const createPackageVerificationHints = async (
   }
 
   try {
-    const parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as unknown;
+    const parsed = JSON.parse(
+      await readFile(packageJsonPath, "utf8"),
+    ) as unknown;
 
     if (!isRecord(parsed)) {
-      return ["- package.json is not an object; keep verification commands configurable."];
+      return [
+        "- package.json is not an object; keep verification commands configurable.",
+      ];
     }
 
     const scripts = isRecord(parsed.scripts) ? parsed.scripts : {};
@@ -2303,10 +2487,12 @@ const createPackageVerificationHints = async (
       (scriptName) => typeof scripts[scriptName] === "string",
     );
     const packageManager = parsePackageManagerName(
-      typeof parsed.packageManager === "string" ? parsed.packageManager : undefined,
+      typeof parsed.packageManager === "string"
+        ? parsed.packageManager
+        : undefined,
     );
-    const recommendedScripts = UI_VERIFICATION_SCRIPT_PRIORITY.filter((scriptName) =>
-      scriptNames.includes(scriptName),
+    const recommendedScripts = UI_VERIFICATION_SCRIPT_PRIORITY.filter(
+      (scriptName) => scriptNames.includes(scriptName),
     );
     const recommendedCommands = recommendedScripts.map((scriptName) =>
       createPackageScriptCommand(packageManager, scriptName),
@@ -2346,7 +2532,9 @@ const createMcpCapabilityHints = (workspaceRoot: string): string[] => {
     const discoveryCache = loadMcpDiscoveryCacheSync(workspaceRoot);
     const lines: string[] = [];
 
-    for (const server of config.servers.filter((candidate) => candidate.enabled)) {
+    for (const server of config.servers.filter(
+      (candidate) => candidate.enabled,
+    )) {
       const discovery = discoveryCache.servers[server.id];
 
       if (!discovery) {
@@ -2422,7 +2610,10 @@ const createBlockedGenerationResult = (
     events: [],
     generatorResults: [],
     validatorResults: [],
-    summary: summary ?? validation.errors[0] ?? "Invalid Ralph flow generation options.",
+    summary:
+      summary ??
+      validation.errors[0] ??
+      "Invalid Ralph flow generation options.",
   };
 };
 
@@ -2472,14 +2663,21 @@ const executeGenerationActorWithFallback = async (
   paths: RalphGenerationActorTracePaths,
   agentRuntime?: RalphGenerationAgentRuntime,
 ): Promise<TaskExecutionResult> => {
-  for (let attemptIndex = 0; attemptIndex < attemptConfigs.length; attemptIndex += 1) {
+  for (
+    let attemptIndex = 0;
+    attemptIndex < attemptConfigs.length;
+    attemptIndex += 1
+  ) {
     const attemptConfig = attemptConfigs[attemptIndex];
 
     if (!attemptConfig) {
       continue;
     }
 
-    const actorConfig = createGenerationActorRuntimeConfig(attemptConfig, actor);
+    const actorConfig = createGenerationActorRuntimeConfig(
+      attemptConfig,
+      actor,
+    );
     const startedAt = Date.now();
 
     await emitGenerationEvent({
@@ -2492,7 +2690,10 @@ const executeGenerationActorWithFallback = async (
       message: `Starting Ralph ${actor} with ${actorConfig.provider}/${actorConfig.model}.`,
     });
 
-    const executionOptions = await createRalphTaskExecutionOptions(options, actorConfig);
+    const executionOptions = await createRalphTaskExecutionOptions(
+      options,
+      actorConfig,
+    );
     const baseOnStateChange = executionOptions.onStateChange;
     const baseOnActionOutput = executionOptions.onActionOutput;
     let lastProgressSignature = "";
@@ -2533,7 +2734,9 @@ const executeGenerationActorWithFallback = async (
           generationFlowPath: paths.generationFlowPath,
           durationMs: Date.now() - startedAt,
           actorState: progress.state,
-          ...(detail ? { detail: capLogText(detail, MAX_RALPH_SIMPLE_LOG_CHARS) } : {}),
+          ...(detail
+            ? { detail: capLogText(detail, MAX_RALPH_SIMPLE_LOG_CHARS) }
+            : {}),
           message: `Ralph ${actor} ${progress.state}: ${createGenerationFeedbackExcerpt(message)}`,
         });
       },
@@ -2563,7 +2766,8 @@ const executeGenerationActorWithFallback = async (
         });
       },
       maxDurationMs:
-        executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
+        executionOptions.maxDurationMs ??
+        DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
       executionRole: actor,
       ...(actor === "generator" && agentRuntime
         ? {
@@ -2626,7 +2830,13 @@ export const createRalphGenerationInterviewWithAgent = async (
   );
   const config =
     options.config ??
-    (await loadRuntimeConfig(workspaceRoot, "machdoch", undefined, undefined, undefined));
+    (await loadRuntimeConfig(
+      workspaceRoot,
+      "machdoch",
+      undefined,
+      undefined,
+      undefined,
+    ));
   const interviewerConfig: RuntimeConfig = {
     ...config,
     mode: "ask",
@@ -2638,7 +2848,8 @@ export const createRalphGenerationInterviewWithAgent = async (
       status: "blocked",
       session,
       fields: [],
-      summary: "Expected a prompt before starting a Ralph generation interview.",
+      summary:
+        "Expected a prompt before starting a Ralph generation interview.",
       provider: interviewerConfig.provider,
       model: interviewerConfig.model,
     };
@@ -2671,10 +2882,14 @@ export const createRalphGenerationInterviewWithAgent = async (
     options.customizations ??
     (await discoverCustomizations(workspaceRoot, {
       discoverUserCustomizations: true,
-      discoverGithubCustomizations:
-        Boolean(config.compatibility.discoverGithubCustomizations),
+      discoverGithubCustomizations: Boolean(
+        config.compatibility.discoverGithubCustomizations,
+      ),
       includeDiagnostics: true,
-      ...createExistingRalphFlowDiscoveryTarget(options.existingFlow, session.scope),
+      ...createExistingRalphFlowDiscoveryTarget(
+        options.existingFlow,
+        session.scope,
+      ),
     }));
   const nextTurn = session.turn + 1;
   const executionOptions = await createRalphTaskExecutionOptions(
@@ -2692,11 +2907,13 @@ export const createRalphGenerationInterviewWithAgent = async (
     customizations,
     {
       ...executionOptions,
-      additionalToolDefinitions: createRalphGenerationInterviewToolDefinitions(),
+      additionalToolDefinitions:
+        createRalphGenerationInterviewToolDefinitions(),
       systemPromptSections: [createRalphGenerationInterviewSystemPrompt()],
       executionRole: "generator",
       maxDurationMs:
-        executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
+        executionOptions.maxDurationMs ??
+        DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
     },
   );
 
@@ -2831,7 +3048,8 @@ export const createRalphFlowWithAgent = async (
     `.${id}-generation-${randomUUID()}${FLOW_FILE_EXTENSION}`,
   );
   const maxRounds = options.maxRounds ?? DEFAULT_RALPH_GENERATION_MAX_ROUNDS;
-  const generationRunId = options.runId ?? `ralph-generation-${id}-${randomUUID()}`;
+  const generationRunId =
+    options.runId ?? `ralph-generation-${id}-${randomUUID()}`;
   const generationEvents: RalphGenerationEvent[] = [];
   const generationLoggerRef: { current?: RalphFileGenerationLogger } = {};
   const emitGenerationEvent: EmitRalphGenerationEvent = async (event) => {
@@ -2858,7 +3076,10 @@ export const createRalphFlowWithAgent = async (
     const completedResult: RalphFlowGenerationResult = {
       generationRunId,
       ...(generationLoggerRef.current?.paths.simpleMarkdownPath
-        ? { generationLogPath: generationLoggerRef.current.paths.simpleMarkdownPath }
+        ? {
+            generationLogPath:
+              generationLoggerRef.current.paths.simpleMarkdownPath,
+          }
         : {}),
       ...(generationLoggerRef.current?.paths.traceJsonlPath
         ? { traceLogPath: generationLoggerRef.current.paths.traceJsonlPath }
@@ -2867,7 +3088,9 @@ export const createRalphFlowWithAgent = async (
       events: generationEvents,
     };
 
-    await generationLoggerRef.current?.record(completedResult).catch(() => undefined);
+    await generationLoggerRef.current
+      ?.record(completedResult)
+      .catch(() => undefined);
 
     return completedResult;
   };
@@ -2914,13 +3137,20 @@ export const createRalphFlowWithAgent = async (
 
   const config =
     options.config ??
-    (await loadRuntimeConfig(workspaceRoot, "machdoch", undefined, undefined, undefined));
+    (await loadRuntimeConfig(
+      workspaceRoot,
+      "machdoch",
+      undefined,
+      undefined,
+      undefined,
+    ));
   const customizations =
     options.customizations ??
     (await discoverCustomizations(workspaceRoot, {
       discoverUserCustomizations: true,
-      discoverGithubCustomizations:
-        Boolean(config.compatibility.discoverGithubCustomizations),
+      discoverGithubCustomizations: Boolean(
+        config.compatibility.discoverGithubCustomizations,
+      ),
       includeDiagnostics: true,
       ...createExistingRalphFlowDiscoveryTarget(options.existingFlow, scope),
     }));
@@ -2932,11 +3162,11 @@ export const createRalphFlowWithAgent = async (
   const generationAlias = options.existingFlow?.alias
     ? requestedGenerationAlias
     : await createAvailableGeneratedFlowAlias(
-      workspaceRoot,
-      scope,
-      requestedGenerationAlias,
-      id,
-    );
+        workspaceRoot,
+        scope,
+        requestedGenerationAlias,
+        id,
+      );
   const generationIdentity: RalphGeneratedFlowIdentity = {
     id,
     alias: generationAlias,
@@ -2944,14 +3174,19 @@ export const createRalphFlowWithAgent = async (
   };
   const generationAgentRuntime: RalphGenerationAgentRuntime = {
     systemPromptSections: [createRalphGeneratorSystemPrompt()],
-    toolDefinitions: createRalphGenerationToolDefinitions(generationIdentity, config),
+    toolDefinitions: createRalphGenerationToolDefinitions(
+      generationIdentity,
+      config,
+    ),
   };
   let latestGenerationFlowPath = generationFlowPath;
   let validatorFeedback: string | undefined;
   let latestValidation = createValidationResult([]);
   let workspaceHints: string | undefined;
 
-  await mkdir(getRalphFlowStorageDirectory(workspaceRoot, scope), { recursive: true });
+  await mkdir(getRalphFlowStorageDirectory(workspaceRoot, scope), {
+    recursive: true,
+  });
   const generationLogger = await createRalphGenerationLogger(workspaceRoot, {
     runId: generationRunId,
     flowPath,
@@ -3009,7 +3244,8 @@ export const createRalphFlowWithAgent = async (
           options.existingFlow,
           validatorFeedback,
           workspaceHints ??
-            (workspaceHints = await createFlowGenerationWorkspaceHints(workspaceRoot)),
+            (workspaceHints =
+              await createFlowGenerationWorkspaceHints(workspaceRoot)),
         ),
         customizations,
         { ...options, runId: generationRunId },
@@ -3030,7 +3266,10 @@ export const createRalphFlowWithAgent = async (
           status: "blocked",
           flowPath,
           generationFlowPath: roundGenerationFlowPath,
-          message: createTaskDidNotExecuteFeedback("generator", generatorResult),
+          message: createTaskDidNotExecuteFeedback(
+            "generator",
+            generatorResult,
+          ),
         });
 
         return await finalizeGenerationResult({
@@ -3040,7 +3279,10 @@ export const createRalphFlowWithAgent = async (
           validation: latestValidation,
           generatorResults,
           validatorResults,
-          summary: createTaskDidNotExecuteFeedback("generator", generatorResult),
+          summary: createTaskDidNotExecuteFeedback(
+            "generator",
+            generatorResult,
+          ),
         });
       }
 
@@ -3052,7 +3294,8 @@ export const createRalphFlowWithAgent = async (
           maxRounds,
           flowPath,
           generationFlowPath: roundGenerationFlowPath,
-          message: "Reading generated Ralph flow JSON from file output or generator response.",
+          message:
+            "Reading generated Ralph flow JSON from file output or generator response.",
         });
         const generatedFlow = await readGeneratedRalphFlow(
           roundGenerationFlowPath,
@@ -3060,7 +3303,9 @@ export const createRalphFlowWithAgent = async (
         );
 
         if (!generatedFlow.flow) {
-          throw new Error(generatedFlow.error ?? "Generated Ralph flow JSON was missing.");
+          throw new Error(
+            generatedFlow.error ?? "Generated Ralph flow JSON was missing.",
+          );
         }
 
         flow = normalizeGeneratedRalphFlowCandidate(
@@ -3178,14 +3423,16 @@ export const createRalphFlowWithAgent = async (
       });
 
       if (validatorDecision === "DONE") {
-        flow = await writeGeneratedRalphFlowWithAliasFallback(workspaceRoot, flow, {
-          scope,
-          fallbackAliasBase: generationIdentity.alias ?? alias,
-          allowAliasFallback: true,
-          ...(expectedFingerprint
-            ? { expectedFingerprint }
-            : {}),
-        });
+        flow = await writeGeneratedRalphFlowWithAliasFallback(
+          workspaceRoot,
+          flow,
+          {
+            scope,
+            fallbackAliasBase: generationIdentity.alias ?? alias,
+            allowAliasFallback: true,
+            ...(expectedFingerprint ? { expectedFingerprint } : {}),
+          },
+        );
         latestValidation = validateRalphFlow(flow, { config });
         await emitGenerationEvent({
           type: "created",

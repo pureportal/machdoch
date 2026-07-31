@@ -105,7 +105,7 @@ Conservative candidates where business logic is embedded in broad modules instea
 
 - `src/core/ralph.ts`: type surface, storage paths, flow persistence, validation re-exports, execution transitions, utility execution, browser analysis, interview/input normalization, run logging, and persisted record handling are mixed.
 - `src/core/ralph-generation.ts`: generation state, validation loop, prompt construction, interview normalization, persistence, event logging, and layout/defaulting are mixed.
-- `src/core/scheduler.ts`: schedule/trigger types, state locking, migration, cron/time parsing, trigger filtering, queue dedupe, persistence, retry policy, event matching, and execution dispatch are mixed.
+- `src/core/scheduler.ts`: schedule/trigger types, state locking, current-schema validation, cron/time parsing, trigger filtering, queue dedupe, persistence, retry policy, event matching, and execution dispatch are mixed.
 - `src/cli/_helpers/cli-args.ts`: command definitions, validation sets, help text, aliases, and parsing are mixed.
 - `src/tauri/ui/runtime.ts`: UI-facing contract types, Tauri invoke wrappers, runtime config normalization, preview fixture fallback, event listeners, scheduler/Ralph/MCP APIs, and API-shape validation are mixed.
 - `src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts`: React wiring, instruction registry mutations, attachment handling, speech input, session lifecycle, remote mission control, and task submission are mixed.
@@ -119,7 +119,7 @@ Refactor action: extract pure domain helpers adjacent to the owning module first
 
 2026-06-20 refactor-pass update 2: extracted scheduler event trigger matching, filter evaluation, stateful/cooldown/rate-limit skip decisions, event payload normalization, and event dedupe suffix rendering into `src/core/_helpers/scheduler-event-trigger-matching.helper.ts`. Added direct coverage in `src/core/_helpers/scheduler-event-trigger-matching.helper.spec.ts` for wildcard event matching, nested filters, numeric/string/existence filter expressions, invalid filters, dedupe templates, state repeat buckets, recovery filters, cooldown boundaries, rate-limit boundaries, and payload normalization. `src/core/scheduler.ts` still remains over 500 lines and still contains persistence, trigger normalization, queue execution, retry handling, and run lifecycle orchestration.
 
-2026-06-20 refactor-pass update 2 also fixed the partially extracted Ralph interview submission boundary by importing `RalphGenerationInterviewSubmission` from `src/core/_helpers/read-ralph-generation-interview-submission.helper.ts` and preserving legacy `default: null` handling without changing the existing `defaultValue: null` omission behavior. This unblocked `pnpm typecheck` and restored the direct helper spec.
+2026-06-20 refactor-pass update 2 also fixed the partially extracted Ralph interview submission boundary by importing `RalphGenerationInterviewSubmission` from `src/core/_helpers/read-ralph-generation-interview-submission.helper.ts` and preserving generated `default: null` input handling without changing the existing `defaultValue: null` omission behavior. This unblocked `pnpm typecheck` and restored the direct helper spec.
 
 2026-06-20 refactor-pass update: moved Ralph generation interview-submission business logic out of the broad orchestration module and into module-local `_helpers`. The extracted helpers preserve the existing public API and runtime behavior, including the existing nullish fallback behavior where `defaultValue: null` is omitted while `default: null` is preserved.
 
@@ -171,7 +171,7 @@ Refactor action: extract primitives only after two or more call sites prove iden
 
 ### P2 - Risky public API and contract-change areas
 
-Treat the following as public or cross-process contracts and refactor with compatibility tests:
+Treat the following as public or cross-process contracts and refactor with contract tests:
 
 - CLI argument surface in `src/cli/_helpers/cli-args.ts`, `src/cli/app.ts`, and package binary entry `dist/cli/main.js` generated from `src/cli/main.ts`.
 - Runtime contract files: `src/core/runtime-contract.generated.ts`, `src/shared/runtime-config.schema.json`, `src-tauri/src/runtime_contract_generated.rs`, and `scripts/generate-runtime-contract.mjs`.
@@ -181,4 +181,4 @@ Treat the following as public or cross-process contracts and refactor with compa
 - MCP config/cache types under `src/core/mcp/**`.
 - Marketplace cache/enrichment/model shapes under `src/tauri/ui/marketplace/**`.
 
-Refactor action: keep exported names, Tauri command names, JSON shapes, and persisted schema defaults stable unless paired with migration/compatibility tests and generated-contract regeneration.
+Refactor action: keep exported names, Tauri command names, JSON shapes, and persisted schema defaults stable unless the contract is intentionally updated with generated-contract regeneration and current-schema tests.

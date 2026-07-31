@@ -831,12 +831,15 @@ const summarizeRalphAsTaskResult = (
     reconciledFromRunId?: string;
   },
 ): TaskExecutionResult => {
-  const status: TaskExecutionResult["status"] =
-    result.status === "completed"
-      ? "executed"
-      : result.status === "stopped"
-        ? "cancelled"
-        : "blocked";
+  const outcomeSucceeded =
+    result.outcome?.verified === true &&
+    (result.outcome.status === "succeeded" ||
+      result.outcome.status === "no-op");
+  const status: TaskExecutionResult["status"] = outcomeSucceeded
+    ? "executed"
+    : result.status === "stopped"
+      ? "cancelled"
+      : "blocked";
 
   return {
     task,
@@ -852,6 +855,14 @@ const summarizeRalphAsTaskResult = (
         scope: metadata.scope,
         runId: result.runId,
         status: result.status,
+        ...(result.outcome
+          ? {
+              outcome: result.outcome.status,
+              verified: result.outcome.verified,
+              retryable: result.outcome.retryable,
+              outcomeReason: result.outcome.reason,
+            }
+          : {}),
         runLogScope: metadata.runLogScope,
         schedulerAttempt: metadata.schedulerAttempt,
         resumedFromCheckpoint: Boolean(metadata.resumedFromRunId),
@@ -870,6 +881,12 @@ const summarizeRalphAsTaskResult = (
         lines: [
           `Flow: ${result.flow}`,
           `Status: ${result.status}`,
+          ...(result.outcome
+            ? [
+                `Outcome: ${result.outcome.status}`,
+                `Verified: ${result.outcome.verified ? "yes" : "no"}`,
+              ]
+            : []),
           ...(result.runId ? [`Run: ${result.runId}`] : []),
         ],
       },
@@ -1143,13 +1160,27 @@ const executeScheduledRalphFlow = async (
     );
   }
   const recovery = await readScheduledRalphRecovery(request, flow, runLogScope);
-  if (recovery?.record.status === "completed") {
+  if (
+    recovery?.record.outcome?.verified === true &&
+    (recovery.record.outcome.status === "succeeded" ||
+      recovery.record.outcome.status === "no-op")
+  ) {
     return summarizeRalphAsTaskResult(
       `Run Ralph flow ${flow.name} (${flowScope}:${flow.id}).`,
       {
         runId: recovery.record.id,
         flow: flow.id,
         status: recovery.record.status,
+        outcome: recovery.record.outcome,
+        ...(recovery.record.autonomy
+          ? { autonomy: recovery.record.autonomy }
+          : {}),
+        ...(recovery.record.progress
+          ? { progress: recovery.record.progress }
+          : {}),
+        ...(recovery.record.durability
+          ? { durability: recovery.record.durability }
+          : {}),
         summary: recovery.record.summary,
         events: recovery.record.events,
         // Durable records intentionally store a compact block summary rather

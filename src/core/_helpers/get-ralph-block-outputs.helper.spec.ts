@@ -1,7 +1,4 @@
-import type {
-  RalphFlowBlock,
-  RalphUtilityConfig,
-} from "../ralph.ts";
+import type { RalphFlowBlock, RalphUtilityConfig } from "../ralph.ts";
 import {
   getRalphBlockOutputs,
   getRalphUtilityOutputs,
@@ -41,13 +38,22 @@ describe("getRalphUtilityOutputs", () => {
       ["DONE", "CONTINUE", "RETRY", "ERROR", "INVALID"],
     ],
     [
+      { type: "ASSESS_JSON_TASKS" },
+      [
+        "READY",
+        "COMPLETE",
+        "BLOCKED",
+        "EMPTY",
+        "NOT_FOUND",
+        "INVALID",
+        "ERROR",
+      ],
+    ],
+    [
       { type: "SELECT_JSON_TASK" },
       ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"],
     ],
-    [
-      { type: "MARK_JSON_TASK" },
-      ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"],
-    ],
+    [{ type: "MARK_JSON_TASK" }, ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"]],
     [
       { type: "CHANGE_SCOPE_GUARD" },
       ["IN_SCOPE", "OUT_OF_SCOPE", "EMPTY", "ERROR"],
@@ -62,7 +68,7 @@ describe("getRalphUtilityOutputs", () => {
     [{ type: "DETECT_PROJECT_COMMANDS" }, ["SUCCESS", "EMPTY", "ERROR"]],
     [{ type: "TRANSFORM_JSON" }, ["SUCCESS", "ERROR"]],
     [{ type: "SEARCH_FILES" }, ["SUCCESS", "EMPTY", "ERROR"]],
-    [{ type: "RUN_CHECK" }, ["SUCCESS", "FAILED", "ERROR"]],
+    [{ type: "RUN_CHECK" }, ["SUCCESS", "FAILED", "INCONCLUSIVE", "ERROR"]],
     [{ type: "VALIDATE_JSON" }, ["SUCCESS", "INVALID", "ERROR"]],
     [{ type: "FINAL_REPORT" }, ["SUCCESS", "ERROR"]],
   ] as const)("returns outputs for utility %#", (utility, outputs) => {
@@ -124,7 +130,12 @@ describe("getRalphBlockOutputs", () => {
       ["SUCCESS", "ERROR"],
     ],
     [
-      { id: "validator", type: "VALIDATOR", title: "Validate", prompt: "Check." },
+      {
+        id: "validator",
+        type: "VALIDATOR",
+        title: "Validate",
+        prompt: "Check.",
+      },
       ["DONE", "CONTINUE", "RETRY", "ERROR"],
     ],
     [
@@ -136,10 +147,7 @@ describe("getRalphBlockOutputs", () => {
       },
       ["SUCCESS", "CANCELLED", "TIMEOUT", "ERROR"],
     ],
-    [
-      { id: "end", type: "END", title: "End" },
-      [],
-    ],
+    [{ id: "end", type: "END", title: "End" }, []],
   ] satisfies Array<[RalphFlowBlock, string[]]>)(
     "returns outputs for block %#",
     (block, outputs) => {
@@ -175,10 +183,7 @@ describe("Ralph block execution classification", () => {
   it.each([
     [{ id: "start", type: "START", title: "Start" }, false],
     [{ id: "end", type: "END", title: "End" }, false],
-    [
-      { id: "prompt", type: "PROMPT", title: "Prompt", prompt: "Do it." },
-      true,
-    ],
+    [{ id: "prompt", type: "PROMPT", title: "Prompt", prompt: "Do it." }, true],
     [
       {
         id: "utility",

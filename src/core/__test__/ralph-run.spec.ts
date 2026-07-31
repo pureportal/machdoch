@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
@@ -46,7 +54,9 @@ describe("runRalphFlow", () => {
   });
 
   it("does not resolve or deliver provider instructions for a utility-only flow", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-utility-instructions-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-utility-instructions-"),
+    );
     try {
       await writeFile(join(workspace, "AGENTS.md"), Buffer.from([0xff]));
       const flow = createFlow({
@@ -211,7 +221,9 @@ describe("runRalphFlow", () => {
 
   it("pauses for ask-user blocks and resumes with submitted values", async () => {
     const flow = createFlow({
-      variables: [{ name: "details", type: "text", required: false, default: "" }],
+      variables: [
+        { name: "details", type: "text", required: false, default: "" },
+      ],
       blocks: [
         { id: "start", type: "START", title: "Start" },
         {
@@ -233,8 +245,18 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Done" },
       ],
       edges: [
-        { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
-        { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-to-collect",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "collect",
+        },
+        {
+          id: "collect-to-success",
+          from: "collect",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
     const paused = await runRalphFlow(flow, runtimeConfig, customizations, {
@@ -263,7 +285,9 @@ describe("runRalphFlow", () => {
     });
 
     expect(resumed.status).toBe("completed");
-    expect(resumed.events.map((event) => event.type)).toContain("input-submitted");
+    expect(resumed.events.map((event) => event.type)).toContain(
+      "input-submitted",
+    );
     expect(resumed.blockResults).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -308,8 +332,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Done" },
         ],
         edges: [
-          { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
-          { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-collect",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "collect",
+          },
+          {
+            id: "collect-to-success",
+            from: "collect",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -368,8 +402,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Done" },
         ],
         edges: [
-          { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
-          { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-collect",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "collect",
+          },
+          {
+            id: "collect-to-success",
+            from: "collect",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -410,8 +454,18 @@ describe("runRalphFlow", () => {
           },
         ],
         edges: [
-          { id: "start-to-wait", from: "start", fromOutput: "SUCCESS", to: "wait" },
-          { id: "wait-to-start", from: "wait", fromOutput: "SUCCESS", to: "start" },
+          {
+            id: "start-to-wait",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "wait",
+          },
+          {
+            id: "wait-to-start",
+            from: "wait",
+            fromOutput: "SUCCESS",
+            to: "start",
+          },
         ],
       }),
       runtimeConfig,
@@ -476,9 +530,24 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-effect", from: "start", fromOutput: "SUCCESS", to: "side-effect" },
-          { id: "effect-to-collect", from: "side-effect", fromOutput: "SUCCESS", to: "collect" },
-          { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-effect",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "side-effect",
+          },
+          {
+            id: "effect-to-collect",
+            from: "side-effect",
+            fromOutput: "SUCCESS",
+            to: "collect",
+          },
+          {
+            id: "collect-to-success",
+            from: "collect",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       });
       const paused = await runRalphFlow(
@@ -493,8 +562,116 @@ describe("runRalphFlow", () => {
 
       expect(paused.status).toBe("waiting-for-input");
       expect(persisted.checkpoint?.currentBlockId).toBe("collect");
-      expect(paused.blockResults.filter((entry) => entry.blockId === "side-effect"))
-        .toHaveLength(1);
+      expect(
+        paused.blockResults.filter((entry) => entry.blockId === "side-effect"),
+      ).toHaveLength(1);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes from the newest immutable checkpoint when run.json lags", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-stale-projection-"));
+    const flow = createFlow({
+      variables: [
+        { name: "approval", type: "string", default: "", required: false },
+      ],
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "collect",
+          type: "ASK_USER",
+          title: "Collect",
+          mode: "alwaysAsk",
+          fields: [
+            {
+              id: "approval",
+              label: "Approval",
+              type: "text",
+              required: true,
+              variableName: "approval",
+            },
+          ],
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        {
+          id: "start-collect",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "collect",
+        },
+        {
+          id: "collect-success",
+          from: "collect",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      const firstLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "stale-projection",
+      });
+      const paused = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        { ...customizations, workspaceRoot: workspace },
+        { logger: firstLogger, runId: firstLogger.runId },
+      );
+      const staleCheckpoint: RalphRunCheckpoint = {
+        ...paused.checkpoint!,
+        currentBlockId: "start",
+        transitions: 0,
+        totalTransitions: 0,
+      };
+      delete staleCheckpoint.pendingInput;
+      const staleRecord = JSON.parse(
+        await readFile(firstLogger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+      staleRecord.checkpoint = staleCheckpoint;
+      await writeFile(
+        firstLogger.paths!.recordPath,
+        JSON.stringify(staleRecord),
+        "utf8",
+      );
+      const resumedLogger = await createRalphRunLogger(workspace, flow, {
+        runId: firstLogger.runId,
+        paths: firstLogger.paths!,
+        append: true,
+      });
+
+      const resumed = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        { ...customizations, workspaceRoot: workspace },
+        {
+          logger: resumedLogger,
+          runId: resumedLogger.runId,
+          checkpoint: staleCheckpoint,
+          inputResponse: {
+            requestId: paused.pendingInput!.id,
+            action: "submit",
+            values: { approval: "approved" },
+          },
+        },
+      );
+
+      expect(paused.status).toBe("waiting-for-input");
+      expect(resumed.status).toBe("completed");
+      expect(
+        resumed.blockResults.filter((entry) => entry.blockId === "start"),
+      ).toHaveLength(1);
+      expect(
+        resumed.blockResults.find((entry) => entry.blockId === "collect"),
+      ).toMatchObject({
+        output: "SUCCESS",
+        data: expect.objectContaining({
+          values: { approval: "approved" },
+        }),
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -514,7 +691,9 @@ describe("runRalphFlow", () => {
       variables: { approval: "" },
       resultsByBlock: { start: historicalResult },
       runLog: Array.from({ length: 1_100 }, (_, index) => `entry-${index}`),
-      blockResults: Array.from({ length: 1_100 }, () => ({ ...historicalResult })),
+      blockResults: Array.from({ length: 1_100 }, () => ({
+        ...historicalResult,
+      })),
       events: Array.from({ length: 2_100 }, (_, index) => ({
         type: "block-start" as const,
         blockId: "start",
@@ -547,8 +726,18 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Success" },
       ],
       edges: [
-        { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
-        { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-to-collect",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "collect",
+        },
+        {
+          id: "collect-to-success",
+          from: "collect",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
 
@@ -586,9 +775,24 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Success" },
       ],
       edges: [
-        { id: "start-to-one", from: "start", fromOutput: "SUCCESS", to: "wait-one" },
-        { id: "one-to-two", from: "wait-one", fromOutput: "SUCCESS", to: "wait-two" },
-        { id: "two-to-success", from: "wait-two", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-to-one",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "wait-one",
+        },
+        {
+          id: "one-to-two",
+          from: "wait-one",
+          fromOutput: "SUCCESS",
+          to: "wait-two",
+        },
+        {
+          id: "two-to-success",
+          from: "wait-two",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
     const exhausted = await runRalphFlow(flow, runtimeConfig, customizations, {
@@ -631,8 +835,18 @@ describe("runRalphFlow", () => {
           },
         ],
         edges: [
-          { id: "start-to-wait", from: "start", fromOutput: "SUCCESS", to: "wait" },
-          { id: "wait-to-start", from: "wait", fromOutput: "SUCCESS", to: "start" },
+          {
+            id: "start-to-wait",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "wait",
+          },
+          {
+            id: "wait-to-start",
+            from: "wait",
+            fromOutput: "SUCCESS",
+            to: "start",
+          },
         ],
       }),
       runtimeConfig,
@@ -674,8 +888,18 @@ describe("runRalphFlow", () => {
           { id: "failed", type: "END", title: "Failed", status: "failed" },
         ],
         edges: [
-          { id: "start-to-work", from: "start", fromOutput: "SUCCESS", to: "work" },
-          { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-work",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "work",
+          },
+          {
+            id: "work-success",
+            from: "work",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
           { id: "work-error", from: "work", fromOutput: "ERROR", to: "failed" },
         ],
       }),
@@ -690,7 +914,14 @@ describe("runRalphFlow", () => {
       },
     );
 
-    expect(result.status).toBe("completed");
+    expect(result).toMatchObject({
+      status: "blocked",
+      outcome: {
+        status: "verification-inconclusive",
+        verified: false,
+        retryable: true,
+      },
+    });
     expect(executeTask).toHaveBeenCalledTimes(2);
     expect(result.autonomy).toMatchObject({
       recoveryAttempts: [
@@ -701,9 +932,7 @@ describe("runRalphFlow", () => {
           attempt: 1,
         }),
       ],
-      recovered: [
-        expect.objectContaining({ blockId: "work", attempts: 1 }),
-      ],
+      recovered: [expect.objectContaining({ blockId: "work", attempts: 1 })],
       deferred: [],
     });
     expect(result.events).toEqual(
@@ -751,18 +980,40 @@ describe("runRalphFlow", () => {
           { id: "failed", type: "END", title: "Failed", status: "failed" },
         ],
         edges: [
-          { id: "start-to-validate", from: "start", fromOutput: "SUCCESS", to: "validate" },
-          { id: "validate-invalid", from: "validate", fromOutput: "INVALID", to: "failed" },
-          { id: "defer-to-success", from: "defer-work", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-validate",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "validate",
+          },
+          {
+            id: "validate-invalid",
+            from: "validate",
+            fromOutput: "INVALID",
+            to: "failed",
+          },
+          {
+            id: "defer-to-success",
+            from: "defer-work",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
       customizations,
     );
 
-    expect(result.status).toBe("completed");
-    expect(result.blockResults.filter((entry) => entry.blockId === "validate"))
-      .toHaveLength(2);
+    expect(result.status).toBe("blocked");
+    expect(result.outcome).toMatchObject({
+      status: "deferred",
+      verified: false,
+      retryable: true,
+    });
+    expect(result.checkpoint).toBeDefined();
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "validate"),
+    ).toHaveLength(2);
     expect(result.autonomy?.deferred).toEqual([
       expect.objectContaining({
         blockId: "validate",
@@ -823,10 +1074,30 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
-          { id: "check-invalid-to-fix", from: "check", fromOutput: "INVALID", to: "fix" },
-          { id: "check-success-to-success", from: "check", fromOutput: "SUCCESS", to: "success" },
-          { id: "fix-to-check", from: "fix", fromOutput: "SUCCESS", to: "check" },
+          {
+            id: "start-to-check",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "check",
+          },
+          {
+            id: "check-invalid-to-fix",
+            from: "check",
+            fromOutput: "INVALID",
+            to: "fix",
+          },
+          {
+            id: "check-success-to-success",
+            from: "check",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
+          {
+            id: "fix-to-check",
+            from: "fix",
+            fromOutput: "SUCCESS",
+            to: "check",
+          },
         ],
       }),
       runtimeConfig,
@@ -834,9 +1105,7 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("blocked");
-    expect(result.summary).toContain(
-      "after 3 identical non-success result(s)",
-    );
+    expect(result.summary).toContain("after 3 identical non-success result(s)");
     expect(
       result.blockResults.filter((entry) => entry.blockId === "check"),
     ).toHaveLength(3);
@@ -894,9 +1163,14 @@ describe("runRalphFlow", () => {
     const controller = new AbortController();
     controller.abort();
 
-    const result = await runRalphFlow(createFlow(), runtimeConfig, customizations, {
-      signal: controller.signal,
-    });
+    const result = await runRalphFlow(
+      createFlow(),
+      runtimeConfig,
+      customizations,
+      {
+        signal: controller.signal,
+      },
+    );
 
     expect(result.status).toBe("stopped");
     expect(result.summary).toBe("Ralph run stopped.");
@@ -930,8 +1204,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-wait", from: "start", fromOutput: "SUCCESS", to: "wait" },
-          { id: "wait-to-success", from: "wait", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-wait",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "wait",
+          },
+          {
+            id: "wait-to-success",
+            from: "wait",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -942,7 +1226,12 @@ describe("runRalphFlow", () => {
     expect(result.status).toBe("completed");
     expect(onEvent).toHaveBeenCalled();
     expect(result.events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(["block-start", "block-output", "edge-route", "end"]),
+      expect.arrayContaining([
+        "block-start",
+        "block-output",
+        "edge-route",
+        "end",
+      ]),
     );
   });
 
@@ -968,8 +1257,18 @@ describe("runRalphFlow", () => {
           { id: "failed", type: "END", title: "Failed", status: "failed" },
         ],
         edges: [
-          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
-          { id: "prompt-error", from: "prompt", fromOutput: "ERROR", to: "failed" },
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt",
+          },
+          {
+            id: "prompt-error",
+            from: "prompt",
+            fromOutput: "ERROR",
+            to: "failed",
+          },
         ],
       }),
       runtimeConfig,
@@ -1026,8 +1325,18 @@ describe("runRalphFlow", () => {
           { id: "failed", type: "END", title: "Failed", status: "failed" },
         ],
         edges: [
-          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
-          { id: "prompt-error", from: "prompt", fromOutput: "ERROR", to: "failed" },
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt",
+          },
+          {
+            id: "prompt-error",
+            from: "prompt",
+            fromOutput: "ERROR",
+            to: "failed",
+          },
         ],
       }),
       runtimeConfig,
@@ -1102,8 +1411,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
-          { id: "prompt-success", from: "prompt", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt",
+          },
+          {
+            id: "prompt-success",
+            from: "prompt",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -1164,8 +1483,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
-          { id: "prompt-to-success", from: "prompt", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt",
+          },
+          {
+            id: "prompt-to-success",
+            from: "prompt",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -1208,8 +1537,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt" },
-          { id: "prompt-to-success", from: "prompt", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt",
+          },
+          {
+            id: "prompt-to-success",
+            from: "prompt",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -1232,8 +1571,16 @@ describe("runRalphFlow", () => {
       await mkdir(join(workspace, ".machdoch", "ralph", "flows", "src"), {
         recursive: true,
       });
-      await writeFile(join(workspace, "src", "App.tsx"), "export {};\n", "utf8");
-      await writeFile(join(workspace, "src", "Other.tsx"), "export {};\n", "utf8");
+      await writeFile(
+        join(workspace, "src", "App.tsx"),
+        "export {};\n",
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "src", "Other.tsx"),
+        "export {};\n",
+        "utf8",
+      );
       await writeFile(
         join(workspace, "node_modules", "package", "src", "Hidden.tsx"),
         "export {};\n",
@@ -1287,7 +1634,12 @@ describe("runRalphFlow", () => {
         (entry) => entry.blockId === "search",
       );
       const searchData = searchResult?.data as
-        | { results: string[]; count: number; truncated: boolean; limit: number }
+        | {
+            results: string[];
+            count: number;
+            truncated: boolean;
+            limit: number;
+          }
         | undefined;
       const normalizedResults =
         searchData?.results.map((entry) => entry.replace(/\\/gu, "/")) ?? [];
@@ -1311,13 +1663,21 @@ describe("runRalphFlow", () => {
     try {
       await mkdir(join(workspace, "src", "nested"), { recursive: true });
       await mkdir(join(workspace, "docs"), { recursive: true });
-      await writeFile(join(workspace, "src", "index.ts"), "export {};\n", "utf8");
+      await writeFile(
+        join(workspace, "src", "index.ts"),
+        "export {};\n",
+        "utf8",
+      );
       await writeFile(
         join(workspace, "src", "nested", "view.ts"),
         "export {};\n",
         "utf8",
       );
-      await writeFile(join(workspace, "docs", "guide.ts"), "not source\n", "utf8");
+      await writeFile(
+        join(workspace, "docs", "guide.ts"),
+        "not source\n",
+        "utf8",
+      );
 
       const result = await runRalphFlow(
         createFlow({
@@ -1355,8 +1715,9 @@ describe("runRalphFlow", () => {
         { maxTransitions: 5 },
       );
 
-      const searchData = result.blockResults.find((entry) => entry.blockId === "search")
-        ?.data as { results: string[]; count: number } | undefined;
+      const searchData = result.blockResults.find(
+        (entry) => entry.blockId === "search",
+      )?.data as { results: string[]; count: number } | undefined;
       const normalizedResults =
         searchData?.results.map((entry) => entry.replace(/\\/gu, "/")) ?? [];
 
@@ -1384,8 +1745,18 @@ describe("runRalphFlow", () => {
       const result = await runRalphFlow(
         createFlow({
           variables: [
-            { name: "enabled", type: "boolean", required: false, default: "true" },
-            { name: "trackedPath", type: "path", required: false, default: "tracked.md" },
+            {
+              name: "enabled",
+              type: "boolean",
+              required: false,
+              default: "true",
+            },
+            {
+              name: "trackedPath",
+              type: "path",
+              required: false,
+              default: "tracked.md",
+            },
           ],
           blocks: [
             { id: "start", type: "START", title: "Start" },
@@ -1440,12 +1811,42 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-condition", from: "start", fromOutput: "SUCCESS", to: "condition" },
-            { id: "condition-match", from: "condition", fromOutput: "MATCH", to: "exists-before" },
-            { id: "exists-before-delete", from: "exists-before", fromOutput: "EXISTS", to: "delete" },
-            { id: "delete-to-exists-after", from: "delete", fromOutput: "SUCCESS", to: "exists-after" },
-            { id: "exists-after-missing", from: "exists-after", fromOutput: "MISSING", to: "delete-again" },
-            { id: "delete-again-not-found", from: "delete-again", fromOutput: "NOT_FOUND", to: "success" },
+            {
+              id: "start-to-condition",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "condition",
+            },
+            {
+              id: "condition-match",
+              from: "condition",
+              fromOutput: "MATCH",
+              to: "exists-before",
+            },
+            {
+              id: "exists-before-delete",
+              from: "exists-before",
+              fromOutput: "EXISTS",
+              to: "delete",
+            },
+            {
+              id: "delete-to-exists-after",
+              from: "delete",
+              fromOutput: "SUCCESS",
+              to: "exists-after",
+            },
+            {
+              id: "exists-after-missing",
+              from: "exists-after",
+              fromOutput: "MISSING",
+              to: "delete-again",
+            },
+            {
+              id: "delete-again-not-found",
+              from: "delete-again",
+              fromOutput: "NOT_FOUND",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -1463,10 +1864,19 @@ describe("runRalphFlow", () => {
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ blockId: "condition", output: "MATCH" }),
-          expect.objectContaining({ blockId: "exists-before", output: "EXISTS" }),
+          expect.objectContaining({
+            blockId: "exists-before",
+            output: "EXISTS",
+          }),
           expect.objectContaining({ blockId: "delete", output: "SUCCESS" }),
-          expect.objectContaining({ blockId: "exists-after", output: "MISSING" }),
-          expect.objectContaining({ blockId: "delete-again", output: "NOT_FOUND" }),
+          expect.objectContaining({
+            blockId: "exists-after",
+            output: "MISSING",
+          }),
+          expect.objectContaining({
+            blockId: "delete-again",
+            output: "NOT_FOUND",
+          }),
         ]),
       );
       await expect(readFile(trackedPath, "utf8")).rejects.toMatchObject({
@@ -1493,7 +1903,7 @@ describe("runRalphFlow", () => {
               utility: {
                 type: "WRITE_JSON",
                 path: "state/goal.json",
-                input: "{\"goal\":\"ship\",\"stats\":{\"passes\":1}}",
+                input: '{"goal":"ship","stats":{"passes":1}}',
               },
             },
             {
@@ -1503,7 +1913,7 @@ describe("runRalphFlow", () => {
               utility: {
                 type: "PATCH_JSON",
                 path: "state/goal.json",
-                input: "{\"stats\":{\"verified\":true}}",
+                input: '{"stats":{"verified":true}}',
                 jsonPatchMode: "merge",
               },
             },
@@ -1577,15 +1987,60 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-write", from: "start", fromOutput: "SUCCESS", to: "write-json" },
-            { id: "write-to-patch", from: "write-json", fromOutput: "SUCCESS", to: "patch-json" },
-            { id: "patch-to-read", from: "patch-json", fromOutput: "SUCCESS", to: "read-json" },
-            { id: "read-to-append", from: "read-json", fromOutput: "SUCCESS", to: "append-jsonl" },
-            { id: "append-to-move", from: "append-jsonl", fromOutput: "SUCCESS", to: "move-file" },
-            { id: "move-to-archive", from: "move-file", fromOutput: "SUCCESS", to: "archive-file" },
-            { id: "archive-to-counter-one", from: "archive-file", fromOutput: "SUCCESS", to: "counter-one" },
-            { id: "counter-one-to-counter-two", from: "counter-one", fromOutput: "CONTINUE", to: "counter-two" },
-            { id: "counter-two-to-success", from: "counter-two", fromOutput: "LIMIT_REACHED", to: "success" },
+            {
+              id: "start-to-write",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "write-json",
+            },
+            {
+              id: "write-to-patch",
+              from: "write-json",
+              fromOutput: "SUCCESS",
+              to: "patch-json",
+            },
+            {
+              id: "patch-to-read",
+              from: "patch-json",
+              fromOutput: "SUCCESS",
+              to: "read-json",
+            },
+            {
+              id: "read-to-append",
+              from: "read-json",
+              fromOutput: "SUCCESS",
+              to: "append-jsonl",
+            },
+            {
+              id: "append-to-move",
+              from: "append-jsonl",
+              fromOutput: "SUCCESS",
+              to: "move-file",
+            },
+            {
+              id: "move-to-archive",
+              from: "move-file",
+              fromOutput: "SUCCESS",
+              to: "archive-file",
+            },
+            {
+              id: "archive-to-counter-one",
+              from: "archive-file",
+              fromOutput: "SUCCESS",
+              to: "counter-one",
+            },
+            {
+              id: "counter-one-to-counter-two",
+              from: "counter-one",
+              fromOutput: "CONTINUE",
+              to: "counter-two",
+            },
+            {
+              id: "counter-two-to-success",
+              from: "counter-two",
+              fromOutput: "LIMIT_REACHED",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -1607,7 +2062,10 @@ describe("runRalphFlow", () => {
               },
             }),
           }),
-          expect.objectContaining({ blockId: "counter-one", output: "CONTINUE" }),
+          expect.objectContaining({
+            blockId: "counter-one",
+            output: "CONTINUE",
+          }),
           expect.objectContaining({
             blockId: "counter-two",
             output: "LIMIT_REACHED",
@@ -1618,14 +2076,16 @@ describe("runRalphFlow", () => {
       const archiveResult = result.blockResults.find(
         (entry) => entry.blockId === "archive-file",
       );
-      const archivePath = (archiveResult?.data as { to?: string } | undefined)?.to;
+      const archivePath = (archiveResult?.data as { to?: string } | undefined)
+        ?.to;
 
       expect(archivePath).toBeTruthy();
       await expect(readFile(archivePath!, "utf8")).resolves.toContain(
-        "\"verified\": true",
+        '"verified": true',
       );
-      await expect(readFile(join(workspace, "state", "events.jsonl"), "utf8"))
-        .resolves.toContain("\"goal\":\"ship\"");
+      await expect(
+        readFile(join(workspace, "state", "events.jsonl"), "utf8"),
+      ).resolves.toContain('"goal":"ship"');
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -1669,17 +2129,43 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
-          { id: "check-to-fix", from: "check", fromOutput: "INVALID", to: "fix" },
-          { id: "fix-to-check", from: "fix", fromOutput: "SUCCESS", to: "check" },
-          { id: "defer-to-success", from: "defer-work", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-check",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "check",
+          },
+          {
+            id: "check-to-fix",
+            from: "check",
+            fromOutput: "INVALID",
+            to: "fix",
+          },
+          {
+            id: "fix-to-check",
+            from: "fix",
+            fromOutput: "SUCCESS",
+            to: "check",
+          },
+          {
+            id: "defer-to-success",
+            from: "defer-work",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
       customizations,
     );
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("blocked");
+    expect(result.outcome).toMatchObject({
+      status: "deferred",
+      verified: false,
+      retryable: true,
+    });
+    expect(result.checkpoint).toBeDefined();
     expect(result.autonomy).toMatchObject({
       deferred: [
         expect.objectContaining({
@@ -1711,7 +2197,12 @@ describe("runRalphFlow", () => {
       const result = await runRalphFlow(
         createFlow({
           variables: [
-            { name: "maxPasses", type: "number", default: "1", required: false },
+            {
+              name: "maxPasses",
+              type: "number",
+              default: "1",
+              required: false,
+            },
           ],
           blocks: [
             { id: "start", type: "START", title: "Start" },
@@ -1742,9 +2233,24 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-counter-one", from: "start", fromOutput: "SUCCESS", to: "counter-one" },
-            { id: "counter-one-to-counter-two", from: "counter-one", fromOutput: "CONTINUE", to: "counter-two" },
-            { id: "counter-two-to-success", from: "counter-two", fromOutput: "LIMIT_REACHED", to: "success" },
+            {
+              id: "start-to-counter-one",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "counter-one",
+            },
+            {
+              id: "counter-one-to-counter-two",
+              from: "counter-one",
+              fromOutput: "CONTINUE",
+              to: "counter-two",
+            },
+            {
+              id: "counter-two-to-success",
+              from: "counter-two",
+              fromOutput: "LIMIT_REACHED",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -1775,6 +2281,347 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("assesses JSON task plans without mutation or false completion", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-assessment-"));
+    const path = join(workspace, "tasks.json");
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "assess",
+          type: "UTILITY",
+          title: "Assess Tasks",
+          utility: {
+            type: "ASSESS_JSON_TASKS",
+            path: "tasks.json",
+            strategy: "start-to-end",
+            maxTasks: 2,
+          },
+        },
+        { id: "done", type: "END", title: "Done", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-assess",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+        ...[
+          "READY",
+          "COMPLETE",
+          "BLOCKED",
+          "EMPTY",
+          "NOT_FOUND",
+          "INVALID",
+          "ERROR",
+        ].map((fromOutput) => ({
+          id: `assess-${fromOutput.toLowerCase().replaceAll("_", "-")}`,
+          from: "assess",
+          fromOutput,
+          to: "done",
+        })),
+      ],
+    });
+    const runAssessment = async (tasks: Array<Record<string, unknown>>) => {
+      const original = JSON.stringify({ tasks }, null, 2);
+      await writeFile(path, original, "utf8");
+      const before = await stat(path);
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 5 },
+      );
+      const after = await stat(path);
+      const assessment = result.blockResults.find(
+        (entry) => entry.blockId === "assess",
+      );
+      expect(await readFile(path, "utf8")).toBe(original);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+      if (!assessment) {
+        throw new Error(
+          `Assessment block did not execute: ${JSON.stringify({
+            status: result.status,
+            summary: result.summary,
+            validation: result.validation,
+            blocks: result.blockResults.map((entry) => ({
+              blockId: entry.blockId,
+              output: entry.output,
+              error: entry.error,
+            })),
+          })}`,
+        );
+      }
+      return assessment;
+    };
+
+    try {
+      await expect(
+        runAssessment([
+          { id: "done", status: "completed" },
+          { id: "ready", status: "planned", dependencies: ["done"] },
+        ]),
+      ).resolves.toMatchObject({
+        output: "READY",
+        status: "completed",
+        data: expect.objectContaining({
+          totalCount: 2,
+          completedCount: 1,
+          unfinishedCount: 1,
+          completionRatio: 0.5,
+          nextTaskIds: ["ready"],
+          structurallyBlocked: false,
+          retryable: false,
+        }),
+      });
+
+      const complete = await runAssessment(
+        Array.from({ length: 105 }, (_, index) => ({
+          id: `task-${index}`,
+          status: "completed",
+        })),
+      );
+      expect(complete).toMatchObject({
+        output: "COMPLETE",
+        data: expect.objectContaining({
+          totalCount: 105,
+          completedCount: 105,
+          tasks: expect.any(Array),
+          tasksTruncated: true,
+          omittedTaskCount: 5,
+        }),
+      });
+      expect((complete.data as { tasks: unknown[] }).tasks).toHaveLength(100);
+
+      const empty = await runAssessment([]);
+      expect(empty).toMatchObject({
+        output: "EMPTY",
+        data: expect.objectContaining({
+          totalCount: 0,
+          completedCount: 0,
+          completionRatio: 0,
+        }),
+      });
+      expect(empty?.summary).toContain("not complete");
+
+      await expect(
+        runAssessment([
+          {
+            id: "later",
+            status: "deferred",
+            nextEligibleAt: "2099-01-01T00:00:00.000Z",
+          },
+        ]),
+      ).resolves.toMatchObject({
+        output: "BLOCKED",
+        status: "completed",
+        data: expect.objectContaining({
+          structurallyBlocked: false,
+          retryable: true,
+          nextRetryAt: "2099-01-01T00:00:00.000Z",
+          blockers: [
+            expect.objectContaining({
+              taskId: "later",
+              reasons: ["deferred"],
+            }),
+          ],
+        }),
+      });
+
+      await expect(
+        runAssessment([
+          {
+            id: "invalid-retry",
+            status: "deferred",
+            nextEligibleAt: "not-a-timestamp",
+          },
+        ]),
+      ).resolves.toMatchObject({
+        output: "BLOCKED",
+        status: "completed",
+        data: expect.objectContaining({
+          structurallyBlocked: true,
+          retryable: false,
+          blockers: [
+            expect.objectContaining({
+              taskId: "invalid-retry",
+              reasons: ["deferred", "invalid-next-eligible-at"],
+            }),
+          ],
+        }),
+      });
+
+      const structuralBlock = await runAssessment([
+        {
+          id: "broken",
+          status: "planned",
+          dependencies: Array.from(
+            { length: 105 },
+            (_, index) => `missing-${index}`,
+          ),
+        },
+      ]);
+      expect(structuralBlock).toMatchObject({
+        output: "BLOCKED",
+        status: "completed",
+        data: expect.objectContaining({
+          structurallyBlocked: true,
+          retryable: false,
+          blockers: [
+            expect.objectContaining({
+              taskId: "broken",
+              reasons: expect.arrayContaining(["missing-dependency"]),
+              missingDependencyIds: expect.any(Array),
+              omittedMissingDependencyIdsCount: 5,
+            }),
+          ],
+        }),
+      });
+      expect(
+        (
+          structuralBlock.data as {
+            blockers: Array<{ missingDependencyIds: string[] }>;
+          }
+        ).blockers[0]?.missingDependencyIds,
+      ).toHaveLength(100);
+
+      await expect(
+        runAssessment([
+          { id: "cycle-a", status: "planned", dependencies: ["cycle-b"] },
+          { id: "cycle-b", status: "planned", dependencies: ["cycle-a"] },
+        ]),
+      ).resolves.toMatchObject({
+        output: "BLOCKED",
+        data: expect.objectContaining({
+          structurallyBlocked: true,
+          retryable: false,
+          dependencyCycles: [["cycle-a", "cycle-b", "cycle-a"]],
+          blockers: [
+            expect.objectContaining({
+              taskId: "cycle-a",
+              reasons: expect.arrayContaining(["dependency-cycle"]),
+            }),
+            expect.objectContaining({
+              taskId: "cycle-b",
+              reasons: expect.arrayContaining(["dependency-cycle"]),
+            }),
+          ],
+        }),
+      });
+      expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves assessed task blockers in the durable outcome", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-blocker-"));
+    const outcomesPath = join(workspace, "outcomes.jsonl");
+    const flow = createFlow({
+      settings: { autonomy: true },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "assess",
+          type: "UTILITY",
+          title: "Assess Tasks",
+          utility: {
+            type: "ASSESS_JSON_TASKS",
+            path: "tasks.json",
+          },
+        },
+        {
+          id: "record-blocked",
+          type: "UTILITY",
+          title: "Record Blocked",
+          utility: {
+            type: "APPEND_JSONL",
+            path: "outcomes.jsonl",
+            input: '{"outcome":"BLOCKED","assessment":{{data:assess}}}',
+          },
+        },
+        {
+          id: "deferred",
+          type: "END",
+          title: "Deferred",
+          status: "success",
+          outcome: "deferred",
+        },
+      ],
+      edges: [
+        {
+          id: "start-assess",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+        {
+          id: "assess-blocked",
+          from: "assess",
+          fromOutput: "BLOCKED",
+          to: "record-blocked",
+        },
+        ...["READY", "COMPLETE", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"].map(
+          (fromOutput) => ({
+            id: `assess-${fromOutput.toLowerCase().replaceAll("_", "-")}`,
+            from: "assess",
+            fromOutput,
+            to: "deferred",
+          }),
+        ),
+        ...["SUCCESS", "INVALID", "ERROR"].map((fromOutput) => ({
+          id: `record-${fromOutput.toLowerCase()}`,
+          from: "record-blocked",
+          fromOutput,
+          to: "deferred",
+        })),
+      ],
+    });
+
+    try {
+      await writeFile(
+        join(workspace, "tasks.json"),
+        JSON.stringify({
+          tasks: [
+            { id: "cycle-a", status: "planned", dependencies: ["cycle-b"] },
+            { id: "cycle-b", status: "planned", dependencies: ["cycle-a"] },
+          ],
+        }),
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+      );
+      const recorded = JSON.parse(
+        (await readFile(outcomesPath, "utf8")).trim(),
+      ) as Record<string, unknown>;
+
+      expect(result).toMatchObject({
+        status: "blocked",
+        outcome: {
+          status: "blocked",
+          verified: false,
+          retryable: true,
+        },
+      });
+      expect(recorded).toMatchObject({
+        outcome: "BLOCKED",
+        assessment: {
+          structurallyBlocked: true,
+          retryable: false,
+          dependencyCycles: [["cycle-a", "cycle-b", "cycle-a"]],
+        },
+      });
+      expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("runs JSONL history and JSON task utilities", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-json-task-"));
 
@@ -1794,8 +2641,8 @@ describe("runRalphFlow", () => {
         JSON.stringify(
           {
             tasks: [
-              { id: "task-1", title: "First", status: "todo", priority: 2 },
-              { id: "task-2", title: "Second", status: "done" },
+              { id: "task-1", title: "First", status: "planned", priority: 2 },
+              { id: "task-2", title: "Second", status: "completed" },
             ],
           },
           null,
@@ -1851,18 +2698,43 @@ describe("runRalphFlow", () => {
                 type: "MARK_JSON_TASK",
                 path: "state/tasks.json",
                 jsonPath: "tasks",
-                input: "{{data:select-task:task}}",
-                status: "done",
+                input: "{{data:select-task}}",
+                status: "verifying",
               },
             },
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-read", from: "start", fromOutput: "SUCCESS", to: "read-jsonl" },
-            { id: "read-to-query", from: "read-jsonl", fromOutput: "SUCCESS", to: "query-jsonl" },
-            { id: "query-to-select", from: "query-jsonl", fromOutput: "SUCCESS", to: "select-task" },
-            { id: "select-to-mark", from: "select-task", fromOutput: "SELECTED", to: "mark-task" },
-            { id: "mark-to-success", from: "mark-task", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-read",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "read-jsonl",
+            },
+            {
+              id: "read-to-query",
+              from: "read-jsonl",
+              fromOutput: "SUCCESS",
+              to: "query-jsonl",
+            },
+            {
+              id: "query-to-select",
+              from: "query-jsonl",
+              fromOutput: "SUCCESS",
+              to: "select-task",
+            },
+            {
+              id: "select-to-mark",
+              from: "select-task",
+              fromOutput: "SELECTED",
+              to: "mark-task",
+            },
+            {
+              id: "mark-to-success",
+              from: "mark-task",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -1882,14 +2754,21 @@ describe("runRalphFlow", () => {
             blockId: "select-task",
             output: "SELECTED",
             data: expect.objectContaining({
-              task: expect.objectContaining({ id: "task-1", status: "implementing" }),
+              tasks: [
+                expect.objectContaining({
+                  id: "task-1",
+                  status: "implementing",
+                }),
+              ],
+              taskIds: ["task-1"],
             }),
           }),
           expect.objectContaining({ blockId: "mark-task", output: "SUCCESS" }),
         ]),
       );
-      await expect(readFile(join(workspace, "state", "tasks.json"), "utf8"))
-        .resolves.toContain("\"status\": \"done\"");
+      await expect(
+        readFile(join(workspace, "state", "tasks.json"), "utf8"),
+      ).resolves.toContain('"status": "verifying"');
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -1922,7 +2801,6 @@ describe("runRalphFlow", () => {
                 path: "state/tasks.json",
                 taskId: "task-1",
                 status: "implementing",
-                enforce: true,
               },
             },
             {
@@ -1934,15 +2812,29 @@ describe("runRalphFlow", () => {
                 path: "state/tasks.json",
                 taskId: "task-1",
                 status: "verifying",
-                enforce: true,
               },
             },
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-implement", from: "start", fromOutput: "SUCCESS", to: "implement" },
-            { id: "implement-to-verify", from: "implement", fromOutput: "SUCCESS", to: "verify" },
-            { id: "verify-to-success", from: "verify", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-implement",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "implement",
+            },
+            {
+              id: "implement-to-verify",
+              from: "implement",
+              fromOutput: "SUCCESS",
+              to: "verify",
+            },
+            {
+              id: "verify-to-success",
+              from: "verify",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -1982,20 +2874,20 @@ describe("runRalphFlow", () => {
               {
                 id: "task-1",
                 title: "Create service",
-                status: "todo",
+                status: "planned",
                 batchKey: "service",
               },
               {
                 id: "task-2",
                 title: "Wire service tests",
-                status: "todo",
+                status: "planned",
                 batchKey: "service",
-                dependsOn: ["task-1"],
+                dependencies: ["task-1"],
               },
               {
                 id: "task-3",
                 title: "Update UI",
-                status: "todo",
+                status: "planned",
                 batchKey: "ui",
               },
               {
@@ -2007,7 +2899,7 @@ describe("runRalphFlow", () => {
               {
                 id: "task-5",
                 title: "No action needed",
-                status: "no_action",
+                status: "completed",
                 batchKey: "service",
               },
             ],
@@ -2037,8 +2929,18 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-select", from: "start", fromOutput: "SUCCESS", to: "select-task" },
-            { id: "select-to-success", from: "select-task", fromOutput: "SELECTED", to: "success" },
+            {
+              id: "start-to-select",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "select-task",
+            },
+            {
+              id: "select-to-success",
+              from: "select-task",
+              fromOutput: "SELECTED",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -2057,33 +2959,35 @@ describe("runRalphFlow", () => {
       expect(selectResult).toMatchObject({
         output: "SELECTED",
         data: expect.objectContaining({
-          task: expect.objectContaining({
-            id: "task-1",
-            workItemId: "task-1",
-            runId: expect.any(String),
-            stateHistory: [
-              expect.objectContaining({ from: "planned", to: "implementing" }),
-            ],
-          }),
           tasks: [
-            expect.objectContaining({ id: "task-1", status: "implementing" }),
+            expect.objectContaining({
+              id: "task-1",
+              status: "implementing",
+              workItemId: "task-1",
+              runId: expect.any(String),
+              stateHistory: [
+                expect.objectContaining({
+                  from: "planned",
+                  to: "implementing",
+                }),
+              ],
+            }),
             expect.objectContaining({ id: "task-2", status: "implementing" }),
           ],
+          taskIds: ["task-1", "task-2"],
           indexes: [0, 1],
           count: 2,
-          batch: expect.objectContaining({
-            taskIds: ["task-1", "task-2"],
-          }),
         }),
       });
-      expect(storedTasks.tasks.map((task) => [task.id, task.status, task.attempts]))
-        .toEqual([
-          ["task-1", "implementing", 1],
-          ["task-2", "implementing", 1],
-          ["task-3", "todo", undefined],
-          ["task-4", "deferred", undefined],
-          ["task-5", "no_action", undefined],
-        ]);
+      expect(
+        storedTasks.tasks.map((task) => [task.id, task.status, task.attempts]),
+      ).toEqual([
+        ["task-1", "implementing", 1],
+        ["task-2", "implementing", 1],
+        ["task-3", "planned", undefined],
+        ["task-4", "deferred", undefined],
+        ["task-5", "completed", undefined],
+      ]);
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -2098,7 +3002,7 @@ describe("runRalphFlow", () => {
         createExecutionResult({
           summary: "Invalid JSON shape.",
           response: {
-            markdown: "{\"name\":\"candidate\"}",
+            markdown: '{"name":"candidate"}',
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -2110,7 +3014,7 @@ describe("runRalphFlow", () => {
         createExecutionResult({
           summary: "Valid JSON.",
           response: {
-            markdown: "```json\n{\"name\":\"candidate\",\"score\":7}\n```",
+            markdown: '```json\n{"name":"candidate","score":7}\n```',
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -2146,8 +3050,18 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt-json" },
-            { id: "prompt-to-success", from: "prompt-json", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-prompt",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "prompt-json",
+            },
+            {
+              id: "prompt-to-success",
+              from: "prompt-json",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -2157,16 +3071,18 @@ describe("runRalphFlow", () => {
 
       expect(result.status).toBe("completed");
       expect(executeTask).toHaveBeenCalledTimes(2);
-      expect(result.blockResults.find((entry) => entry.blockId === "prompt-json"))
-        .toMatchObject({
-          output: "SUCCESS",
-          data: expect.objectContaining({
-            output: { name: "candidate", score: 7 },
-            attempts: 2,
-          }),
-        });
-      await expect(readFile(join(workspace, "state", "candidate.json"), "utf8"))
-        .resolves.toContain("\"score\": 7");
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "prompt-json"),
+      ).toMatchObject({
+        output: "SUCCESS",
+        data: expect.objectContaining({
+          output: { name: "candidate", score: 7 },
+          attempts: 2,
+        }),
+      });
+      await expect(
+        readFile(join(workspace, "state", "candidate.json"), "utf8"),
+      ).resolves.toContain('"score": 7');
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -2177,7 +3093,10 @@ describe("runRalphFlow", () => {
       createExecutionResult({
         summary: "Stop.",
         response: {
-          markdown: JSON.stringify({ decision: "STOP", selectedCandidate: null }),
+          markdown: JSON.stringify({
+            decision: "STOP",
+            selectedCandidate: null,
+          }),
           highlights: [],
           relatedFiles: [],
           verification: [],
@@ -2215,8 +3134,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt-json" },
-          { id: "prompt-to-success", from: "prompt-json", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt-json",
+          },
+          {
+            id: "prompt-to-success",
+            from: "prompt-json",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -2225,13 +3154,14 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "prompt-json"))
-      .toMatchObject({
-        output: "SUCCESS",
-        data: expect.objectContaining({
-          output: { decision: "STOP" },
-        }),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "prompt-json"),
+    ).toMatchObject({
+      output: "SUCCESS",
+      data: expect.objectContaining({
+        output: { decision: "STOP" },
+      }),
+    });
     expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toMatchObject({
       structuredOutput: { strict: true },
     });
@@ -2269,9 +3199,24 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-properties", from: "start", fromOutput: "SUCCESS", to: "validate-properties" },
-          { id: "properties-to-null", from: "validate-properties", fromOutput: "INVALID", to: "validate-null" },
-          { id: "null-to-success", from: "validate-null", fromOutput: "INVALID", to: "success" },
+          {
+            id: "start-to-properties",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "validate-properties",
+          },
+          {
+            id: "properties-to-null",
+            from: "validate-properties",
+            fromOutput: "INVALID",
+            to: "validate-null",
+          },
+          {
+            id: "null-to-success",
+            from: "validate-null",
+            fromOutput: "INVALID",
+            to: "success",
+          },
         ],
       }),
       runtimeConfig,
@@ -2280,31 +3225,35 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "validate-properties"))
-      .toMatchObject({
-        output: "INVALID",
-        data: {
-          input: { count: 1.5, extra: true },
-          validation: {
-            valid: false,
-            errors: expect.arrayContaining([
-              expect.stringContaining("expected integer"),
-              expect.stringContaining("extra is not allowed"),
-            ]),
-          },
+    expect(
+      result.blockResults.find(
+        (entry) => entry.blockId === "validate-properties",
+      ),
+    ).toMatchObject({
+      output: "INVALID",
+      data: {
+        input: { count: 1.5, extra: true },
+        validation: {
+          valid: false,
+          errors: expect.arrayContaining([
+            expect.stringContaining("expected integer"),
+            expect.stringContaining("extra is not allowed"),
+          ]),
         },
-      });
-    expect(result.blockResults.find((entry) => entry.blockId === "validate-null"))
-      .toMatchObject({
-        output: "INVALID",
-        data: {
-          input: null,
-          validation: {
-            valid: false,
-            errors: [expect.stringContaining("expected object, got null")],
-          },
+      },
+    });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "validate-null"),
+    ).toMatchObject({
+      output: "INVALID",
+      data: {
+        input: null,
+        validation: {
+          valid: false,
+          errors: [expect.stringContaining("expected object, got null")],
         },
-      });
+      },
+    });
   });
 
   it("routes VALIDATOR_JSON decisions from schema-valid model output", async () => {
@@ -2346,8 +3295,18 @@ describe("runRalphFlow", () => {
             { id: "continue", type: "END", title: "Continue" },
           ],
           edges: [
-            { id: "start-to-validator", from: "start", fromOutput: "SUCCESS", to: "validator-json" },
-            { id: "validator-to-continue", from: "validator-json", fromOutput: "CONTINUE", to: "continue" },
+            {
+              id: "start-to-validator",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "validator-json",
+            },
+            {
+              id: "validator-to-continue",
+              from: "validator-json",
+              fromOutput: "CONTINUE",
+              to: "continue",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -2370,7 +3329,13 @@ describe("runRalphFlow", () => {
           name: "ralph_validator-json",
           strict: true,
           schema: expect.objectContaining({
-            required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
+            required: [
+              "decision",
+              "confidence",
+              "summary",
+              "evidence",
+              "remainingWork",
+            ],
           }),
         },
       });
@@ -2413,8 +3378,18 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-detect", from: "start", fromOutput: "SUCCESS", to: "detect" },
-            { id: "detect-to-success", from: "detect", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-detect",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "detect",
+            },
+            {
+              id: "detect-to-success",
+              from: "detect",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -2450,18 +3425,20 @@ describe("runRalphFlow", () => {
           : "pnpm typecheck && pnpm lint";
 
       expect(result.status).toBe("completed");
-      expect(result.blockResults.find((entry) => entry.blockId === "detect"))
-        .toMatchObject({
-          output: "SUCCESS",
-          data: expect.objectContaining({
-            focusedVerificationCommand: expectedFocusedVerificationCommand,
-            standardVerificationCommand: expectedStandardVerificationCommand,
-            broadVerificationCommand: expectedVerificationCommand,
-            verificationCommand: expectedVerificationCommand,
-          }),
-        });
-      await expect(readFile(join(workspace, "state", "project-commands.json"), "utf8"))
-        .resolves.toContain("pnpm typecheck");
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "detect"),
+      ).toMatchObject({
+        output: "SUCCESS",
+        data: expect.objectContaining({
+          focusedVerificationCommand: expectedFocusedVerificationCommand,
+          standardVerificationCommand: expectedStandardVerificationCommand,
+          broadVerificationCommand: expectedVerificationCommand,
+          verificationCommand: expectedVerificationCommand,
+        }),
+      });
+      await expect(
+        readFile(join(workspace, "state", "project-commands.json"), "utf8"),
+      ).resolves.toContain("pnpm typecheck");
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -2491,8 +3468,18 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-detect", from: "start", fromOutput: "SUCCESS", to: "detect" },
-            { id: "detect-to-success", from: "detect", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-detect",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "detect",
+            },
+            {
+              id: "detect-to-success",
+              from: "detect",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -2519,11 +3506,17 @@ describe("runRalphFlow", () => {
   });
 
   it("detects nested package commands from a selected source scope", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-project-scope-commands-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-project-scope-commands-"),
+    );
 
     try {
       await mkdir(join(workspace, "apps", "api", "src"), { recursive: true });
-      await writeFile(join(workspace, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\n",
+        "utf8",
+      );
       await writeFile(
         join(workspace, "apps", "api", "package.json"),
         JSON.stringify({
@@ -2551,8 +3544,18 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-detect", from: "start", fromOutput: "SUCCESS", to: "detect" },
-            { id: "detect-to-success", from: "detect", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-detect",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "detect",
+            },
+            {
+              id: "detect-to-success",
+              from: "detect",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -2570,463 +3573,757 @@ describe("runRalphFlow", () => {
           : "pnpm typecheck && pnpm lint";
 
       expect(result.status).toBe("completed");
-      expect(result.blockResults.find((entry) => entry.blockId === "detect"))
-        .toMatchObject({
-          output: "SUCCESS",
-          data: expect.objectContaining({
-            rootPath: join(workspace, "apps", "api"),
-            requestedRootPath: join(workspace, "apps", "api", "src"),
-            commands: expect.arrayContaining([
-              expect.objectContaining({
-                kind: "typecheck",
-                command: "pnpm typecheck",
-              }),
-              expect.objectContaining({
-                kind: "lint",
-                command: "pnpm lint",
-              }),
-            ]),
-            focusedVerificationCommand:
-              process.platform === "win32"
-                ? [
-                    "pnpm typecheck",
-                    "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
-                  ].join("; ")
-                : "pnpm typecheck",
-            standardVerificationCommand: expectedVerificationCommand,
-            broadVerificationCommand: expectedVerificationCommand,
-            verificationCommand: expectedVerificationCommand,
-          }),
-        });
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "detect"),
+      ).toMatchObject({
+        output: "SUCCESS",
+        data: expect.objectContaining({
+          rootPath: join(workspace, "apps", "api"),
+          requestedRootPath: join(workspace, "apps", "api", "src"),
+          commands: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "typecheck",
+              command: "pnpm typecheck",
+            }),
+            expect.objectContaining({
+              kind: "lint",
+              command: "pnpm lint",
+            }),
+          ]),
+          focusedVerificationCommand:
+            process.platform === "win32"
+              ? [
+                  "pnpm typecheck",
+                  "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+                ].join("; ")
+              : "pnpm typecheck",
+          standardVerificationCommand: expectedVerificationCommand,
+          broadVerificationCommand: expectedVerificationCommand,
+          verificationCommand: expectedVerificationCommand,
+        }),
+      });
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });
 
-  it("records out-of-scope changed files as advisory by default", async () => {
-    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+  it(
+    "records out-of-scope changed files as advisory by default",
+    async () => {
+      const gitAvailable = spawnSync("git", ["--version"], {
+        encoding: "utf8",
+      });
 
-    if (gitAvailable.status !== 0) {
-      return;
-    }
+      if (gitAvailable.status !== 0) {
+        return;
+      }
 
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-"));
+      const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-"));
 
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await mkdir(join(workspace, "docs"), { recursive: true });
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 1;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "before\n", "utf8");
-      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await mkdir(join(workspace, "docs"), { recursive: true });
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 1;\n",
+          "utf8",
+        );
+        await writeFile(
+          join(workspace, "RALPH_REFACTOR_NOTES.md"),
+          "before\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
-      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.email", "test@example.com"], {
-          cwd: workspace,
-        }).status,
-      ).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
-          .status,
-      ).toBe(0);
-      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
-      ).toBe(0);
+        expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.email", "test@example.com"], {
+            cwd: workspace,
+          }).status,
+        ).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+        expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(
+          0,
+        );
+        expect(
+          spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+            .status,
+        ).toBe(0);
 
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 2;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "after\n", "utf8");
-      await writeFile(join(workspace, "docs", "note.md"), "after\n", "utf8");
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 2;\n",
+          "utf8",
+        );
+        await writeFile(
+          join(workspace, "RALPH_REFACTOR_NOTES.md"),
+          "after\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "after\n", "utf8");
 
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "scope-guard",
-              type: "UTILITY",
-              title: "Scope Guard",
-              utility: {
-                type: "CHANGE_SCOPE_GUARD",
-                cwd: ".",
-                input: JSON.stringify({
-                  scope: {
-                    paths: ["src"],
-                    globs: ["src/**/*.ts"],
-                  },
-                  allowedPaths: ["RALPH_REFACTOR_NOTES.md"],
-                }),
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "scope-guard",
+                type: "UTILITY",
+                title: "Scope Guard",
+                utility: {
+                  type: "CHANGE_SCOPE_GUARD",
+                  cwd: ".",
+                  input: JSON.stringify({
+                    scope: {
+                      paths: ["src"],
+                      globs: ["src/**/*.ts"],
+                    },
+                    allowedPaths: ["RALPH_REFACTOR_NOTES.md"],
+                  }),
+                },
               },
-            },
-            { id: "success", type: "END", title: "Success" },
-            { id: "blocked", type: "END", title: "Blocked", status: "failed" },
-          ],
-          edges: [
-            { id: "start-to-guard", from: "start", fromOutput: "SUCCESS", to: "scope-guard" },
-            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
-            { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scope-guard",
-            output: "IN_SCOPE",
-            data: expect.objectContaining({
-              enforcement: "advisory",
-              outOfScopeFiles: [],
-              advisoryOutOfScopeFiles: expect.arrayContaining(["docs/note.md"]),
-              unrelatedWorkspaceFiles: expect.arrayContaining(["docs/note.md"]),
-            }),
+              { id: "success", type: "END", title: "Success" },
+              {
+                id: "blocked",
+                type: "END",
+                title: "Blocked",
+                status: "failed",
+              },
+            ],
+            edges: [
+              {
+                id: "start-to-guard",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "scope-guard",
+              },
+              {
+                id: "guard-to-success",
+                from: "scope-guard",
+                fromOutput: "IN_SCOPE",
+                to: "success",
+              },
+              {
+                id: "guard-to-blocked",
+                from: "scope-guard",
+                fromOutput: "OUT_OF_SCOPE",
+                to: "blocked",
+              },
+            ],
           }),
-        ]),
-      );
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
 
-  it("uses the latest prior git snapshot as an implicit scope guard baseline", async () => {
-    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
-
-    if (gitAvailable.status !== 0) {
-      return;
-    }
-
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-implicit-baseline-"));
-
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await mkdir(join(workspace, "docs"), { recursive: true });
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 1;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
-
-      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.email", "test@example.com"], {
-          cwd: workspace,
-        }).status,
-      ).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
-          .status,
-      ).toBe(0);
-      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
-      ).toBe(0);
-
-      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
-
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "git-snapshot-before",
-              type: "UTILITY",
-              title: "Git Snapshot",
-              utility: {
-                type: "GIT_SNAPSHOT",
-                cwd: ".",
-              },
-            },
-            {
-              id: "write",
-              type: "UTILITY",
-              title: "Write Src",
-              utility: {
-                type: "WRITE_FILE",
-                path: "src/feature.ts",
-                content: "export const value = 2;\n",
-              },
-            },
-            {
-              id: "scope-guard",
-              type: "UTILITY",
-              title: "Scope Guard",
-              utility: {
-                type: "CHANGE_SCOPE_GUARD",
-                cwd: ".",
-                input: JSON.stringify({ paths: ["src"] }),
-              },
-            },
-            { id: "success", type: "END", title: "Success" },
-            { id: "blocked", type: "END", title: "Blocked", status: "failed" },
-          ],
-          edges: [
-            { id: "start-to-snapshot", from: "start", fromOutput: "SUCCESS", to: "git-snapshot-before" },
-            { id: "snapshot-to-write", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "write" },
-            { id: "write-to-guard", from: "write", fromOutput: "SUCCESS", to: "scope-guard" },
-            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
-            { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scope-guard",
-            output: "IN_SCOPE",
-            data: expect.objectContaining({
-              baselineSource: "implicit",
-              baselineBlockId: "git-snapshot-before",
-              ignoredBaselineFiles: ["docs/note.md"],
-              guardedFiles: ["src/feature.ts"],
-              outOfScopeFiles: [],
+        expect(result.status).toBe("completed");
+        expect(result.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scope-guard",
+              output: "IN_SCOPE",
+              data: expect.objectContaining({
+                enforcement: "advisory",
+                outOfScopeFiles: [],
+                advisoryOutOfScopeFiles: expect.arrayContaining([
+                  "docs/note.md",
+                ]),
+                unrelatedWorkspaceFiles: expect.arrayContaining([
+                  "docs/note.md",
+                ]),
+              }),
             }),
-          }),
-        ]),
+          ]),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+    GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "uses the latest prior git snapshot as an implicit scope guard baseline",
+    async () => {
+      const gitAvailable = spawnSync("git", ["--version"], {
+        encoding: "utf8",
+      });
+
+      if (gitAvailable.status !== 0) {
+        return;
+      }
+
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-scope-guard-implicit-baseline-"),
       );
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
-  it("keeps unstaged tracked files in allowed scope", async () => {
-    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await mkdir(join(workspace, "docs"), { recursive: true });
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 1;\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
-    if (gitAvailable.status !== 0) {
-      return;
-    }
+        expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.email", "test@example.com"], {
+            cwd: workspace,
+          }).status,
+        ).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+        expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(
+          0,
+        );
+        expect(
+          spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+            .status,
+        ).toBe(0);
 
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-tracked-"));
+        await writeFile(
+          join(workspace, "docs", "note.md"),
+          "dirty before run\n",
+          "utf8",
+        );
 
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 1;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "before\n", "utf8");
-
-      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.email", "test@example.com"], {
-          cwd: workspace,
-        }).status,
-      ).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
-          .status,
-      ).toBe(0);
-      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
-      ).toBe(0);
-
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 2;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "after\n", "utf8");
-
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "scope-guard",
-              type: "UTILITY",
-              title: "Scope Guard",
-              utility: {
-                type: "CHANGE_SCOPE_GUARD",
-                cwd: ".",
-                input: JSON.stringify({
-                  scope: {
-                    paths: ["src"],
-                    globs: ["src/**/*.ts"],
-                  },
-                  allowedPaths: ["RALPH_REFACTOR_NOTES.md"],
-                }),
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "git-snapshot-before",
+                type: "UTILITY",
+                title: "Git Snapshot",
+                utility: {
+                  type: "GIT_SNAPSHOT",
+                  cwd: ".",
+                },
               },
-            },
-            { id: "success", type: "END", title: "Success" },
-          ],
-          edges: [
-            { id: "start-to-guard", from: "start", fromOutput: "SUCCESS", to: "scope-guard" },
-            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scope-guard",
-            output: "IN_SCOPE",
-            data: expect.objectContaining({
-              changedFiles: ["RALPH_REFACTOR_NOTES.md", "src/feature.ts"],
-              guardedFiles: ["RALPH_REFACTOR_NOTES.md", "src/feature.ts"],
-              outOfScopeFiles: [],
-            }),
-          }),
-        ]),
-      );
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
-
-  it("normalizes scope guard allowed paths before matching changed files", async () => {
-    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
-
-    if (gitAvailable.status !== 0) {
-      return;
-    }
-
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-rules-"));
-
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await mkdir(join(workspace, "docs"), { recursive: true });
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 1;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
-
-      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.email", "test@example.com"], {
-          cwd: workspace,
-        }).status,
-      ).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
-          .status,
-      ).toBe(0);
-      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
-      ).toBe(0);
-
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 2;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "docs", "note.md"), "after\n", "utf8");
-
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "scope-guard",
-              type: "UTILITY",
-              title: "Scope Guard",
-              utility: {
-                type: "CHANGE_SCOPE_GUARD",
-                cwd: ".",
-                input: JSON.stringify({
-                  allowedPaths: [join(workspace, "docs")],
-                  allowedGlobs: ["./src/**/*.ts"],
-                }),
+              {
+                id: "write",
+                type: "UTILITY",
+                title: "Write Src",
+                utility: {
+                  type: "WRITE_FILE",
+                  path: "src/feature.ts",
+                  content: "export const value = 2;\n",
+                },
               },
-            },
-            { id: "success", type: "END", title: "Success" },
-          ],
-          edges: [
-            { id: "start-to-guard", from: "start", fromOutput: "SUCCESS", to: "scope-guard" },
-            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-
-      expect(result.status).toBe("completed");
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scope-guard",
-            output: "IN_SCOPE",
-            data: expect.objectContaining({
-              guardedFiles: expect.arrayContaining([
-                "docs/note.md",
-                "src/feature.ts",
-              ]),
-              outOfScopeFiles: [],
-            }),
+              {
+                id: "scope-guard",
+                type: "UTILITY",
+                title: "Scope Guard",
+                utility: {
+                  type: "CHANGE_SCOPE_GUARD",
+                  cwd: ".",
+                  input: JSON.stringify({ paths: ["src"] }),
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+              {
+                id: "blocked",
+                type: "END",
+                title: "Blocked",
+                status: "failed",
+              },
+            ],
+            edges: [
+              {
+                id: "start-to-snapshot",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "git-snapshot-before",
+              },
+              {
+                id: "snapshot-to-write",
+                from: "git-snapshot-before",
+                fromOutput: "SUCCESS",
+                to: "write",
+              },
+              {
+                id: "write-to-guard",
+                from: "write",
+                fromOutput: "SUCCESS",
+                to: "scope-guard",
+              },
+              {
+                id: "guard-to-success",
+                from: "scope-guard",
+                fromOutput: "IN_SCOPE",
+                to: "success",
+              },
+              {
+                id: "guard-to-blocked",
+                from: "scope-guard",
+                fromOutput: "OUT_OF_SCOPE",
+                to: "blocked",
+              },
+            ],
           }),
-        ]),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
+
+        expect(result.status).toBe("completed");
+        expect(result.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scope-guard",
+              output: "IN_SCOPE",
+              data: expect.objectContaining({
+                baselineSource: "implicit",
+                baselineBlockId: "git-snapshot-before",
+                ignoredBaselineFiles: ["docs/note.md"],
+                guardedFiles: ["src/feature.ts"],
+                outOfScopeFiles: [],
+              }),
+            }),
+          ]),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+    GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps unstaged tracked files in allowed scope",
+    async () => {
+      const gitAvailable = spawnSync("git", ["--version"], {
+        encoding: "utf8",
+      });
+
+      if (gitAvailable.status !== 0) {
+        return;
+      }
+
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-scope-guard-tracked-"),
       );
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
-  it("ignores files already dirty in the scope guard baseline", async () => {
-    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 1;\n",
+          "utf8",
+        );
+        await writeFile(
+          join(workspace, "RALPH_REFACTOR_NOTES.md"),
+          "before\n",
+          "utf8",
+        );
 
-    if (gitAvailable.status !== 0) {
-      return;
-    }
+        expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.email", "test@example.com"], {
+            cwd: workspace,
+          }).status,
+        ).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+        expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(
+          0,
+        );
+        expect(
+          spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+            .status,
+        ).toBe(0);
 
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-baseline-"));
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 2;\n",
+          "utf8",
+        );
+        await writeFile(
+          join(workspace, "RALPH_REFACTOR_NOTES.md"),
+          "after\n",
+          "utf8",
+        );
 
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await mkdir(join(workspace, "docs"), { recursive: true });
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 1;\n",
-        "utf8",
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "scope-guard",
+                type: "UTILITY",
+                title: "Scope Guard",
+                utility: {
+                  type: "CHANGE_SCOPE_GUARD",
+                  cwd: ".",
+                  input: JSON.stringify({
+                    scope: {
+                      paths: ["src"],
+                      globs: ["src/**/*.ts"],
+                    },
+                    allowedPaths: ["RALPH_REFACTOR_NOTES.md"],
+                  }),
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+            ],
+            edges: [
+              {
+                id: "start-to-guard",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "scope-guard",
+              },
+              {
+                id: "guard-to-success",
+                from: "scope-guard",
+                fromOutput: "IN_SCOPE",
+                to: "success",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
+
+        expect(result.status).toBe("completed");
+        expect(result.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scope-guard",
+              output: "IN_SCOPE",
+              data: expect.objectContaining({
+                changedFiles: ["RALPH_REFACTOR_NOTES.md", "src/feature.ts"],
+                guardedFiles: ["RALPH_REFACTOR_NOTES.md", "src/feature.ts"],
+                outOfScopeFiles: [],
+              }),
+            }),
+          ]),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+    GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "normalizes scope guard allowed paths before matching changed files",
+    async () => {
+      const gitAvailable = spawnSync("git", ["--version"], {
+        encoding: "utf8",
+      });
+
+      if (gitAvailable.status !== 0) {
+        return;
+      }
+
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-scope-guard-rules-"),
       );
-      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
-      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.email", "test@example.com"], {
-          cwd: workspace,
-        }).status,
-      ).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
-          .status,
-      ).toBe(0);
-      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
-      ).toBe(0);
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await mkdir(join(workspace, "docs"), { recursive: true });
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 1;\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
-      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
+        expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.email", "test@example.com"], {
+            cwd: workspace,
+          }).status,
+        ).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+        expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(
+          0,
+        );
+        expect(
+          spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+            .status,
+        ).toBe(0);
 
-      const result = await runRalphFlow(
-        createFlow({
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 2;\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "after\n", "utf8");
+
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "scope-guard",
+                type: "UTILITY",
+                title: "Scope Guard",
+                utility: {
+                  type: "CHANGE_SCOPE_GUARD",
+                  cwd: ".",
+                  input: JSON.stringify({
+                    allowedPaths: [join(workspace, "docs")],
+                    allowedGlobs: ["./src/**/*.ts"],
+                  }),
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+            ],
+            edges: [
+              {
+                id: "start-to-guard",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "scope-guard",
+              },
+              {
+                id: "guard-to-success",
+                from: "scope-guard",
+                fromOutput: "IN_SCOPE",
+                to: "success",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
+
+        expect(result.status).toBe("completed");
+        expect(result.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scope-guard",
+              output: "IN_SCOPE",
+              data: expect.objectContaining({
+                guardedFiles: expect.arrayContaining([
+                  "docs/note.md",
+                  "src/feature.ts",
+                ]),
+                outOfScopeFiles: [],
+              }),
+            }),
+          ]),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+    GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "ignores files already dirty in the scope guard baseline",
+    async () => {
+      const gitAvailable = spawnSync("git", ["--version"], {
+        encoding: "utf8",
+      });
+
+      if (gitAvailable.status !== 0) {
+        return;
+      }
+
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-scope-guard-baseline-"),
+      );
+
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await mkdir(join(workspace, "docs"), { recursive: true });
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 1;\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+
+        expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.email", "test@example.com"], {
+            cwd: workspace,
+          }).status,
+        ).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+        expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(
+          0,
+        );
+        expect(
+          spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+
+        await writeFile(
+          join(workspace, "docs", "note.md"),
+          "dirty before run\n",
+          "utf8",
+        );
+
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "snapshot",
+                type: "UTILITY",
+                title: "Snapshot",
+                utility: {
+                  type: "GIT_SNAPSHOT",
+                  cwd: ".",
+                },
+              },
+              {
+                id: "write",
+                type: "UTILITY",
+                title: "Write Src",
+                utility: {
+                  type: "WRITE_FILE",
+                  path: "src/feature.ts",
+                  content: "export const value = 2;\n",
+                },
+              },
+              {
+                id: "scope-guard",
+                type: "UTILITY",
+                title: "Scope Guard",
+                utility: {
+                  type: "CHANGE_SCOPE_GUARD",
+                  cwd: ".",
+                  input: JSON.stringify({ paths: ["src"] }),
+                  baseline: "{{result:snapshot}}",
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+              { id: "blocked", type: "END", title: "Blocked" },
+            ],
+            edges: [
+              {
+                id: "start-to-snapshot",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "snapshot",
+              },
+              {
+                id: "snapshot-to-write",
+                from: "snapshot",
+                fromOutput: "SUCCESS",
+                to: "write",
+              },
+              {
+                id: "write-to-guard",
+                from: "write",
+                fromOutput: "SUCCESS",
+                to: "scope-guard",
+              },
+              {
+                id: "guard-to-success",
+                from: "scope-guard",
+                fromOutput: "IN_SCOPE",
+                to: "success",
+              },
+              {
+                id: "guard-to-blocked",
+                from: "scope-guard",
+                fromOutput: "OUT_OF_SCOPE",
+                to: "blocked",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
+
+        expect(result.status).toBe("completed");
+        expect(result.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scope-guard",
+              output: "IN_SCOPE",
+              data: expect.objectContaining({
+                baselineFiles: ["docs/note.md"],
+                guardedFiles: ["src/feature.ts"],
+                outOfScopeFiles: [],
+              }),
+            }),
+          ]),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+    GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "guards files that changed after the scope guard baseline and can retry the checkpoint",
+    async () => {
+      const gitAvailable = spawnSync("git", ["--version"], {
+        encoding: "utf8",
+      });
+
+      if (gitAvailable.status !== 0) {
+        return;
+      }
+
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-scope-guard-drift-"),
+      );
+
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await mkdir(join(workspace, "docs"), { recursive: true });
+        await writeFile(
+          join(workspace, "src", "feature.ts"),
+          "export const value = 1;\n",
+          "utf8",
+        );
+        await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+
+        expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.email", "test@example.com"], {
+            cwd: workspace,
+          }).status,
+        ).toBe(0);
+        expect(
+          spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+        expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(
+          0,
+        );
+        expect(
+          spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+            .status,
+        ).toBe(0);
+
+        await writeFile(
+          join(workspace, "docs", "note.md"),
+          "dirty before run\n",
+          "utf8",
+        );
+
+        const flow = createFlow({
           blocks: [
             { id: "start", type: "START", title: "Start" },
             {
@@ -3039,13 +4336,23 @@ describe("runRalphFlow", () => {
               },
             },
             {
-              id: "write",
+              id: "write-src",
               type: "UTILITY",
               title: "Write Src",
               utility: {
                 type: "WRITE_FILE",
                 path: "src/feature.ts",
                 content: "export const value = 2;\n",
+              },
+            },
+            {
+              id: "write-docs",
+              type: "UTILITY",
+              title: "Write Docs",
+              utility: {
+                type: "WRITE_FILE",
+                path: "docs/note.md",
+                content: "changed after baseline\n",
               },
             },
             {
@@ -3057,191 +4364,115 @@ describe("runRalphFlow", () => {
                 cwd: ".",
                 input: JSON.stringify({ paths: ["src"] }),
                 baseline: "{{result:snapshot}}",
+                enforce: true,
               },
             },
             { id: "success", type: "END", title: "Success" },
-            { id: "blocked", type: "END", title: "Blocked" },
+            { id: "blocked", type: "END", title: "Blocked", status: "failed" },
           ],
           edges: [
-            { id: "start-to-snapshot", from: "start", fromOutput: "SUCCESS", to: "snapshot" },
-            { id: "snapshot-to-write", from: "snapshot", fromOutput: "SUCCESS", to: "write" },
-            { id: "write-to-guard", from: "write", fromOutput: "SUCCESS", to: "scope-guard" },
-            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
-            { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
+            {
+              id: "start-to-snapshot",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "snapshot",
+            },
+            {
+              id: "snapshot-to-write-src",
+              from: "snapshot",
+              fromOutput: "SUCCESS",
+              to: "write-src",
+            },
+            {
+              id: "write-src-to-write-docs",
+              from: "write-src",
+              fromOutput: "SUCCESS",
+              to: "write-docs",
+            },
+            {
+              id: "write-docs-to-guard",
+              from: "write-docs",
+              fromOutput: "SUCCESS",
+              to: "scope-guard",
+            },
+            {
+              id: "guard-to-success",
+              from: "scope-guard",
+              fromOutput: "IN_SCOPE",
+              to: "success",
+            },
+            {
+              id: "guard-to-blocked",
+              from: "scope-guard",
+              fromOutput: "OUT_OF_SCOPE",
+              to: "blocked",
+            },
           ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
+        });
 
-      expect(result.status).toBe("completed");
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scope-guard",
-            output: "IN_SCOPE",
-            data: expect.objectContaining({
-              baselineFiles: ["docs/note.md"],
-              guardedFiles: ["src/feature.ts"],
-              outOfScopeFiles: [],
+        const blocked = await runRalphFlow(
+          flow,
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
+
+        expect(blocked.status).toBe("blocked");
+        expect(blocked.checkpoint?.currentBlockId).toBe("scope-guard");
+        expect(blocked.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scope-guard",
+              output: "OUT_OF_SCOPE",
+              data: expect.objectContaining({
+                baselineFiles: ["docs/note.md"],
+                changedSinceBaselineFiles: ["docs/note.md"],
+                outOfScopeFiles: ["docs/note.md"],
+              }),
             }),
+          ]),
+        );
+
+        await writeFile(
+          join(workspace, "docs", "note.md"),
+          "dirty before run\n",
+          "utf8",
+        );
+        const blockedCheckpoint = blocked.checkpoint;
+        if (!blockedCheckpoint) {
+          throw new Error(
+            "Expected blocked Ralph run to include a checkpoint.",
+          );
+        }
+
+        const resumed = await runRalphFlow(
+          flow,
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          {
+            maxTransitions: 10,
+            checkpoint: blockedCheckpoint,
+          },
+        );
+        const latestScopeGuardResult = resumed.blockResults
+          .filter((result) => result.blockId === "scope-guard")
+          .at(-1);
+
+        expect(resumed.status).toBe("completed");
+        expect(latestScopeGuardResult).toMatchObject({
+          output: "IN_SCOPE",
+          data: expect.objectContaining({
+            ignoredBaselineFiles: ["docs/note.md"],
+            guardedFiles: ["src/feature.ts"],
+            outOfScopeFiles: [],
           }),
-        ]),
-      );
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
-
-  it("guards files that changed after the scope guard baseline and can retry the checkpoint", async () => {
-    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
-
-    if (gitAvailable.status !== 0) {
-      return;
-    }
-
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-drift-"));
-
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await mkdir(join(workspace, "docs"), { recursive: true });
-      await writeFile(
-        join(workspace, "src", "feature.ts"),
-        "export const value = 1;\n",
-        "utf8",
-      );
-      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
-
-      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.email", "test@example.com"], {
-          cwd: workspace,
-        }).status,
-      ).toBe(0);
-      expect(
-        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
-          .status,
-      ).toBe(0);
-      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
-      expect(
-        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
-      ).toBe(0);
-
-      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
-
-      const flow = createFlow({
-        blocks: [
-          { id: "start", type: "START", title: "Start" },
-          {
-            id: "snapshot",
-            type: "UTILITY",
-            title: "Snapshot",
-            utility: {
-              type: "GIT_SNAPSHOT",
-              cwd: ".",
-            },
-          },
-          {
-            id: "write-src",
-            type: "UTILITY",
-            title: "Write Src",
-            utility: {
-              type: "WRITE_FILE",
-              path: "src/feature.ts",
-              content: "export const value = 2;\n",
-            },
-          },
-          {
-            id: "write-docs",
-            type: "UTILITY",
-            title: "Write Docs",
-            utility: {
-              type: "WRITE_FILE",
-              path: "docs/note.md",
-              content: "changed after baseline\n",
-            },
-          },
-          {
-            id: "scope-guard",
-            type: "UTILITY",
-            title: "Scope Guard",
-            utility: {
-              type: "CHANGE_SCOPE_GUARD",
-              cwd: ".",
-              input: JSON.stringify({ paths: ["src"] }),
-              baseline: "{{result:snapshot}}",
-              enforce: true,
-            },
-          },
-          { id: "success", type: "END", title: "Success" },
-          { id: "blocked", type: "END", title: "Blocked", status: "failed" },
-        ],
-        edges: [
-          { id: "start-to-snapshot", from: "start", fromOutput: "SUCCESS", to: "snapshot" },
-          { id: "snapshot-to-write-src", from: "snapshot", fromOutput: "SUCCESS", to: "write-src" },
-          { id: "write-src-to-write-docs", from: "write-src", fromOutput: "SUCCESS", to: "write-docs" },
-          { id: "write-docs-to-guard", from: "write-docs", fromOutput: "SUCCESS", to: "scope-guard" },
-          { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
-          { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
-        ],
-      });
-
-      const blocked = await runRalphFlow(
-        flow,
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-
-      expect(blocked.status).toBe("blocked");
-      expect(blocked.checkpoint?.currentBlockId).toBe("scope-guard");
-      expect(blocked.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scope-guard",
-            output: "OUT_OF_SCOPE",
-            data: expect.objectContaining({
-              baselineFiles: ["docs/note.md"],
-              changedSinceBaselineFiles: ["docs/note.md"],
-              outOfScopeFiles: ["docs/note.md"],
-            }),
-          }),
-        ]),
-      );
-
-      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
-      const blockedCheckpoint = blocked.checkpoint;
-      if (!blockedCheckpoint) {
-        throw new Error("Expected blocked Ralph run to include a checkpoint.");
+        });
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
       }
-
-      const resumed = await runRalphFlow(
-        flow,
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        {
-          maxTransitions: 10,
-          checkpoint: blockedCheckpoint,
-        },
-      );
-      const latestScopeGuardResult = resumed.blockResults
-        .filter((result) => result.blockId === "scope-guard")
-        .at(-1);
-
-      expect(resumed.status).toBe("completed");
-      expect(latestScopeGuardResult).toMatchObject({
-        output: "IN_SCOPE",
-        data: expect.objectContaining({
-          ignoredBaselineFiles: ["docs/note.md"],
-          guardedFiles: ["src/feature.ts"],
-          outOfScopeFiles: [],
-        }),
-      });
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
+    },
+    GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
+  );
 
   it("scans, updates, selects, and marks JSON scope registries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
@@ -3253,7 +4484,11 @@ describe("runRalphFlow", () => {
       await mkdir(join(workspace, "packages", "api"), { recursive: true });
       await writeFile(join(workspace, "package.json"), "{}", "utf8");
       await writeFile(join(workspace, "src", "index.ts"), "", "utf8");
-      await writeFile(join(workspace, "packages", "api", "package.json"), "{}", "utf8");
+      await writeFile(
+        join(workspace, "packages", "api", "package.json"),
+        "{}",
+        "utf8",
+      );
 
       const result = await runRalphFlow(
         createFlow({
@@ -3305,11 +4540,36 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-scan", from: "start", fromOutput: "SUCCESS", to: "scan-scopes" },
-            { id: "scan-to-update", from: "scan-scopes", fromOutput: "SUCCESS", to: "update-registry" },
-            { id: "update-to-select", from: "update-registry", fromOutput: "SUCCESS", to: "select-scope" },
-            { id: "select-to-mark", from: "select-scope", fromOutput: "SELECTED", to: "mark-scope" },
-            { id: "mark-to-success", from: "mark-scope", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-scan",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "scan-scopes",
+            },
+            {
+              id: "scan-to-update",
+              from: "scan-scopes",
+              fromOutput: "SUCCESS",
+              to: "update-registry",
+            },
+            {
+              id: "update-to-select",
+              from: "update-registry",
+              fromOutput: "SUCCESS",
+              to: "select-scope",
+            },
+            {
+              id: "select-to-mark",
+              from: "select-scope",
+              fromOutput: "SELECTED",
+              to: "mark-scope",
+            },
+            {
+              id: "mark-to-success",
+              from: "mark-scope",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -3329,25 +4589,38 @@ describe("runRalphFlow", () => {
         ),
       ) as {
         scopes: Array<{ id: string; status: string; validatedCount: number }>;
-        selection: { currentScopeId: string | null; completedScopeIds: string[] };
+        selection: {
+          currentScopeId: string | null;
+          completedScopeIds: string[];
+        };
       };
 
       expect(result.status).toBe("completed");
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ blockId: "scan-scopes", output: "SUCCESS" }),
-          expect.objectContaining({ blockId: "update-registry", output: "SUCCESS" }),
-          expect.objectContaining({ blockId: "select-scope", output: "SELECTED" }),
+          expect.objectContaining({
+            blockId: "scan-scopes",
+            output: "SUCCESS",
+          }),
+          expect.objectContaining({
+            blockId: "update-registry",
+            output: "SUCCESS",
+          }),
+          expect.objectContaining({
+            blockId: "select-scope",
+            output: "SELECTED",
+          }),
           expect.objectContaining({ blockId: "mark-scope", output: "SUCCESS" }),
         ]),
       );
-      expect(registry.scopes.filter((scope) => scope.status === "active").length)
-        .toBeGreaterThan(1);
+      expect(
+        registry.scopes.filter((scope) => scope.status === "active").length,
+      ).toBeGreaterThan(1);
       expect(registry.selection.currentScopeId).toBeNull();
       expect(registry.selection.completedScopeIds).toHaveLength(1);
-      expect(
-        registry.scopes.some((scope) => scope.validatedCount === 1),
-      ).toBe(true);
+      expect(registry.scopes.some((scope) => scope.validatedCount === 1)).toBe(
+        true,
+      );
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -3389,12 +4662,20 @@ describe("runRalphFlow", () => {
             id: "fetch-timeout",
             type: "UTILITY",
             title: "Fetch Timeout",
-            utility: { type: "HTTP_FETCH", url: "https://example.test/timeout" },
+            utility: {
+              type: "HTTP_FETCH",
+              url: "https://example.test/timeout",
+            },
           },
           { id: "success", type: "END", title: "Success" },
         ],
         edges: [
-          { id: "start-to-ok", from: "start", fromOutput: "SUCCESS", to: "fetch-ok" },
+          {
+            id: "start-to-ok",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "fetch-ok",
+          },
           {
             id: "ok-to-http-error",
             from: "fetch-ok",
@@ -3449,14 +4730,13 @@ describe("runRalphFlow", () => {
   });
 
   it("routes POLL TIMEOUT after finite unmatched attempts", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation(async () =>
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
         new Response('{"ready":false}', {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
-      );
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await runRalphFlow(
@@ -3483,7 +4763,12 @@ describe("runRalphFlow", () => {
           { id: "timeout", type: "END", title: "Timed out", status: "failed" },
         ],
         edges: [
-          { id: "start-to-poll", from: "start", fromOutput: "SUCCESS", to: "poll" },
+          {
+            id: "start-to-poll",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "poll",
+          },
           {
             id: "poll-timeout",
             from: "poll",
@@ -3499,14 +4784,15 @@ describe("runRalphFlow", () => {
 
     expect(result.status).toBe("blocked");
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.blockResults.find((entry) => entry.blockId === "poll"))
-      .toMatchObject({
-        output: "TIMEOUT",
-        status: "error",
-        data: expect.objectContaining({
-          body: { ready: false },
-        }),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "poll"),
+    ).toMatchObject({
+      output: "TIMEOUT",
+      status: "error",
+      data: expect.objectContaining({
+        body: { ready: false },
+      }),
+    });
   });
 
   it("routes filesystem, JSON, empty search, failed check, and notification utilities", async () => {
@@ -3524,7 +4810,7 @@ describe("runRalphFlow", () => {
               utility: {
                 type: "WRITE_FILE",
                 path: "data/input.json",
-                content: "{\"value\":2}",
+                content: '{"value":2}',
               },
             },
             {
@@ -3591,8 +4877,18 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-write", from: "start", fromOutput: "SUCCESS", to: "write" },
-            { id: "write-to-read", from: "write", fromOutput: "SUCCESS", to: "read" },
+            {
+              id: "start-to-write",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "write",
+            },
+            {
+              id: "write-to-read",
+              from: "write",
+              fromOutput: "SUCCESS",
+              to: "read",
+            },
             {
               id: "read-to-transform",
               from: "read",
@@ -3647,7 +4943,7 @@ describe("runRalphFlow", () => {
           expect.objectContaining({
             blockId: "read",
             output: "SUCCESS",
-            data: expect.objectContaining({ content: "{\"value\":2}" }),
+            data: expect.objectContaining({ content: '{"value":2}' }),
           }),
           expect.objectContaining({
             blockId: "transform",
@@ -3682,8 +4978,9 @@ describe("runRalphFlow", () => {
           }),
         ]),
       );
-      const checkData = result.blockResults.find((entry) => entry.blockId === "check")
-        ?.data as { exitCode?: number } | undefined;
+      const checkData = result.blockResults.find(
+        (entry) => entry.blockId === "check",
+      )?.data as { exitCode?: number } | undefined;
       expect(checkData?.exitCode).not.toBe(0);
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -3705,13 +5002,19 @@ describe("runRalphFlow", () => {
               utility: {
                 type: "RUN_CHECK",
                 command: "{{verificationCommand:text=}}",
-                fallbackCommand: "node -e \"process.stdout.write('fallback-check')\"",
+                fallbackCommand:
+                  "node -e \"process.stdout.write('fallback-check')\"",
               },
             },
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
+            {
+              id: "start-to-check",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "check",
+            },
             {
               id: "check-to-success",
               from: "check",
@@ -3743,6 +5046,411 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("completes an autonomy flow only after producing and verifying repository output", async () => {
+    const gitAvailable = spawnSync("git", ["--version"], {
+      encoding: "utf8",
+    });
+    if (gitAvailable.status !== 0) {
+      return;
+    }
+
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-autonomy-evidence-"));
+    const flow = createFlow({
+      id: "evidence-flow",
+      name: "Evidence flow",
+      settings: { autonomy: true, maxTransitions: 30 },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "detect",
+          type: "UTILITY",
+          title: "Detect project",
+          utility: { type: "DETECT_PROJECT_COMMANDS", rootPath: "." },
+        },
+        {
+          id: "snapshot-before",
+          type: "UTILITY",
+          title: "Capture baseline",
+          utility: { type: "GIT_SNAPSHOT", cwd: "." },
+        },
+        {
+          id: "baseline-check",
+          type: "UTILITY",
+          title: "Baseline check",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --check artifact.js",
+            cwd: ".",
+            verificationRole: "baseline",
+            verificationPlanId: "artifact-syntax",
+          },
+        },
+        {
+          id: "write",
+          type: "UTILITY",
+          title: "Produce artifact",
+          utility: {
+            type: "WRITE_FILE",
+            path: "artifact.js",
+            content: "export const answer = 42;\n",
+          },
+        },
+        {
+          id: "candidate-check",
+          type: "UTILITY",
+          title: "Candidate check",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --check artifact.js",
+            cwd: ".",
+            verificationRole: "candidate",
+            baselineBlockId: "baseline-check",
+            verificationPlanId: "artifact-syntax",
+          },
+        },
+        {
+          id: "diff",
+          type: "UTILITY",
+          title: "Capture final diff",
+          utility: { type: "GIT_DIFF_SUMMARY", cwd: "." },
+        },
+        {
+          id: "scope",
+          type: "UTILITY",
+          title: "Verify scope",
+          utility: {
+            type: "CHANGE_SCOPE_GUARD",
+            cwd: ".",
+            input: JSON.stringify({ paths: ["artifact.js"] }),
+          },
+        },
+        {
+          id: "report",
+          type: "UTILITY",
+          title: "Finalize evidence",
+          utility: { type: "FINAL_REPORT" },
+        },
+        {
+          id: "success",
+          type: "END",
+          title: "Verified",
+          status: "success",
+          outcome: "succeeded",
+        },
+        {
+          id: "blocked",
+          type: "END",
+          title: "Blocked",
+          status: "failed",
+          outcome: "blocked",
+        },
+      ],
+      edges: [
+        {
+          id: "start-detect",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "detect",
+        },
+        {
+          id: "detect-snapshot",
+          from: "detect",
+          fromOutput: "SUCCESS",
+          to: "snapshot-before",
+        },
+        {
+          id: "snapshot-baseline",
+          from: "snapshot-before",
+          fromOutput: "SUCCESS",
+          to: "baseline-check",
+        },
+        {
+          id: "baseline-write",
+          from: "baseline-check",
+          fromOutput: "SUCCESS",
+          to: "write",
+        },
+        {
+          id: "baseline-blocked",
+          from: "baseline-check",
+          fromOutput: "FAILED",
+          to: "blocked",
+        },
+        {
+          id: "write-candidate",
+          from: "write",
+          fromOutput: "SUCCESS",
+          to: "candidate-check",
+        },
+        {
+          id: "candidate-diff",
+          from: "candidate-check",
+          fromOutput: "SUCCESS",
+          to: "diff",
+        },
+        {
+          id: "candidate-inconclusive",
+          from: "candidate-check",
+          fromOutput: "INCONCLUSIVE",
+          to: "blocked",
+        },
+        {
+          id: "candidate-failed",
+          from: "candidate-check",
+          fromOutput: "FAILED",
+          to: "blocked",
+        },
+        { id: "diff-scope", from: "diff", fromOutput: "SUCCESS", to: "scope" },
+        { id: "diff-empty", from: "diff", fromOutput: "EMPTY", to: "blocked" },
+        {
+          id: "scope-report",
+          from: "scope",
+          fromOutput: "IN_SCOPE",
+          to: "report",
+        },
+        {
+          id: "scope-empty",
+          from: "scope",
+          fromOutput: "EMPTY",
+          to: "blocked",
+        },
+        {
+          id: "scope-out",
+          from: "scope",
+          fromOutput: "OUT_OF_SCOPE",
+          to: "blocked",
+        },
+        {
+          id: "report-success",
+          from: "report",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+        {
+          id: "report-error",
+          from: "report",
+          fromOutput: "ERROR",
+          to: "blocked",
+        },
+      ],
+    });
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({ name: "ralph-evidence-fixture", private: true }),
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "artifact.js"),
+        "export const answer = 1;\n",
+        "utf8",
+      );
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "artifact-evidence",
+      });
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId },
+      );
+      const evidence = JSON.parse(
+        await readFile(
+          join(logger.paths!.directory, "autonomy-evidence.json"),
+          "utf8",
+        ),
+      ) as Record<string, unknown>;
+      const record = JSON.parse(
+        await readFile(logger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+
+      expect(await readFile(join(workspace, "artifact.js"), "utf8")).toBe(
+        "export const answer = 42;\n",
+      );
+      expect(result).toMatchObject({
+        status: "completed",
+        outcome: {
+          status: "succeeded",
+          verified: true,
+          retryable: false,
+        },
+      });
+      expect(evidence).toMatchObject({
+        outcome: { status: "succeeded", verified: true },
+        repositoryEvidence: {
+          known: true,
+          changedFiles: ["artifact.js"],
+          headChanged: false,
+          finalSnapshotBlockId: "diff",
+        },
+      });
+      expect(record.outcome).toMatchObject({
+        status: "succeeded",
+        verified: true,
+      });
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "scope")?.data,
+      ).toMatchObject({
+        snapshotReusedFromBlockId: "diff",
+      });
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "report")?.data,
+      ).toMatchObject({
+        outcome: { status: "succeeded", verified: true },
+        lifecycle: { status: "completed" },
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it("fences concurrent autonomous writers in the same workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-writer-fence-"));
+    const flow = createFlow({
+      settings: { autonomy: true },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "work", type: "PROMPT", title: "Work", prompt: "Do work." },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+        {
+          id: "work-success",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    let resolveExecution!: (
+      result: ReturnType<typeof createExecutionResult>,
+    ) => void;
+    const execution = new Promise<ReturnType<typeof createExecutionResult>>(
+      (resolve) => {
+        resolveExecution = resolve;
+      },
+    );
+
+    try {
+      vi.mocked(executeTask).mockImplementationOnce(() => execution);
+      const ownerRun = runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "writer-owner", leaseDurationMs: 5_000 },
+      );
+      const executionDeadline = Date.now() + 10_000;
+      while (
+        vi.mocked(executeTask).mock.calls.length === 0 &&
+        Date.now() < executionDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(executeTask).toHaveBeenCalledTimes(1);
+
+      const rivalResult = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "writer-rival", leaseDurationMs: 5_000 },
+      );
+      expect(rivalResult).toMatchObject({
+        status: "blocked",
+        outcome: { verified: false },
+      });
+      expect(rivalResult.summary).toContain("workspace writer lease");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+
+      resolveExecution(createExecutionResult({ summary: "Owner finished." }));
+      const ownerResult = await ownerRun;
+      expect(ownerResult.status).not.toBe("crashed");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+    } finally {
+      resolveExecution?.(createExecutionResult({ summary: "Cleanup." }));
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers an abandoned autonomous workspace writer lease", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-writer-recovery-"));
+    const lockPath = join(
+      workspace,
+      ".machdoch",
+      "ralph",
+      "runs",
+      ".workspace-writer.ralph.lock",
+    );
+    const flow = createFlow({
+      settings: { autonomy: true },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "work",
+          type: "UTILITY",
+          title: "Work",
+          utility: { type: "NOTIFY", message: "Recovered." },
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+        {
+          id: "work-success",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      await mkdir(join(workspace, ".machdoch", "ralph", "runs"), {
+        recursive: true,
+      });
+      await writeFile(
+        lockPath,
+        `${JSON.stringify({ token: "abandoned", ownerId: "dead-run" })}\n`,
+        "utf8",
+      );
+      const staleAt = new Date(Date.now() - 5_000);
+      await utimes(lockPath, staleAt, staleAt);
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "writer-recovery", leaseDurationMs: 1_000 },
+      );
+
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ blockId: "work", output: "SUCCESS" }),
+        ]),
+      );
+      await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("reports truncated scope evidence when the configured cap is reached", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-cap-"));
     try {
@@ -3759,52 +5467,24 @@ describe("runRalphFlow", () => {
               id: "scan",
               type: "UTILITY",
               title: "Scan",
-              utility: { type: "SCAN_SCOPE_EVIDENCE", rootPath: ".", maxResults: 1 },
-            },
-            { id: "success", type: "END", title: "Success" },
-          ],
-          edges: [
-            { id: "start-scan", from: "start", fromOutput: "SUCCESS", to: "scan" },
-            { id: "scan-success", from: "scan", fromOutput: "SUCCESS", to: "success" },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-
-      expect(result.blockResults.find((entry) => entry.blockId === "scan")?.data)
-        .toMatchObject({ truncated: true, limit: 1, scopes: [expect.any(Object)] });
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
-
-  it("runs legacy RUN_CHECK command chains", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-check-chain-"));
-
-    try {
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "check",
-              type: "UTILITY",
-              title: "Check",
               utility: {
-                type: "RUN_CHECK",
-                command:
-                  "node -e \"process.stdout.write('first')\" && node -e \"process.stdout.write('second')\"",
+                type: "SCAN_SCOPE_EVIDENCE",
+                rootPath: ".",
+                maxResults: 1,
               },
             },
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
             {
-              id: "check-to-success",
-              from: "check",
+              id: "start-scan",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "scan",
+            },
+            {
+              id: "scan-success",
+              from: "scan",
               fromOutput: "SUCCESS",
               to: "success",
             },
@@ -3815,18 +5495,13 @@ describe("runRalphFlow", () => {
         { maxTransitions: 10 },
       );
 
-      expect(result.status).toBe("completed");
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "check",
-            output: "SUCCESS",
-            data: expect.objectContaining({
-              stdout: "firstsecond",
-            }),
-          }),
-        ]),
-      );
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "scan")?.data,
+      ).toMatchObject({
+        truncated: true,
+        limit: 1,
+        scopes: [expect.any(Object)],
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -4002,9 +5677,14 @@ describe("runRalphFlow", () => {
         }),
       );
 
-    const result = await runRalphFlow(createFlow(), runtimeConfig, customizations, {
-      maxTransitions: 10,
-    });
+    const result = await runRalphFlow(
+      createFlow(),
+      runtimeConfig,
+      customizations,
+      {
+        maxTransitions: 10,
+      },
+    );
 
     expect(result.status).toBe("completed");
     expect(
@@ -4025,7 +5705,8 @@ describe("runRalphFlow", () => {
       createExecutionResult({
         summary: "Decision selected RUN.",
         response: {
-          markdown: "I will run the test.\nRALPH_DECISION: RUN\nRoute selected.",
+          markdown:
+            "I will run the test.\nRALPH_DECISION: RUN\nRoute selected.",
           highlights: [],
           relatedFiles: [],
           verification: [],
@@ -4050,10 +5731,20 @@ describe("runRalphFlow", () => {
           { id: "failed", type: "END", title: "Failed", status: "failed" },
         ],
         edges: [
-          { id: "start-to-choose", from: "start", fromOutput: "SUCCESS", to: "choose" },
+          {
+            id: "start-to-choose",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "choose",
+          },
           { id: "choose-run", from: "choose", fromOutput: "RUN", to: "run" },
           { id: "choose-skip", from: "choose", fromOutput: "SKIP", to: "skip" },
-          { id: "choose-error", from: "choose", fromOutput: "ERROR", to: "failed" },
+          {
+            id: "choose-error",
+            from: "choose",
+            fromOutput: "ERROR",
+            to: "failed",
+          },
         ],
       }),
       runtimeConfig,
@@ -4062,11 +5753,12 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "choose"))
-      .toMatchObject({
-        output: "RUN",
-        status: "completed",
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "choose"),
+    ).toMatchObject({
+      output: "RUN",
+      status: "completed",
+    });
     expect(result.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4108,9 +5800,19 @@ describe("runRalphFlow", () => {
           { id: "failed", type: "END", title: "Failed", status: "failed" },
         ],
         edges: [
-          { id: "start-to-choose", from: "start", fromOutput: "SUCCESS", to: "choose" },
+          {
+            id: "start-to-choose",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "choose",
+          },
           { id: "choose-run", from: "choose", fromOutput: "RUN", to: "run" },
-          { id: "choose-error", from: "choose", fromOutput: "ERROR", to: "failed" },
+          {
+            id: "choose-error",
+            from: "choose",
+            fromOutput: "ERROR",
+            to: "failed",
+          },
         ],
       }),
       runtimeConfig,
@@ -4120,13 +5822,15 @@ describe("runRalphFlow", () => {
 
     expect(vi.mocked(executeTask)).toHaveBeenCalledTimes(1);
     expect(result.status).toBe("blocked");
-    expect(result.blockResults.find((entry) => entry.blockId === "choose"))
-      .toMatchObject({
-        output: "ERROR",
-        status: "error",
-      });
-    expect(result.blockResults.find((entry) => entry.blockId === "choose")?.error)
-      .toContain("did not return a supported RALPH_DECISION marker");
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "choose"),
+    ).toMatchObject({
+      output: "ERROR",
+      status: "error",
+    });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "choose")?.error,
+    ).toContain("did not return a supported RALPH_DECISION marker");
     expect(result.events.some((event) => event.type === "retry")).toBe(false);
     expect(result.events).toEqual(
       expect.arrayContaining([
@@ -4241,9 +5945,24 @@ describe("runRalphFlow", () => {
             { id: "success", type: "END", title: "Success" },
           ],
           edges: [
-            { id: "start-to-notify", from: "start", fromOutput: "SUCCESS", to: "notify" },
-            { id: "notify-to-report", from: "notify", fromOutput: "SUCCESS", to: "report" },
-            { id: "report-to-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+            {
+              id: "start-to-notify",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "notify",
+            },
+            {
+              id: "notify-to-report",
+              from: "notify",
+              fromOutput: "SUCCESS",
+              to: "report",
+            },
+            {
+              id: "report-to-success",
+              from: "report",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
           ],
         }),
         { ...runtimeConfig, workspaceRoot: workspace },
@@ -4275,16 +5994,18 @@ describe("runRalphFlow", () => {
         "final-report.json",
       );
       const report = JSON.parse(await readFile(reportPath, "utf8")) as {
-        outcome: { status: string; summary: string };
+        outcome: { status: string; verified: boolean };
+        lifecycle: { status: string };
         executionHistory: Array<{ blockId: string; sequence: number }>;
         events: Array<{ type: string }>;
       };
 
       expect(result.status).toBe("completed");
       expect(report.outcome).toMatchObject({
-        status: "completed",
-        summary: expect.stringContaining("ended at `success`"),
+        status: "succeeded",
+        verified: true,
       });
+      expect(report.lifecycle.status).toBe("completed");
       expect(report.executionHistory.map((entry) => entry.blockId)).toEqual([
         "start",
         "notify",
@@ -4301,10 +6022,16 @@ describe("runRalphFlow", () => {
   });
 
   it("restores and finalizes report descriptors after a crash before END", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-final-report-resume-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-final-report-resume-"),
+    );
     try {
       const reportPath = join(workspace, "final-report.json");
-      await writeFile(reportPath, JSON.stringify({ outcome: { status: "running" } }), "utf8");
+      await writeFile(
+        reportPath,
+        JSON.stringify({ outcome: { status: "running" } }),
+        "utf8",
+      );
       const flow = createFlow({
         blocks: [
           { id: "start", type: "START", title: "Start" },
@@ -4317,8 +6044,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success", status: "success" },
         ],
         edges: [
-          { id: "start-report", from: "start", fromOutput: "SUCCESS", to: "report" },
-          { id: "report-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-report",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "report",
+          },
+          {
+            id: "report-success",
+            from: "report",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       });
       const reportResult = {
@@ -4362,10 +6099,12 @@ describe("runRalphFlow", () => {
       );
       const report = JSON.parse(await readFile(reportPath, "utf8")) as {
         outcome: { status: string };
+        lifecycle: { status: string };
       };
 
       expect(result.status).toBe("completed");
-      expect(report.outcome.status).toBe("completed");
+      expect(report.outcome.status).toBe("succeeded");
+      expect(report.lifecycle.status).toBe("completed");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -4545,12 +6284,13 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("blocked");
-    expect(result.blockResults.find((entry) => entry.blockId === "search"))
-      .toMatchObject({
-        output: "ERROR",
-        status: "error",
-        error: expect.stringContaining("tool failed"),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "search"),
+    ).toMatchObject({
+      output: "ERROR",
+      status: "error",
+      error: expect.stringContaining("tool failed"),
+    });
     expect(result.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4648,12 +6388,13 @@ describe("runRalphFlow", () => {
         },
       }),
     );
-    expect(result.blockResults.find((entry) => entry.blockId === "prompt-template"))
-      .toMatchObject({
-        output: "SUCCESS",
-        status: "completed",
-        markdown: expect.stringContaining("Generated prompt"),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "prompt-template"),
+    ).toMatchObject({
+      output: "SUCCESS",
+      status: "completed",
+      markdown: expect.stringContaining("Generated prompt"),
+    });
   });
 
   it("runs SET_VARIABLE utilities and exposes structured utility data to later blocks", async () => {
@@ -4825,20 +6566,42 @@ describe("runRalphFlow", () => {
   it("executes a block again when a legitimate graph loop returns to it", async () => {
     vi.mocked(executeTask)
       .mockResolvedValueOnce(createExecutionResult({ summary: "A1" }))
-      .mockResolvedValueOnce(createExecutionResult({ summary: "Loop", response: {
-        markdown: "RALPH_DECISION: LOOP",
-        highlights: [], relatedFiles: [], verification: [], followUps: [],
-      } }))
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "Loop",
+          response: {
+            markdown: "RALPH_DECISION: LOOP",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      )
       .mockResolvedValueOnce(createExecutionResult({ summary: "A2" }))
-      .mockResolvedValueOnce(createExecutionResult({ summary: "Done", response: {
-        markdown: "RALPH_DECISION: DONE",
-        highlights: [], relatedFiles: [], verification: [], followUps: [],
-      } }));
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "Done",
+          response: {
+            markdown: "RALPH_DECISION: DONE",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      );
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
         { id: "a", type: "PROMPT", title: "A", prompt: "Execute A" },
-        { id: "route", type: "DECISION", title: "Route", prompt: "Loop?", labels: ["LOOP", "DONE"] },
+        {
+          id: "route",
+          type: "DECISION",
+          title: "Route",
+          prompt: "Loop?",
+          labels: ["LOOP", "DONE"],
+        },
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
@@ -4853,7 +6616,9 @@ describe("runRalphFlow", () => {
     const result = await runRalphFlow(flow, runtimeConfig, customizations);
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.filter((entry) => entry.blockId === "a")).toHaveLength(2);
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "a"),
+    ).toHaveLength(2);
     expect(executeTask).toHaveBeenCalledTimes(4);
   });
 
@@ -4893,12 +6658,27 @@ describe("runRalphFlow", () => {
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
-        { id: "side-effect", type: "PROMPT", title: "Side Effect", prompt: "Do it" },
+        {
+          id: "side-effect",
+          type: "PROMPT",
+          title: "Side Effect",
+          prompt: "Do it",
+        },
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-side", from: "start", fromOutput: "SUCCESS", to: "side-effect" },
-        { id: "side-success", from: "side-effect", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-side",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "side-effect",
+        },
+        {
+          id: "side-success",
+          from: "side-effect",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
 
@@ -4909,8 +6689,9 @@ describe("runRalphFlow", () => {
     });
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.filter((entry) => entry.blockId === "side-effect"))
-      .toHaveLength(1);
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "side-effect"),
+    ).toHaveLength(1);
     expect(executeTask).not.toHaveBeenCalled();
   });
 
@@ -4970,13 +6751,22 @@ describe("runRalphFlow", () => {
       ],
       edges: [
         { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
-        { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "work-success",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
-    let resolveExecution!: (value: ReturnType<typeof createExecutionResult>) => void;
-    const execution = new Promise<ReturnType<typeof createExecutionResult>>((resolve) => {
-      resolveExecution = resolve;
-    });
+    let resolveExecution!: (
+      value: ReturnType<typeof createExecutionResult>,
+    ) => void;
+    const execution = new Promise<ReturnType<typeof createExecutionResult>>(
+      (resolve) => {
+        resolveExecution = resolve;
+      },
+    );
 
     try {
       vi.mocked(executeTask).mockImplementation(() => execution);
@@ -5009,14 +6799,19 @@ describe("runRalphFlow", () => {
         },
       );
       const executionDeadline = Date.now() + 10_000;
-      while (vi.mocked(executeTask).mock.calls.length === 0 && Date.now() < executionDeadline) {
+      while (
+        vi.mocked(executeTask).mock.calls.length === 0 &&
+        Date.now() < executionDeadline
+      ) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       expect(executeTask).toHaveBeenCalledTimes(1);
       resolveExecution(createExecutionResult({ summary: "Winner completed." }));
 
       const results = await Promise.all([firstRun, secondRun]);
-      expect(results.filter((result) => result.status === "completed")).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === "completed"),
+      ).toHaveLength(1);
       expect(
         results.filter(
           (result) =>
@@ -5055,13 +6850,32 @@ describe("runRalphFlow", () => {
       ],
       edges: [
         { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
-        { id: "work-report", from: "work", fromOutput: "SUCCESS", to: "report" },
-        { id: "work-error-report", from: "work", fromOutput: "ERROR", to: "report" },
-        { id: "report-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "work-report",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "report",
+        },
+        {
+          id: "work-error-report",
+          from: "work",
+          fromOutput: "ERROR",
+          to: "report",
+        },
+        {
+          id: "report-success",
+          from: "report",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
-    let resolveStaleExecution!: (value: ReturnType<typeof createExecutionResult>) => void;
-    const staleExecution = new Promise<ReturnType<typeof createExecutionResult>>((resolve) => {
+    let resolveStaleExecution!: (
+      value: ReturnType<typeof createExecutionResult>,
+    ) => void;
+    const staleExecution = new Promise<
+      ReturnType<typeof createExecutionResult>
+    >((resolve) => {
       resolveStaleExecution = resolve;
     });
 
@@ -5084,7 +6898,9 @@ describe("runRalphFlow", () => {
 
       let takeoverCheckpoint: RalphRunCheckpoint | undefined;
       let lastObservedRecord: RalphRunRecord | undefined;
-      let earlyStaleResult: Awaited<ReturnType<typeof runRalphFlow>> | undefined;
+      let earlyStaleResult:
+        | Awaited<ReturnType<typeof runRalphFlow>>
+        | undefined;
       void staleRun.then((result) => {
         earlyStaleResult = result;
       });
@@ -5138,7 +6954,9 @@ describe("runRalphFlow", () => {
       );
       expect(takeoverResult.status).toBe("completed");
 
-      resolveStaleExecution(createExecutionResult({ summary: "Stale work returned late." }));
+      resolveStaleExecution(
+        createExecutionResult({ summary: "Stale work returned late." }),
+      );
       const staleResult = await staleRun;
       expect(staleResult.status).toBe("crashed");
       expect(staleResult.summary.toLowerCase()).toContain("ownership");
@@ -5155,7 +6973,7 @@ describe("runRalphFlow", () => {
       const report = JSON.parse(
         await readFile(join(workspace, "reports", "final.json"), "utf8"),
       ) as { outcome?: { status?: unknown } };
-      expect(report.outcome?.status).toBe("completed");
+      expect(report.outcome?.status).toBe("succeeded");
       expect(executeTask).toHaveBeenCalledTimes(1);
     } finally {
       resolveStaleExecution?.(createExecutionResult({ summary: "Cleanup." }));
@@ -5166,13 +6984,22 @@ describe("runRalphFlow", () => {
   it("heartbeats a durable lease while a long block is still executing", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-heartbeat-"));
     try {
-      let resolveExecution!: (value: ReturnType<typeof createExecutionResult>) => void;
-      const executionPromise = new Promise<ReturnType<typeof createExecutionResult>>(
-        (resolve) => {
-          resolveExecution = resolve;
-        },
-      );
-      vi.mocked(executeTask).mockImplementation(() => executionPromise);
+      let resolveExecution!: (
+        value: ReturnType<typeof createExecutionResult>,
+      ) => void;
+      const executionPromise = new Promise<
+        ReturnType<typeof createExecutionResult>
+      >((resolve) => {
+        resolveExecution = resolve;
+      });
+      let markExecutionStarted!: () => void;
+      const executionStarted = new Promise<void>((resolve) => {
+        markExecutionStarted = resolve;
+      });
+      vi.mocked(executeTask).mockImplementation(() => {
+        markExecutionStarted();
+        return executionPromise;
+      });
       const flow = createFlow({
         blocks: [
           { id: "start", type: "START", title: "Start" },
@@ -5180,8 +7007,18 @@ describe("runRalphFlow", () => {
           { id: "success", type: "END", title: "Success", status: "success" },
         ],
         edges: [
-          { id: "start-long", from: "start", fromOutput: "SUCCESS", to: "long" },
-          { id: "long-success", from: "long", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-long",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "long",
+          },
+          {
+            id: "long-success",
+            from: "long",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       });
       const logger = await createRalphRunLogger(workspace, flow, {
@@ -5194,21 +7031,18 @@ describe("runRalphFlow", () => {
         { logger, runId: logger.runId, leaseDurationMs: 1_000 },
       );
 
-      let activeRecord:
-        | { checkpoint: { lease: { acquiredAt: string; heartbeatAt: string } } }
-        | undefined;
+      await executionStarted;
+      const leasePath = join(logger.paths!.directory, "run-lease.json");
+      const initialLeaseMtime = (await stat(leasePath)).mtimeMs;
+      const initialRecord = await readFile(logger.paths!.recordPath, "utf8");
+      const initialRecordMtime = (await stat(logger.paths!.recordPath)).mtimeMs;
+      let heartbeatMtime = initialLeaseMtime;
       let inspectionError: unknown;
       const heartbeatDeadline = Date.now() + 10_000;
       while (Date.now() < heartbeatDeadline) {
         try {
-          activeRecord = JSON.parse(
-            await readFile(logger.paths!.recordPath, "utf8"),
-          ) as typeof activeRecord;
-          if (
-            activeRecord &&
-            Date.parse(activeRecord.checkpoint.lease.heartbeatAt) >
-              Date.parse(activeRecord.checkpoint.lease.acquiredAt)
-          ) {
+          heartbeatMtime = (await stat(leasePath)).mtimeMs;
+          if (heartbeatMtime > initialLeaseMtime) {
             break;
           }
         } catch (error) {
@@ -5217,6 +7051,9 @@ describe("runRalphFlow", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
+      const heartbeatRecord = await readFile(logger.paths!.recordPath, "utf8");
+      const heartbeatRecordMtime = (await stat(logger.paths!.recordPath))
+        .mtimeMs;
       resolveExecution(createExecutionResult({ summary: "Finished." }));
       const result = await runPromise;
       const diagnostics = [
@@ -5224,14 +7061,14 @@ describe("runRalphFlow", () => {
         `summary: ${result.summary}`,
         `durability: ${result.durability?.error ?? "healthy"}`,
         ...(inspectionError
-          ? [`last record read error: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`]
+          ? [
+              `last record read error: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`,
+            ]
           : []),
       ].join("; ");
-      expect(activeRecord, diagnostics).toBeDefined();
-      expect(
-        Date.parse(activeRecord!.checkpoint.lease.heartbeatAt),
-        diagnostics,
-      ).toBeGreaterThan(Date.parse(activeRecord!.checkpoint.lease.acquiredAt));
+      expect(heartbeatMtime, diagnostics).toBeGreaterThan(initialLeaseMtime);
+      expect(heartbeatRecord).toBe(initialRecord);
+      expect(heartbeatRecordMtime).toBe(initialRecordMtime);
       expect(result.status, diagnostics).toBe("completed");
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -5251,7 +7088,12 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-success", from: "start", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-success",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
 
@@ -5283,8 +7125,18 @@ describe("runRalphFlow", () => {
           { id: "handled", type: "END", title: "Handled", status: "success" },
         ],
         edges: [
-          { id: "start-write", from: "start", fromOutput: "SUCCESS", to: "write" },
-          { id: "write-error", from: "write", fromOutput: "ERROR", to: "handled" },
+          {
+            id: "start-write",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "write",
+          },
+          {
+            id: "write-error",
+            from: "write",
+            fromOutput: "ERROR",
+            to: "handled",
+          },
         ],
       }),
       runtimeConfig,
@@ -5293,12 +7145,13 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "write"))
-      .toMatchObject({
-        output: "ERROR",
-        status: "error",
-        error: expect.stringContaining("Unresolved Ralph block reference"),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "write"),
+    ).toMatchObject({
+      output: "ERROR",
+      status: "error",
+      error: expect.stringContaining("Unresolved Ralph block reference"),
+    });
   });
 
   it("enforces an MCP deadline even when the connector never settles", async () => {
@@ -5318,11 +7171,16 @@ describe("runRalphFlow", () => {
             settings: {
               timeoutSeconds: 0.001,
               mcp: {
-                servers: [{
-                  id: "test",
-                  enabled: true,
-                  transport: { type: "streamable-http", url: "https://example.test/mcp" },
-                }],
+                servers: [
+                  {
+                    id: "test",
+                    enabled: true,
+                    transport: {
+                      type: "streamable-http",
+                      url: "https://example.test/mcp",
+                    },
+                  },
+                ],
               },
             },
           },
@@ -5339,19 +7197,20 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "mcp"))
-      .toMatchObject({
-        output: "ERROR",
-        error: expect.stringContaining("timed out"),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "mcp"),
+    ).toMatchObject({
+      output: "ERROR",
+      error: expect.stringContaining("timed out"),
+    });
   });
 
   it("reconciles a partial APPEND_JSONL tail on end-to-end operation resume", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-append-resume-"));
     const path = join(workspace, "events.jsonl");
     const operationId = "append-operation";
-    const initial = "{\"seed\":true}\n";
-    const intended = "{\"item\":1}\n";
+    const initial = '{"seed":true}\n';
+    const intended = '{"item":1}\n';
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
@@ -5359,13 +7218,27 @@ describe("runRalphFlow", () => {
           id: "append",
           type: "UTILITY",
           title: "Append",
-          utility: { type: "APPEND_JSONL", path: "events.jsonl", input: "{\"item\":1}" },
+          utility: {
+            type: "APPEND_JSONL",
+            path: "events.jsonl",
+            input: '{"item":1}',
+          },
         },
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-append", from: "start", fromOutput: "SUCCESS", to: "append" },
-        { id: "append-success", from: "append", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-append",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "append",
+        },
+        {
+          id: "append-success",
+          from: "append",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
     const checkpoint: RalphRunCheckpoint = {
@@ -5415,18 +7288,23 @@ describe("runRalphFlow", () => {
       );
 
       expect(result.status).toBe("completed");
-      await expect(readFile(path, "utf8")).resolves.toBe(`${initial}${intended}`);
-      expect(result.blockResults.find((entry) => entry.blockId === "append"))
-        .toMatchObject({ operationId, output: "SUCCESS" });
+      await expect(readFile(path, "utf8")).resolves.toBe(
+        `${initial}${intended}`,
+      );
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "append"),
+      ).toMatchObject({ operationId, output: "SUCCESS" });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });
 
   it("fails APPEND_JSONL closed on ledger I/O errors without mutating its target", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-append-ledger-error-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-append-ledger-error-"),
+    );
     const path = join(workspace, "events.jsonl");
-    const original = "{\"existing\":true}\n";
+    const original = '{"existing":true}\n';
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
@@ -5434,13 +7312,27 @@ describe("runRalphFlow", () => {
           id: "append",
           type: "UTILITY",
           title: "Append",
-          utility: { type: "APPEND_JSONL", path: "events.jsonl", input: "{\"item\":1}" },
+          utility: {
+            type: "APPEND_JSONL",
+            path: "events.jsonl",
+            input: '{"item":1}',
+          },
         },
         { id: "failed", type: "END", title: "Failed", status: "failed" },
       ],
       edges: [
-        { id: "start-append", from: "start", fromOutput: "SUCCESS", to: "append" },
-        { id: "append-failed", from: "append", fromOutput: "ERROR", to: "failed" },
+        {
+          id: "start-append",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "append",
+        },
+        {
+          id: "append-failed",
+          from: "append",
+          fromOutput: "ERROR",
+          to: "failed",
+        },
       ],
     });
 
@@ -5455,8 +7347,9 @@ describe("runRalphFlow", () => {
         { runId: "append-ledger-error" },
       );
 
-      expect(result.blockResults.find((entry) => entry.blockId === "append"))
-        .toMatchObject({ output: "ERROR" });
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "append"),
+      ).toMatchObject({ output: "ERROR" });
       await expect(readFile(path, "utf8")).resolves.toBe(original);
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -5478,8 +7371,18 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-report", from: "start", fromOutput: "SUCCESS", to: "report" },
-        { id: "report-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-report",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "report",
+        },
+        {
+          id: "report-success",
+          from: "report",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
     const checkpoint: RalphRunCheckpoint = {
@@ -5511,14 +7414,19 @@ describe("runRalphFlow", () => {
         customizations,
         { checkpoint, runId: "pending-report" },
       );
-      const report = JSON.parse(await readFile(join(workspace, "report.json"), "utf8")) as {
+      const report = JSON.parse(
+        await readFile(join(workspace, "report.json"), "utf8"),
+      ) as {
         outcome: { status: string };
+        lifecycle: { status: string };
       };
 
       expect(result.status).toBe("completed");
-      expect(report.outcome.status).toBe("completed");
-      expect(result.blockResults.find((entry) => entry.blockId === "report"))
-        .toMatchObject({ operationId, output: "SUCCESS" });
+      expect(report.outcome.status).toBe("succeeded");
+      expect(report.lifecycle.status).toBe("completed");
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "report"),
+      ).toMatchObject({ operationId, output: "SUCCESS" });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -5545,7 +7453,12 @@ describe("runRalphFlow", () => {
       ],
       edges: [
         { id: "start-a", from: "start", fromOutput: "SUCCESS", to: "report-a" },
-        { id: "a-success", from: "report-a", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "a-success",
+          from: "report-a",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
 
@@ -5558,9 +7471,12 @@ describe("runRalphFlow", () => {
       );
 
       expect(result.status).toBe("completed");
-      await expect(readFile(join(workspace, "reports", "a.json"), "utf8"))
-        .resolves.toContain('"status": "completed"');
-      expect(result.blockResults.some((entry) => entry.blockId === "report-b")).toBe(false);
+      await expect(
+        readFile(join(workspace, "reports", "a.json"), "utf8"),
+      ).resolves.toContain('"status": "completed"');
+      expect(
+        result.blockResults.some((entry) => entry.blockId === "report-b"),
+      ).toBe(false);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -5570,7 +7486,7 @@ describe("runRalphFlow", () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-append-mismatch-"));
     const path = join(workspace, "events.jsonl");
     const operationId = "append-mismatch-operation";
-    const initial = "{\"seed\":true}\n";
+    const initial = '{"seed":true}\n';
     const mismatched = "not-the-intended-entry";
     const checkpoint: RalphRunCheckpoint = {
       currentBlockId: "append",
@@ -5600,27 +7516,45 @@ describe("runRalphFlow", () => {
           id: "append",
           type: "UTILITY",
           title: "Append",
-          utility: { type: "APPEND_JSONL", path: "events.jsonl", input: "{\"item\":1}" },
+          utility: {
+            type: "APPEND_JSONL",
+            path: "events.jsonl",
+            input: '{"item":1}',
+          },
         },
         { id: "failed", type: "END", title: "Failed", status: "failed" },
       ],
       edges: [
-        { id: "start-append", from: "start", fromOutput: "SUCCESS", to: "append" },
-        { id: "append-failed", from: "append", fromOutput: "ERROR", to: "failed" },
+        {
+          id: "start-append",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "append",
+        },
+        {
+          id: "append-failed",
+          from: "append",
+          fromOutput: "ERROR",
+          to: "failed",
+        },
       ],
     });
 
     try {
       await writeFile(path, `${initial}${mismatched}`, "utf8");
-      await writeFile(`${path}.ralph-operations.json`, JSON.stringify({
-        operations: {
-          [operationId]: {
-            state: "started",
-            priorSize: Buffer.byteLength(initial),
-            lineLength: Buffer.byteLength("{\"item\":1}\n"),
+      await writeFile(
+        `${path}.ralph-operations.json`,
+        JSON.stringify({
+          operations: {
+            [operationId]: {
+              state: "started",
+              priorSize: Buffer.byteLength(initial),
+              lineLength: Buffer.byteLength('{"item":1}\n'),
+            },
           },
-        },
-      }), "utf8");
+        }),
+        "utf8",
+      );
 
       const result = await runRalphFlow(
         flow,
@@ -5629,12 +7563,15 @@ describe("runRalphFlow", () => {
         { checkpoint, runId: "append-mismatch" },
       );
 
-      expect(result.blockResults.find((entry) => entry.blockId === "append"))
-        .toMatchObject({
-          output: "ERROR",
-          data: expect.objectContaining({ reconciliation: "indeterminate" }),
-        });
-      await expect(readFile(path, "utf8")).resolves.toBe(`${initial}${mismatched}`);
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "append"),
+      ).toMatchObject({
+        output: "ERROR",
+        data: expect.objectContaining({ reconciliation: "indeterminate" }),
+      });
+      await expect(readFile(path, "utf8")).resolves.toBe(
+        `${initial}${mismatched}`,
+      );
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -5657,8 +7594,18 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-        { id: "select-success", from: "select", fromOutput: "SELECTED", to: "success" },
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-success",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "success",
+        },
       ],
     });
     const createPendingCheckpoint = (
@@ -5688,18 +7635,26 @@ describe("runRalphFlow", () => {
 
     try {
       const now = new Date().toISOString();
-      await writeFile(path, JSON.stringify({ tasks: [{
-        id: "task-1",
-        status: "implementing",
-        attempts: 1,
-        lease: {
-          ownerId: runId,
-          generation: 1,
-          acquiredAt: now,
-          heartbeatAt: now,
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        },
-      }] }), "utf8");
+      await writeFile(
+        path,
+        JSON.stringify({
+          tasks: [
+            {
+              id: "task-1",
+              status: "implementing",
+              attempts: 1,
+              lease: {
+                ownerId: runId,
+                generation: 1,
+                acquiredAt: now,
+                heartbeatAt: now,
+                expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              },
+            },
+          ],
+        }),
+        "utf8",
+      );
 
       const selected = await runRalphFlow(
         selectFlow,
@@ -5715,14 +7670,25 @@ describe("runRalphFlow", () => {
       };
 
       expect(selected.status).toBe("completed");
-      expect(afterSelect.tasks[0]).toMatchObject({ attempts: 1, lease: { generation: 1 } });
+      expect(afterSelect.tasks[0]).toMatchObject({
+        attempts: 1,
+        lease: { generation: 1 },
+      });
 
       const stateHistory = [{ from: "implementing", to: "completed", at: now }];
-      await writeFile(path, JSON.stringify({ tasks: [{
-        id: "task-1",
-        status: "completed",
-        stateHistory,
-      }] }), "utf8");
+      await writeFile(
+        path,
+        JSON.stringify({
+          tasks: [
+            {
+              id: "task-1",
+              status: "completed",
+              stateHistory,
+            },
+          ],
+        }),
+        "utf8",
+      );
       const markFlow = createFlow({
         blocks: [
           { id: "start", type: "START", title: "Start" },
@@ -5735,14 +7701,23 @@ describe("runRalphFlow", () => {
               path: "tasks.json",
               taskId: "task-1",
               status: "completed",
-              enforce: true,
             },
           },
           { id: "success", type: "END", title: "Success", status: "success" },
         ],
         edges: [
-          { id: "start-mark", from: "start", fromOutput: "SUCCESS", to: "mark" },
-          { id: "mark-success", from: "mark", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-mark",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "mark",
+          },
+          {
+            id: "mark-success",
+            from: "mark",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       });
       const marked = await runRalphFlow(
@@ -5783,14 +7758,33 @@ describe("runRalphFlow", () => {
         { id: "blocked", type: "END", title: "Blocked", status: "failed" },
       ],
       edges: [
-        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-        { id: "selected-success", from: "select", fromOutput: "SELECTED", to: "success" },
-        { id: "invalid-blocked", from: "select", fromOutput: "INVALID", to: "blocked" },
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "selected-success",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "success",
+        },
+        {
+          id: "invalid-blocked",
+          from: "select",
+          fromOutput: "INVALID",
+          to: "blocked",
+        },
       ],
     });
 
     try {
-      await writeFile(path, JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }), "utf8");
+      await writeFile(
+        path,
+        JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }),
+        "utf8",
+      );
       const deferFlow = createFlow({
         blocks: [
           { id: "start", type: "START", title: "Start" },
@@ -5803,16 +7797,30 @@ describe("runRalphFlow", () => {
               type: "MARK_JSON_TASK",
               path: "tasks.json",
               status: "deferred",
-              enforce: true,
               delaySeconds: 60,
             },
           },
           { id: "success", type: "END", title: "Success", status: "success" },
         ],
         edges: [
-          { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-          { id: "select-defer", from: "select", fromOutput: "SELECTED", to: "defer" },
-          { id: "defer-success", from: "defer", fromOutput: "SUCCESS", to: "success" },
+          {
+            id: "start-select",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "select",
+          },
+          {
+            id: "select-defer",
+            from: "select",
+            fromOutput: "SELECTED",
+            to: "defer",
+          },
+          {
+            id: "defer-success",
+            from: "defer",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
         ],
       });
       const deferred = await runRalphFlow(
@@ -5836,13 +7844,16 @@ describe("runRalphFlow", () => {
         customizations,
         { runId: "defer-before" },
       );
-      expect(before.blockResults.find((entry) => entry.blockId === "select"))
-        .toMatchObject({ output: "INVALID" });
+      expect(
+        before.blockResults.find((entry) => entry.blockId === "select"),
+      ).toMatchObject({ output: "INVALID" });
 
       const eligibleJson = JSON.parse(await readFile(path, "utf8")) as {
         tasks: Array<Record<string, unknown>>;
       };
-      eligibleJson.tasks[0]!.nextEligibleAt = new Date(Date.now() - 1_000).toISOString();
+      eligibleJson.tasks[0]!.nextEligibleAt = new Date(
+        Date.now() - 1_000,
+      ).toISOString();
       await writeFile(path, JSON.stringify(eligibleJson), "utf8");
       const after = await runRalphFlow(
         selectionFlow,
@@ -5855,8 +7866,9 @@ describe("runRalphFlow", () => {
       };
 
       expect(after.status).toBe("completed");
-      expect(after.blockResults.find((entry) => entry.blockId === "select"))
-        .toMatchObject({ output: "SELECTED" });
+      expect(
+        after.blockResults.find((entry) => entry.blockId === "select"),
+      ).toMatchObject({ output: "SELECTED" });
       expect(stored.tasks[0]).not.toHaveProperty("nextEligibleAt");
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -5877,19 +7889,39 @@ describe("runRalphFlow", () => {
         { id: "blocked", type: "END", title: "Blocked", status: "failed" },
       ],
       edges: [
-        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-        { id: "select-blocked", from: "select", fromOutput: "INVALID", to: "blocked" },
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-blocked",
+          from: "select",
+          fromOutput: "INVALID",
+          to: "blocked",
+        },
       ],
     });
 
     try {
-      await writeFile(join(workspace, "tasks.json"), JSON.stringify({ tasks: [
-        { id: "missing", status: "planned", dependencies: ["absent"] },
-        { id: "cycle-a", status: "planned", dependencies: ["cycle-b"] },
-        { id: "cycle-b", status: "planned", dependencies: ["cycle-a"] },
-        { id: "deferred", status: "deferred", nextEligibleAt: "2099-01-01T00:00:00.000Z" },
-        { id: "waits", status: "planned", dependencies: ["deferred"] },
-      ] }), "utf8");
+      await writeFile(
+        join(workspace, "tasks.json"),
+        JSON.stringify({
+          tasks: [
+            { id: "missing", status: "planned", dependencies: ["absent"] },
+            { id: "cycle-a", status: "planned", dependencies: ["cycle-b"] },
+            { id: "cycle-b", status: "planned", dependencies: ["cycle-a"] },
+            {
+              id: "deferred",
+              status: "deferred",
+              nextEligibleAt: "2099-01-01T00:00:00.000Z",
+            },
+            { id: "waits", status: "planned", dependencies: ["deferred"] },
+          ],
+        }),
+        "utf8",
+      );
 
       const result = await runRalphFlow(
         flow,
@@ -5897,14 +7929,22 @@ describe("runRalphFlow", () => {
         customizations,
         { runId: "dependency-blockers" },
       );
-      const selection = result.blockResults.find((entry) => entry.blockId === "select");
+      const selection = result.blockResults.find(
+        (entry) => entry.blockId === "select",
+      );
 
       expect(selection).toMatchObject({
         output: "INVALID",
         data: expect.objectContaining({
           blockers: expect.arrayContaining([
-            expect.objectContaining({ taskId: "missing", missingDependencyIds: ["absent"] }),
-            expect.objectContaining({ taskId: "waits", deferredDependencyIds: ["deferred"] }),
+            expect.objectContaining({
+              taskId: "missing",
+              missingDependencyIds: ["absent"],
+            }),
+            expect.objectContaining({
+              taskId: "waits",
+              deferredDependencyIds: ["deferred"],
+            }),
           ]),
           dependencyCycles: expect.arrayContaining([
             expect.arrayContaining(["cycle-a", "cycle-b"]),
@@ -5918,7 +7958,9 @@ describe("runRalphFlow", () => {
 
   it("selects random-seeded JSON tasks deterministically for the same run", async () => {
     const firstWorkspace = await mkdtemp(join(tmpdir(), "ralph-seeded-first-"));
-    const secondWorkspace = await mkdtemp(join(tmpdir(), "ralph-seeded-second-"));
+    const secondWorkspace = await mkdtemp(
+      join(tmpdir(), "ralph-seeded-second-"),
+    );
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
@@ -5935,20 +7977,40 @@ describe("runRalphFlow", () => {
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-        { id: "select-success", from: "select", fromOutput: "SELECTED", to: "success" },
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-success",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "success",
+        },
       ],
     });
-    const tasks = { tasks: [
-      { id: "alpha", status: "planned" },
-      { id: "beta", status: "planned" },
-      { id: "gamma", status: "planned" },
-    ] };
+    const tasks = {
+      tasks: [
+        { id: "alpha", status: "planned" },
+        { id: "beta", status: "planned" },
+        { id: "gamma", status: "planned" },
+      ],
+    };
 
     try {
       await Promise.all([
-        writeFile(join(firstWorkspace, "tasks.json"), JSON.stringify(tasks), "utf8"),
-        writeFile(join(secondWorkspace, "tasks.json"), JSON.stringify(tasks), "utf8"),
+        writeFile(
+          join(firstWorkspace, "tasks.json"),
+          JSON.stringify(tasks),
+          "utf8",
+        ),
+        writeFile(
+          join(secondWorkspace, "tasks.json"),
+          JSON.stringify(tasks),
+          "utf8",
+        ),
       ]);
       const [first, second] = await Promise.all([
         runRalphFlow(
@@ -5965,10 +8027,14 @@ describe("runRalphFlow", () => {
         ),
       ]);
       const selectedId = (result: typeof first): unknown => {
-        const data = result.blockResults.find((entry) => entry.blockId === "select")?.data;
-        return typeof data === "object" && data !== null && "task" in data &&
-          typeof data.task === "object" && data.task !== null && "id" in data.task
-          ? data.task.id
+        const data = result.blockResults.find(
+          (entry) => entry.blockId === "select",
+        )?.data;
+        return typeof data === "object" &&
+          data !== null &&
+          "taskIds" in data &&
+          Array.isArray(data.taskIds)
+          ? data.taskIds[0]
           : undefined;
       };
 
@@ -5991,38 +8057,79 @@ describe("runRalphFlow", () => {
         title: "Select",
         utility: { type: "SELECT_JSON_TASK" as const, path: "tasks.json" },
       },
-      { id: "blocked", type: "END" as const, title: "Blocked", status: "failed" as const },
+      {
+        id: "blocked",
+        type: "END" as const,
+        title: "Blocked",
+        status: "failed" as const,
+      },
     ];
     const rivalFlow = createFlow({
       blocks: selectionBlocks,
       edges: [
-        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-        { id: "select-blocked", from: "select", fromOutput: "INVALID", to: "blocked" },
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-blocked",
+          from: "select",
+          fromOutput: "INVALID",
+          to: "blocked",
+        },
       ],
     });
     const ownerFlow = createFlow({
       blocks: [
         selectionBlocks[0]!,
         selectionBlocks[1]!,
-        { id: "work", type: "PROMPT", title: "Work", prompt: "Work for a while." },
+        {
+          id: "work",
+          type: "PROMPT",
+          title: "Work",
+          prompt: "Work for a while.",
+        },
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
       edges: [
-        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
-        { id: "select-work", from: "select", fromOutput: "SELECTED", to: "work" },
-        { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-work",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "work",
+        },
+        {
+          id: "work-success",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
     let rivalResult: Awaited<ReturnType<typeof runRalphFlow>> | undefined;
 
     try {
-      await writeFile(path, JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }), "utf8");
+      await writeFile(
+        path,
+        JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }),
+        "utf8",
+      );
       vi.mocked(executeTask).mockImplementationOnce(async () => {
         const json = JSON.parse(await readFile(path, "utf8")) as {
           tasks: Array<{ lease: { heartbeatAt: string; expiresAt: string } }>;
         };
         json.tasks[0]!.lease.heartbeatAt = new Date().toISOString();
-        json.tasks[0]!.lease.expiresAt = new Date(Date.now() + 100).toISOString();
+        json.tasks[0]!.lease.expiresAt = new Date(
+          Date.now() + 100,
+        ).toISOString();
         await writeFile(path, JSON.stringify(json), "utf8");
         await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
         rivalResult = await runRalphFlow(
@@ -6045,10 +8152,14 @@ describe("runRalphFlow", () => {
       };
 
       expect(ownerResult.status).toBe("completed");
-      expect(rivalResult?.blockResults.find((entry) => entry.blockId === "select")?.output)
-        .not.toBe("SELECTED");
+      expect(
+        rivalResult?.blockResults.find((entry) => entry.blockId === "select")
+          ?.output,
+      ).not.toBe("SELECTED");
       expect(stored.tasks[0]?.lease.ownerId).toBe("owner-run");
-      expect(Date.parse(stored.tasks[0]!.lease.expiresAt)).toBeGreaterThan(Date.now());
+      expect(Date.parse(stored.tasks[0]!.lease.expiresAt)).toBeGreaterThan(
+        Date.now(),
+      );
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -6107,12 +8218,13 @@ describe("runRalphFlow", () => {
     });
 
     expect(result.status).toBe("completed");
-    expect(result.blockResults.find((entry) => entry.blockId === "post"))
-      .toMatchObject({
-        operationId,
-        output: "ERROR",
-        data: expect.objectContaining({ reconciliation: "indeterminate" }),
-      });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "post"),
+    ).toMatchObject({
+      operationId,
+      output: "ERROR",
+      data: expect.objectContaining({ reconciliation: "indeterminate" }),
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -6126,7 +8238,12 @@ describe("runRalphFlow", () => {
       ],
       edges: [
         { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
-        { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+        {
+          id: "work-success",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
       ],
     });
 
@@ -6139,26 +8256,32 @@ describe("runRalphFlow", () => {
         throw new Error("Expected logger paths.");
       }
       let abortObserved = false;
-      vi.mocked(executeTask).mockImplementationOnce(async (_task, _config, _customizations, executionOptions) => {
-        await rm(paths.recordPath, { force: true });
-        await mkdir(paths.recordPath);
-        const signal = executionOptions?.signal;
-        if (!signal) {
-          throw new Error("Expected block abort signal.");
-        }
-        await new Promise<void>((resolveAbort, rejectAbort) => {
-          const timeout = setTimeout(
-            () => rejectAbort(new Error("Heartbeat did not abort the block.")),
-            3_000,
-          );
-          signal.addEventListener("abort", () => {
-            clearTimeout(timeout);
-            abortObserved = true;
-            resolveAbort();
-          }, { once: true });
-        });
-        return createExecutionResult({ summary: "Aborted work." });
-      });
+      vi.mocked(executeTask).mockImplementationOnce(
+        async (_task, _config, _customizations, executionOptions) => {
+          await rm(join(paths.directory, "run-lease.json"), { force: true });
+          const signal = executionOptions?.signal;
+          if (!signal) {
+            throw new Error("Expected block abort signal.");
+          }
+          await new Promise<void>((resolveAbort, rejectAbort) => {
+            const timeout = setTimeout(
+              () =>
+                rejectAbort(new Error("Heartbeat did not abort the block.")),
+              3_000,
+            );
+            signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timeout);
+                abortObserved = true;
+                resolveAbort();
+              },
+              { once: true },
+            );
+          });
+          return createExecutionResult({ summary: "Aborted work." });
+        },
+      );
 
       const result = await runRalphFlow(
         flow,
@@ -6169,9 +8292,12 @@ describe("runRalphFlow", () => {
 
       expect(abortObserved).toBe(true);
       expect(result.status).toBe("crashed");
-      expect(result.summary).toContain("ownership lost");
+      expect(result.summary).toContain("durable run ownership lost");
+      expect(result.summary).toContain("ownership changed");
       expect(result.checkpoint).toBeUndefined();
-      expect(result.blockResults.some((entry) => entry.blockId === "work")).toBe(false);
+      expect(
+        result.blockResults.some((entry) => entry.blockId === "work"),
+      ).toBe(false);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -6197,7 +8323,12 @@ describe("runRalphFlow", () => {
         },
       ],
       edges: [
-        { id: "start-stopped", from: "start", fromOutput: "SUCCESS", to: "stopped" },
+        {
+          id: "start-stopped",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "stopped",
+        },
       ],
     });
 
@@ -6218,16 +8349,16 @@ describe("runRalphFlow", () => {
       );
       const report = JSON.parse(await readFile(fallbackPath, "utf8")) as {
         outcome: { status: string };
+        lifecycle: { status: string };
         fallback: { reason: string };
       };
 
       expect(result.status).toBe("stopped");
-      expect(report.outcome.status).toBe("stopped");
+      expect(report.outcome.status).toBe("cancelled");
+      expect(report.lifecycle.status).toBe("stopped");
       expect(report.fallback.reason).toContain("No branch-specific");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });
 });
-
-

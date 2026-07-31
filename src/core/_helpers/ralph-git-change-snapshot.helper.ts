@@ -58,6 +58,30 @@ const normalizeWorkspaceRelativePath = (
   return relativePath.replace(/\\/gu, "/").replace(/^\.\/+/u, "");
 };
 
+const createGitContentPathspecs = (
+  gitRoot: string,
+  workspaceRoot: string,
+): string[] => {
+  const controlArtifactPath = relative(
+    gitRoot,
+    resolve(workspaceRoot, ".machdoch"),
+  ).replace(/\\/gu, "/");
+
+  if (
+    isAbsolute(controlArtifactPath) ||
+    controlArtifactPath === ".." ||
+    controlArtifactPath.startsWith("../")
+  ) {
+    return ["."];
+  }
+
+  return [
+    ".",
+    `:(exclude)${controlArtifactPath}`,
+    `:(exclude)${controlArtifactPath}/**`,
+  ];
+};
+
 interface PorcelainV1StatusEntry {
   path: string;
   gitPath: string;
@@ -72,21 +96,26 @@ const runGitCommand = async (
   cwd = options.cwd,
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
-    execFile("git", ["--no-optional-locks", ...args], {
-      cwd: normalizeLocalCommandCwd(cwd),
-      timeout: options.timeoutMs,
-      maxBuffer: options.maxOutputBytes,
-      ...(options.signal ? { signal: options.signal } : {}),
-      windowsHide: true,
-      encoding: "utf8",
-    }, (error, stdout, stderr) => {
-      if (error) {
-        reject(Object.assign(error, { stdout, stderr }));
-        return;
-      }
+    execFile(
+      "git",
+      ["--no-optional-locks", ...args],
+      {
+        cwd: normalizeLocalCommandCwd(cwd),
+        timeout: options.timeoutMs,
+        maxBuffer: options.maxOutputBytes,
+        ...(options.signal ? { signal: options.signal } : {}),
+        windowsHide: true,
+        encoding: "utf8",
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(Object.assign(error, { stdout, stderr }));
+          return;
+        }
 
-      resolve(stdout);
-    });
+        resolve(stdout);
+      },
+    );
   });
 };
 
@@ -107,7 +136,10 @@ const parsePorcelainV1ZStatus = (
 
     const status = entry.slice(0, 2);
     const gitPath = entry.slice(3);
-    const path = normalizeWorkspaceRelativePath(resolve(gitRoot, gitPath), workspaceRoot);
+    const path = normalizeWorkspaceRelativePath(
+      resolve(gitRoot, gitPath),
+      workspaceRoot,
+    );
 
     parsed.push({
       path,
@@ -136,7 +168,9 @@ const readWorktreeHash = async (path: string): Promise<string | undefined> => {
     return undefined;
   }
 
-  return createHash("sha256").update(await readFile(path)).digest("hex");
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
 };
 
 const readIndexOids = async (
@@ -183,7 +217,8 @@ const createChangedFileSnapshot = async (
   const worktreeHash = await readWorktreeHash(absolutePath);
   const indexOid = indexOids.get(entry.gitPath);
   const indexChanged = entry.indexStatus !== " " && entry.indexStatus !== "?";
-  const worktreeChanged = entry.worktreeStatus !== " " && entry.worktreeStatus !== "?";
+  const worktreeChanged =
+    entry.worktreeStatus !== " " && entry.worktreeStatus !== "?";
   const untracked = entry.indexStatus === "?" && entry.worktreeStatus === "?";
   const deleted = entry.indexStatus === "D" || entry.worktreeStatus === "D";
   const file: Omit<RalphGitChangedFileSnapshot, "signature"> = {
@@ -208,35 +243,65 @@ const createChangedFileSnapshot = async (
 export const collectRalphGitChangeSnapshot = async (
   options: RalphGitChangeSnapshotOptions,
 ): Promise<RalphGitChangeSnapshot> => {
-  const rawRoot = (await runGitCommand(["rev-parse", "--show-toplevel"], options))
-    .trim();
+  const rawRoot = (
+    await runGitCommand(["rev-parse", "--show-toplevel"], options)
+  ).trim();
   const [root, workspaceRoot] = await Promise.all([
     realpath(rawRoot).catch(() => resolve(rawRoot)),
     realpath(options.workspaceRoot).catch(() => resolve(options.workspaceRoot)),
   ]);
   const rootOptions: RalphGitChangeSnapshotOptions = { ...options, cwd: root };
+  const contentPathspecs = createGitContentPathspecs(root, workspaceRoot);
   const includeHead = options.includeHead !== false;
   const includeDiffs = options.includeDiffs !== false;
-  const [head, statusText, diffStat, diffNames, stagedDiffStat, stagedDiffNames] =
-    await Promise.all([
-      includeHead
-        ? runGitCommand(["rev-parse", "--short", "HEAD"], rootOptions)
-        : Promise.resolve(""),
-      runGitCommand(["status", "--porcelain=v1", "-z", "-uall"], rootOptions),
-      includeDiffs
-        ? runGitCommand(["diff", "--stat"], rootOptions)
-        : Promise.resolve(""),
-      includeDiffs
-        ? runGitCommand(["diff", "--name-only", "-z"], rootOptions)
-        : Promise.resolve(""),
-      includeDiffs
-        ? runGitCommand(["diff", "--cached", "--stat"], rootOptions)
-        : Promise.resolve(""),
-      includeDiffs
-        ? runGitCommand(["diff", "--cached", "--name-only", "-z"], rootOptions)
-        : Promise.resolve(""),
-    ]);
-  const statusEntries = parsePorcelainV1ZStatus(statusText, root, workspaceRoot);
+  const [
+    head,
+    statusText,
+    diffStat,
+    diffNames,
+    stagedDiffStat,
+    stagedDiffNames,
+  ] = await Promise.all([
+    includeHead
+      ? runGitCommand(
+          ["rev-parse", "--verify", "--short", "HEAD"],
+          rootOptions,
+        ).catch(() => "")
+      : Promise.resolve(""),
+    runGitCommand(
+      ["status", "--porcelain=v1", "-z", "-uall", "--", ...contentPathspecs],
+      rootOptions,
+    ),
+    includeDiffs
+      ? runGitCommand(
+          ["diff", "--stat", "--", ...contentPathspecs],
+          rootOptions,
+        )
+      : Promise.resolve(""),
+    includeDiffs
+      ? runGitCommand(
+          ["diff", "--name-only", "-z", "--", ...contentPathspecs],
+          rootOptions,
+        )
+      : Promise.resolve(""),
+    includeDiffs
+      ? runGitCommand(
+          ["diff", "--cached", "--stat", "--", ...contentPathspecs],
+          rootOptions,
+        )
+      : Promise.resolve(""),
+    includeDiffs
+      ? runGitCommand(
+          ["diff", "--cached", "--name-only", "-z", "--", ...contentPathspecs],
+          rootOptions,
+        )
+      : Promise.resolve(""),
+  ]);
+  const statusEntries = parsePorcelainV1ZStatus(
+    statusText,
+    root,
+    workspaceRoot,
+  );
   const indexOids = await readIndexOids(
     statusEntries
       .filter((entry) => entry.indexStatus !== "?")

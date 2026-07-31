@@ -47,6 +47,8 @@ describe("resolveRalphAutonomyPolicy", () => {
       transitionExhaustion: "checkpoint",
       recoveryExhaustion: "defer",
       deferToBlockId: "archive",
+      maxStagnantTransitions: 80,
+      maxRepeatedCycle: 3,
     });
   });
 
@@ -68,7 +70,10 @@ describe("getRalphAutonomyBackoffSeconds", () => {
       undefined,
     );
 
-    expect([1, 2, 3, 4].map((attempt) =>
-      getRalphAutonomyBackoffSeconds(policy, attempt))).toEqual([2, 6, 10, 10]);
+    expect(
+      [1, 2, 3, 4].map((attempt) =>
+        getRalphAutonomyBackoffSeconds(policy, attempt),
+      ),
+    ).toEqual([2, 6, 10, 10]);
   });
 });

@@ -4,9 +4,9 @@ import {
 } from "./transition-ralph-work-item-state.helper.ts";
 
 describe("transitionRalphWorkItemState", () => {
-  it("normalizes legacy state names and allows the canonical lifecycle", () => {
-    expect(normalizeRalphWorkItemState("in_progress")).toBe("implementing");
-    expect(transitionRalphWorkItemState("pending", "implementing")).toEqual({
+  it("allows the canonical lifecycle", () => {
+    expect(normalizeRalphWorkItemState("implementing")).toBe("implementing");
+    expect(transitionRalphWorkItemState("planned", "implementing")).toEqual({
       from: "planned",
       to: "implementing",
       changed: true,
@@ -16,17 +16,21 @@ describe("transitionRalphWorkItemState", () => {
       to: "verifying",
       changed: true,
     });
-    expect(transitionRalphWorkItemState("verifying", "done")).toEqual({
+    expect(transitionRalphWorkItemState("verifying", "completed")).toEqual({
       from: "verifying",
       to: "completed",
       changed: true,
     });
   });
 
-  it("allows idempotent updates and rejects skipped or terminal transitions", () => {
+  it("allows idempotent updates and rejects aliases, skipped, or terminal transitions", () => {
     expect(transitionRalphWorkItemState("repairing", "repairing").changed).toBe(
       false,
     );
+    expect(normalizeRalphWorkItemState("in_progress")).toBeUndefined();
+    expect(() =>
+      transitionRalphWorkItemState("pending", "implementing"),
+    ).toThrow("Unsupported current work-item state");
     expect(() => transitionRalphWorkItemState("planned", "completed")).toThrow(
       "Invalid work-item state transition planned -> completed.",
     );

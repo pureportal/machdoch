@@ -645,6 +645,10 @@ export const summarizeRun = (
     runId: result.runId ?? null,
     flow: result.flow,
     status: result.status,
+    outcome: result.outcome ?? null,
+    progress: result.progress ?? null,
+    autonomy: result.autonomy ?? null,
+    durability: result.durability ?? null,
     summary: result.summary,
     missingVariables: result.missingVariables,
     unknownVariables: result.unknownVariables,
@@ -666,6 +670,30 @@ export const summarizeRun = (
         : null,
     })),
   };
+};
+
+export const getRalphRunExitCode = (result: RalphRunResult): number => {
+  switch (result.outcome?.status) {
+    case "succeeded":
+    case "no-op":
+      return 0;
+    case "cancelled":
+      return 130;
+    case "failed":
+      return 1;
+    case "deferred":
+    case "blocked":
+    case "stalled":
+    case "budget-exhausted":
+    case "verification-inconclusive":
+      return 2;
+    case undefined:
+      return result.status === "stopped"
+        ? 130
+        : result.status === "crashed"
+          ? 1
+          : 2;
+  }
 };
 
 interface RunRalphFlowForCliOptions {
@@ -710,7 +738,7 @@ const runRalphFlowForCli = async ({
   );
 
   try {
-    return await runRalphFlow(flow, config, customizations, {
+    const result = await runRalphFlow(flow, config, customizations, {
       variableValues,
       runId: logger.runId,
       logger,
@@ -727,6 +755,8 @@ const runRalphFlowForCli = async ({
           }
         : {}),
     });
+    process.exitCode = getRalphRunExitCode(result);
+    return result;
   } catch (error) {
     const reason = getErrorMessage(error);
     const result = createInterruptedRalphRunResult(
@@ -778,6 +808,7 @@ const getRalphEventBlockId = (event: RalphRunEvent): string | undefined => {
     case "input-cancelled":
     case "crash":
     case "end":
+    case "progress":
       return event.blockId;
     case "edge-route":
       return event.from;
@@ -816,6 +847,8 @@ const createRalphEventProgressMessage = (
       return `Input cancelled for Ralph block \`${title}\`.`;
     case "crash":
       return `Ralph flow crashed at \`${title}\`: ${event.reason}`;
+    case "progress":
+      return `${event.meaningful ? "Progress" : "No objective progress"} at \`${title}\`: ${event.summary}`;
     case "end":
       return event.summary;
   }
@@ -1664,6 +1697,12 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
       }
 
       writeStdoutLine(`ralph run: ${result.status}`);
+      if (result.outcome) {
+        writeStdoutLine(
+          `outcome: ${result.outcome.status} (${result.outcome.verified ? "verified" : "unverified"})`,
+        );
+        writeStdoutLine(result.outcome.reason);
+      }
       writeStdoutLine(result.summary);
       writeStdoutLine(`run log: ${runRecord.paths.simpleMarkdownPath}`);
       writeStdoutLine(`trace log: ${runRecord.paths.traceJsonlPath}`);
@@ -1787,6 +1826,12 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
       }
 
       writeStdoutLine(`ralph resume: ${result.status}`);
+      if (result.outcome) {
+        writeStdoutLine(
+          `outcome: ${result.outcome.status} (${result.outcome.verified ? "verified" : "unverified"})`,
+        );
+        writeStdoutLine(result.outcome.reason);
+      }
       writeStdoutLine(result.summary);
       writeStdoutLine(`run log: ${runRecord.paths.simpleMarkdownPath}`);
       writeStdoutLine(`trace log: ${runRecord.paths.traceJsonlPath}`);

@@ -1,8 +1,5 @@
 import { hasRalphPlaceholders } from "./ralph-placeholders.helper.js";
-import type {
-  RalphUtilityBlock,
-  RalphValidationIssue,
-} from "../ralph.js";
+import type { RalphUtilityBlock, RalphValidationIssue } from "../ralph.js";
 
 const MIN_RALPH_UI_VIEWPORT_SIZE = 320;
 const MAX_RALPH_UI_VIEWPORT_SIZE = 3840;
@@ -69,7 +66,9 @@ const validateUiAnalyzeUtilityBlock = (
 ): void => {
   const utility = block.utility;
   const adapter = utility.adapter ?? "auto";
-  const hasTargetUrl = Boolean(utility.targetUrl?.trim() || utility.url?.trim());
+  const hasTargetUrl = Boolean(
+    utility.targetUrl?.trim() || utility.url?.trim(),
+  );
   const hasScreenshotPath = Boolean(utility.screenshotPath?.trim());
   const isMcpAdapter = adapter === "playwright-mcp" || adapter === "tauri-mcp";
 
@@ -157,7 +156,11 @@ export const validateRalphUtilityBlock = (
   const blockLabel = block.id || block.title || "utility block";
   const utility = block.utility;
 
-  if (utility.order !== undefined && utility.order !== "oldest" && utility.order !== "newest") {
+  if (
+    utility.order !== undefined &&
+    utility.order !== "oldest" &&
+    utility.order !== "newest"
+  ) {
     addUtilityIssue(
       errors,
       "utility-order-invalid",
@@ -328,6 +331,7 @@ export const validateRalphUtilityBlock = (
     case "APPEND_JSONL":
     case "READ_JSONL":
     case "QUERY_JSONL":
+    case "ASSESS_JSON_TASKS":
     case "SELECT_JSON_TASK":
     case "MARK_JSON_TASK":
     case "FILE_EXISTS":
@@ -339,6 +343,15 @@ export const validateRalphUtilityBlock = (
           errors,
           "utility-path-required",
           `${blockLabel} requires path.`,
+          { blockId: block.id },
+        );
+      }
+
+      if (utility.type === "MARK_JSON_TASK" && !utility.status?.trim()) {
+        addUtilityIssue(
+          errors,
+          "utility-status-required",
+          `${blockLabel} requires status.`,
           { blockId: block.id },
         );
       }

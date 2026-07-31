@@ -45,24 +45,12 @@ import {
   normalizeSchedulerText,
   normalizeSchedulerTrimmedText,
 } from "./_helpers/normalize-scheduler-value.helper.js";
-import {
-  createScheduledJobTaskText,
-} from "./_helpers/create-scheduled-job-task-text.helper.js";
-import {
-  getScheduledJobContextPaths,
-} from "./_helpers/get-scheduled-job-context-paths.helper.js";
-import {
-  getSchedulerFrontmatterBoolean,
-} from "./_helpers/get-scheduler-frontmatter-boolean.helper.js";
-import {
-  getSchedulerFrontmatterNumber,
-} from "./_helpers/get-scheduler-frontmatter-number.helper.js";
-import {
-  getSchedulerFrontmatterString,
-} from "./_helpers/get-scheduler-frontmatter-string.helper.js";
-import {
-  getSchedulerFrontmatterStringList,
-} from "./_helpers/get-scheduler-frontmatter-string-list.helper.js";
+import { createScheduledJobTaskText } from "./_helpers/create-scheduled-job-task-text.helper.js";
+import { getScheduledJobContextPaths } from "./_helpers/get-scheduled-job-context-paths.helper.js";
+import { getSchedulerFrontmatterBoolean } from "./_helpers/get-scheduler-frontmatter-boolean.helper.js";
+import { getSchedulerFrontmatterNumber } from "./_helpers/get-scheduler-frontmatter-number.helper.js";
+import { getSchedulerFrontmatterString } from "./_helpers/get-scheduler-frontmatter-string.helper.js";
+import { getSchedulerFrontmatterStringList } from "./_helpers/get-scheduler-frontmatter-string-list.helper.js";
 import {
   createSchedulerEventRunDedupeSuffix,
   getSchedulerEventTriggerFiringMode,
@@ -78,12 +66,8 @@ import {
   schedulerEventTypeMatches,
 } from "./_helpers/scheduler-event-trigger-matching.helper.js";
 import { normalizeStringList } from "../helpers/normalize-string-list.helper.js";
-export {
-  createScheduledJobTaskText,
-} from "./_helpers/create-scheduled-job-task-text.helper.js";
-export {
-  getScheduledJobContextPaths,
-} from "./_helpers/get-scheduled-job-context-paths.helper.js";
+export { createScheduledJobTaskText } from "./_helpers/create-scheduled-job-task-text.helper.js";
+export { getScheduledJobContextPaths } from "./_helpers/get-scheduled-job-context-paths.helper.js";
 export {
   getNextCronRunAfter,
   parseCronExpression,
@@ -128,12 +112,7 @@ const SCHEDULER_STATE_LOCK_RETRY_MS = 25;
 const SCHEDULER_STATE_LOCK_STALE_MS = 5 * 60_000;
 const SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS = 2_000;
 const SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS = [
-  0,
-  10,
-  25,
-  50,
-  100,
-  250,
+  0, 10, 25, 50, 100, 250,
 ] as const;
 const SCHEDULER_TIMEOUT_REASON_PREFIX = "Scheduled run exceeded max duration";
 const SCHEDULER_HEARTBEAT_FAILURE_PREFIX =
@@ -170,7 +149,10 @@ export type ScheduledRunSource =
   | "manual-retry"
   | "event";
 
-export type ScheduledMissedRunPolicy = "skip" | "enqueue-latest" | "enqueue-all";
+export type ScheduledMissedRunPolicy =
+  | "skip"
+  | "enqueue-latest"
+  | "enqueue-all";
 
 export type ScheduledTriggerKind =
   | "time"
@@ -661,7 +643,9 @@ export interface SchedulerServiceOptions {
   maxIterations?: number;
   maxRunsPerTick?: number;
   signal?: AbortSignal;
-  onIteration?: (result: SchedulerServiceIterationResult) => void | Promise<void>;
+  onIteration?: (
+    result: SchedulerServiceIterationResult,
+  ) => void | Promise<void>;
 }
 
 export interface SchedulerServiceResult {
@@ -697,7 +681,9 @@ const createEmptySchedulerState = (timestamp: number): SmartSchedulerState => ({
   mutationReceipts: [],
 });
 
-export const getWorkspaceSchedulerStatePath = (workspaceRoot: string): string => {
+export const getWorkspaceSchedulerStatePath = (
+  workspaceRoot: string,
+): string => {
   return join(workspaceRoot, ".machdoch", SMART_SCHEDULER_FILE_NAME);
 };
 
@@ -770,7 +756,9 @@ const getSchedulerStateLockPath = (statePath: string): string => {
   return `${statePath}.lock`;
 };
 
-const removeStaleSchedulerStateLock = async (lockPath: string): Promise<void> => {
+const removeStaleSchedulerStateLock = async (
+  lockPath: string,
+): Promise<void> => {
   try {
     const metadata = await stat(lockPath);
 
@@ -940,10 +928,7 @@ const serializeMutationPayload = (value: unknown): string => {
     return Number.isFinite(value) ? JSON.stringify(value) : "null";
   }
 
-  if (
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "string" || typeof value === "boolean") {
     return JSON.stringify(value);
   }
 
@@ -983,55 +968,17 @@ const getEarliestTriggerRunAt = (
     .sort((left, right) => left - right)[0];
 };
 
-const createLegacyTimeTrigger = (
-  job: Pick<ScheduledJob, "id" | "schedule" | "createdAt" | "updatedAt" | "nextRunAt">,
-): ScheduledTimeTrigger | undefined => {
-  if (!job.schedule) {
-    return undefined;
+const isCurrentScheduledJobRecord = (value: unknown): value is ScheduledJob => {
+  if (
+    !isRecordValue(value) ||
+    !Array.isArray(value.triggers) ||
+    value.triggers.length === 0 ||
+    !isRecordValue(value.target)
+  ) {
+    return false;
   }
 
-  return {
-    id: "trigger_time_primary",
-    kind: "time",
-    enabled: true,
-    name: "Time Schedule",
-    schedule: job.schedule,
-    createdAt: job.createdAt,
-    updatedAt: job.updatedAt,
-    ...(job.nextRunAt !== undefined ? { nextRunAt: job.nextRunAt } : {}),
-  };
-};
-
-const migrateScheduledJobRecord = (job: ScheduledJob): ScheduledJob => {
-  const candidate = job as ScheduledJob & { triggers?: unknown };
-  const legacyTimeTrigger = createLegacyTimeTrigger(candidate);
-  const triggers =
-    Array.isArray(candidate.triggers) && candidate.triggers.length > 0
-      ? (candidate.triggers as ScheduledJobTrigger[])
-      : legacyTimeTrigger
-        ? [legacyTimeTrigger]
-        : [];
-  const primaryTimeTrigger = getPrimaryTimeTrigger(triggers);
-  const nextRunAt =
-    getEarliestTriggerRunAt(triggers) ?? candidate.nextRunAt ?? undefined;
-  const target = {
-    ...candidate.target,
-    type: candidate.target?.type === "ralph-flow" ? "ralph-flow" : "prompt",
-  } as ScheduledJobTarget;
-  const migrated: ScheduledJob = {
-    ...candidate,
-    target,
-    triggers,
-    ...(primaryTimeTrigger ? { schedule: primaryTimeTrigger.schedule } : {}),
-    ...(nextRunAt !== undefined ? { nextRunAt } : {}),
-  };
-
-  if (!primaryTimeTrigger) {
-    delete migrated.schedule;
-    delete migrated.nextRunAt;
-  }
-
-  return migrated;
+  return value.target.type === "prompt" || value.target.type === "ralph-flow";
 };
 
 export const readSmartSchedulerState = async (
@@ -1048,7 +995,10 @@ export const readSmartSchedulerState = async (
     parsed.schema !== SMART_SCHEDULER_SCHEMA ||
     parsed.schemaVersion !== SMART_SCHEDULER_SCHEMA_VERSION ||
     !Array.isArray(parsed.jobs) ||
-    !Array.isArray(parsed.runs)
+    !Array.isArray(parsed.runs) ||
+    !Array.isArray(parsed.events) ||
+    !Array.isArray(parsed.mutationReceipts) ||
+    !parsed.jobs.every(isCurrentScheduledJobRecord)
   ) {
     throw new Error(`Unsupported smart scheduler state file: ${statePath}`);
   }
@@ -1060,9 +1010,9 @@ export const readSmartSchedulerState = async (
       typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now(),
     updatedAt:
       typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
-    jobs: parsed.jobs.map((job) => migrateScheduledJobRecord(job)),
+    jobs: parsed.jobs,
     runs: parsed.runs,
-    events: Array.isArray(parsed.events) ? parsed.events : [],
+    events: parsed.events,
     mutationReceipts: normalizeMutationReceipts(parsed.mutationReceipts),
   };
 };
@@ -1165,7 +1115,9 @@ const normalizeTimeZone = (value: string | undefined): string => {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
     return timezone;
   } catch {
-    throw new Error(`Expected scheduler timezone to be a valid IANA timezone: ${timezone}`);
+    throw new Error(
+      `Expected scheduler timezone to be a valid IANA timezone: ${timezone}`,
+    );
   }
 };
 
@@ -1190,10 +1142,14 @@ const normalizeSchedule = (
       };
     }
     case "interval": {
-      const intervalMs = normalizeSchedulerOptionalPositiveInteger(input.intervalMs);
+      const intervalMs = normalizeSchedulerOptionalPositiveInteger(
+        input.intervalMs,
+      );
 
       if (intervalMs === undefined) {
-        throw new Error("Expected interval schedule to include a positive intervalMs.");
+        throw new Error(
+          "Expected interval schedule to include a positive intervalMs.",
+        );
       }
 
       return {
@@ -1279,8 +1235,12 @@ const normalizeTriggerCommon = (
   existingTrigger?: ScheduledJobTrigger,
 ): Omit<ScheduledTriggerBase, "kind"> => {
   const name = normalizeSchedulerText(input.name);
-  const debounceMs = normalizeSchedulerOptionalPositiveInteger(input.debounceMs);
-  const cooldownMs = normalizeSchedulerOptionalPositiveInteger(input.cooldownMs);
+  const debounceMs = normalizeSchedulerOptionalPositiveInteger(
+    input.debounceMs,
+  );
+  const cooldownMs = normalizeSchedulerOptionalPositiveInteger(
+    input.cooldownMs,
+  );
   const repeatIntervalMs = normalizeSchedulerOptionalPositiveInteger(
     input.repeatIntervalMs,
   );
@@ -1298,18 +1258,33 @@ const normalizeTriggerCommon = (
   const maxEventsPerWindow = normalizeRateLimitPolicy(input.maxEventsPerWindow);
 
   return {
-    id: normalizeSchedulerText(input.id) ?? existingTrigger?.id ?? createTriggerId(),
+    id:
+      normalizeSchedulerText(input.id) ??
+      existingTrigger?.id ??
+      createTriggerId(),
     enabled: input.enabled ?? existingTrigger?.enabled ?? true,
     createdAt: existingTrigger?.createdAt ?? timestamp,
     updatedAt: timestamp,
-    ...(name ? { name } : existingTrigger?.name ? { name: existingTrigger.name } : {}),
-    ...(filters ? { filters } : existingTrigger?.filters ? { filters: existingTrigger.filters } : {}),
+    ...(name
+      ? { name }
+      : existingTrigger?.name
+        ? { name: existingTrigger.name }
+        : {}),
+    ...(filters
+      ? { filters }
+      : existingTrigger?.filters
+        ? { filters: existingTrigger.filters }
+        : {}),
     ...(recoveryFilters
       ? { recoveryFilters }
       : existingTrigger?.recoveryFilters
         ? { recoveryFilters: existingTrigger.recoveryFilters }
         : {}),
-    ...(guards ? { guards } : existingTrigger?.guards ? { guards: existingTrigger.guards } : {}),
+    ...(guards
+      ? { guards }
+      : existingTrigger?.guards
+        ? { guards: existingTrigger.guards }
+        : {}),
     ...(firingMode ? { firingMode } : {}),
     ...(debounceMs !== undefined
       ? { debounceMs }
@@ -1427,9 +1402,13 @@ const normalizeJobTriggers = (
               triggerInput.id !== undefined && trigger.id === triggerInput.id,
           );
 
-          return normalizeTriggerInput(triggerInput, timestamp, existingTrigger);
+          return normalizeTriggerInput(
+            triggerInput,
+            timestamp,
+            existingTrigger,
+          );
         })
-      : existingJob?.triggers ?? [];
+      : (existingJob?.triggers ?? []);
 
   if (input.schedule) {
     triggers = replacePrimaryTimeTrigger(triggers, input.schedule, timestamp);
@@ -1466,7 +1445,9 @@ const normalizeContextPack = (
     ...(instructions ? { instructions } : {}),
     ...(prompt ? { prompt } : {}),
     ...(contextPaths.length > 0 ? { contextPaths } : {}),
-    ...(pack.variableValues ? { variableValues: { ...pack.variableValues } } : {}),
+    ...(pack.variableValues
+      ? { variableValues: { ...pack.variableValues } }
+      : {}),
   };
 };
 
@@ -1535,10 +1516,14 @@ const normalizeRalphFlowTarget = (
               : unattended
                 ? [workspaceRoot]
                 : [],
-          allowCommands: unattended || configuredPermissions?.allowCommands === true,
-          allowWrites: unattended || configuredPermissions?.allowWrites === true,
-          allowNetwork: unattended || configuredPermissions?.allowNetwork === true,
-          allowMcpTools: unattended || configuredPermissions?.allowMcpTools === true,
+          allowCommands:
+            unattended || configuredPermissions?.allowCommands === true,
+          allowWrites:
+            unattended || configuredPermissions?.allowWrites === true,
+          allowNetwork:
+            unattended || configuredPermissions?.allowNetwork === true,
+          allowMcpTools:
+            unattended || configuredPermissions?.allowMcpTools === true,
         }
       : undefined;
 
@@ -1546,7 +1531,9 @@ const normalizeRalphFlowTarget = (
     maxTransitions !== undefined &&
     (!Number.isInteger(maxTransitions) || maxTransitions < 1)
   ) {
-    throw new Error("Expected scheduled Ralph maxTransitions to be an integer >= 1.");
+    throw new Error(
+      "Expected scheduled Ralph maxTransitions to be an integer >= 1.",
+    );
   }
 
   return {
@@ -1555,7 +1542,12 @@ const normalizeRalphFlowTarget = (
     params: { ...(target.ralphFlow?.params ?? {}) },
     ...(maxTransitions !== undefined ? { maxTransitions } : {}),
     ...(target.ralphFlow?.runLogScope
-      ? { runLogScope: normalizeRalphFlowScope(target.ralphFlow.runLogScope, "workspace") }
+      ? {
+          runLogScope: normalizeRalphFlowScope(
+            target.ralphFlow.runLogScope,
+            "workspace",
+          ),
+        }
       : {}),
     ...(executionProfile ? { executionProfile } : {}),
     ...(resumePolicy ? { resumePolicy } : {}),
@@ -1589,22 +1581,28 @@ const readSchedulerWorkspaceRegistryUnlocked = async (
     };
   }
 
-  const value = JSON.parse(await readFile(registryPath, "utf8")) as Partial<SchedulerWorkspaceRegistry>;
+  const value = JSON.parse(
+    await readFile(registryPath, "utf8"),
+  ) as Partial<SchedulerWorkspaceRegistry>;
 
   if (
     value.schema !== "machdoch.schedulerWorkspaces" ||
     value.schemaVersion !== 1 ||
     !Array.isArray(value.workspaceRoots)
   ) {
-    throw new Error(`Unsupported scheduler workspace registry: ${registryPath}`);
+    throw new Error(
+      `Unsupported scheduler workspace registry: ${registryPath}`,
+    );
   }
 
   return {
     schema: "machdoch.schedulerWorkspaces",
     schemaVersion: 1,
-    updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : Date.now(),
+    updatedAt:
+      typeof value.updatedAt === "number" ? value.updatedAt : Date.now(),
     workspaceRoots: value.workspaceRoots.filter(
-      (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+      (entry): entry is string =>
+        typeof entry === "string" && entry.trim().length > 0,
     ),
   };
 };
@@ -1638,7 +1636,10 @@ export const registerSchedulerWorkspace = async (
     const registry = await readSchedulerWorkspaceRegistryUnlocked(registryPath);
     const queueKey = createCanonicalWorkspaceQueueKey(canonicalRoot);
     const rootsByKey = new Map(
-      registry.workspaceRoots.map((root) => [createCanonicalWorkspaceQueueKey(root), root]),
+      registry.workspaceRoots.map((root) => [
+        createCanonicalWorkspaceQueueKey(root),
+        root,
+      ]),
     );
     rootsByKey.set(queueKey, canonicalRoot);
     registry.workspaceRoots = [...rootsByKey.values()].sort((left, right) =>
@@ -1651,7 +1652,9 @@ export const registerSchedulerWorkspace = async (
   return canonicalRoot;
 };
 
-export const listRegisteredSchedulerWorkspaces = async (): Promise<string[]> => {
+export const listRegisteredSchedulerWorkspaces = async (): Promise<
+  string[]
+> => {
   const registryPath = getUserSchedulerWorkspaceRegistryPath();
 
   return withSchedulerStateLock(registryPath, async () => {
@@ -1707,7 +1710,9 @@ export const createScheduledRalphExecutionSnapshot = (
   return snapshot;
 };
 
-const canonicalizeWorkspaceRoot = async (workspaceRoot: string): Promise<string> => {
+const canonicalizeWorkspaceRoot = async (
+  workspaceRoot: string,
+): Promise<string> => {
   const absoluteRoot = resolve(workspaceRoot);
 
   try {
@@ -1723,7 +1728,8 @@ const canonicalizeWorkspaceRoot = async (workspaceRoot: string): Promise<string>
 
 const createCanonicalWorkspaceQueueKey = (workspaceRoot: string): string => {
   const normalized = resolve(workspaceRoot).replaceAll("\\", "/");
-  const canonical = process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  const canonical =
+    process.platform === "win32" ? normalized.toLowerCase() : normalized;
 
   return `ralph-workspace:${canonical}`;
 };
@@ -1754,11 +1760,10 @@ export const inspectScheduledRalphTarget = async (
   let flow: RalphFlow;
 
   try {
-    flow = options.flow ?? target.flowSnapshot ?? await readRalphFlow(
-      workspaceRoot,
-      target.id,
-      { scope: target.scope },
-    );
+    flow =
+      options.flow ??
+      target.flowSnapshot ??
+      (await readRalphFlow(workspaceRoot, target.id, { scope: target.scope }));
   } catch (error) {
     return {
       ready: false,
@@ -1773,7 +1778,9 @@ export const inspectScheduledRalphTarget = async (
 
   const params = options.params ?? target.params;
   const declaredVariables = discoverRalphFlowVariables(flow);
-  const declaredVariableNames = new Set(declaredVariables.map((variable) => variable.name));
+  const declaredVariableNames = new Set(
+    declaredVariables.map((variable) => variable.name),
+  );
   const resolvedVariables = Object.fromEntries(
     declaredVariables.flatMap((variable) => {
       if (Object.hasOwn(params, variable.name)) {
@@ -1790,10 +1797,10 @@ export const inspectScheduledRalphTarget = async (
       const hasParam = Object.hasOwn(params, variable.name);
       const value = hasParam ? params[variable.name] : variable.default;
       const source = hasParam
-        ? "parameter" as const
+        ? ("parameter" as const)
         : variable.default !== undefined
-          ? "default" as const
-          : "missing" as const;
+          ? ("default" as const)
+          : ("missing" as const);
 
       if (variable.required && !hasScheduledValue(value)) {
         errors.push(`Missing required Ralph parameter \`${variable.name}\`.`);
@@ -1803,7 +1810,9 @@ export const inspectScheduledRalphTarget = async (
         name: variable.name,
         type: variable.type,
         required: variable.required,
-        ...(variable.default !== undefined ? { default: variable.default } : {}),
+        ...(variable.default !== undefined
+          ? { default: variable.default }
+          : {}),
         ...(value !== undefined ? { value } : {}),
         source,
       };
@@ -1816,8 +1825,14 @@ export const inspectScheduledRalphTarget = async (
     }
   }
 
-  const validation = validateRalphFlow(flow, { variableValues: resolvedVariables });
-  errors.push(...validation.errors.filter((message) => !message.startsWith("missing required Ralph variable")));
+  const validation = validateRalphFlow(flow, {
+    variableValues: resolvedVariables,
+  });
+  errors.push(
+    ...validation.errors.filter(
+      (message) => !message.startsWith("missing required Ralph variable"),
+    ),
+  );
   warnings.push(...validation.warnings);
 
   for (const block of flow.blocks) {
@@ -1838,16 +1853,22 @@ export const inspectScheduledRalphTarget = async (
           }
 
           const variableName = field.variableName?.trim() || field.id;
-          return hasScheduledValue(resolvedVariables[variableName]) ||
-            hasScheduledValue(field.defaultValue);
+          return (
+            hasScheduledValue(resolvedVariables[variableName]) ||
+            hasScheduledValue(field.defaultValue)
+          );
         });
 
       if (canAutoResolve) {
         autoResolvedHumanBlockIds.push(block.id);
-        warnings.push(`ASK_USER block \`${block.id}\` will use scheduled/default values.`);
+        warnings.push(
+          `ASK_USER block \`${block.id}\` will use scheduled/default values.`,
+        );
       } else {
         blockingHumanBlockIds.push(block.id);
-        errors.push(`Scheduled Ralph flow cannot pause at ASK_USER block \`${block.id}\`.`);
+        errors.push(
+          `Scheduled Ralph flow cannot pause at ASK_USER block \`${block.id}\`.`,
+        );
       }
       continue;
     }
@@ -1865,7 +1886,9 @@ export const inspectScheduledRalphTarget = async (
 
       if (interviewEnabled === "false" || interviewEnabled === "0") {
         autoResolvedHumanBlockIds.push(block.id);
-        warnings.push(`INTERVIEW block \`${block.id}\` is disabled for unattended execution.`);
+        warnings.push(
+          `INTERVIEW block \`${block.id}\` is disabled for unattended execution.`,
+        );
       } else {
         blockingHumanBlockIds.push(block.id);
         errors.push(
@@ -1893,11 +1916,17 @@ const pinScheduledRalphTarget = async (
   target: ScheduledRalphFlowTarget,
   timestamp: number,
 ): Promise<ScheduledRalphFlowTarget> => {
-  const flow = await readRalphFlow(workspaceRoot, target.id, { scope: target.scope });
-  const readiness = await inspectScheduledRalphTarget(workspaceRoot, target, { flow });
+  const flow = await readRalphFlow(workspaceRoot, target.id, {
+    scope: target.scope,
+  });
+  const readiness = await inspectScheduledRalphTarget(workspaceRoot, target, {
+    flow,
+  });
 
   if (!readiness.ready) {
-    throw new Error(`Scheduled Ralph target is not unattended-ready: ${readiness.errors.join(" ")}`);
+    throw new Error(
+      `Scheduled Ralph target is not unattended-ready: ${readiness.errors.join(" ")}`,
+    );
   }
 
   return {
@@ -1984,13 +2013,19 @@ const normalizeTarget = async (
   timestamp: number,
   previousTarget?: ScheduledJobTarget,
 ): Promise<ScheduledJobTarget> => {
-  const configuredWorkspaceRoot = normalizeSchedulerTrimmedText(target.workspaceRoot);
+  const configuredWorkspaceRoot = normalizeSchedulerTrimmedText(
+    target.workspaceRoot,
+  );
 
   if (!configuredWorkspaceRoot) {
-    throw new Error("Expected scheduled job target to include a workspace root.");
+    throw new Error(
+      "Expected scheduled job target to include a workspace root.",
+    );
   }
 
-  const workspaceRoot = await canonicalizeWorkspaceRoot(configuredWorkspaceRoot);
+  const workspaceRoot = await canonicalizeWorkspaceRoot(
+    configuredWorkspaceRoot,
+  );
 
   const normalizedRalphFlow = normalizeRalphFlowTarget(target, workspaceRoot);
   const existingRalphFlow = previousTarget?.ralphFlow;
@@ -2010,7 +2045,9 @@ const normalizeTarget = async (
         timestamp,
       )
     : undefined;
-  const targetType: ScheduledJobTargetType = ralphFlow ? "ralph-flow" : "prompt";
+  const targetType: ScheduledJobTargetType = ralphFlow
+    ? "ralph-flow"
+    : "prompt";
   const prompt = normalizeSchedulerMultilineText(target.prompt);
   const contextPacks = (target.contextPacks ?? []).flatMap((pack) => {
     const normalized = normalizeContextPack(pack);
@@ -2125,7 +2162,9 @@ const isConfiguredProviderValue = (
 const isMissedRunPolicyValue = (
   value: string | undefined,
 ): value is ScheduledMissedRunPolicy => {
-  return value === "skip" || value === "enqueue-latest" || value === "enqueue-all";
+  return (
+    value === "skip" || value === "enqueue-latest" || value === "enqueue-all"
+  );
 };
 
 const toWorkspaceRelativePath = (
@@ -2183,7 +2222,10 @@ const parsePromptSchedule = (
     (typeof scheduleValue === "string" && scheduleValue.trim().includes(" ")
       ? scheduleValue.trim()
       : undefined);
-  const timezone = getSchedulerFrontmatterString(attributes, "schedule-timezone");
+  const timezone = getSchedulerFrontmatterString(
+    attributes,
+    "schedule-timezone",
+  );
 
   if (cron) {
     return {
@@ -2193,8 +2235,14 @@ const parsePromptSchedule = (
     };
   }
 
-  const intervalMs = getSchedulerFrontmatterNumber(attributes, "schedule-interval-ms");
-  const anchorAt = getSchedulerFrontmatterNumber(attributes, "schedule-anchor-at");
+  const intervalMs = getSchedulerFrontmatterNumber(
+    attributes,
+    "schedule-interval-ms",
+  );
+  const anchorAt = getSchedulerFrontmatterNumber(
+    attributes,
+    "schedule-anchor-at",
+  );
 
   if (intervalMs !== undefined) {
     return {
@@ -2204,7 +2252,10 @@ const parsePromptSchedule = (
     };
   }
 
-  const delayMs = getSchedulerFrontmatterNumber(attributes, "schedule-delay-ms");
+  const delayMs = getSchedulerFrontmatterNumber(
+    attributes,
+    "schedule-delay-ms",
+  );
   const runAt = getSchedulerFrontmatterNumber(attributes, "schedule-run-at");
 
   if (delayMs !== undefined || runAt !== undefined) {
@@ -2258,7 +2309,10 @@ const parsePromptScheduleInput = async (
     };
   }
 
-  const modeText = getSchedulerFrontmatterString(document.attributes, "schedule-mode");
+  const modeText = getSchedulerFrontmatterString(
+    document.attributes,
+    "schedule-mode",
+  );
   const providerText = getSchedulerFrontmatterString(
     document.attributes,
     "schedule-provider",
@@ -2268,12 +2322,16 @@ const parsePromptScheduleInput = async (
     "schedule-missed-run-policy",
   );
   const scheduleArguments =
-    getSchedulerFrontmatterString(document.attributes, "schedule-arguments") ?? "";
+    getSchedulerFrontmatterString(document.attributes, "schedule-arguments") ??
+    "";
   const promptInvocation = `/${promptName}${scheduleArguments ? ` ${scheduleArguments}` : ""}`;
   const missedRunPolicy = isMissedRunPolicyValue(missedRunPolicyText)
     ? missedRunPolicyText
     : undefined;
-  const model = getSchedulerFrontmatterString(document.attributes, "schedule-model");
+  const model = getSchedulerFrontmatterString(
+    document.attributes,
+    "schedule-model",
+  );
   const missedRunGraceMs = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-missed-run-grace-ms",
@@ -2306,7 +2364,10 @@ const parsePromptScheduleInput = async (
     document.attributes,
     "schedule-concurrency-limit",
   );
-  const ttlMs = getSchedulerFrontmatterNumber(document.attributes, "schedule-ttl-ms");
+  const ttlMs = getSchedulerFrontmatterNumber(
+    document.attributes,
+    "schedule-ttl-ms",
+  );
   const maxDurationMs = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-max-duration-ms",
@@ -2349,8 +2410,10 @@ const parsePromptScheduleInput = async (
       ...(model ? { model } : {}),
     },
     dedupeKey:
-      getSchedulerFrontmatterString(document.attributes, "schedule-dedupe-key") ??
-      `prompt:${relativePath}`,
+      getSchedulerFrontmatterString(
+        document.attributes,
+        "schedule-dedupe-key",
+      ) ?? `prompt:${relativePath}`,
     ...(missedRunPolicy ? { missedRunPolicy } : {}),
     ...(missedRunGraceMs !== undefined ? { missedRunGraceMs } : {}),
     retry: {
@@ -2382,12 +2445,16 @@ const parsePromptScheduleInput = async (
 export const discoverScheduledPromptDefinitions = async (
   workspaceRoot: string,
 ): Promise<ScheduledPromptDefinition[]> => {
-  const promptPaths = (await walkFiles(join(workspaceRoot, ".machdoch", "prompts")))
+  const promptPaths = (
+    await walkFiles(join(workspaceRoot, ".machdoch", "prompts"))
+  )
     .filter((filePath) => filePath.endsWith(".prompt.md"))
     .sort();
 
   return Promise.all(
-    promptPaths.map((filePath) => parsePromptScheduleInput(workspaceRoot, filePath)),
+    promptPaths.map((filePath) =>
+      parsePromptScheduleInput(workspaceRoot, filePath),
+    ),
   );
 };
 
@@ -2480,7 +2547,10 @@ const createRun = (
     attemptHistory: [],
     targetSnapshot: cloneScheduledValue(options.targetSnapshot ?? job.target),
     ...((options.maxDurationMsSnapshot ?? job.maxDurationMs) !== undefined
-      ? { maxDurationMsSnapshot: options.maxDurationMsSnapshot ?? job.maxDurationMs }
+      ? {
+          maxDurationMsSnapshot:
+            options.maxDurationMsSnapshot ?? job.maxDurationMs,
+        }
       : {}),
     ...(dedupeKey ? { dedupeKey } : {}),
     ...(options.parentRunId ? { parentRunId: options.parentRunId } : {}),
@@ -2574,13 +2644,17 @@ const getJobEventChainSkipReason = (
   return undefined;
 };
 
-const createRunHandle = (run: Pick<ScheduledJobRun, "jobId" | "id">): ScheduledRunHandle => ({
+const createRunHandle = (
+  run: Pick<ScheduledJobRun, "jobId" | "id">,
+): ScheduledRunHandle => ({
   jobId: run.jobId,
   runId: run.id,
 });
 
 const resolveRunId = (handleOrRunId: ScheduledRunHandle | string): string => {
-  return typeof handleOrRunId === "string" ? handleOrRunId : handleOrRunId.runId;
+  return typeof handleOrRunId === "string"
+    ? handleOrRunId
+    : handleOrRunId.runId;
 };
 
 const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
@@ -2614,7 +2688,10 @@ const attachMaxDurationTimer = (
 };
 
 const isTimeoutReason = (value: unknown): boolean => {
-  return typeof value === "string" && value.startsWith(SCHEDULER_TIMEOUT_REASON_PREFIX);
+  return (
+    typeof value === "string" &&
+    value.startsWith(SCHEDULER_TIMEOUT_REASON_PREFIX)
+  );
 };
 
 const getNextRunAfter = (
@@ -2630,7 +2707,8 @@ const getNextRunAfter = (
       );
     case "interval": {
       const elapsed = afterTimestamp - schedule.anchorAt;
-      const intervalsElapsed = elapsed < 0 ? 0 : Math.floor(elapsed / schedule.intervalMs) + 1;
+      const intervalsElapsed =
+        elapsed < 0 ? 0 : Math.floor(elapsed / schedule.intervalMs) + 1;
 
       return schedule.anchorAt + intervalsElapsed * schedule.intervalMs;
     }
@@ -2792,6 +2870,10 @@ const createRalphCompletionPayload = (
       flowName: getStringEntry(ralph, "flowName"),
       runId: getStringEntry(ralph, "runId"),
       status: getStringEntry(ralph, "status"),
+      outcome: getStringEntry(ralph, "outcome"),
+      verified: ralph.verified === true,
+      retryable: ralph.retryable === true,
+      outcomeReason: getStringEntry(ralph, "outcomeReason"),
       runLogScope: getStringEntry(ralph, "runLogScope"),
     },
   };
@@ -2829,6 +2911,7 @@ const createRunCompletionEventInputs = (
   ];
   const ralph = getRalphCompletionMetadata(run.result);
   const ralphStatus = ralph ? getStringEntry(ralph, "status") : undefined;
+  const ralphOutcome = ralph ? getStringEntry(ralph, "outcome") : undefined;
 
   if (ralph && ralphStatus) {
     const payload = createRalphCompletionPayload(job, run, ralph);
@@ -2847,6 +2930,14 @@ const createRunCompletionEventInputs = (
         dedupeKey: `run:${run.id}:job-event.ralph-flow.${ralphStatus}`,
       },
     );
+    if (ralphOutcome) {
+      events.push({
+        ...baseEvent,
+        type: `job-event.ralph-flow.outcome.${ralphOutcome}`,
+        payload,
+        dedupeKey: `run:${run.id}:job-event.ralph-flow.outcome.${ralphOutcome}`,
+      });
+    }
   }
 
   return events;
@@ -2859,7 +2950,9 @@ const getRetryDelayMs = (
 ): number => {
   const baseDelay = Math.min(
     retry.maxTimeoutMs,
-    Math.round(retry.minTimeoutMs * retry.factor ** Math.max(0, completedAttempt - 1)),
+    Math.round(
+      retry.minTimeoutMs * retry.factor ** Math.max(0, completedAttempt - 1),
+    ),
   );
 
   if (!retry.randomize) {
@@ -2950,7 +3043,9 @@ export class DurableSmartScheduler {
     this.rng = options.rng ?? Math.random;
     this.runningHeartbeatMs = Math.max(
       1,
-      Math.trunc(options.runningHeartbeatMs ?? DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS),
+      Math.trunc(
+        options.runningHeartbeatMs ?? DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS,
+      ),
     );
     this.heartbeatRun = options.heartbeatRun;
   }
@@ -2964,9 +3059,9 @@ export class DurableSmartScheduler {
       return;
     }
 
-    this.workspaceRegistration ??= registerSchedulerWorkspace(this.workspaceRoot).then(
-      () => undefined,
-    );
+    this.workspaceRegistration ??= registerSchedulerWorkspace(
+      this.workspaceRoot,
+    ).then(() => undefined);
 
     try {
       await this.workspaceRegistration;
@@ -2985,9 +3080,10 @@ export class DurableSmartScheduler {
       return withSchedulerStateLock(this.statePath, async () => {
         const state = await readSmartSchedulerState(this.statePath);
         const requestKey = normalizeSchedulerText(request?.key);
-        const payloadHash = requestKey && request
-          ? createMutationPayloadHash(request.payload)
-          : undefined;
+        const payloadHash =
+          requestKey && request
+            ? createMutationPayloadHash(request.payload)
+            : undefined;
         const existingReceipt = requestKey
           ? [...state.mutationReceipts]
               .reverse()
@@ -3050,82 +3146,96 @@ export class DurableSmartScheduler {
     input: CreateScheduledJobInput,
     requestId?: string,
   ): Promise<ScheduledJob> {
-    return this.mutateState(async (state) => {
-      const now = this.now();
-      const dedupeKey = normalizeSchedulerText(input.dedupeKey);
-      const existingJob = dedupeKey
-        ? state.jobs.find(
-            (job) => job.dedupeKey === dedupeKey && job.status !== "deleted",
-          )
-        : undefined;
-      const id = existingJob?.id ?? createJobId();
-      const triggers = normalizeJobTriggers(input, now, existingJob);
-      const schedule = getJobScheduleSummary(triggers);
-      const target = await normalizeTarget(input.target, now, existingJob?.target);
-      const retry = normalizeRetryPolicy(input.retry, getDefaultRetryPolicy(target));
-      const queue = normalizeQueuePolicy(id, input.queue, target);
-      const nextRunAt = getEarliestTriggerRunAt(triggers);
-      const name =
-        normalizeSchedulerText(input.name) ??
-        existingJob?.name ??
-        normalizeSchedulerTrimmedText(target.prompt.split(/\r?\n/u)[0]?.slice(0, 80)) ??
-        "Scheduled job";
-      const ttlMs = normalizeSchedulerOptionalPositiveInteger(input.ttlMs);
-      const maxDurationMs = normalizeSchedulerOptionalPositiveInteger(input.maxDurationMs);
-      const job: ScheduledJob = {
-        id,
-        name,
-        status: "active",
-        ...(schedule ? { schedule } : {}),
-        triggers,
-        target,
-        missedRunPolicy: normalizeMissedRunPolicy(input.missedRunPolicy),
-        missedRunGraceMs: normalizeSchedulerPositiveInteger(
-          input.missedRunGraceMs,
-          DEFAULT_MISSED_RUN_GRACE_MS,
-        ),
-        retry,
-        queue,
-        historyLimit: normalizeSchedulerPositiveInteger(
-          input.historyLimit,
-          DEFAULT_HISTORY_LIMIT,
-        ),
-        maxCatchUpRuns: normalizeSchedulerPositiveInteger(
-          input.maxCatchUpRuns,
-          DEFAULT_MAX_CATCH_UP_RUNS,
-        ),
-        createdAt: existingJob?.createdAt ?? now,
-        updatedAt: now,
-        ...(nextRunAt !== undefined ? { nextRunAt } : {}),
-        ...(dedupeKey ? { dedupeKey } : {}),
-        ...(ttlMs !== undefined ? { ttlMs } : {}),
-        ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
-        ...(existingJob?.lastEnqueuedAt !== undefined
-          ? { lastEnqueuedAt: existingJob.lastEnqueuedAt }
-          : {}),
-        ...(existingJob?.lastStartedAt !== undefined
-          ? { lastStartedAt: existingJob.lastStartedAt }
-          : {}),
-        ...(existingJob?.lastFinishedAt !== undefined
-          ? { lastFinishedAt: existingJob.lastFinishedAt }
-          : {}),
-      };
-
-      if (existingJob) {
-        state.jobs = state.jobs.map((candidate) =>
-          candidate.id === existingJob.id ? job : candidate,
+    return this.mutateState(
+      async (state) => {
+        const now = this.now();
+        const dedupeKey = normalizeSchedulerText(input.dedupeKey);
+        const existingJob = dedupeKey
+          ? state.jobs.find(
+              (job) => job.dedupeKey === dedupeKey && job.status !== "deleted",
+            )
+          : undefined;
+        const id = existingJob?.id ?? createJobId();
+        const triggers = normalizeJobTriggers(input, now, existingJob);
+        const schedule = getJobScheduleSummary(triggers);
+        const target = await normalizeTarget(
+          input.target,
+          now,
+          existingJob?.target,
         );
-      } else {
-        state.jobs.push(job);
-      }
+        const retry = normalizeRetryPolicy(
+          input.retry,
+          getDefaultRetryPolicy(target),
+        );
+        const queue = normalizeQueuePolicy(id, input.queue, target);
+        const nextRunAt = getEarliestTriggerRunAt(triggers);
+        const name =
+          normalizeSchedulerText(input.name) ??
+          existingJob?.name ??
+          normalizeSchedulerTrimmedText(
+            target.prompt.split(/\r?\n/u)[0]?.slice(0, 80),
+          ) ??
+          "Scheduled job";
+        const ttlMs = normalizeSchedulerOptionalPositiveInteger(input.ttlMs);
+        const maxDurationMs = normalizeSchedulerOptionalPositiveInteger(
+          input.maxDurationMs,
+        );
+        const job: ScheduledJob = {
+          id,
+          name,
+          status: "active",
+          ...(schedule ? { schedule } : {}),
+          triggers,
+          target,
+          missedRunPolicy: normalizeMissedRunPolicy(input.missedRunPolicy),
+          missedRunGraceMs: normalizeSchedulerPositiveInteger(
+            input.missedRunGraceMs,
+            DEFAULT_MISSED_RUN_GRACE_MS,
+          ),
+          retry,
+          queue,
+          historyLimit: normalizeSchedulerPositiveInteger(
+            input.historyLimit,
+            DEFAULT_HISTORY_LIMIT,
+          ),
+          maxCatchUpRuns: normalizeSchedulerPositiveInteger(
+            input.maxCatchUpRuns,
+            DEFAULT_MAX_CATCH_UP_RUNS,
+          ),
+          createdAt: existingJob?.createdAt ?? now,
+          updatedAt: now,
+          ...(nextRunAt !== undefined ? { nextRunAt } : {}),
+          ...(dedupeKey ? { dedupeKey } : {}),
+          ...(ttlMs !== undefined ? { ttlMs } : {}),
+          ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
+          ...(existingJob?.lastEnqueuedAt !== undefined
+            ? { lastEnqueuedAt: existingJob.lastEnqueuedAt }
+            : {}),
+          ...(existingJob?.lastStartedAt !== undefined
+            ? { lastStartedAt: existingJob.lastStartedAt }
+            : {}),
+          ...(existingJob?.lastFinishedAt !== undefined
+            ? { lastFinishedAt: existingJob.lastFinishedAt }
+            : {}),
+        };
 
-      return job;
-    }, {
-      key: requestId,
-      operation: "upsert-job",
-      target: normalizeSchedulerText(input.dedupeKey) ?? "new-job",
-      payload: input,
-    });
+        if (existingJob) {
+          state.jobs = state.jobs.map((candidate) =>
+            candidate.id === existingJob.id ? job : candidate,
+          );
+        } else {
+          state.jobs.push(job);
+        }
+
+        return job;
+      },
+      {
+        key: requestId,
+        operation: "upsert-job",
+        target: normalizeSchedulerText(input.dedupeKey) ?? "new-job",
+        payload: input,
+      },
+    );
   }
 
   async updateJob(
@@ -3133,162 +3243,180 @@ export class DurableSmartScheduler {
     input: UpdateScheduledJobInput,
     requestId?: string,
   ): Promise<ScheduledJob> {
-    return this.mutateState(async (state) => {
-      const now = this.now();
-      const existingJob = state.jobs.find(
-        (candidate) => candidate.id === jobId,
-      );
+    return this.mutateState(
+      async (state) => {
+        const now = this.now();
+        const existingJob = state.jobs.find(
+          (candidate) => candidate.id === jobId,
+        );
 
-      if (!existingJob || existingJob.status === "deleted") {
-        throw new Error(`Scheduled job not found: ${jobId}`);
-      }
+        if (!existingJob || existingJob.status === "deleted") {
+          throw new Error(`Scheduled job not found: ${jobId}`);
+        }
 
-      const targetType = input.target?.type ?? existingJob.target.type;
-      const targetInput: ScheduledJobTargetInput = {
-        type: targetType,
-        workspaceRoot:
-          input.target?.workspaceRoot ?? existingJob.target.workspaceRoot,
-        prompt: input.target?.prompt ?? existingJob.target.prompt,
-        contextPaths:
-          input.target?.contextPaths ?? existingJob.target.contextPaths,
-        imagePaths: input.target?.imagePaths ?? existingJob.target.imagePaths,
-        contextPacks:
-          input.target?.contextPacks ?? existingJob.target.contextPacks,
-        macros: input.target?.macros ?? existingJob.target.macros,
-        ...(targetType === "ralph-flow"
-          ? {
-              ralphFlow:
-                input.target?.ralphFlow ?? existingJob.target.ralphFlow ??
-                (() => {
-                  throw new Error("Expected updated Ralph target to include a flow id.");
-                })(),
-            }
-          : {}),
-        ...(input.target?.mode ?? existingJob.target.mode
-          ? { mode: input.target?.mode ?? existingJob.target.mode }
-          : {}),
-        ...(input.target?.provider ?? existingJob.target.provider
-          ? { provider: input.target?.provider ?? existingJob.target.provider }
-          : {}),
-        ...(input.target?.model ?? existingJob.target.model
-          ? { model: input.target?.model ?? existingJob.target.model }
-          : {}),
-        ...(input.target?.reasoning ?? existingJob.target.reasoning
-          ? { reasoning: input.target?.reasoning ?? existingJob.target.reasoning }
-          : {}),
-      };
-      const triggers =
-        input.triggers !== undefined || input.schedule !== undefined
-          ? normalizeJobTriggers(
-              {
-                ...(input.schedule ? { schedule: input.schedule } : {}),
-                ...(input.triggers ? { triggers: input.triggers } : {}),
-              },
-              now,
-              existingJob,
-            )
-          : existingJob.triggers;
-      const schedule = getJobScheduleSummary(triggers);
-      const target = await normalizeTarget(targetInput, now, existingJob.target);
-      const enteredUnattendedRalphProfile =
-        target.ralphFlow?.executionProfile === "unattended" &&
-        existingJob.target.ralphFlow?.executionProfile !== "unattended";
-      const workspaceChanged =
-        target.workspaceRoot !== existingJob.target.workspaceRoot;
-      const existingQueueWasWorkspaceDefault =
-        existingJob.queue.concurrencyKey ===
-        createCanonicalWorkspaceQueueKey(existingJob.target.workspaceRoot);
-      const refreshDefaultQueue =
-        enteredUnattendedRalphProfile ||
-        (workspaceChanged && existingQueueWasWorkspaceDefault);
-      const nextRunAt = getEarliestTriggerRunAt(triggers);
-      const dedupeKey = normalizeSchedulerText(input.dedupeKey) ?? existingJob.dedupeKey;
-      const ttlMs =
-        input.ttlMs !== undefined
-          ? normalizeSchedulerOptionalPositiveInteger(input.ttlMs)
-          : existingJob.ttlMs;
-      const maxDurationMs =
-        input.maxDurationMs !== undefined
-          ? normalizeSchedulerOptionalPositiveInteger(input.maxDurationMs)
-          : existingJob.maxDurationMs;
-      const updatedJob: ScheduledJob = {
-        id: existingJob.id,
-        name: normalizeSchedulerText(input.name) ?? existingJob.name,
-        status:
-          existingJob.status === "completed" && triggers.length > 0
-            ? "active"
-            : existingJob.status,
-        ...(schedule ? { schedule } : {}),
-        triggers,
-        target,
-        missedRunPolicy:
-          input.missedRunPolicy ?? existingJob.missedRunPolicy,
-        missedRunGraceMs:
-          input.missedRunGraceMs !== undefined
-            ? normalizeSchedulerPositiveInteger(
-                input.missedRunGraceMs,
-                existingJob.missedRunGraceMs,
+        const targetType = input.target?.type ?? existingJob.target.type;
+        const targetInput: ScheduledJobTargetInput = {
+          type: targetType,
+          workspaceRoot:
+            input.target?.workspaceRoot ?? existingJob.target.workspaceRoot,
+          prompt: input.target?.prompt ?? existingJob.target.prompt,
+          contextPaths:
+            input.target?.contextPaths ?? existingJob.target.contextPaths,
+          imagePaths: input.target?.imagePaths ?? existingJob.target.imagePaths,
+          contextPacks:
+            input.target?.contextPacks ?? existingJob.target.contextPacks,
+          macros: input.target?.macros ?? existingJob.target.macros,
+          ...(targetType === "ralph-flow"
+            ? {
+                ralphFlow:
+                  input.target?.ralphFlow ??
+                  existingJob.target.ralphFlow ??
+                  (() => {
+                    throw new Error(
+                      "Expected updated Ralph target to include a flow id.",
+                    );
+                  })(),
+              }
+            : {}),
+          ...((input.target?.mode ?? existingJob.target.mode)
+            ? { mode: input.target?.mode ?? existingJob.target.mode }
+            : {}),
+          ...((input.target?.provider ?? existingJob.target.provider)
+            ? {
+                provider: input.target?.provider ?? existingJob.target.provider,
+              }
+            : {}),
+          ...((input.target?.model ?? existingJob.target.model)
+            ? { model: input.target?.model ?? existingJob.target.model }
+            : {}),
+          ...((input.target?.reasoning ?? existingJob.target.reasoning)
+            ? {
+                reasoning:
+                  input.target?.reasoning ?? existingJob.target.reasoning,
+              }
+            : {}),
+        };
+        const triggers =
+          input.triggers !== undefined || input.schedule !== undefined
+            ? normalizeJobTriggers(
+                {
+                  ...(input.schedule ? { schedule: input.schedule } : {}),
+                  ...(input.triggers ? { triggers: input.triggers } : {}),
+                },
+                now,
+                existingJob,
               )
-            : existingJob.missedRunGraceMs,
-        retry: input.retry
-          ? normalizeRetryPolicy(
-              { ...existingJob.retry, ...input.retry },
-              getDefaultRetryPolicy(target),
-            )
-          : enteredUnattendedRalphProfile
-            ? normalizeRetryPolicy(undefined, getDefaultRetryPolicy(target))
-            : existingJob.retry,
-        queue: input.queue
-          ? normalizeQueuePolicy(
-              existingJob.id,
-              {
-                ...(refreshDefaultQueue ? {} : existingJob.queue),
-                ...input.queue,
-              },
-              target,
-            )
-          : refreshDefaultQueue
-            ? normalizeQueuePolicy(existingJob.id, undefined, target)
-            : existingJob.queue,
-        historyLimit:
-          input.historyLimit !== undefined
-            ? normalizeSchedulerPositiveInteger(input.historyLimit, existingJob.historyLimit)
-            : existingJob.historyLimit,
-        maxCatchUpRuns:
-          input.maxCatchUpRuns !== undefined
-            ? normalizeSchedulerPositiveInteger(
-                input.maxCatchUpRuns,
-                existingJob.maxCatchUpRuns,
+            : existingJob.triggers;
+        const schedule = getJobScheduleSummary(triggers);
+        const target = await normalizeTarget(
+          targetInput,
+          now,
+          existingJob.target,
+        );
+        const enteredUnattendedRalphProfile =
+          target.ralphFlow?.executionProfile === "unattended" &&
+          existingJob.target.ralphFlow?.executionProfile !== "unattended";
+        const workspaceChanged =
+          target.workspaceRoot !== existingJob.target.workspaceRoot;
+        const existingQueueWasWorkspaceDefault =
+          existingJob.queue.concurrencyKey ===
+          createCanonicalWorkspaceQueueKey(existingJob.target.workspaceRoot);
+        const refreshDefaultQueue =
+          enteredUnattendedRalphProfile ||
+          (workspaceChanged && existingQueueWasWorkspaceDefault);
+        const nextRunAt = getEarliestTriggerRunAt(triggers);
+        const dedupeKey =
+          normalizeSchedulerText(input.dedupeKey) ?? existingJob.dedupeKey;
+        const ttlMs =
+          input.ttlMs !== undefined
+            ? normalizeSchedulerOptionalPositiveInteger(input.ttlMs)
+            : existingJob.ttlMs;
+        const maxDurationMs =
+          input.maxDurationMs !== undefined
+            ? normalizeSchedulerOptionalPositiveInteger(input.maxDurationMs)
+            : existingJob.maxDurationMs;
+        const updatedJob: ScheduledJob = {
+          id: existingJob.id,
+          name: normalizeSchedulerText(input.name) ?? existingJob.name,
+          status:
+            existingJob.status === "completed" && triggers.length > 0
+              ? "active"
+              : existingJob.status,
+          ...(schedule ? { schedule } : {}),
+          triggers,
+          target,
+          missedRunPolicy: input.missedRunPolicy ?? existingJob.missedRunPolicy,
+          missedRunGraceMs:
+            input.missedRunGraceMs !== undefined
+              ? normalizeSchedulerPositiveInteger(
+                  input.missedRunGraceMs,
+                  existingJob.missedRunGraceMs,
+                )
+              : existingJob.missedRunGraceMs,
+          retry: input.retry
+            ? normalizeRetryPolicy(
+                { ...existingJob.retry, ...input.retry },
+                getDefaultRetryPolicy(target),
               )
-            : existingJob.maxCatchUpRuns,
-        createdAt: existingJob.createdAt,
-        updatedAt: now,
-        ...(nextRunAt !== undefined ? { nextRunAt } : {}),
-        ...(dedupeKey ? { dedupeKey } : {}),
-        ...(ttlMs !== undefined ? { ttlMs } : {}),
-        ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
-        ...(existingJob.lastEnqueuedAt !== undefined
-          ? { lastEnqueuedAt: existingJob.lastEnqueuedAt }
-          : {}),
-        ...(existingJob.lastStartedAt !== undefined
-          ? { lastStartedAt: existingJob.lastStartedAt }
-          : {}),
-        ...(existingJob.lastFinishedAt !== undefined
-          ? { lastFinishedAt: existingJob.lastFinishedAt }
-          : {}),
-      };
+            : enteredUnattendedRalphProfile
+              ? normalizeRetryPolicy(undefined, getDefaultRetryPolicy(target))
+              : existingJob.retry,
+          queue: input.queue
+            ? normalizeQueuePolicy(
+                existingJob.id,
+                {
+                  ...(refreshDefaultQueue ? {} : existingJob.queue),
+                  ...input.queue,
+                },
+                target,
+              )
+            : refreshDefaultQueue
+              ? normalizeQueuePolicy(existingJob.id, undefined, target)
+              : existingJob.queue,
+          historyLimit:
+            input.historyLimit !== undefined
+              ? normalizeSchedulerPositiveInteger(
+                  input.historyLimit,
+                  existingJob.historyLimit,
+                )
+              : existingJob.historyLimit,
+          maxCatchUpRuns:
+            input.maxCatchUpRuns !== undefined
+              ? normalizeSchedulerPositiveInteger(
+                  input.maxCatchUpRuns,
+                  existingJob.maxCatchUpRuns,
+                )
+              : existingJob.maxCatchUpRuns,
+          createdAt: existingJob.createdAt,
+          updatedAt: now,
+          ...(nextRunAt !== undefined ? { nextRunAt } : {}),
+          ...(dedupeKey ? { dedupeKey } : {}),
+          ...(ttlMs !== undefined ? { ttlMs } : {}),
+          ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
+          ...(existingJob.lastEnqueuedAt !== undefined
+            ? { lastEnqueuedAt: existingJob.lastEnqueuedAt }
+            : {}),
+          ...(existingJob.lastStartedAt !== undefined
+            ? { lastStartedAt: existingJob.lastStartedAt }
+            : {}),
+          ...(existingJob.lastFinishedAt !== undefined
+            ? { lastFinishedAt: existingJob.lastFinishedAt }
+            : {}),
+        };
 
-      state.jobs = state.jobs.map((candidate) =>
-        candidate.id === existingJob.id ? updatedJob : candidate,
-      );
+        state.jobs = state.jobs.map((candidate) =>
+          candidate.id === existingJob.id ? updatedJob : candidate,
+        );
 
-      return updatedJob;
-    }, {
-      key: requestId,
-      operation: "update-job",
-      target: jobId,
-      payload: input,
-    });
+        return updatedJob;
+      },
+      {
+        key: requestId,
+        operation: "update-job",
+        target: jobId,
+        payload: input,
+      },
+    );
   }
 
   async listJobs(): Promise<ScheduledJob[]> {
@@ -3300,7 +3428,9 @@ export class DurableSmartScheduler {
   async getJob(jobId: string): Promise<ScheduledJob | undefined> {
     const state = await this.getState();
 
-    return state.jobs.find((job) => job.id === jobId && job.status !== "deleted");
+    return state.jobs.find(
+      (job) => job.id === jobId && job.status !== "deleted",
+    );
   }
 
   async pauseJob(jobId: string, requestId?: string): Promise<ScheduledJob> {
@@ -3308,55 +3438,60 @@ export class DurableSmartScheduler {
   }
 
   async resumeJob(jobId: string, requestId?: string): Promise<ScheduledJob> {
-    return this.mutateState((state) => {
-      const job = state.jobs.find((candidate) => candidate.id === jobId);
+    return this.mutateState(
+      (state) => {
+        const job = state.jobs.find((candidate) => candidate.id === jobId);
 
-      if (!job || job.status === "deleted") {
-        throw new Error(`Scheduled job not found: ${jobId}`);
-      }
-
-      job.status = "active";
-      job.updatedAt = this.now();
-      const now = this.now();
-      const nextRunAtCandidates: number[] = [];
-
-      for (const trigger of job.triggers) {
-        if (trigger.kind !== "time" || !trigger.enabled) {
-          continue;
+        if (!job || job.status === "deleted") {
+          throw new Error(`Scheduled job not found: ${jobId}`);
         }
 
-        const nextRunAt = getNextRunAfter(trigger.schedule, now);
+        job.status = "active";
+        job.updatedAt = this.now();
+        const now = this.now();
+        const nextRunAtCandidates: number[] = [];
+
+        for (const trigger of job.triggers) {
+          if (trigger.kind !== "time" || !trigger.enabled) {
+            continue;
+          }
+
+          const nextRunAt = getNextRunAfter(trigger.schedule, now);
+
+          if (nextRunAt !== undefined) {
+            trigger.nextRunAt = nextRunAt;
+            nextRunAtCandidates.push(nextRunAt);
+          } else {
+            delete trigger.nextRunAt;
+          }
+        }
+
+        const nextRunAt = nextRunAtCandidates.sort(
+          (left, right) => left - right,
+        )[0];
 
         if (nextRunAt !== undefined) {
-          trigger.nextRunAt = nextRunAt;
-          nextRunAtCandidates.push(nextRunAt);
+          job.nextRunAt = nextRunAt;
         } else {
-          delete trigger.nextRunAt;
+          delete job.nextRunAt;
+          const hasEventTrigger = job.triggers.some(
+            (trigger) => trigger.kind !== "time" && trigger.enabled,
+          );
+
+          if (!hasEventTrigger) {
+            job.status = "completed";
+          }
         }
-      }
 
-      const nextRunAt = nextRunAtCandidates.sort((left, right) => left - right)[0];
-
-      if (nextRunAt !== undefined) {
-        job.nextRunAt = nextRunAt;
-      } else {
-        delete job.nextRunAt;
-        const hasEventTrigger = job.triggers.some(
-          (trigger) => trigger.kind !== "time" && trigger.enabled,
-        );
-
-        if (!hasEventTrigger) {
-          job.status = "completed";
-        }
-      }
-
-      return { ...job };
-    }, {
-      key: requestId,
-      operation: "resume-job",
-      target: jobId,
-      payload: {},
-    });
+        return { ...job };
+      },
+      {
+        key: requestId,
+        operation: "resume-job",
+        target: jobId,
+        payload: {},
+      },
+    );
   }
 
   async deleteJob(jobId: string, requestId?: string): Promise<ScheduledJob> {
@@ -3368,23 +3503,26 @@ export class DurableSmartScheduler {
     status: ScheduledJobStatus,
     requestId?: string,
   ): Promise<ScheduledJob> {
-    return this.mutateState((state) => {
-      const job = state.jobs.find((candidate) => candidate.id === jobId);
+    return this.mutateState(
+      (state) => {
+        const job = state.jobs.find((candidate) => candidate.id === jobId);
 
-      if (!job || job.status === "deleted") {
-        throw new Error(`Scheduled job not found: ${jobId}`);
-      }
+        if (!job || job.status === "deleted") {
+          throw new Error(`Scheduled job not found: ${jobId}`);
+        }
 
-      job.status = status;
-      job.updatedAt = this.now();
+        job.status = status;
+        job.updatedAt = this.now();
 
-      return { ...job };
-    }, {
-      key: requestId,
-      operation: status === "paused" ? "pause-job" : "delete-job",
-      target: jobId,
-      payload: {},
-    });
+        return { ...job };
+      },
+      {
+        key: requestId,
+        operation: status === "paused" ? "pause-job" : "delete-job",
+        target: jobId,
+        payload: {},
+      },
+    );
   }
 
   async enqueueDueRuns(): Promise<ScheduledRunEnqueueResult[]> {
@@ -3494,8 +3632,7 @@ export class DurableSmartScheduler {
           if (!ralphTargetUsable) {
             run.finishedAt = now;
             run.updatedAt = now;
-            run.error =
-              `Scheduled Ralph flow revision could not be refreshed and no pinned fallback exists: ${ralphRefreshError ?? "unknown error"}`;
+            run.error = `Scheduled Ralph flow revision could not be refreshed and no pinned fallback exists: ${ralphRefreshError ?? "unknown error"}`;
             state.runs.push(run);
             continue;
           }
@@ -3536,52 +3673,55 @@ export class DurableSmartScheduler {
   ): Promise<ScheduledRunEnqueueResult> {
     const normalizedIdempotencyKey = normalizeSchedulerText(idempotencyKey);
 
-    return this.mutateState(async (state) => {
-      const now = this.now();
-      const job = state.jobs.find((candidate) => candidate.id === jobId);
+    return this.mutateState(
+      async (state) => {
+        const now = this.now();
+        const job = state.jobs.find((candidate) => candidate.id === jobId);
 
-      if (!job || job.status === "deleted") {
-        throw new Error(`Scheduled job not found: ${jobId}`);
-      }
-
-      if (job.target.ralphFlow) {
-        const refresh = await refreshScheduledRalphTarget(
-          job.target.workspaceRoot,
-          job.target.ralphFlow,
-          now,
-        );
-        if (!refresh.usable) {
-          throw new Error(
-            `Scheduled Ralph flow revision could not be refreshed: ${refresh.error ?? "unknown error"}`,
-          );
+        if (!job || job.status === "deleted") {
+          throw new Error(`Scheduled job not found: ${jobId}`);
         }
-        job.target = {
-          ...job.target,
-          ralphFlow: refresh.target,
+
+        if (job.target.ralphFlow) {
+          const refresh = await refreshScheduledRalphTarget(
+            job.target.workspaceRoot,
+            job.target.ralphFlow,
+            now,
+          );
+          if (!refresh.usable) {
+            throw new Error(
+              `Scheduled Ralph flow revision could not be refreshed: ${refresh.error ?? "unknown error"}`,
+            );
+          }
+          job.target = {
+            ...job.target,
+            ralphFlow: refresh.target,
+          };
+        }
+
+        const run = createRun(job, "queued", now, now, "manual");
+
+        if (normalizedIdempotencyKey) {
+          run.idempotencyKey = normalizedIdempotencyKey;
+        }
+
+        job.lastEnqueuedAt = now;
+        job.updatedAt = now;
+        state.runs.push(run);
+
+        return {
+          handle: createRunHandle(run),
+          run: { ...run },
+          deduplicated: false,
         };
-      }
-
-      const run = createRun(job, "queued", now, now, "manual");
-
-      if (normalizedIdempotencyKey) {
-        run.idempotencyKey = normalizedIdempotencyKey;
-      }
-
-      job.lastEnqueuedAt = now;
-      job.updatedAt = now;
-      state.runs.push(run);
-
-      return {
-        handle: createRunHandle(run),
-        run: { ...run },
-        deduplicated: false,
-      };
-    }, {
-      key: normalizedIdempotencyKey,
-      operation: "trigger-job",
-      target: jobId,
-      payload: {},
-    });
+      },
+      {
+        key: normalizedIdempotencyKey,
+        operation: "trigger-job",
+        target: jobId,
+        payload: {},
+      },
+    );
   }
 
   async recordEventAndEnqueueRuns(
@@ -3710,7 +3850,11 @@ export class DurableSmartScheduler {
             continue;
           }
 
-          const chainSkipReason = getJobEventChainSkipReason(state, event, job.id);
+          const chainSkipReason = getJobEventChainSkipReason(
+            state,
+            event,
+            job.id,
+          );
 
           if (chainSkipReason) {
             trigger.lastMatchedAt = now;
@@ -3769,25 +3913,17 @@ export class DurableSmartScheduler {
           const refreshError = unusableRalphJobs.get(job.id);
           if (refreshError) {
             trigger.lastSkippedAt = now;
-            match.skippedReason =
-              `Scheduled Ralph flow revision could not be refreshed: ${refreshError}`;
+            match.skippedReason = `Scheduled Ralph flow revision could not be refreshed: ${refreshError}`;
             event.matches.push(match);
             continue;
           }
 
-          const run = createRun(
-            job,
-            "queued",
-            event.occurredAt,
-            now,
-            "event",
-            {
-              triggerId: trigger.id,
-              eventId: event.id,
-              ...(event.parentRunId ? { parentRunId: event.parentRunId } : {}),
-              dedupeSuffix,
-            },
-          );
+          const run = createRun(job, "queued", event.occurredAt, now, "event", {
+            triggerId: trigger.id,
+            eventId: event.id,
+            ...(event.parentRunId ? { parentRunId: event.parentRunId } : {}),
+            dedupeSuffix,
+          });
 
           trigger.lastFiredAt = now;
           job.lastEnqueuedAt = now;
@@ -3888,15 +4024,21 @@ export class DurableSmartScheduler {
   ): Promise<SchedulerServiceResult> {
     const pollIntervalMs = Math.max(
       1,
-      Math.trunc(options.pollIntervalMs ?? DEFAULT_SCHEDULER_SERVICE_POLL_INTERVAL_MS),
+      Math.trunc(
+        options.pollIntervalMs ?? DEFAULT_SCHEDULER_SERVICE_POLL_INTERVAL_MS,
+      ),
     );
     const idleShutdownMs = Math.max(
       0,
-      Math.trunc(options.idleShutdownMs ?? DEFAULT_SCHEDULER_SERVICE_IDLE_SHUTDOWN_MS),
+      Math.trunc(
+        options.idleShutdownMs ?? DEFAULT_SCHEDULER_SERVICE_IDLE_SHUTDOWN_MS,
+      ),
     );
     const abandonedRunStaleMs = Math.max(
       DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS,
-      Math.trunc(options.abandonedRunStaleMs ?? DEFAULT_SCHEDULER_ABANDONED_RUN_STALE_MS),
+      Math.trunc(
+        options.abandonedRunStaleMs ?? DEFAULT_SCHEDULER_ABANDONED_RUN_STALE_MS,
+      ),
     );
     const maxIterations =
       options.maxIterations !== undefined
@@ -3960,7 +4102,10 @@ export class DurableSmartScheduler {
         break;
       }
 
-      await sleepWithSignal(didFinishOrRecover ? 1 : pollIntervalMs, options.signal);
+      await sleepWithSignal(
+        didFinishOrRecover ? 1 : pollIntervalMs,
+        options.signal,
+      );
     }
 
     return result;
@@ -3970,7 +4115,9 @@ export class DurableSmartScheduler {
     options: RunQueuedScheduledJobsOptions = {},
   ): Promise<ScheduledJobRun[]> {
     if (!this.executor) {
-      throw new Error("Cannot run scheduled jobs without a scheduler executor.");
+      throw new Error(
+        "Cannot run scheduled jobs without a scheduler executor.",
+      );
     }
 
     if (options.signal?.aborted) {
@@ -3985,7 +4132,9 @@ export class DurableSmartScheduler {
     const finishedRuns = await Promise.all(
       selectedRuns.map((run) => {
         if (!run.claimToken) {
-          throw new Error(`Scheduled run claim token was not persisted: ${run.id}`);
+          throw new Error(
+            `Scheduled run claim token was not persisted: ${run.id}`,
+          );
         }
 
         return this.executeClaimedRun(run.id, run.claimToken, options.signal);
@@ -4075,7 +4224,9 @@ export class DurableSmartScheduler {
     signal?: AbortSignal,
   ): Promise<ScheduledJobRun> {
     if (!this.executor) {
-      throw new Error("Cannot run scheduled jobs without a scheduler executor.");
+      throw new Error(
+        "Cannot run scheduled jobs without a scheduler executor.",
+      );
     }
 
     const controller = new AbortController();
@@ -4124,7 +4275,12 @@ export class DurableSmartScheduler {
         });
       }
 
-      return await this.finishRunWithResult(runId, claimToken, controller, result);
+      return await this.finishRunWithResult(
+        runId,
+        claimToken,
+        controller,
+        result,
+      );
     } catch (error: unknown) {
       if (isStaleScheduledRunClaimError(error)) {
         throw error;
@@ -4140,7 +4296,12 @@ export class DurableSmartScheduler {
         });
       }
 
-      return await this.finishRunWithError(runId, claimToken, controller, error);
+      return await this.finishRunWithError(
+        runId,
+        claimToken,
+        controller,
+        error,
+      );
     } finally {
       cleanupMaxDurationTimer();
       cleanupHeartbeat();
@@ -4179,11 +4340,7 @@ export class DurableSmartScheduler {
     await this.mutateState((state) => {
       const run = state.runs.find((candidate) => candidate.id === runId);
 
-      if (
-        !run ||
-        run.status !== "running" ||
-        run.claimToken !== claimToken
-      ) {
+      if (!run || run.status !== "running" || run.claimToken !== claimToken) {
         throw new StaleScheduledRunClaimError(runId);
       }
 
@@ -4194,15 +4351,15 @@ export class DurableSmartScheduler {
   private async getRunnableSnapshot(
     runId: string,
     claimToken: string,
-  ): Promise<{ job: ScheduledJob; run: ScheduledJobRun; event?: ScheduledTriggerEvent }> {
+  ): Promise<{
+    job: ScheduledJob;
+    run: ScheduledJobRun;
+    event?: ScheduledTriggerEvent;
+  }> {
     const state = await this.getState();
     const run = state.runs.find((candidate) => candidate.id === runId);
 
-    if (
-      !run ||
-      run.status !== "running" ||
-      run.claimToken !== claimToken
-    ) {
+    if (!run || run.status !== "running" || run.claimToken !== claimToken) {
       throw new StaleScheduledRunClaimError(runId);
     }
 
@@ -4344,11 +4501,7 @@ export class DurableSmartScheduler {
       const now = this.now();
       const run = state.runs.find((candidate) => candidate.id === runId);
 
-      if (
-        !run ||
-        run.status !== "running" ||
-        run.claimToken !== claimToken
-      ) {
+      if (!run || run.status !== "running" || run.claimToken !== claimToken) {
         throw new StaleScheduledRunClaimError(runId);
       }
 
@@ -4371,7 +4524,7 @@ export class DurableSmartScheduler {
             : outcome.status;
       const finalError =
         run.cancelRequestedAt !== undefined
-          ? run.cancelReason ?? outcome.error
+          ? (run.cancelReason ?? outcome.error)
           : outcome.error;
       const shouldRetry =
         infrastructureRetry ||
@@ -4394,7 +4547,9 @@ export class DurableSmartScheduler {
         finishedAt: now,
         status: finalStatus,
         ...(outcome.result?.summary ? { summary: outcome.result.summary } : {}),
-        ...(outcome.result?.status ? { resultStatus: outcome.result.status } : {}),
+        ...(outcome.result?.status
+          ? { resultStatus: outcome.result.status }
+          : {}),
         ...(finalError ? { error: finalError } : {}),
         ...(nextRetryAt !== undefined ? { nextRetryAt } : {}),
       };
@@ -4474,34 +4629,37 @@ export class DurableSmartScheduler {
     idempotencyKey?: string,
   ): Promise<ScheduledJobRun> {
     const runId = resolveRunId(handleOrRunId);
-    const run = await this.mutateState<ScheduledJobRun>((state) => {
-      const now = this.now();
-      const run = state.runs.find((candidate) => candidate.id === runId);
+    const run = await this.mutateState<ScheduledJobRun>(
+      (state) => {
+        const now = this.now();
+        const run = state.runs.find((candidate) => candidate.id === runId);
 
-      if (!run) {
-        throw new Error(`Scheduled run not found: ${runId}`);
-      }
+        if (!run) {
+          throw new Error(`Scheduled run not found: ${runId}`);
+        }
 
-      if (run.status === "queued") {
-        run.status = "cancelled";
-        run.cancelRequestedAt = now;
-        run.cancelReason = reason;
-        run.finishedAt = now;
-        run.updatedAt = now;
-        run.error = reason;
-      } else if (run.status === "running") {
-        run.cancelRequestedAt = now;
-        run.cancelReason = reason;
-        run.updatedAt = now;
-      }
+        if (run.status === "queued") {
+          run.status = "cancelled";
+          run.cancelRequestedAt = now;
+          run.cancelReason = reason;
+          run.finishedAt = now;
+          run.updatedAt = now;
+          run.error = reason;
+        } else if (run.status === "running") {
+          run.cancelRequestedAt = now;
+          run.cancelReason = reason;
+          run.updatedAt = now;
+        }
 
-      return { ...run };
-    }, {
-      key: idempotencyKey,
-      operation: "cancel-run",
-      target: runId,
-      payload: { reason },
-    });
+        return { ...run };
+      },
+      {
+        key: idempotencyKey,
+        operation: "cancel-run",
+        target: runId,
+        payload: { reason },
+      },
+    );
 
     const activeClaim = this.activeRunControllers.get(runId);
     if (
@@ -4523,59 +4681,66 @@ export class DurableSmartScheduler {
     const runId = resolveRunId(handleOrRunId);
     const normalizedIdempotencyKey = normalizeSchedulerText(idempotencyKey);
 
-    return this.mutateState((state) => {
-      const now = this.now();
-      const parentRun = state.runs.find((candidate) => candidate.id === runId);
+    return this.mutateState(
+      (state) => {
+        const now = this.now();
+        const parentRun = state.runs.find(
+          (candidate) => candidate.id === runId,
+        );
 
-      if (!parentRun) {
-        throw new Error(`Scheduled run not found: ${runId}`);
-      }
+        if (!parentRun) {
+          throw new Error(`Scheduled run not found: ${runId}`);
+        }
 
-      if (!isTerminalRunStatus(parentRun.status)) {
-        throw new Error(`Scheduled run is not retryable yet: ${runId}`);
-      }
+        if (!isTerminalRunStatus(parentRun.status)) {
+          throw new Error(`Scheduled run is not retryable yet: ${runId}`);
+        }
 
-      const job = state.jobs.find((candidate) => candidate.id === parentRun.jobId);
+        const job = state.jobs.find(
+          (candidate) => candidate.id === parentRun.jobId,
+        );
 
-      if (!job || job.status === "deleted") {
-        throw new Error(`Scheduled job not found for run: ${runId}`);
-      }
+        if (!job || job.status === "deleted") {
+          throw new Error(`Scheduled job not found for run: ${runId}`);
+        }
 
-      const retryRun = createRun(
-        job,
-        "queued",
-        parentRun.scheduledFor,
-        now,
-        "manual-retry",
-        {
-          parentRunId: parentRun.id,
-          ...(parentRun.targetSnapshot
-            ? { targetSnapshot: parentRun.targetSnapshot }
-            : {}),
-          ...(parentRun.maxDurationMsSnapshot !== undefined
-            ? { maxDurationMsSnapshot: parentRun.maxDurationMsSnapshot }
-            : {}),
-          ...(parentRun.triggerId ? { triggerId: parentRun.triggerId } : {}),
-          ...(parentRun.eventId ? { eventId: parentRun.eventId } : {}),
-        },
-      );
+        const retryRun = createRun(
+          job,
+          "queued",
+          parentRun.scheduledFor,
+          now,
+          "manual-retry",
+          {
+            parentRunId: parentRun.id,
+            ...(parentRun.targetSnapshot
+              ? { targetSnapshot: parentRun.targetSnapshot }
+              : {}),
+            ...(parentRun.maxDurationMsSnapshot !== undefined
+              ? { maxDurationMsSnapshot: parentRun.maxDurationMsSnapshot }
+              : {}),
+            ...(parentRun.triggerId ? { triggerId: parentRun.triggerId } : {}),
+            ...(parentRun.eventId ? { eventId: parentRun.eventId } : {}),
+          },
+        );
 
-      if (normalizedIdempotencyKey) {
-        retryRun.idempotencyKey = normalizedIdempotencyKey;
-      }
+        if (normalizedIdempotencyKey) {
+          retryRun.idempotencyKey = normalizedIdempotencyKey;
+        }
 
-      state.runs.push(retryRun);
+        state.runs.push(retryRun);
 
-      return {
-        jobId: job.id,
-        runId: retryRun.id,
-        status: retryRun.status,
-      };
-    }, {
-      key: normalizedIdempotencyKey,
-      operation: "retry-run",
-      target: runId,
-      payload: {},
-    });
+        return {
+          jobId: job.id,
+          runId: retryRun.id,
+          status: retryRun.status,
+        };
+      },
+      {
+        key: normalizedIdempotencyKey,
+        operation: "retry-run",
+        target: runId,
+        payload: {},
+      },
+    );
   }
 }

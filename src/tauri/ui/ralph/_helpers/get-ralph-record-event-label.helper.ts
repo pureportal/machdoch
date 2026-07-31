@@ -18,6 +18,8 @@ export const getRalphRecordEventLabel = (event: RalphRunEvent): string => {
       return `${event.blockId} input cancelled`;
     case "crash":
       return `Crash at ${event.blockId}: ${event.reason}`;
+    case "progress":
+      return `${event.meaningful ? "Progress" : "No progress"} at ${event.blockId}: ${event.summary}`;
     case "end":
       return `${event.status}: ${event.summary}`;
   }

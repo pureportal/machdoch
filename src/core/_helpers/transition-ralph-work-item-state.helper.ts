@@ -9,14 +9,6 @@ export const RALPH_WORK_ITEM_STATES = [
 
 export type RalphWorkItemState = (typeof RALPH_WORK_ITEM_STATES)[number];
 
-const RALPH_WORK_ITEM_STATE_ALIASES: Readonly<Record<string, RalphWorkItemState>> = {
-  pending: "planned",
-  todo: "planned",
-  in_progress: "implementing",
-  "in-progress": "implementing",
-  done: "completed",
-};
-
 const ALLOWED_RALPH_WORK_ITEM_TRANSITIONS: Readonly<
   Record<RalphWorkItemState, readonly RalphWorkItemState[]>
 > = {
@@ -45,7 +37,7 @@ export const normalizeRalphWorkItemState = (
 
   return RALPH_WORK_ITEM_STATES.includes(normalized as RalphWorkItemState)
     ? (normalized as RalphWorkItemState)
-    : RALPH_WORK_ITEM_STATE_ALIASES[normalized];
+    : undefined;
 };
 
 export const transitionRalphWorkItemState = (

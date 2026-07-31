@@ -191,7 +191,7 @@ describe("parseRalphFlowRecord", () => {
     });
   });
 
-  it("preserves parser defaults for malformed optional fields", () => {
+  it("keeps a malformed schema version invalid while coercing optional fields", () => {
     const flow = parseRalphFlowRecord({
       schemaVersion: null,
       id: 123,
@@ -222,7 +222,7 @@ describe("parseRalphFlowRecord", () => {
     });
 
     expect(flow).toEqual({
-      schemaVersion: 1,
+      schemaVersion: Number.NaN,
       id: "",
       name: "",
       variables: [{ name: "", type: "path", required: true }],

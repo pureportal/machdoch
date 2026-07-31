@@ -107,6 +107,19 @@ describe("getRalphUtilityOutputs", () => {
       outputs: ["DONE", "CONTINUE", "RETRY", "ERROR", "INVALID"],
     },
     {
+      name: "ASSESS_JSON_TASKS",
+      utility: { type: "ASSESS_JSON_TASKS" },
+      outputs: [
+        "READY",
+        "COMPLETE",
+        "BLOCKED",
+        "EMPTY",
+        "NOT_FOUND",
+        "INVALID",
+        "ERROR",
+      ],
+    },
+    {
       name: "SELECT_JSON_TASK",
       utility: { type: "SELECT_JSON_TASK" },
       outputs: ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"],
@@ -149,7 +162,7 @@ describe("getRalphUtilityOutputs", () => {
     {
       name: "RUN_CHECK",
       utility: { type: "RUN_CHECK" },
-      outputs: ["SUCCESS", "FAILED", "ERROR"],
+      outputs: ["SUCCESS", "FAILED", "INCONCLUSIVE", "ERROR"],
     },
     {
       name: "GIT_STATUS",
@@ -204,5 +217,3 @@ describe("getRalphUtilityOutputs", () => {
     expect(getRalphUtilityOutputs(utility)).toEqual(outputs);
   });
 });
-
-

@@ -240,6 +240,13 @@ export const createDefaultUtilityConfig = (
           "Review the current run evidence and return a JSON validator decision.",
         maxAttempts: 2,
       };
+    case "ASSESS_JSON_TASKS":
+      return {
+        type,
+        path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
+        jsonPath: "tasks",
+        strategy: "start-to-end",
+      };
     case "SELECT_JSON_TASK":
       return {
         type,
@@ -252,7 +259,7 @@ export const createDefaultUtilityConfig = (
         type,
         path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
         jsonPath: "tasks",
-        status: "done",
+        status: "verifying",
       };
     case "CHANGE_SCOPE_GUARD":
       return {
@@ -265,7 +272,8 @@ export const createDefaultUtilityConfig = (
       return {
         type,
         rootPath: ".",
-        excludePaths: "node_modules, dist, build, coverage, target, .next, .machdoch",
+        excludePaths:
+          "node_modules, dist, build, coverage, target, .next, .machdoch",
         maxDepth: 4,
         maxResults: 200,
       };
@@ -414,7 +422,8 @@ export const createBlock = (
         title: "Interview",
         position,
         prompt: "Clarify the request until there is enough detail to continue.",
-        completionCriteria: "The request is specific enough to implement and test.",
+        completionCriteria:
+          "The request is specific enough to implement and test.",
         maxTurns: 5,
         questionsPerTurn: 3,
         outputVariableName: `${id.replace(/[^A-Za-z0-9_]+/gu, "_")}_interview`,

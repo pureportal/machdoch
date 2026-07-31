@@ -63,6 +63,7 @@ export const createRalphPathAttachmentPreview = (
 
   return {
     id: attachment.id ?? `ralph-path-${index}`,
+    source: "path",
     path: attachment.value,
     kind,
     name: getRalphPathName(attachment.value),

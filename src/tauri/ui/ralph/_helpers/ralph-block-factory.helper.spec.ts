@@ -1,12 +1,11 @@
-import type {
-  RalphFlow,
-  RalphFlowBlock,
-} from "../../../../core/ralph.js";
+import type { RalphFlow, RalphFlowBlock } from "../../../../core/ralph.js";
 import {
   createBlock,
   createBlockId,
+  createDefaultUtilityConfig,
   createEdgeId,
 } from "./ralph-block-factory.helper";
+import { getUtilityOutputs } from "./get-block-outputs.helper";
 
 const createFlow = (blocks: RalphFlowBlock[] = []): RalphFlow => ({
   schemaVersion: 1,
@@ -58,6 +57,35 @@ describe("ralph-block-factory helper", () => {
     });
   });
 
+  it("creates and routes the read-only JSON task assessment contract", () => {
+    const utility = createDefaultUtilityConfig("ASSESS_JSON_TASKS");
+
+    expect(utility).toEqual({
+      type: "ASSESS_JSON_TASKS",
+      path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
+      jsonPath: "tasks",
+      strategy: "start-to-end",
+    });
+    expect(getUtilityOutputs(utility)).toEqual([
+      "READY",
+      "COMPLETE",
+      "BLOCKED",
+      "EMPTY",
+      "NOT_FOUND",
+      "INVALID",
+      "ERROR",
+    ]);
+  });
+
+  it("exposes inconclusive checks separately from success", () => {
+    expect(getUtilityOutputs(createDefaultUtilityConfig("RUN_CHECK"))).toEqual([
+      "SUCCESS",
+      "FAILED",
+      "INCONCLUSIVE",
+      "ERROR",
+    ]);
+  });
+
   it("creates a safe pinned media-flow bridge that waits by default", () => {
     expect(createBlock(createFlow(), "MEDIA_FLOW")).toMatchObject({
       id: "media-flow-1",
@@ -72,5 +100,4 @@ describe("ralph-block-factory helper", () => {
       settings: { retry: { mode: "finite", maxRetries: 0 } },
     });
   });
-
 });

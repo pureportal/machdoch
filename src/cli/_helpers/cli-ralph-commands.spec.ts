@@ -3,6 +3,7 @@ import type { RalphFlow, RalphRunResult } from "../../core/ralph.js";
 import { createFlow } from "../../core/__test__/ralph-test-helpers.js";
 import {
   createInterruptedRalphRunResult,
+  getRalphRunExitCode,
   summarizeRun,
   validateRalphJsonBatch,
 } from "./cli-ralph-commands.js";
@@ -87,6 +88,52 @@ describe("createInterruptedRalphRunResult", () => {
       blockResults: [],
     });
     expect(result.finishedAt).toEqual(expect.any(String));
+  });
+});
+
+describe("getRalphRunExitCode", () => {
+  it.each([
+    ["succeeded", 0],
+    ["no-op", 0],
+    ["deferred", 2],
+    ["blocked", 2],
+    ["stalled", 2],
+    ["budget-exhausted", 2],
+    ["verification-inconclusive", 2],
+    ["failed", 1],
+    ["cancelled", 130],
+  ] as const)(
+    "maps semantic outcome %s to exit code %i",
+    (status, exitCode) => {
+      expect(
+        getRalphRunExitCode(
+          createRunResult({
+            status:
+              status === "succeeded" || status === "no-op"
+                ? "completed"
+                : "blocked",
+            outcome: {
+              status,
+              verified: status === "succeeded" || status === "no-op",
+              retryable: status !== "succeeded" && status !== "no-op",
+              reason: status,
+              evidence: [],
+              limitations: [],
+            },
+          }),
+        ),
+      ).toBe(exitCode);
+    },
+  );
+
+  it("does not treat lifecycle completion without an outcome as success", () => {
+    expect(
+      getRalphRunExitCode(
+        createRunResult({
+          status: "completed",
+        }),
+      ),
+    ).toBe(2);
   });
 });
 

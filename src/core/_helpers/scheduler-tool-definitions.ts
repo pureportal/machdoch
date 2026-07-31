@@ -473,7 +473,7 @@ const schedulerTargetSchema = {
           "allowMcpTools",
         ],
         description:
-          "Explicit legacy capability fields. They remain supported; executionProfile=unattended can be used instead.",
+          "Explicit capability fields. executionProfile=unattended can be used instead.",
       },
     },
     required: ["id"],

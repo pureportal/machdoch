@@ -67,7 +67,9 @@ export const getUtilityNodePreview = (
       if (mode === "condition" || mode === "poll") {
         return {
           primary:
-            mode === "poll" ? "Poll until condition passes" : "Wait for condition",
+            mode === "poll"
+              ? "Poll until condition passes"
+              : "Wait for condition",
           secondary: formatUtilityConditionSummary(utility.condition),
           chips: [`every ${formatSeconds(utility.intervalSeconds ?? 30)}`],
         };
@@ -98,7 +100,7 @@ export const getUtilityNodePreview = (
           `every ${formatSeconds(utility.intervalSeconds ?? 30)}`,
           utility.maxAttempts === null || utility.maxAttempts === undefined
             ? "endless"
-          : `${utility.maxAttempts} attempts`,
+            : `${utility.maxAttempts} attempts`,
         ],
       };
     case "CONDITION":
@@ -110,7 +112,9 @@ export const getUtilityNodePreview = (
     case "RUN_COMMAND":
       return {
         primary: compactPreviewText(utility.command, "Command not set"),
-        secondary: utility.cwd ? `Working dir: ${utility.cwd}` : "Runs in the block workspace.",
+        secondary: utility.cwd
+          ? `Working dir: ${utility.cwd}`
+          : "Runs in the block workspace.",
         chips: [`${formatSeconds(utility.timeoutSeconds ?? 120)} timeout`],
       };
     case "RUN_CHECK":
@@ -129,7 +133,8 @@ export const getUtilityNodePreview = (
                 "Target URL not set",
               ),
         secondary:
-          utility.adapter === "tauri-mcp" || utility.adapter === "playwright-mcp"
+          utility.adapter === "tauri-mcp" ||
+          utility.adapter === "playwright-mcp"
             ? `${utility.mcpServerId ?? "mcp"}.${utility.mcpToolName ?? "tool"}`
             : `Server: ${utility.server?.mode ?? "existing"}`,
         chips: [
@@ -157,7 +162,9 @@ export const getUtilityNodePreview = (
       return {
         primary: `Read JSON ${compactPreviewText(utility.path, "file path not set")}`,
         secondary:
-          utility.schema === undefined ? "No schema validation" : "Schema configured",
+          utility.schema === undefined
+            ? "No schema validation"
+            : "Schema configured",
         chips: ["SUCCESS", "NOT_FOUND", "INVALID"],
       };
     case "READ_JSONL":
@@ -185,7 +192,7 @@ export const getUtilityNodePreview = (
           "file path not set",
         )}`,
         secondary:
-          utility.input ?? utility.content
+          (utility.input ?? utility.content)
             ? compactPreviewText(utility.input ?? utility.content, "JSON input")
             : "Uses previous result data",
         chips: [
@@ -245,6 +252,12 @@ export const getUtilityNodePreview = (
         secondary: compactPreviewText(utility.prompt, "Prompt not set"),
         chips: ["DONE", "CONTINUE", "RETRY", "ERROR"],
       };
+    case "ASSESS_JSON_TASKS":
+      return {
+        primary: `Assess tasks in ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: `Path: ${compactPreviewText(utility.jsonPath, "tasks")}`,
+        chips: ["READY", "COMPLETE", "BLOCKED"],
+      };
     case "SELECT_JSON_TASK":
       return {
         primary: `Select task from ${compactPreviewText(utility.path, "file path not set")}`,
@@ -258,7 +271,7 @@ export const getUtilityNodePreview = (
           utility.taskId,
           "Uses selected/in-progress task",
         ),
-        chips: [utility.status ?? utility.result ?? "done"],
+        chips: [utility.status ?? "verifying"],
       };
     case "SCAN_SCOPE_EVIDENCE":
       return {
@@ -359,12 +372,15 @@ export const getUtilityNodePreview = (
         ),
         chips: [
           ...(utility.path ? ["JSON"] : []),
-          ...(utility.outputPath ?? utility.markdownPath ? ["Markdown"] : []),
+          ...((utility.outputPath ?? utility.markdownPath) ? ["Markdown"] : []),
         ],
       };
     case "NOTIFY":
       return {
-        primary: compactPreviewText(utility.message, "Notification message not set"),
+        primary: compactPreviewText(
+          utility.message,
+          "Notification message not set",
+        ),
         secondary: "Shows an execution notification.",
         chips: [],
       };
@@ -408,7 +424,9 @@ export const getBlockSettingsPreviewChips = (
   return chips;
 };
 
-export const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => {
+export const getBlockNodePreview = (
+  block: RalphFlowBlock,
+): RalphNodePreview => {
   if (block.type === "UTILITY") {
     return getUtilityNodePreview(block.utility);
   }
@@ -505,7 +523,13 @@ export const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => 
     return {
       primary: compactPreviewText(promptText, block.id),
       secondary: `Scope: ${titleFromId(block.validationScope?.mode ?? "sinceLastValidator")}`,
-      chips: ["DONE", "CONTINUE", "RETRY", "ERROR", ...getBlockSettingsPreviewChips(block.settings)],
+      chips: [
+        "DONE",
+        "CONTINUE",
+        "RETRY",
+        "ERROR",
+        ...getBlockSettingsPreviewChips(block.settings),
+      ],
     };
   }
 
@@ -513,7 +537,11 @@ export const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => 
     return {
       primary: compactPreviewText(promptText, block.id),
       secondary: "Routes by decision label.",
-      chips: [...block.labels, "ERROR", ...getBlockSettingsPreviewChips(block.settings)],
+      chips: [
+        ...block.labels,
+        "ERROR",
+        ...getBlockSettingsPreviewChips(block.settings),
+      ],
     };
   }
 

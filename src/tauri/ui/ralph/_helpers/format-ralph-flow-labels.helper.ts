@@ -35,6 +35,7 @@ export const UTILITY_TYPE_LABELS: Record<RalphUtilityType, string> = {
   LOOP_COUNTER: "Loop Counter",
   PROMPT_JSON: "Prompt JSON",
   VALIDATOR_JSON: "Validator JSON",
+  ASSESS_JSON_TASKS: "Assess JSON Tasks",
   SELECT_JSON_TASK: "Select JSON Task",
   MARK_JSON_TASK: "Mark JSON Task",
   CHANGE_SCOPE_GUARD: "Change Scope Guard",
@@ -70,7 +71,9 @@ export const formatRouteOptionTargetLabel = (
 ): string => {
   const targetLabel = formatRouteTargetLabel(targetBlock);
 
-  return sourceBlock.id === targetBlock.id ? `Self (${targetLabel})` : targetLabel;
+  return sourceBlock.id === targetBlock.id
+    ? `Self (${targetLabel})`
+    : targetLabel;
 };
 
 export const formatProviderOptionLabel = (
@@ -115,13 +118,12 @@ export const formatUnconnectedRouteLabel = (
 };
 
 export const titleFromId = (id: string): string => {
-  const words = id
-    .replace(/-/gu, " ")
-    .split(/\s+/u)
-    .filter(Boolean);
+  const words = id.replace(/-/gu, " ").split(/\s+/u).filter(Boolean);
 
   return words.length > 0
-    ? words.map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`).join(" ")
+    ? words
+        .map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`)
+        .join(" ")
     : "Ralph Flow";
 };
 
@@ -176,7 +178,9 @@ export const formatUtilityConditionSummary = (
       : "Matches";
     const value = compactPreviewText(condition.value, "");
 
-    return value ? `JSON ${path} ${operator} ${value}` : `JSON ${path} ${operator}`;
+    return value
+      ? `JSON ${path} ${operator} ${value}`
+      : `JSON ${path} ${operator}`;
   }
 
   const expression = compactPreviewText(condition.expression, "No expression");

@@ -6,6 +6,9 @@ import {
   createScheduledRalphExecutionSnapshot,
   getNextCronRunAfter,
   getWorkspaceSchedulerStatePath,
+  readSmartSchedulerState,
+  SMART_SCHEDULER_SCHEMA,
+  SMART_SCHEDULER_SCHEMA_VERSION,
   syncScheduledPromptJobs,
   type ScheduledTaskExecutor,
 } from "./scheduler.ts";
@@ -51,7 +54,7 @@ const createWorkspace = async (): Promise<string> => {
     "autonomous-improvement",
     "autonomous-ui-improvement",
     "isolated-improvement",
-    "legacy-flow",
+    "baseline-flow",
     "security-analysis",
   ]) {
     await writeRalphFlow(workspaceRoot, createSimpleFlow(id));
@@ -60,7 +63,9 @@ const createWorkspace = async (): Promise<string> => {
   return workspaceRoot;
 };
 
-const createClock = (initialTimestamp = 0): {
+const createClock = (
+  initialTimestamp = 0,
+): {
   now(): number;
   set(timestamp: number): void;
   advance(durationMs: number): void;
@@ -164,6 +169,65 @@ describe("getNextCronRunAfter", () => {
   });
 });
 
+describe("readSmartSchedulerState", () => {
+  it("rejects job records without the current trigger and target contract", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = join(workspaceRoot, "scheduler-state.json");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        schema: SMART_SCHEDULER_SCHEMA,
+        schemaVersion: SMART_SCHEDULER_SCHEMA_VERSION,
+        createdAt: 0,
+        updatedAt: 0,
+        jobs: [
+          {
+            id: "noncurrent-job",
+            schedule: {
+              type: "interval",
+              intervalMs: 60_000,
+              anchorAt: 0,
+            },
+            target: {
+              workspaceRoot,
+              prompt: "Run",
+            },
+          },
+        ],
+        runs: [],
+        events: [],
+        mutationReceipts: [],
+      }),
+      "utf8",
+    );
+
+    await expect(readSmartSchedulerState(statePath)).rejects.toThrow(
+      "Unsupported smart scheduler state file",
+    );
+  });
+
+  it("rejects state without the current event and mutation receipt collections", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = join(workspaceRoot, "scheduler-state.json");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        schema: SMART_SCHEDULER_SCHEMA,
+        schemaVersion: SMART_SCHEDULER_SCHEMA_VERSION,
+        createdAt: 0,
+        updatedAt: 0,
+        jobs: [],
+        runs: [],
+      }),
+      "utf8",
+    );
+
+    await expect(readSmartSchedulerState(statePath)).rejects.toThrow(
+      "Unsupported smart scheduler state file",
+    );
+  });
+});
+
 describe("DurableSmartScheduler", () => {
   it("strips nested starter provenance without changing execution fingerprint", () => {
     const flow = createSimpleFlow("snapshot-flow", {
@@ -195,9 +259,7 @@ describe("DurableSmartScheduler", () => {
     await writeRalphFlow(
       workspaceRoot,
       createSimpleFlow("readiness-flow", {
-        variables: [
-          { name: "goal", type: "string", required: true },
-        ],
+        variables: [{ name: "goal", type: "string", required: true }],
       }),
     );
     await writeRalphFlow(
@@ -215,8 +277,18 @@ describe("DurableSmartScheduler", () => {
           { id: "done", type: "END", title: "Done", status: "success" },
         ],
         edges: [
-          { id: "to-approval", from: "start", fromOutput: "SUCCESS", to: "approval" },
-          { id: "to-done", from: "approval", fromOutput: "SUBMITTED", to: "done" },
+          {
+            id: "to-approval",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "approval",
+          },
+          {
+            id: "to-done",
+            from: "approval",
+            fromOutput: "SUBMITTED",
+            to: "done",
+          },
         ],
       }),
       { allowInvalid: true },
@@ -225,45 +297,53 @@ describe("DurableSmartScheduler", () => {
       statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
     });
 
-    await expect(scheduler.upsertJob({
-      schedule: { type: "delay", delayMs: 1_000 },
-      target: {
-        type: "ralph-flow",
-        workspaceRoot,
-        ralphFlow: { id: "readiness-flow", executionProfile: "unattended" },
-      },
-    })).rejects.toThrow("Missing required Ralph parameter `goal`");
-
-    await expect(scheduler.upsertJob({
-      schedule: { type: "delay", delayMs: 1_000 },
-      target: {
-        type: "ralph-flow",
-        workspaceRoot,
-        ralphFlow: {
-          id: "readiness-flow",
-          params: { goal: "Improve it", typoGoal: "unknown" },
-          executionProfile: "unattended",
+    await expect(
+      scheduler.upsertJob({
+        schedule: { type: "delay", delayMs: 1_000 },
+        target: {
+          type: "ralph-flow",
+          workspaceRoot,
+          ralphFlow: { id: "readiness-flow", executionProfile: "unattended" },
         },
-      },
-    })).rejects.toThrow("parameter `typoGoal` is not declared");
+      }),
+    ).rejects.toThrow("Missing required Ralph parameter `goal`");
 
-    await expect(scheduler.upsertJob({
-      schedule: { type: "delay", delayMs: 1_000 },
-      target: {
-        type: "ralph-flow",
-        workspaceRoot,
-        ralphFlow: { id: "human-flow" },
-      },
-    })).rejects.toThrow("cannot pause at ASK_USER");
+    await expect(
+      scheduler.upsertJob({
+        schedule: { type: "delay", delayMs: 1_000 },
+        target: {
+          type: "ralph-flow",
+          workspaceRoot,
+          ralphFlow: {
+            id: "readiness-flow",
+            params: { goal: "Improve it", typoGoal: "unknown" },
+            executionProfile: "unattended",
+          },
+        },
+      }),
+    ).rejects.toThrow("parameter `typoGoal` is not declared");
 
-    await expect(scheduler.upsertJob({
-      schedule: { type: "delay", delayMs: 1_000 },
-      target: {
-        type: "ralph-flow",
-        workspaceRoot,
-        ralphFlow: { id: "human-flow", executionProfile: "unattended" },
-      },
-    })).resolves.toMatchObject({
+    await expect(
+      scheduler.upsertJob({
+        schedule: { type: "delay", delayMs: 1_000 },
+        target: {
+          type: "ralph-flow",
+          workspaceRoot,
+          ralphFlow: { id: "human-flow" },
+        },
+      }),
+    ).rejects.toThrow("cannot pause at ASK_USER");
+
+    await expect(
+      scheduler.upsertJob({
+        schedule: { type: "delay", delayMs: 1_000 },
+        target: {
+          type: "ralph-flow",
+          workspaceRoot,
+          ralphFlow: { id: "human-flow", executionProfile: "unattended" },
+        },
+      }),
+    ).resolves.toMatchObject({
       target: {
         ralphFlow: {
           executionProfile: "unattended",
@@ -312,7 +392,9 @@ describe("DurableSmartScheduler", () => {
 
     expect(queued.run.targetSnapshot?.ralphFlow).toMatchObject({
       id: "external-flow",
-      flowSnapshot: expect.objectContaining({ name: "Installed external flow" }),
+      flowSnapshot: expect.objectContaining({
+        name: "Installed external flow",
+      }),
     });
   });
 
@@ -351,11 +433,15 @@ describe("DurableSmartScheduler", () => {
       createSimpleFlow("versioned-flow", { name: "Version Two" }),
       { createRevision: true },
     );
-    expect(first.run.targetSnapshot?.ralphFlow?.flowSnapshot?.name).toBe("Version One");
+    expect(first.run.targetSnapshot?.ralphFlow?.flowSnapshot?.name).toBe(
+      "Version One",
+    );
     await scheduler.runQueuedRuns();
 
     const second = await scheduler.triggerJobNow(job.id);
-    expect(second.run.targetSnapshot?.ralphFlow?.flowSnapshot?.name).toBe("Version Two");
+    expect(second.run.targetSnapshot?.ralphFlow?.flowSnapshot?.name).toBe(
+      "Version Two",
+    );
     await scheduler.runQueuedRuns();
 
     expect(observedNames).toEqual(["Version One", "Version Two"]);
@@ -375,27 +461,21 @@ describe("DurableSmartScheduler", () => {
 
     const first = await scheduler.triggerJobNow(job.id, "remote-trigger-1");
     const reloaded = new DurableSmartScheduler({ statePath, executor });
-    const duplicate = await reloaded.triggerJobNow(
-      job.id,
-      "remote-trigger-1",
-    );
+    const duplicate = await reloaded.triggerJobNow(job.id, "remote-trigger-1");
 
     expect(duplicate).toEqual(first);
-    expect((await reloaded.listRuns(job.id))).toHaveLength(1);
+    expect(await reloaded.listRuns(job.id)).toHaveLength(1);
 
     const [completed] = await reloaded.runQueuedRuns({ maxRuns: 1 });
     expect(completed?.status).toBe("succeeded");
-    const retry = await reloaded.retryRun(
-      completed!.id,
-      "remote-retry-1",
-    );
+    const retry = await reloaded.retryRun(completed!.id, "remote-retry-1");
     const duplicateRetry = await new DurableSmartScheduler({
       statePath,
       executor,
     }).retryRun(completed!.id, "remote-retry-1");
 
     expect(duplicateRetry).toEqual(retry);
-    expect((await reloaded.listRuns(job.id))).toHaveLength(2);
+    expect(await reloaded.listRuns(job.id)).toHaveLength(2);
   });
 
   it("replays job mutations across restarts without undoing newer operations", async () => {
@@ -462,9 +542,9 @@ describe("DurableSmartScheduler", () => {
     expect(replayedResume).toEqual(resumed);
     expect(replayedDelete).toEqual(deleted);
     expect(stateAfterReplay.updatedAt).toBe(stateBeforeReplay.updatedAt);
-    expect(stateAfterReplay.jobs.find((job) => job.id === created.id)?.status).toBe(
-      "deleted",
-    );
+    expect(
+      stateAfterReplay.jobs.find((job) => job.id === created.id)?.status,
+    ).toBe("deleted");
   });
 
   it("rejects reuse of a mutation key for another operation, target, or payload", async () => {
@@ -516,10 +596,7 @@ describe("DurableSmartScheduler", () => {
     const triggered = await scheduler.triggerJobNow(job.id, "trigger-request");
 
     await scheduler.runQueuedRuns({ maxRuns: 1 });
-    const retry = await scheduler.retryRun(
-      triggered.run.id,
-      "retry-request",
-    );
+    const retry = await scheduler.retryRun(triggered.run.id, "retry-request");
     await scheduler.runQueuedRuns({ maxRuns: 1 });
 
     const cancelTarget = await scheduler.triggerJobNow(job.id);
@@ -620,9 +697,7 @@ describe("DurableSmartScheduler", () => {
 
   it("aborts and fails a run when its durable heartbeat cannot be persisted", async () => {
     const workspaceRoot = await createWorkspace();
-    let heartbeatClaim:
-      | { runId: string; claimToken: string }
-      | undefined;
+    let heartbeatClaim: { runId: string; claimToken: string } | undefined;
     const scheduler = new DurableSmartScheduler({
       statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
       runningHeartbeatMs: 5,
@@ -637,9 +712,13 @@ describe("DurableSmartScheduler", () => {
               resolveExecution();
               return;
             }
-            options.signal?.addEventListener("abort", () => resolveExecution(), {
-              once: true,
-            });
+            options.signal?.addEventListener(
+              "abort",
+              () => resolveExecution(),
+              {
+                once: true,
+              },
+            );
           });
           return createSuccessfulResult(request.task);
         },
@@ -780,10 +859,9 @@ describe("DurableSmartScheduler", () => {
     });
     expect(cancelledRun?.claimToken).toBeUndefined();
     expect(cancelledRun?.attemptHistory).toHaveLength(2);
-    expect(cancelledRun?.attemptHistory.map((attempt) => attempt.claimToken)).toEqual([
-      firstClaim?.claimToken,
-      secondClaim?.claimToken,
-    ]);
+    expect(
+      cancelledRun?.attemptHistory.map((attempt) => attempt.claimToken),
+    ).toEqual([firstClaim?.claimToken, secondClaim?.claimToken]);
   });
 
   it("rekeys the default Ralph queue when its canonical workspace changes", async () => {
@@ -797,13 +875,13 @@ describe("DurableSmartScheduler", () => {
       target: {
         type: "ralph-flow",
         workspaceRoot: firstWorkspace,
-        ralphFlow: { id: "legacy-flow", executionProfile: "unattended" },
+        ralphFlow: { id: "baseline-flow", executionProfile: "unattended" },
       },
     });
     const updated = await scheduler.updateJob(job.id, {
       target: {
         workspaceRoot: secondWorkspace,
-        ralphFlow: { id: "legacy-flow", executionProfile: "unattended" },
+        ralphFlow: { id: "baseline-flow", executionProfile: "unattended" },
       },
     });
 
@@ -831,7 +909,7 @@ describe("DurableSmartScheduler", () => {
       target: {
         type: "ralph-flow",
         workspaceRoot,
-        ralphFlow: { id: "legacy-flow", executionProfile: "unattended" },
+        ralphFlow: { id: "baseline-flow", executionProfile: "unattended" },
       },
       queue: { concurrencyLimit: 2 },
     });
@@ -844,18 +922,22 @@ describe("DurableSmartScheduler", () => {
       },
       queue: { concurrencyLimit: 2 },
     });
-    await deleteRalphFlow(workspaceRoot, "legacy-flow");
+    await deleteRalphFlow(workspaceRoot, "baseline-flow");
     clock.set(1_000);
 
     const result = await scheduler.runDueJobs();
 
     expect(result.runs).toHaveLength(2);
-    expect(executedFlowIds.sort()).toEqual(["legacy-flow", "security-analysis"]);
+    expect(executedFlowIds.sort()).toEqual([
+      "baseline-flow",
+      "security-analysis",
+    ]);
     const fallbackRun = result.runs.find(
-      (run) => run.targetSnapshot?.ralphFlow?.id === "legacy-flow",
+      (run) => run.targetSnapshot?.ralphFlow?.id === "baseline-flow",
     );
-    expect(fallbackRun?.targetSnapshot?.ralphFlow?.flowSnapshotRefreshError)
-      .toContain("was not found");
+    expect(
+      fallbackRun?.targetSnapshot?.ralphFlow?.flowSnapshotRefreshError,
+    ).toContain("was not found");
   });
 
   it("applies the unattended RALPH capability, recovery, and retry profile", async () => {
@@ -946,7 +1028,7 @@ describe("DurableSmartScheduler", () => {
         type: "ralph-flow",
         workspaceRoot,
         ralphFlow: {
-          id: "legacy-flow",
+          id: "baseline-flow",
           permissions: {
             allowedRoots: [workspaceRoot],
             allowCommands: true,
@@ -972,7 +1054,7 @@ describe("DurableSmartScheduler", () => {
     const upgraded = await scheduler.updateJob(job.id, {
       target: {
         ralphFlow: {
-          id: "legacy-flow",
+          id: "baseline-flow",
           executionProfile: "unattended",
         },
       },
@@ -1041,7 +1123,10 @@ describe("DurableSmartScheduler", () => {
     const workspaceRoot = await createWorkspace();
     const clock = createClock();
     const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
-    const jobNames = Array.from({ length: 8 }, (_value, index) => `job-${index}`);
+    const jobNames = Array.from(
+      { length: 8 },
+      (_value, index) => `job-${index}`,
+    );
 
     await Promise.all(
       jobNames.map((name, index) => {
@@ -1314,7 +1399,7 @@ describe("DurableSmartScheduler", () => {
 
     expect(duplicate.enqueued).toHaveLength(1);
     expect(duplicate.enqueued[0]?.deduplicated).toBe(true);
-    expect((await scheduler.listRuns(job.id))).toHaveLength(1);
+    expect(await scheduler.listRuns(job.id)).toHaveLength(1);
     expect(await scheduler.listEvents()).toHaveLength(3);
   });
 
@@ -1520,7 +1605,9 @@ describe("DurableSmartScheduler", () => {
 
     clock.set(1_000);
 
-    const { runs: [run] } = await scheduler.runDueJobs();
+    const {
+      runs: [run],
+    } = await scheduler.runDueJobs();
 
     expect(run?.status).toBe("succeeded");
     expect(requests).toHaveLength(1);
@@ -1606,7 +1693,9 @@ describe("DurableSmartScheduler", () => {
 
     clock.set(1_000);
 
-    const { runs: [sourceRun] } = await scheduler.runDueJobs();
+    const {
+      runs: [sourceRun],
+    } = await scheduler.runDueJobs();
 
     expect(sourceRun?.jobId).toBe(sourceJob.id);
     expect(sourceRun?.status).toBe("cancelled");
@@ -1673,7 +1762,9 @@ describe("DurableSmartScheduler", () => {
 
     clock.set(1_000);
 
-    const { runs: [firstAttempt] } = await scheduler.runDueJobs();
+    const {
+      runs: [firstAttempt],
+    } = await scheduler.runDueJobs();
 
     expect(firstAttempt?.status).toBe("queued");
     expect(firstAttempt?.attempt).toBe(1);
@@ -1734,7 +1825,9 @@ describe("DurableSmartScheduler", () => {
     await scheduler.cancelRun(runningRun?.id ?? "", "No longer needed.");
     execution.resolve(createSuccessfulResult("executor returned after cancel"));
 
-    const { runs: [finishedRun] } = await runPromise;
+    const {
+      runs: [finishedRun],
+    } = await runPromise;
 
     expect(finishedRun?.status).toBe("cancelled");
     expect(finishedRun?.attemptHistory).toHaveLength(1);
@@ -1771,7 +1864,9 @@ describe("DurableSmartScheduler", () => {
 
     clock.set(1_000);
 
-    const { runs: [finishedRun] } = await scheduler.runDueJobs();
+    const {
+      runs: [finishedRun],
+    } = await scheduler.runDueJobs();
 
     expect(finishedRun?.status).toBe("queued");
     expect(finishedRun?.attemptHistory).toHaveLength(1);
@@ -1784,10 +1879,9 @@ describe("DurableSmartScheduler", () => {
 
     expect(retriedRun?.id).toBe(originalRunId);
     expect(retriedRun?.status).toBe("timed_out");
-    expect(retriedRun?.attemptHistory.map((attempt) => attempt.status)).toEqual([
-      "timed_out",
-      "timed_out",
-    ]);
+    expect(retriedRun?.attemptHistory.map((attempt) => attempt.status)).toEqual(
+      ["timed_out", "timed_out"],
+    );
   });
 
   it("enforces queue concurrency limits across jobs", async () => {
