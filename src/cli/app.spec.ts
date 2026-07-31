@@ -1314,22 +1314,31 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toEqual({
-      command: "set-config",
-      configSetting: "web-search.serper.key",
-      configValue: "serper-live",
+      command: "config",
+      config: {
+        action: "set",
+        setting: "web-search.serper.key",
+        value: "serper-live",
+      },
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
     });
 
     expect(
-      parseCliArgs(["--json", "config", "set", "web-search.provider", "serper"], {
-        currentWorkingDirectory: "C:/workspace",
-      }),
+      parseCliArgs(
+        ["--json", "config", "set", "web-search.provider", "serper"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
     ).toEqual({
-      command: "set-config",
-      configSetting: "web-search.provider",
-      configValue: "serper",
+      command: "config",
+      config: {
+        action: "set",
+        setting: "web-search.provider",
+        value: "serper",
+      },
       json: true,
       verbose: false,
       workspaceRoot: "C:/workspace",
@@ -1614,7 +1623,9 @@ describe("parseCliArgs", () => {
       parseCliArgs(["config", "extra"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("Command `config` does not accept positional arguments: extra");
+    ).toThrow(
+      "Unknown config command `extra`. Expected show, list, get, set, unset, or edit.",
+    );
   });
 });
 

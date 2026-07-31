@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
+import { withoutObjectPath } from "./_helpers/without-object-path.helper.js";
 import {
   MAX_GLOBAL_MEMORY_ENTRIES,
   normalizeConversationMemoryEntries,
@@ -342,7 +343,7 @@ export const loadWorkspaceEnv = async (
 /**
  * Reads the user-scoped Machdoch config file when present.
  */
-const loadUserConfigFile = async (): Promise<{
+export const loadUserConfigFile = async (): Promise<{
   config: UserConfigFile;
   path: string;
 }> => {
@@ -374,6 +375,12 @@ const updateUserConfigFile = async (
   });
 
   return path;
+};
+
+export const clearUserConfigValue = async (
+  path: readonly string[],
+): Promise<string> => {
+  return updateUserConfigFile((config) => withoutObjectPath(config, path));
 };
 
 /**

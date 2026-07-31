@@ -1,5 +1,7 @@
+import process from "node:process";
 import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
-import { writeStdoutLine } from "./_helpers/cli-io.js";
+import { writeStderrLine, writeStdoutLine } from "./_helpers/cli-io.js";
+import { createCliStyle } from "./_helpers/cli-terminal.js";
 
 export const runCli = async (argv: string[]): Promise<void> => {
   const args = parseCliArgs(argv);
@@ -12,6 +14,7 @@ export const runCli = async (argv: string[]): Promise<void> => {
     args.command === "ralph" && args.ralph?.action === "validate-json";
   if (
     args.command !== "help" &&
+    args.command !== "memory" &&
     !isInternalProviderProcess &&
     !isSideEffectFreeRalphValidation
   ) {
@@ -21,14 +24,17 @@ export const runCli = async (argv: string[]): Promise<void> => {
     await ensureAutomaticProviderSync(args.workspaceRoot).catch(
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`machdoch provider-sync: ${message}`);
+        const style = createCliStyle({ isTTY: process.stderr.isTTY === true });
+        writeStderrLine(
+          `${style.warning("Warning:")} provider synchronization failed: ${message}`,
+        );
       },
     );
   }
 
   switch (args.command) {
     case "help": {
-      writeStdoutLine(getHelpText());
+      writeStdoutLine(getHelpText(args.helpTopic));
       return;
     }
     case "set-api": {
@@ -36,13 +42,6 @@ export const runCli = async (argv: string[]): Promise<void> => {
         "./_helpers/cli-summary-commands.js"
       );
       await printSetApiSummary(args);
-      return;
-    }
-    case "set-config": {
-      const { printSetConfigSummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
-      await printSetConfigSummary(args);
       return;
     }
     case "set-global-memory": {
@@ -60,10 +59,17 @@ export const runCli = async (argv: string[]): Promise<void> => {
       return;
     }
     case "config": {
-      const { printConfigSummary } = await import(
+      const { runConfigCommand } = await import(
+        "./_helpers/cli-config-commands.js"
+      );
+      await runConfigCommand(args);
+      return;
+    }
+    case "memory": {
+      const { printMemorySummary } = await import(
         "./_helpers/cli-summary-commands.js"
       );
-      await printConfigSummary(args);
+      await printMemorySummary(args);
       return;
     }
     case "chat": {

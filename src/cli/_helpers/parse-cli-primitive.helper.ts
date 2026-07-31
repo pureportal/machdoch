@@ -1,9 +1,10 @@
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { COMMANDS_WITHOUT_POSITIONALS, VALID_BOOLEAN_TOGGLE_VALUES, VALID_MEMORY_OVERRIDE_VALUES } from "./cli-args-constants.js";
 import type { CommandName } from "./cli-args-types.js";
+import { CliUsageError } from "./cli-error.js";
 
 export const fail = (message: string): never => {
-  throw new Error(message);
+  throw new CliUsageError(message);
 };
 
 export const parseBooleanToggle = (value: string, flagName: string): boolean => {

@@ -16,14 +16,28 @@ export type CommandName =
   | "mcp"
   | "provider-sync"
   | "set-api"
-  | "set-config"
   | "set-global-memory"
   | "inspect"
   | "instructions"
   | "config"
+  | "memory"
   | "tools"
   | "set-default-model"
   | "help";
+
+export type ConfigCliAction =
+  | "show"
+  | "list"
+  | "get"
+  | "set"
+  | "unset"
+  | "edit";
+
+export interface ConfigCliOptions {
+  action: ConfigCliAction;
+  setting?: string;
+  value?: string;
+}
 
 export type SchedulerCliAction =
   | "list"
@@ -279,7 +293,9 @@ export interface InstructionCliOptions {
 
 export interface ParsedCliArgs {
   command: CommandName;
+  helpTopic?: string;
   task?: string;
+  config?: ConfigCliOptions;
   interview?: TaskInterviewCliOptions;
   ralph?: RalphCliOptions;
   scheduler?: SchedulerCliOptions;
@@ -290,8 +306,6 @@ export interface ParsedCliArgs {
   provider?: UserApiProvider;
   runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   key?: string;
-  configSetting?: string;
-  configValue?: string;
   model?: string;
   defaultModel?: string;
   reasoning?: ReasoningMode;

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
+import { withoutObjectPath } from "./_helpers/without-object-path.helper.js";
 import {
   getUserConfigPath,
   hasConfiguredValue,
@@ -66,7 +67,7 @@ const isModelProvider = (
 /**
  * Reads `.machdoch/config.json` when present and returns its parsed contents.
  */
-const loadWorkspaceConfigFile = async (
+export const loadWorkspaceConfigFile = async (
   workspaceRoot: string,
 ): Promise<{ config: WorkspaceConfigFile; path?: string }> => {
   const configPath = join(
@@ -103,6 +104,14 @@ const saveWorkspaceConfigFile = async (
     await writeJsonAtomically(configPath, {
       ...existingConfig,
       ...update,
+      ...(update.compatibility
+        ? {
+            compatibility: {
+              ...existingConfig.compatibility,
+              ...update.compatibility,
+            },
+          }
+        : {}),
     });
   });
 
@@ -183,6 +192,37 @@ export const saveWorkspaceOffline = async (
 ): Promise<string> => {
   return saveWorkspaceConfigFile(workspaceRoot, {
     offline,
+  });
+};
+
+export const clearWorkspaceConfigValue = async (
+  workspaceRoot: string,
+  path: readonly string[],
+): Promise<string> => {
+  const configDirectory = join(workspaceRoot, WORKSPACE_CONFIG_DIRECTORY);
+  const configPath = join(configDirectory, WORKSPACE_CONFIG_FILE_NAME);
+
+  await withCooperativeFileLock(configPath, async () => {
+    const existingConfig = existsSync(configPath)
+      ? (JSON.parse(await readFile(configPath, "utf8")) as WorkspaceConfigFile)
+      : {};
+    await writeJsonAtomically(
+      configPath,
+      withoutObjectPath(existingConfig, path),
+    );
+  });
+
+  return configPath;
+};
+
+export const saveWorkspaceGithubCustomizations = async (
+  workspaceRoot: string,
+  enabled: boolean,
+): Promise<string> => {
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    compatibility: {
+      discoverGithubCustomizations: enabled,
+    },
   });
 };
 

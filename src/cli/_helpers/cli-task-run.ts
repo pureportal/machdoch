@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
+import { CliUsageError } from "./cli-error.js";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { loadUserMemorySettings } from "../../core/env.js";
@@ -47,7 +48,7 @@ import {
 import { createDiscoveryOptions } from "./cli-output.js";
 
 const fail = (message: string): never => {
-  throw new Error(message);
+  throw new CliUsageError(message);
 };
 
 type CliContextPathKind = "file" | "folder" | "path";
@@ -574,7 +575,9 @@ export const runInteractiveChat = async (
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    fail("Interactive chat mode requires an interactive terminal.");
+    fail(
+      "Interactive chat requires a terminal. Use `machdoch run <task>` for non-interactive shells and scripts.",
+    );
   }
 
   const config = await loadRuntimeConfig(

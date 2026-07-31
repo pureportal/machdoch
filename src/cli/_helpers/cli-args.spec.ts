@@ -1,9 +1,73 @@
 import { getHelpText, parseCliArgs } from "./cli-args.ts";
 
 describe("cli args public parser", () => {
-  it("keeps the existing public help text available", () => {
-    expect(getHelpText()).toContain("machdoch ralph watches create");
-    expect(getHelpText()).toContain("--context <path>");
+  it("provides concise root help and focused command help", () => {
+    expect(getHelpText()).toContain("machdoch config edit");
+    expect(getHelpText("run")).toContain("--context <path>");
+    expect(getHelpText("ralph")).toContain("machdoch ralph watches create");
+    expect(getHelpText("memory")).toContain("every saved global memory fact");
+  });
+
+  it("parses the global memory listing command", () => {
+    expect(
+      parseCliArgs(["memory", "list", "--json"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "memory",
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(() =>
+      parseCliArgs(["memory", "clear"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected `machdoch memory list`");
+  });
+
+  it("parses contextual help and configuration actions", () => {
+    expect(
+      parseCliArgs(["help", "config"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({ command: "help", helpTopic: "config" });
+    expect(
+      parseCliArgs(["config", "--help"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({ command: "help", helpTopic: "config" });
+    expect(
+      parseCliArgs(["config", "list", "--json"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({
+      command: "config",
+      config: { action: "list" },
+      json: true,
+    });
+    expect(
+      parseCliArgs(["config", "get", "workspace.model"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({
+      command: "config",
+      config: { action: "get", setting: "workspace.model" },
+    });
+    expect(
+      parseCliArgs(["config", "unset", "api.openai.key"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({
+      command: "config",
+      config: { action: "unset", setting: "api.openai.key" },
+    });
+    expect(
+      parseCliArgs(["config", "interactive"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({ command: "config", config: { action: "edit" } });
   });
 
   it("parses default chat, explicit run, and repeated context options", () => {
@@ -88,7 +152,7 @@ describe("cli args public parser", () => {
           "trigger",
           "job-1",
           "--dedupe-key",
-          "legacy-trigger-key",
+          "trigger-key",
           "--request-id",
           "trigger-request",
         ],
@@ -99,7 +163,7 @@ describe("cli args public parser", () => {
       scheduler: {
         action: "trigger",
         subject: "job-1",
-        dedupeKey: "legacy-trigger-key",
+        dedupeKey: "trigger-key",
         requestId: "trigger-request",
       },
     });

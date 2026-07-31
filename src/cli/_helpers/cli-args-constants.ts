@@ -45,6 +45,7 @@ export const VALID_MEMORY_OVERRIDE_VALUES: ReadonlySet<string> = new Set([
 export const COMMANDS_WITHOUT_POSITIONALS: ReadonlySet<CommandName> = new Set([
   "inspect",
   "config",
+  "memory",
   "tools",
   "help",
 ]);

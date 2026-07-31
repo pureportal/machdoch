@@ -6,6 +6,7 @@ import type {
   UserApiProvider,
 } from "../../core/runtime-contract.generated.js";
 import type {
+  ConfigCliOptions,
   InstructionCliOptions,
   McpCliOptions,
   ParsedCliArgs,
@@ -19,7 +20,9 @@ export const createParsedArgs = (
   base: Omit<
     ParsedCliArgs,
     | "mode"
+    | "helpTopic"
     | "task"
+    | "config"
     | "interview"
     | "ralph"
     | "scheduler"
@@ -29,8 +32,6 @@ export const createParsedArgs = (
     | "provider"
     | "runtimeProvider"
     | "key"
-    | "configSetting"
-    | "configValue"
     | "model"
     | "defaultModel"
     | "reasoning"
@@ -43,12 +44,11 @@ export const createParsedArgs = (
     | "imagePaths"
   >,
   options?: {
+    helpTopic?: string;
     mode?: RunMode;
     provider?: UserApiProvider;
     runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
     key?: string;
-    configSetting?: string;
-    configValue?: string;
     model?: string;
     defaultModel?: string;
     reasoning?: ReasoningMode;
@@ -65,19 +65,19 @@ export const createParsedArgs = (
     mcp?: McpCliOptions;
     providerSync?: ProviderSyncCliOptions;
     instructions?: InstructionCliOptions;
+    config?: ConfigCliOptions;
     task?: string;
   },
 ): ParsedCliArgs => {
   return {
     ...base,
+    ...(options?.helpTopic ? { helpTopic: options.helpTopic } : {}),
     ...(options?.mode ? { mode: options.mode } : {}),
     ...(options?.provider ? { provider: options.provider } : {}),
     ...(options?.runtimeProvider
       ? { runtimeProvider: options.runtimeProvider }
       : {}),
     ...(options?.key ? { key: options.key } : {}),
-    ...(options?.configSetting ? { configSetting: options.configSetting } : {}),
-    ...(options?.configValue ? { configValue: options.configValue } : {}),
     ...(options?.model ? { model: options.model } : {}),
     ...(options?.defaultModel ? { defaultModel: options.defaultModel } : {}),
     ...(options?.reasoning ? { reasoning: options.reasoning } : {}),
@@ -107,6 +107,7 @@ export const createParsedArgs = (
     ...(options?.mcp ? { mcp: options.mcp } : {}),
     ...(options?.providerSync ? { providerSync: options.providerSync } : {}),
     ...(options?.instructions ? { instructions: options.instructions } : {}),
+    ...(options?.config ? { config: options.config } : {}),
   };
 };
 

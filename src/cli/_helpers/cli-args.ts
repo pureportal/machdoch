@@ -50,6 +50,8 @@ import {
   parsePositiveInteger,
 } from "./parse-cli-primitive.helper.js";
 export type {
+  ConfigCliAction,
+  ConfigCliOptions,
   CommandName,
   InstructionCliAction,
   InstructionCliGroup,
@@ -932,10 +934,16 @@ export const parseCliArgs = (
       );
     }
 
-    return createParsedArgs({
-      ...sharedOptions,
-      command: "help",
-    });
+    const helpPositionals =
+      positionals[0] === "help" ? positionals.slice(1) : positionals;
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "help",
+      },
+      helpPositionals[0] ? { helpTopic: helpPositionals[0] } : undefined,
+    );
   }
 
   if (rawDefaultModel) {
@@ -1871,7 +1879,66 @@ export const parseCliArgs = (
     );
   }
 
-  if (first === "inspect" || first === "tools" || first === "help") {
+  if (first === "help") {
+    if (quickRunRequested) {
+      fail(
+        "--quick can only be used with a task provided via --task or positional task text.",
+      );
+    }
+
+    if (rest.length > 1) {
+      fail("Usage: machdoch help [command]");
+    }
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "help",
+      },
+      rest[0] ? { helpTopic: rest[0] } : undefined,
+    );
+  }
+
+  if (first === "memory") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch memory` cannot be combined with --quick or --task.");
+    }
+
+    const [rawAction, ...extraPositionals] = rest;
+    const action = normalizeOptionalString(rawAction) ?? "list";
+    if (action !== "list") {
+      fail("Unknown memory command. Expected `machdoch memory list`.");
+    }
+    if (extraPositionals.length > 0) {
+      fail("Usage: machdoch memory [list] [--json]");
+    }
+    if (
+      rawModel ||
+      rawDefaultModel ||
+      rawReasoning ||
+      rawRuntimeProvider ||
+      rawMode ||
+      sessionMemoryEnabled !== undefined ||
+      globalMemoryEnabled !== undefined ||
+      agentLimits ||
+      rawConversationContextFile ||
+      rawContextPaths ||
+      rawImagePaths
+    ) {
+      fail(
+        "`machdoch memory` cannot be combined with runtime override options.",
+      );
+    }
+
+    return createParsedArgs({
+      json,
+      verbose,
+      workspaceRoot,
+      command: "memory",
+    });
+  }
+
+  if (first === "inspect" || first === "tools") {
     if (quickRunRequested) {
       fail(
         "--quick can only be used with a task provided via --task or positional task text.",
@@ -1893,56 +1960,87 @@ export const parseCliArgs = (
       );
     }
 
-    if (rest.length === 0) {
-      return createParsedArgs({
-        ...sharedOptions,
-        command: "config",
-      });
-    }
+    const [rawSubcommand, setting, ...valueParts] = rest;
+    const subcommand = rawSubcommand ?? "show";
+    const configAction = subcommand === "interactive" ? "edit" : subcommand;
 
-    const [subcommand, setting, ...valueParts] = rest;
-
-    if (subcommand !== "set") {
+    if (
+      !["show", "list", "get", "set", "unset", "edit"].includes(configAction)
+    ) {
       fail(
-        `Command \`config\` does not accept positional arguments: ${rest.join(" ")}`,
+        `Unknown config command \`${subcommand}\`. Expected show, list, get, set, unset, or edit.`,
       );
     }
 
+    if (
+      (configAction === "show" ||
+        configAction === "list" ||
+        configAction === "edit") &&
+      (setting || valueParts.length > 0)
+    ) {
+      fail(`Usage: machdoch config ${configAction}`);
+    }
+
     const configSetting =
-      normalizeOptionalString(setting) ??
-      fail("Expected `machdoch config set <setting> <value>`.");
+      configAction === "get" ||
+      configAction === "set" ||
+      configAction === "unset"
+        ? (normalizeOptionalString(setting) ??
+          fail(
+            `Expected \`machdoch config ${configAction} <setting>${configAction === "set" ? " <value>" : ""}\`.`,
+          ))
+        : undefined;
     const configValue =
-      normalizeOptionalString(valueParts.join(" ")) ??
-      fail("Expected `machdoch config set <setting> <value>`.");
+      configAction === "set"
+        ? (normalizeOptionalString(valueParts.join(" ")) ??
+          fail("Expected `machdoch config set <setting> <value>`."))
+        : undefined;
 
     if (
-      rawModel ||
-      rawDefaultModel ||
-      rawReasoning ||
-      rawRuntimeProvider ||
-      rawMode ||
-      sessionMemoryEnabled !== undefined ||
-      globalMemoryEnabled !== undefined ||
-      agentLimits ||
-      rawConversationContextFile ||
-      rawContextPaths ||
-      rawImagePaths
+      (configAction === "get" || configAction === "unset") &&
+      valueParts.length > 0
+    ) {
+      fail(`Usage: machdoch config ${configAction} <setting>`);
+    }
+
+    if (
+      configAction !== "show" &&
+      (rawModel ||
+        rawDefaultModel ||
+        rawReasoning ||
+        rawRuntimeProvider ||
+        rawMode ||
+        sessionMemoryEnabled !== undefined ||
+        globalMemoryEnabled !== undefined ||
+        agentLimits ||
+        rawConversationContextFile ||
+        rawContextPaths ||
+        rawImagePaths)
     ) {
       fail(
-        "`machdoch config set` cannot be combined with runtime override options.",
+        `\`machdoch config ${configAction}\` cannot be combined with runtime override options.`,
       );
     }
 
     return createParsedArgs(
       {
-        json,
-        verbose,
-        workspaceRoot,
-        command: "set-config",
+        ...(configAction === "show"
+          ? sharedOptions
+          : { json, verbose, workspaceRoot }),
+        command: "config",
       },
       {
-        configSetting,
-        configValue,
+        config: {
+          action: configAction as
+            | "show"
+            | "list"
+            | "get"
+            | "set"
+            | "unset"
+            | "edit",
+          ...(configSetting ? { setting: configSetting } : {}),
+          ...(configValue ? { value: configValue } : {}),
+        },
       },
     );
   }

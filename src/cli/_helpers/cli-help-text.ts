@@ -1,268 +1,293 @@
-export const CLI_HELP_TEXT = (): string => {
-  return `machdoch
+import { CliUsageError } from "./cli-error.js";
+
+const ROOT_HELP = `machdoch - local-first AI agent for terminal and desktop
 
 Usage:
-  machdoch [--mode <ask|machdoch>]
-  machdoch <task>
-  machdoch --task <task> [--mode <ask|machdoch>]
-  machdoch run <task>
-  machdoch --quick --task <task> [--mode <ask|machdoch>]
-  machdoch --set-api --provider <openai|anthropic|google|langdock|quiver|recraft> --key <value>
-  machdoch --set-global-memory <on|off>
-  machdoch --runtime-provider <openai|anthropic|google|langdock|codex-cli|claude-cli|copilot-cli>
-  machdoch --model <name>
-  machdoch --reasoning <default|none|minimal|low|medium|high|xhigh|max|ultra>
-  machdoch --default-model <name>
-  machdoch inspect [--json]
-  machdoch config [--json]
-  machdoch config set <setting> <value> [--json]
-  machdoch tools [--json]
-  machdoch instructions profiles list|show|create|edit|duplicate|delete [profile] [--include-content] [--json]
-  machdoch instructions assignments list|set-defaults [--profile <uuid>...] [--json]
-  machdoch instructions assignments set|remove <workspace-uuid> --path <relative-folder> [--profile <uuid>...] [--json]
-  machdoch instructions assignments relink <workspace-uuid> <old-folder> --path <new-folder> [--json]
-  machdoch instructions local list|show|create|edit|delete [relative-folder] [--expected-digest <sha256>] [--json]
-  machdoch instructions workspaces list|register|relink|unregister [workspace-or-path] [--json]
-  machdoch instructions resolve [--surface <api|cli>] [--path <relative-path>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--include-content] [--json]
-  machdoch instructions validate [--json]
-  machdoch instructions transfer export [--include-workspaces] [--json]
-  machdoch instructions transfer import --prompt-file <export.json> [--decisions-file <choices.json>] [--include-workspaces] [--json]
-  machdoch instructions recovery status [--json]
-  machdoch instructions recovery restore --expected-digest <validated-backup-sha256> [--json]
-  machdoch instructions recovery export --expected-digest <validated-backup-sha256> --include-content [--json]
-  machdoch instructions recovery reset --expected-digest <reviewed-primary-sha256> [--json]
-  machdoch interview --prompt <text> [--input-json <json>] [--max-rounds <n>] [--json]
-  machdoch ralph list [--scope <user|workspace>] [--json]
-  machdoch ralph show|validate <flow> [--scope <user|workspace>] [--json]
-  machdoch ralph validate-json (--flow-json <batch>|--flow-json-file <path|->) [--json]
-  machdoch ralph delete <flow> [--expected-fingerprint <sha256>] [--scope <user|workspace>] [--json]
-  machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
-  machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
-  machdoch ralph save <flow> --flow-json <json> [--expected-fingerprint <sha256>] [--scope <user|workspace>] [--json]
-  machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
-  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>|--retry-current) [--instruction-boundary-policy <require-match|original-boundary|new-boundary>] [--scope <user|workspace>] [--json]
-  machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
-  machdoch ralph run-detail <run-id> [--scope <user|workspace>] [--json]
-  machdoch ralph log <run-id> [--scope <user|workspace>] [--trace] [--json]
-  machdoch ralph create [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--generation-mode <do-it|interview>] [--max-rounds <n>] [--json]
-  machdoch ralph interview [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--existing-flow-json <json>] [--input-json <json>] [--max-rounds <n>] [--json]
-  machdoch ralph watches list|sync|run [--json]
-  machdoch ralph watches create (--watch-json <json>|--watch-json-file <path>) [--json]
-  machdoch ralph watches delete <watch-id> [--json]
-  machdoch mcp servers [--include-disabled] [--json]
-  machdoch mcp cache [--json]
-  machdoch mcp discover|refresh <server-id> [--json]
-  machdoch mcp oauth-authorize <server-id> [--json]
-  machdoch mcp oauth-start <server-id> [--json]
-  machdoch mcp oauth-finish <server-id> <callback-url-or-code> [--json]
-  machdoch mcp call-tool <server-id> <tool-name> [--arguments-json <json>] [--json]
-  machdoch mcp read-resource <server-id> <uri> [--json]
-  machdoch mcp get-prompt <server-id> <prompt-name> [--arguments-json <json>] [--json]
-  machdoch mcp usage [--json]
-  machdoch mcp lifecycle-hook [--agent <provider>] [--phase <phase>] [--json]
-  machdoch mcp cleanup [--unused-days <n>] [--never-used-days <n>] [--apply] [--json]
-  machdoch mcp proxy <server-id> [--cwd <path>]
-  machdoch mcp broker [--cwd <path>]
-  machdoch provider-sync plan [--provider <codex-cli|claude-cli|copilot-cli>] [--json]  # persistent MCP only
-  machdoch provider-sync enable|status|disable|refresh|doctor [--json]
-  machdoch provider-sync daemon
-  machdoch scheduler list [--json]
-  machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
-  machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --scheduler-target ralph-flow --scheduled-ralph-flow <id> [--json]
-  machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
-  machdoch scheduler runs [job-id] [--json]
-  machdoch scheduler events [--json]
-  machdoch scheduler event --event-type <type> [--event-kind <kind>] [--json]
-  machdoch scheduler run-due [--json]
-  machdoch scheduler run-all-due [--json]
-  machdoch scheduler poll-all [--json]
-  machdoch scheduler inspect-ralph <flow> [--scheduled-ralph-param <name=value>] [--json]
-  machdoch scheduler service [--service-start-event-type <type>] [--service-poll-ms <ms>] [--service-idle-shutdown-ms <ms>] [--json]
-  machdoch scheduler service-all [--service-poll-ms <ms>] [--json]
-  machdoch scheduler retry|cancel <run-id> [--json]
-  machdoch scheduler sync-prompts [--json]
+  machdoch                         Start interactive chat
+  machdoch <task>                  Start chat with an initial task
+  machdoch run <task>              Run one task and exit
+  machdoch <command> [options]
 
-Options:
-  --mode <ask|machdoch>
-                          Override the runtime mode for this command or chat session.
-  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose ask or machdoch.
-  --set-api               Save a provider API key into the user-scoped Machdoch config file.
-  --provider <name>       Provider name for --set-api (openai, anthropic, google, langdock, quiver, recraft).
-  --runtime-provider <name>
-                          Override the runtime provider for this command or chat session.
-  --key <value>           API key value for --set-api.
-  --task <text>           Provide the task text explicitly instead of positionals.
-  --model <name>          Override the active model for this run or chat session.
-  --reasoning <mode>      Override model reasoning effort for this run or chat session.
-  --default-model <name>  Persist the workspace default model to .machdoch/config.json.
-  --set-global-memory <on|off>
-                          Persist whether cross-session global memory is enabled.
-  --session-memory <on|off>
-                          Enable or disable per-session memory for this run or chat session.
-  --global-memory <inherit|on|off>
-                          Override cross-session global memory for this run or chat session.
-  --executor-turns <count>
-                          Override the per-executor model turn limit.
-  --autopilot-iterations <count>
-                          Override the Machdoch continuation limit.
-  --infinite              Disable executor turn and Machdoch continuation limits. The inactivity safety timeout still applies.
+Core commands:
+  run            Run one task and exit
+  chat           Start an interactive terminal session
+  interview      Refine a task through structured questions
+  config         Inspect or change user and workspace settings
+  memory         List durable global memory facts
+  inspect        List discovered prompts and skills
+  tools          List available tool areas and model-facing functions
+
+Automation and integration:
+  ralph          Create, validate, run, and inspect RALPH flows
+  scheduler      Manage scheduled and event-triggered work
+  instructions   Manage instruction profiles and workspace assignments
+  mcp            Inspect and use MCP servers, tools, resources, and prompts
+  provider-sync  Manage delegated CLI-provider integration
+
+Examples:
+  machdoch run "summarize the changes in this repository"
+  machdoch --mode ask --context README.md "explain the setup"
+  machdoch config list
+  machdoch config edit
+  machdoch ralph list
+  machdoch scheduler list --json
+
+Global options:
+  --cwd <path>            Use a different workspace root
+  --json                  Print machine-readable JSON where supported
+  --verbose, -v           Print task progress
+  -h, --help              Show help for the current command
+
+Run 'machdoch help <command>' or 'machdoch <command> --help' for details.`;
+
+const RUN_HELP = `machdoch run - execute one task and exit
+
+Usage:
+  machdoch run <task> [options]
+  machdoch --quick --task <task> [options]
+
+Task options:
+  --mode <ask|machdoch>          Override the execution mode
+  --runtime-provider <provider> Override the model provider
+  --model <name>                Override the model
+  --reasoning <mode>            default, none, minimal, low, medium, high,
+                                xhigh, max, or ultra
+  --context <path>              Attach a file or folder; repeatable
+  --image <path>                Attach an image; repeatable
   --conversation-context-file <path>
-                          Load conversation history and memory context from a JSON file.
-  --context <path>        Add a file or folder path as task context. Repeat for multiple paths.
-  --image <path>          Attach an image for a vision-capable model to read. Repeat for multiple images.
-  --cwd <path>            Use a different workspace root.
-  --cron <expr>           Scheduler cron expression for \`scheduler create\`.
-  --trigger <kind:event>  Add an event trigger for \`scheduler create\`, for example workspace-file:workspace-file.created. Repeat for multiple triggers.
-  --trigger-filter <path=value>
-                          Add an activation filter such as payload.path=*.pdf or payload.usedPercent>=90. Repeat for multiple filters.
-  --trigger-recovery-filter <path=value>
-                          Add a recovery filter for stateful triggers, for example payload.usedPercent<=80.
-  --trigger-firing-mode <event|state>
-                          Use state for threshold/condition triggers that repeat only after cooldown/recovery.
-  --trigger-cooldown-ms <ms>
-                          Minimum time between runs fired by an event trigger.
-  --trigger-repeat-ms <ms>
-                          Repeat interval for stateful triggers while the condition remains active.
-  --trigger-debounce-ms <ms>
-                          Debounce window for bursty event sources.
-  --trigger-dedupe-key-template <template>
-                          Event run dedupe template such as file:{payload.path}:{payload.mtime}.
-  --trigger-max-events <n>
-                          Maximum trigger firings allowed per trigger window.
-  --trigger-window-ms <ms>
-                          Rolling window used with --trigger-max-events.
-  --interval-ms <ms>      Scheduler interval in milliseconds for \`scheduler create\`.
-  --delay-ms <ms>         Scheduler one-shot delay in milliseconds for \`scheduler create\`.
-  --run-at <epoch-ms>     Scheduler one-shot absolute run time in epoch milliseconds.
-  --timezone <iana>       IANA timezone for cron schedules.
-  --prompt <text>         Task text or instruction-profile/local Markdown.
-  --prompt-file <path>    Read task or instruction Markdown from a file.
-  --scheduler-target <prompt|ralph-flow>
-                          Choose whether a scheduled job runs a prompt or an existing RALPH-Flow.
-  --scheduled-ralph-flow <id>
-                          Existing RALPH-Flow id or alias for \`scheduler create --scheduler-target ralph-flow\`.
-  --scheduled-ralph-flow-scope <workspace|user>
-                          Scope used to load the scheduled RALPH-Flow.
-  --scheduled-ralph-param <name=value>
-                          Set a scheduled RALPH variable. Repeat for multiple variables.
-  --scheduled-ralph-run-log-scope <workspace|user>
-                          Scope where scheduled RALPH run logs are written.
-  --scheduled-ralph-max-transitions <n>
-                          Maximum graph transitions for scheduled RALPH runs.
-  --scheduled-ralph-profile <unattended>
-                          Enable full capabilities, checkpoint recovery, and autonomous retry defaults.
-  --scheduled-ralph-resume-policy <never|recoverable>
-                          Control whether scheduler retries resume a durable RALPH checkpoint.
-  --scheduled-ralph-allowed-root <path>
-                          Filesystem root allowed for scheduled RALPH execution. Repeat for multiple roots.
-  --scheduled-ralph-allow-commands <on|off>
-                          Allow command/check/git utility execution in scheduled RALPH runs.
-  --scheduled-ralph-allow-writes <on|off>
-                          Allow file writes in scheduled RALPH runs.
-  --scheduled-ralph-allow-network <on|off>
-                          Allow network utilities in scheduled RALPH runs.
-  --scheduled-ralph-allow-mcp-tools <on|off>
-                          Allow MCP tool/resource/prompt blocks in scheduled RALPH runs.
-  --scope <user|workspace>
-                          Ralph flow scope.
-  --path <path>           Workspace-relative instruction scope, relink root, or explicit input path.
-  --profile <uuid>        Ordered profile reference. Repeat to define exact assignment order.
-  --description <text>    Profile description; pass an empty value while editing to clear it.
-  --expected-revision <n> Reject a stale profile, assignment, or workspace mutation.
-  --expected-digest <sha256>
-                          Reject a stale local-file mutation or confirm reviewed recovery bytes.
-  --surface <api|cli>     Provider surface used by instruction resolution.
-  --include-content       Include profile/local bodies in otherwise body-free output; required for recovery export.
-  --include-workspaces    Export unbound workspace mappings or return them for manual relinking on import.
-  --decisions-file <path> Explicit transfer conflict choices.
-  --confirm-assignment-removal
-                          Confirm removal of assignments while unregistering a workspace binding.
-  --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.
-  --expected-fingerprint <sha256>
-                          Reject \`ralph save\` or \`ralph delete\` if the stored flow changed since it was read.
-  --watch-json <json>     Save a Ralph watch definition for \`ralph watches create\`.
-  --watch-json-file <path>
-                          Read a Ralph watch definition from a JSON file.
-  --existing-flow-json <json>
-                          Provide the current Ralph flow JSON to \`ralph create\` for AI-assisted edits.
-  --revision <id>         Ralph flow revision id for \`ralph restore\`.
-  --flow-target <target>  Ralph generation target: flow, prompt-block, or refactor.
-  --generation-mode <mode>
-                          Ralph generation style: do-it or interview.
-  --param <name=value>    Set a Ralph flow variable for \`ralph run\`. Repeat for multiple variables.
-  --input-json <json>     Submit answers for \`ralph resume\`, \`ralph interview\`, or \`interview\`.
-  --input-json-file <path>
-                          Read interview or Ralph resume answers from a JSON file.
-  --retry-current         Resume a recoverable blocked Ralph run by retrying its checkpoint block.
-  --max-rounds <n>        Maximum rounds for \`interview\`, \`ralph create\`, or \`ralph interview\`.
-  --max-transitions <n>   Stop a Ralph run or resume after this many graph transitions.
-  --instruction-boundary-policy <policy>
-                          On resume, require matching instructions, request the retained original, or start an explicit new boundary.
-  --trace                 Show the detailed JSONL trace for \`ralph log\`.
-  --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
-  --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.
-  --agent <provider>      MCP lifecycle hook source: codex-cli, claude-cli, copilot-cli, openai-api, or anthropic-api.
-  --phase <phase>         MCP lifecycle hook phase: invoked, cache-hit, remote-started, succeeded, or failed.
-  --unused-days <n>       Days since last managed MCP use before \`mcp cleanup\` marks it stale.
-  --never-used-days <n>   Days after creation before an unused managed MCP is stale.
-  --apply                 Apply a non-destructive \`mcp cleanup\` plan by marking stale candidates.
-  --context-pack <json>   Add a scheduled context-pack snapshot as JSON. Repeat for multiple packs.
-  --macro <name|prompt>   Add a saved macro reference or prompt invocation. Repeat for multiple macros.
-  --missed-run-policy <skip|enqueue-latest|enqueue-all>
-                          Control catch-up behavior after downtime.
-  --retry-attempts <n>    Maximum scheduler attempts for a run.
-  --ttl-ms <ms>           Expire queued runs that do not start within this duration.
-  --max-duration-ms <ms>  Abort scheduled runs that exceed this duration.
-  --event-type <type>     Event type for \`scheduler event\`, for example workspace-file.created.
-  --event-kind <kind>     Event trigger category for \`scheduler event\`.
-  --event-source <source> Event source for \`scheduler event\`.
-  --event-payload-json <json>
-                          JSON payload for \`scheduler event\`.
-  --event-dedupe-key <key>
-                          Stable source event key for \`scheduler event\`.
-  --event-occurred-at <epoch-ms>
-                          Event occurrence time in epoch milliseconds.
-  --service-poll-ms <ms>  Poll interval for \`scheduler service\`.
-  --service-idle-shutdown-ms <ms>
-                          Stop \`scheduler service\` after this many idle milliseconds.
-  --service-abandoned-run-stale-ms <ms>
-                          Recover running jobs whose heartbeat is stale by this many milliseconds.
-  --service-max-iterations <n>
-                          Stop \`scheduler service\` after this many loop iterations.
-  --service-max-runs-per-tick <n>
-                          Maximum queued scheduler runs claimed per service loop.
-  --service-start-event-type <type>
-                          Emit an event before \`scheduler service\` starts, for example system.startup.
-  --service-start-event-kind <kind>
-                          Event trigger category for the service start event.
-  --service-start-event-dedupe-key <key>
-                          Stable dedupe key for the service start event.
-  --dedupe-key <key>      Stable key used to update an existing schedule instead of creating a duplicate.
-  --request-id <id>       Stable mutation request id; replaying it returns the original scheduler result.
-  --concurrency-key <key> Share queue capacity across related scheduled jobs.
-  --concurrency-limit <n> Maximum actively running jobs for the queue key.
-  --json                  Print machine-readable JSON.
-  --verbose, -v           Print compact progress updates during \`machdoch run\`.
-  -h, --help              Show help.
+                                Load conversation history and memory JSON
+  --session-memory <on|off>     Override session memory
+  --global-memory <inherit|on|off>
+                                Override global memory
+  --executor-turns <count>      Override executor model/tool turns
+  --autopilot-iterations <n>    Override Machdoch continuation cycles
+  --infinite                    Disable both loop limits
+  --json                        Print a machine-readable result
+  --verbose, -v                 Print progress; structured with --json
 
-Config settings accepted by \`machdoch config set\`:
+Use -- before task text that begins with a dash.`;
+
+const CHAT_HELP = `machdoch chat - interactive terminal conversation
+
+Usage:
+  machdoch
+  machdoch <initial task>
+  machdoch --task <initial task>
+
+Chat accepts the same model, mode, context, image, and memory overrides as
+machdoch run. It requires an interactive terminal and does not support --json.
+
+Interactive commands:
+  /help                 Show chat commands
+  /paste [ask|machdoch] Paste multiline task text; finish with /end
+  /exit, /quit          Leave interactive chat`;
+
+const CONFIG_HELP = `machdoch config - inspect and change configuration
+
+Usage:
+  machdoch config [show] [--json]
+  machdoch config list [--json]
+  machdoch config get <setting> [--json]
+  machdoch config set <setting> <value> [--json]
+  machdoch config unset <setting> [--json]
+  machdoch config edit
+
+Commands:
+  show  Print the resolved runtime configuration (default)
+  list  List every CLI-configurable setting, current value, and source
+  get   Show one setting with its scope, source, and accepted values
+  set   Persist one user- or workspace-scoped setting
+  unset Remove a saved value so its default or environment value applies
+  edit  Open the arrow-key interactive configuration editor
+
+Setting groups:
+  workspace.<mode|provider|model|reasoning|offline|github-customizations>
   api.<openai|anthropic|google|langdock|quiver|recraft>.key
   agent-cli.<codex-cli|claude-cli|copilot-cli>.path
   web-search.provider
   web-search.<perplexity|tavily|serper>.key
+  agent-limits.<infinite|executor-turns|autopilot-iterations>
+  review-model
+  memory.global
   voice.provider
   speech-to-text.<provider|input-device>
   desktop.<setting>
-  memory.global
-  agent-limits.<infinite|executor-turns|autopilot-iterations>
-  workspace.<model|provider|mode|reasoning|offline>
 
-Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.
-\`machdoch <task>\` and \`machdoch --task <text>\` start interactive chat with an initial task.
-Use \`/paste\` in interactive chat to submit multiline task text; finish with a line containing only \`/end\`.
-Use \`machdoch run <task>\` or \`machdoch --quick --task <text>\` for one-shot execution that exits.
-During a task run, press Ctrl+C to request cancellation after the current execution step.
-`;
+Examples:
+  machdoch config get workspace.model
+  machdoch config set workspace.mode ask
+  machdoch config set workspace.github-customizations on
+  machdoch config set review-model openai:gpt-5.5-mini
+  machdoch config set api.openai.key <key>
+
+Boolean settings accept on/off, true/false, yes/no, or 1/0. API keys are never
+printed by config show, list, get, or set. The interactive editor masks secret
+input; direct key arguments may remain in shell history. Interactive editing
+requires a TTY; use config set in scripts and CI.`;
+
+const INTERVIEW_HELP = `machdoch interview - refine a task through questions
+
+Usage:
+  machdoch interview (--prompt <text>|--prompt-file <path>) [options]
+
+Options:
+  --input-json <json>       Submit non-interactive answers
+  --input-json-file <path>  Read answers from a JSON file
+  --max-rounds <n>          Limit interview rounds
+  --json                    Print machine-readable output`;
+
+const MEMORY_HELP = `machdoch memory - inspect durable global memory
+
+Usage:
+  machdoch memory [list] [--json]
+
+Lists every saved global memory fact, including its stable id and update time.
+Use \`machdoch config set memory.global on|off\` to change whether global memory
+is enabled for new sessions.`;
+
+const INSPECT_HELP = `machdoch inspect - list discovered customizations
+
+Usage:
+  machdoch inspect [--json]
+
+Lists user and workspace prompts and skills. Enable compatible .github prompt
+and skill discovery with:
+
+  machdoch config set workspace.github-customizations on`;
+
+const TOOLS_HELP = `machdoch tools - inspect the task tool surface
+
+Usage:
+  machdoch tools [--mode <ask|machdoch>] [--json]
+
+Ask mode exposes only read-only calls. Machdoch mode exposes the full tool
+surface allowed by the runtime and current environment.`;
+
+const INSTRUCTIONS_HELP = `machdoch instructions - manage canonical instructions
+
+Usage:
+  machdoch instructions validate [--json]
+  machdoch instructions resolve [--surface <api|cli>] [--path <path>] [--json]
+  machdoch instructions profiles list|show|create|edit|duplicate|delete [profile]
+  machdoch instructions assignments list|set-defaults|set|relink|remove [...]
+  machdoch instructions local list|show|create|edit|delete [folder]
+  machdoch instructions workspaces list|register|relink|unregister [workspace]
+  machdoch instructions transfer export|import [...]
+  machdoch instructions recovery status|restore|export|reset [...]
+
+Common options:
+  --profile <uuid>             Ordered profile reference; repeatable
+  --path <path>                Workspace-relative instruction scope
+  --prompt <text>              Instruction Markdown
+  --prompt-file <path>         Read Markdown or transfer JSON from a file
+  --expected-revision <n>      Reject a stale registry mutation
+  --expected-digest <sha256>   Reject stale local content
+  --include-content            Include stored instruction bodies
+  --include-workspaces         Include workspace mappings in transfers
+  --json                       Print machine-readable output`;
+
+const RALPH_HELP = `machdoch ralph - create and run durable flows
+
+Usage:
+  machdoch ralph list [--scope <user|workspace>] [--json]
+  machdoch ralph show|validate <flow> [--scope <scope>] [--json]
+  machdoch ralph validate-json (--flow-json <json>|--flow-json-file <path|->)
+  machdoch ralph create [flow] (--prompt <text>|--prompt-file <path>) [...]
+  machdoch ralph interview [flow] --prompt <text> [...]
+  machdoch ralph save|delete|revisions|restore <flow> [...]
+  machdoch ralph run <flow> [--param <name=value>...] [--json]
+  machdoch ralph resume <run-id> (--input-json <json>|--retry-current) [...]
+  machdoch ralph runs [flow] [--json]
+  machdoch ralph run-detail|log <run-id> [--trace] [--json]
+  machdoch ralph watches list|sync|run [--json]
+  machdoch ralph watches create (--watch-json <json>|--watch-json-file <path>)
+  machdoch ralph watches delete <watch-id>
+
+Use --scope user or --scope workspace to select flow storage. Use
+--max-transitions to bound a run and --json for automation.`;
+
+const MCP_HELP = `machdoch mcp - inspect and use MCP integrations
+
+Usage:
+  machdoch mcp servers [--include-disabled] [--json]
+  machdoch mcp cache [--json]
+  machdoch mcp discover|refresh <server-id> [--json]
+  machdoch mcp oauth-authorize|oauth-start <server-id> [--json]
+  machdoch mcp oauth-finish <server-id> <callback-url-or-code> [--json]
+  machdoch mcp call-tool <server-id> <tool> [--arguments-json <json>]
+  machdoch mcp read-resource <server-id> <uri> [--json]
+  machdoch mcp get-prompt <server-id> <name> [--arguments-json <json>]
+  machdoch mcp usage [--json]
+  machdoch mcp cleanup [--unused-days <n>] [--apply] [--json]
+  machdoch mcp proxy <server-id> [--cwd <path>]
+  machdoch mcp broker [--cwd <path>]`;
+
+const PROVIDER_SYNC_HELP = `machdoch provider-sync - delegated CLI-provider integration
+
+Usage:
+  machdoch provider-sync plan [--provider <provider>] [--json]
+  machdoch provider-sync enable|status|disable|refresh|doctor [--json]
+  machdoch provider-sync daemon
+
+Providers: codex-cli, claude-cli, copilot-cli. The daemon is an internal
+long-running process normally managed by provider-sync enable.`;
+
+const SCHEDULER_HELP = `machdoch scheduler - scheduled and event-triggered tasks
+
+Usage:
+  machdoch scheduler list [--json]
+  machdoch scheduler create <schedule> --prompt <text> [options]
+  machdoch scheduler create <schedule> --scheduler-target ralph-flow \\
+    --scheduled-ralph-flow <id> [options]
+  machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
+  machdoch scheduler runs [job-id] [--json]
+  machdoch scheduler events [--json]
+  machdoch scheduler event --event-type <type> [options]
+  machdoch scheduler run-due|run-all-due|poll-all [--json]
+  machdoch scheduler retry|cancel <run-id> [--json]
+  machdoch scheduler service|service-all [options]
+
+Schedule one of:
+  --cron <expr>             Cron expression
+  --interval-ms <ms>       Fixed interval
+  --delay-ms <ms>          One-shot delay
+  --run-at <epoch-ms>      One-shot absolute time
+  --trigger <kind:event>   Event trigger; repeatable
+
+Use --timezone for cron schedules, --prompt-file for file input, and --json for
+automation. Run 'machdoch scheduler create --help' to return to this reference.`;
+
+const HELP_BY_TOPIC: Readonly<Record<string, string>> = {
+  run: RUN_HELP,
+  chat: CHAT_HELP,
+  config: CONFIG_HELP,
+  memory: MEMORY_HELP,
+  interview: INTERVIEW_HELP,
+  inspect: INSPECT_HELP,
+  tools: TOOLS_HELP,
+  instructions: INSTRUCTIONS_HELP,
+  ralph: RALPH_HELP,
+  mcp: MCP_HELP,
+  "provider-sync": PROVIDER_SYNC_HELP,
+  scheduler: SCHEDULER_HELP,
 };
 
-export const getHelpText = CLI_HELP_TEXT;
+const HELP_TOPIC_ALIASES: Readonly<Record<string, string>> = {
+  configuration: "config",
+  task: "run",
+};
+
+export const getHelpText = (topic?: string): string => {
+  const normalizedTopic = topic?.trim().toLowerCase();
+  if (!normalizedTopic) return ROOT_HELP;
+
+  const resolvedTopic = HELP_TOPIC_ALIASES[normalizedTopic] ?? normalizedTopic;
+  const help = HELP_BY_TOPIC[resolvedTopic];
+  if (help) return help;
+
+  throw new CliUsageError(
+    `Unknown help topic \`${topic}\`. Available topics: ${Object.keys(HELP_BY_TOPIC).join(", ")}.`,
+  );
+};
+
+export const CLI_HELP_TEXT = (): string => getHelpText();

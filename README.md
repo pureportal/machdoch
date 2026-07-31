@@ -87,11 +87,11 @@ machdoch --cli
 
 The packaged binary chooses a launcher mode first, then a task mode.
 
-| Launcher mode | Command | Notes |
-| --- | --- | --- |
-| Desktop GUI | `machdoch` or `machdoch --ui` | Default when a supported graphical session is available. `--ui` cannot be combined with task args or `--quick`. |
-| Interactive CLI | `machdoch --cli` or `machdoch` without GUI support | Keeps a terminal chat open until `/exit`, `/quit`, or Ctrl+C. |
-| Single-run CLI | `machdoch run <task>` or `machdoch --quick --task <task>` | Runs one task, prints the result, then exits. |
+| Launcher mode   | Command                                                   | Notes                                                                                                           |
+| --------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Desktop GUI     | `machdoch` or `machdoch --ui`                             | Default when a supported graphical session is available. `--ui` cannot be combined with task args or `--quick`. |
+| Interactive CLI | `machdoch --cli` or `machdoch` without GUI support        | Keeps a terminal chat open until `/exit`, `/quit`, or Ctrl+C.                                                   |
+| Single-run CLI  | `machdoch run <task>` or `machdoch --quick --task <task>` | Runs one task, prints the result, then exits.                                                                   |
 
 On Linux, the desktop GUI requires `DISPLAY` or `WAYLAND_DISPLAY`. Without a graphical session, `machdoch` falls back to CLI behavior.
 
@@ -99,11 +99,11 @@ On Linux, the desktop GUI requires `DISPLAY` or `WAYLAND_DISPLAY`. Without a gra
 
 `machdoch` resolves settings from three places:
 
-| Scope | File or source | Use it for |
-| --- | --- | --- |
-| User/global | `user-config.json` | Provider keys, web-search keys, voice, speech-to-text, desktop behavior, global memory, default agent loop limits. |
-| Workspace | `.machdoch/config.json` | Workspace defaults, provider/model/mode defaults, offline behavior, workspace loop limits, compatibility discovery. |
-| Environment | `.env` in the workspace and process env | API keys and runtime overrides for automation or temporary runs. |
+| Scope       | File or source                          | Use it for                                                                                                          |
+| ----------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| User/global | `user-config.json`                      | Provider keys, web-search keys, voice, speech-to-text, desktop behavior, global memory, default agent loop limits.  |
+| Workspace   | `.machdoch/config.json`                 | Workspace defaults, provider/model/mode defaults, offline behavior, workspace loop limits, compatibility discovery. |
+| Environment | `.env` in the workspace and process env | API keys and runtime overrides for automation or temporary runs.                                                    |
 
 User config locations:
 
@@ -115,22 +115,26 @@ Use `MACHDOCH_USER_CONFIG_DIR` to override the user config directory. When runni
 
 ### Resolution Order
 
-| Setting | Highest to lowest priority |
-| --- | --- |
-| Mode | CLI/GUI session override, then `MACHDOCH_MODE`, then `defaultMode`, then `machdoch` |
-| Provider | CLI/GUI provider override, then workspace `provider`, then first configured provider, then `unconfigured` |
-| Model | CLI/GUI model override, then workspace `model`, then `MACHDOCH_MODEL`, then provider default |
-| Offline | `MACHDOCH_OFFLINE=true`, then workspace `offline`, then `false` |
-| Agent limits | CLI runtime flags, then env overrides, then workspace `agentLimits`, then user/global limits, then built-in defaults |
-| Web search provider | `MACHDOCH_WEB_SEARCH_PROVIDER`, then user/global web-search provider |
+| Setting             | Highest to lowest priority                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Mode                | CLI/GUI session override, then `MACHDOCH_MODE`, then `defaultMode`, then `machdoch`                                  |
+| Provider            | CLI/GUI provider override, then workspace `provider`, then first configured provider, then `unconfigured`            |
+| Model               | CLI/GUI model override, then workspace `model`, then `MACHDOCH_MODEL`, then provider default                         |
+| Offline             | `MACHDOCH_OFFLINE=true`, then workspace `offline`, then `false`                                                      |
+| Agent limits        | CLI runtime flags, then env overrides, then workspace `agentLimits`, then user/global limits, then built-in defaults |
+| Web search provider | `MACHDOCH_WEB_SEARCH_PROVIDER`, then user/global web-search provider                                                 |
 
 Provider defaults:
 
-| Provider | Default model |
-| --- | --- |
-| `openai` | `gpt-5.5` |
-| `anthropic` | `claude-sonnet-4-6` |
-| `google` | `gemini-2.5-flash` |
+| Provider      | Default model      |
+| ------------- | ------------------ |
+| `openai`      | `gpt-5.5`          |
+| `anthropic`   | `claude-sonnet-5`  |
+| `google`      | `gemini-3.5-flash` |
+| `langdock`    | `gpt-5.5`          |
+| `codex-cli`   | `gpt-5.5`          |
+| `claude-cli`  | `sonnet`           |
+| `copilot-cli` | `auto`             |
 
 ## Workspace Config
 
@@ -141,6 +145,7 @@ Create `.machdoch/config.json` in a workspace:
   "defaultMode": "machdoch",
   "provider": "openai",
   "model": "gpt-5.5",
+  "reasoning": "default",
   "offline": false,
   "agentLimits": {
     "infinite": false,
@@ -155,16 +160,17 @@ Create `.machdoch/config.json` in a workspace:
 
 Workspace config keys:
 
-| Key | Values |
-| --- | --- |
-| `defaultMode` | `ask`, `machdoch` |
-| `provider` | `openai`, `anthropic`, `google` |
-| `model` | Provider model id |
-| `offline` | `true`, `false` |
-| `agentLimits.infinite` | `true`, `false` |
-| `agentLimits.executorTurns` | Integer `1` to `1000` |
-| `agentLimits.autopilotExecutorIterations` | Integer `1` to `100` |
-| `compatibility.discoverGithubCustomizations` | `true`, `false` |
+| Key                                          | Values                                                                                |
+| -------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `defaultMode`                                | `ask`, `machdoch`                                                                     |
+| `provider`                                   | `openai`, `anthropic`, `google`, `langdock`, `codex-cli`, `claude-cli`, `copilot-cli` |
+| `model`                                      | Provider model id                                                                     |
+| `reasoning`                                  | `default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`        |
+| `offline`                                    | `true`, `false`                                                                       |
+| `agentLimits.infinite`                       | `true`, `false`                                                                       |
+| `agentLimits.executorTurns`                  | Integer `1` to `1000`                                                                 |
+| `agentLimits.autopilotExecutorIterations`    | Integer `1` to `100`                                                                  |
+| `compatibility.discoverGithubCustomizations` | `true`, `false`                                                                       |
 
 Quick workspace writes:
 
@@ -173,125 +179,143 @@ machdoch --default-model gpt-5.5
 machdoch config set workspace.model gpt-5.5
 machdoch config set workspace.provider openai
 machdoch config set workspace.mode machdoch
+machdoch config set workspace.reasoning high
 machdoch config set workspace.offline off
+machdoch config set workspace.github-customizations on
 ```
 
 ## User/Global Config
 
-Use `machdoch config set <setting> <value>` for user/global settings and a few workspace writes. Add `--json` for machine-readable output.
+Use `machdoch config list` to discover every CLI-configurable value, `machdoch config get <setting>` to inspect one value and its source, and `machdoch config set <setting> <value>` to persist a change. `machdoch config unset <setting>` removes a saved value so its default or environment value applies. Add `--json` for machine-readable output.
+
+For an interactive arrow-key editor, run:
+
+```bash
+machdoch config edit
+```
+
+The interactive editor requires a terminal. Scripts and CI should use `config get`, `config set`, and `config unset`.
+
+API keys are redacted from `config show`, `config list`, `config get`, and update results. `config edit` masks key entry. A key passed directly to `config set` may remain in shell history, so prefer the interactive editor or environment variables on shared machines.
 
 Boolean config values accept `on`, `off`, `true`, `false`, `1`, `0`, `yes`, and `no`.
 
-| Setting | Values | Scope | GUI |
-| --- | --- | --- | --- |
-| `api.openai.key` | API key | User | Settings > Providers |
-| `api.anthropic.key` | API key | User | Settings > Providers |
-| `api.google.key` | API key | User | Settings > Providers |
-| `web-search.provider` | `none`, `perplexity`, `tavily`, `serper` | User | Settings > Web search |
-| `web-search.perplexity.key` | API key | User | Settings > Web search |
-| `web-search.tavily.key` | API key | User | Settings > Web search |
-| `web-search.serper.key` | API key | User | Settings > Web search |
-| `voice.provider` | `none`, `openai`, `google` | User | Settings > Voice |
-| `speech-to-text.provider` | `none`, `openai`, `google` | User | Settings > Voice |
-| `speech-to-text.input-device` | Device id, or `none` | User | Settings > Voice |
-| `memory.global` | Boolean | User | Settings > Memory |
-| `agent-limits.infinite` | Boolean | User | Settings > Agent |
-| `agent-limits.executor-turns` | Integer `1` to `1000` | User | Settings > Agent |
-| `agent-limits.autopilot-iterations` | Integer `1` to `100` | User | Settings > Agent |
-| `workspace.model` | Provider model id | Workspace | Model picker/session workspace defaults |
-| `workspace.provider` | `openai`, `anthropic`, `google` | Workspace | Model picker/session workspace defaults |
-| `workspace.mode` | `ask`, `machdoch` | Workspace | Mode picker/session workspace defaults |
-| `workspace.offline` | Boolean | Workspace | Runtime snapshot |
+| Setting                             | Values                                   | Scope     | GUI                                     |
+| ----------------------------------- | ---------------------------------------- | --------- | --------------------------------------- |
+| `api.openai.key`                    | API key                                  | User      | Settings > Providers                    |
+| `api.anthropic.key`                 | API key                                  | User      | Settings > Providers                    |
+| `api.google.key`                    | API key                                  | User      | Settings > Providers                    |
+| `api.langdock.key`                  | API key                                  | User      | Settings > Providers                    |
+| `api.quiver.key`                    | API key                                  | User      | Settings > Providers                    |
+| `api.recraft.key`                   | API key                                  | User      | Settings > Providers                    |
+| `agent-cli.<provider>.path`         | Existing executable path                 | User      | Delegated provider setup                |
+| `web-search.provider`               | `none`, `perplexity`, `tavily`, `serper` | User      | Settings > Web search                   |
+| `web-search.perplexity.key`         | API key                                  | User      | Settings > Web search                   |
+| `web-search.tavily.key`             | API key                                  | User      | Settings > Web search                   |
+| `web-search.serper.key`             | API key                                  | User      | Settings > Web search                   |
+| `voice.provider`                    | `none`, `openai`, `google`               | User      | Settings > Voice                        |
+| `speech-to-text.provider`           | `none`, `openai`, `google`               | User      | Settings > Voice                        |
+| `speech-to-text.input-device`       | Device id, or `none`                     | User      | Settings > Voice                        |
+| `memory.global`                     | Boolean                                  | User      | Settings > Memory                       |
+| `agent-limits.infinite`             | Boolean                                  | User      | Settings > Agent                        |
+| `agent-limits.executor-turns`       | Integer `1` to `1000`                    | User      | Settings > Agent                        |
+| `agent-limits.autopilot-iterations` | Integer `1` to `100`                     | User      | Settings > Agent                        |
+| `review-model`                      | `base`, or `<provider>:<model>`          | User      | Settings > Agent > Review model         |
+| `workspace.model`                   | Provider model id                        | Workspace | Model picker/session workspace defaults |
+| `workspace.provider`                | Any model provider                       | Workspace | Model picker/session workspace defaults |
+| `workspace.mode`                    | `ask`, `machdoch`                        | Workspace | Mode picker/session workspace defaults  |
+| `workspace.reasoning`               | Reasoning mode                           | Workspace | Settings > Workspace                    |
+| `workspace.offline`                 | Boolean                                  | Workspace | Runtime snapshot                        |
+| `workspace.github-customizations`   | Boolean                                  | Workspace | Prompt/skill compatibility discovery    |
 
 Desktop settings are user-scoped:
 
-| Setting | Values | Default |
-| --- | --- | --- |
-| `desktop.autostart-enabled` | Boolean | `false` |
-| `desktop.autostart-minimized` | Boolean | `false` |
-| `desktop.autostart-to-tray` | Boolean | `false` |
-| `desktop.always-run-as-administrator` | Boolean | `false` |
-| `desktop.assistant-bubble-enabled` | Boolean | `true` |
-| `desktop.assistant-bubble-hide-when-fullscreen` | Boolean | `true` |
-| `desktop.assistant-bubble-temporarily-hide-seconds` | Number `2` to `30` | `6` |
-| `desktop.ai-context-max-messages` | Integer `1` to `200` | `60` |
-| `desktop.inactive-session-archive-days` | Integer `1` to `365` | `7` |
-| `desktop.archived-session-retention-days` | Integer `1` to `365` | `7` |
-| `desktop.quick-voice-enabled` | Boolean | `true` |
-| `desktop.quick-voice-shortcut` | Non-empty shortcut string | `CommandOrControl+Alt+V` |
-| `desktop.quick-voice-silence-seconds` | Number `0.8` to `8` | `1.8` |
-| `desktop.quick-voice-max-messages` | Integer `10` to `200` | `50` |
+| Setting                                             | Values                    | Default                  |
+| --------------------------------------------------- | ------------------------- | ------------------------ |
+| `desktop.autostart-minimized`                       | Boolean                   | `false`                  |
+| `desktop.autostart-to-tray`                         | Boolean                   | `false`                  |
+| `desktop.always-run-as-administrator`               | Boolean                   | `false`                  |
+| `desktop.assistant-bubble-enabled`                  | Boolean                   | `true`                   |
+| `desktop.assistant-bubble-hide-when-fullscreen`     | Boolean                   | `true`                   |
+| `desktop.assistant-bubble-temporarily-hide-seconds` | Number `2` to `30`        | `6`                      |
+| `desktop.ai-context-max-messages`                   | Integer `1` to `200`      | `60`                     |
+| `desktop.inactive-session-archive-days`             | Integer `1` to `365`      | `7`                      |
+| `desktop.archived-session-retention-days`           | Integer `1` to `365`      | `7`                      |
+| `desktop.quick-voice-enabled`                       | Boolean                   | `true`                   |
+| `desktop.quick-voice-shortcut`                      | Non-empty shortcut string | `CommandOrControl+Alt+V` |
+| `desktop.quick-voice-silence-seconds`               | Number `0.8` to `8`       | `1.8`                    |
+| `desktop.quick-voice-max-messages`                  | Integer `10` to `200`     | `50`                     |
 
-Use the GUI for `desktop.autostart-enabled` when possible because the desktop app also updates the platform autostart registration.
+Launch-on-sign-in is intentionally desktop-only: changing it must update the operating system's login registration, not just `user-config.json`. Use **Settings > Desktop > Launch on sign-in**. The other startup settings above affect how an already registered desktop launch opens.
 
 GUI-only shell appearance settings are stored in the desktop shell store:
 
-| Setting | Values |
-| --- | --- |
-| Theme | `dark`, `light` |
-| Density | `comfortable`, `compact` |
-| Accent | `sky`, `emerald`, `violet`, `amber` |
+| Setting                 | Values                               |
+| ----------------------- | ------------------------------------ |
+| Theme                   | `dark`, `light`                      |
+| Density                 | `comfortable`, `compact`             |
+| Accent                  | `sky`, `emerald`, `violet`, `amber`  |
 | Quick Chat bubble style | `classic`, `glass`, `pulse`, `orbit` |
 
 Quick Chat bubble styles:
 
-| Style | Behavior |
-| --- | --- |
-| `classic` | Quiet solid launcher with hover, press, open, and focus states. |
-| `glass` | Rounded translucent launcher with a solid fallback when backdrop blur is unavailable. |
-| `pulse` | Static while idle; uses an aura only for active work or pending attention. |
-| `orbit` | Static conic ring while idle; animates the ring only while work is running. |
+| Style     | Behavior                                                                              |
+| --------- | ------------------------------------------------------------------------------------- |
+| `classic` | Quiet solid launcher with hover, press, open, and focus states.                       |
+| `glass`   | Rounded translucent launcher with a solid fallback when backdrop blur is unavailable. |
+| `pulse`   | Static while idle; uses an aura only for active work or pending attention.            |
+| `orbit`   | Static conic ring while idle; animates the ring only while work is running.           |
 
 GUI-only voice reply settings are stored with the desktop shell state:
 
-| Setting | Values |
-| --- | --- |
-| Replies | Auto-read new replies, or manual only |
+| Setting      | Values                                     |
+| ------------ | ------------------------------------------ |
+| Replies      | Auto-read new replies, or manual only      |
 | System voice | System default, or a selected system voice |
-| Speech rate | `0.8` to `1.4`; default `1.0` |
+| Speech rate  | `0.8` to `1.4`; default `1.0`              |
 
 ## Environment Variables
 
 Environment values can come from the process or a workspace `.env` file. Process env wins over `.env`.
 
-| Variable | Purpose |
-| --- | --- |
-| `OPENAI_API_KEY` | OpenAI model provider key |
-| `ANTHROPIC_API_KEY` | Anthropic model provider key |
-| `GOOGLE_API_KEY` | Google model provider key |
-| `PERPLEXITY_API_KEY` | Perplexity web-search key |
-| `TAVILY_API_KEY` | Tavily web-search key |
-| `SERPER_API_KEY` | Serper web-search key |
-| `MACHDOCH_MODE` | Default task mode: `ask` or `machdoch` |
-| `MACHDOCH_MODEL` | Default model id override |
-| `MACHDOCH_OFFLINE` | Set to `true` to force offline behavior |
-| `MACHDOCH_WEB_SEARCH_PROVIDER` | `none`, `perplexity`, `tavily`, or `serper` |
-| `MACHDOCH_EXECUTOR_TURNS` | Executor turn limit |
-| `MACHDOCH_AUTOPILOT_ITERATIONS` | Machdoch continuation limit |
-| `MACHDOCH_INFINITE` | `true` or `1` disables loop-count limits |
-| `MACHDOCH_USER_CONFIG_DIR` | Override the user config directory |
+| Variable                                | Purpose                                                            |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `OPENAI_API_KEY`                        | OpenAI model provider key                                          |
+| `ANTHROPIC_API_KEY`                     | Anthropic model provider key                                       |
+| `GOOGLE_API_KEY`                        | Google model provider key                                          |
+| `PERPLEXITY_API_KEY`                    | Perplexity web-search key                                          |
+| `TAVILY_API_KEY`                        | Tavily web-search key                                              |
+| `SERPER_API_KEY`                        | Serper web-search key                                              |
+| `MACHDOCH_MODE`                         | Default task mode: `ask` or `machdoch`                             |
+| `MACHDOCH_MODEL`                        | Default model id override                                          |
+| `MACHDOCH_OFFLINE`                      | Set to `true` to force offline behavior                            |
+| `MACHDOCH_WEB_SEARCH_PROVIDER`          | `none`, `perplexity`, `tavily`, or `serper`                        |
+| `MACHDOCH_EXECUTOR_TURNS`               | Executor turn limit                                                |
+| `MACHDOCH_AUTOPILOT_ITERATIONS`         | Machdoch continuation limit                                        |
+| `MACHDOCH_INFINITE`                     | `true` or `1` disables loop-count limits                           |
+| `MACHDOCH_USER_CONFIG_DIR`              | Override the user config directory                                 |
 | `MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV` | `true` or `1` enables Windows administrator relaunch in dev builds |
 
 ## Execution Options
 
-| Parameter | Single-run CLI | Interactive CLI | Desktop GUI |
-| --- | --- | --- | --- |
-| Task text | `machdoch run <task>` or `--quick --task <task>` | Type at `machdoch>` or start with `machdoch "task"` | Composer text |
-| Workspace | `--cwd <path>` | `--cwd <path>` | Workspace picker, dropped files/folders, or session workspace |
-| Mode | `--mode ask\|machdoch` | `--mode ...`; `/paste ask` or `/paste machdoch` for one pasted task | Mode picker: workspace default, Ask, or Machdoch |
-| Provider | `--runtime-provider openai\|anthropic\|google` | Same | Model picker provider |
-| Model | `--model <name>` | Same | Model picker model |
-| Files/folders as context | Repeat `--context <path>` | Start chat with `--context <path>` | Attach files/folders or drag/drop |
-| Images | Repeat `--image <path>` | Start chat with `--image <path>` | Attach images or paste images |
-| Conversation context | `--conversation-context-file <path>` | Same, used as initial chat context | Automatic session history/context |
-| Session memory | `--session-memory on\|off` | Same, applies to the chat session | Composer memory toggle |
-| Global memory | `--global-memory inherit\|on\|off` | Same, applies to the chat session | Composer global memory toggle plus Settings > Memory |
-| Agent loop limits | `--executor-turns`, `--autopilot-iterations`, `--infinite` | Same, applies to chat task runs | Settings > Agent |
-| Output JSON | `--json` | Not supported | Structured UI output |
-| Progress | `--verbose` or `-v` | Built-in task progress | Live thinking/progress panel |
-| Cancellation | Ctrl+C during task execution | Ctrl+C during task execution or exit chat | Cancel button |
-| Desktop UI control | Not exposed as a direct CLI flag | Not exposed as a direct CLI flag | Composer UI-control toggle when available |
-| Quick Voice | Not available | Not available | Quick Voice window and global shortcut |
+| Parameter                | Single-run CLI                                             | Interactive CLI                                                     | Desktop GUI                                                   |
+| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Task text                | `machdoch run <task>` or `--quick --task <task>`           | Type at `machdoch>` or start with `machdoch "task"`                 | Composer text                                                 |
+| Workspace                | `--cwd <path>`                                             | `--cwd <path>`                                                      | Workspace picker, dropped files/folders, or session workspace |
+| Mode                     | `--mode ask\|machdoch`                                     | `--mode ...`; `/paste ask` or `/paste machdoch` for one pasted task | Mode picker: workspace default, Ask, or Machdoch              |
+| Provider                 | `--runtime-provider <provider>`                            | Same                                                                | Model picker provider                                         |
+| Model                    | `--model <name>`                                           | Same                                                                | Model picker model                                            |
+| Files/folders as context | Repeat `--context <path>`                                  | Start chat with `--context <path>`                                  | Attach files/folders or drag/drop                             |
+| Images                   | Repeat `--image <path>`                                    | Start chat with `--image <path>`                                    | Attach images or paste images                                 |
+| Conversation context     | `--conversation-context-file <path>`                       | Same, used as initial chat context                                  | Automatic session history/context                             |
+| Session memory           | `--session-memory on\|off`                                 | Same, applies to the chat session                                   | Composer memory toggle                                        |
+| Global memory            | `--global-memory inherit\|on\|off`                         | Same, applies to the chat session                                   | Composer global memory toggle plus Settings > Memory          |
+| Agent loop limits        | `--executor-turns`, `--autopilot-iterations`, `--infinite` | Same, applies to chat task runs                                     | Settings > Agent                                              |
+| Output JSON              | `--json`                                                   | Not supported                                                       | Structured UI output                                          |
+| Progress                 | `--verbose` or `-v`                                        | Built-in task progress                                              | Live thinking/progress panel                                  |
+| Cancellation             | Ctrl+C during task execution                               | Ctrl+C during task execution or exit chat                           | Cancel button                                                 |
+| Desktop UI control       | Not exposed as a direct CLI flag                           | Not exposed as a direct CLI flag                                    | Composer UI-control toggle when available                     |
+| Quick Voice              | Not available                                              | Not available                                                       | Quick Voice window and global shortcut                        |
 
 Image attachments require a configured provider/model with image input support. Supported image extensions are provider-specific.
 
@@ -299,60 +323,75 @@ Image attachments require a configured provider/model with image input support. 
 
 Commands:
 
-| Command | Purpose |
-| --- | --- |
-| `machdoch --help` | Show CLI help |
-| `machdoch --ui` | Force desktop GUI launch |
-| `machdoch --cli` | Force terminal mode |
-| `machdoch` | Start GUI when available, otherwise terminal chat |
-| `machdoch <task>` | Start interactive chat with an initial task |
-| `machdoch --task <task>` | Start interactive chat with an explicit initial task |
-| `machdoch run <task>` | Run one task and exit |
-| `machdoch --quick --task <task>` | Run one task and exit |
-| `machdoch --set-api --provider <provider> --key <key>` | Save a model provider key |
-| `machdoch --set-global-memory on\|off` | Persist global memory default |
-| `machdoch --default-model <model>` | Persist workspace default model |
-| `machdoch config` | Print resolved runtime config |
-| `machdoch config set <setting> <value>` | Persist a user or workspace setting |
-| `machdoch inspect` | List discovered prompts and skills |
-| `machdoch tools` | List tool areas and model-facing function calls |
+| Command                                                | Purpose                                              |
+| ------------------------------------------------------ | ---------------------------------------------------- |
+| `machdoch --help`                                      | Show CLI help                                        |
+| `machdoch help <command>`                              | Show focused help for one command                    |
+| `machdoch --ui`                                        | Force desktop GUI launch                             |
+| `machdoch --cli`                                       | Force terminal mode                                  |
+| `machdoch`                                             | Start GUI when available, otherwise terminal chat    |
+| `machdoch <task>`                                      | Start interactive chat with an initial task          |
+| `machdoch --task <task>`                               | Start interactive chat with an explicit initial task |
+| `machdoch run <task>`                                  | Run one task and exit                                |
+| `machdoch --quick --task <task>`                       | Run one task and exit                                |
+| `machdoch --set-api --provider <provider> --key <key>` | Save a model provider key                            |
+| `machdoch --set-global-memory on\|off`                 | Persist global memory default                        |
+| `machdoch --default-model <model>`                     | Persist workspace default model                      |
+| `machdoch config`                                      | Print resolved runtime config                        |
+| `machdoch config list`                                 | List every configurable setting and its source       |
+| `machdoch config get <setting>`                        | Inspect one setting                                  |
+| `machdoch config set <setting> <value>`                | Persist a user or workspace setting                  |
+| `machdoch config unset <setting>`                      | Restore a setting's default or environment value     |
+| `machdoch config edit`                                 | Open the arrow-key interactive configuration editor  |
+| `machdoch memory list`                                 | List every saved global memory fact                  |
+| `machdoch inspect`                                     | List discovered prompts and skills                   |
+| `machdoch tools`                                       | List tool areas and model-facing function calls      |
 
 Flags:
 
-| Flag | Values | Applies to |
-| --- | --- | --- |
-| `--mode` | `ask`, `machdoch` | Run/chat |
-| `--runtime-provider` | `openai`, `anthropic`, `google` | Run/chat/config summaries |
-| `--model` | Provider model id | Run/chat/config summaries |
-| `--cwd` | Path | All commands |
-| `--task` | Text | Run/chat |
-| `--quick` | Boolean flag | Single-run CLI only |
-| `--context` | Path, repeatable | Run/chat |
-| `--image` | Image path, repeatable | Run/chat |
-| `--conversation-context-file` | JSON file path | Run/chat |
-| `--session-memory` | `on`, `off` | Run/chat |
-| `--global-memory` | `inherit`, `on`, `off` | Run/chat |
-| `--executor-turns` | Positive integer | Run/chat |
-| `--autopilot-iterations` | Positive integer | Run/chat |
-| `--infinite` | Boolean flag | Run/chat |
-| `--json` | Boolean flag | `run`, `config`, `config set`, `inspect`, `tools`, `--set-api`, `--default-model`, `--set-global-memory` |
-| `--verbose`, `-v` | Boolean flag | Run/chat task progress; structured progress with `--json` |
-| `--set-api` | Boolean flag | Provider key write |
-| `--provider` | `openai`, `anthropic`, `google` | Only with `--set-api` |
-| `--key` | API key | Only with `--set-api` |
-| `--default-model` | Provider model id | Workspace model write |
-| `--set-global-memory` | `on`, `off` | User memory setting write |
-| `--help`, `-h` | Boolean flag | Help |
+| Flag                          | Values                          | Applies to                                                                                            |
+| ----------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `--mode`                      | `ask`, `machdoch`               | Run/chat                                                                                              |
+| `--runtime-provider`          | Model provider                  | Run/chat/config summaries                                                                             |
+| `--model`                     | Provider model id               | Run/chat/config summaries                                                                             |
+| `--cwd`                       | Path                            | All commands                                                                                          |
+| `--task`                      | Text                            | Run/chat                                                                                              |
+| `--quick`                     | Boolean flag                    | Single-run CLI only                                                                                   |
+| `--context`                   | Path, repeatable                | Run/chat                                                                                              |
+| `--image`                     | Image path, repeatable          | Run/chat                                                                                              |
+| `--conversation-context-file` | JSON file path                  | Run/chat                                                                                              |
+| `--session-memory`            | `on`, `off`                     | Run/chat                                                                                              |
+| `--global-memory`             | `inherit`, `on`, `off`          | Run/chat                                                                                              |
+| `--executor-turns`            | Positive integer                | Run/chat                                                                                              |
+| `--autopilot-iterations`      | Positive integer                | Run/chat                                                                                              |
+| `--infinite`                  | Boolean flag                    | Run/chat                                                                                              |
+| `--json`                      | Boolean flag                    | `run`, non-interactive `config` commands, `inspect`, `tools`, automation commands, and legacy setters |
+| `--verbose`, `-v`             | Boolean flag                    | Run/chat task progress; structured progress with `--json`                                             |
+| `--set-api`                   | Boolean flag                    | Provider key write                                                                                    |
+| `--provider`                  | `openai`, `anthropic`, `google` | Only with `--set-api`                                                                                 |
+| `--key`                       | API key                         | Only with `--set-api`                                                                                 |
+| `--default-model`             | Provider model id               | Workspace model write                                                                                 |
+| `--set-global-memory`         | `on`, `off`                     | User memory setting write                                                                             |
+| `--help`, `-h`                | Boolean flag                    | Help                                                                                                  |
 
 Interactive chat commands:
 
-| Command | Purpose |
-| --- | --- |
-| `/help` | Show interactive help |
-| `/paste` | Paste multiline task text; finish with `/end` |
-| `/paste ask` | Paste one task and run it in Ask mode |
-| `/paste machdoch` | Paste one task and run it in Machdoch mode |
-| `/exit`, `/quit` | Leave interactive chat |
+| Command           | Purpose                                       |
+| ----------------- | --------------------------------------------- |
+| `/help`           | Show interactive help                         |
+| `/paste`          | Paste multiline task text; finish with `/end` |
+| `/paste ask`      | Paste one task and run it in Ask mode         |
+| `/paste machdoch` | Paste one task and run it in Machdoch mode    |
+| `/exit`, `/quit`  | Leave interactive chat                        |
+
+### Terminal and scripting behavior
+
+- `machdoch help` is intentionally short; use `machdoch help config`, `machdoch help ralph`, or another command topic for the full command syntax.
+- Human-readable output uses color only on a capable TTY. Set `NO_COLOR` (even to an empty value) or `FORCE_COLOR=0` to disable it; set `FORCE_COLOR=1` to enable it when output is captured by a color-aware tool.
+- `--json` keeps stdout machine-readable, and command errors are written to stderr as JSON. Usage errors exit with code `2`, runtime failures with `1`, cancellations with `130`, and successful broken-pipe exits with `0`.
+- Interactive chat and `config edit` require a TTY. Use `machdoch run`, `config get`, `config set`, or `config unset` in non-interactive shells.
+- Quote paths that contain spaces in PowerShell, Command Prompt, Bash, or other shells. `--cwd`, repeated `--context`, image paths, and explicit delegated-provider executable paths accept native Windows or POSIX paths.
+- The arrow-key editor uses Node's cross-platform keypress handling and restores terminal raw mode and cursor state when it exits or is cancelled.
 
 ## Desktop GUI
 
@@ -367,6 +406,10 @@ The desktop app adds:
 - Assistant bubble, popup, tray behavior, sign-in startup behavior, and optional Windows administrator launch.
 
 Desktop task runs are executed through the shared CLI one-shot path. The GUI forwards the selected workspace, task, mode, provider, model, session history/context, and image attachments to the CLI bridge.
+
+CLI-suitable settings shared with the desktop UI include provider credentials, delegated CLI paths, web search, agent limits, the dedicated review model, global memory, voice/speech providers, workspace defaults, and non-visual desktop behavior. `machdoch memory list` exposes the saved facts shown by the desktop Memory panel. MCP, instructions, scheduler, and RALPH actions also have dedicated CLI commands.
+
+Visual shell appearance, session-history manipulation, system voice playback preferences, desktop UI control, Quick Voice capture, Media Studio visual authoring, and gallery workflows remain UI-only. Launch-on-sign-in also remains in the desktop app because it must update platform registration. These features either depend on an active desktop/Tauri runtime or are primarily visual rather than useful terminal configuration.
 
 On Windows, **Settings > Desktop > Always run as administrator** stores a user preference. Packaged app launches request elevation through the normal UAC prompt. Dev builds do not relaunch unless `MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV=true` is set.
 
@@ -425,7 +468,7 @@ Persistent `provider-sync` reconciles MCP configuration only. Instruction
 delivery is run-scoped: API providers receive the frozen envelope in their
 request field, while CLI providers use owner-restricted temporary adaptation.
 Compatible (rather than fully conformant) delivery is shown before execution
-and requires explicit acknowledgement; unattended runs block by default.
+as diagnostic telemetry; only unsupported delivery blocks execution.
 Persistent sync is opt-in and blocks unmanaged name collisions, stale or linked
 targets, and malformed ownership state rather than overwriting them.
 
@@ -434,17 +477,17 @@ workflow, precedence rules, provider support, transfer, and recovery.
 
 ## Capabilities
 
-| Tool area | What it can do |
-| --- | --- |
-| Filesystem | Read, search, create, and modify workspace files and folders. |
-| Shell | Run shell commands and detached commands in Machdoch mode. |
-| Network | Fetch URLs and use web search when configured. |
-| Browser | Control installed Chromium-based browsers for navigation, screenshots, clicks, typing, and forms. |
-| Git | Inspect repository state, diffs, logs, branches, and create local commits. It does not push. |
-| Packages | Inspect Node package manifests/workspaces, run declared scripts, check outdated dependencies, audit projects, and install registry packages. |
-| Utilities | Generate ids, random values, timestamps, hashes, encodings, JSON validation, URL transforms, version comparisons, regex matches, compact diffs, and sorted unique lines without shell access. |
-| Memory | Store session facts and optional cross-session global facts. |
-| Desktop UI | In the desktop app, capture screens/windows and use mouse, keyboard, window, and Windows control-handle actions when available. |
+| Tool area  | What it can do                                                                                                                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filesystem | Read, search, create, and modify workspace files and folders.                                                                                                                                 |
+| Shell      | Run shell commands and detached commands in Machdoch mode.                                                                                                                                    |
+| Network    | Fetch URLs and use web search when configured.                                                                                                                                                |
+| Browser    | Control installed Chromium-based browsers for navigation, screenshots, clicks, typing, and forms.                                                                                             |
+| Git        | Inspect repository state, diffs, logs, branches, and create local commits. It does not push.                                                                                                  |
+| Packages   | Inspect Node package manifests/workspaces, run declared scripts, check outdated dependencies, audit projects, and install registry packages.                                                  |
+| Utilities  | Generate ids, random values, timestamps, hashes, encodings, JSON validation, URL transforms, version comparisons, regex matches, compact diffs, and sorted unique lines without shell access. |
+| Memory     | Store session facts and optional cross-session global facts.                                                                                                                                  |
+| Desktop UI | In the desktop app, capture screens/windows and use mouse, keyboard, window, and Windows control-handle actions when available.                                                               |
 
 For browser automation, install Microsoft Edge or Google Chrome. `machdoch` uses installed Chromium-based browsers through `playwright-core`; it does not download bundled browser binaries.
 
