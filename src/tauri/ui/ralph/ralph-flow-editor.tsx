@@ -303,6 +303,13 @@ import {
   getSortedActiveBlockDetails,
   type ActiveRalphRun,
 } from "./_helpers/ralph-active-run-progress.helper";
+import {
+  doesRalphFlowRequireWorkspaceWriterLease,
+  getRalphContinuationWorkspaceWriterLeaseRequirement,
+  getRalphKnownFlowWorkspaceWriterLeaseRequirement,
+  getRalphWorkspaceWriterBlockingRun,
+  getRalphWorkspaceWriterBlockingRunForRequirement,
+} from "./_helpers/ralph-workspace-writer-conflict.helper";
 import { getRalphRecordEventLabel } from "./_helpers/get-ralph-record-event-label.helper";
 import {
   createRalphRunTaskId,
@@ -1520,6 +1527,22 @@ export const RalphFlowEditor = ({
   const selectedFlowActiveRuns = activeRunsByFlowKey.get(selectedFlowKey) ?? [];
   const selectedFlowPrimaryActiveRun = selectedFlowActiveRuns[0] ?? null;
   const selectedFlowActiveRunCount = selectedFlowActiveRuns.length;
+  const workspaceWriterBlockingRun = getRalphWorkspaceWriterBlockingRun(
+    draftFlow,
+    selectedFlowPrimaryActiveRun !== null,
+    activeRuns,
+  );
+  const continuationWorkspaceWriterLeaseRequirement =
+    getRalphContinuationWorkspaceWriterLeaseRequirement(
+      lastRun,
+      dirty ? null : draftFlow,
+    );
+  const continuationWorkspaceWriterBlockingRun =
+    getRalphWorkspaceWriterBlockingRunForRequirement(
+      continuationWorkspaceWriterLeaseRequirement,
+      false,
+      activeRuns,
+    );
   const selectedActiveRun = useMemo(
     () => activeRuns.find((run) => run.id === selectedRunId) ?? null,
     [activeRuns, selectedRunId],
@@ -1799,6 +1822,7 @@ export const RalphFlowEditor = ({
     Boolean(workspaceRoot && selectedId && draftFlow && selectedMatchesDraft) &&
     !loading &&
     !detailsLoading &&
+    !workspaceWriterBlockingRun &&
     !(generationRunning && generationJob?.targetFlowId === draftFlow?.id) &&
     !dirty &&
     !hasBlockingIssues &&
@@ -1859,6 +1883,10 @@ export const RalphFlowEditor = ({
       return "Create or select a flow before running.";
     }
 
+    if (workspaceWriterBlockingRun) {
+      return `Wait for ${workspaceWriterBlockingRun.flowName} to finish.`;
+    }
+
     if (loading) {
       return "Wait for the current edit operation to finish.";
     }
@@ -1906,6 +1934,7 @@ export const RalphFlowEditor = ({
     selectedFlowUnsaved,
     selectedMatchesDraft,
     setupVariableErrorNames,
+    workspaceWriterBlockingRun,
     workspaceRoot,
   ]);
   const runReadyMessage =
@@ -2602,12 +2631,23 @@ export const RalphFlowEditor = ({
             : undefined) ??
           flowReference ??
           parsed?.flowId;
+        const requiresWorkspaceWriterLease = flowId
+          ? getRalphKnownFlowWorkspaceWriterLeaseRequirement(
+              flowId,
+              !dirty && draftFlow?.id === flowId && selectedScope === scope
+                ? draftFlow
+                : null,
+            )
+          : undefined;
 
         return flowId
           ? {
               id: task.id,
               flowId,
               scope,
+              ...(requiresWorkspaceWriterLease !== undefined
+                ? { requiresWorkspaceWriterLease }
+                : {}),
               startedAt: task.startedAt || parsed?.startedAt || Date.now(),
             }
           : null;
@@ -2619,22 +2659,37 @@ export const RalphFlowEditor = ({
           id: string;
           flowId: string;
           scope: RalphFlowScope;
+          requiresWorkspaceWriterLease?: boolean;
           startedAt: number;
         } => Boolean(task),
       );
     const activeIds = new Set(activeRalphRunTasks.map((task) => task.id));
+    const activeTaskById = new Map(
+      activeRalphRunTasks.map((task) => [task.id, task] as const),
+    );
     const now = Date.now();
 
     setActiveRuns((current) => {
       const currentById = new Map(current.map((run) => [run.id, run] as const));
       const next = current
         .filter((run) => activeIds.has(run.id) || now - run.startedAt < 5_000)
-        .map((run) => ({
-          ...run,
-          flowName:
-            flowNameByKey.get(getFlowSelectionKey(run.flowId, run.scope)) ??
-            run.flowName,
-        }));
+        .map((run) => {
+          const task = activeTaskById.get(run.id);
+
+          return {
+            ...run,
+            ...(run.requiresWorkspaceWriterLease === undefined &&
+            task?.requiresWorkspaceWriterLease !== undefined
+              ? {
+                  requiresWorkspaceWriterLease:
+                    task.requiresWorkspaceWriterLease,
+                }
+              : {}),
+            flowName:
+              flowNameByKey.get(getFlowSelectionKey(run.flowId, run.scope)) ??
+              run.flowName,
+          };
+        });
 
       for (const task of activeRalphRunTasks) {
         if (currentById.has(task.id)) {
@@ -2648,6 +2703,11 @@ export const RalphFlowEditor = ({
           flowName:
             flowNameByKey.get(getFlowSelectionKey(task.flowId, task.scope)) ??
             titleFromId(task.flowId),
+          ...(task.requiresWorkspaceWriterLease !== undefined
+            ? {
+                requiresWorkspaceWriterLease: task.requiresWorkspaceWriterLease,
+              }
+            : {}),
           startedAt: task.startedAt,
           status: "running",
           mode: runMode,
@@ -2812,6 +2872,8 @@ export const RalphFlowEditor = ({
   }, [
     draftFlow?.id,
     draftFlow?.name,
+    draftFlow?.settings?.autonomy,
+    dirty,
     flows,
     generationJob?.id,
     generationJob?.status,
@@ -5338,6 +5400,22 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    if (selectedFlowPrimaryActiveRun) {
+      focusActiveRun(
+        selectedFlowPrimaryActiveRun,
+        `Ralph run \`${selectedFlowPrimaryActiveRun.flowName}\` is already running.`,
+      );
+      return;
+    }
+
+    if (continuationWorkspaceWriterBlockingRun) {
+      focusActiveRun(
+        continuationWorkspaceWriterBlockingRun,
+        `Wait for Ralph run \`${continuationWorkspaceWriterBlockingRun.flowName}\` to finish.`,
+      );
+      return;
+    }
+
     const workspaceAtStart = workspaceRoot;
     const scopeAtStart = selectedScope;
     const selectedIdAtStart = selectedId;
@@ -5364,6 +5442,12 @@ export const RalphFlowEditor = ({
         flowId: resumeFlowId,
         scope: scopeAtStart,
         flowName: resumeFlowName,
+        ...(continuationWorkspaceWriterLeaseRequirement !== undefined
+          ? {
+              requiresWorkspaceWriterLease:
+                continuationWorkspaceWriterLeaseRequirement,
+            }
+          : {}),
         startedAt: resumeStartedAt,
         status: "running",
         mode: runMode,
@@ -5456,6 +5540,22 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    if (selectedFlowPrimaryActiveRun) {
+      focusActiveRun(
+        selectedFlowPrimaryActiveRun,
+        `Ralph run \`${selectedFlowPrimaryActiveRun.flowName}\` is already running.`,
+      );
+      return;
+    }
+
+    if (continuationWorkspaceWriterBlockingRun) {
+      focusActiveRun(
+        continuationWorkspaceWriterBlockingRun,
+        `Wait for Ralph run \`${continuationWorkspaceWriterBlockingRun.flowName}\` to finish.`,
+      );
+      return;
+    }
+
     const workspaceAtStart = workspaceRoot;
     const scopeAtStart = selectedScope;
     const selectedIdAtStart = selectedId;
@@ -5481,6 +5581,12 @@ export const RalphFlowEditor = ({
         flowId: resumeFlowId,
         scope: scopeAtStart,
         flowName: resumeFlowName,
+        ...(continuationWorkspaceWriterLeaseRequirement !== undefined
+          ? {
+              requiresWorkspaceWriterLease:
+                continuationWorkspaceWriterLeaseRequirement,
+            }
+          : {}),
         startedAt: resumeStartedAt,
         status: "running",
         mode: runMode,
@@ -5589,6 +5695,14 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    if (workspaceWriterBlockingRun) {
+      focusActiveRun(
+        workspaceWriterBlockingRun,
+        `Wait for Ralph run \`${workspaceWriterBlockingRun.flowName}\` to finish.`,
+      );
+      return;
+    }
+
     if (!workspaceRoot || !selectedId || !draftFlow) {
       return;
     }
@@ -5636,6 +5750,8 @@ export const RalphFlowEditor = ({
         flowId: flowToRun.id,
         scope: runScope,
         flowName,
+        requiresWorkspaceWriterLease:
+          doesRalphFlowRequireWorkspaceWriterLease(flowToRun),
         startedAt: Date.now(),
         status: "running",
         mode: runMode,

@@ -26,7 +26,9 @@ describe("Ralph run task id helpers", () => {
   });
 
   it("parses valid task ids with hyphenated flow ids", () => {
-    expect(parseRalphRunTaskId("ralph-release-flow-1781872000000-abc123")).toEqual({
+    expect(
+      parseRalphRunTaskId("ralph-release-flow-1781872000000-abc123"),
+    ).toEqual({
       flowId: "release-flow",
       startedAt: 1_781_872_000_000,
     });
@@ -53,11 +55,39 @@ describe("Ralph run task id helpers", () => {
     expect(normalizeWorkspaceForTaskComparison(undefined)).toBe("");
   });
 
-  it("reads trimmed argument values and returns null for missing or empty values", () => {
-    expect(getRalphArgumentValue(["create", "--name", " Release Flow "], "--name")).toBe(
-      "Release Flow",
+  it("matches equivalent Windows namespace, UNC, and trailing-separator forms", () => {
+    expect(
+      normalizeWorkspaceForTaskComparison("\\\\?\\C:\\Repo\\Machdoch\\"),
+    ).toBe(normalizeWorkspaceForTaskComparison("C:/Repo/Machdoch"));
+    expect(
+      normalizeWorkspaceForTaskComparison(
+        "\\\\.\\UNC\\Server\\Share\\Machdoch\\",
+      ),
+    ).toBe(normalizeWorkspaceForTaskComparison("\\\\server\\share\\machdoch"));
+  });
+
+  it("keeps genuinely different Windows workspaces distinct", () => {
+    expect(
+      normalizeWorkspaceForTaskComparison("C:\\Repo\\Machdoch-Other"),
+    ).not.toBe(
+      normalizeWorkspaceForTaskComparison("\\\\?\\C:\\Repo\\Machdoch"),
     );
-    expect(getRalphArgumentValue(["create", "--name", "   "], "--name")).toBeNull();
+    expect(
+      normalizeWorkspaceForTaskComparison("\\\\server\\other\\Machdoch"),
+    ).not.toBe(
+      normalizeWorkspaceForTaskComparison(
+        "\\\\?\\UNC\\server\\share\\Machdoch",
+      ),
+    );
+  });
+
+  it("reads trimmed argument values and returns null for missing or empty values", () => {
+    expect(
+      getRalphArgumentValue(["create", "--name", " Release Flow "], "--name"),
+    ).toBe("Release Flow");
+    expect(
+      getRalphArgumentValue(["create", "--name", "   "], "--name"),
+    ).toBeNull();
     expect(getRalphArgumentValue(["create"], "--name")).toBeNull();
   });
 
@@ -78,15 +108,19 @@ describe("Ralph run task id helpers", () => {
   });
 
   it("normalizes task flow scopes with workspace defaults for invalid values", () => {
-    expect(getRalphTaskFlowScope({ arguments: ["run", "flow", "--scope", "user"] })).toBe(
-      "user",
-    );
     expect(
-      getRalphTaskFlowScope({ arguments: ["run", "flow", "--scope", "workspace"] }),
+      getRalphTaskFlowScope({ arguments: ["run", "flow", "--scope", "user"] }),
+    ).toBe("user");
+    expect(
+      getRalphTaskFlowScope({
+        arguments: ["run", "flow", "--scope", "workspace"],
+      }),
     ).toBe("workspace");
-    expect(getRalphTaskFlowScope({ arguments: ["run", "flow"] })).toBe("workspace");
-    expect(getRalphTaskFlowScope({ arguments: ["run", "flow", "--scope", "team"] })).toBe(
+    expect(getRalphTaskFlowScope({ arguments: ["run", "flow"] })).toBe(
       "workspace",
     );
+    expect(
+      getRalphTaskFlowScope({ arguments: ["run", "flow", "--scope", "team"] }),
+    ).toBe("workspace");
   });
 });

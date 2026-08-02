@@ -14,14 +14,16 @@ export type ActiveRalphRunStatus = "running" | "stopping";
 export type RalphRunEventTone = NonNullable<
   NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"]
 >;
-export type RalphRunEventPhase =
-  NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"];
+export type RalphRunEventPhase = NonNullable<
+  TaskExecutionProgress["timelineEvent"]
+>["phase"];
 
 export interface ActiveRalphRun {
   id: string;
   flowId: string;
   scope: RalphFlowScope;
   flowName: string;
+  requiresWorkspaceWriterLease?: boolean;
   startedAt: number;
   status: ActiveRalphRunStatus;
   mode: RunMode;
@@ -68,8 +70,9 @@ export interface ActiveRalphRunBlockDetail {
   progress: RalphRunRecordBlockProgressEvent[];
 }
 
-type RalphProgressMetadata =
-  NonNullable<TaskExecutionProgress["timelineEvent"]>["metadata"];
+type RalphProgressMetadata = NonNullable<
+  TaskExecutionProgress["timelineEvent"]
+>["metadata"];
 
 interface RalphProgressSnapshot {
   eventType: string;
@@ -123,7 +126,9 @@ export const getProgressMetadataNumber = (
 ): number | undefined => {
   const value = metadata?.[key];
 
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 };
 
 export const getProgressMetadataBoolean = (
@@ -138,7 +143,9 @@ export const getProgressMetadataBoolean = (
 const createIsoTimestamp = (timestamp: number): string => {
   const date = new Date(timestamp);
 
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  return Number.isNaN(date.getTime())
+    ? new Date().toISOString()
+    : date.toISOString();
 };
 
 const getRalphProgressBlockReference = (
@@ -361,9 +368,14 @@ export const applyActiveRunEventSnapshot = (
           ...currentDetail,
           ...(blockTitle ? { blockTitle } : {}),
           ...(snapshot.output ? { output: snapshot.output } : {}),
-          ...(snapshot.attempt !== undefined ? { attempt: snapshot.attempt } : {}),
+          ...(snapshot.attempt !== undefined
+            ? { attempt: snapshot.attempt }
+            : {}),
           ...(snapshot.eventType === "block-output"
-            ? { status: "completed", summary: snapshot.detail ?? snapshot.label }
+            ? {
+                status: "completed",
+                summary: snapshot.detail ?? snapshot.label,
+              }
             : {}),
           ...(snapshot.eventType === "crash"
             ? { status: "error", summary: snapshot.detail ?? snapshot.label }
@@ -477,7 +489,10 @@ export const getRalphProgressToneClassName = (
       return "border-violet-400/30 bg-violet-500/10 text-violet-100";
     }
 
-    if (event.streamKind === "tool-call" || event.streamKind === "tool-result") {
+    if (
+      event.streamKind === "tool-call" ||
+      event.streamKind === "tool-result"
+    ) {
       return "border-sky-400/30 bg-sky-500/10 text-sky-100";
     }
   }

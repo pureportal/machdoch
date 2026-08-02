@@ -33,11 +33,31 @@ export const parseRalphRunTaskId = (
 export const normalizeWorkspaceForTaskComparison = (
   workspaceRoot: string | null | undefined,
 ): string => {
-  return (workspaceRoot ?? "")
-    .trim()
-    .replace(/\\/gu, "/")
-    .replace(/\/{2,}/gu, "/")
-    .toLowerCase();
+  let normalized = (workspaceRoot ?? "").trim().replace(/\\/gu, "/");
+  const namespacedUncMatch = /^\/{2}[?.]\/unc\//iu.exec(normalized);
+
+  if (namespacedUncMatch) {
+    normalized = `//${normalized.slice(namespacedUncMatch[0].length)}`;
+  } else {
+    const namespaceMatch = /^\/{2}[?.]\//u.exec(normalized);
+    const withoutNamespace = namespaceMatch
+      ? normalized.slice(namespaceMatch[0].length)
+      : "";
+
+    if (/^[a-z]:\//iu.test(withoutNamespace)) {
+      normalized = withoutNamespace;
+    }
+  }
+
+  normalized = normalized.startsWith("//")
+    ? `//${normalized.slice(2).replace(/\/{2,}/gu, "/")}`
+    : normalized.replace(/\/{2,}/gu, "/");
+
+  if (normalized.length > 1 && !/^[a-z]:\/$/iu.test(normalized)) {
+    normalized = normalized.replace(/\/+$/u, "");
+  }
+
+  return normalized.toLowerCase();
 };
 
 export const getRalphArgumentValue = (
@@ -49,9 +69,7 @@ export const getRalphArgumentValue = (
   return index >= 0 ? argumentsList[index + 1]?.trim() || null : null;
 };
 
-export const getRalphTaskAction = (
-  task: RalphTaskArguments,
-): string | null => {
+export const getRalphTaskAction = (task: RalphTaskArguments): string | null => {
   return task.arguments[0]?.trim() || null;
 };
 
@@ -74,5 +92,7 @@ export const getRalphTaskFlowReference = (
 export const getRalphTaskFlowScope = (
   task: RalphTaskArguments,
 ): RalphFlowScope => {
-  return normalizeRalphFlowScope(getRalphArgumentValue(task.arguments, "--scope"));
+  return normalizeRalphFlowScope(
+    getRalphArgumentValue(task.arguments, "--scope"),
+  );
 };
