@@ -49,10 +49,11 @@
   },
   "bundle": {
     "active": true,
-    "resources": [
-      "python/media_diffusers_worker.py",
-      "python/media_diffusers_requirements.txt"
-    ],
+    "resources": {
+      "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
+      "python/media_diffusers_requirements.txt": "python/media_diffusers_requirements.txt",
+      "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
+    },
     "targets": [
       "msi",
       "nsis",

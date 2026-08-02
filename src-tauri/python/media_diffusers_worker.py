@@ -11,6 +11,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import importlib.metadata
+import importlib.util
 import inspect
 import json
 import math
@@ -28,7 +29,7 @@ from typing import Any
 
 from PIL import Image
 
-WORKER_VERSION = "media-diffusers-worker/1.48.0"
+WORKER_VERSION = "media-diffusers-worker/1.50.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -92,6 +93,7 @@ REQUIRED_PACKAGES = (
     "safetensors",
     "Pillow",
     "imageio-ffmpeg",
+    "opencv-python-headless",
 )
 ACCEPTED_PACKAGE_VERSIONS = {
     # Torch is selected with the accelerator bundle. AMD's current supported
@@ -106,6 +108,7 @@ ACCEPTED_PACKAGE_VERSIONS = {
     "safetensors": ("0.8.0",),
     "pillow": ("12.3.0",),
     "imageio-ffmpeg": ("0.6.0",),
+    "opencv-python-headless": ("4.13.0.92",),
 }
 
 # Never resolve model components or custom Python code over the network.
@@ -220,6 +223,9 @@ def probe() -> dict[str, Any]:
                 "non-looping-video",
                 "seamless-video-loop",
                 "video-composite",
+                "source-anchored-articulated-loop",
+                "source-anchored-wind-fabric",
+                "periodic-wind-streaks",
             ],
             "diagnostic": "Pinned Python runtime is not ready: " + "; ".join(problems),
         }
@@ -253,6 +259,9 @@ def probe() -> dict[str, Any]:
                 "non-looping-video",
                 "seamless-video-loop",
                 "video-composite",
+                "source-anchored-articulated-loop",
+                "source-anchored-wind-fabric",
+                "periodic-wind-streaks",
             ],
             "diagnostic": str(error),
         }
@@ -282,6 +291,9 @@ def probe() -> dict[str, Any]:
             "non-looping-video",
             "seamless-video-loop",
             "video-composite",
+            "source-anchored-articulated-loop",
+            "source-anchored-wind-fabric",
+            "periodic-wind-streaks",
         ],
         "diagnostic": "Pinned local Diffusers imports succeeded.",
     }
@@ -1304,6 +1316,34 @@ def _sha256_file(path: Path) -> str:
         while chunk := source.read(1024 * 1024):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _load_source_anchored_builder() -> Any:
+    worker_path = Path(__file__).resolve()
+    candidates = (
+        worker_path.with_name("build_source_anchored_loop.py"),
+        worker_path.parents[2] / "scripts" / "build_source_anchored_loop.py",
+    )
+    builder_path = next(
+        (
+            path
+            for path in candidates
+            if path.is_file() and not path.is_symlink()
+        ),
+        None,
+    )
+    if builder_path is None:
+        raise WorkerError("The source-anchored Studio compositor is missing")
+    specification = importlib.util.spec_from_file_location(
+        "machdoch_source_anchored_loop", builder_path
+    )
+    if specification is None or specification.loader is None:
+        raise WorkerError("The source-anchored Studio compositor could not be loaded")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    if not callable(getattr(module, "build", None)):
+        raise WorkerError("The source-anchored Studio compositor is invalid")
+    return module
 
 
 def _embedding_profiles(
@@ -7798,6 +7838,98 @@ def _encode_video_webm(
     return destination, evidence, composite
 
 
+def render_source_anchored_loop(request: dict[str, Any]) -> dict[str, Any]:
+    """Build and encode one reviewed source-anchored loop inside Media Studio."""
+    started_at = time.perf_counter()
+    manifest_path = _absolute_existing_path(request.get("manifestPath"), file=True)
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    encoding_quality = str(request.get("encodingQuality", "lossless"))
+    if encoding_quality not in ("preview", "production", "lossless"):
+        raise WorkerError(
+            "encodingQuality must be preview, production, or lossless"
+        )
+
+    builder = _load_source_anchored_builder()
+    rig_directory = output_directory / "rig"
+    try:
+        result = builder.build(manifest_path, rig_directory)
+    except (OSError, ValueError, RuntimeError) as error:
+        raise WorkerError(f"Source-anchored composition failed: {error}") from error
+    frame_directory = Path(result["frames"])
+    frame_paths = sorted(frame_directory.glob("frame-*.png"))
+    frame_count = result.get("frameCount")
+    fps = result.get("fps")
+    if (
+        not isinstance(frame_count, int)
+        or frame_count < 3
+        or len(frame_paths) != frame_count
+        or not isinstance(fps, int)
+        or not 1 <= fps <= 60
+    ):
+        raise WorkerError(
+            "Source-anchored composition returned inconsistent frame evidence"
+        )
+    frames = []
+    expected_size: tuple[int, int] | None = None
+    for path in frame_paths:
+        with Image.open(path) as opened:
+            frame = opened.convert("RGB")
+            if expected_size is None:
+                expected_size = frame.size
+            elif frame.size != expected_size:
+                raise WorkerError(
+                    "Source-anchored composition changed dimensions between frames"
+                )
+            frames.append(frame.copy())
+    import numpy as np
+
+    if np.array_equal(np.asarray(frames[0]), np.asarray(frames[-1])):
+        raise WorkerError(
+            "Source-anchored half-open cycle contains a duplicate closure frame"
+        )
+    frames.append(frames[0].copy())
+    encode_directory = output_directory / "studio-encode"
+    encode_directory.mkdir()
+    destination, evidence, composite = _encode_video_webm(
+        frames,
+        encode_directory,
+        fps,
+        None,
+        transparent_background=False,
+        loop_mode="seamless",
+        matte_quality="production",
+        encoding_quality=encoding_quality,
+    )
+    if composite is not None:
+        raise WorkerError("Source-anchored opaque encoding returned a composite")
+    response = {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "operation": "source-anchored-articulated-loop",
+        "capability": "source-anchored-articulated-loop",
+        "manifestPath": str(manifest_path),
+        "manifestSha256": _sha256_file(manifest_path),
+        "builderSchemaVersion": getattr(builder, "SCHEMA_VERSION", None),
+        "packages": _package_versions(),
+        "performance": {
+            "execution": "isolated-media-studio-worker",
+            "totalSeconds": round(time.perf_counter() - started_at, 3),
+        },
+        "rig": result,
+        "output": {
+            "path": str(destination.resolve()),
+            "sha256": _sha256_file(destination),
+            **evidence,
+        },
+    }
+    evidence_path = output_directory / "media-studio-run.json"
+    evidence_path.write_text(
+        json.dumps(response, indent=2) + "\n", encoding="utf-8"
+    )
+    response["runEvidencePath"] = str(evidence_path.resolve())
+    return response
+
+
 def _prepare_video_conditioning_frame(
     path: Path,
     width: int,
@@ -8750,6 +8882,12 @@ def main() -> int:
                 raise WorkerError("Worker request must be a JSON object")
             _emit(generate_video(request))
             return 0
+        if command == "render-source-anchored-loop":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(render_source_anchored_loop(request))
+            return 0
         if command == "_encode-framepack-prompt":
             request = json.load(sys.stdin)
             if not isinstance(request, dict):
@@ -8775,7 +8913,8 @@ def main() -> int:
             _emit(_generate_hunyuan_video_15_latents_subprocess(request))
             return 0
         raise WorkerError(
-            "Expected exactly one command: probe, probe-model, generate, or generate-video"
+            "Expected exactly one command: probe, probe-model, generate, "
+            "generate-video, or render-source-anchored-loop"
         )
     except WorkerError as error:
         _emit(

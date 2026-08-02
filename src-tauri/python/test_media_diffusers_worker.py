@@ -1262,6 +1262,80 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             )
             self.assertLess(evidence["decodedRgbEncodingMae"], 0.5)
 
+    def test_source_anchored_loop_runs_inside_the_studio_worker(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="machdoch-source-anchored-worker-"
+        ) as temporary:
+            root = Path(temporary)
+            manifest = root / "manifest.json"
+            manifest.write_text('{"schemaVersion": 1}\n', encoding="utf-8")
+            output = root / "studio-output"
+            output.mkdir()
+            encoded_frames: list[Image.Image] = []
+
+            def fake_build(_: Path, rig_directory: Path) -> dict[str, object]:
+                frames_directory = rig_directory / "frames"
+                frames_directory.mkdir(parents=True)
+                for index, value in enumerate((20, 80, 140)):
+                    pixels = np.full((12, 16, 3), value, dtype=np.uint8)
+                    Image.fromarray(pixels).save(
+                        frames_directory / f"frame-{index:04d}.png"
+                    )
+                return {
+                    "schemaVersion": 1,
+                    "frameCount": 3,
+                    "fps": 12,
+                    "frames": str(frames_directory),
+                }
+
+            def fake_encode(
+                frames: list[Image.Image],
+                destination_directory: Path,
+                fps: int,
+                _: object,
+                **options: object,
+            ) -> tuple[Path, dict[str, object], None]:
+                encoded_frames.extend(frames)
+                self.assertEqual(fps, 12)
+                self.assertEqual(options["loop_mode"], "seamless")
+                self.assertEqual(options["encoding_quality"], "lossless")
+                destination = destination_directory / "output-0000.webm"
+                destination.write_bytes(b"studio-source-anchored-test")
+                return destination, {"width": 16, "height": 12}, None
+
+            fake_builder = SimpleNamespace(SCHEMA_VERSION=1, build=fake_build)
+            with mock.patch.object(
+                WORKER, "_load_source_anchored_builder", return_value=fake_builder
+            ), mock.patch.object(
+                WORKER, "_encode_video_webm", side_effect=fake_encode
+            ), mock.patch.object(
+                WORKER, "_package_versions", return_value={"test": "1"}
+            ):
+                response = WORKER.render_source_anchored_loop(
+                    {
+                        "manifestPath": str(manifest.resolve()),
+                        "outputDirectory": str(output.resolve()),
+                        "encodingQuality": "lossless",
+                    }
+                )
+
+            self.assertEqual(response["workerVersion"], WORKER.WORKER_VERSION)
+            self.assertEqual(
+                response["capability"], "source-anchored-articulated-loop"
+            )
+            self.assertEqual(response["rig"]["frameCount"], 3)
+            self.assertEqual(len(encoded_frames), 4)
+            np.testing.assert_array_equal(
+                np.asarray(encoded_frames[0]), np.asarray(encoded_frames[-1])
+            )
+            self.assertFalse(
+                np.array_equal(
+                    np.asarray(encoded_frames[0]), np.asarray(encoded_frames[-2])
+                )
+            )
+            self.assertTrue(Path(response["output"]["path"]).is_file())
+            self.assertTrue(Path(response["runEvidencePath"]).is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

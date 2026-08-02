@@ -55,6 +55,39 @@ Sharpness is diagnostic rather than a goal: an oversharpened or hallucinated
 frame can score high. Automatic measurements therefore never replace the
 semantic rubric.
 
+## Source-anchored articulated loops
+
+When whole-frame video diffusion changes identity, anatomy, props, or the
+background, use Media Studio's `source-anchored-articulated-loop` worker
+capability with reviewed masks. A manifest declares every region that may
+change, periodic rigid motion for each articulated part, optional procedural
+blink poses, mask-bounded clean-plate inpainting, and periodic masked light or
+particle effects. Identity-critical fabric can use attachment-anchored
+`wind-fabric` deformation: several integer-temporal-frequency waves travel
+from the fixed attachment toward the free edge, with displacement falloff and
+optional fold shading. `wind-streaks` adds a directional, edge-faded periodic
+flow field without a boundary pop. The compositor outputs a forward-only
+half-open cycle: it does not warp the full frame, retime generated motion,
+duplicate the closure pose, or assemble a ping-pong loop.
+
+Encode the result through the application path and verify repeated playback:
+
+```powershell
+python scripts/render_source_anchored_loop_with_studio.py `
+  manifest.json tmp\studio-source-anchored-run `
+  --encoding-quality lossless
+$ffmpeg = "src-tauri\python\runtime\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
+& $ffmpeg -stream_loop 2 -i tmp\studio-source-anchored-run\studio-encode\output-0000.webm `
+  -t 9 -c copy tmp\three-cycle.webm
+python scripts/verify_loop_playback.py tmp\three-cycle.webm `
+  --frames-per-cycle 48 --cycles 3 --fps 16
+```
+
+AI-generated plates and facial keyframes must remain inside their reviewed
+masks. Visible layers should retain the source texture, and the semantic review
+must still confirm that the articulated action reads as character motion rather
+than an effectively static image.
+
 ## Review protocol
 
 1. Record the exact source assets, hashes, model revisions, prompts, negative
