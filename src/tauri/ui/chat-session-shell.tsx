@@ -7,10 +7,7 @@ import {
   useState,
   type JSX,
 } from "react";
-import {
-  AppRail,
-  type AppActivityState,
-} from "./app-shell/app-rail";
+import { AppRail, type AppActivityState } from "./app-shell/app-rail";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
@@ -61,9 +58,7 @@ const SettingsDialog = lazy(async () => {
 });
 
 const OnboardingWizard = lazy(async () => {
-  const module = await import(
-    "./chat-session/components/onboarding-wizard"
-  );
+  const module = await import("./chat-session/components/onboarding-wizard");
 
   return {
     default: module.OnboardingWizard,
@@ -92,6 +87,16 @@ const MediaStudio = lazy(async () => {
   const module = await import("./media/media-studio");
 
   return { default: module.MediaStudio };
+});
+
+const InstructionManager = lazy(async () => {
+  const module = await import("./instruction-management/instruction-manager");
+  return { default: module.InstructionManager };
+});
+
+const WorkspaceManager = lazy(async () => {
+  const module = await import("./workspace-management/workspace-manager");
+  return { default: module.WorkspaceManager };
 });
 
 const appLoadingFallback = (
@@ -154,11 +159,15 @@ export const ChatSession = (): JSX.Element => {
     DEFAULT_APP_SHELL_STATE,
   );
   const [appShellLoaded, setAppShellLoaded] = useState(false);
-  const [appShellLoadError, setAppShellLoadError] = useState<string | null>(null);
+  const [appShellLoadError, setAppShellLoadError] = useState<string | null>(
+    null,
+  );
   const [appShellLoadAttempt, setAppShellLoadAttempt] = useState(0);
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
-  const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(null);
+  const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(
+    null,
+  );
   const [pendingMediaSection, setPendingMediaSection] = useState<
     "generate" | "library" | null
   >(null);
@@ -293,7 +302,7 @@ export const ChatSession = (): JSX.Element => {
   }, []);
 
   const schedulerWorkspaceSignature = controller.sidebar.sessionProjectFacets
-    .flatMap((project) => project.path ? [project.path] : [])
+    .flatMap((project) => (project.path ? [project.path] : []))
     .sort((left, right) => left.localeCompare(right))
     .join("\u0000");
   const schedulerWorkspaceRoots = useMemo(
@@ -318,7 +327,10 @@ export const ChatSession = (): JSX.Element => {
     ).then((results) => {
       if (results.some((result) => result?.jobs.length)) {
         void ensurePersistentSchedulerService(null).catch((error) => {
-          console.error("Persistent Smart Scheduler service failed to start", error);
+          console.error(
+            "Persistent Smart Scheduler service failed to start",
+            error,
+          );
         });
       }
     });
@@ -448,26 +460,18 @@ export const ChatSession = (): JSX.Element => {
                 activeSession={controller.composer.activeSession}
                 chooserProviders={controller.composer.chooserProviders}
                 hasAnyProvider={controller.hasAnyProvider}
-                isUiControlAvailable={
-                  controller.composer.isUiControlAvailable
-                }
-                uiControlDescription={
-                  controller.composer.uiControlDescription
-                }
+                isUiControlAvailable={controller.composer.isUiControlAvailable}
+                uiControlDescription={controller.composer.uiControlDescription}
                 settingsSection={controller.settingsDialog.settingsSection}
                 onSettingsSectionChange={
                   controller.settingsDialog.onSettingsSectionChange
                 }
                 providerSetup={controller.settingsDialog.providerSetup}
                 workspaceSetup={controller.settingsDialog.workspaceSetup}
-                instructionsSetup={
-                  controller.settingsDialog.instructionsSetup
-                }
+                instructionsSetup={controller.settingsDialog.instructionsSetup}
                 webSearchSetup={controller.settingsDialog.webSearchSetup}
                 mcpSetup={controller.settingsDialog.mcpSetup}
-                agentLimitsSetup={
-                  controller.settingsDialog.agentLimitsSetup
-                }
+                agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
                 appearanceSetup={appearance}
                 memorySetup={controller.settingsDialog.memorySetup}
                 desktopSetup={controller.settingsDialog.desktopSetup}
@@ -519,7 +523,9 @@ export const ChatSession = (): JSX.Element => {
               mediaActivity={mediaActivity}
               onSelectApp={selectApp}
               onOpenScheduler={() => setSchedulerOpen(true)}
-              onOpenMissionControl={() => controller.missionControl.setOpen(true)}
+              onOpenMissionControl={() =>
+                controller.missionControl.setOpen(true)
+              }
               onOpenSettings={controller.openProviderSettings}
             />
 
@@ -604,7 +610,9 @@ export const ChatSession = (): JSX.Element => {
                     importPath={pendingMediaImportPath}
                     onImportPathHandled={() => setPendingMediaImportPath(null)}
                     draftPrompt={pendingMediaDraftPrompt}
-                    onDraftPromptHandled={() => setPendingMediaDraftPrompt(null)}
+                    onDraftPromptHandled={() =>
+                      setPendingMediaDraftPrompt(null)
+                    }
                     onSendAssetToChat={(reference) => {
                       if (controller.attachMediaAssetToChat(reference)) {
                         selectApp("chat");
@@ -634,6 +642,29 @@ export const ChatSession = (): JSX.Element => {
                 </Suspense>
               ) : null}
             </div>
+
+            {activeApp === "instructions" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <InstructionManager
+                    setup={controller.settingsDialog.instructionsSetup}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+
+            {activeApp === "workspaces" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <WorkspaceManager
+                    setup={controller.settingsDialog.instructionsSetup}
+                    activeWorkspaceRoot={
+                      controller.composer.activeSession.workspace
+                    }
+                  />
+                </Suspense>
+              </div>
+            ) : null}
           </div>
         </div>
 

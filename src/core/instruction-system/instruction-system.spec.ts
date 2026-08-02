@@ -211,6 +211,13 @@ describe("instruction profiles and assignments", () => {
       ),
     ).rejects.toMatchObject({ code: "INSTRUCTION_LIBRARY_REVISION_CONFLICT" });
     await expect(
+      updateInstructionProfile(
+        created.profile.id,
+        { global: true },
+        { path: fixture.libraryPath, expectedRevision: 3 },
+      ),
+    ).rejects.toMatchObject({ code: "REDUNDANT_PROFILE_ASSIGNMENT" });
+    await expect(
       deleteInstructionProfile(created.profile.id, {
         path: fixture.libraryPath,
         expectedRevision: 3,
@@ -242,6 +249,28 @@ describe("instruction profiles and assignments", () => {
       expect.objectContaining({ id: registered.workspace.id, scopes: [] }),
     ]);
     expect(exported.workspaces?.[0]).not.toHaveProperty("root");
+  });
+
+  it("duplicates global profiles without duplicating their assignment", async () => {
+    const fixture = await createTestRoot();
+    const created = await createInstructionProfile(
+      { name: "Global", body: "Apply everywhere.", global: true },
+      { path: fixture.libraryPath },
+    );
+    const duplicate = await duplicateInstructionProfile(
+      created.profile.id,
+      undefined,
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+
+    expect(duplicate.profile).toMatchObject({
+      name: "Global copy",
+      global: false,
+    });
+    expect(duplicate.library.defaults.profiles).toEqual([created.profile.id]);
+    await expect(loadInstructionLibrary(fixture.libraryPath)).resolves.toEqual(
+      duplicate.library,
+    );
   });
 
   it("applies schema length limits by Unicode code point", async () => {
@@ -1470,9 +1499,25 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       path: fixture.libraryPath,
       expectedRevision: 1,
     });
+    await createInstructionProfile(
+      {
+        name: "Automatic schema profile",
+        body: "Automatically selected body.",
+        match: { op: "tag", tag: "TypeScript" },
+      },
+      { path: fixture.libraryPath, expectedRevision: 2 },
+    );
+    await registerInstructionWorkspace(
+      fixture.workspace,
+      { tags: ["TypeScript"] },
+      { path: fixture.libraryPath, expectedRevision: 3 },
+    );
     const resolution = await resolve(fixture.workspace, fixture.libraryPath, {
       model: "gpt-5.5",
     });
+    expect(resolution.selectedSources).toContainEqual(
+      expect.objectContaining({ kind: "profile-auto" }),
+    );
     const explanation = explainInstructionResolution(resolution);
     const plan = createInstructionDeliveryPlan(resolution);
     const receipt = createInstructionDeliveryReceipt({

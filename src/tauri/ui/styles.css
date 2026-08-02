@@ -1112,6 +1112,28 @@ body {
     width: 2rem !important;
 }
 
+@media (max-height: 800px) {
+  .app-shell-rail {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+
+  .app-shell-rail-group {
+    gap: 0.5rem !important;
+  }
+
+  .app-shell-logo,
+  .app-shell-rail-button {
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    border-radius: 0.9rem !important;
+  }
+
+  .app-shell-version {
+    display: none !important;
+  }
+}
+
 :root[data-density="compact"] .app-sessions-sidebar {
     width: 18rem !important;
 }

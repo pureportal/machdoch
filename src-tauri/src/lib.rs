@@ -15,6 +15,7 @@ mod sleep_inhibition;
 mod ui_control;
 mod ui_operation;
 mod voice;
+mod workspace_git;
 
 use tauri::Manager as _;
 #[cfg(desktop)]
@@ -229,6 +230,8 @@ pub fn run() {
             desktop_task::run_task_interview_command,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
+            workspace_git::get_workspace_git_overview,
+            workspace_git::run_workspace_git_action,
             media::media_cancel_run,
             media::media_analyze_image_quality,
             media::media_enqueue_fixture_run,

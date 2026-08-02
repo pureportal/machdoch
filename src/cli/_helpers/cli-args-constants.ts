@@ -3,7 +3,12 @@ import {
   USER_API_PROVIDERS,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
-import type { ModelProvider, ReasoningMode, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+  RunMode,
+  UserApiProvider,
+} from "../../core/runtime-contract.generated.js";
 import type {
   CommandName,
   InstructionCliAction,
@@ -17,10 +22,7 @@ import type {
   SchedulerCliAction,
 } from "./cli-args-types.js";
 
-export const VALID_MODES: ReadonlySet<RunMode> = new Set([
-  "ask",
-  "machdoch",
-]);
+export const VALID_MODES: ReadonlySet<RunMode> = new Set(["ask", "machdoch"]);
 export const VALID_MODE_DESCRIPTION = "ask or machdoch";
 export const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set(
   USER_API_PROVIDERS,
@@ -36,7 +38,10 @@ export const VALID_REASONING_MODES: ReadonlySet<ReasoningMode> = new Set(
 );
 export const VALID_REASONING_MODE_DESCRIPTION =
   "default, none, minimal, low, medium, high, xhigh, max, or ultra";
-export const VALID_BOOLEAN_TOGGLE_VALUES: ReadonlySet<string> = new Set(["on", "off"]);
+export const VALID_BOOLEAN_TOGGLE_VALUES: ReadonlySet<string> = new Set([
+  "on",
+  "off",
+]);
 export const VALID_MEMORY_OVERRIDE_VALUES: ReadonlySet<string> = new Set([
   "inherit",
   "on",
@@ -113,15 +118,16 @@ export const MCP_ACTIONS_REQUIRING_TARGET: ReadonlySet<McpCliAction> = new Set([
   "read-resource",
   "get-prompt",
 ]);
-export const PROVIDER_SYNC_ACTIONS: ReadonlySet<ProviderSyncCliAction> = new Set([
-  "plan",
-  "enable",
-  "status",
-  "disable",
-  "refresh",
-  "doctor",
-  "daemon",
-]);
+export const PROVIDER_SYNC_ACTIONS: ReadonlySet<ProviderSyncCliAction> =
+  new Set([
+    "plan",
+    "enable",
+    "status",
+    "disable",
+    "refresh",
+    "doctor",
+    "daemon",
+  ]);
 export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
   "validate",
   "resolve",
@@ -143,6 +149,7 @@ export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
   "local-delete",
   "workspace-list",
   "workspace-register",
+  "workspace-update",
   "workspace-relink",
   "workspace-unregister",
   "transfer-export",
@@ -170,27 +177,23 @@ export const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
   "interview",
   "watches",
 ]);
-export const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
-  "show",
-  "validate",
-  "delete",
-  "save",
-  "run",
-  "resume",
-  "run-detail",
-  "log",
-  "revisions",
-  "restore",
-]);
-export const RALPH_GENERATION_MODES: ReadonlySet<RalphCliGenerationMode> = new Set([
-  "do-it",
-  "interview",
-]);
-export const RALPH_GENERATION_TARGETS: ReadonlySet<RalphCliGenerationTarget> = new Set([
-  "flow",
-  "prompt-block",
-  "refactor",
-]);
+export const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> =
+  new Set([
+    "show",
+    "validate",
+    "delete",
+    "save",
+    "run",
+    "resume",
+    "run-detail",
+    "log",
+    "revisions",
+    "restore",
+  ]);
+export const RALPH_GENERATION_MODES: ReadonlySet<RalphCliGenerationMode> =
+  new Set(["do-it", "interview"]);
+export const RALPH_GENERATION_TARGETS: ReadonlySet<RalphCliGenerationTarget> =
+  new Set(["flow", "prompt-block", "refactor"]);
 export const RALPH_SCOPES: ReadonlySet<RalphCliScope> = new Set([
   "workspace",
   "user",

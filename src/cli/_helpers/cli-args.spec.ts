@@ -71,7 +71,9 @@ describe("cli args public parser", () => {
   });
 
   it("parses default chat, explicit run, and repeated context options", () => {
-    expect(parseCliArgs([], { currentWorkingDirectory: "C:/workspace" })).toEqual({
+    expect(
+      parseCliArgs([], { currentWorkingDirectory: "C:/workspace" }),
+    ).toEqual({
       command: "chat",
       json: false,
       verbose: false,
@@ -105,10 +107,9 @@ describe("cli args public parser", () => {
 
   it("parses Ralph and scheduler command options with numeric boundaries", () => {
     expect(
-      parseCliArgs(
-        ["ralph", "run", "flow-one", "--max-transitions", "1"],
-        { currentWorkingDirectory: "C:/workspace" },
-      ),
+      parseCliArgs(["ralph", "run", "flow-one", "--max-transitions", "1"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
     ).toMatchObject({
       command: "ralph",
       ralph: {
@@ -192,6 +193,58 @@ describe("cli args public parser", () => {
     });
   });
 
+  it("parses workspace metadata mutations used by the desktop bridge", () => {
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "workspaces",
+          "register",
+          "C:/workspace",
+          "--metadata-json",
+          '{"tags":["React","Node.js"]}',
+          "--expected-revision",
+          "4",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "instructions",
+      instructions: {
+        action: "workspace-register",
+        group: "workspaces",
+        subject: "C:/workspace",
+        metadataJson: '{"tags":["React","Node.js"]}',
+        expectedRevision: 4,
+      },
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "workspaces",
+          "update",
+          "workspace-id",
+          "--name",
+          "Frontend",
+          "--metadata-json",
+          '{"tags":["React"]}',
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "instructions",
+      instructions: {
+        action: "workspace-update",
+        group: "workspaces",
+        subject: "workspace-id",
+        name: "Frontend",
+        metadataJson: '{"tags":["React"]}',
+      },
+    });
+  });
+
   it("parses explicit instruction-library recovery actions", () => {
     expect(
       parseCliArgs(["instructions", "recovery"], {
@@ -258,12 +311,17 @@ describe("cli args public parser", () => {
       parseCliArgs(["ralph", "run", "flow-one", "--max-transitions", "0"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("Expected --max-transitions to be followed by a positive integer.");
+    ).toThrow(
+      "Expected --max-transitions to be followed by a positive integer.",
+    );
 
     expect(() =>
-      parseCliArgs(["scheduler", "create", "--interval-ms", "0", "--prompt", "x"], {
-        currentWorkingDirectory: "C:/workspace",
-      }),
+      parseCliArgs(
+        ["scheduler", "create", "--interval-ms", "0", "--prompt", "x"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
     ).toThrow("Expected --interval-ms to be followed by a positive integer.");
 
     expect(() =>

@@ -13,7 +13,13 @@ export interface OnboardingState {
   skippedAt?: number;
 }
 
-export type MainAppId = "chat" | "ralph" | "media" | "marketplace";
+export type MainAppId =
+  | "chat"
+  | "ralph"
+  | "media"
+  | "marketplace"
+  | "instructions"
+  | "workspaces";
 export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
 
 export interface AppShellState {
@@ -81,6 +87,8 @@ export const DEFAULT_APP_SHELL_STATE = {
     ralph: 0,
     media: 0,
     marketplace: 0,
+    instructions: 0,
+    workspaces: 0,
   },
 } as const satisfies AppShellState;
 
@@ -118,10 +126,7 @@ const isOneOf = <T extends string>(
   value: unknown,
   allowedValues: readonly T[],
 ): value is T => {
-  return (
-    typeof value === "string" &&
-    allowedValues.includes(value as T)
-  );
+  return typeof value === "string" && allowedValues.includes(value as T);
 };
 
 const normalizeOneOf = <T extends string>(
@@ -163,7 +168,7 @@ const normalizeStringHistory = (value: unknown, limit: number): string[] => {
 const normalizeMainAppId = (value: unknown): MainAppId => {
   return normalizeOneOf(
     value,
-    ["chat", "ralph", "media", "marketplace"],
+    ["chat", "ralph", "media", "marketplace", "instructions", "workspaces"],
     "chat",
   );
 };
@@ -205,6 +210,14 @@ export const normalizeAppShellState = (value: unknown): AppShellState => {
         typeof lastViewedAt.marketplace === "number"
           ? lastViewedAt.marketplace
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.marketplace,
+      instructions:
+        typeof lastViewedAt.instructions === "number"
+          ? lastViewedAt.instructions
+          : DEFAULT_APP_SHELL_STATE.lastViewedAt.instructions,
+      workspaces:
+        typeof lastViewedAt.workspaces === "number"
+          ? lastViewedAt.workspaces
+          : DEFAULT_APP_SHELL_STATE.lastViewedAt.workspaces,
     },
   };
 };

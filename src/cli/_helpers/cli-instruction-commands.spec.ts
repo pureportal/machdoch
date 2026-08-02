@@ -116,6 +116,97 @@ describe("printInstructionSummary", () => {
     });
   });
 
+  it("persists workspace tags and reports only enabled automatic selections", async () => {
+    const workspaceRoot = await createWorkspace();
+    const runJson = async (argv: string[]): Promise<Record<string, unknown>> =>
+      JSON.parse(
+        await captureStdout(async () => {
+          await printInstructionSummary(
+            parseCliArgs(["--json", "--cwd", workspaceRoot, ...argv], {
+              currentWorkingDirectory: workspaceRoot,
+            }),
+          );
+        }),
+      ) as Record<string, unknown>;
+
+    const created = (await runJson([
+      "instructions",
+      "profiles",
+      "create",
+      "React policy",
+      "--prompt",
+      "Use React conventions.",
+      "--metadata-json",
+      JSON.stringify({
+        enabled: false,
+        tags: ["Frontend"],
+        match: { op: "tag", tag: "React" },
+      }),
+    ])) as { profile: { id: string } };
+    const registered = (await runJson([
+      "instructions",
+      "workspaces",
+      "register",
+      workspaceRoot,
+      "--metadata-json",
+      JSON.stringify({ tags: ["React", "TypeScript"] }),
+      "--expected-revision",
+      "1",
+    ])) as { workspace: { id: string } };
+
+    const disabled = (await runJson([
+      "instructions",
+      "profiles",
+      "list",
+      "--include-content",
+    ])) as {
+      profiles: Array<{
+        id: string;
+        enabled: boolean;
+        tags: string[];
+        match: unknown;
+        automaticWorkspaceIds: string[];
+      }>;
+      workspaces: Array<{ id: string; tags: string[] }>;
+    };
+    expect(disabled.profiles).toEqual([
+      expect.objectContaining({
+        id: created.profile.id,
+        enabled: false,
+        tags: ["Frontend"],
+        match: { op: "tag", tag: "React" },
+        automaticWorkspaceIds: [],
+      }),
+    ]);
+    expect(disabled.workspaces).toEqual([
+      expect.objectContaining({
+        id: registered.workspace.id,
+        tags: ["React", "TypeScript"],
+      }),
+    ]);
+
+    await runJson([
+      "instructions",
+      "profiles",
+      "edit",
+      created.profile.id,
+      "--metadata-json",
+      JSON.stringify({ enabled: true }),
+      "--expected-revision",
+      "2",
+    ]);
+    const enabled = (await runJson([
+      "instructions",
+      "profiles",
+      "list",
+    ])) as {
+      profiles: Array<{ automaticWorkspaceIds: string[] }>;
+    };
+    expect(enabled.profiles[0]?.automaticWorkspaceIds).toEqual([
+      registered.workspace.id,
+    ]);
+  });
+
   it("rejects undecodable instruction input files before mutation", async () => {
     const workspaceRoot = await createWorkspace();
     const promptPath = join(workspaceRoot, "invalid-policy.md");

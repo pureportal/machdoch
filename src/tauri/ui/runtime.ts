@@ -14,6 +14,7 @@ import type {
   TaskRunPreview,
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
+import type { InstructionTagRule } from "../../core/instruction-system/types.js";
 import type { MediaAssetReference } from "../../core/media/contracts.js";
 import type {
   RalphGenerationEvent,
@@ -240,12 +241,19 @@ export interface InstructionProfileView {
   lineCount: number;
   digest: string;
   assignmentCount: number;
+  manualAssignmentCount: number;
+  automaticWorkspaceIds: string[];
+  enabled: boolean;
+  global: boolean;
+  tags: string[];
+  match?: InstructionTagRule;
 }
 
 export interface InstructionWorkspaceView {
   id: string;
   root: string;
   displayName?: string;
+  tags: string[];
   scopes: Array<{ path: string; profiles: string[] }>;
 }
 
@@ -324,12 +332,89 @@ export interface InstructionRegistryResult {
   resolutionError?: string;
 }
 
+export interface WorkspaceGitChange {
+  status: string;
+  path: string;
+}
+
+export interface WorkspaceGitBranch {
+  name: string;
+  commit: string;
+  current: boolean;
+  upstream?: string;
+}
+
+export interface WorkspaceGitRemote {
+  name: string;
+  fetchUrl?: string;
+  pushUrl?: string;
+}
+
+export interface WorkspaceGitCommit {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  authoredAt: string;
+}
+
+export interface WorkspacePullRequest {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  headBranch: string;
+  baseBranch: string;
+  draft: boolean;
+  author?: string;
+  updatedAt?: string;
+}
+
+export interface WorkspaceGitOverview {
+  workspaceRoot: string;
+  repositoryRoot: string;
+  branch: string;
+  detached: boolean;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  clean: boolean;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+  conflictedCount: number;
+  changes: WorkspaceGitChange[];
+  changesTruncated: boolean;
+  localBranches: WorkspaceGitBranch[];
+  remoteBranches: WorkspaceGitBranch[];
+  remotes: WorkspaceGitRemote[];
+  headCommit?: WorkspaceGitCommit;
+  pullRequests: {
+    available: boolean;
+    reason?: string;
+    items: WorkspacePullRequest[];
+  };
+}
+
+export type WorkspaceGitAction =
+  | "fetch"
+  | "pull"
+  | "checkout"
+  | "checkout-remote"
+  | "create-branch"
+  | "add-remote"
+  | "remove-remote";
+
 export type InstructionMutationInput =
   | {
       operation: "profile-create";
       name: string;
       description?: string;
       body: string;
+      enabled?: boolean;
+      global?: boolean;
+      tags?: string[];
+      match?: InstructionTagRule;
       expectedRevision: number;
     }
   | {
@@ -338,6 +423,10 @@ export type InstructionMutationInput =
       name?: string;
       description?: string;
       body?: string;
+      enabled?: boolean;
+      global?: boolean;
+      tags?: string[];
+      match?: InstructionTagRule | null;
       expectedRevision: number;
     }
   | {
@@ -390,6 +479,14 @@ export type InstructionMutationInput =
       operation: "workspace-register";
       root: string;
       displayName?: string;
+      tags?: string[];
+      expectedRevision: number;
+    }
+  | {
+      operation: "workspace-update";
+      workspaceId: string;
+      displayName?: string;
+      tags?: string[];
       expectedRevision: number;
     }
   | {
@@ -4192,6 +4289,16 @@ const createInstructionMutationArguments = (
       appendInstructionOption(args, "--prompt", input.body);
       appendInstructionOption(
         args,
+        "--metadata-json",
+        JSON.stringify({
+          ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+          ...(input.global === undefined ? {} : { global: input.global }),
+          ...(input.tags === undefined ? {} : { tags: input.tags }),
+          ...(input.match === undefined ? {} : { match: input.match }),
+        }),
+      );
+      appendInstructionOption(
+        args,
         "--expected-revision",
         input.expectedRevision,
       );
@@ -4203,6 +4310,16 @@ const createInstructionMutationArguments = (
         args.push("--description", input.description);
       }
       appendInstructionOption(args, "--prompt", input.body);
+      appendInstructionOption(
+        args,
+        "--metadata-json",
+        JSON.stringify({
+          ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+          ...(input.global === undefined ? {} : { global: input.global }),
+          ...(input.tags === undefined ? {} : { tags: input.tags }),
+          ...(input.match === undefined ? {} : { match: input.match }),
+        }),
+      );
       appendInstructionOption(
         args,
         "--expected-revision",
@@ -4281,6 +4398,31 @@ const createInstructionMutationArguments = (
       appendInstructionOption(args, "--name", input.displayName);
       appendInstructionOption(
         args,
+        "--metadata-json",
+        JSON.stringify({
+          ...(input.tags === undefined ? {} : { tags: input.tags }),
+        }),
+      );
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
+      break;
+    case "workspace-update":
+      args.push("workspaces", "update", input.workspaceId);
+      if (input.displayName !== undefined) {
+        args.push("--name", input.displayName);
+      }
+      appendInstructionOption(
+        args,
+        "--metadata-json",
+        JSON.stringify({
+          ...(input.tags === undefined ? {} : { tags: input.tags }),
+        }),
+      );
+      appendInstructionOption(
+        args,
         "--expected-revision",
         input.expectedRevision,
       );
@@ -4326,6 +4468,70 @@ export const mutateInstructions = async (
     createInstructionMutationArguments(input),
     assertInstructionDesktopAvailable,
   );
+
+export const loadWorkspaceGitOverview = async (
+  workspaceRoot: string,
+): Promise<WorkspaceGitOverview> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before loading Git information.");
+  }
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "Workspace Git information is only available in the desktop app.",
+    );
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceGitOverview>(
+      "get_workspace_git_overview",
+      { workspaceRoot: normalizedWorkspaceRoot },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const runWorkspaceGitAction = async (
+  workspaceRoot: string,
+  action: WorkspaceGitAction,
+  options: {
+    branchName?: string;
+    remoteName?: string;
+    remoteUrl?: string;
+  } = {},
+): Promise<WorkspaceGitOverview> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before running a Git action.");
+  }
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "Workspace Git actions are only available in the desktop app.",
+    );
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceGitOverview>(
+      "run_workspace_git_action",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          action,
+          ...(options.branchName?.trim()
+            ? { branchName: options.branchName.trim() }
+            : {}),
+          ...(options.remoteName?.trim()
+            ? { remoteName: options.remoteName.trim() }
+            : {}),
+          ...(options.remoteUrl?.trim()
+            ? { remoteUrl: options.remoteUrl.trim() }
+            : {}),
+        },
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
 
 const runMcpCommand = async <Result>(
   workspaceRoot: string | null | undefined,

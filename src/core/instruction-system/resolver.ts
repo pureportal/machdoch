@@ -5,6 +5,7 @@ import { getModelContextWindowTokens } from "../model-capabilities.js";
 import { loadInstructionLibrary } from "./library-store.js";
 import { discoverLocalInstructions } from "./local-discovery.js";
 import { inventoryNativeInstructions } from "./native-inventory.js";
+import { instructionTagRuleMatches } from "./tag-rules.js";
 import {
   loadMcpInitializationInstructionSnapshot,
   mcpInitializationInstructionSupplementBytes,
@@ -123,7 +124,7 @@ const validateConfiguredScopes = async (
 
 const createProfileSource = (input: {
   id: string;
-  kind: "profile-default" | "profile-workspace";
+  kind: "profile-default" | "profile-auto" | "profile-workspace";
   name: string;
   body: string;
   profileId: string;
@@ -587,10 +588,53 @@ export const resolveInstructionSet = async (
       assignmentPath: "defaults",
       precedence: precedence++,
       sequence: sequence++,
+      ...(profile.enabled === false
+        ? {
+            status: "skipped" as const,
+            reason: "PROFILE_DISABLED" as const,
+          }
+        : {}),
     });
-    selected.push(source);
     assignmentEntries.push(source);
-    selectedProfileScopes.set(profile.id, [{ path: ".", id: source.id }]);
+    if (source.status === "selected") {
+      selected.push(source);
+      selectedProfileScopes.set(profile.id, [{ path: ".", id: source.id }]);
+    }
+  }
+
+  for (const profile of library.profiles.filter(
+    (candidate) => candidate.global !== true && candidate.match !== undefined,
+  )) {
+    const matches =
+      workspace !== undefined &&
+      instructionTagRuleMatches(profile.match!, workspace.tags ?? []);
+    const selectedAutomatically = profile.enabled !== false && matches;
+    const source = createProfileSource({
+      id: `profile-auto:${workspace?.id ?? "unregistered"}:${profile.id}`,
+      kind: "profile-auto",
+      name: profile.name,
+      body: profile.body,
+      profileId: profile.id,
+      ...(workspace === undefined ? {} : { workspaceId: workspace.id }),
+      scopePath: ".",
+      assignmentPath: "tags",
+      precedence: precedence++,
+      sequence: sequence++,
+      ...(selectedAutomatically
+        ? {}
+        : {
+            status: "skipped" as const,
+            reason:
+              profile.enabled === false
+                ? ("PROFILE_DISABLED" as const)
+                : ("TAG_RULE_NOT_MATCHED" as const),
+          }),
+    });
+    assignmentEntries.push(source);
+    if (selectedAutomatically) {
+      selected.push(source);
+      selectedProfileScopes.set(profile.id, [{ path: ".", id: source.id }]);
+    }
   }
 
   const workspaceScopes = workspace
@@ -619,6 +663,7 @@ export const resolveInstructionSet = async (
       const ancestor = (selectedProfileScopes.get(profileId) ?? []).find(
         (candidate) => isScopeAncestor(candidate.path, scopePath),
       );
+      const disabled = profile.enabled === false;
       const source = createProfileSource({
         id: `profile-workspace:${workspace.id}:${scopePath}:${profile.id}`,
         kind: "profile-workspace",
@@ -630,16 +675,21 @@ export const resolveInstructionSet = async (
         assignmentPath: scopePath,
         precedence: precedence++,
         sequence: sequence++,
-        ...(ancestor
+        ...(disabled
           ? {
               status: "skipped" as const,
-              reason: "DUPLICATE_INHERITED_ASSIGNMENT" as const,
-              inheritedFrom: ancestor.id,
+              reason: "PROFILE_DISABLED" as const,
             }
-          : {}),
+          : ancestor
+            ? {
+                status: "skipped" as const,
+                reason: "DUPLICATE_INHERITED_ASSIGNMENT" as const,
+                inheritedFrom: ancestor.id,
+              }
+            : {}),
       });
       assignmentEntries.push(source);
-      if (!ancestor) {
+      if (!ancestor && !disabled) {
         selected.push(source);
         selectedProfileScopes.set(profileId, [
           ...(selectedProfileScopes.get(profileId) ?? []),
@@ -820,7 +870,12 @@ export const resolveInstructionSet = async (
       .map<InstructionDiagnostic>((source) => ({
         code: source.reason ?? "INSTRUCTION_SKIPPED",
         severity: "info",
-        message: `${source.id} is already inherited from ${source.inheritedFrom}.`,
+        message:
+          source.reason === "PROFILE_DISABLED"
+            ? `${source.id} is disabled.`
+            : source.reason === "TAG_RULE_NOT_MATCHED"
+              ? `${source.id} does not match this workspace's tags.`
+              : `${source.id} is already inherited from ${source.inheritedFrom}.`,
         sourceId: source.id,
       })),
     ...structuralDiagnostics(selected),

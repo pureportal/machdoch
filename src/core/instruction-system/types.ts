@@ -8,11 +8,27 @@ export const INSTRUCTION_DELIVERY_SCHEMA_VERSION = 1 as const;
 export type ProfileId = string;
 export type WorkspaceId = string;
 
+export type InstructionTagRule =
+  | {
+      op: "tag";
+      tag: string;
+    }
+  | {
+      op: "and" | "or";
+      rules: InstructionTagRule[];
+    };
+
 export interface InstructionProfile {
   id: ProfileId;
   name: string;
   description?: string;
   body: string;
+  /** Defaults to true when loading libraries written before this field existed. */
+  enabled?: boolean;
+  /** Mirrors membership in defaults.profiles and is persisted for portable metadata. */
+  global?: boolean;
+  tags?: string[];
+  match?: InstructionTagRule;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +46,7 @@ export interface InstructionWorkspaceBinding {
     gitRemote?: string;
     repositoryId?: string;
   };
+  tags?: string[];
   scopes: InstructionScopeAssignment[];
 }
 
@@ -60,6 +77,7 @@ export interface InstructionDiagnostic {
 
 export type InstructionSourceKind =
   | "profile-default"
+  | "profile-auto"
   | "profile-workspace"
   | "project-local"
   | "flow-guidance";
@@ -81,7 +99,11 @@ export interface ResolvedInstructionSource {
   assignmentPath?: string;
   inheritedFrom?: string;
   status: "selected" | "skipped";
-  reason?: "NO_APPLICABLE_ASSIGNMENT" | "DUPLICATE_INHERITED_ASSIGNMENT";
+  reason?:
+    | "NO_APPLICABLE_ASSIGNMENT"
+    | "DUPLICATE_INHERITED_ASSIGNMENT"
+    | "PROFILE_DISABLED"
+    | "TAG_RULE_NOT_MATCHED";
   otherAssignments?: Array<{
     workspaceId: WorkspaceId;
     scopePath: string;

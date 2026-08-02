@@ -98,6 +98,7 @@
         "kind": {
           "enum": [
             "profile-default",
+            "profile-auto",
             "profile-workspace",
             "project-local",
             "flow-guidance"

@@ -223,6 +223,7 @@ export const parseCliArgs = (
         "include-workspaces"?: boolean;
         "decisions-file"?: string;
         "confirm-assignment-removal"?: boolean;
+        "metadata-json"?: string;
       }
     | undefined;
   let positionals: string[] = [];
@@ -355,6 +356,7 @@ export const parseCliArgs = (
         "include-workspaces": { type: "boolean" },
         "decisions-file": { type: "string" },
         "confirm-assignment-removal": { type: "boolean" },
+        "metadata-json": { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -635,6 +637,9 @@ export const parseCliArgs = (
   const rawInstructionSurface = normalizeOptionalString(values?.surface);
   const rawInstructionDecisionsFile = normalizeOptionalString(
     values?.["decisions-file"],
+  );
+  const rawInstructionMetadataJson = normalizeOptionalString(
+    values?.["metadata-json"],
   );
 
   if (values?.mode !== undefined && !rawMode) {
@@ -1767,6 +1772,9 @@ export const parseCliArgs = (
             ? { promptFile: rawSchedulerPromptFile }
             : {}),
           ...(rawInstructionPath ? { path: rawInstructionPath } : {}),
+          ...(rawInstructionMetadataJson
+            ? { metadataJson: rawInstructionMetadataJson }
+            : {}),
         },
       },
     );

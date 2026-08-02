@@ -135,6 +135,7 @@ export type InstructionCliAction =
   | "local-delete"
   | "workspace-list"
   | "workspace-register"
+  | "workspace-update"
   | "workspace-relink"
   | "workspace-unregister"
   | "transfer-export"
@@ -289,6 +290,7 @@ export interface InstructionCliOptions {
   prompt?: string;
   promptFile?: string;
   path?: string;
+  metadataJson?: string;
 }
 
 export interface ParsedCliArgs {

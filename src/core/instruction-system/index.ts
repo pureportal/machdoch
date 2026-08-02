@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./normalization.js";
+export * from "./tag-rules.js";
 export * from "./library-store.js";
 export * from "./local-discovery.js";
 export * from "./local-files.js";

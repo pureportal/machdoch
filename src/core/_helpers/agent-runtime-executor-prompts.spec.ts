@@ -10,6 +10,7 @@ import {
   inferTaskStrategyProfile,
 } from "./agent-runtime-executor-prompts.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
+import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
 
 const createRuntimeConfig = (
   overrides: Partial<RuntimeConfig> = {},
@@ -94,6 +95,24 @@ afterEach(() => {
 });
 
 describe("createExecutorSystemPrompt", () => {
+  it("delivers resolved workspace instructions through the system prompt", () => {
+    const instructionResolution = createInstructionResolutionFixture({
+      body: "Use the automatically selected React instruction.",
+      sourceName: "React policy",
+    });
+    const prompt = createExecutorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext({ instructionResolution }),
+      [createTool("read_file")],
+      createConversationContext(),
+    );
+
+    expect(prompt).toContain(instructionResolution.renderedEnvelope);
+    expect(prompt).toContain(
+      "Use the automatically selected React instruction.",
+    );
+  });
+
   it("encourages proactive web research when search tools are available", () => {
     const prompt = createExecutorSystemPrompt(
       createRuntimeConfig(),

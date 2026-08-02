@@ -25,6 +25,10 @@ import {
   showLocalInstruction,
   unregisterInstructionWorkspace,
   updateInstructionProfile,
+  updateInstructionWorkspace,
+  instructionTagRuleMatches,
+  normalizeInstructionTagRule,
+  normalizeInstructionTags,
   updateLocalInstruction,
   profileNameKey,
   sha256,
@@ -35,6 +39,7 @@ import {
   InstructionSystemError,
   type LocalInstructionRecord,
   type InstructionLibraryImportChoices,
+  type InstructionTagRule,
 } from "../../core/instruction-system/index.js";
 import { isAgentCliProvider } from "../../core/_helpers/agent-cli-providers.js";
 import { createInstructionDeliveryPlanForRuntime } from "../../core/provider-enrollment/instruction-delivery-preflight.js";
@@ -58,6 +63,73 @@ const resolveInputPath = (workspaceRoot: string, path: string): string =>
   isAbsolute(path) ? path : resolve(workspaceRoot, path);
 
 const MAX_INSTRUCTION_CLI_JSON_BYTES = 64 * 1024 * 1024;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+interface InstructionProfileMetadataInput {
+  enabled?: boolean;
+  global?: boolean;
+  tags?: string[];
+  match?: InstructionTagRule | null;
+}
+
+const parseInstructionProfileMetadata = (
+  raw: string | undefined,
+): InstructionProfileMetadataInput => {
+  if (raw === undefined) return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return fail("--metadata-json must contain valid JSON.");
+  }
+  if (!isRecord(value)) return fail("--metadata-json must contain an object.");
+  const unsupported = Object.keys(value).filter(
+    (key) => !["enabled", "global", "tags", "match"].includes(key),
+  );
+  if (unsupported.length > 0) {
+    return fail(`Unsupported profile metadata: ${unsupported.join(", ")}.`);
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+    return fail("Profile metadata enabled must be a boolean.");
+  }
+  if (value.global !== undefined && typeof value.global !== "boolean") {
+    return fail("Profile metadata global must be a boolean.");
+  }
+  return {
+    ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
+    ...(value.global === undefined ? {} : { global: value.global }),
+    ...(value.tags === undefined
+      ? {}
+      : { tags: normalizeInstructionTags(value.tags, "metadata.tags") }),
+    ...(value.match === undefined
+      ? {}
+      : value.match === null
+        ? { match: null }
+        : { match: normalizeInstructionTagRule(value.match) }),
+  };
+};
+
+const parseInstructionWorkspaceTags = (
+  raw: string | undefined,
+): string[] | undefined => {
+  if (raw === undefined) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return fail("--metadata-json must contain valid JSON.");
+  }
+  if (!isRecord(value)) return fail("--metadata-json must contain an object.");
+  const unsupported = Object.keys(value).filter((key) => key !== "tags");
+  if (unsupported.length > 0) {
+    return fail(`Unsupported workspace metadata: ${unsupported.join(", ")}.`);
+  }
+  return value.tags === undefined
+    ? undefined
+    : normalizeInstructionTags(value.tags, "metadata.tags");
+};
 
 const readBoundedUtf8InputFile = async (
   path: string,
@@ -166,6 +238,30 @@ const createLibraryOverview = (
       lineCount: profile.body.split("\n").length,
       digest: sha256(profile.body),
       assignmentCount: references.get(profile.id) ?? 0,
+      manualAssignmentCount: library.workspaces.reduce(
+        (count, workspace) =>
+          count +
+          workspace.scopes.filter((scope) =>
+            scope.profiles.includes(profile.id),
+          ).length,
+        0,
+      ),
+      automaticWorkspaceIds:
+        profile.enabled === false ||
+        profile.global === true ||
+        profile.match === undefined
+          ? []
+          : library.workspaces
+              .filter((workspace) =>
+                instructionTagRuleMatches(profile.match!, workspace.tags ?? []),
+              )
+              .map((workspace) => workspace.id),
+      enabled: profile.enabled !== false,
+      global: library.defaults.profiles.includes(profile.id),
+      tags: [...(profile.tags ?? [])],
+      ...(profile.match === undefined
+        ? {}
+        : { match: structuredClone(profile.match) }),
       ...(includeBodies ? { body: profile.body } : {}),
     })),
     defaults: { profiles: [...library.defaults.profiles] },
@@ -351,6 +447,8 @@ export const printInstructionSummary = async (
       return;
     }
     case "profile-create": {
+      const metadata = parseInstructionProfileMetadata(options.metadataJson);
+      const { match, ...createMetadata } = metadata;
       const result = await createInstructionProfile(
         {
           name:
@@ -362,6 +460,8 @@ export const printInstructionSummary = async (
             ? {}
             : { description: options.description }),
           body: (await readBody(args, options)) as string,
+          ...createMetadata,
+          ...(match === undefined || match === null ? {} : { match }),
         },
         mutationOptions(options),
       );
@@ -379,10 +479,12 @@ export const printInstructionSummary = async (
         options.subject ?? fail("Profile edit requires an id or name."),
       );
       const body = await readBody(args, options, false);
+      const metadata = parseInstructionProfileMetadata(options.metadataJson);
       if (
         body === undefined &&
         options.name === undefined &&
-        options.description === undefined
+        options.description === undefined &&
+        options.metadataJson === undefined
       ) {
         fail(
           "Profile edit requires --name, --description, --prompt, or --prompt-file.",
@@ -399,6 +501,7 @@ export const printInstructionSummary = async (
                   options.description.length === 0 ? null : options.description,
               }),
           ...(body === undefined ? {} : { body }),
+          ...metadata,
         },
         mutationOptions(options),
       );
@@ -608,15 +711,43 @@ export const printInstructionSummary = async (
       return;
     }
     case "workspace-register": {
+      const tags = parseInstructionWorkspaceTags(options.metadataJson);
       const result = await registerInstructionWorkspace(
         options.subject ?? options.path ?? args.workspaceRoot,
-        options.name === undefined ? {} : { displayName: options.name },
+        {
+          ...(options.name === undefined ? {} : { displayName: options.name }),
+          ...(tags === undefined ? {} : { tags }),
+        },
         mutationOptions(options),
       );
       if (args.json) printJson(result);
       else
         writeStdoutLine(
           `registered ${result.workspace.id}: ${result.workspace.root}`,
+        );
+      return;
+    }
+    case "workspace-update": {
+      const workspaceId =
+        options.subject ?? fail("Workspace update requires a workspace UUID.");
+      const tags = parseInstructionWorkspaceTags(options.metadataJson);
+      if (options.name === undefined && tags === undefined) {
+        fail("Workspace update requires --name or --metadata-json.");
+      }
+      const result = await updateInstructionWorkspace(
+        workspaceId,
+        {
+          ...(options.name === undefined
+            ? {}
+            : { displayName: options.name.length === 0 ? null : options.name }),
+          ...(tags === undefined ? {} : { tags }),
+        },
+        mutationOptions(options),
+      );
+      if (args.json) printJson(result);
+      else
+        writeStdoutLine(
+          `updated workspace ${workspaceId}, revision ${result.library.revision}`,
         );
       return;
     }

@@ -2,6 +2,8 @@ import {
   Aperture,
   CalendarClock,
   Cog,
+  FileSliders,
+  FolderGit2,
   MessageSquareText,
   RadioTower,
   Store,
@@ -76,7 +78,8 @@ const AppActivityIndicator = ({
     return null;
   }
 
-  const running = activity === "running" || activity === "running-and-completed";
+  const running =
+    activity === "running" || activity === "running-and-completed";
   const completed =
     activity === "completed" || activity === "running-and-completed";
 
@@ -189,6 +192,19 @@ export const AppRail = ({
             active={activeApp === "marketplace"}
             onClick={() => onSelectApp("marketplace")}
           />
+          <AppRailButton
+            label="Instructions"
+            icon={FileSliders}
+            active={activeApp === "instructions"}
+            onClick={() => onSelectApp("instructions")}
+          />
+          <Separator className="my-1 w-8 bg-slate-900" />
+          <AppRailButton
+            label="Workspace Management"
+            icon={FolderGit2}
+            active={activeApp === "workspaces"}
+            onClick={() => onSelectApp("workspaces")}
+          />
         </div>
       </div>
 
@@ -203,15 +219,11 @@ export const AppRail = ({
           icon={RadioTower}
           onClick={onOpenMissionControl}
         />
-        <AppRailButton
-          label="Settings"
-          icon={Cog}
-          onClick={onOpenSettings}
-        />
+        <AppRailButton label="Settings" icon={Cog} onClick={onOpenSettings} />
         <Tooltip>
           <TooltipTrigger asChild>
             <span
-              className="mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500"
+              className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500"
               title={`machdoch ${appVersion}`}
             >
               v{appVersion}

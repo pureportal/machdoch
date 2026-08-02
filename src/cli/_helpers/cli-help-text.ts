@@ -171,7 +171,7 @@ Usage:
   machdoch instructions profiles list|show|create|edit|duplicate|delete [profile]
   machdoch instructions assignments list|set-defaults|set|relink|remove [...]
   machdoch instructions local list|show|create|edit|delete [folder]
-  machdoch instructions workspaces list|register|relink|unregister [workspace]
+  machdoch instructions workspaces list|register|update|relink|unregister [workspace]
   machdoch instructions transfer export|import [...]
   machdoch instructions recovery status|restore|export|reset [...]
 
