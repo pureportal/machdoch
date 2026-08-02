@@ -77,6 +77,8 @@ export const PROVIDER_CAPABILITY_REGISTRY = {
 } as const satisfies Record<ConfiguredModelProvider, ProviderCapabilityProfile>;
 
 const PROVIDER_PROBE_CACHE_TTL_MS = 5 * 60 * 1_000;
+const PROVIDER_PROBE_TIMEOUT_MS = 4_000;
+const PROVIDER_PROBE_RETRY_TIMEOUT_MS = 12_000;
 const probeCache = new Map<
   string,
   { expiresAt: number; result: Promise<ProviderProbeResult> }
@@ -92,6 +94,7 @@ const shouldUseShell = (executable: string): boolean => {
 const captureCommand = (
   executable: string,
   args: string[],
+  timeoutMs = PROVIDER_PROBE_TIMEOUT_MS,
 ): { output: string; exitCode: number | null } => {
   if (typeof spawnSync !== "function") {
     return { output: "", exitCode: null };
@@ -102,7 +105,7 @@ const captureCommand = (
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
     encoding: "utf8",
-    timeout: 4_000,
+    timeout: timeoutMs,
     maxBuffer: 64_000,
   });
   return {
@@ -157,12 +160,26 @@ export const probeProviderCli = async (
   probeCache.delete(key);
 
   const pending = (async (): Promise<ProviderProbeResult> => {
-    const [versionResult, helpResult] = [
-      captureCommand(executable, ["--version"]),
-      captureCommand(executable, ["--help"]),
-    ];
+    const versionResult = captureCommand(executable, ["--version"]);
+    let helpResult = captureCommand(executable, ["--help"]);
     const warnings: string[] = [];
-    if (helpResult.exitCode !== 0 && helpResult.exitCode !== null) {
+
+    if (helpResult.exitCode !== 0) {
+      helpResult = captureCommand(
+        executable,
+        ["--help"],
+        PROVIDER_PROBE_RETRY_TIMEOUT_MS,
+      );
+      warnings.push(
+        "Provider help probe did not complete successfully on the first attempt and was retried.",
+      );
+    }
+
+    if (helpResult.exitCode === null) {
+      warnings.push(
+        "Provider help probe did not complete; required run-scoped instruction flags could not be confirmed.",
+      );
+    } else if (helpResult.exitCode !== 0) {
       warnings.push(
         "Provider help probe returned a non-zero exit code; required run-scoped instruction flags must still be observed before launch.",
       );
