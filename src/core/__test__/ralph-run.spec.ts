@@ -5,6 +5,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   utimes,
   writeFile,
 } from "node:fs/promises";
@@ -3088,6 +3089,295 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it.runIf(process.platform === "win32")(
+    "writes PROMPT_JSON artifacts when Windows workspace paths use equivalent namespace forms",
+    async () => {
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-prompt-json-path-"),
+      );
+      const extendedWorkspace = `\\\\?\\${workspace}`;
+
+      vi.mocked(executeTask).mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "Valid JSON.",
+          response: {
+            markdown: '{"name":"candidate","score":7}',
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      );
+
+      try {
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "prompt-json",
+                type: "UTILITY",
+                title: "Prompt JSON",
+                settings: {
+                  workspace: { mode: "custom", path: workspace },
+                },
+                utility: {
+                  type: "PROMPT_JSON",
+                  prompt: "Create a candidate score.",
+                  outputPath: "{{run:artifactRoot}}/state/candidate.json",
+                  schema: {
+                    type: "object",
+                    required: ["name", "score"],
+                    properties: {
+                      name: { type: "string" },
+                      score: { type: "number" },
+                    },
+                  },
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+            ],
+            edges: [
+              {
+                id: "start-to-prompt",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "prompt-json",
+              },
+              {
+                id: "prompt-to-success",
+                from: "prompt-json",
+                fromOutput: "SUCCESS",
+                to: "success",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: extendedWorkspace },
+          customizations,
+          { maxTransitions: 10, runId: "windows-namespace-artifact" },
+        );
+
+        expect(result.status).toBe("completed");
+        expect(executeTask).toHaveBeenCalledTimes(1);
+        await expect(
+          readFile(
+            join(
+              workspace,
+              ".machdoch",
+              "ralph",
+              "runs",
+              "windows-namespace-artifact",
+              "state",
+              "candidate.json",
+            ),
+            "utf8",
+          ),
+        ).resolves.toContain('"score": 7');
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "win32")(
+    "keeps namespace-equivalent utility paths contained to the workspace",
+    async () => {
+      const testRoot = await mkdtemp(
+        join(tmpdir(), "ralph-utility-path-containment-"),
+      );
+      const workspace = join(testRoot, "workspace");
+      const outsidePath = join(testRoot, "outside.json");
+
+      try {
+        await mkdir(workspace);
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "write",
+                type: "UTILITY",
+                title: "Write JSON",
+                utility: {
+                  type: "WRITE_JSON",
+                  path: outsidePath,
+                  input: "{}",
+                },
+              },
+              { id: "handled", type: "END", title: "Handled" },
+            ],
+            edges: [
+              {
+                id: "start-write",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "write",
+              },
+              {
+                id: "write-error",
+                from: "write",
+                fromOutput: "ERROR",
+                to: "handled",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: `\\\\?\\${workspace}` },
+          customizations,
+          { maxTransitions: 10 },
+        );
+
+        expect(
+          result.blockResults.find((entry) => entry.blockId === "write"),
+        ).toMatchObject({
+          output: "ERROR",
+          summary: "Utility path must stay inside the workspace.",
+        });
+        await expect(readFile(outsidePath, "utf8")).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        await rm(testRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects artifact writes redirected outside the workspace by a directory link", async () => {
+    const testRoot = await mkdtemp(
+      join(tmpdir(), "ralph-linked-artifact-containment-"),
+    );
+    const workspace = join(testRoot, "workspace");
+    const outside = join(testRoot, "outside");
+    const linkedDirectory = join(workspace, "linked");
+    const outsideArtifact = join(outside, "artifact.json");
+
+    try {
+      await mkdir(workspace);
+      await mkdir(outside);
+      await symlink(
+        outside,
+        linkedDirectory,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "write",
+              type: "UTILITY",
+              title: "Write JSON",
+              utility: {
+                type: "WRITE_JSON",
+                path: "linked/artifact.json",
+                input: "{}",
+              },
+            },
+            { id: "handled", type: "END", title: "Handled" },
+          ],
+          edges: [
+            {
+              id: "start-write",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "write",
+            },
+            {
+              id: "write-error",
+              from: "write",
+              fromOutput: "ERROR",
+              to: "handled",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "write"),
+      ).toMatchObject({
+        output: "ERROR",
+        summary: "Utility path must stay inside the workspace.",
+      });
+      await expect(readFile(outsideArtifact, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(process.platform === "win32")(
+    "protects reserved run artifacts across equivalent Windows path forms",
+    async () => {
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-reserved-artifact-path-"),
+      );
+      const runId = "reserved-artifact-path";
+      const reservedPath = join(
+        workspace,
+        ".machdoch",
+        "ralph",
+        "runs",
+        runId,
+        "simple.md",
+      );
+      const equivalentReservedPath = `${reservedPath}.`;
+
+      try {
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "report",
+                type: "UTILITY",
+                title: "Final report",
+                utility: {
+                  type: "FINAL_REPORT",
+                  path: equivalentReservedPath,
+                },
+              },
+              { id: "handled", type: "END", title: "Handled" },
+            ],
+            edges: [
+              {
+                id: "start-report",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "report",
+              },
+              {
+                id: "report-error",
+                from: "report",
+                fromOutput: "ERROR",
+                to: "handled",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: `\\\\?\\${workspace}` },
+          customizations,
+          { maxTransitions: 10, runId },
+        );
+
+        expect(
+          result.blockResults.find((entry) => entry.blockId === "report"),
+        ).toMatchObject({
+          output: "ERROR",
+          summary:
+            "Final report cannot overwrite reserved run artifact simple.md.",
+        });
+        await expect(readFile(reservedPath, "utf8")).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("removes strict-output nulls for optional schema properties before validation", async () => {
     vi.mocked(executeTask).mockResolvedValueOnce(
       createExecutionResult({
@@ -5321,7 +5611,7 @@ describe("runRalphFlow", () => {
     }
   }, 180_000);
 
-  it("fences concurrent autonomous writers in the same workspace", async () => {
+  it("fences concurrent autonomous writers across equivalent workspace paths and releases on completion", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-writer-fence-"));
     const flow = createFlow({
       settings: { autonomy: true },
@@ -5368,7 +5658,11 @@ describe("runRalphFlow", () => {
 
       const rivalResult = await runRalphFlow(
         flow,
-        { ...runtimeConfig, workspaceRoot: workspace },
+        {
+          ...runtimeConfig,
+          workspaceRoot:
+            process.platform === "win32" ? `\\\\?\\${workspace}` : workspace,
+        },
         customizations,
         { runId: "writer-rival", leaseDurationMs: 5_000 },
       );
@@ -5383,6 +5677,30 @@ describe("runRalphFlow", () => {
       const ownerResult = await ownerRun;
       expect(ownerResult.status).not.toBe("crashed");
       expect(executeTask).toHaveBeenCalledTimes(1);
+      await expect(
+        stat(
+          join(
+            workspace,
+            ".machdoch",
+            "ralph",
+            "runs",
+            ".workspace-writer.ralph.lock",
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+
+      vi.mocked(executeTask).mockResolvedValueOnce(
+        createExecutionResult({ summary: "Successor finished." }),
+      );
+      const successorResult = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "writer-successor", leaseDurationMs: 5_000 },
+      );
+      expect(successorResult.status).not.toBe("crashed");
+      expect(successorResult.summary).not.toContain("workspace writer lease");
+      expect(executeTask).toHaveBeenCalledTimes(2);
     } finally {
       resolveExecution?.(createExecutionResult({ summary: "Cleanup." }));
       await rm(workspace, { recursive: true, force: true });
@@ -6107,6 +6425,95 @@ describe("runRalphFlow", () => {
       expect(report.lifecycle.status).toBe("completed");
     } finally {
       await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not finalize restored report descriptors outside the workspace", async () => {
+    const testRoot = await mkdtemp(
+      join(tmpdir(), "ralph-final-report-resume-containment-"),
+    );
+    const workspace = join(testRoot, "workspace");
+    const outsideReportPath = join(testRoot, "outside-report.json");
+    const originalReport = JSON.stringify({ marker: "outside" });
+
+    try {
+      await mkdir(workspace);
+      await writeFile(outsideReportPath, originalReport, "utf8");
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "report",
+            type: "UTILITY",
+            title: "Final report",
+            utility: { type: "FINAL_REPORT", path: "final-report.json" },
+          },
+          { id: "success", type: "END", title: "Success", status: "success" },
+        ],
+        edges: [
+          {
+            id: "start-report",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "report",
+          },
+          {
+            id: "report-success",
+            from: "report",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
+        ],
+      });
+      const reportResult = {
+        blockId: "report",
+        operationId: "report-operation",
+        output: "SUCCESS",
+        status: "completed" as const,
+        attempt: 1,
+        summary: "Report started.",
+      };
+      const checkpoint: RalphRunCheckpoint = {
+        currentBlockId: "success",
+        transitions: 2,
+        variables: {},
+        resultsByBlock: { report: reportResult },
+        runLog: [],
+        blockResults: [reportResult],
+        events: [],
+        errorCounts: {},
+        repeatedFailures: {},
+        finalReports: [{ blockId: "report", jsonPath: outsideReportPath }],
+        operationLedger: {
+          "report-operation": {
+            id: "report-operation",
+            blockId: "report",
+            attempt: 1,
+            state: "routed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:00:01.000Z",
+            routedAt: "2026-01-01T00:00:02.000Z",
+            routedToBlockId: "success",
+          },
+        },
+      };
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "report-resume-containment" },
+      );
+
+      expect(result.status).toBe("crashed");
+      expect(result.summary).toContain(
+        "Utility path must stay inside the workspace.",
+      );
+      await expect(readFile(outsideReportPath, "utf8")).resolves.toBe(
+        originalReport,
+      );
+    } finally {
+      await rm(testRoot, { recursive: true, force: true });
     }
   });
 
@@ -7574,6 +7981,121 @@ describe("runRalphFlow", () => {
       );
     } finally {
       await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not refresh restored JSON task claims outside the workspace", async () => {
+    const testRoot = await mkdtemp(
+      join(tmpdir(), "ralph-restored-task-claim-"),
+    );
+    const workspace = join(testRoot, "workspace");
+    const outsidePath = join(testRoot, "outside-tasks.json");
+    const runId = "restored-task-claim";
+    const now = "2026-01-01T00:00:00.000Z";
+    const outsideContents = JSON.stringify({
+      tasks: [
+        {
+          id: "task-1",
+          status: "implementing",
+          updatedAt: now,
+          lease: {
+            ownerId: runId,
+            generation: 1,
+            acquiredAt: now,
+            heartbeatAt: now,
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+    const selectedResult = {
+      blockId: "select",
+      output: "SELECTED" as const,
+      status: "completed" as const,
+      attempt: 1,
+      summary: "Selected task-1.",
+      data: {
+        path: outsidePath,
+        jsonPath: "tasks",
+        taskIds: ["task-1"],
+      },
+    };
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "work",
+      transitions: 2,
+      variables: {},
+      resultsByBlock: { select: selectedResult },
+      runLog: [],
+      blockResults: [selectedResult],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+    };
+
+    try {
+      await mkdir(workspace);
+      await writeFile(outsidePath, outsideContents, "utf8");
+      vi.mocked(executeTask).mockResolvedValueOnce(
+        createExecutionResult({ summary: "Continued safely." }),
+      );
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "select",
+              type: "UTILITY",
+              title: "Select",
+              utility: { type: "SELECT_JSON_TASK", path: "tasks.json" },
+            },
+            { id: "work", type: "PROMPT", title: "Work", prompt: "Work." },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            {
+              id: "start-select",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "select",
+            },
+            {
+              id: "select-work",
+              from: "select",
+              fromOutput: "SELECTED",
+              to: "work",
+            },
+            {
+              id: "work-success",
+              from: "work",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          checkpoint,
+          instructionBoundaryPolicy: "new-boundary",
+          maxTransitions: 10,
+          runId,
+        },
+      );
+
+      expect(result.status).toBe("crashed");
+      expect(result.summary).toContain(
+        "Durability failed: Utility path must stay inside the workspace.",
+      );
+      expect(result.durability).toMatchObject({
+        status: "degraded",
+        error: "Utility path must stay inside the workspace.",
+      });
+      await expect(readFile(outsidePath, "utf8")).resolves.toBe(
+        outsideContents,
+      );
+    } finally {
+      await rm(testRoot, { recursive: true, force: true });
     }
   });
 

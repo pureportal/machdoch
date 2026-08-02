@@ -11,6 +11,7 @@ import {
   open,
   readdir,
   readFile,
+  realpath,
   rename,
   rm,
   stat,
@@ -4907,8 +4908,11 @@ const isResolvedPathInsideWorkspace = (
   path: string,
   workspaceRoot: string,
 ): boolean => {
-  const workspacePath = resolve(workspaceRoot);
-  const relativePath = relative(workspacePath, resolve(path));
+  const workspacePath = resolve(normalizeLocalCommandCwd(workspaceRoot));
+  const relativePath = relative(
+    workspacePath,
+    resolve(normalizeLocalCommandCwd(path)),
+  );
 
   return (
     relativePath === "" ||
@@ -4927,6 +4931,56 @@ const resolveWorkspaceContainedUtilityPath = (
   }
 
   return resolvedPath;
+};
+
+const resolvePathThroughExistingAncestors = async (
+  path: string,
+): Promise<string> => {
+  const missingSegments: string[] = [];
+  let currentPath = path;
+
+  for (;;) {
+    try {
+      const resolvedBasePath = await realpath(currentPath);
+
+      return missingSegments.reduce(
+        (resolvedPath, segment) => resolve(resolvedPath, segment),
+        resolvedBasePath,
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+
+      const parentPath = dirname(currentPath);
+      if (parentPath === currentPath) {
+        throw error;
+      }
+
+      missingSegments.unshift(basename(currentPath));
+      currentPath = parentPath;
+    }
+  }
+};
+
+const resolveWorkspaceContainedMutationPath = async (
+  path: string | undefined,
+  workspaceRoot: string,
+  options: { preserveRequestedPath?: boolean } = {},
+): Promise<string> => {
+  const resolvedPath = resolveUtilityPath(path, workspaceRoot);
+  const [resolvedWorkspacePath, resolvedMutationPath] = await Promise.all([
+    realpath(normalizeLocalCommandCwd(workspaceRoot)),
+    resolvePathThroughExistingAncestors(normalizeLocalCommandCwd(resolvedPath)),
+  ]);
+
+  if (
+    !isResolvedPathInsideWorkspace(resolvedMutationPath, resolvedWorkspacePath)
+  ) {
+    throw new Error("Utility path must stay inside the workspace.");
+  }
+
+  return options.preserveRequestedPath ? resolvedPath : resolvedMutationPath;
 };
 
 const delayWithBackoff = async (
@@ -5739,7 +5793,7 @@ const executeWriteJsonUtilityBlock = async (
 
   let mutationLock: RalphFileMutationLock | undefined;
   try {
-    const path = resolveWorkspaceContainedUtilityPath(
+    const path = await resolveWorkspaceContainedMutationPath(
       rawPath,
       config.workspaceRoot,
     );
@@ -5791,7 +5845,7 @@ const executePatchJsonUtilityBlock = async (
     );
   }
 
-  const path = resolveWorkspaceContainedUtilityPath(
+  const path = await resolveWorkspaceContainedMutationPath(
     rawPath,
     config.workspaceRoot,
   );
@@ -5870,7 +5924,7 @@ const executeAppendJsonlUtilityBlock = async (
 
   let mutationLock: RalphFileMutationLock | undefined;
   try {
-    const path = resolveWorkspaceContainedUtilityPath(
+    const path = await resolveWorkspaceContainedMutationPath(
       rawPath,
       config.workspaceRoot,
     );
@@ -7175,7 +7229,7 @@ const executeSelectJsonTaskUtilityBlock = async (
     );
   }
 
-  const path = resolveWorkspaceContainedUtilityPath(
+  const path = await resolveWorkspaceContainedMutationPath(
     rawPath,
     config.workspaceRoot,
   );
@@ -7406,7 +7460,7 @@ const executeMarkJsonTaskUtilityBlock = async (
     );
   }
 
-  const path = resolveWorkspaceContainedUtilityPath(
+  const path = await resolveWorkspaceContainedMutationPath(
     rawPath,
     config.workspaceRoot,
   );
@@ -7694,20 +7748,25 @@ const collectRalphJsonTaskClaims = (
 const refreshRalphJsonTaskLeases = async (
   flow: RalphFlow,
   context: RalphResultContext,
+  workspaceRoot: string,
 ): Promise<number> => {
   let refreshed = 0;
 
   for (const claim of collectRalphJsonTaskClaims(flow, context)) {
-    const mutationLock = await acquireRalphFileMutationLock(
+    const claimPath = await resolveWorkspaceContainedMutationPath(
       claim.path,
+      workspaceRoot,
+    );
+    const mutationLock = await acquireRalphFileMutationLock(
+      claimPath,
       context.runId,
     );
     try {
-      const json = await readJsonFile(claim.path);
+      const json = await readJsonFile(claimPath);
       const taskArray = getJsonTaskArray(json, claim.jsonPath);
       if (!taskArray) {
         throw new Error(
-          `Could not refresh JSON task leases because ${claim.jsonPath ?? "tasks"} is missing in ${claim.path}.`,
+          `Could not refresh JSON task leases because ${claim.jsonPath ?? "tasks"} is missing in ${claimPath}.`,
         );
       }
       const now = new Date().toISOString();
@@ -7736,7 +7795,7 @@ const refreshRalphJsonTaskLeases = async (
         refreshed += 1;
       }
       if (changed) {
-        await writeUtilityJsonOutput(claim.path, json);
+        await writeUtilityJsonOutput(claimPath, json);
       }
     } finally {
       await mutationLock.release();
@@ -7814,9 +7873,10 @@ const executeDeleteFileUtilityBlock = async (
   }
 
   try {
-    const path = resolveWorkspaceContainedUtilityPath(
+    const path = await resolveWorkspaceContainedMutationPath(
       rawPath,
       config.workspaceRoot,
+      { preserveRequestedPath: true },
     );
     const fileStat = await lstat(path);
 
@@ -7838,9 +7898,10 @@ const executeDeleteFileUtilityBlock = async (
     );
   } catch (error) {
     if (isFileNotFoundError(error)) {
-      const path = resolveWorkspaceContainedUtilityPath(
+      const path = await resolveWorkspaceContainedMutationPath(
         rawPath,
         config.workspaceRoot,
+        { preserveRequestedPath: true },
       );
 
       return createUtilityResult(
@@ -7872,13 +7933,15 @@ const executeMoveFileUtilityBlock = async (
     );
   }
 
-  const from = resolveWorkspaceContainedUtilityPath(
+  const from = await resolveWorkspaceContainedMutationPath(
     rawPath,
     config.workspaceRoot,
+    { preserveRequestedPath: true },
   );
-  const to = resolveWorkspaceContainedUtilityPath(
+  const to = await resolveWorkspaceContainedMutationPath(
     rawOutputPath,
     config.workspaceRoot,
+    { preserveRequestedPath: true },
   );
 
   try {
@@ -7919,20 +7982,23 @@ const executeMoveFileUtilityBlock = async (
   }
 };
 
-const createArchiveFilePath = (
+const createArchiveFilePath = async (
   sourcePath: string,
   utility: RalphUtilityConfig,
   workspaceRoot: string,
-): string => {
+): Promise<string> => {
   const rawOutputPath = utility.outputPath?.trim();
 
   if (rawOutputPath) {
-    return resolveWorkspaceContainedUtilityPath(rawOutputPath, workspaceRoot);
+    return resolveWorkspaceContainedMutationPath(rawOutputPath, workspaceRoot, {
+      preserveRequestedPath: true,
+    });
   }
 
-  const archiveRoot = resolveWorkspaceContainedUtilityPath(
+  const archiveRoot = await resolveWorkspaceContainedMutationPath(
     utility.rootPath?.trim() || ".machdoch/ralph/archive",
     workspaceRoot,
+    { preserveRequestedPath: true },
   );
   const parsedName = basename(sourcePath);
   const extension = extname(parsedName);
@@ -7957,11 +8023,12 @@ const executeArchiveFileUtilityBlock = async (
     );
   }
 
-  const from = resolveWorkspaceContainedUtilityPath(
+  const from = await resolveWorkspaceContainedMutationPath(
     rawPath,
     config.workspaceRoot,
+    { preserveRequestedPath: true },
   );
-  const to = createArchiveFilePath(from, utility, config.workspaceRoot);
+  const to = await createArchiveFilePath(from, utility, config.workspaceRoot);
 
   try {
     const fileStat = await lstat(from);
@@ -8030,7 +8097,7 @@ const executeLoopCounterUtilityBlock = async (
   config: RuntimeConfig,
   context: RalphResultContext,
 ): Promise<RalphBlockExecutionResult> => {
-  const path = resolveWorkspaceContainedUtilityPath(
+  const path = await resolveWorkspaceContainedMutationPath(
     utility.path?.trim() || ".machdoch/ralph/counters.json",
     config.workspaceRoot,
   );
@@ -8122,17 +8189,17 @@ const getScopeRegistryStrategy = (
   );
 };
 
-const resolveScopeRegistryUtilityPath = (
+const resolveScopeRegistryUtilityPath = async (
   utility: RalphUtilityConfig,
   workspaceRoot: string,
-): string => {
+): Promise<string> => {
   const flowAlias = getScopeRegistryFlowAlias(utility);
   const path =
     utility.registryPath?.trim() ||
     utility.path?.trim() ||
     createDefaultRalphScopeRegistryPath(flowAlias);
 
-  return resolveWorkspaceContainedUtilityPath(path, workspaceRoot);
+  return resolveWorkspaceContainedMutationPath(path, workspaceRoot);
 };
 
 const resolveScopeScanRootPath = (
@@ -8184,7 +8251,7 @@ const maybeWriteScopeRegistryMarkdown = async (
     return undefined;
   }
 
-  const markdownPath = resolveWorkspaceContainedUtilityPath(
+  const markdownPath = await resolveWorkspaceContainedMutationPath(
     utility.outputPath?.trim() ||
       createRalphScopeRegistryMarkdownPath(registryPath),
     workspaceRoot,
@@ -8283,7 +8350,7 @@ const executeUpdateScopeRegistryUtilityBlock = async (
 
     const flowAlias = getScopeRegistryFlowAlias(utility);
     const strategy = getScopeRegistryStrategy(utility);
-    const registryPath = resolveScopeRegistryUtilityPath(
+    const registryPath = await resolveScopeRegistryUtilityPath(
       utility,
       config.workspaceRoot,
     );
@@ -8339,7 +8406,7 @@ const executeSelectScopeUtilityBlock = async (
   try {
     const flowAlias = getScopeRegistryFlowAlias(utility);
     const strategy = getScopeRegistryStrategy(utility);
-    const registryPath = resolveScopeRegistryUtilityPath(
+    const registryPath = await resolveScopeRegistryUtilityPath(
       utility,
       config.workspaceRoot,
     );
@@ -8408,7 +8475,7 @@ const executeMarkScopeResultUtilityBlock = async (
   try {
     const flowAlias = getScopeRegistryFlowAlias(utility);
     const strategy = getScopeRegistryStrategy(utility);
-    const registryPath = resolveScopeRegistryUtilityPath(
+    const registryPath = await resolveScopeRegistryUtilityPath(
       utility,
       config.workspaceRoot,
     );
@@ -10095,7 +10162,7 @@ const maybeWriteJsonArtifact = async (
     return undefined;
   }
 
-  const resolvedPath = resolveWorkspaceContainedUtilityPath(
+  const resolvedPath = await resolveWorkspaceContainedMutationPath(
     path,
     workspaceRoot,
   );
@@ -11281,17 +11348,28 @@ const RALPH_RESERVED_RUN_ARTIFACT_NAMES = new Set([
   "autonomy-evidence.json",
 ]);
 
-const assertRalphFinalReportPathAvailable = (
+const assertRalphFinalReportPathAvailable = async (
   path: string,
-  context: RalphResultContext,
-): void => {
+  context: Pick<RalphResultContext, "artifactRoot">,
+): Promise<void> => {
+  const artifactName =
+    process.platform === "win32"
+      ? (basename(path).split(":", 1)[0] ?? "").replace(/[ .]+$/u, "")
+      : basename(path);
+  const resolvedArtifactRoot = context.artifactRoot
+    ? await resolvePathThroughExistingAncestors(
+        normalizeLocalCommandCwd(context.artifactRoot),
+      )
+    : undefined;
+
   if (
-    context.artifactRoot &&
-    resolve(dirname(path)) === resolve(context.artifactRoot) &&
-    RALPH_RESERVED_RUN_ARTIFACT_NAMES.has(basename(path).toLowerCase())
+    resolvedArtifactRoot &&
+    isResolvedPathInsideWorkspace(dirname(path), resolvedArtifactRoot) &&
+    isResolvedPathInsideWorkspace(resolvedArtifactRoot, dirname(path)) &&
+    RALPH_RESERVED_RUN_ARTIFACT_NAMES.has(artifactName.toLowerCase())
   ) {
     throw new Error(
-      `Final report cannot overwrite reserved run artifact ${basename(path)}.`,
+      `Final report cannot overwrite reserved run artifact ${artifactName}.`,
     );
   }
 };
@@ -11299,6 +11377,8 @@ const assertRalphFinalReportPathAvailable = (
 const restoreRalphFinalReportArtifacts = async (
   flow: RalphFlow,
   descriptors: readonly RalphFinalReportCheckpointArtifact[] | undefined,
+  workspaceRoot: string,
+  artifactRoot: string,
 ): Promise<RalphFinalReportArtifact[]> => {
   if (!descriptors?.length) {
     return [];
@@ -11311,14 +11391,32 @@ const restoreRalphFinalReportArtifacts = async (
     if (block?.type !== "UTILITY" || block.utility.type !== "FINAL_REPORT") {
       continue;
     }
+    const jsonPath = descriptor.jsonPath
+      ? await resolveWorkspaceContainedMutationPath(
+          descriptor.jsonPath,
+          workspaceRoot,
+        )
+      : undefined;
+    const markdownPath = descriptor.markdownPath
+      ? await resolveWorkspaceContainedMutationPath(
+          descriptor.markdownPath,
+          workspaceRoot,
+        )
+      : undefined;
+    if (jsonPath) {
+      await assertRalphFinalReportPathAvailable(jsonPath, { artifactRoot });
+    }
+    if (markdownPath) {
+      await assertRalphFinalReportPathAvailable(markdownPath, { artifactRoot });
+    }
     let report: Record<string, unknown> = {
       flowId: flow.id,
       flowName: flow.name,
       generatedAt: new Date().toISOString(),
       outcome: { status: "recovering" },
     };
-    if (descriptor.jsonPath) {
-      const restored = await readFile(descriptor.jsonPath, "utf8")
+    if (jsonPath) {
+      const restored = await readFile(jsonPath, "utf8")
         .then((text) => JSON.parse(text) as unknown)
         .catch(() => undefined);
       if (isRecord(restored)) {
@@ -11329,10 +11427,8 @@ const restoreRalphFinalReportArtifacts = async (
       flow,
       block,
       report,
-      ...(descriptor.jsonPath ? { jsonPath: descriptor.jsonPath } : {}),
-      ...(descriptor.markdownPath
-        ? { markdownPath: descriptor.markdownPath }
-        : {}),
+      ...(jsonPath ? { jsonPath } : {}),
+      ...(markdownPath ? { markdownPath } : {}),
     });
   }
 
@@ -11440,17 +11536,17 @@ const executeFinalReportUtilityBlock = async (
         ? { autonomy: cloneRalphRunAutonomyMetadata(context.autonomy) }
         : {}),
     };
-    if (utility.path?.trim()) {
-      assertRalphFinalReportPathAvailable(
-        resolveWorkspaceContainedUtilityPath(
+    const resolvedJsonPath = utility.path?.trim()
+      ? await resolveWorkspaceContainedMutationPath(
           utility.path,
           config.workspaceRoot,
-        ),
-        context,
-      );
+        )
+      : undefined;
+    if (resolvedJsonPath) {
+      await assertRalphFinalReportPathAvailable(resolvedJsonPath, context);
     }
     const jsonPath = await maybeWriteJsonArtifact(
-      utility.path,
+      resolvedJsonPath,
       config.workspaceRoot,
       report,
     );
@@ -11458,11 +11554,11 @@ const executeFinalReportUtilityBlock = async (
     let resolvedMarkdownPath: string | undefined;
 
     if (markdownPath?.trim()) {
-      resolvedMarkdownPath = resolveWorkspaceContainedUtilityPath(
+      resolvedMarkdownPath = await resolveWorkspaceContainedMutationPath(
         markdownPath,
         config.workspaceRoot,
       );
-      assertRalphFinalReportPathAvailable(resolvedMarkdownPath, context);
+      await assertRalphFinalReportPathAvailable(resolvedMarkdownPath, context);
       await mkdir(dirname(resolvedMarkdownPath), { recursive: true });
       await writeFileAtomically(
         resolvedMarkdownPath,
@@ -14772,16 +14868,35 @@ export const runRalphFlow = async (
       result.operationId ? [[result.operationId, result] as const] : [],
     ),
   );
-  const restoredFinalReports = await restoreRalphFinalReportArtifacts(
-    flow,
-    checkpoint?.finalReports,
+  const artifactRoot = join(
+    getRalphRunDirectory(config.workspaceRoot, "workspace"),
+    normalizeRunId(runId),
   );
+  let restoredFinalReports: RalphFinalReportArtifact[];
+  try {
+    restoredFinalReports = await restoreRalphFinalReportArtifacts(
+      flow,
+      checkpoint?.finalReports,
+      config.workspaceRoot,
+      artifactRoot,
+    );
+  } catch (error) {
+    markDurabilityDegraded(error);
+    return finishRun({
+      flow: flow.id,
+      status: "crashed",
+      summary: `Ralph refused to resume from unsafe final-report metadata: ${durability.error}.`,
+      events,
+      blockResults,
+      missingVariables: [],
+      unknownVariables: [],
+      validation,
+      ...(checkpoint ? { checkpoint } : {}),
+    });
+  }
   const resultContext: RalphResultContext = {
     runId,
-    artifactRoot: join(
-      getRalphRunDirectory(config.workspaceRoot, "workspace"),
-      normalizeRunId(runId),
-    ),
+    artifactRoot,
     resultsByBlock: restoreRalphResultMap(checkpoint),
     runLog: checkpoint ? [...checkpoint.runLog] : [],
     variables: {
@@ -15030,7 +15145,11 @@ export const runRalphFlow = async (
   ): Promise<void> => {
     const refreshTaskLeases = async (): Promise<void> => {
       try {
-        await refreshRalphJsonTaskLeases(flow, resultContext);
+        await refreshRalphJsonTaskLeases(
+          flow,
+          resultContext,
+          config.workspaceRoot,
+        );
       } catch (error) {
         markDurabilityDegraded(error);
         logger?.trace({
@@ -15115,7 +15234,7 @@ export const runRalphFlow = async (
     }
   };
   const heartbeatRunOwnership = async (): Promise<void> => {
-    await refreshRalphJsonTaskLeases(flow, resultContext);
+    await refreshRalphJsonTaskLeases(flow, resultContext, config.workspaceRoot);
     if (runStore && ownedLeaseGeneration !== undefined) {
       await runStore.heartbeat(
         {
