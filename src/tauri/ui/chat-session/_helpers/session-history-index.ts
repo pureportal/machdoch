@@ -66,6 +66,7 @@ export interface SessionHistoryIndex {
 
 export interface SessionHistoryIndexOptions {
   includeContent?: boolean;
+  workspaceRoots?: readonly string[];
 }
 
 export interface SessionHistoryFilterOptions {
@@ -230,6 +231,26 @@ export const createSessionHistoryIndex = (
   const includeContent = options.includeContent !== false;
   const tagsByLabel = new Map<string, SessionHistoryTagFacet>();
   const projectsById = new Map<string, SessionHistoryProjectFacet>();
+  const configuredProjectIds = options.workspaceRoots
+    ? new Set(
+        options.workspaceRoots.flatMap((workspaceRoot) => {
+          const root = workspaceRoot.trim();
+
+          if (!root) {
+            return [];
+          }
+
+          const id = getProjectId(root);
+          projectsById.set(id, {
+            id,
+            label: getProjectLabel(root),
+            path: root,
+            count: 0,
+          });
+          return [id];
+        }),
+      )
+    : null;
   const nextEntryCache = entryCache
     ? new Map<string, SessionHistoryIndexEntry>()
     : null;
@@ -248,13 +269,19 @@ export const createSessionHistoryIndex = (
       });
     }
 
-    const existingProject = projectsById.get(projectId);
-    projectsById.set(projectId, {
-      id: projectId,
-      label: existingProject?.label ?? projectLabel,
-      path: session.workspace,
-      count: (existingProject?.count ?? 0) + 1,
-    });
+    if (
+      configuredProjectIds === null ||
+      !session.workspace?.trim() ||
+      configuredProjectIds.has(projectId)
+    ) {
+      const existingProject = projectsById.get(projectId);
+      projectsById.set(projectId, {
+        id: projectId,
+        label: existingProject?.label ?? projectLabel,
+        path: existingProject?.path ?? session.workspace,
+        count: (existingProject?.count ?? 0) + 1,
+      });
+    }
 
     const cachedEntry = entryCache?.get(session.id);
 

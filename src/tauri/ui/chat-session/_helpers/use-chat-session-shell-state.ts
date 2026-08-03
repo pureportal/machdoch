@@ -2442,9 +2442,15 @@ export const useChatSessionShellState = (
       {
         includeContent:
           includeHistoryContent && sessionSearchQuery.trim().length > 0,
+        workspaceRoots: shellState.recentWorkspaces,
       },
     );
-  }, [includeHistoryContent, sessionSearchQuery, sortedSessions]);
+  }, [
+    includeHistoryContent,
+    sessionSearchQuery,
+    shellState.recentWorkspaces,
+    sortedSessions,
+  ]);
 
   const filteredSessions = useMemo(() => {
     return filterSessionHistoryIndex(sessionHistoryIndex, {

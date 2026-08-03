@@ -2668,10 +2668,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const normalizedRecentWorkspaces = normalizeRecentWorkspaces(
     candidate.recentWorkspaces,
   );
-  const recentWorkspaces =
-    normalizedRecentWorkspaces.length > 0
-      ? normalizedRecentWorkspaces
-      : deriveRecentWorkspacesFromSessions(normalizedSessions);
+  const recentWorkspaces = Array.isArray(candidate.recentWorkspaces)
+    ? normalizedRecentWorkspaces
+    : deriveRecentWorkspacesFromSessions(normalizedSessions);
   const handledRemoteCommandIds = Array.isArray(
     candidate.handledRemoteCommandIds,
   )

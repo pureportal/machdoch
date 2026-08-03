@@ -2161,6 +2161,32 @@ export const useChatSessionController = (
     [state.applyShellState],
   );
 
+  const addWorkspaceToHistory = useCallback(
+    (workspace: string): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        recentWorkspaces: rememberRecentWorkspace(
+          prev.recentWorkspaces,
+          workspace,
+        ),
+      }));
+    },
+    [state.applyShellState],
+  );
+
+  const relinkWorkspaceInHistory = useCallback(
+    (currentWorkspace: string, nextWorkspace: string): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        recentWorkspaces: rememberRecentWorkspace(
+          removeRecentWorkspace(prev.recentWorkspaces, currentWorkspace),
+          nextWorkspace,
+        ),
+      }));
+    },
+    [state.applyShellState],
+  );
+
   const handleSelectFolder = async (): Promise<void> => {
     if (isSessionWorkspaceLocked(activeComposerSession)) {
       return;
@@ -7487,6 +7513,13 @@ export const useChatSessionController = (
         message: instructionRegistryMessage,
         onRefresh: refreshInstructionRegistry,
         onManualSave: handleInstructionManualSave,
+      },
+      workspaceManagementSetup: {
+        workspaceRoots: state.shellState.recentWorkspaces,
+        loading: !state.hasHydrated,
+        onAdd: addWorkspaceToHistory,
+        onRemove: removeWorkspaceFromHistory,
+        onRelink: relinkWorkspaceInHistory,
       },
       webSearchSetup: {
         activeProvider: runtime.webSearchActiveProvider,

@@ -37,18 +37,19 @@ import {
   type WorkspaceGitAction,
   type WorkspaceGitOverview,
 } from "../runtime";
-import type { InstructionSettingsControls } from "../chat-session/components/settings-dialog-panels/types";
+import type {
+  InstructionSettingsControls,
+  WorkspaceManagementControls,
+} from "../chat-session/components/settings-dialog-panels/types";
 import { TagEditor } from "../instruction-management/tag-editor";
+import {
+  createManagedWorkspaceViews,
+  createWorkspaceRootKey,
+  getManagedWorkspaceName,
+  getManagedWorkspaceTags,
+} from "./workspace-management-model";
 
 type GitSection = "status" | "branches" | "remotes" | "pull-requests";
-
-const workspaceName = (workspace: InstructionWorkspaceView): string =>
-  workspace.displayName ??
-  workspace.root.split(/[\\/]/u).filter(Boolean).at(-1) ??
-  workspace.root;
-
-const workspaceTags = (workspace: InstructionWorkspaceView): string[] =>
-  workspace.tags ?? [];
 
 const profileIsEnabled = (profile: InstructionProfileView): boolean =>
   profile.enabled !== false;
@@ -153,18 +154,27 @@ const GitStatusView = ({
 
 export const WorkspaceManager = ({
   setup,
+  workspaceSetup,
   activeWorkspaceRoot,
 }: {
   setup: InstructionSettingsControls;
+  workspaceSetup: WorkspaceManagementControls;
   activeWorkspaceRoot: string | null;
 }): JSX.Element => {
   const registry = setup.registry;
-  const workspaces = registry?.workspaces ?? [];
+  const workspaces = useMemo(
+    () =>
+      createManagedWorkspaceViews(
+        workspaceSetup.workspaceRoots,
+        registry?.workspaces ?? [],
+      ),
+    [registry?.workspaces, workspaceSetup.workspaceRoots],
+  );
   const profiles = registry?.profiles ?? [];
   const [query, setQuery] = useState("");
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
-    null,
-  );
+  const [selectedWorkspaceKey, setSelectedWorkspaceKey] = useState<
+    string | null
+  >(null);
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [gitSection, setGitSection] = useState<GitSection>("status");
@@ -184,30 +194,32 @@ export const WorkspaceManager = ({
 
   useEffect(() => {
     if (
-      selectedWorkspaceId &&
-      workspaces.some((workspace) => workspace.id === selectedWorkspaceId)
+      selectedWorkspaceKey &&
+      workspaces.some((workspace) => workspace.key === selectedWorkspaceKey)
     ) {
       return;
     }
     const active = workspaces.find(
       (workspace) =>
         activeWorkspaceRoot &&
-        workspace.root.toLocaleLowerCase() ===
-          activeWorkspaceRoot.toLocaleLowerCase(),
+        workspace.key === createWorkspaceRootKey(activeWorkspaceRoot),
     );
-    setSelectedWorkspaceId(active?.id ?? workspaces[0]?.id ?? null);
-  }, [activeWorkspaceRoot, selectedWorkspaceId, workspaces]);
+    setSelectedWorkspaceKey(active?.key ?? workspaces[0]?.key ?? null);
+  }, [activeWorkspaceRoot, selectedWorkspaceKey, workspaces]);
 
   const selectedWorkspace =
-    workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ??
+    workspaces.find((workspace) => workspace.key === selectedWorkspaceKey) ??
     null;
+  const selectedInstructionWorkspace =
+    selectedWorkspace?.instructionWorkspace ?? null;
 
   useEffect(() => {
     if (!selectedWorkspace) return;
     setDisplayName(
-      selectedWorkspace.displayName ?? workspaceName(selectedWorkspace),
+      selectedWorkspace.instructionWorkspace?.displayName ??
+        getManagedWorkspaceName(selectedWorkspace),
     );
-    setTags([...workspaceTags(selectedWorkspace)]);
+    setTags([...getManagedWorkspaceTags(selectedWorkspace)]);
   }, [selectedWorkspace]);
 
   const refreshGit = useCallback(async (): Promise<void> => {
@@ -241,9 +253,21 @@ export const WorkspaceManager = ({
   };
 
   const addWorkspace = async (root?: string): Promise<void> => {
-    if (!registry) return;
     const selectedRoot = root ?? (await chooseDirectory());
     if (!selectedRoot) return;
+    workspaceSetup.onAdd(selectedRoot);
+
+    if (
+      !registry ||
+      registry.workspaces.some(
+        (workspace) =>
+          createWorkspaceRootKey(workspace.root) ===
+          createWorkspaceRootKey(selectedRoot),
+      )
+    ) {
+      return;
+    }
+
     await mutate({
       operation: "workspace-register",
       root: selectedRoot,
@@ -283,9 +307,9 @@ export const WorkspaceManager = ({
         !normalizedQuery
           ? true
           : [
-              workspaceName(workspace),
+              getManagedWorkspaceName(workspace),
               workspace.root,
-              ...workspaceTags(workspace),
+              ...getManagedWorkspaceTags(workspace),
             ]
               .join(" ")
               .toLocaleLowerCase()
@@ -293,12 +317,22 @@ export const WorkspaceManager = ({
       ),
     [normalizedQuery, workspaces],
   );
-  const activeWorkspaceRegistered = workspaces.some(
+  const activeWorkspaceConfigured = workspaces.some(
     (workspace) =>
       activeWorkspaceRoot &&
-      workspace.root.toLocaleLowerCase() ===
-        activeWorkspaceRoot.toLocaleLowerCase(),
+      workspace.key === createWorkspaceRootKey(activeWorkspaceRoot),
   );
+  const effectiveInstructionProfileCount = profiles.filter((profile) => {
+    if (!profileIsEnabled(profile)) {
+      return false;
+    }
+
+    return selectedInstructionWorkspace
+      ? profileSourcesForWorkspace(profile, selectedInstructionWorkspace).some(
+          (source) => source !== "Disabled",
+        )
+      : profile.global;
+  }).length;
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
@@ -310,11 +344,11 @@ export const WorkspaceManager = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {activeWorkspaceRoot && !activeWorkspaceRegistered ? (
+          {activeWorkspaceRoot && !activeWorkspaceConfigured ? (
             <Button
               size="sm"
               variant="outline"
-              disabled={setup.saving || !registry}
+              disabled={setup.saving || workspaceSetup.loading}
               onClick={() => void addWorkspace(activeWorkspaceRoot)}
             >
               <FolderPlus className="size-4" />
@@ -323,7 +357,7 @@ export const WorkspaceManager = ({
           ) : null}
           <Button
             size="sm"
-            disabled={setup.saving || !registry}
+            disabled={setup.saving || workspaceSetup.loading}
             onClick={() => void addWorkspace()}
           >
             <Plus className="size-4" />
@@ -369,7 +403,7 @@ export const WorkspaceManager = ({
             />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {setup.loading && !registry ? (
+            {workspaceSetup.loading && workspaces.length === 0 ? (
               <div className="grid h-32 place-items-center">
                 <LoaderCircle className="size-5 animate-spin text-slate-500" />
               </div>
@@ -381,7 +415,7 @@ export const WorkspaceManager = ({
                 action={
                   <Button
                     size="sm"
-                    disabled={!registry}
+                    disabled={workspaceSetup.loading}
                     onClick={() => void addWorkspace()}
                   >
                     <Plus className="size-4" />
@@ -392,15 +426,16 @@ export const WorkspaceManager = ({
             ) : (
               <div className="space-y-1">
                 {filteredWorkspaces.map((workspace) => {
-                  const selected = workspace.id === selectedWorkspaceId;
+                  const selected = workspace.key === selectedWorkspaceKey;
                   const active =
-                    activeWorkspaceRoot?.toLocaleLowerCase() ===
-                    workspace.root.toLocaleLowerCase();
+                    activeWorkspaceRoot !== null &&
+                    createWorkspaceRootKey(activeWorkspaceRoot) ===
+                      workspace.key;
                   return (
                     <button
-                      key={workspace.id}
+                      key={workspace.key}
                       type="button"
-                      onClick={() => setSelectedWorkspaceId(workspace.id)}
+                      onClick={() => setSelectedWorkspaceKey(workspace.key)}
                       className={cn(
                         "w-full rounded-lg border px-3 py-2.5 text-left",
                         selected
@@ -411,7 +446,7 @@ export const WorkspaceManager = ({
                       <div className="flex items-center gap-2">
                         <FolderGit2 className="size-4 shrink-0 text-slate-500" />
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-200">
-                          {workspaceName(workspace)}
+                          {getManagedWorkspaceName(workspace)}
                         </span>
                         {active ? (
                           <CircleDot className="size-3.5 text-sky-300" />
@@ -420,9 +455,9 @@ export const WorkspaceManager = ({
                       <p className="mt-1 truncate pl-6 text-[11px] text-slate-600">
                         {workspace.root}
                       </p>
-                      {workspaceTags(workspace).length > 0 ? (
+                      {getManagedWorkspaceTags(workspace).length > 0 ? (
                         <div className="mt-2 flex flex-wrap gap-1 pl-6">
-                          {workspaceTags(workspace)
+                          {getManagedWorkspaceTags(workspace)
                             .slice(0, 4)
                             .map((tag) => (
                               <Badge
@@ -444,7 +479,7 @@ export const WorkspaceManager = ({
         </aside>
 
         <section className="min-h-0 min-w-0 overflow-y-auto">
-          {!selectedWorkspace || !registry ? (
+          {!selectedWorkspace ? (
             <div className="grid h-full min-h-64 place-items-center p-6">
               <EmptyState icon={FolderGit2} title="Select a workspace" />
             </div>
@@ -453,7 +488,7 @@ export const WorkspaceManager = ({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="truncate text-base font-semibold text-slate-100">
-                    {workspaceName(selectedWorkspace)}
+                    {getManagedWorkspaceName(selectedWorkspace)}
                   </h2>
                   <p className="mt-1 break-all font-mono text-xs text-slate-500">
                     {selectedWorkspace.root}
@@ -467,12 +502,16 @@ export const WorkspaceManager = ({
                     onClick={async () => {
                       const root = await chooseDirectory();
                       if (!root) return;
-                      void mutate({
-                        operation: "workspace-relink",
-                        workspaceId: selectedWorkspace.id,
-                        root,
-                        expectedRevision: registry.revision,
-                      });
+                      if (selectedInstructionWorkspace && registry) {
+                        const saved = await mutate({
+                          operation: "workspace-relink",
+                          workspaceId: selectedInstructionWorkspace.id,
+                          root,
+                          expectedRevision: registry.revision,
+                        });
+                        if (!saved) return;
+                      }
+                      workspaceSetup.onRelink(selectedWorkspace.root, root);
                     }}
                   >
                     Relink
@@ -482,10 +521,11 @@ export const WorkspaceManager = ({
                     variant="ghost"
                     disabled={setup.saving}
                     aria-label="Remove workspace"
-                    onClick={() => {
-                      const hasAssignments = selectedWorkspace.scopes.some(
-                        (scope) => scope.profiles.length > 0,
-                      );
+                    onClick={async () => {
+                      const hasAssignments =
+                        selectedInstructionWorkspace?.scopes.some(
+                          (scope) => scope.profiles.length > 0,
+                        ) ?? false;
                       if (
                         hasAssignments &&
                         !window.confirm(
@@ -494,12 +534,16 @@ export const WorkspaceManager = ({
                       ) {
                         return;
                       }
-                      void mutate({
-                        operation: "workspace-unregister",
-                        workspaceId: selectedWorkspace.id,
-                        confirmAssignedRemoval: hasAssignments,
-                        expectedRevision: registry.revision,
-                      });
+                      if (selectedInstructionWorkspace && registry) {
+                        const saved = await mutate({
+                          operation: "workspace-unregister",
+                          workspaceId: selectedInstructionWorkspace.id,
+                          confirmAssignedRemoval: hasAssignments,
+                          expectedRevision: registry.revision,
+                        });
+                        if (!saved) return;
+                      }
+                      workspaceSetup.onRemove(selectedWorkspace.root);
                     }}
                   >
                     <Trash2 className="size-4 text-red-300" />
@@ -522,19 +566,32 @@ export const WorkspaceManager = ({
                 </label>
                 <Button
                   size="sm"
-                  disabled={setup.saving || !displayName.trim()}
-                  onClick={() =>
-                    void mutate({
-                      operation: "workspace-update",
-                      workspaceId: selectedWorkspace.id,
-                      displayName,
-                      tags,
-                      expectedRevision: registry.revision,
-                    })
+                  disabled={
+                    setup.saving || !displayName.trim() || registry === null
                   }
+                  onClick={() => {
+                    if (!registry) return;
+                    void mutate(
+                      selectedInstructionWorkspace
+                        ? {
+                            operation: "workspace-update",
+                            workspaceId: selectedInstructionWorkspace.id,
+                            displayName,
+                            tags,
+                            expectedRevision: registry.revision,
+                          }
+                        : {
+                            operation: "workspace-register",
+                            root: selectedWorkspace.root,
+                            displayName,
+                            tags,
+                            expectedRevision: registry.revision,
+                          },
+                    );
+                  }}
                 >
                   <Save className="size-4" />
-                  Save
+                  {selectedInstructionWorkspace ? "Save" : "Register"}
                 </Button>
               </section>
 
@@ -900,20 +957,46 @@ export const WorkspaceManager = ({
                     Instructions
                   </h3>
                   <span className="text-xs text-slate-500">
-                    {
-                      profiles.filter(
-                        (profile) =>
-                          profileSourcesForWorkspace(
-                            profile,
-                            selectedWorkspace,
-                          ).some((source) => source !== "Disabled") &&
-                          profileIsEnabled(profile),
-                      ).length
-                    }{" "}
-                    effective
+                    {effectiveInstructionProfileCount} effective
                   </span>
                 </div>
-                {profiles.length === 0 ? (
+                {!registry ? (
+                  setup.loading ? (
+                    <div className="grid h-24 place-items-center">
+                      <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                    </div>
+                  ) : (
+                    <EmptyState
+                      icon={FolderGit2}
+                      title="Instruction library unavailable"
+                      size="compact"
+                    />
+                  )
+                ) : !selectedInstructionWorkspace ? (
+                  <EmptyState
+                    icon={FolderGit2}
+                    title="Workspace instructions not configured"
+                    description="Register this workspace only if it needs workspace-specific profile assignments."
+                    size="compact"
+                    action={
+                      <Button
+                        size="sm"
+                        disabled={setup.saving}
+                        onClick={() =>
+                          void mutate({
+                            operation: "workspace-register",
+                            root: selectedWorkspace.root,
+                            displayName,
+                            tags,
+                            expectedRevision: registry.revision,
+                          })
+                        }
+                      >
+                        Register for instructions
+                      </Button>
+                    }
+                  />
+                ) : profiles.length === 0 ? (
                   <EmptyState
                     icon={FolderGit2}
                     title="No library instructions"
@@ -922,19 +1005,21 @@ export const WorkspaceManager = ({
                 ) : (
                   <div className="grid gap-2 md:grid-cols-2">
                     {profiles.map((profile) => {
-                      const rootScope = selectedWorkspace.scopes.find(
-                        (scope) => scope.path === ".",
-                      );
+                      const rootScope =
+                        selectedInstructionWorkspace.scopes.find(
+                          (scope) => scope.path === ".",
+                        );
                       const rootAssigned =
                         rootScope?.profiles.includes(profile.id) ?? false;
-                      const folderScopes = selectedWorkspace.scopes.filter(
-                        (scope) =>
-                          scope.path !== "." &&
-                          scope.profiles.includes(profile.id),
-                      );
+                      const folderScopes =
+                        selectedInstructionWorkspace.scopes.filter(
+                          (scope) =>
+                            scope.path !== "." &&
+                            scope.profiles.includes(profile.id),
+                        );
                       const labels = profileSourcesForWorkspace(
                         profile,
-                        selectedWorkspace,
+                        selectedInstructionWorkspace,
                       );
                       return (
                         <div
@@ -953,13 +1038,11 @@ export const WorkspaceManager = ({
                                 const current = rootScope?.profiles ?? [];
                                 void mutate({
                                   operation: "scope-set",
-                                  workspaceId: selectedWorkspace.id,
+                                  workspaceId: selectedInstructionWorkspace.id,
                                   scopePath: ".",
                                   profileIds: event.target.checked
                                     ? [...current, profile.id]
-                                    : current.filter(
-                                        (id) => id !== profile.id,
-                                      ),
+                                    : current.filter((id) => id !== profile.id),
                                   expectedRevision: registry.revision,
                                 });
                               }}
@@ -985,7 +1068,8 @@ export const WorkspaceManager = ({
                                   onClick={() =>
                                     void mutate({
                                       operation: "scope-set",
-                                      workspaceId: selectedWorkspace.id,
+                                      workspaceId:
+                                        selectedInstructionWorkspace.id,
                                       scopePath: scope.path,
                                       profileIds: scope.profiles.filter(
                                         (profileId) => profileId !== profile.id,

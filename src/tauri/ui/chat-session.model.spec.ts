@@ -35,6 +35,28 @@ describe("normalizeTaskExecutionFileChange", () => {
 });
 
 describe("normalizeShellState", () => {
+  it("preserves an explicitly empty global workspace list on reload", () => {
+    const workspaceSession = createSession({
+      id: "workspace-session",
+      workspace: "C:\\Projects\\machdoch",
+    });
+    const state = {
+      ...createInitialShellState(),
+      activeSessionId: workspaceSession.id,
+      sessions: [workspaceSession],
+      recentWorkspaces: [],
+    };
+
+    expect(normalizeShellState(state).recentWorkspaces).toEqual([]);
+
+    const legacyState: Record<string, unknown> = { ...state };
+    delete legacyState.recentWorkspaces;
+
+    expect(normalizeShellState(legacyState).recentWorkspaces).toEqual([
+      "C:\\Projects\\machdoch",
+    ]);
+  });
+
   it("preserves the active timeout state across session restoration", () => {
     const normalized = normalizeShellState({
       version: 2,

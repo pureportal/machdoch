@@ -123,6 +123,14 @@ export interface InstructionSettingsControls {
   ) => Promise<boolean | void> | boolean | void;
 }
 
+export interface WorkspaceManagementControls {
+  workspaceRoots: string[];
+  loading: boolean;
+  onAdd: (workspaceRoot: string) => void;
+  onRemove: (workspaceRoot: string) => void;
+  onRelink: (currentWorkspaceRoot: string, nextWorkspaceRoot: string) => void;
+}
+
 export interface DesktopSettingsControls {
   settings: UserDesktopSettings;
   saving: boolean;

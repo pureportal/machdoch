@@ -387,7 +387,8 @@ export const WorkspacePicker = ({
               Workspaces
             </p>
             <p className="text-sm leading-5 text-slate-400">
-              Workspace target for this session.
+              Workspace target for this session · {recentWorkspaces.length}{" "}
+              configured.
             </p>
           </div>
 

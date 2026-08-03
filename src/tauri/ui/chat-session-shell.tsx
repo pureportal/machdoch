@@ -658,6 +658,9 @@ export const ChatSession = (): JSX.Element => {
                 <Suspense fallback={appLoadingFallback}>
                   <WorkspaceManager
                     setup={controller.settingsDialog.instructionsSetup}
+                    workspaceSetup={
+                      controller.settingsDialog.workspaceManagementSetup
+                    }
                     activeWorkspaceRoot={
                       controller.composer.activeSession.workspace
                     }

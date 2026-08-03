@@ -366,10 +366,9 @@ export const SessionsSidebar = ({
     sessionStatusFilters,
     sessionTagFilters,
   ]);
-  const sessionProjectCount = sessionProjectFacets.reduce(
-    (count, project) => count + project.count,
-    0,
-  );
+  const sessionProjectCount = sessionProjectFacets.filter(
+    (project) => project.path !== null,
+  ).length;
   const selectedStatusFilters =
     normalizeSessionStatusFilterSelection(sessionStatusFilters);
 
