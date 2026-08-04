@@ -90,6 +90,7 @@ export const ShellTitlebar = ({
         <div className="mx-2 h-4 w-px bg-slate-800" />
         <button
           type="button"
+          aria-label="Minimize window"
           className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
           data-tauri-no-drag
           onMouseDown={(event) => {
@@ -98,12 +99,13 @@ export const ShellTitlebar = ({
           onClick={onMinimizeWindow}
           tabIndex={-1}
         >
-          <svg width="10" height="1" viewBox="0 0 10 1">
+          <svg aria-hidden="true" width="10" height="1" viewBox="0 0 10 1">
             <path fill="currentColor" d="M0 0h10v1H0z" />
           </svg>
         </button>
         <button
           type="button"
+          aria-label="Maximize or restore window"
           className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
           data-tauri-no-drag
           onMouseDown={(event) => {
@@ -112,7 +114,7 @@ export const ShellTitlebar = ({
           onClick={onToggleMaximizeWindow}
           tabIndex={-1}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10">
+          <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10">
             <path
               fill="currentColor"
               fillRule="evenodd"
@@ -122,6 +124,7 @@ export const ShellTitlebar = ({
         </button>
         <button
           type="button"
+          aria-label="Close window"
           className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500 hover:text-white"
           data-tauri-no-drag
           onMouseDown={(event) => {
@@ -130,7 +133,7 @@ export const ShellTitlebar = ({
           onClick={onCloseWindow}
           tabIndex={-1}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10">
+          <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10">
             <path
               fill="currentColor"
               fillRule="evenodd"
