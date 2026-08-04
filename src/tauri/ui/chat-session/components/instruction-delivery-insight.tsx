@@ -15,17 +15,14 @@ const number = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
 const sourceLocation = (source: UnknownRecord): string => {
-  if (typeof source.relativePath === "string") {
-    return source.relativePath;
-  }
   if (typeof source.assignmentPath === "string") {
-    return `profile assignment ${source.assignmentPath}`;
-  }
-  if (typeof source.inheritedFrom === "string") {
-    return `inherited from ${source.inheritedFrom}`;
+    if (source.assignmentPath === "global") return "Global";
+    if (source.assignmentPath === "tags") return "Tag match";
+    if (source.assignmentPath === ".") return "Workspace";
+    return `Workspace path ${source.assignmentPath}`;
   }
   if (typeof source.profileId === "string") {
-    return `profile:${source.profileId}`;
+    return `file:${source.profileId}`;
   }
   return text(source.scopePath, ".");
 };
@@ -47,9 +44,7 @@ export const InstructionDeliveryInsight = ({
     <details className="app-instruction-delivery-insight basis-full rounded-lg border border-cyan-400/20 bg-slate-950/75 px-3 py-2 text-xs text-slate-300">
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 font-semibold text-cyan-100 outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 [&::-webkit-details-marker]:hidden">
         <span>Instructions used</span>
-        <span className="font-normal text-slate-500">
-          {sources.length} source{sources.length === 1 ? "" : "s"}
-        </span>
+        <span className="font-normal text-slate-500">{sources.length}</span>
       </summary>
 
       <div className="mt-3 border-t border-slate-800 pt-3">
@@ -73,9 +68,7 @@ export const InstructionDeliveryInsight = ({
             ))}
           </ol>
         ) : (
-          <p className="text-slate-500">
-            No instruction files or profiles were used for this execution.
-          </p>
+          <p className="text-slate-500">No instructions were used.</p>
         )}
       </div>
     </details>

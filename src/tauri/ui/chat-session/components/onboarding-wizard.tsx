@@ -47,7 +47,6 @@ export interface OnboardingWizardProps extends SettingsControlsProps {
 const getSettingsSavePending = ({
   providerSetup,
   workspaceSetup,
-  instructionsSetup,
   webSearchSetup,
   mcpSetup,
   agentLimitsSetup,
@@ -59,7 +58,6 @@ const getSettingsSavePending = ({
   return (
     providerSetup.saving ||
     workspaceSetup.saving ||
-    instructionsSetup.saving ||
     webSearchSetup.saving ||
     mcpSetup.saving ||
     agentLimitsSetup.saving ||

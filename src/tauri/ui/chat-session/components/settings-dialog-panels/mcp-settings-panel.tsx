@@ -2028,10 +2028,7 @@ export const McpSettingsPanel = ({
       description="Configure servers, credentials, discovery, and tools."
     >
       <div className="grid gap-4 py-4">
-        <PanelBlock
-          title="Automatic provider enrollment"
-          description="Syncs managed MCP entries only; instructions remain run-scoped."
-        >
+        <PanelBlock title="Automatic provider enrollment">
           <ProviderSyncControl
             workspaceRoot={setup.workspaceRoot}
             showDiagnostics

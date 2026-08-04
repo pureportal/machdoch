@@ -1,7 +1,5 @@
 import {
-  Bot,
   Copy,
-  FilePlus2,
   FileText,
   Globe2,
   LoaderCircle,
@@ -10,13 +8,19 @@ import {
   Save,
   Search,
   Sparkles,
+  Tags,
   Trash2,
   WandSparkles,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
+import {
+  MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH,
+  MAX_INSTRUCTION_PROFILE_NAME_LENGTH,
+  MAX_INSTRUCTION_SOURCE_BYTES,
+} from "../../../core/instruction-system/limits.js";
 import type { InstructionTagRule } from "../../../core/instruction-system/types.js";
-import { Badge } from "../components/ui/badge";
+import { MessageMarkdown } from "../chat-session/components/message-markdown";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
@@ -24,207 +28,78 @@ import { SearchField } from "../components/ui/search-field";
 import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import {
+  cancelDesktopTask,
   runDesktopTask,
   type InstructionMutationInput,
   type InstructionProfileView,
-  type InstructionWorkspaceView,
 } from "../runtime";
-import type { InstructionSettingsControls } from "../chat-session/components/settings-dialog-panels/types";
 import {
   createInstructionAiTask,
   extractInstructionAiBody,
 } from "./instruction-ai";
 import { TagEditor } from "./tag-editor";
+import { createEmptyTagGroup, TagRuleEditor } from "./tag-rule-editor";
+import type { InstructionManagementControls } from "./types";
 import {
-  createEmptyTagGroup,
-  isCompleteTagRule,
-  TagRuleEditor,
-} from "./tag-rule-editor";
+  isInstructionFormDirty,
+  validateInstructionForm,
+  type InstructionFormBaseline,
+  type InstructionFormDraft,
+} from "./instruction-form";
 
-type ProfileFilter = "all" | "global" | "automatic" | "manual" | "disabled";
+type FileFilter = "all" | "global" | "tag-match" | "manual" | "disabled";
+type ContentMode = "edit" | "preview";
 
-const profileIsEnabled = (profile: InstructionProfileView): boolean =>
-  profile.enabled !== false;
+const fileIsEnabled = (file: InstructionProfileView): boolean => file.enabled;
 
-const profileTags = (profile: InstructionProfileView): string[] =>
-  profile.tags ?? [];
+const fileTags = (file: InstructionProfileView): string[] => file.tags;
 
-const automaticWorkspaceIds = (profile: InstructionProfileView): string[] =>
-  profile.automaticWorkspaceIds ?? [];
-
-const profileHasManualAssignment = (
-  profile: InstructionProfileView,
-  workspaces: readonly InstructionWorkspaceView[],
-): boolean =>
-  workspaces.some((workspace) =>
-    workspace.scopes.some((scope) => scope.profiles.includes(profile.id)),
-  );
-
-const sourceLabels = (
-  profile: InstructionProfileView,
-  workspaces: readonly InstructionWorkspaceView[],
-): string[] => [
-  ...(profile.global ? ["Global"] : []),
-  ...(profileHasManualAssignment(profile, workspaces) ? ["Manual"] : []),
-  ...(automaticWorkspaceIds(profile).length > 0 ? ["Automatic"] : []),
-  ...(!profileIsEnabled(profile) ? ["Disabled"] : []),
-];
-
-const ProfileSourceBadges = ({
-  profile,
-  workspaces,
-}: {
-  profile: InstructionProfileView;
-  workspaces: readonly InstructionWorkspaceView[];
-}): JSX.Element | null => {
-  const labels = sourceLabels(profile, workspaces);
-  return labels.length === 0 ? null : (
-    <div className="flex flex-wrap gap-1">
-      {labels.map((label) => (
-        <Badge
-          key={label}
-          variant={label === "Disabled" ? "destructive" : "outline"}
-          className="px-1.5 py-0 text-[10px]"
-        >
-          {label}
-        </Badge>
-      ))}
-    </div>
-  );
+const fileStatusText = (file: InstructionProfileView): string => {
+  if (file.global) return "Global";
+  if (!fileIsEnabled(file)) {
+    return `${file.match ? "Tag match" : "Manual"} · Disabled`;
+  }
+  if (file.match) return "Tag match";
+  return "Manual";
 };
 
-const ManualAssignments = ({
-  profile,
-  workspaces,
-  revision,
-  disabled,
-  mutate,
-}: {
-  profile: InstructionProfileView;
-  workspaces: readonly InstructionWorkspaceView[];
-  revision: number;
-  disabled: boolean;
-  mutate: (input: InstructionMutationInput) => Promise<boolean>;
-}): JSX.Element | null => {
-  if (workspaces.length === 0) return null;
-  return (
-    <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Workspaces
-      </h3>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {workspaces.map((workspace) => {
-          const rootScope = workspace.scopes.find(
-            (scope) => scope.path === ".",
-          );
-          const assignedScopes = workspace.scopes.filter((scope) =>
-            scope.profiles.includes(profile.id),
-          );
-          const folderScopes = assignedScopes.filter(
-            (scope) => scope.path !== ".",
-          );
-          const checked = rootScope?.profiles.includes(profile.id) ?? false;
-          const automatic = automaticWorkspaceIds(profile).includes(
-            workspace.id,
-          );
-          return (
-            <div
-              key={workspace.id}
-              className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/45 px-3 py-2"
-            >
-              <label className="flex min-w-0 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled || (profile.global && !checked)}
-                  onChange={(event) => {
-                    const current = rootScope?.profiles ?? [];
-                    void mutate({
-                      operation: "scope-set",
-                      workspaceId: workspace.id,
-                      scopePath: ".",
-                      profileIds: event.target.checked
-                        ? [...current, profile.id]
-                        : current.filter((id) => id !== profile.id),
-                      expectedRevision: revision,
-                    });
-                  }}
-                  className="accent-sky-500"
-                />
-                <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                  {workspace.displayName ??
-                    workspace.root.split(/[\\/]/u).at(-1) ??
-                    workspace.root}
-                </span>
-                {automatic ? (
-                  <Badge variant="outline" className="text-[10px]">
-                    Automatic
-                  </Badge>
-                ) : null}
-              </label>
-              {folderScopes.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
-                  {folderScopes.map((scope) => (
-                    <button
-                      key={scope.path}
-                      type="button"
-                      disabled={disabled}
-                      aria-label={`Remove ${profile.name} from ${scope.path}`}
-                      onClick={() =>
-                        void mutate({
-                          operation: "scope-set",
-                          workspaceId: workspace.id,
-                          scopePath: scope.path,
-                          profileIds: scope.profiles.filter(
-                            (profileId) => profileId !== profile.id,
-                          ),
-                          expectedRevision: revision,
-                        })
-                      }
-                      className="flex min-w-0 max-w-full items-center gap-1 rounded-md border border-slate-800 px-2 py-1 font-mono text-[10px] text-slate-400 hover:border-slate-700 hover:text-slate-200 disabled:opacity-50"
-                    >
-                      <span className="truncate">{scope.path}</span>
-                      <X className="size-3 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
+const fileStatusIcon = (file: InstructionProfileView): JSX.Element => {
+  if (file.global) return <Globe2 className="size-3.5" aria-hidden="true" />;
+  if (file.match) return <Tags className="size-3.5" aria-hidden="true" />;
+  return <FileText className="size-3.5" aria-hidden="true" />;
 };
 
 export const InstructionManager = ({
   setup,
+  onDirtyChange,
 }: {
-  setup: InstructionSettingsControls;
+  setup: InstructionManagementControls;
+  onDirtyChange?: (dirty: boolean) => void;
 }): JSX.Element => {
   const registry = setup.registry;
-  const profiles = registry?.profiles ?? [];
-  const localFiles = registry?.localFiles ?? [];
-  const workspaces = registry?.workspaces ?? [];
+  const files = registry?.profiles ?? [];
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<ProfileFilter>("all");
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    null,
-  );
-  const [selectedLocalId, setSelectedLocalId] = useState<string | null>(null);
-  const [creatingProfile, setCreatingProfile] = useState(false);
-  const [creatingLocal, setCreatingLocal] = useState(false);
+  const [filter, setFilter] = useState<FileFilter>("all");
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [body, setBody] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [global, setGlobal] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [tagDraftPending, setTagDraftPending] = useState(false);
   const [match, setMatch] = useState<InstructionTagRule | null>(null);
-  const [localScope, setLocalScope] = useState(".");
+  const [contentMode, setContentMode] = useState<ContentMode>("edit");
   const [aiRequest, setAiRequest] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiCancelling, setAiCancelling] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const aiTaskIdRef = useRef<string | null>(null);
+  const previousSelectionRef = useRef<string | null>(null);
+  const validationErrorId = useId();
+  const pendingTagMessageId = useId();
+  const contentViewId = useId();
 
   useEffect(() => {
     void setup.onRefresh();
@@ -232,141 +107,208 @@ export const InstructionManager = ({
 
   useEffect(() => {
     if (
-      !creatingProfile &&
-      !creatingLocal &&
-      !selectedProfileId &&
-      !selectedLocalId &&
-      profiles[0]
+      !creating &&
+      (!selectedFileId || !files.some((file) => file.id === selectedFileId))
     ) {
-      setSelectedProfileId(profiles[0].id);
+      setSelectedFileId(files[0]?.id ?? null);
     }
-  }, [
-    creatingLocal,
-    creatingProfile,
-    profiles,
-    selectedLocalId,
-    selectedProfileId,
-  ]);
+  }, [creating, files, selectedFileId]);
 
-  const selectedProfile =
-    profiles.find((profile) => profile.id === selectedProfileId) ?? null;
-  const selectedLocal =
-    localFiles.find((file) => file.id === selectedLocalId) ?? null;
+  const selectedFile = files.find((file) => file.id === selectedFileId) ?? null;
 
   useEffect(() => {
-    if (!selectedProfile) return;
-    setName(selectedProfile.name);
-    setDescription(selectedProfile.description ?? "");
-    setBody(selectedProfile.body ?? "");
-    setEnabled(profileIsEnabled(selectedProfile));
-    setGlobal(selectedProfile.global === true);
-    setTags([...profileTags(selectedProfile)]);
-    setMatch(
-      selectedProfile.match ? structuredClone(selectedProfile.match) : null,
-    );
+    if (!selectedFile) return;
+    setName(selectedFile.name);
+    setDescription(selectedFile.description ?? "");
+    setBody(selectedFile.body ?? "");
+    setEnabled(fileIsEnabled(selectedFile));
+    setGlobal(selectedFile.global);
+    setTags([...fileTags(selectedFile)]);
+    setTagDraftPending(false);
+    setMatch(selectedFile.match ? structuredClone(selectedFile.match) : null);
     setAiRequest("");
     setAiError(null);
-  }, [selectedProfile]);
+  }, [selectedFile]);
+
+  const draft: InstructionFormDraft = useMemo(
+    () => ({ name, description, body, enabled, global, tags, match }),
+    [body, description, enabled, global, match, name, tags],
+  );
+  const baseline: InstructionFormBaseline | null = useMemo(
+    () =>
+      selectedFile
+        ? {
+            id: selectedFile.id,
+            name: selectedFile.name,
+            description: selectedFile.description ?? "",
+            body: selectedFile.body ?? "",
+            enabled: fileIsEnabled(selectedFile),
+            global: selectedFile.global,
+            tags: [...fileTags(selectedFile)],
+            match: selectedFile.match
+              ? structuredClone(selectedFile.match)
+              : null,
+          }
+        : null,
+    [selectedFile],
+  );
+  const dirty =
+    tagDraftPending ||
+    isInstructionFormDirty(creating ? null : baseline, draft);
 
   useEffect(() => {
-    if (!selectedLocal) return;
-    setLocalScope(selectedLocal.scopePath);
-    setBody(selectedLocal.body ?? "");
-    setName(selectedLocal.relativePath);
-    setDescription("");
-    setAiRequest("");
-    setAiError(null);
-  }, [selectedLocal]);
+    onDirtyChange?.(dirty || aiBusy);
+  }, [aiBusy, dirty, onDirtyChange]);
 
-  const mutate = async (input: InstructionMutationInput): Promise<boolean> =>
-    (await setup.onManualSave(input)) !== false;
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
-  const startProfile = (): void => {
-    setCreatingProfile(true);
-    setCreatingLocal(false);
-    setSelectedProfileId(null);
-    setSelectedLocalId(null);
+  useEffect(
+    () => () => {
+      const taskId = aiTaskIdRef.current;
+      if (taskId) void cancelDesktopTask(taskId).catch(() => undefined);
+    },
+    [],
+  );
+
+  const validationError = validateInstructionForm(draft);
+  const nameInvalid = Boolean(
+    dirty &&
+    (validationError === "Enter a name." ||
+      validationError?.startsWith("Name ")),
+  );
+  const descriptionInvalid = Boolean(
+    dirty && validationError?.startsWith("Description "),
+  );
+  const bodyInvalid = Boolean(
+    dirty &&
+    (validationError?.startsWith("Instruction content") ||
+      validationError?.startsWith("Enter instruction")),
+  );
+  const matchInvalid = Boolean(
+    dirty &&
+    match !== null &&
+    validationError &&
+    !nameInvalid &&
+    !descriptionInvalid &&
+    !bodyInvalid,
+  );
+
+  const mutate = async (input: InstructionMutationInput) =>
+    await setup.onSave(input);
+
+  const confirmDiscard = (): boolean =>
+    !dirty || window.confirm("Discard unsaved instruction changes?");
+
+  const startFile = (): void => {
+    if (setup.saving || aiBusy || !confirmDiscard()) return;
+    previousSelectionRef.current = selectedFileId;
+    setCreating(true);
+    setSelectedFileId(null);
     setName("");
     setDescription("");
     setBody("");
     setEnabled(true);
     setGlobal(false);
     setTags([]);
+    setTagDraftPending(false);
     setMatch(null);
+    setContentMode("edit");
     setAiRequest("");
     setAiError(null);
   };
 
-  const startLocal = (): void => {
-    setCreatingLocal(true);
-    setCreatingProfile(false);
-    setSelectedProfileId(null);
-    setSelectedLocalId(null);
-    setName("AGENTS.md");
-    setDescription("");
-    setBody("");
-    setLocalScope(".");
+  const selectFile = (fileId: string): void => {
+    if (
+      setup.saving ||
+      aiBusy ||
+      (!creating && selectedFileId === fileId) ||
+      !confirmDiscard()
+    )
+      return;
+    setCreating(false);
+    setSelectedFileId(fileId);
+    setTagDraftPending(false);
+  };
+
+  const cancelCreate = (): void => {
+    if (!confirmDiscard()) return;
+    const previous = previousSelectionRef.current;
+    setCreating(false);
+    setTagDraftPending(false);
+    setSelectedFileId(
+      previous && files.some((file) => file.id === previous)
+        ? previous
+        : (files[0]?.id ?? null),
+    );
+  };
+
+  const discardChanges = (): void => {
+    if (creating) {
+      cancelCreate();
+      return;
+    }
+    if (!selectedFile || !confirmDiscard()) return;
+    setName(selectedFile.name);
+    setDescription(selectedFile.description ?? "");
+    setBody(selectedFile.body ?? "");
+    setEnabled(fileIsEnabled(selectedFile));
+    setGlobal(selectedFile.global);
+    setTags([...fileTags(selectedFile)]);
+    setTagDraftPending(false);
+    setMatch(selectedFile.match ? structuredClone(selectedFile.match) : null);
     setAiRequest("");
     setAiError(null);
   };
 
-  const selectProfile = (profileId: string): void => {
-    setCreatingProfile(false);
-    setCreatingLocal(false);
-    setSelectedLocalId(null);
-    setSelectedProfileId(profileId);
-  };
-
-  const selectLocal = (localId: string): void => {
-    setCreatingProfile(false);
-    setCreatingLocal(false);
-    setSelectedProfileId(null);
-    setSelectedLocalId(localId);
+  const refresh = (): void => {
+    if (setup.saving || aiBusy || !confirmDiscard()) return;
+    void setup.onRefresh();
   };
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredProfiles = useMemo(
+  const filteredFiles = useMemo(
     () =>
-      profiles.filter((profile) => {
+      files.filter((file) => {
         const matchesFilter =
           filter === "all" ||
-          (filter === "global" && profile.global) ||
-          (filter === "automatic" && profile.match !== undefined) ||
-          (filter === "manual" &&
-            profileHasManualAssignment(profile, workspaces)) ||
-          (filter === "disabled" && !profileIsEnabled(profile));
+          (filter === "global" && file.global) ||
+          (filter === "tag-match" && file.match !== undefined) ||
+          (filter === "manual" && !file.global && file.match === undefined) ||
+          (filter === "disabled" && !fileIsEnabled(file));
         if (!matchesFilter) return false;
         return (
           !normalizedQuery ||
-          [profile.name, profile.description ?? "", ...profileTags(profile)]
+          [file.name, file.description ?? "", ...fileTags(file)]
             .join(" ")
             .toLocaleLowerCase()
             .includes(normalizedQuery)
         );
       }),
-    [filter, normalizedQuery, profiles, workspaces],
-  );
-  const filteredLocals = localFiles.filter(
-    (file) =>
-      filter === "all" &&
-      (!normalizedQuery ||
-        `${file.relativePath} ${file.scopePath}`
-          .toLocaleLowerCase()
-          .includes(normalizedQuery)),
+    [files, filter, normalizedQuery],
   );
 
-  const saveProfile = async (): Promise<void> => {
-    if (!registry || !name.trim() || !body.trim()) return;
-    if (!global && match && !isCompleteTagRule(match)) return;
+  const saveFile = async (): Promise<void> => {
+    if (
+      !registry ||
+      setup.saving ||
+      aiBusy ||
+      registry.libraryError ||
+      registry.recovery?.primaryValid === false ||
+      tagDraftPending ||
+      validationError ||
+      !dirty
+    )
+      return;
+    const fileEnabled = global ? true : enabled;
     const ok = await mutate(
-      selectedProfile
+      selectedFile
         ? {
             operation: "profile-edit",
-            profileId: selectedProfile.id,
+            profileId: selectedFile.id,
             name,
             description,
             body,
-            enabled,
+            enabled: fileEnabled,
             global,
             tags,
             match: global ? null : match,
@@ -377,34 +319,25 @@ export const InstructionManager = ({
             name,
             description,
             body,
-            enabled,
+            enabled: fileEnabled,
             global,
             tags,
             ...(global || match === null ? {} : { match }),
             expectedRevision: registry.revision,
           },
     );
-    if (ok) setCreatingProfile(false);
-  };
-
-  const saveLocal = async (): Promise<void> => {
-    if (!body.trim() || !localScope.trim()) return;
-    const ok = await mutate(
-      selectedLocal
-        ? {
-            operation: "local-edit",
-            scopePath: selectedLocal.scopePath,
-            body,
-            expectedDigest: selectedLocal.digest,
-          }
-        : { operation: "local-create", scopePath: localScope, body },
-    );
-    if (ok) setCreatingLocal(false);
+    if (ok !== false) {
+      setCreating(false);
+      setSelectedFileId(ok?.profile?.id ?? selectedFile?.id ?? null);
+    }
   };
 
   const runAiAssist = async (): Promise<void> => {
-    if (!name.trim()) return;
+    if (setup.saving || aiBusy || !name.trim() || !setup.workspaceRoot) return;
+    const taskId = crypto.randomUUID();
+    aiTaskIdRef.current = taskId;
     setAiBusy(true);
+    setAiCancelling(false);
     setAiError(null);
     try {
       const result = await runDesktopTask(
@@ -416,61 +349,119 @@ export const InstructionManager = ({
           body,
           ...(aiRequest.trim() ? { request: aiRequest } : {}),
         }),
-        { mode: "ask" },
+        { mode: "ask", taskId },
       );
       const response =
         result.execution.response?.markdown ?? result.execution.summary;
       const nextBody = extractInstructionAiBody(response);
       if (!nextBody) {
-        throw new Error(
-          "AI assistance did not return a complete instruction file.",
-        );
+        throw new Error("AI assistance did not return an instruction file.");
       }
       setBody(nextBody);
       setAiRequest("");
+      setContentMode("edit");
     } catch (error) {
       setAiError(error instanceof Error ? error.message : String(error));
     } finally {
+      if (aiTaskIdRef.current === taskId) aiTaskIdRef.current = null;
       setAiBusy(false);
+      setAiCancelling(false);
     }
   };
 
-  const editingLocal = creatingLocal || selectedLocal !== null;
-  const editingProfile = creatingProfile || selectedProfile !== null;
+  const cancelAiAssist = async (): Promise<void> => {
+    const taskId = aiTaskIdRef.current;
+    if (!taskId || aiCancelling) return;
+    setAiCancelling(true);
+    try {
+      await cancelDesktopTask(taskId);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : String(error));
+      setAiCancelling(false);
+    }
+  };
+
+  const editing = creating || selectedFile !== null;
   const recovery = registry?.recovery;
+  const hasManualAssignments = Boolean(selectedFile?.manualAssignmentCount);
+  const busy = setup.saving || aiBusy;
+  const libraryUnavailable = Boolean(
+    !registry || registry.libraryError || recovery?.primaryValid === false,
+  );
+  const formDisabled = setup.loading || busy || libraryUnavailable;
+
+  const duplicateFile = async (): Promise<void> => {
+    if (
+      !registry ||
+      !selectedFile ||
+      dirty ||
+      setup.saving ||
+      aiBusy ||
+      libraryUnavailable
+    )
+      return;
+    const result = await mutate({
+      operation: "profile-duplicate",
+      profileId: selectedFile.id,
+      expectedRevision: registry.revision,
+    });
+    if (result !== false && result?.profile?.id) {
+      setSelectedFileId(result.profile.id);
+    }
+  };
+
+  const deleteFile = async (): Promise<void> => {
+    if (
+      !registry ||
+      !selectedFile ||
+      dirty ||
+      setup.saving ||
+      aiBusy ||
+      libraryUnavailable ||
+      hasManualAssignments
+    )
+      return;
+    if (
+      !window.confirm(`Delete "${selectedFile.name}"? This cannot be undone.`)
+    )
+      return;
+    const deletedId = selectedFile.id;
+    const result = await mutate({
+      operation: "profile-delete",
+      profileId: deletedId,
+      expectedRevision: registry.revision,
+    });
+    if (result !== false) {
+      setSelectedFileId(null);
+    }
+  };
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Instructions</h1>
-          <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
-            <span>{profiles.length} library</span>
-            <span>{localFiles.length} project</span>
-            <span>Revision {registry?.revision ?? 0}</span>
-          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            {files.length} {files.length === 1 ? "file" : "files"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            variant="outline"
             size="sm"
-            onClick={startLocal}
+            disabled={formDisabled}
+            onClick={startFile}
           >
-            <FilePlus2 className="size-4" />
-            Project file
-          </Button>
-          <Button type="button" size="sm" onClick={startProfile}>
             <Plus className="size-4" />
-            Instruction
+            New file
           </Button>
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            disabled={setup.loading}
+            disabled={setup.loading || busy}
             aria-label="Refresh instructions"
-            onClick={() => void setup.onRefresh()}
+            onClick={refresh}
           >
             <RefreshCw
               className={cn("size-4", setup.loading && "animate-spin")}
@@ -481,7 +472,7 @@ export const InstructionManager = ({
 
       {setup.message ? (
         <div
-          role="status"
+          role={setup.message.tone === "error" ? "alert" : "status"}
           className={cn(
             "shrink-0 border-b px-6 py-2 text-sm",
             setup.message.tone === "error"
@@ -493,16 +484,58 @@ export const InstructionManager = ({
         </div>
       ) : null}
 
+      {recovery?.errorCode ===
+      "INSTRUCTION_LIBRARY_RECOVERY_STATUS_UNAVAILABLE" ? (
+        <div
+          role="alert"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-900/60 bg-amber-950/20 px-6 py-3 text-sm text-amber-200"
+        >
+          <span className="min-w-0 flex-1">
+            {recovery.errorMessage ?? "Recovery status could not be loaded."}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={setup.loading || busy}
+            onClick={refresh}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
+      {registry?.libraryError && recovery?.primaryValid !== false ? (
+        <div
+          role="alert"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-6 py-3 text-sm text-red-200"
+        >
+          <span className="min-w-0 flex-1">{registry.libraryError}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={setup.loading || busy}
+            onClick={refresh}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
       {recovery && !recovery.primaryValid ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-6 py-3 text-sm text-red-200">
+        <div
+          role="alert"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-6 py-3 text-sm text-red-200"
+        >
           <span className="min-w-0 flex-1">
             {recovery.errorMessage ?? "Instruction library unavailable."}
           </span>
-          {recovery.backupDigest ? (
+          {recovery.backupValid && recovery.backupDigest ? (
             <Button
               size="sm"
               variant="outline"
-              disabled={setup.saving}
+              disabled={busy}
               onClick={() =>
                 void mutate({
                   operation: "recovery-restore",
@@ -513,11 +546,11 @@ export const InstructionManager = ({
               Restore
             </Button>
           ) : null}
-          {recovery.primaryDigest ? (
+          {recovery.resetDigest ? (
             <Button
               size="sm"
               variant="destructive"
-              disabled={setup.saving}
+              disabled={busy}
               onClick={() => {
                 if (
                   !window.confirm(
@@ -527,7 +560,7 @@ export const InstructionManager = ({
                   return;
                 void mutate({
                   operation: "recovery-reset",
-                  expectedDigest: recovery.primaryDigest as string,
+                  expectedDigest: recovery.resetDigest as string,
                 });
               }}
             >
@@ -537,19 +570,23 @@ export const InstructionManager = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(12rem,35vh)_minmax(0,1fr)] lg:grid-cols-[22rem_minmax(0,1fr)] lg:grid-rows-1">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(11rem,30vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
         <aside className="flex min-h-0 min-w-0 flex-col border-r border-slate-900 bg-slate-950/70">
           <div className="shrink-0 space-y-3 border-b border-slate-900 p-4">
             <SearchField
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              aria-label="Search instructions"
-              placeholder="Search instructions"
+              aria-label="Search instruction files"
+              placeholder="Search files"
               className="h-9 border-slate-800 bg-slate-950"
             />
-            <div className="flex flex-wrap gap-1">
+            <div
+              className="flex flex-wrap gap-1"
+              role="group"
+              aria-label="File filter"
+            >
               {(
-                ["all", "global", "automatic", "manual", "disabled"] as const
+                ["all", "global", "tag-match", "manual", "disabled"] as const
               ).map((value) => (
                 <button
                   key={value}
@@ -557,13 +594,15 @@ export const InstructionManager = ({
                   aria-pressed={filter === value}
                   onClick={() => setFilter(value)}
                   className={cn(
-                    "rounded-md px-2 py-1 text-[11px] capitalize",
+                    "rounded-md px-2 py-1 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
                     filter === value
                       ? "bg-sky-500/15 text-sky-200"
                       : "text-slate-500 hover:bg-slate-900 hover:text-slate-200",
                   )}
                 >
-                  {value}
+                  {value === "tag-match"
+                    ? "Tag match"
+                    : `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`}
                 </button>
               ))}
             </div>
@@ -573,64 +612,48 @@ export const InstructionManager = ({
               <div className="grid h-32 place-items-center text-slate-500">
                 <LoaderCircle className="size-5 animate-spin" />
               </div>
-            ) : filteredProfiles.length === 0 && filteredLocals.length === 0 ? (
+            ) : libraryUnavailable ? null : filteredFiles.length === 0 ? (
               <EmptyState
                 icon={Search}
-                title="No instructions"
+                title={
+                  files.length === 0
+                    ? "No instruction files"
+                    : "No matching files"
+                }
                 size="compact"
               />
             ) : (
               <div className="space-y-1">
-                {filteredProfiles.map((profile) => (
+                {filteredFiles.map((file) => (
                   <button
-                    key={profile.id}
+                    key={file.id}
                     type="button"
-                    onClick={() => selectProfile(profile.id)}
+                    aria-pressed={selectedFileId === file.id}
+                    onClick={() => selectFile(file.id)}
                     className={cn(
-                      "w-full rounded-lg border px-3 py-2.5 text-left",
-                      selectedProfileId === profile.id
+                      "w-full rounded-lg border px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
+                      selectedFileId === file.id
                         ? "border-sky-800/70 bg-sky-950/25"
                         : "border-transparent hover:border-slate-800 hover:bg-slate-900/55",
+                      !fileIsEnabled(file) && "opacity-60",
                     )}
                   >
                     <div className="flex min-w-0 items-center gap-2">
                       <FileText className="size-4 shrink-0 text-slate-500" />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-200">
-                        {profile.name}
+                        {file.name}
                       </span>
                     </div>
-                    <div className="mt-1.5 pl-6">
-                      <ProfileSourceBadges
-                        profile={profile}
-                        workspaces={workspaces}
-                      />
+                    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 pl-6 text-[11px] text-slate-500">
+                      {fileStatusIcon(file)}
+                      <span>{fileStatusText(file)}</span>
+                      {file.description ? (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="truncate">{file.description}</span>
+                        </>
+                      ) : null}
                     </div>
-                  </button>
-                ))}
-                {filteredLocals.length > 0 ? (
-                  <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-                    Project files
-                  </p>
-                ) : null}
-                {filteredLocals.map((file) => (
-                  <button
-                    key={file.id}
-                    type="button"
-                    onClick={() => selectLocal(file.id)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left",
-                      selectedLocalId === file.id
-                        ? "border-sky-800/70 bg-sky-950/25"
-                        : "border-transparent hover:border-slate-800 hover:bg-slate-900/55",
-                    )}
-                  >
-                    <FileText className="size-4 shrink-0 text-amber-400/70" />
-                    <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                      {file.relativePath}
-                    </span>
-                    <Badge variant="outline" className="text-[10px]">
-                      Local
-                    </Badge>
                   </button>
                 ))}
               </div>
@@ -639,113 +662,120 @@ export const InstructionManager = ({
         </aside>
 
         <section className="min-h-0 min-w-0 overflow-y-auto">
-          {!editingProfile && !editingLocal ? (
+          {!editing ? (
             <div className="grid h-full min-h-64 place-items-center p-6">
-              <EmptyState
-                icon={FileText}
-                title="Select an instruction"
-                action={
-                  <Button size="sm" onClick={startProfile}>
-                    <Plus className="size-4" />
-                    Instruction
-                  </Button>
-                }
-              />
+              {setup.loading && !registry ? (
+                <LoaderCircle className="size-5 animate-spin text-slate-500" />
+              ) : (
+                <EmptyState
+                  icon={FileText}
+                  title={
+                    libraryUnavailable
+                      ? "Instruction library unavailable"
+                      : "Select an instruction file"
+                  }
+                  action={
+                    libraryUnavailable ? undefined : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={formDisabled}
+                        onClick={startFile}
+                      >
+                        <Plus className="size-4" />
+                        New file
+                      </Button>
+                    )
+                  }
+                />
+              )}
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-5xl space-y-5 p-5 sm:p-6">
+            <div className="mx-auto w-full max-w-7xl space-y-5 p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    {editingLocal ? (
-                      <FileText className="size-5 text-amber-400/80" />
-                    ) : global ? (
+                    {global ? (
                       <Globe2 className="size-5 text-sky-300" />
                     ) : (
                       <FileText className="size-5 text-sky-300" />
                     )}
                     <h2 className="truncate text-base font-semibold text-slate-100">
-                      {creatingProfile
-                        ? "New instruction"
-                        : creatingLocal
-                          ? "New project file"
-                          : name}
+                      {creating
+                        ? "New instruction file"
+                        : name.trim() || selectedFile?.name}
                     </h2>
                   </div>
-                  {selectedProfile ? (
-                    <div className="mt-2">
-                      <ProfileSourceBadges
-                        profile={selectedProfile}
-                        workspaces={workspaces}
-                      />
-                    </div>
+                  {!creating ? (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      {global
+                        ? "Global"
+                        : match
+                          ? "Assigned by workspace tags"
+                          : "Assigned manually"}
+                      {tags.length > 0 ? ` · ${tags.length} tags` : ""}
+                    </p>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2">
+                  {creating || dirty ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={formDisabled}
+                      onClick={discardChanges}
+                    >
+                      {creating ? "Cancel" : "Discard"}
+                    </Button>
+                  ) : null}
                   <Button
+                    type="button"
                     size="sm"
                     disabled={
-                      setup.saving ||
-                      !body.trim() ||
-                      (!editingLocal &&
-                        (!name.trim() ||
-                          (!global &&
-                            match !== null &&
-                            !isCompleteTagRule(match))))
+                      formDisabled ||
+                      tagDraftPending ||
+                      !dirty ||
+                      validationError !== null
                     }
-                    onClick={() =>
-                      void (editingLocal ? saveLocal() : saveProfile())
+                    aria-describedby={
+                      tagDraftPending ? pendingTagMessageId : undefined
                     }
+                    onClick={() => void saveFile()}
                   >
                     <Save className="size-4" />
                     Save
                   </Button>
-                  {selectedProfile && registry ? (
+                  {selectedFile && registry ? (
                     <Button
+                      type="button"
                       size="icon"
                       variant="outline"
-                      disabled={setup.saving}
-                      aria-label="Duplicate instruction"
-                      onClick={() =>
-                        void mutate({
-                          operation: "profile-duplicate",
-                          profileId: selectedProfile.id,
-                          expectedRevision: registry.revision,
-                        })
+                      disabled={formDisabled || dirty}
+                      aria-label="Duplicate instruction file"
+                      title={
+                        dirty ? "Save or discard changes first." : undefined
                       }
+                      onClick={() => void duplicateFile()}
                     >
                       <Copy className="size-4" />
                     </Button>
                   ) : null}
-                  {(selectedProfile || selectedLocal) && registry ? (
+                  {selectedFile && registry ? (
                     <Button
+                      type="button"
                       size="icon"
                       variant="ghost"
-                      disabled={
-                        setup.saving ||
-                        Boolean(selectedProfile?.assignmentCount)
-                      }
-                      aria-label="Delete instruction"
+                      disabled={formDisabled || dirty || hasManualAssignments}
+                      aria-label="Delete instruction file"
                       title={
-                        selectedProfile?.assignmentCount
-                          ? "Remove assignments before deleting."
-                          : undefined
+                        dirty
+                          ? "Save or discard changes first."
+                          : selectedFile.manualAssignmentCount
+                            ? "Remove workspace assignments first."
+                            : undefined
                       }
-                      onClick={() => {
-                        if (selectedProfile) {
-                          void mutate({
-                            operation: "profile-delete",
-                            profileId: selectedProfile.id,
-                            expectedRevision: registry.revision,
-                          });
-                        } else if (selectedLocal) {
-                          void mutate({
-                            operation: "local-delete",
-                            scopePath: selectedLocal.scopePath,
-                            expectedDigest: selectedLocal.digest,
-                          });
-                        }
-                      }}
+                      onClick={() => void deleteFile()}
                     >
                       <Trash2 className="size-4 text-red-300" />
                     </Button>
@@ -753,79 +783,112 @@ export const InstructionManager = ({
                 </div>
               </div>
 
-              <div className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-                {editingLocal ? (
+              {dirty && validationError ? (
+                <p
+                  id={validationErrorId}
+                  role="alert"
+                  className="text-sm text-red-300"
+                >
+                  {validationError}
+                </p>
+              ) : null}
+
+              <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
+                <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                    Scope
+                    Name
                     <Input
-                      value={localScope}
-                      disabled={Boolean(selectedLocal)}
-                      onChange={(event) => setLocalScope(event.target.value)}
-                      className="h-9 border-slate-800 bg-slate-950 font-mono"
+                      value={name}
+                      maxLength={MAX_INSTRUCTION_PROFILE_NAME_LENGTH * 2}
+                      disabled={formDisabled}
+                      aria-invalid={nameInvalid}
+                      aria-describedby={
+                        nameInvalid ? validationErrorId : undefined
+                      }
+                      onChange={(event) => setName(event.target.value)}
+                      className="h-9 border-slate-800 bg-slate-950"
                     />
                   </label>
-                ) : (
-                  <>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                        Name
-                        <Input
-                          value={name}
-                          onChange={(event) => setName(event.target.value)}
-                          className="h-9 border-slate-800 bg-slate-950"
-                        />
-                      </label>
-                      <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                        Description
-                        <Input
-                          value={description}
-                          onChange={(event) =>
-                            setDescription(event.target.value)
-                          }
-                          className="h-9 border-slate-800 bg-slate-950"
-                        />
-                      </label>
-                    </div>
-                    <div className="flex flex-wrap gap-5">
-                      <label className="flex items-center gap-2 text-sm text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={(event) => setEnabled(event.target.checked)}
-                          className="accent-sky-500"
-                        />
-                        Enabled
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={global}
-                          onChange={(event) =>
-                            setGlobal(event.target.checked)
-                          }
-                          className="accent-sky-500"
-                        />
-                        Global
-                      </label>
-                    </div>
-                    <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                      Tags
-                      <TagEditor value={tags} onChange={setTags} />
-                    </label>
-                  </>
-                )}
-              </div>
+                  <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+                    Description
+                    <Input
+                      value={description}
+                      maxLength={MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH * 2}
+                      disabled={formDisabled}
+                      aria-invalid={descriptionInvalid}
+                      aria-describedby={
+                        descriptionInvalid ? validationErrorId : undefined
+                      }
+                      onChange={(event) => setDescription(event.target.value)}
+                      className="h-9 border-slate-800 bg-slate-950"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-5">
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={global || enabled}
+                      disabled={formDisabled || global}
+                      onChange={(event) => setEnabled(event.target.checked)}
+                      className="accent-sky-500"
+                    />
+                    Enabled
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={global}
+                      disabled={formDisabled || hasManualAssignments}
+                      onChange={(event) => {
+                        const nextGlobal = event.target.checked;
+                        setGlobal(nextGlobal);
+                        if (nextGlobal) {
+                          setEnabled(true);
+                          setMatch(null);
+                        }
+                      }}
+                      className="accent-sky-500"
+                    />
+                    Global
+                  </label>
+                </div>
+                <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+                  Tags
+                  <TagEditor
+                    value={tags}
+                    disabled={formDisabled}
+                    onChange={setTags}
+                    onPendingChange={setTagDraftPending}
+                  />
+                </label>
+                {hasManualAssignments ? (
+                  <p className="text-xs text-slate-500">
+                    Remove manual workspace assignments before changing the
+                    assignment mode or deleting this file.
+                  </p>
+                ) : null}
+                {tagDraftPending ? (
+                  <p
+                    id={pendingTagMessageId}
+                    className="text-xs text-slate-500"
+                  >
+                    Add or clear the pending tag before saving.
+                  </p>
+                ) : null}
+              </section>
 
-              {!editingLocal && !global ? (
+              {!global ? (
                 <section className="rounded-xl border border-slate-800 bg-slate-900/20 p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h3 className="text-sm font-medium text-slate-200">
-                      Automatic match
+                      Workspace tag match
                     </h3>
                     <label className="flex items-center gap-2 text-sm text-slate-400">
                       <input
                         type="checkbox"
                         checked={match !== null}
+                        disabled={formDisabled || hasManualAssignments}
                         onChange={(event) =>
                           setMatch(
                             event.target.checked ? createEmptyTagGroup() : null,
@@ -837,68 +900,172 @@ export const InstructionManager = ({
                     </label>
                   </div>
                   {match ? (
-                    <TagRuleEditor value={match} onChange={setMatch} />
+                    <TagRuleEditor
+                      value={match}
+                      disabled={formDisabled}
+                      errorId={matchInvalid ? validationErrorId : undefined}
+                      onChange={setMatch}
+                    />
                   ) : null}
                 </section>
               ) : null}
 
-              <section className="rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Bot className="size-4 text-violet-300" />
-                  <h3 className="text-sm font-medium text-slate-200">
-                    AI edit
-                  </h3>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    value={aiRequest}
-                    disabled={aiBusy}
-                    aria-label="AI editing request"
-                    placeholder={
-                      body.trim() ? "Editing request" : "What should it cover?"
-                    }
-                    onChange={(event) => setAiRequest(event.target.value)}
-                    className="h-9 min-w-0 flex-1 border-slate-800 bg-slate-950"
-                  />
-                  <Button
-                    variant="outline"
-                    disabled={aiBusy || !name.trim()}
-                    onClick={() => void runAiAssist()}
-                  >
-                    {aiBusy ? (
-                      <LoaderCircle className="size-4 animate-spin" />
-                    ) : body.trim() ? (
-                      <WandSparkles className="size-4" />
-                    ) : (
-                      <Sparkles className="size-4" />
-                    )}
-                    {body.trim() ? "Improve" : "Create"}
-                  </Button>
+              <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-medium text-slate-200">
+                      Content
+                    </h3>
+                    <div
+                      className="inline-flex rounded-md border border-slate-800 bg-slate-950 p-0.5"
+                      role="tablist"
+                      aria-label="Instruction content view"
+                    >
+                      {(["edit", "preview"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          id={`${contentViewId}-tab-${mode}`}
+                          type="button"
+                          role="tab"
+                          tabIndex={contentMode === mode ? 0 : -1}
+                          aria-controls={contentViewId}
+                          aria-selected={contentMode === mode}
+                          onClick={() => setContentMode(mode)}
+                          onKeyDown={(event) => {
+                            if (
+                              ![
+                                "ArrowLeft",
+                                "ArrowRight",
+                                "Home",
+                                "End",
+                              ].includes(event.key)
+                            )
+                              return;
+                            event.preventDefault();
+                            const nextMode =
+                              event.key === "Home"
+                                ? "edit"
+                                : event.key === "End"
+                                  ? "preview"
+                                  : contentMode === "edit"
+                                    ? "preview"
+                                    : "edit";
+                            setContentMode(nextMode);
+                            document
+                              .getElementById(
+                                `${contentViewId}-tab-${nextMode}`,
+                              )
+                              ?.focus();
+                          }}
+                          className={cn(
+                            "rounded px-2.5 py-1 text-xs capitalize outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
+                            contentMode === mode
+                              ? "bg-slate-800 text-slate-100"
+                              : "text-slate-500 hover:text-slate-200",
+                          )}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:max-w-xl">
+                    <Input
+                      value={aiRequest}
+                      disabled={formDisabled}
+                      aria-label="AI editing request"
+                      placeholder={
+                        body.trim()
+                          ? "Editing request"
+                          : "What should it cover?"
+                      }
+                      onChange={(event) => setAiRequest(event.target.value)}
+                      className="h-8 min-w-28 flex-1 border-slate-800 bg-slate-950"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        setup.saving ||
+                        aiCancelling ||
+                        (!aiBusy &&
+                          (formDisabled ||
+                            !name.trim() ||
+                            !setup.workspaceRoot))
+                      }
+                      title={
+                        !setup.workspaceRoot && !aiBusy
+                          ? "Select a workspace to use AI editing."
+                          : undefined
+                      }
+                      onClick={() =>
+                        void (aiBusy ? cancelAiAssist() : runAiAssist())
+                      }
+                    >
+                      {aiBusy ? (
+                        aiCancelling ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <X className="size-4" />
+                        )
+                      ) : body.trim() ? (
+                        <WandSparkles className="size-4" />
+                      ) : (
+                        <Sparkles className="size-4" />
+                      )}
+                      {aiBusy
+                        ? aiCancelling
+                          ? "Canceling"
+                          : "Cancel"
+                        : body.trim()
+                          ? "Improve"
+                          : "Create"}
+                    </Button>
+                  </div>
                 </div>
                 {aiError ? (
-                  <p className="mt-2 text-sm text-red-300">{aiError}</p>
+                  <p
+                    role="alert"
+                    className="border-b border-red-950 bg-red-950/20 px-4 py-2 text-sm text-red-300"
+                  >
+                    {aiError}
+                  </p>
                 ) : null}
+                <div
+                  id={contentViewId}
+                  role="tabpanel"
+                  aria-labelledby={`${contentViewId}-tab-${contentMode}`}
+                  className="min-h-[34rem]"
+                >
+                  {contentMode === "edit" ? (
+                    <Textarea
+                      value={body}
+                      maxLength={MAX_INSTRUCTION_SOURCE_BYTES}
+                      disabled={formDisabled}
+                      aria-label="Instruction Markdown"
+                      aria-invalid={bodyInvalid}
+                      aria-describedby={
+                        bodyInvalid ? validationErrorId : undefined
+                      }
+                      onChange={(event) => setBody(event.target.value)}
+                      spellCheck={false}
+                      className="min-h-[34rem] resize-y rounded-none border-0 bg-slate-950/70 p-5 font-mono text-sm leading-6 text-slate-100 focus-visible:ring-0"
+                    />
+                  ) : body.trim() ? (
+                    <article className="mx-auto max-w-4xl px-6 py-7 sm:px-8">
+                      <MessageMarkdown
+                        content={body}
+                        className="text-sm text-slate-200"
+                      />
+                    </article>
+                  ) : (
+                    <div className="grid min-h-[34rem] place-items-center text-sm text-slate-600">
+                      Nothing to preview
+                    </div>
+                  )}
+                </div>
               </section>
-
-              <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                Content
-                <Textarea
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
-                  spellCheck={false}
-                  className="min-h-[24rem] resize-y border-slate-800 bg-slate-950 font-mono text-sm leading-6 text-slate-100"
-                />
-              </label>
-
-              {selectedProfile && registry ? (
-                <ManualAssignments
-                  profile={selectedProfile}
-                  workspaces={workspaces}
-                  revision={registry.revision}
-                  disabled={setup.saving}
-                  mutate={mutate}
-                />
-              ) : null}
             </div>
           )}
         </section>

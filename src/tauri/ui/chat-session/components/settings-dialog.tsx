@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   Brain,
-  FileText,
   Folder,
   Gauge,
   KeyRound,
@@ -42,7 +41,6 @@ import {
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
 import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-panel";
-import { InstructionSettingsPanel } from "./settings-dialog-panels/instruction-settings-panel";
 import { MemorySettingsPanel } from "./settings-dialog-panels/memory-settings-panel";
 import { McpSettingsPanel } from "./settings-dialog-panels/mcp-settings-panel";
 import {
@@ -55,7 +53,6 @@ import type {
   AgentLimitsSettingsControls,
   AppearanceSettingsControls,
   DesktopSettingsControls,
-  InstructionSettingsControls,
   MemorySettingsControls,
   McpSettingsControls,
   ProviderSetupControls,
@@ -70,7 +67,6 @@ import { WorkspaceSettingsPanel } from "./settings-dialog-panels/workspace-setti
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
   workspace: Folder,
-  instructions: FileText,
   "web-search": SearchIcon,
   mcp: Network,
   agent: Gauge,
@@ -113,7 +109,6 @@ type PendingNavigation =
 export interface SettingsControlsProps {
   providerSetup: ProviderSetupControls;
   workspaceSetup: WorkspaceSettingsControls;
-  instructionsSetup: InstructionSettingsControls;
   webSearchSetup: WebSearchSetupControls;
   mcpSetup: McpSettingsControls;
   agentLimitsSetup: AgentLimitsSettingsControls;
@@ -156,7 +151,6 @@ const renderSettingsPanel = ({
   settingsSection,
   providerSetup,
   workspaceSetup,
-  instructionsSetup,
   webSearchSetup,
   mcpSetup,
   agentLimitsSetup,
@@ -171,9 +165,6 @@ const renderSettingsPanel = ({
 
     case "workspace":
       return <WorkspaceSettingsPanel setup={workspaceSetup} />;
-
-    case "instructions":
-      return <InstructionSettingsPanel setup={instructionsSetup} />;
 
     case "web-search":
       return <WebSearchSettingsPanel setup={webSearchSetup} />;

@@ -10,6 +10,7 @@ import {
 import { AppRail, type AppActivityState } from "./app-shell/app-rail";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
+import { useUnsavedChangesGuard } from "./chat-session/_helpers/use-unsaved-changes-guard";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { ChatInterviewDialog } from "./chat-session/components/chat-interview-dialog";
@@ -180,12 +181,21 @@ export const ChatSession = (): JSX.Element => {
   const [pendingMediaDraftPrompt, setPendingMediaDraftPrompt] = useState<
     string | null
   >(null);
+  const [instructionDraftDirty, setInstructionDraftDirty] = useState(false);
+  const [workspaceDraftDirty, setWorkspaceDraftDirty] = useState(false);
   const previousChatRunningRef = useRef(false);
   const appShellInteractionRevisionRef = useRef(0);
   const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const appShellStateRef = useRef(appShellState);
   appShellStateRef.current = appShellState;
   const activeApp = appShellState.activeApp;
+  const unsavedChangesMessage =
+    activeApp === "instructions" && instructionDraftDirty
+      ? "Discard unsaved instruction changes?"
+      : activeApp === "workspaces" && workspaceDraftDirty
+        ? "Discard unsaved workspace changes?"
+        : null;
+  useUnsavedChangesGuard(unsavedChangesMessage);
   const ralphActivity = useRalphActivity(activeApp);
   const mediaActivity = useMediaActivity(activeApp);
   useMediaShutdownGuard();
@@ -252,6 +262,15 @@ export const ChatSession = (): JSX.Element => {
   }, [appShellLoaded]);
 
   const selectApp = (nextApp: MainAppId): void => {
+    if (
+      nextApp !== activeApp &&
+      unsavedChangesMessage &&
+      !window.confirm(unsavedChangesMessage)
+    ) {
+      return;
+    }
+    if (activeApp === "instructions") setInstructionDraftDirty(false);
+    if (activeApp === "workspaces") setWorkspaceDraftDirty(false);
     appShellInteractionRevisionRef.current += 1;
     setAppShellState((current) => ({
       version: 1,
@@ -468,7 +487,6 @@ export const ChatSession = (): JSX.Element => {
                 }
                 providerSetup={controller.settingsDialog.providerSetup}
                 workspaceSetup={controller.settingsDialog.workspaceSetup}
-                instructionsSetup={controller.settingsDialog.instructionsSetup}
                 webSearchSetup={controller.settingsDialog.webSearchSetup}
                 mcpSetup={controller.settingsDialog.mcpSetup}
                 agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
@@ -647,7 +665,8 @@ export const ChatSession = (): JSX.Element => {
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <Suspense fallback={appLoadingFallback}>
                   <InstructionManager
-                    setup={controller.settingsDialog.instructionsSetup}
+                    setup={controller.instructionManagement}
+                    onDirtyChange={setInstructionDraftDirty}
                   />
                 </Suspense>
               </div>
@@ -657,13 +676,12 @@ export const ChatSession = (): JSX.Element => {
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <Suspense fallback={appLoadingFallback}>
                   <WorkspaceManager
-                    setup={controller.settingsDialog.instructionsSetup}
-                    workspaceSetup={
-                      controller.settingsDialog.workspaceManagementSetup
-                    }
+                    setup={controller.instructionManagement}
+                    workspaceSetup={controller.workspaceManagement}
                     activeWorkspaceRoot={
                       controller.composer.activeSession.workspace
                     }
+                    onDirtyChange={setWorkspaceDraftDirty}
                   />
                 </Suspense>
               </div>
@@ -681,7 +699,6 @@ export const ChatSession = (): JSX.Element => {
               onClose={() => controller.setCatalogOpen(false)}
               providerSetup={controller.settingsDialog.providerSetup}
               workspaceSetup={controller.settingsDialog.workspaceSetup}
-              instructionsSetup={controller.settingsDialog.instructionsSetup}
               webSearchSetup={controller.settingsDialog.webSearchSetup}
               mcpSetup={controller.settingsDialog.mcpSetup}
               agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}

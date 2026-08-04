@@ -37,7 +37,6 @@ import {
 export type SettingsSection =
   | "providers"
   | "workspace"
-  | "instructions"
   | "web-search"
   | "mcp"
   | "agent"
@@ -95,13 +94,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
     group: "Agent",
     description: "Execution and review limits.",
     keywords: ["turns", "iterations", "review", "model", "infinite"],
-  },
-  {
-    id: "instructions",
-    label: "Instructions",
-    group: "Agent",
-    description: "Profiles, assignments, and local guidance.",
-    keywords: ["rules", "prompts", "files", "guidance"],
   },
   {
     id: "memory",

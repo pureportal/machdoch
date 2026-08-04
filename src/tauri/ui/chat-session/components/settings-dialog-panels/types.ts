@@ -5,8 +5,6 @@ import type {
   SpeechToTextProvider,
   SpeechToTextProviderAvailability,
   RuntimeProviderAvailability,
-  InstructionMutationInput,
-  InstructionRegistryResult,
   UserAgentLimitsSettings,
   UserApiKeyProvider,
   UserDesktopSettings,
@@ -109,26 +107,6 @@ export interface McpSettingsControls {
     serverId?: string,
     authorizationResponse?: string,
   ) => Promise<void> | void;
-}
-
-export interface InstructionSettingsControls {
-  workspaceRoot: string | null;
-  registry: InstructionRegistryResult | null;
-  loading: boolean;
-  saving: boolean;
-  message: SettingsStatusMessage | null;
-  onRefresh: () => Promise<void> | void;
-  onManualSave: (
-    input: InstructionMutationInput,
-  ) => Promise<boolean | void> | boolean | void;
-}
-
-export interface WorkspaceManagementControls {
-  workspaceRoots: string[];
-  loading: boolean;
-  onAdd: (workspaceRoot: string) => void;
-  onRemove: (workspaceRoot: string) => void;
-  onRelink: (currentWorkspaceRoot: string, nextWorkspaceRoot: string) => void;
 }
 
 export interface DesktopSettingsControls {
