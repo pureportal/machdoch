@@ -3,6 +3,7 @@ import {
   createInstructionDeliveryPlan,
   deepFreeze,
   estimateConservativeTokensFromUtf8Bytes,
+  INSTRUCTION_RESOLUTION_SCHEMA_VERSION,
   sha256,
   type FrozenInstructionSet,
   type InstructionBodyGroup,
@@ -27,7 +28,7 @@ export const createInstructionResolutionFixture = (
   const digest = sha256(body);
   const source: ResolvedInstructionSource = {
     id: "fixture:profile",
-    kind: "profile-default",
+    kind: "profile-global",
     name: options.sourceName ?? "Fixture policy",
     body,
     digest,
@@ -37,7 +38,7 @@ export const createInstructionResolutionFixture = (
     precedence: 0,
     trusted: true,
     profileId: "00000000-0000-4000-8000-000000000001",
-    assignmentPath: "defaults",
+    assignmentPath: "global",
     status: "selected",
   };
   const group: InstructionBodyGroup = {
@@ -56,7 +57,7 @@ export const createInstructionResolutionFixture = (
   };
   const canonicalDigest = sha256(
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: INSTRUCTION_RESOLUTION_SCHEMA_VERSION,
       sources: [{ id: source.id, digest, scopePath: ".", precedence: 0 }],
     }),
   );
@@ -89,7 +90,7 @@ export const createInstructionResolutionFixture = (
     Buffer.byteLength(renderedEnvelope, "utf8"),
   );
   return deepFreeze({
-    schemaVersion: 1,
+    schemaVersion: INSTRUCTION_RESOLUTION_SCHEMA_VERSION,
     resolutionId: `instruction-resolution:${sha256(
       `${providerId}:${surface}:${canonicalDigest}`,
     )}`,
@@ -97,7 +98,6 @@ export const createInstructionResolutionFixture = (
     providerId,
     surface,
     ...(options.model === undefined ? {} : { model: options.model }),
-    workspaceRegistered: false,
     libraryRevision: 0,
     selectedSources: [source],
     allProfiles: [source],

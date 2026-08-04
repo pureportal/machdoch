@@ -30,8 +30,14 @@ import {
   normalizeInstructionTags,
 } from "./tag-rules.js";
 import {
+  MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH,
+  MAX_INSTRUCTION_PROFILE_NAME_LENGTH,
+  MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH,
+} from "./limits.js";
+import {
   canonicalizeExistingWorkspaceRoot,
   canonicalDigest,
+  hasAsciiControlCharacter,
   normalizeInstructionBody,
   normalizeProfileName,
   normalizeScopePath,
@@ -40,6 +46,7 @@ import {
   unicodeCodePointLength,
 } from "./normalization.js";
 import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
+import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
 
 const MAX_INSTRUCTION_LIBRARY_BYTES = 64 * 1024 * 1024;
 const MAX_INSTRUCTION_AUDIT_READ_BYTES = 2 * 1024 * 1024;
@@ -51,7 +58,6 @@ export const createEmptyInstructionLibrary = (): InstructionLibrary => ({
   schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
   revision: 0,
   profiles: [],
-  defaults: { profiles: [] },
   workspaces: [],
 });
 
@@ -62,11 +68,12 @@ const assertExactKeys = (
   value: Record<string, unknown>,
   allowed: readonly string[],
   label: string,
+  errorCode = "INSTRUCTION_LIBRARY_INVALID",
 ): void => {
   const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unexpected.length > 0) {
     throw new InstructionSystemError(
-      "INSTRUCTION_LIBRARY_INVALID",
+      errorCode,
       `${label} contains unsupported fields: ${unexpected.join(", ")}.`,
     );
   }
@@ -77,6 +84,67 @@ const isUuid = (value: unknown): value is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
     value,
   );
+
+const isScopeAncestor = (ancestor: string, descendant: string): boolean =>
+  ancestor === "." ||
+  descendant === ancestor ||
+  descendant.startsWith(`${ancestor}/`);
+
+const assertProfileCanBeAssignedManually = (
+  profile: InstructionProfile,
+  assignmentLabel: string,
+): void => {
+  if (profile.global) {
+    throw new InstructionSystemError(
+      "REDUNDANT_PROFILE_ASSIGNMENT",
+      `${assignmentLabel} references global profile ${profile.id}, which is already applied everywhere.`,
+    );
+  }
+  if (profile.match !== undefined) {
+    throw new InstructionSystemError(
+      "AUTOMATIC_PROFILE_ASSIGNMENT",
+      `${assignmentLabel} references tag-matched profile ${profile.id}. Remove its tag rule before assigning it manually.`,
+    );
+  }
+};
+
+const assertManualWorkspaceAssignments = (
+  workspaceLabel: string,
+  scopes: readonly { path: string; profiles: readonly string[] }[],
+  profileById: ReadonlyMap<string, InstructionProfile>,
+): void => {
+  const pathsByProfile = new Map<string, string[]>();
+  for (const scope of scopes) {
+    for (const profileId of scope.profiles) {
+      const profile = profileById.get(profileId);
+      if (!profile) {
+        throw new InstructionSystemError(
+          "INSTRUCTION_LIBRARY_INVALID_REFERENCE",
+          `${workspaceLabel} references missing profile ${profileId}.`,
+        );
+      }
+      assertProfileCanBeAssignedManually(
+        profile,
+        `${workspaceLabel} scope "${scope.path}"`,
+      );
+      const overlap = (pathsByProfile.get(profileId) ?? []).find(
+        (path) =>
+          isScopeAncestor(path, scope.path) ||
+          isScopeAncestor(scope.path, path),
+      );
+      if (overlap) {
+        throw new InstructionSystemError(
+          "REDUNDANT_PROFILE_ASSIGNMENT",
+          `${workspaceLabel} assigns profile ${profileId} at overlapping scopes "${overlap}" and "${scope.path}".`,
+        );
+      }
+      pathsByProfile.set(profileId, [
+        ...(pathsByProfile.get(profileId) ?? []),
+        scope.path,
+      ]);
+    }
+  }
+};
 
 const isRfc3339DateTime = (value: string): boolean => {
   const match =
@@ -128,6 +196,71 @@ const requireString = (
   return value;
 };
 
+const normalizeWorkspaceDisplayName = (
+  value: string,
+  field: string,
+): string => {
+  const normalized = value.trim().normalize("NFKC");
+  if (!normalized) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} cannot be empty.`,
+    );
+  }
+  if (
+    unicodeCodePointLength(normalized) >
+    MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH
+  ) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} cannot exceed ${MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH} characters.`,
+    );
+  }
+  if (hasAsciiControlCharacter(normalized)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} cannot contain control characters.`,
+    );
+  }
+  if (hasUnpairedUtf16Surrogate(normalized)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} must contain valid Unicode text.`,
+    );
+  }
+  return normalized;
+};
+
+const normalizeProfileDescription = (
+  value: string,
+  field: string,
+): string | undefined => {
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  if (
+    unicodeCodePointLength(normalized) >
+    MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH
+  ) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} cannot exceed ${MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH} characters.`,
+    );
+  }
+  if (hasAsciiControlCharacter(normalized)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} cannot contain control characters.`,
+    );
+  }
+  if (hasUnpairedUtf16Surrogate(normalized)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} must contain valid Unicode text.`,
+    );
+  }
+  return normalized;
+};
+
 const parseProfile = (value: unknown, index: number): InstructionProfile => {
   if (!isRecord(value) || !isUuid(value.id)) {
     throw new InstructionSystemError(
@@ -168,21 +301,34 @@ const parseProfile = (value: unknown, index: number): InstructionProfile => {
       `Profile "${name}" has an invalid timestamp.`,
     );
   }
-  const description = requireString(
+  const rawDescription = requireString(
     value.description,
     `profiles[${index}].description`,
-    { optional: true, max: 2_000 },
+    { optional: true, max: MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH },
   );
-  if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+  const description =
+    rawDescription === undefined
+      ? undefined
+      : normalizeProfileDescription(
+          rawDescription,
+          `profiles[${index}].description`,
+        );
+  if (typeof value.enabled !== "boolean") {
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_INVALID",
       `profiles[${index}].enabled must be a boolean.`,
     );
   }
-  if (value.global !== undefined && typeof value.global !== "boolean") {
+  if (typeof value.global !== "boolean") {
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_INVALID",
       `profiles[${index}].global must be a boolean.`,
+    );
+  }
+  if (!Object.hasOwn(value, "tags")) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `profiles[${index}].tags is required.`,
     );
   }
   const tags = normalizeInstructionTags(value.tags, `profiles[${index}].tags`);
@@ -195,8 +341,8 @@ const parseProfile = (value: unknown, index: number): InstructionProfile => {
     name,
     ...(description === undefined ? {} : { description }),
     body,
-    enabled: value.enabled !== false,
-    global: value.global === true,
+    enabled: value.enabled,
+    global: value.global,
     tags,
     ...(match === undefined ? {} : { match }),
     createdAt,
@@ -213,6 +359,12 @@ const parseProfileIds = (
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_INVALID",
       `${field} must be an array.`,
+    );
+  }
+  if (value.length === 0) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} must contain at least one profile. Remove the empty scope instead.`,
     );
   }
   const ids: string[] = [];
@@ -249,10 +401,16 @@ const parseWorkspace = (
   }
   assertExactKeys(
     value,
-    ["id", "root", "displayName", "identityHints", "tags", "scopes"],
+    ["id", "root", "displayName", "tags", "scopes"],
     `workspaces[${index}]`,
   );
   const root = requireString(value.root, `workspaces[${index}].root`) ?? "";
+  if (hasUnpairedUtf16Surrogate(root)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `Workspace root must contain valid Unicode text.`,
+    );
+  }
   if (!root || resolve(root) !== root) {
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_INVALID",
@@ -263,6 +421,12 @@ const parseWorkspace = (
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_INVALID",
       `workspaces[${index}].scopes must be an array.`,
+    );
+  }
+  if (!Object.hasOwn(value, "tags")) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `workspaces[${index}].tags is required.`,
     );
   }
   const scopeKeys = new Set<string>();
@@ -303,44 +467,31 @@ const parseWorkspace = (
     };
   });
 
-  const displayName = requireString(
+  const rawDisplayName = requireString(
     value.displayName,
     `workspaces[${index}].displayName`,
-    { optional: true, max: 300 },
+    {
+      optional: true,
+      max: MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH,
+    },
   );
-  let identityHints: InstructionWorkspaceBinding["identityHints"];
-  if (value.identityHints !== undefined) {
-    if (!isRecord(value.identityHints)) {
-      throw new InstructionSystemError(
-        "INSTRUCTION_LIBRARY_INVALID",
-        `workspaces[${index}].identityHints must be an object.`,
-      );
-    }
-    assertExactKeys(
-      value.identityHints,
-      ["gitRemote", "repositoryId"],
-      `workspaces[${index}].identityHints`,
+  const displayName =
+    rawDisplayName === undefined
+      ? undefined
+      : normalizeWorkspaceDisplayName(
+          rawDisplayName,
+          `workspaces[${index}].displayName`,
+        );
+  if (rawDisplayName !== undefined && rawDisplayName !== displayName) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `workspaces[${index}].displayName must use its normalized form.`,
     );
-    const gitRemote = requireString(
-      value.identityHints.gitRemote,
-      `workspaces[${index}].identityHints.gitRemote`,
-      { optional: true, max: 2_000 },
-    );
-    const repositoryId = requireString(
-      value.identityHints.repositoryId,
-      `workspaces[${index}].identityHints.repositoryId`,
-      { optional: true, max: 500 },
-    );
-    identityHints = {
-      ...(gitRemote === undefined ? {} : { gitRemote }),
-      ...(repositoryId === undefined ? {} : { repositoryId }),
-    };
   }
   return {
     id: value.id,
     root,
     ...(displayName === undefined ? {} : { displayName }),
-    ...(identityHints === undefined ? {} : { identityHints }),
     tags: normalizeInstructionTags(value.tags, `workspaces[${index}].tags`),
     scopes,
   };
@@ -353,20 +504,18 @@ export const parseInstructionLibrary = (value: unknown): InstructionLibrary => {
     !Number.isSafeInteger(value.revision) ||
     Number(value.revision) < 0 ||
     !Array.isArray(value.profiles) ||
-    !Array.isArray(value.workspaces) ||
-    !isRecord(value.defaults)
+    !Array.isArray(value.workspaces)
   ) {
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_INVALID",
-      "The instruction library does not match schema version 1.",
+      `The instruction library does not match schema version ${INSTRUCTION_LIBRARY_SCHEMA_VERSION}.`,
     );
   }
   assertExactKeys(
     value,
-    ["schemaVersion", "revision", "profiles", "defaults", "workspaces"],
+    ["schemaVersion", "revision", "profiles", "workspaces"],
     "instruction library",
   );
-  assertExactKeys(value.defaults, ["profiles"], "instruction library defaults");
   const profiles = value.profiles.map(parseProfile);
   const profileIds = new Set<string>();
   const profileNames = new Set<string>();
@@ -408,45 +557,39 @@ export const parseInstructionLibrary = (value: unknown): InstructionLibrary => {
     if (workspaceRoots.has(rootKey)) {
       throw new InstructionSystemError(
         "INSTRUCTION_LIBRARY_DUPLICATE_WORKSPACE",
-        `Workspace root ${workspace.root} is registered more than once.`,
+        `Workspace root ${workspace.root} is configured more than once.`,
       );
     }
     workspaceRoots.set(rootKey, workspace.id);
   }
 
-  const defaultProfiles = parseProfileIds(
-    value.defaults.profiles,
-    "defaults.profiles",
-    profileIds,
-  );
-  const globalProfileIds = new Set(defaultProfiles);
-  const normalizedProfiles = profiles.map((profile, index) => {
-    const rawProfile = (value.profiles as unknown[])[index];
-    const hasExplicitGlobal =
-      isRecord(rawProfile) && rawProfile.global !== undefined;
-    const global = globalProfileIds.has(profile.id);
-    if (hasExplicitGlobal && profile.global !== global) {
+  for (const profile of profiles) {
+    if (profile.global && !profile.enabled) {
       throw new InstructionSystemError(
         "INSTRUCTION_LIBRARY_INVALID",
-        `Profile ${profile.id} global metadata does not match defaults.profiles.`,
+        `Global profile ${profile.id} must be enabled.`,
       );
     }
-    if (global && profile.match !== undefined) {
+    if (profile.global && profile.match !== undefined) {
       throw new InstructionSystemError(
         "INSTRUCTION_LIBRARY_INVALID",
         `Global profile ${profile.id} cannot also have an automatic tag rule.`,
       );
     }
-    return { ...profile, global };
-  });
+  }
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  for (const workspace of workspaces) {
+    assertManualWorkspaceAssignments(
+      `Workspace ${workspace.root}`,
+      workspace.scopes,
+      profileById,
+    );
+  }
 
   return {
     schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
     revision: Number(value.revision),
-    profiles: normalizedProfiles,
-    defaults: {
-      profiles: defaultProfiles,
-    },
+    profiles,
     workspaces,
   };
 };
@@ -476,9 +619,22 @@ const readInstructionLibraryBytes = async (path: string): Promise<Buffer> => {
         (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
     );
     opened = await handle.stat();
+    if (!sameFileSnapshotIdentity(metadata, opened)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_CHANGED_DURING_READ",
+        `Instruction library ${path} changed before it could be read safely.`,
+      );
+    }
+    if (opened.size > MAX_INSTRUCTION_LIBRARY_BYTES) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_TOO_LARGE",
+        `Instruction library ${path} exceeds ${MAX_INSTRUCTION_LIBRARY_BYTES} bytes.`,
+      );
+    }
     bytes = await readOpenedFileExactly(handle, opened.size);
     afterRead = await handle.stat();
   } catch (error) {
+    if (error instanceof InstructionSystemError) throw error;
     throw new InstructionSystemError(
       "INSTRUCTION_LIBRARY_UNREADABLE",
       `Instruction library ${path} could not be opened safely.`,
@@ -488,7 +644,14 @@ const readInstructionLibraryBytes = async (path: string): Promise<Buffer> => {
   } finally {
     await handle?.close();
   }
-  const afterPath = await lstat(path);
+  const afterPath = await lstat(path).catch((error: unknown) => {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_CHANGED_DURING_READ",
+      `Instruction library ${path} changed while it was being read.`,
+      [],
+      { cause: error },
+    );
+  });
   if (
     afterPath.isSymbolicLink() ||
     !afterPath.isFile() ||
@@ -603,12 +766,18 @@ export const inspectInstructionLibraryRecovery = async (
     | Awaited<ReturnType<typeof readAndParseInstructionLibrary>>
     | undefined;
   let backupExists = false;
+  let invalidBackupDigest: string | undefined;
   try {
     await lstat(backupPath);
     backupExists = true;
     backup = await readAndParseInstructionLibrary(backupPath);
   } catch {
     backup = undefined;
+    if (backupExists) {
+      invalidBackupDigest = await readInstructionLibraryBytes(backupPath)
+        .then((bytes) => sha256(bytes))
+        .catch(() => undefined);
+    }
   }
   if (primaryMissing && backupExists) {
     primaryError = new InstructionSystemError(
@@ -616,6 +785,14 @@ export const inspectInstructionLibraryRecovery = async (
       "The primary instruction library is missing, but a prior recovery backup exists.",
     );
   }
+  const resetSource =
+    primaryDigest !== undefined
+      ? ("primary" as const)
+      : primaryMissing && invalidBackupDigest !== undefined
+        ? ("backup" as const)
+        : undefined;
+  const resetDigest =
+    resetSource === "primary" ? primaryDigest : invalidBackupDigest;
   return {
     libraryPath: path,
     backupPath,
@@ -628,6 +805,9 @@ export const inspectInstructionLibraryRecovery = async (
           backupDigest: sha256(backup.bytes),
           backupRevision: backup.library.revision,
         }),
+    ...(resetDigest === undefined || resetSource === undefined
+      ? {}
+      : { resetDigest, resetSource }),
     ...(primaryError instanceof InstructionSystemError
       ? {
           errorCode: primaryError.code,
@@ -723,6 +903,12 @@ export const recoverInstructionLibraryFromBackup = async (
         );
       }
       const backup = await readAndParseInstructionLibrary(status.backupPath);
+      if (sha256(backup.bytes) !== expectedBackupDigest) {
+        throw new InstructionSystemError(
+          "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
+          "The validated backup changed before it could be restored.",
+        );
+      }
       const expectedPrimaryState =
         await captureInstructionPrimaryFileState(path);
       if (
@@ -796,7 +982,7 @@ const appendAuditEntry = async (
 };
 
 export const resetCorruptInstructionLibrary = async (
-  expectedPrimaryDigest: string,
+  expectedResetDigest: string,
   path = getInstructionLibraryPath(),
 ): Promise<{ library: InstructionLibrary; corruptCopy: string }> =>
   withCooperativeFileLock(
@@ -810,19 +996,22 @@ export const resetCorruptInstructionLibrary = async (
         );
       }
       if (
-        status.primaryDigest === undefined ||
-        status.primaryDigest !== expectedPrimaryDigest
+        status.resetDigest === undefined ||
+        status.resetSource === undefined ||
+        status.resetDigest !== expectedResetDigest
       ) {
         throw new InstructionSystemError(
           "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
           "The corrupt instruction library is missing or changed after reset review.",
         );
       }
-      const currentBytes = await readInstructionLibraryBytes(path);
-      if (sha256(currentBytes) !== expectedPrimaryDigest) {
+      const sourcePath =
+        status.resetSource === "primary" ? path : status.backupPath;
+      const currentBytes = await readInstructionLibraryBytes(sourcePath);
+      if (sha256(currentBytes) !== expectedResetDigest) {
         throw new InstructionSystemError(
           "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
-          "The corrupt instruction library changed before reset.",
+          "The reviewed corrupt recovery file changed before reset.",
         );
       }
       const corruptCopy = `${path}.corrupt-${new Date()
@@ -832,21 +1021,36 @@ export const resetCorruptInstructionLibrary = async (
       await chmod(corruptCopy, 0o600).catch(() => undefined);
       const library = createEmptyInstructionLibrary();
       await writeJsonAtomically(path, library, {
-        beforeCommit: async () =>
-          assertInstructionPrimaryFileState(path, {
-            exists: true,
-            digest: expectedPrimaryDigest,
-          }),
+        beforeCommit: async () => {
+          await assertInstructionPrimaryFileState(
+            path,
+            status.resetSource === "primary"
+              ? { exists: true, digest: expectedResetDigest }
+              : { exists: false },
+          );
+          if (status.resetSource === "backup") {
+            const currentBackup = await readInstructionLibraryBytes(
+              status.backupPath,
+            );
+            if (sha256(currentBackup) !== expectedResetDigest) {
+              throw new InstructionSystemError(
+                "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
+                "The reviewed corrupt backup changed before reset.",
+              );
+            }
+          }
+        },
       });
       await chmod(path, 0o600).catch(() => undefined);
       await appendAuditEntry(path, {
         at: new Date().toISOString(),
         action: "reset-corrupt-library",
-        previousDigest: expectedPrimaryDigest,
+        previousDigest: expectedResetDigest,
+        resetSource: status.resetSource,
         revision: library.revision,
         profileCount: 0,
         workspaceCount: 0,
-        defaultsCount: 0,
+        globalCount: 0,
       }).catch(() => undefined);
       return { library, corruptCopy };
     },
@@ -889,7 +1093,7 @@ const persistInstructionLibrary = async (
     revision: library.revision,
     profileCount: library.profiles.length,
     workspaceCount: library.workspaces.length,
-    defaultsCount: library.defaults.profiles.length,
+    globalCount: library.profiles.filter((profile) => profile.global).length,
     digest: canonicalDigest({
       schemaVersion: library.schemaVersion,
       revision: library.revision,
@@ -902,7 +1106,6 @@ const persistInstructionLibrary = async (
           bodyDigest: sha256(body),
         }),
       ),
-      defaults: library.defaults,
       workspaces: library.workspaces,
     }),
   }).catch(() => undefined);
@@ -992,14 +1195,16 @@ export const createInstructionProfile = async (
 > => {
   const id = randomUUID();
   const at = new Date().toISOString();
+  const description =
+    input.description === undefined
+      ? undefined
+      : normalizeProfileDescription(input.description, "profile.description");
   const profile: InstructionProfile = {
     id,
     name: normalizeProfileName(input.name),
-    ...(input.description === undefined
-      ? {}
-      : { description: input.description.trim() }),
+    ...(description === undefined ? {} : { description }),
     body: normalizeInstructionBody(input.body, `profile "${input.name}"`),
-    enabled: input.enabled !== false,
+    enabled: input.global === true ? true : input.enabled !== false,
     global: input.global === true,
     tags: normalizeInstructionTags(input.tags, "profile.tags"),
     ...(input.match === undefined
@@ -1018,9 +1223,6 @@ export const createInstructionProfile = async (
     (library) => ({
       ...library,
       profiles: [...library.profiles, profile],
-      defaults: profile.global
-        ? { profiles: [...library.defaults.profiles, profile.id] }
-        : library.defaults,
     }),
     options,
   );
@@ -1049,7 +1251,7 @@ export const updateInstructionProfile = async (
         `Instruction profile ${id} does not exist.`,
       );
     }
-    const nextGlobal = patch.global ?? existing.global === true;
+    const nextGlobal = patch.global ?? existing.global;
     const nextMatch =
       patch.match === null
         ? undefined
@@ -1062,56 +1264,54 @@ export const updateInstructionProfile = async (
         "A global instruction profile cannot also use automatic tag matching.",
       );
     }
-    if (nextGlobal && existing.global !== true) {
-      const references = library.workspaces.flatMap((workspace) =>
-        workspace.scopes
-          .filter((scope) => scope.profiles.includes(id))
-          .map((scope) => `${workspace.id}:${scope.path}`),
+    const references = library.workspaces.flatMap((workspace) =>
+      workspace.scopes
+        .filter((scope) => scope.profiles.includes(id))
+        .map((scope) => `${workspace.id}:${scope.path}`),
+    );
+    if ((nextGlobal || nextMatch !== undefined) && references.length > 0) {
+      throw new InstructionSystemError(
+        "REDUNDANT_PROFILE_ASSIGNMENT",
+        `Profile ${id} is already assigned at ${references.join(", ")}. Remove those manual references before enabling ${nextGlobal ? "global application" : "tag matching"}.`,
       );
-      if (references.length > 0) {
-        throw new InstructionSystemError(
-          "REDUNDANT_PROFILE_ASSIGNMENT",
-          `Profile ${id} is already assigned at ${references.join(", ")}. Remove those narrower references before making it global.`,
-        );
-      }
     }
+    const nextDescription =
+      patch.description === null
+        ? undefined
+        : patch.description === undefined
+          ? existing.description
+          : normalizeProfileDescription(
+              patch.description,
+              "profile.description",
+            );
     const next: InstructionProfile = {
       id: existing.id,
       name:
         patch.name === undefined
           ? existing.name
           : normalizeProfileName(patch.name),
-      ...(patch.description === null
+      ...(nextDescription === undefined
         ? {}
-        : patch.description === undefined
-          ? existing.description === undefined
-            ? {}
-            : { description: existing.description }
-          : { description: patch.description.trim() }),
+        : { description: nextDescription }),
       body:
         patch.body === undefined
           ? existing.body
           : normalizeInstructionBody(patch.body, `profile ${id}`),
-      enabled: patch.enabled ?? existing.enabled !== false,
+      enabled: nextGlobal ? true : (patch.enabled ?? existing.enabled),
       global: nextGlobal,
       tags:
         patch.tags === undefined
-          ? [...(existing.tags ?? [])]
+          ? [...existing.tags]
           : normalizeInstructionTags(patch.tags, "profile.tags"),
       ...(nextMatch === undefined ? {} : { match: nextMatch }),
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     };
-    const defaults = library.defaults.profiles.filter(
-      (profileId) => profileId !== id,
-    );
-    if (nextGlobal) defaults.push(id);
     return {
       ...library,
       profiles: library.profiles.map((profile) =>
         profile.id === id ? next : profile,
       ),
-      defaults: { profiles: defaults },
     };
   }, options);
 
@@ -1120,14 +1320,11 @@ export const deleteInstructionProfile = async (
   options: { path?: string; expectedRevision?: number } = {},
 ): Promise<InstructionStoreMutationResult> =>
   mutateInstructionLibrary((library) => {
-    const references = [
-      ...(library.defaults.profiles.includes(id) ? ["defaults"] : []),
-      ...library.workspaces.flatMap((workspace) =>
-        workspace.scopes
-          .filter((scope) => scope.profiles.includes(id))
-          .map((scope) => `${workspace.id}:${scope.path}`),
-      ),
-    ];
+    const references = library.workspaces.flatMap((workspace) =>
+      workspace.scopes
+        .filter((scope) => scope.profiles.includes(id))
+        .map((scope) => `${workspace.id}:${scope.path}`),
+    );
     if (references.length > 0) {
       throw new InstructionSystemError(
         "PROFILE_IS_ASSIGNED",
@@ -1163,14 +1360,31 @@ export const duplicateInstructionProfile = async (
       );
     }
     const at = new Date().toISOString();
+    const copyName = (() => {
+      if (name !== undefined) return normalizeProfileName(name);
+      const existingNameKeys = new Set(
+        library.profiles.map((profile) => profileNameKey(profile.name)),
+      );
+      for (let copyNumber = 1; ; copyNumber += 1) {
+        const suffix = copyNumber === 1 ? " copy" : ` copy ${copyNumber}`;
+        const availableBaseLength =
+          MAX_INSTRUCTION_PROFILE_NAME_LENGTH - unicodeCodePointLength(suffix);
+        const base = Array.from(source.name)
+          .slice(0, availableBaseLength)
+          .join("");
+        const candidate = normalizeProfileName(`${base}${suffix}`);
+        if (!existingNameKeys.has(profileNameKey(candidate))) return candidate;
+      }
+    })();
     created = {
       ...source,
       id: randomUUID(),
-      name: normalizeProfileName(name ?? `${source.name} copy`),
+      name: copyName,
       global: false,
       createdAt: at,
       updatedAt: at,
     };
+    Reflect.deleteProperty(created, "match");
     return { ...library, profiles: [...library.profiles, created] };
   }, options);
   if (!created) {
@@ -1182,109 +1396,96 @@ export const duplicateInstructionProfile = async (
   return { ...result, profile: created };
 };
 
-export const setDefaultInstructionProfiles = async (
-  profileIds: ProfileId[],
-  options: { path?: string; expectedRevision?: number } = {},
-): Promise<InstructionStoreMutationResult> =>
-  mutateInstructionLibrary((library) => {
-    for (const profileId of profileIds) {
-      const references = library.workspaces.flatMap((workspace) =>
-        workspace.scopes
-          .filter((scope) => scope.profiles.includes(profileId))
-          .map((scope) => `${workspace.id}:${scope.path}`),
-      );
-      if (references.length > 0) {
-        throw new InstructionSystemError(
-          "REDUNDANT_PROFILE_ASSIGNMENT",
-          `Profile ${profileId} is already assigned at ${references.join(", ")}. Remove those narrower references before making it an all-workspaces default.`,
-        );
-      }
-    }
-    const globalIds = new Set(profileIds);
-    return {
-      ...library,
-      profiles: library.profiles.map((profile) => {
-        if (!globalIds.has(profile.id)) return { ...profile, global: false };
-        const { match: _match, ...withoutMatch } = profile;
-        return { ...withoutMatch, global: true };
-      }),
-      defaults: { profiles: [...profileIds] },
-    };
-  }, options);
-
-export const registerInstructionWorkspace = async (
+export const configureInstructionWorkspace = async (
   root: string,
   input: {
     displayName?: string;
-    identityHints?: InstructionWorkspaceBinding["identityHints"];
     tags?: string[];
-  } = {},
+    profileIds?: ProfileId[];
+  },
   options: { path?: string; expectedRevision?: number } = {},
 ): Promise<
   InstructionStoreMutationResult & { workspace: InstructionWorkspaceBinding }
 > => {
   const canonicalRoot = await canonicalizeExistingWorkspaceRoot(root);
-  const workspace: InstructionWorkspaceBinding = {
-    id: randomUUID(),
-    root: canonicalRoot,
-    ...(input.displayName === undefined
-      ? {}
-      : { displayName: input.displayName.trim() }),
-    ...(input.identityHints === undefined
-      ? {}
-      : { identityHints: input.identityHints }),
-    tags: normalizeInstructionTags(input.tags, "workspace.tags"),
-    scopes: [],
-  };
-  const result = await mutateInstructionLibrary(
-    (library) => ({
-      ...library,
-      workspaces: [...library.workspaces, workspace],
-    }),
-    options,
-  );
-  return { ...result, workspace };
-};
-
-export const updateInstructionWorkspace = async (
-  workspaceId: string,
-  patch: { displayName?: string | null; tags?: string[] },
-  options: { path?: string; expectedRevision?: number } = {},
-): Promise<InstructionStoreMutationResult> =>
-  mutateInstructionLibrary((library) => {
+  const rootKey = (value: string): string =>
+    process.platform === "win32"
+      ? resolve(value).toLocaleLowerCase("en-US")
+      : resolve(value);
+  const result = await mutateInstructionLibrary((library) => {
     const existing = library.workspaces.find(
-      (workspace) => workspace.id === workspaceId,
+      (workspace) => rootKey(workspace.root) === rootKey(canonicalRoot),
     );
-    if (!existing) {
-      throw new InstructionSystemError(
-        "WORKSPACE_NOT_REGISTERED",
-        `Instruction workspace ${workspaceId} is not registered.`,
-      );
+    const profileIds = input.profileIds;
+    if (profileIds !== undefined) {
+      const seenProfileIds = new Set<ProfileId>();
+      for (const profileId of profileIds) {
+        if (seenProfileIds.has(profileId)) {
+          throw new InstructionSystemError(
+            "INSTRUCTION_LIBRARY_DUPLICATE_REFERENCE",
+            `Workspace assignment contains profile ${profileId} more than once.`,
+          );
+        }
+        seenProfileIds.add(profileId);
+        const profile = library.profiles.find(
+          (candidate) => candidate.id === profileId,
+        );
+        if (!profile) {
+          throw new InstructionSystemError(
+            "INSTRUCTION_LIBRARY_INVALID_REFERENCE",
+            `Workspace assignment references missing profile ${profileId}.`,
+          );
+        }
+        assertProfileCanBeAssignedManually(profile, "Workspace assignment");
+      }
     }
-    const { displayName: _displayName, ...existingWithoutDisplayName } =
-      existing;
-    const next: InstructionWorkspaceBinding = {
-      ...(patch.displayName === null ? existingWithoutDisplayName : existing),
-      ...(patch.displayName === undefined || patch.displayName === null
-        ? {}
-        : { displayName: patch.displayName.trim() }),
+    const rootScope =
+      profileIds === undefined
+        ? existing?.scopes.find((scope) => scope.path === ".")
+        : profileIds.length > 0
+          ? { path: ".", profiles: [...profileIds] }
+          : undefined;
+    const nestedScopes =
+      existing?.scopes.filter((scope) => scope.path !== ".") ?? [];
+    const workspace: InstructionWorkspaceBinding = {
+      id: existing?.id ?? randomUUID(),
+      root: canonicalRoot,
+      ...(input.displayName === undefined
+        ? existing?.displayName === undefined
+          ? {}
+          : { displayName: existing.displayName }
+        : {
+            displayName: normalizeWorkspaceDisplayName(
+              input.displayName,
+              "workspace.displayName",
+            ),
+          }),
       tags:
-        patch.tags === undefined
-          ? [...(existing.tags ?? [])]
-          : normalizeInstructionTags(patch.tags, "workspace.tags"),
+        input.tags === undefined
+          ? [...(existing?.tags ?? [])]
+          : normalizeInstructionTags(input.tags, "workspace.tags"),
+      scopes: [...(rootScope ? [rootScope] : []), ...nestedScopes],
     };
     return {
       ...library,
-      workspaces: library.workspaces.map((workspace) =>
-        workspace.id === workspaceId ? next : workspace,
-      ),
+      workspaces: existing
+        ? library.workspaces.map((candidate) =>
+            candidate.id === existing.id ? workspace : candidate,
+          )
+        : [...library.workspaces, workspace],
     };
   }, options);
-
-const isScopeAncestor = (ancestor: string, descendant: string): boolean =>
-  ancestor === "." ||
-  descendant === ancestor ||
-  descendant.startsWith(`${ancestor}/`);
+  const workspace = result.library.workspaces.find(
+    (candidate) => rootKey(candidate.root) === rootKey(canonicalRoot),
+  );
+  if (!workspace) {
+    throw new InstructionSystemError(
+      "WORKSPACE_CONFIGURATION_FAILED",
+      `Workspace ${canonicalRoot} could not be configured.`,
+    );
+  }
+  return { ...result, workspace };
+};
 
 const assertExistingWorkspaceScope = async (
   workspaceRoot: string,
@@ -1338,20 +1539,24 @@ export const setWorkspaceInstructionScope = async (
     );
     if (!workspace) {
       throw new InstructionSystemError(
-        "WORKSPACE_NOT_REGISTERED",
-        `Instruction workspace ${workspaceId} is not registered.`,
+        "WORKSPACE_NOT_CONFIGURED",
+        `Instruction workspace ${workspaceId} is not configured.`,
       );
     }
     if (profileIds.length > 0) {
       await assertExistingWorkspaceScope(workspace.root, normalizedPath);
     }
     for (const profileId of profileIds) {
-      if (library.defaults.profiles.includes(profileId)) {
+      const profile = library.profiles.find(
+        (candidate) => candidate.id === profileId,
+      );
+      if (!profile) {
         throw new InstructionSystemError(
-          "REDUNDANT_PROFILE_ASSIGNMENT",
-          `Profile ${profileId} already applies through the all-workspaces defaults.`,
+          "INSTRUCTION_LIBRARY_INVALID_REFERENCE",
+          `Workspace assignment references missing profile ${profileId}.`,
         );
       }
+      assertProfileCanBeAssignedManually(profile, "Workspace assignment");
       const overlap = workspace.scopes.find(
         (scope) =>
           scope.path !== normalizedPath &&
@@ -1408,8 +1613,8 @@ export const relinkInstructionWorkspaceScope = async (
     );
     if (!workspace) {
       throw new InstructionSystemError(
-        "WORKSPACE_NOT_REGISTERED",
-        `Instruction workspace ${workspaceId} is not registered.`,
+        "WORKSPACE_NOT_CONFIGURED",
+        `Instruction workspace ${workspaceId} is not configured.`,
       );
     }
     const pathKey = (value: string): string =>
@@ -1477,8 +1682,8 @@ export const relinkInstructionWorkspace = async (
     );
     if (!existing) {
       throw new InstructionSystemError(
-        "WORKSPACE_NOT_REGISTERED",
-        `Instruction workspace ${workspaceId} is not registered.`,
+        "WORKSPACE_NOT_CONFIGURED",
+        `Instruction workspace ${workspaceId} is not configured.`,
       );
     }
     for (const scope of existing.scopes) {
@@ -1497,7 +1702,7 @@ export const relinkInstructionWorkspace = async (
   }, options);
 };
 
-export const unregisterInstructionWorkspace = async (
+export const removeInstructionWorkspaceConfiguration = async (
   workspaceId: string,
   options: {
     path?: string;
@@ -1511,8 +1716,8 @@ export const unregisterInstructionWorkspace = async (
     );
     if (!workspace) {
       throw new InstructionSystemError(
-        "WORKSPACE_NOT_REGISTERED",
-        `Instruction workspace ${workspaceId} is not registered.`,
+        "WORKSPACE_NOT_CONFIGURED",
+        `Instruction workspace ${workspaceId} is not configured.`,
       );
     }
     if (
@@ -1539,7 +1744,6 @@ export const exportInstructionLibrary = (
   schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
   exportedAt: new Date().toISOString(),
   profiles: structuredClone(library.profiles),
-  defaults: structuredClone(library.defaults),
   ...(includeWorkspaceBindings
     ? {
         workspaces: library.workspaces.map((workspace) => ({
@@ -1547,10 +1751,7 @@ export const exportInstructionLibrary = (
           ...(workspace.displayName === undefined
             ? {}
             : { displayName: workspace.displayName }),
-          ...(workspace.identityHints === undefined
-            ? {}
-            : { identityHints: structuredClone(workspace.identityHints) }),
-          tags: [...(workspace.tags ?? [])],
+          tags: [...workspace.tags],
           scopes: structuredClone(workspace.scopes),
         })),
       }
@@ -1599,8 +1800,9 @@ export const importInstructionLibrary = async (
   }
   assertExactKeys(
     input,
-    ["schemaVersion", "exportedAt", "profiles", "defaults", "workspaces"],
+    ["schemaVersion", "exportedAt", "profiles", "workspaces"],
     "instruction library import",
+    "INSTRUCTION_IMPORT_INVALID",
   );
   if (
     typeof input.exportedAt !== "string" ||
@@ -1615,7 +1817,6 @@ export const importInstructionLibrary = async (
     schemaVersion: input.schemaVersion,
     revision: 0,
     profiles: input.profiles,
-    defaults: input.defaults,
     workspaces: [],
   });
   const importedIds = new Set(
@@ -1637,19 +1838,10 @@ export const importInstructionLibrary = async (
     }
     assertExactKeys(
       choices,
-      ["conflicts", "renamedProfiles", "defaults"],
+      ["conflicts", "renamedProfiles"],
       "instruction import choices",
+      "INSTRUCTION_IMPORT_INVALID_CHOICE",
     );
-    if (
-      choices.defaults !== undefined &&
-      (typeof choices.defaults !== "string" ||
-        !["merge", "replace", "keep-existing"].includes(choices.defaults))
-    ) {
-      throw new InstructionSystemError(
-        "INSTRUCTION_IMPORT_INVALID_CHOICE",
-        `Unknown instruction-default import choice ${JSON.stringify(choices.defaults)}.`,
-      );
-    }
     for (const [field, value] of [
       ["conflicts", choices.conflicts],
       ["renamedProfiles", choices.renamedProfiles],
@@ -1697,8 +1889,9 @@ export const importInstructionLibrary = async (
     }
     assertExactKeys(
       workspace,
-      ["id", "displayName", "identityHints", "tags", "scopes"],
+      ["id", "displayName", "tags", "scopes"],
       `imported workspace mapping ${index}`,
+      "INSTRUCTION_IMPORT_INVALID",
     );
     const parsed = parseWorkspace(
       {
@@ -1717,10 +1910,7 @@ export const importInstructionLibrary = async (
       ...(parsed.displayName === undefined
         ? {}
         : { displayName: parsed.displayName }),
-      ...(parsed.identityHints === undefined
-        ? {}
-        : { identityHints: parsed.identityHints }),
-      tags: [...(parsed.tags ?? [])],
+      tags: [...parsed.tags],
       scopes: parsed.scopes,
     };
   });
@@ -1734,13 +1924,26 @@ export const importInstructionLibrary = async (
     }
     unboundIds.add(workspace.id);
   }
+  const importedProfileById = new Map(
+    parsedInput.profiles.map((profile) => [profile.id, profile]),
+  );
+  for (const workspace of unboundWorkspaces) {
+    assertManualWorkspaceAssignments(
+      `Imported workspace mapping ${workspace.id}`,
+      workspace.scopes,
+      importedProfileById,
+    );
+  }
 
-  let resolvedIdMap = new Map<string, string>();
+  type UnboundWorkspace = NonNullable<
+    InstructionLibraryExport["workspaces"]
+  >[number];
+  let resolvedUnboundWorkspaces: UnboundWorkspace[] = [];
   const result = await mutateInstructionLibrary((library) => {
     if (parsedInput.schemaVersion !== INSTRUCTION_LIBRARY_SCHEMA_VERSION) {
       throw new InstructionSystemError(
         "INSTRUCTION_IMPORT_INVALID",
-        "The imported instruction library does not match schema version 1.",
+        `The imported instruction library does not match schema version ${INSTRUCTION_LIBRARY_SCHEMA_VERSION}.`,
       );
     }
     const profiles = structuredClone(library.profiles);
@@ -1757,7 +1960,7 @@ export const importInstructionLibrary = async (
       }
       const existing = existingById.get(profile.id);
       if (existing) {
-        if (existing.body === profile.body) {
+        if (canonicalDigest(existing) === canonicalDigest(profile)) {
           idMap.set(profile.id, existing.id);
           continue;
         }
@@ -1765,11 +1968,7 @@ export const importInstructionLibrary = async (
         if (!choice) {
           throw new InstructionSystemError(
             "INSTRUCTION_IMPORT_ID_CONFLICT",
-            `Profile id ${profile.id} has different content (existing ${sha256(
-              existing.body,
-            )}, imported ${sha256(
-              profile.body,
-            )}). Provide an explicit keep-existing, replace-existing, or duplicate-imported choice.`,
+            `Profile id ${profile.id} has different file data (existing ${canonicalDigest(existing)}, imported ${canonicalDigest(profile)}). Provide an explicit keep-existing, replace-existing, or duplicate-imported choice.`,
           );
         }
         consumedConflictChoices.add(profile.id);
@@ -1823,48 +2022,14 @@ export const importInstructionLibrary = async (
         `Conflict choices do not correspond to an observed conflict for profile(s): ${unusedConflictChoices.join(", ")}.`,
       );
     }
-    const importedDefaults = parsedInput.defaults.profiles.map((profileId) => {
-      const mapped = idMap.get(profileId);
-      if (!mapped) {
-        throw new InstructionSystemError(
-          "INSTRUCTION_IMPORT_INVALID_REFERENCE",
-          `Imported defaults reference unresolved profile ${profileId}.`,
-        );
-      }
-      return mapped;
-    });
-    const defaultMode = options.choices?.defaults ?? "merge";
-    const defaults =
-      defaultMode === "keep-existing"
-        ? [...library.defaults.profiles]
-        : defaultMode === "replace"
-          ? Array.from(new Set(importedDefaults))
-          : Array.from(
-              new Set([...library.defaults.profiles, ...importedDefaults]),
-            );
-    const defaultIds = new Set(defaults);
-    const normalizedProfiles = profiles.map((profile) => {
-      if (!defaultIds.has(profile.id)) return { ...profile, global: false };
-      const { match: _match, ...withoutMatch } = profile;
-      return { ...withoutMatch, global: true };
-    });
-    resolvedIdMap = new Map(idMap);
-    return {
-      ...library,
-      profiles: normalizedProfiles,
-      defaults: { profiles: defaults },
-    };
-  }, options);
-  return {
-    ...result,
-    unboundWorkspaces:
+    resolvedUnboundWorkspaces =
       options.includeWorkspaceBindings === true
         ? unboundWorkspaces.map((workspace) => ({
             ...workspace,
             scopes: workspace.scopes.map((scope) => ({
               ...scope,
               profiles: scope.profiles.map((profileId) => {
-                const mapped = resolvedIdMap.get(profileId);
+                const mapped = idMap.get(profileId);
                 if (!mapped) {
                   throw new InstructionSystemError(
                     "INSTRUCTION_IMPORT_INVALID_REFERENCE",
@@ -1875,6 +2040,24 @@ export const importInstructionLibrary = async (
               }),
             })),
           }))
-        : [],
+        : [];
+    const resolvedProfileById = new Map(
+      profiles.map((profile) => [profile.id, profile]),
+    );
+    for (const workspace of resolvedUnboundWorkspaces) {
+      assertManualWorkspaceAssignments(
+        `Imported workspace mapping ${workspace.id}`,
+        workspace.scopes,
+        resolvedProfileById,
+      );
+    }
+    return {
+      ...library,
+      profiles,
+    };
+  }, options);
+  return {
+    ...result,
+    unboundWorkspaces: resolvedUnboundWorkspaces,
   };
 };

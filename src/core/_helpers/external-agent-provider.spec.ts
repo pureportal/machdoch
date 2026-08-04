@@ -18,6 +18,7 @@ import type { TaskExecutionRole, TaskExecutionSection } from "../types.ts";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.ts";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
 import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
+import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
 import {
@@ -42,6 +43,9 @@ interface SpawnCall {
 }
 
 const spawnCalls: SpawnCall[] = [];
+const waitForCondition = async (callback: () => unknown): Promise<void> => {
+  await vi.waitFor(callback, { timeout: 5_000 });
+};
 
 vi.mock("node:child_process", () => ({
   spawnSync: vi.fn((_executable: string, args: string[]) => ({
@@ -269,6 +273,7 @@ const createParams = (
     executionRole?: TaskExecutionRole;
     instructionBody?: string;
     onActionOutput?: ModelDrivenExecutionParams["onActionOutput"];
+    onStateChange?: ModelDrivenExecutionParams["onStateChange"];
     task?: string;
   } = {},
 ): ModelDrivenExecutionParams & {
@@ -307,6 +312,9 @@ const createParams = (
     ),
     ...(overrides.onActionOutput
       ? { onActionOutput: overrides.onActionOutput }
+      : {}),
+    ...(overrides.onStateChange
+      ? { onStateChange: overrides.onStateChange }
       : {}),
     preparedConversationContext,
   };
@@ -373,7 +381,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
@@ -425,10 +433,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
-    call?.child.stdout.write("x".repeat(600_000));
+    call?.child.stdout.write(
+      `${"x".repeat(511_999)}\ud83e\udd8a${"x".repeat(100_000)}`,
+    );
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -436,6 +446,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(markdown.length).toBeLessThan(513_000);
     expect(markdown).toContain("[output truncated by machdoch]");
+    expect(hasUnpairedUtf16Surrogate(markdown)).toBe(false);
     expect(
       result?.outputSections
         .find((section) => section.title === "Codex CLI answer")
@@ -473,9 +484,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         }),
       );
 
-      await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(call.child.stdinText).toContain(`long-request-end-${provider}`);
       });
 
@@ -531,7 +542,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }));
 
       const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-      await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
 
       expect(
@@ -602,12 +613,45 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     params.runId = runId;
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     call?.child.stdout.write("Budget telemetry did not block execution.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+    const leakedMarkers = await Promise.all(
+      (await readdir(tmpdir(), { withFileTypes: true }))
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            entry.name.startsWith("machdoch-instruction-run-"),
+        )
+        .map(async (entry) =>
+          readFile(
+            join(tmpdir(), entry.name, ".machdoch-instruction-session.json"),
+            "utf8",
+          ).catch(() => ""),
+        ),
+    );
+    expect(leakedMarkers.some((marker) => marker.includes(runId))).toBe(false);
+  });
+
+  it("cleans run-scoped instructions when progress reporting fails before launch", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const runId = `progress-failure-cleanup-${randomUUID()}`;
+    const params = createParams(workspaceRoot, {
+      onStateChange: () => {
+        throw new Error("Progress bridge unavailable.");
+      },
+    });
+    params.runId = runId;
+
+    await expect(maybeExecuteExternalAgentProviderTask(params)).rejects.toThrow(
+      "Progress bridge unavailable.",
+    );
+    expect(spawnCalls).toHaveLength(0);
+
     const leakedMarkers = await Promise.all(
       (await readdir(tmpdir(), { withFileTypes: true }))
         .filter(
@@ -638,7 +682,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--config");
@@ -662,7 +706,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     call?.child.stdout.write(
@@ -692,7 +736,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(configuredWorkspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const cdIndex = call?.args.indexOf("--cd") ?? -1;
 
@@ -735,7 +779,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--sandbox");
@@ -790,7 +834,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     call?.child.stderr.write("authentication failed");
@@ -805,35 +849,109 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
   it("rejects promptly and starts process cleanup when codex exec is aborted", async () => {
     const workspaceRoot = await createWorkspace();
     const controller = new AbortController();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
 
-    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
 
-    const resultPromise = maybeExecuteExternalAgentProviderTask({
-      ...createParams(workspaceRoot),
-      signal: controller.signal,
-    });
-
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
-    const call = spawnCalls[0];
-
-    controller.abort(
-      "Execution stopped after exceeding the safety timeout of 25ms.",
-    );
-
-    if (process.platform === "win32") {
-      expect(spawnCalls[1]).toMatchObject({
-        executable: "taskkill",
-        args: ["/PID", String(call?.child.pid), "/T", "/F"],
+      const resultPromise = maybeExecuteExternalAgentProviderTask({
+        ...createParams(workspaceRoot),
+        signal: controller.signal,
       });
-    } else {
-      expect(call?.options.detached).toBe(true);
+      let resultSettled = false;
+      void resultPromise
+        .finally(() => {
+          resultSettled = true;
+        })
+        .catch(() => undefined);
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0];
+
+      controller.abort(
+        "Execution stopped after exceeding the safety timeout of 25ms.",
+      );
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]).toMatchObject({
+          executable: "taskkill",
+          args: ["/PID", String(call?.child.pid), "/T", "/F"],
+        });
+        call?.child.emit("close", null, "SIGTERM");
+        await Promise.resolve();
+        expect(resultSettled).toBe(false);
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(call?.options.detached).toBe(true);
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call?.child.pid),
+          "SIGTERM",
+        );
+        call?.child.emit("close", null, "SIGTERM");
+      }
+
+      await expect(resultPromise).rejects.toThrow(
+        "Execution stopped after exceeding the safety timeout of 25ms.",
+      );
+      if (processKillSpy) {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call?.child.pid),
+          "SIGKILL",
+        );
+      }
+    } finally {
+      processKillSpy?.mockRestore();
     }
+  });
 
-    call?.child.emit("close", null, "SIGTERM");
+  it("does not dispose run-scoped instructions before stdin failure cleanup finishes", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
 
-    await expect(resultPromise).rejects.toThrow(
-      "Execution stopped after exceeding the safety timeout of 25ms.",
-    );
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+      let resultSettled = false;
+      void resultPromise
+        .finally(() => {
+          resultSettled = true;
+        })
+        .catch(() => undefined);
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      call.child.stdin.emit("error", new Error("simulated stdin failure"));
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]).toMatchObject({
+          executable: "taskkill",
+          args: ["/PID", String(call.child.pid), "/T", "/F"],
+        });
+        call.child.emit("close", null, "SIGTERM");
+        await Promise.resolve();
+        expect(resultSettled).toBe(false);
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGKILL",
+        );
+        call.child.emit("close", null, "SIGKILL");
+      }
+
+      await expect(resultPromise).rejects.toThrow("simulated stdin failure");
+    } finally {
+      processKillSpy?.mockRestore();
+    }
   });
 
   it("summarizes codex quota failures without echoing the delegated prompt", async () => {
@@ -845,7 +963,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     call?.child.stdout.write(
@@ -876,7 +994,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     call?.child.stderr.write(
@@ -916,7 +1034,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -942,7 +1060,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -977,7 +1095,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       createParams(workspaceRoot),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -1008,7 +1126,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
@@ -1073,7 +1191,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         {
           id: "profile:exact-once",
           digest: "a".repeat(64),
-          kind: "profile-default",
+          kind: "profile-global",
           name: "Exact once policy",
           body: canary,
           scopePath: ".",
@@ -1090,7 +1208,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       ];
 
       const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-      await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       const childEnv = call.options.env as NodeJS.ProcessEnv;
       const nativeInstructionText = await readRunScopedSystemInstructions(
@@ -1125,7 +1243,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       {
         id: "profile:fallback",
         digest: "b".repeat(64),
-        kind: "profile-default",
+        kind: "profile-global",
         name: "Fallback policy",
         body: "Apply the native fallback canary.",
         scopePath: ".",
@@ -1142,7 +1260,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ];
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     spawnCalls[0]?.child.stderr.write(
       "error: unknown option --append-system-prompt-file",
     );
@@ -1171,7 +1289,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -1200,7 +1318,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -1233,7 +1351,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--dangerously-skip-permissions");
@@ -1263,7 +1381,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
@@ -1312,7 +1430,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--no-ask-user");
@@ -1352,7 +1470,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -1381,7 +1499,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
@@ -1413,7 +1531,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--model=gpt-5.3-codex");
@@ -1441,7 +1559,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--model=gpt-5.3-codex");
@@ -1471,7 +1589,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }),
     );
 
-    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--autopilot");

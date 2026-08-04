@@ -49,7 +49,7 @@ import {
 
 const SESSION_ROOT_PREFIX = "machdoch-instruction-run-";
 const SESSION_MARKER_NAME = ".machdoch-instruction-session.json";
-const SESSION_MARKER_SCHEMA_VERSION = 1;
+const SESSION_MARKER_SCHEMA_VERSION = 2;
 const STALE_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 const MAX_SESSION_MARKER_BYTES = 16 * 1024;
 const MAX_PROVIDER_STATE_BYTES = 4 * 1024 * 1024;
@@ -124,29 +124,62 @@ const decodeStrictUtf8 = (content: Uint8Array, label: string): string => {
   }
 };
 
-const hasValidSessionMarker = async (path: string): Promise<boolean> => {
+interface InstructionSessionMarker {
+  ownerProcessId?: number;
+}
+
+const readValidSessionMarker = async (
+  path: string,
+): Promise<InstructionSessionMarker | undefined> => {
   try {
     const rootMetadata = await lstat(path);
     if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
-      return false;
+      return undefined;
     }
     const content = await readStableRegularFile(
       join(path, SESSION_MARKER_NAME),
       MAX_SESSION_MARKER_BYTES,
       "Machdoch session marker",
     );
-    if (content === undefined) return false;
+    if (content === undefined) return undefined;
     const parsed = JSON.parse(
       decodeStrictUtf8(content, "Machdoch session marker"),
     ) as Record<string, unknown>;
-    return (
-      parsed.schemaVersion === SESSION_MARKER_SCHEMA_VERSION &&
-      parsed.kind === "machdoch-instruction-run" &&
-      typeof parsed.runId === "string" &&
-      parsed.rootPath === path
-    );
+    if (
+      ![1, SESSION_MARKER_SCHEMA_VERSION].includes(
+        Number(parsed.schemaVersion),
+      ) ||
+      parsed.kind !== "machdoch-instruction-run" ||
+      typeof parsed.runId !== "string" ||
+      parsed.runId.length === 0 ||
+      parsed.rootPath !== path ||
+      typeof parsed.createdAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.createdAt))
+    ) {
+      return undefined;
+    }
+    if (parsed.schemaVersion === 1) return {};
+    if (
+      !Number.isSafeInteger(parsed.ownerProcessId) ||
+      Number(parsed.ownerProcessId) <= 0
+    ) {
+      return undefined;
+    }
+    return { ownerProcessId: Number(parsed.ownerProcessId) };
   } catch {
-    return false;
+    return undefined;
+  }
+};
+
+const hasValidSessionMarker = async (path: string): Promise<boolean> =>
+  (await readValidSessionMarker(path)) !== undefined;
+
+const processMayStillBeRunning = (processId: number): boolean => {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
 };
 
@@ -169,6 +202,18 @@ const removeSessionRoot = async (path: string): Promise<void> => {
   await rm(path, { recursive: true, force: true });
 };
 
+const removeFreshSessionRoot = async (path: string): Promise<void> => {
+  if (!(await isContainedTemporarySession(path))) return;
+  const metadata = await lstat(path).catch(() => undefined);
+  if (
+    metadata?.isDirectory() &&
+    !metadata.isSymbolicLink() &&
+    (await isContainedTemporarySession(path))
+  ) {
+    await rm(path, { recursive: true, force: true });
+  }
+};
+
 export const cleanupStaleEnrollmentArtifacts = async (
   now = Date.now(),
 ): Promise<void> => {
@@ -185,9 +230,16 @@ export const cleanupStaleEnrollmentArtifacts = async (
       metadata &&
       metadata.isDirectory() &&
       !metadata.isSymbolicLink() &&
-      now - metadata.mtimeMs >= STALE_SESSION_MAX_AGE_MS &&
-      (await hasValidSessionMarker(path))
+      now - metadata.mtimeMs >= STALE_SESSION_MAX_AGE_MS
     ) {
+      const marker = await readValidSessionMarker(path);
+      if (!marker) continue;
+      if (
+        marker.ownerProcessId !== undefined &&
+        processMayStillBeRunning(marker.ownerProcessId)
+      ) {
+        continue;
+      }
       await removeSessionRoot(path).catch(() => undefined);
     }
   }
@@ -752,13 +804,19 @@ export const materializeCliEnrollment = async (
   await cleanupStaleEnrollmentArtifacts();
   const rootPath = await mkdtemp(join(tmpdir(), SESSION_ROOT_PREFIX));
   await chmod(rootPath, 0o700).catch(() => undefined);
-  await writeJsonAtomically(join(rootPath, SESSION_MARKER_NAME), {
-    schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
-    kind: "machdoch-instruction-run",
-    runId: params.runId,
-    rootPath,
-    createdAt: new Date().toISOString(),
-  });
+  try {
+    await writeJsonAtomically(join(rootPath, SESSION_MARKER_NAME), {
+      schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
+      kind: "machdoch-instruction-run",
+      runId: params.runId,
+      rootPath,
+      ownerProcessId: process.pid,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    await removeFreshSessionRoot(rootPath).catch(() => undefined);
+    throw error;
+  }
   await chmod(join(rootPath, SESSION_MARKER_NAME), 0o600).catch(
     () => undefined,
   );
@@ -836,7 +894,7 @@ export const materializeCliEnrollment = async (
       providerProbeDigest,
       workspaceId:
         params.resolution.workspaceId ??
-        `unregistered:${sha256(params.workspaceRoot).slice(0, 20)}`,
+        `unconfigured:${sha256(params.workspaceRoot).slice(0, 20)}`,
       createdAt: new Date().toISOString(),
       instructionDelivery,
       mcp: {

@@ -2,9 +2,13 @@ import process from "node:process";
 import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
 import { writeStderrLine, writeStdoutLine } from "./_helpers/cli-io.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
+import { readTaskFromStdin } from "./_helpers/cli-task-stdin.js";
 
 export const runCli = async (argv: string[]): Promise<void> => {
-  const args = parseCliArgs(argv);
+  let args = parseCliArgs(argv);
+  if (args.task === "-") {
+    args = { ...args, task: await readTaskFromStdin() };
+  }
 
   const isInternalProviderProcess =
     args.command === "provider-sync" ||
@@ -18,9 +22,8 @@ export const runCli = async (argv: string[]): Promise<void> => {
     !isInternalProviderProcess &&
     !isSideEffectFreeRalphValidation
   ) {
-    const { ensureAutomaticProviderSync } = await import(
-      "./_helpers/cli-provider-sync-commands.js"
-    );
+    const { ensureAutomaticProviderSync } =
+      await import("./_helpers/cli-provider-sync-commands.js");
     await ensureAutomaticProviderSync(args.workspaceRoot).catch(
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -38,37 +41,32 @@ export const runCli = async (argv: string[]): Promise<void> => {
       return;
     }
     case "set-api": {
-      const { printSetApiSummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
+      const { printSetApiSummary } =
+        await import("./_helpers/cli-summary-commands.js");
       await printSetApiSummary(args);
       return;
     }
     case "set-global-memory": {
-      const { printSetGlobalMemorySummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
+      const { printSetGlobalMemorySummary } =
+        await import("./_helpers/cli-summary-commands.js");
       await printSetGlobalMemorySummary(args);
       return;
     }
     case "set-default-model": {
-      const { printDefaultModelSummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
+      const { printDefaultModelSummary } =
+        await import("./_helpers/cli-summary-commands.js");
       await printDefaultModelSummary(args);
       return;
     }
     case "config": {
-      const { runConfigCommand } = await import(
-        "./_helpers/cli-config-commands.js"
-      );
+      const { runConfigCommand } =
+        await import("./_helpers/cli-config-commands.js");
       await runConfigCommand(args);
       return;
     }
     case "memory": {
-      const { printMemorySummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
+      const { printMemorySummary } =
+        await import("./_helpers/cli-summary-commands.js");
       await printMemorySummary(args);
       return;
     }
@@ -78,56 +76,50 @@ export const runCli = async (argv: string[]): Promise<void> => {
       return;
     }
     case "interview": {
-      const { printTaskInterviewSummary } = await import(
-        "./_helpers/cli-interview-commands.js"
-      );
+      const { printTaskInterviewSummary } =
+        await import("./_helpers/cli-interview-commands.js");
       await printTaskInterviewSummary(args);
       return;
     }
     case "inspect": {
-      const { printCustomizationSummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
+      const { printCustomizationSummary } =
+        await import("./_helpers/cli-summary-commands.js");
       await printCustomizationSummary(args);
       return;
     }
     case "instructions": {
-      const { printInstructionSummary } = await import(
-        "./_helpers/cli-instruction-commands.js"
-      );
+      const { printInstructionSummary } =
+        await import("./_helpers/cli-instruction-commands.js");
       await printInstructionSummary(args);
       return;
     }
     case "tools": {
-      const { printToolSummary } = await import(
-        "./_helpers/cli-summary-commands.js"
-      );
+      const { printToolSummary } =
+        await import("./_helpers/cli-summary-commands.js");
       await printToolSummary(args);
       return;
     }
     case "ralph": {
-      const { printRalphSummary } = await import(
-        "./_helpers/cli-ralph-commands.js"
-      );
+      const { printRalphSummary } =
+        await import("./_helpers/cli-ralph-commands.js");
       await printRalphSummary(args);
       return;
     }
     case "scheduler": {
-      const { printSchedulerSummary } = await import(
-        "./_helpers/cli-scheduler-commands.js"
-      );
+      const { printSchedulerSummary } =
+        await import("./_helpers/cli-scheduler-commands.js");
       await printSchedulerSummary(args);
       return;
     }
     case "mcp": {
-      const { printMcpSummary } = await import("./_helpers/cli-mcp-commands.js");
+      const { printMcpSummary } =
+        await import("./_helpers/cli-mcp-commands.js");
       await printMcpSummary(args);
       return;
     }
     case "provider-sync": {
-      const { printProviderSyncSummary } = await import(
-        "./_helpers/cli-provider-sync-commands.js"
-      );
+      const { printProviderSyncSummary } =
+        await import("./_helpers/cli-provider-sync-commands.js");
       await printProviderSyncSummary(args);
       return;
     }

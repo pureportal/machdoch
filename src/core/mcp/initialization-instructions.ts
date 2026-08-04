@@ -27,10 +27,7 @@ export const loadMcpInitializationInstructionSnapshot = async (
 ): Promise<McpInitializationInstructionSnapshot[]> => {
   const config = await loadMcpConfig(workspaceRoot);
   const discovery = (await loadMcpDiscoveryCache(workspaceRoot)).servers;
-  const byDigest = new Map<
-    string,
-    McpInitializationInstructionSnapshot
-  >();
+  const byDigest = new Map<string, McpInitializationInstructionSnapshot>();
 
   for (const server of listEnabledMcpServers(config)) {
     const rawBody = discovery[server.id]?.instructions;
@@ -38,7 +35,7 @@ export const loadMcpInitializationInstructionSnapshot = async (
     let body: string;
     try {
       body = normalizeInstructionBody(
-        rawBody.trim(),
+        rawBody,
         `MCP initialization instructions from ${server.id}`,
       );
     } catch (error) {
@@ -86,12 +83,16 @@ export const loadMcpInitializationInstructionSnapshot = async (
     .map((entry) => ({
       ...entry,
       serverIds: [...entry.serverIds].sort((left, right) =>
-        left < right ? -1 : left > right ? 1 : 0
+        left < right ? -1 : left > right ? 1 : 0,
       ),
     }))
     .sort(
       (left, right) =>
-        (left.digest < right.digest ? -1 : left.digest > right.digest ? 1 : 0) ||
+        (left.digest < right.digest
+          ? -1
+          : left.digest > right.digest
+            ? 1
+            : 0) ||
         (left.serverIds.join("\0") < right.serverIds.join("\0")
           ? -1
           : left.serverIds.join("\0") > right.serverIds.join("\0")
@@ -124,8 +125,7 @@ export const mcpInitializationInstructionSnapshotDigest = (
 const createMcpInitializationInstructionBoundary = (
   snapshot: readonly McpInitializationInstructionSnapshot[],
 ): string => {
-  const snapshotDigest =
-    mcpInitializationInstructionSnapshotDigest(snapshot);
+  const snapshotDigest = mcpInitializationInstructionSnapshotDigest(snapshot);
   const base = `machdoch-mcp-${snapshotDigest.slice(0, 32)}`;
   let boundary = base;
   let suffix = 0;
@@ -147,8 +147,7 @@ export const renderMcpInitializationInstructionBlock = (
   snapshot: readonly McpInitializationInstructionSnapshot[],
 ): string | undefined => {
   if (snapshot.length === 0) return undefined;
-  const snapshotDigest =
-    mcpInitializationInstructionSnapshotDigest(snapshot);
+  const snapshotDigest = mcpInitializationInstructionSnapshotDigest(snapshot);
   const boundary = createMcpInitializationInstructionBoundary(snapshot);
   const output = [
     `MACHDOCH-MCP-INITIALIZATION-INSTRUCTIONS/1 boundary="${boundary}"`,

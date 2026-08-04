@@ -26,14 +26,14 @@ use super::{
     categories::{
         appearance_store_key, category_data_json, category_file_entries,
         category_resource_lock_paths, global_context_packs_from_shell_state,
-        has_file_ancestor_collision, marketplace_store_key, merge_instruction_library_transfer,
+        has_file_ancestor_collision, marketplace_store_key,
         provider_enrollment_reconcile_lock_path, ralph_flow_id_from_path, ralph_settings_store_key,
         relative_path_to_wire, replace_global_context_packs, running_task_message_action_store_key,
         snapshot_category, store_file, validate_chat_voice_preferences_value,
         validate_global_ralph_preferences_value, validate_wire_path,
         verify_unlinked_directory_chain, zeroize_json_value, zeroize_snapshot,
-        zeroize_snapshot_availability, MAX_INSTRUCTION_LIBRARY_BYTES, MAX_MCP_BYTES,
-        MAX_RALPH_FLOW_BYTES, MAX_TEXT_FILE_BYTES, MAX_TOTAL_ITEMS, MAX_USER_CONFIG_BYTES,
+        zeroize_snapshot_availability, MAX_MCP_BYTES, MAX_RALPH_FLOW_BYTES, MAX_TEXT_FILE_BYTES,
+        MAX_TOTAL_ITEMS, MAX_USER_CONFIG_BYTES,
     },
     contract::{CategorySnapshot, SettingsCategoryId, SnapshotAvailability, TransferEnvelope},
 };
@@ -509,17 +509,6 @@ fn managed_files_for_category(
     category: SettingsCategoryId,
 ) -> Result<Vec<PathBuf>, String> {
     match category {
-        SettingsCategoryId::InstructionProfiles => {
-            let path = root.join("instruction-library.json");
-            match fs::symlink_metadata(&path) {
-                Ok(_) => {
-                    verify_existing_regular_file(&path, root)?;
-                    Ok(vec![path])
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-                Err(_) => Err("The instruction library path could not be inspected.".to_string()),
-            }
-        }
         SettingsCategoryId::GlobalPrompts => {
             collect_matching_files(root, &root.join("prompts"), |relative, _| {
                 relative.ends_with(".prompt.md")
@@ -600,13 +589,12 @@ fn backup_file_entries(
                     "A settings file escaped the global settings root.".to_string()
                 })?)?;
             validate_wire_path(&relative)?;
-            let maximum_bytes = if relative == "instruction-library.json" {
-                MAX_INSTRUCTION_LIBRARY_BYTES
-            } else if relative.starts_with("ralph/flows/") && relative.ends_with(".json") {
-                MAX_RALPH_FLOW_BYTES
-            } else {
-                MAX_TEXT_FILE_BYTES
-            };
+            let maximum_bytes =
+                if relative.starts_with("ralph/flows/") && relative.ends_with(".json") {
+                    MAX_RALPH_FLOW_BYTES
+                } else {
+                    MAX_TEXT_FILE_BYTES
+                };
             let metadata = fs::metadata(&path)
                 .map_err(|_| "A settings file could not be inspected for backup.".to_string())?;
             if metadata.len() > maximum_bytes {
@@ -727,9 +715,7 @@ fn capture_backup<R: Runtime>(
     for category in categories.iter().copied().filter(|category| {
         matches!(
             category,
-            SettingsCategoryId::InstructionProfiles
-                | SettingsCategoryId::GlobalPrompts
-                | SettingsCategoryId::GlobalRalphFlows
+            SettingsCategoryId::GlobalPrompts | SettingsCategoryId::GlobalRalphFlows
         )
     }) {
         files.insert(
@@ -777,7 +763,6 @@ fn validate_backup_file_path(
 ) -> Result<(), String> {
     validate_wire_path(relative_path)?;
     let valid = match category {
-        SettingsCategoryId::InstructionProfiles => relative_path == "instruction-library.json",
         SettingsCategoryId::GlobalPrompts => {
             relative_path.starts_with("prompts/") && relative_path.ends_with(".prompt.md")
         }
@@ -868,9 +853,7 @@ fn validate_resource_backup(backup: &ResourceBackup) -> Result<(), String> {
         .filter(|category| {
             matches!(
                 category,
-                SettingsCategoryId::InstructionProfiles
-                    | SettingsCategoryId::GlobalPrompts
-                    | SettingsCategoryId::GlobalRalphFlows
+                SettingsCategoryId::GlobalPrompts | SettingsCategoryId::GlobalRalphFlows
             )
         })
         .collect::<BTreeSet<_>>();
@@ -895,9 +878,7 @@ fn validate_resource_backup(backup: &ResourceBackup) -> Result<(), String> {
                 return Err("Settings rollback data contains colliding paths.".to_string());
             }
             let ralph_path = entry.relative_path.strip_prefix("ralph/");
-            let maximum_bytes = if *category == SettingsCategoryId::InstructionProfiles {
-                MAX_INSTRUCTION_LIBRARY_BYTES
-            } else if *category == SettingsCategoryId::GlobalRalphFlows
+            let maximum_bytes = if *category == SettingsCategoryId::GlobalRalphFlows
                 && ralph_path.and_then(ralph_flow_id_from_path).is_some()
             {
                 let flow_id = ralph_path
@@ -1403,57 +1384,6 @@ fn category_destination(
     Ok(path)
 }
 
-fn apply_instruction_library(root: &Path, snapshot: &CategorySnapshot) -> Result<(), String> {
-    let path = root.join("instruction-library.json");
-    let (existing, existing_bytes) = match fs::symlink_metadata(&path) {
-        Ok(metadata) => {
-            if metadata.len() > MAX_INSTRUCTION_LIBRARY_BYTES {
-                return Err("The receiver instruction library is too large.".to_string());
-            }
-            verify_existing_regular_file(&path, root)?;
-            let bytes =
-                Zeroizing::new(fs::read(&path).map_err(|_| {
-                    "The receiver instruction library could not be read.".to_string()
-                })?);
-            let value = serde_json::from_slice::<Value>(&bytes).map_err(|_| {
-                "The receiver instruction library contains invalid JSON.".to_string()
-            })?;
-            (Some(value), Some(bytes))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, None),
-        Err(_) => {
-            return Err("The receiver instruction library could not be inspected.".to_string())
-        }
-    };
-    let incoming = Value::Object(category_data_json(snapshot)?.clone());
-    let merged = merge_instruction_library_transfer(existing.as_ref(), &incoming)?;
-    if existing.as_ref() == Some(&merged) {
-        return Ok(());
-    }
-    let serialized = serde_json::to_string_pretty(&merged)
-        .map_err(|_| "The merged instruction library could not be serialized.".to_string())?;
-    let bytes = format!("{serialized}\n");
-    if bytes.len() as u64 > MAX_INSTRUCTION_LIBRARY_BYTES {
-        return Err("The merged instruction library is too large.".to_string());
-    }
-    let backup_bytes = match existing_bytes {
-        Some(bytes) => bytes,
-        None => Zeroizing::new(
-            serde_json::to_vec_pretty(&serde_json::json!({
-                "schemaVersion": 1,
-                "revision": 0,
-                "profiles": [],
-                "defaults": { "profiles": [] },
-                "workspaces": [],
-            }))
-            .map_err(|_| "The empty instruction backup could not be serialized.".to_string())?,
-        ),
-    };
-    let backup_path = root.join("instruction-library.json.bak");
-    write_settings_file(root, &backup_path, &backup_bytes)?;
-    write_settings_file(root, &path, bytes.as_bytes())
-}
-
 fn apply_file_category(root: &Path, snapshot: &CategorySnapshot) -> Result<(), String> {
     let incoming = category_file_entries(snapshot)?;
     let incoming_paths = incoming
@@ -1659,7 +1589,6 @@ fn apply_envelope<R: Runtime>(
     let mut ralph_preferences = None;
     for snapshot in &envelope.categories {
         match snapshot.id {
-            SettingsCategoryId::InstructionProfiles => apply_instruction_library(root, snapshot)?,
             SettingsCategoryId::GlobalPrompts | SettingsCategoryId::GlobalRalphFlows => {
                 apply_file_category(root, snapshot)?
             }
@@ -2274,12 +2203,12 @@ mod tests {
     #[test]
     fn recovery_backup_cannot_target_unselected_files_or_store_keys() {
         let mut backup = ResourceBackup {
-            categories: BTreeSet::from([SettingsCategoryId::InstructionProfiles]),
+            categories: BTreeSet::from([SettingsCategoryId::GlobalPrompts]),
             user_config: None,
             mcp_config: None,
             store_values: BTreeMap::new(),
             files: BTreeMap::from([(
-                SettingsCategoryId::InstructionProfiles,
+                SettingsCategoryId::GlobalPrompts,
                 vec![FileBackupEntry {
                     relative_path: "user-config.json".to_string(),
                     base64_content: BASE64.encode(b"{}\n"),
@@ -2287,21 +2216,21 @@ mod tests {
             )]),
         };
         assert!(validate_resource_backup(&backup)
-            .expect_err("an instruction backup cannot target user config")
+            .expect_err("a prompt backup cannot target user config")
             .contains("out-of-scope path"));
 
         backup.files.insert(
-            SettingsCategoryId::InstructionProfiles,
+            SettingsCategoryId::GlobalPrompts,
             vec![FileBackupEntry {
-                relative_path: "instruction-library.json".to_string(),
-                base64_content: BASE64.encode(b"{}\n"),
+                relative_path: "prompts/review.prompt.md".to_string(),
+                base64_content: BASE64.encode(b"# Review\n"),
             }],
         );
         backup
             .store_values
             .insert("machdoch.desktop.shell-state".to_string(), None);
         assert!(validate_resource_backup(&backup)
-            .expect_err("an instruction backup cannot target an arbitrary store key")
+            .expect_err("a prompt backup cannot target an arbitrary store key")
             .contains("out-of-scope store key"));
     }
 
@@ -2330,62 +2259,6 @@ mod tests {
         assert!(validate_resource_backup(&backup)
             .expect_err("a backup file cannot also be an ancestor directory")
             .contains("nested below another file"));
-    }
-
-    #[test]
-    fn instruction_transfer_refreshes_the_runtime_recovery_backup() {
-        let root = temporary_test_root("instruction-recovery-backup");
-        fs::create_dir_all(&root).expect("test root should be created");
-        let profile_id = "8a48df44-d609-4ba9-9c86-6639618d4424";
-        let existing = serde_json::json!({
-            "schemaVersion": 1,
-            "revision": 4,
-            "profiles": [],
-            "defaults": { "profiles": [] },
-            "workspaces": []
-        });
-        let existing_bytes = format!(
-            "{}\n",
-            serde_json::to_string_pretty(&existing).expect("existing JSON")
-        );
-        fs::write(root.join("instruction-library.json"), &existing_bytes)
-            .expect("existing library should be written");
-        let snapshot = CategorySnapshot {
-            id: SettingsCategoryId::InstructionProfiles,
-            schema_version: super::super::contract::CATEGORY_SCHEMA_VERSION,
-            replacement: "value".to_string(),
-            item_count: 1,
-            plaintext_bytes: 0,
-            sha256: String::new(),
-            data: super::super::contract::CategorySnapshotData::Json(serde_json::json!({
-                "schemaVersion": 1,
-                "exportedAt": "2026-07-23T08:00:00.000Z",
-                "profiles": [{
-                    "id": profile_id,
-                    "name": "Imported policy",
-                    "body": "Keep strict mode enabled.\n",
-                    "createdAt": "2026-07-23T08:00:00.000Z",
-                    "updatedAt": "2026-07-23T08:00:00.000Z"
-                }],
-                "defaults": { "profiles": [profile_id] }
-            })),
-        };
-
-        apply_instruction_library(&root, &snapshot).expect("instruction transfer should apply");
-
-        assert_eq!(
-            fs::read(root.join("instruction-library.json.bak"))
-                .expect("persistent recovery backup should exist"),
-            existing_bytes.as_bytes()
-        );
-        let merged: Value = serde_json::from_slice(
-            &fs::read(root.join("instruction-library.json")).expect("merged library should exist"),
-        )
-        .expect("merged library should be valid JSON");
-        assert_eq!(merged["revision"], serde_json::json!(5));
-        assert_eq!(merged["profiles"][0]["id"], serde_json::json!(profile_id));
-
-        fs::remove_dir_all(&root).expect("test root should be removable");
     }
 
     #[test]

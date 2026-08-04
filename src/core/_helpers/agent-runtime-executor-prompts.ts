@@ -1,7 +1,4 @@
-import type {
-  AgentModelToolSpec,
-  ResolvedTaskContext,
-} from "../types.js";
+import type { AgentModelToolSpec, ResolvedTaskContext } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
@@ -233,9 +230,12 @@ export const createExecutorSystemPrompt = (
     continuationRequest,
   );
   const instructionResolution = taskContext.instructionResolution;
-  const instructionText =
-    instructionResolution?.renderedEnvelope ??
-    "MACHDOCH-INSTRUCTION-ENVELOPE/1\nNo canonical instruction snapshot was supplied.\n";
+  if (!instructionResolution) {
+    throw new Error(
+      "The executor system prompt requires a frozen instruction resolution.",
+    );
+  }
+  const instructionText = instructionResolution.renderedEnvelope;
   const promptContextLines = taskContext.invokedPrompt
     ? [
         `Resolved prompt: /${taskContext.invokedPrompt.name}`,
@@ -291,7 +291,7 @@ export const createExecutorSystemPrompt = (
       .filter((line): line is string => line !== undefined)
       .join("\n"),
     [
-      `<instructions digest="${instructionResolution?.canonicalDigest ?? "unresolved"}">`,
+      `<instructions digest="${instructionResolution.canonicalDigest}">`,
       instructionText,
       "</instructions>",
     ].join("\n"),

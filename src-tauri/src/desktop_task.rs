@@ -60,6 +60,7 @@ pub use registry::{
 
 pub fn cleanup_stale_task_context_files() {
     payload::cleanup_stale_conversation_context_files();
+    payload_files::cleanup_stale_instruction_payload_files();
 }
 
 const DESKTOP_TASK_IDLE_TIMEOUT_MS: u64 = 20 * 60 * 1_000;

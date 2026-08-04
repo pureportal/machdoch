@@ -36,6 +36,10 @@ import {
   createInstructionDeliveryReceipt,
 } from "../instruction-system/delivery.js";
 import { canonicalDigest } from "../instruction-system/normalization.js";
+import {
+  sliceUtf16PrefixAtCodePointBoundary,
+  sliceUtf16SuffixAtCodePointBoundary,
+} from "../../shared/unicode.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
@@ -443,6 +447,7 @@ const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
 
 const terminateExternalAgentProcessTree = async (
   child: ChildProcess,
+  signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
 ): Promise<void> => {
   if (process.platform === "win32" && typeof child.pid === "number") {
     await new Promise<void>((resolve) => {
@@ -489,14 +494,14 @@ const terminateExternalAgentProcessTree = async (
 
   if (typeof child.pid === "number") {
     try {
-      process.kill(-child.pid, "SIGTERM");
+      process.kill(-child.pid, signal);
       return;
     } catch {
       // Fall back to killing the direct child if it was not placed in a group.
     }
   }
 
-  child.kill();
+  child.kill(signal);
 };
 
 const CORE_CHILD_ENV_KEYS = new Set([
@@ -686,7 +691,7 @@ const appendBoundedOutput = (
   const remaining = Math.max(0, limit - buffer.text.length);
 
   if (remaining > 0) {
-    buffer.text += chunk.slice(0, remaining);
+    buffer.text += sliceUtf16PrefixAtCodePointBoundary(chunk, remaining);
   }
 
   if (chunk.length > remaining) {
@@ -741,8 +746,9 @@ const createActionOutputBatcher = (
         return;
       }
 
-      pending[stream] = `${pending[stream]}${chunk}`.slice(
-        -MAX_ACTION_OUTPUT_BATCH_CHARS,
+      pending[stream] = sliceUtf16SuffixAtCodePointBoundary(
+        `${pending[stream]}${chunk}`,
+        MAX_ACTION_OUTPUT_BATCH_CHARS,
       );
 
       if (pending[stream].length >= MAX_ACTION_OUTPUT_BATCH_CHARS) {
@@ -798,6 +804,7 @@ const runExternalAgentCommand = async (
     const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
     let settled = false;
     let abortError: Error | undefined;
+    let abortTerminationPromise: Promise<void> | undefined;
     let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
 
     const cleanup = (): void => {
@@ -838,33 +845,53 @@ const runExternalAgentCommand = async (
       });
     };
 
-    function handleAbort(): void {
+    const beginTermination = (
+      error: Error,
+      initialSignal: "SIGTERM" | "SIGKILL" = "SIGTERM",
+    ): void => {
       if (settled || abortError) {
         return;
       }
 
-      abortError = signal
-        ? createAbortError(signal)
-        : new Error("Execution cancelled.");
-      void terminateExternalAgentProcessTree(child).catch(() => {
-        child.kill();
+      abortError = error;
+      abortTerminationPromise = terminateExternalAgentProcessTree(
+        child,
+        initialSignal,
+      ).catch(() => {
+        child.kill(initialSignal);
       });
+      if (process.platform === "win32") {
+        void abortTerminationPromise.finally(() =>
+          rejectOnce(abortError ?? new Error("Execution cancelled.")),
+        );
+      }
 
       abortSettlementHandle = setTimeout(() => {
-        child.kill();
-        rejectOnce(abortError ?? new Error("Execution cancelled."));
+        if (process.platform === "win32") {
+          void (abortTerminationPromise ?? Promise.resolve()).finally(() => {
+            child.kill();
+            rejectOnce(abortError ?? new Error("Execution cancelled."));
+          });
+          return;
+        }
+        void terminateExternalAgentProcessTree(child, "SIGKILL").finally(() =>
+          rejectOnce(abortError ?? new Error("Execution cancelled.")),
+        );
       }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
       unrefTimer(abortSettlementHandle);
+    };
+
+    function handleAbort(): void {
+      beginTermination(
+        signal ? createAbortError(signal) : new Error("Execution cancelled."),
+      );
     }
 
     function handleStdinError(error: Error): void {
-      if (settled || abortError) {
-        return;
-      }
-
-      void terminateExternalAgentProcessTree(child).finally(() => {
-        rejectOnce(error);
-      });
+      beginTermination(
+        error,
+        process.platform === "win32" ? "SIGTERM" : "SIGKILL",
+      );
     }
 
     child.stdout?.setEncoding("utf8");
@@ -878,11 +905,27 @@ const runExternalAgentCommand = async (
       actionOutputBatcher.enqueue("stderr", chunk);
     });
     child.on("error", (error) => {
-      rejectOnce(abortError ?? error);
+      if (!abortError) {
+        rejectOnce(error);
+        return;
+      }
+      void (abortTerminationPromise ?? Promise.resolve()).finally(() =>
+        rejectOnce(abortError ?? error),
+      );
     });
     child.on("close", (exitCode, exitSignal) => {
       if (abortError) {
-        rejectOnce(abortError);
+        if (process.platform === "win32") {
+          void (abortTerminationPromise ?? Promise.resolve()).finally(() =>
+            rejectOnce(abortError as Error),
+          );
+        } else {
+          // The direct child can exit before descendants in its process group.
+          // Force the remaining group down before disposing run-scoped files.
+          void (abortTerminationPromise ?? Promise.resolve())
+            .then(() => terminateExternalAgentProcessTree(child, "SIGKILL"))
+            .finally(() => rejectOnce(abortError as Error));
+        }
         return;
       }
 
@@ -897,7 +940,16 @@ const runExternalAgentCommand = async (
     }
 
     if (input !== undefined && !abortError) {
-      const inputAccepted = child.stdin?.write(input) ?? true;
+      let inputAccepted: boolean;
+      try {
+        inputAccepted = child.stdin?.write(input) ?? true;
+      } catch (error) {
+        beginTermination(
+          error instanceof Error ? error : new Error(String(error)),
+          process.platform === "win32" ? "SIGTERM" : "SIGKILL",
+        );
+        return;
+      }
 
       if (!inputAccepted) {
         child.stdin?.once("drain", () => child.stdin?.end());
@@ -1338,35 +1390,40 @@ const executeExternalAgentCliTask = async (
     );
   }
 
-  await emitAgentProgress(
-    params.task,
-    params.config,
-    "executing",
-    command.startMessage,
-    loopState,
-    params.onStateChange,
-    undefined,
-    {
-      timelineEvent: {
-        kind: "model-call",
-        phase: "started",
-        label: providerLabel,
-        detail: command.runDetail,
-        tone: "info",
-        provider,
-        model: params.config.model,
-        metadata: {
-          binarySource: binary.source ?? "unknown",
-          instructionCanonicalDigest: resolution.canonicalDigest,
-          instructionCount: resolution.selectedSources.length,
-          instructionDeliveryPlanId: instructionPlan.planId,
-          instructionDeliveryGrade: instructionPlan.grade,
-          instructionDeliveryRoute: enrollment.instructionRoute,
-          ...command.metadata,
+  try {
+    await emitAgentProgress(
+      params.task,
+      params.config,
+      "executing",
+      command.startMessage,
+      loopState,
+      params.onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "started",
+          label: providerLabel,
+          detail: command.runDetail,
+          tone: "info",
+          provider,
+          model: params.config.model,
+          metadata: {
+            binarySource: binary.source ?? "unknown",
+            instructionCanonicalDigest: resolution.canonicalDigest,
+            instructionCount: resolution.selectedSources.length,
+            instructionDeliveryPlanId: instructionPlan.planId,
+            instructionDeliveryGrade: instructionPlan.grade,
+            instructionDeliveryRoute: enrollment.instructionRoute,
+            ...command.metadata,
+          },
         },
       },
-    },
-  );
+    );
+  } catch (error) {
+    await enrollment.dispose();
+    throw error;
+  }
 
   const startedAt = Date.now();
   const instructionReceipts = params.instructionDeliveryReceipts ?? [];
@@ -1470,15 +1527,9 @@ const executeExternalAgentCliTask = async (
       ...(source.workspaceId === undefined
         ? {}
         : { workspaceId: source.workspaceId }),
-      ...(source.relativePath === undefined
-        ? {}
-        : { relativePath: source.relativePath }),
       ...(source.assignmentPath === undefined
         ? {}
         : { assignmentPath: source.assignmentPath }),
-      ...(source.inheritedFrom === undefined
-        ? {}
-        : { inheritedFrom: source.inheritedFrom }),
       ...(source.reason === undefined ? {} : { reason: source.reason }),
       ...(source.otherAssignments === undefined
         ? {}

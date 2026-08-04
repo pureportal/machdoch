@@ -2,6 +2,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, SystemTime},
 };
 
 use crate::{
@@ -12,6 +13,58 @@ use crate::{
 use super::{payload::cleanup_temporary_files, progress::create_progress_timestamp};
 
 static WORKSPACE_PAYLOAD_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+const STALE_INSTRUCTION_PAYLOAD_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const INSTRUCTION_PAYLOAD_DIRECTORY_NAME: &str = ".instruction-command-payloads";
+const INSTRUCTION_PAYLOAD_FILE_PREFIX: &str = ".machdoch-instruction-payload-";
+// Allow a BOM and the worst-case CRLF-to-LF normalization overhead. The
+// shared CLI applies the canonical 128 KiB limit after normalization.
+const MAX_INSTRUCTION_PAYLOAD_BYTES: usize = 128 * 1024 * 2 + 3;
+
+fn cleanup_instruction_payload_directory(directory: &Path, max_age: Duration, now: SystemTime) {
+    let Ok(directory_metadata) = fs::symlink_metadata(directory) else {
+        return;
+    };
+    if !directory_metadata.is_dir() || directory_metadata.file_type().is_symlink() {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.starts_with(INSTRUCTION_PAYLOAD_FILE_PREFIX) || !name.ends_with(".tmp") {
+            continue;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() || file_type.is_symlink() {
+            continue;
+        }
+        let is_stale = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= max_age);
+        if is_stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+pub(super) fn cleanup_stale_instruction_payload_files() {
+    let Ok(config_directory) = get_user_config_directory() else {
+        return;
+    };
+    cleanup_instruction_payload_directory(
+        &config_directory.join(INSTRUCTION_PAYLOAD_DIRECTORY_NAME),
+        STALE_INSTRUCTION_PAYLOAD_MAX_AGE,
+        SystemTime::now(),
+    );
+}
 
 fn write_workspace_payload_file(
     workspace_root: &str,
@@ -53,7 +106,12 @@ fn write_workspace_payload_file(
 
 fn write_instruction_payload_file(contents: &str) -> Result<PathBuf, String> {
     let unique_id = WORKSPACE_PAYLOAD_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let directory = get_user_config_directory()?.join(".instruction-command-payloads");
+    let directory = get_user_config_directory()?.join(INSTRUCTION_PAYLOAD_DIRECTORY_NAME);
+    cleanup_instruction_payload_directory(
+        &directory,
+        STALE_INSTRUCTION_PAYLOAD_MAX_AGE,
+        SystemTime::now(),
+    );
     match fs::symlink_metadata(&directory) {
         Ok(metadata) if !metadata.is_dir() || metadata.file_type().is_symlink() => {
             return Err(
@@ -87,7 +145,7 @@ fn write_instruction_payload_file(contents: &str) -> Result<PathBuf, String> {
         })?;
     }
     let file_path = directory.join(format!(
-        ".machdoch-instruction-payload-{}-{}-{}.tmp",
+        "{INSTRUCTION_PAYLOAD_FILE_PREFIX}{}-{}-{}.tmp",
         std::process::id(),
         create_progress_timestamp(),
         unique_id
@@ -119,6 +177,12 @@ pub(super) fn rewrite_instruction_payload_arguments(
                 cleanup_temporary_files(&payload_paths);
                 return Err("Expected --prompt to include a value.".to_string());
             };
+            if value.len() > MAX_INSTRUCTION_PAYLOAD_BYTES {
+                cleanup_temporary_files(&payload_paths);
+                return Err(format!(
+                    "Instruction content exceeds the {MAX_INSTRUCTION_PAYLOAD_BYTES}-byte desktop payload limit."
+                ));
+            }
             let path = match write_instruction_payload_file(value) {
                 Ok(path) => path,
                 Err(error) => {
@@ -252,14 +316,17 @@ pub(super) fn rewrite_task_interview_payload_arguments(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{
+        fs,
+        time::{Duration, SystemTime},
+    };
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use super::{
-        rewrite_instruction_payload_arguments, rewrite_ralph_payload_arguments,
-        rewrite_task_interview_payload_arguments,
+        cleanup_instruction_payload_directory, rewrite_instruction_payload_arguments,
+        rewrite_ralph_payload_arguments, rewrite_task_interview_payload_arguments,
     };
     use crate::desktop_task::payload::cleanup_temporary_files;
 
@@ -377,5 +444,62 @@ mod tests {
         #[cfg(unix)]
         assert_private_file_mode(&payload_paths[0]);
         cleanup_temporary_files(&payload_paths);
+    }
+
+    #[test]
+    fn instruction_payload_rewrite_rejects_oversized_content_before_writing() {
+        let error = rewrite_instruction_payload_arguments(vec![
+            "profiles".to_string(),
+            "create".to_string(),
+            "--prompt".to_string(),
+            "x".repeat(super::MAX_INSTRUCTION_PAYLOAD_BYTES + 1),
+        ])
+        .expect_err("oversized instruction payload should fail");
+
+        assert!(error.contains("desktop payload limit"));
+    }
+
+    #[test]
+    fn instruction_payload_rewrite_allows_bounded_crlf_normalization() {
+        let contents = format!("{}Policy", "\r\n".repeat(70_000));
+        assert!(contents.len() > 128 * 1024 + 3);
+        let (arguments, payload_paths) = rewrite_instruction_payload_arguments(vec![
+            "profiles".to_string(),
+            "create".to_string(),
+            "--prompt".to_string(),
+            contents.clone(),
+        ])
+        .expect("normalizable instruction payload should rewrite");
+
+        assert!(arguments.contains(&"--prompt-file".to_string()));
+        assert_eq!(
+            fs::read_to_string(&payload_paths[0]).expect("payload should be readable"),
+            contents
+        );
+        cleanup_temporary_files(&payload_paths);
+    }
+
+    #[test]
+    fn stale_instruction_payload_cleanup_is_bounded_to_owned_regular_files() {
+        let directory = std::env::temp_dir().join(format!(
+            "machdoch-instruction-payload-cleanup-{}-{}",
+            std::process::id(),
+            super::WORKSPACE_PAYLOAD_FILE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&directory).expect("cleanup fixture directory should be created");
+        let owned = directory.join(".machdoch-instruction-payload-1-2-3.tmp");
+        let unrelated = directory.join("keep.tmp");
+        fs::write(&owned, "private instructions").expect("owned payload should be written");
+        fs::write(&unrelated, "unrelated").expect("unrelated file should be written");
+
+        cleanup_instruction_payload_directory(
+            &directory,
+            Duration::ZERO,
+            SystemTime::now() + Duration::from_secs(1),
+        );
+
+        assert!(!owned.exists());
+        assert!(unrelated.exists());
+        let _ = fs::remove_dir_all(directory);
     }
 }

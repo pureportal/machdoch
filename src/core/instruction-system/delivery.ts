@@ -320,6 +320,14 @@ export const createInstructionDeliveryPlan = (
         record.recognizingConventions ?? [record.convention],
       ),
   );
+  const nativeInventoryUnavailable = resolution.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "NATIVE_INSTRUCTION_INVENTORY_UNAVAILABLE",
+  );
+  const nativeIsolationUnproven =
+    (nativeInventoryUnavailable || relevantUnreadableNative.length > 0) &&
+    capability.nativeDiscovery !== "isolated" &&
+    capability.nativeDiscovery !== "suppressed";
   const contentFailureEvidence =
     capability.contentFidelity === "none"
       ? capability.evidence.at(-1)
@@ -364,9 +372,7 @@ export const createInstructionDeliveryPlan = (
     ),
     dimension(
       "native-isolation",
-      relevantUnreadableNative.length > 0 &&
-        capability.nativeDiscovery !== "isolated" &&
-        capability.nativeDiscovery !== "suppressed"
+      nativeIsolationUnproven
         ? "unsupported"
         : capability.nativeDiscovery === "isolated" ||
             capability.nativeDiscovery === "suppressed"
@@ -375,10 +381,10 @@ export const createInstructionDeliveryPlan = (
               capability.nativeDiscovery === "unknown"
             ? "compatible"
             : "unsupported",
-      relevantUnreadableNative.length > 0 &&
-        capability.nativeDiscovery !== "isolated" &&
-        capability.nativeDiscovery !== "suppressed"
-        ? `${relevantUnreadableNative.length} active provider-native instruction path(s) could not be inventoried, and this adapter cannot prove they are suppressed.`
+      nativeIsolationUnproven
+        ? nativeInventoryUnavailable
+          ? "Provider-native instruction inventory failed, and this adapter cannot prove that additional native instructions are suppressed."
+          : `${relevantUnreadableNative.length} active provider-native instruction path(s) could not be inventoried, and this adapter cannot prove they are suppressed.`
         : capability.nativeDiscovery === "isolated"
           ? "No independent provider-native repository discovery applies on this surface."
           : capability.nativeDiscovery === "suppressed"

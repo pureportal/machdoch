@@ -20,7 +20,7 @@ Core commands:
 Automation and integration:
   ralph          Create, validate, run, and inspect RALPH flows
   scheduler      Manage scheduled and event-triggered work
-  instructions   Manage instruction profiles and workspace assignments
+  instructions   Manage central instruction files and assignments
   mcp            Inspect and use MCP servers, tools, resources, and prompts
   provider-sync  Manage delegated CLI-provider integration
 
@@ -47,6 +47,7 @@ Usage:
   machdoch --quick --task <task> [options]
 
 Task options:
+  --task -                      Read the complete UTF-8 task from stdin
   --mode <ask|machdoch>          Override the execution mode
   --runtime-provider <provider> Override the model provider
   --model <name>                Override the model
@@ -163,27 +164,39 @@ Usage:
 Ask mode exposes only read-only calls. Machdoch mode exposes the full tool
 surface allowed by the runtime and current environment.`;
 
-const INSTRUCTIONS_HELP = `machdoch instructions - manage canonical instructions
+const INSTRUCTIONS_HELP = `machdoch instructions - manage central instruction files
 
 Usage:
   machdoch instructions validate [--json]
   machdoch instructions resolve [--surface <api|cli>] [--path <path>] [--json]
-  machdoch instructions profiles list|show|create|edit|duplicate|delete [profile]
-  machdoch instructions assignments list|set-defaults|set|relink|remove [...]
-  machdoch instructions local list|show|create|edit|delete [folder]
-  machdoch instructions workspaces list|register|update|relink|unregister [workspace]
-  machdoch instructions transfer export|import [...]
+  machdoch instructions profiles list [--include-content]
+  machdoch instructions profiles show|edit|duplicate|delete <profile>
+  machdoch instructions profiles create [name] (--prompt <text>|--prompt-file <path>)
+  machdoch instructions assignments list
+  machdoch instructions assignments set <workspace> --path <scope> --profile <uuid> [...]
+  machdoch instructions assignments relink <workspace> <scope> --path <new-scope>
+  machdoch instructions assignments remove <workspace> --path <scope>
+  machdoch instructions workspaces list
+  machdoch instructions workspaces configure [root] [--name <name>] [--metadata-json <json>]
+  machdoch instructions workspaces relink <workspace> --path <absolute-root>
+  machdoch instructions workspaces remove <workspace> [--confirm-assignment-removal]
+  machdoch instructions transfer export [--include-workspaces]
+  machdoch instructions transfer import --prompt-file <export.json> [...]
   machdoch instructions recovery status|restore|export|reset [...]
 
 Common options:
+  --name <name>                File or workspace name
+  --description <text>        Optional file description; pass empty to clear
+  --metadata-json <json>       File settings or workspace tags and assignments
   --profile <uuid>             Ordered profile reference; repeatable
-  --path <path>                Workspace-relative instruction scope
+  --path <path>                Command-specific workspace or scope path
   --prompt <text>              Instruction Markdown
   --prompt-file <path>         Read Markdown or transfer JSON from a file
   --expected-revision <n>      Reject a stale registry mutation
-  --expected-digest <sha256>   Reject stale local content
+  --expected-digest <sha256>   Confirm a reviewed recovery file
   --include-content            Include stored instruction bodies
   --include-workspaces         Include workspace mappings in transfers
+  --confirm-assignment-removal Confirm removal of assigned workspace mappings
   --json                       Print machine-readable output`;
 
 const RALPH_HELP = `machdoch ralph - create and run durable flows

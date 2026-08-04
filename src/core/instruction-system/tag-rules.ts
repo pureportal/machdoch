@@ -1,15 +1,24 @@
 import { InstructionSystemError, type InstructionTagRule } from "./types.js";
+import {
+  MAX_INSTRUCTION_TAG_LENGTH,
+  MAX_INSTRUCTION_TAG_RULE_DEPTH,
+  MAX_INSTRUCTION_TAG_RULE_NODES,
+  MAX_INSTRUCTION_TAGS,
+} from "./limits.js";
+import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
 
-export const MAX_INSTRUCTION_TAGS = 64;
-export const MAX_INSTRUCTION_TAG_LENGTH = 80;
-export const MAX_INSTRUCTION_TAG_RULE_DEPTH = 8;
-export const MAX_INSTRUCTION_TAG_RULE_NODES = 128;
+export {
+  MAX_INSTRUCTION_TAG_LENGTH,
+  MAX_INSTRUCTION_TAG_RULE_DEPTH,
+  MAX_INSTRUCTION_TAG_RULE_NODES,
+  MAX_INSTRUCTION_TAGS,
+} from "./limits.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const tagKey = (value: string): string =>
-  value.normalize("NFKC").toLocaleLowerCase("en-US");
+export const instructionTagKey = (value: string): string =>
+  value.normalize("NFKC").toUpperCase().toLowerCase();
 
 export const normalizeInstructionTag = (value: string): string => {
   const normalized = value.normalize("NFKC").trim().replace(/\s+/gu, " ");
@@ -26,6 +35,7 @@ export const normalizeInstructionTag = (value: string): string => {
     );
   }
   if (
+    hasUnpairedUtf16Surrogate(normalized) ||
     normalized.includes(",") ||
     [...normalized].some((character) => {
       const codePoint = character.codePointAt(0) ?? 0;
@@ -34,7 +44,7 @@ export const normalizeInstructionTag = (value: string): string => {
   ) {
     throw new InstructionSystemError(
       "INSTRUCTION_TAG_INVALID",
-      "Instruction tags cannot contain commas or control characters.",
+      "Instruction tags must be valid Unicode text without commas or control characters.",
     );
   }
   return normalized;
@@ -61,7 +71,7 @@ export const normalizeInstructionTags = (
       );
     }
     const tag = normalizeInstructionTag(entry);
-    const key = tagKey(tag);
+    const key = instructionTagKey(tag);
     if (!seen.has(key)) {
       seen.add(key);
       tags.push(tag);
@@ -144,9 +154,10 @@ export const instructionTagRuleMatches = (
   rule: InstructionTagRule,
   workspaceTags: readonly string[],
 ): boolean => {
-  const tags = new Set(workspaceTags.map(tagKey));
+  const tags = new Set(workspaceTags.map(instructionTagKey));
   const evaluate = (candidate: InstructionTagRule): boolean => {
-    if (candidate.op === "tag") return tags.has(tagKey(candidate.tag));
+    if (candidate.op === "tag")
+      return tags.has(instructionTagKey(candidate.tag));
     return candidate.op === "and"
       ? candidate.rules.every(evaluate)
       : candidate.rules.some(evaluate);

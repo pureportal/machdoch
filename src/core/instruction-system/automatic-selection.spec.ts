@@ -3,12 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  configureInstructionWorkspace,
   createInstructionProfile,
   loadInstructionLibrary,
-  registerInstructionWorkspace,
   resolveInstructionSet,
-  setWorkspaceInstructionScope,
-  updateInstructionWorkspace,
 } from "./index.js";
 
 const roots: string[] = [];
@@ -20,7 +18,7 @@ afterEach(async () => {
 });
 
 describe("automatic instruction selection", () => {
-  it("persists tags and rules and reports automatic, manual, global, and disabled sources", async () => {
+  it("persists tags and rules and rejects manual assignment of tag-matched files", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-auto-instructions-"));
     roots.push(root);
     const workspaceRoot = join(root, "workspace");
@@ -61,20 +59,17 @@ describe("automatic instruction selection", () => {
       {
         name: "Global",
         body: "Always apply this instruction.",
+        enabled: false,
         global: true,
       },
       { path: libraryPath, expectedRevision: 2 },
     );
-    const registered = await registerInstructionWorkspace(
+    await configureInstructionWorkspace(
       workspaceRoot,
-      { tags: ["NestJS", "Node.js"] },
+      {
+        tags: ["NestJS", "Node.js"],
+      },
       { path: libraryPath, expectedRevision: 3 },
-    );
-    await setWorkspaceInstructionScope(
-      registered.workspace.id,
-      ".",
-      [automatic.profile.id],
-      { path: libraryPath, expectedRevision: 4 },
     );
 
     const matched = await resolveInstructionSet(
@@ -88,7 +83,7 @@ describe("automatic instruction selection", () => {
     );
     expect(matched.selectedSources).toEqual([
       expect.objectContaining({
-        kind: "profile-default",
+        kind: "profile-global",
         profileId: global.profile.id,
       }),
       expect.objectContaining({
@@ -96,14 +91,6 @@ describe("automatic instruction selection", () => {
         profileId: automatic.profile.id,
       }),
     ]);
-    expect(matched.allProfiles).toContainEqual(
-      expect.objectContaining({
-        kind: "profile-workspace",
-        profileId: automatic.profile.id,
-        status: "skipped",
-        reason: "DUPLICATE_INHERITED_ASSIGNMENT",
-      }),
-    );
     expect(matched.allProfiles).toContainEqual(
       expect.objectContaining({
         profileId: disabled.profile.id,
@@ -118,13 +105,32 @@ describe("automatic instruction selection", () => {
     expect(matched.renderedEnvelope).not.toContain(
       "This must not reach the prompt.",
     );
+    expect(
+      (await loadInstructionLibrary(libraryPath)).profiles.find(
+        (profile) => profile.id === global.profile.id,
+      ),
+    ).toMatchObject({ enabled: true, global: true });
 
-    await updateInstructionWorkspace(
-      registered.workspace.id,
-      { displayName: "Backend", tags: ["Angular", "Node.js"] },
-      { path: libraryPath, expectedRevision: 5 },
+    await expect(
+      configureInstructionWorkspace(
+        workspaceRoot,
+        {
+          tags: ["NestJS", "Node.js"],
+          profileIds: [automatic.profile.id],
+        },
+        { path: libraryPath, expectedRevision: 4 },
+      ),
+    ).rejects.toMatchObject({ code: "AUTOMATIC_PROFILE_ASSIGNMENT" });
+
+    await configureInstructionWorkspace(
+      workspaceRoot,
+      {
+        displayName: "Backend",
+        tags: ["Angular", "Node.js"],
+      },
+      { path: libraryPath, expectedRevision: 4 },
     );
-    const manualFallback = await resolveInstructionSet(
+    const unmatched = await resolveInstructionSet(
       {
         workspaceRoot,
         providerId: "anthropic",
@@ -133,13 +139,10 @@ describe("automatic instruction selection", () => {
       },
       { libraryPath },
     );
-    expect(manualFallback.selectedSources).toContainEqual(
-      expect.objectContaining({
-        kind: "profile-workspace",
-        profileId: automatic.profile.id,
-      }),
+    expect(unmatched.selectedSources).not.toContainEqual(
+      expect.objectContaining({ profileId: automatic.profile.id }),
     );
-    expect(manualFallback.allProfiles).toContainEqual(
+    expect(unmatched.allProfiles).toContainEqual(
       expect.objectContaining({
         kind: "profile-auto",
         reason: "TAG_RULE_NOT_MATCHED",

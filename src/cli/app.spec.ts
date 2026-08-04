@@ -167,7 +167,7 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("supports desktop bridge JSON one-shot invocations with --task", () => {
+  it("supports desktop bridge JSON one-shot invocations with a stdin task", () => {
     expect(
       parseCliArgs(
         [
@@ -177,7 +177,7 @@ describe("parseCliArgs", () => {
           "--cwd",
           "C:/workspace",
           "--task",
-          "How is the weather?",
+          "-",
         ],
         {
           currentWorkingDirectory: "C:/fallback",
@@ -185,7 +185,7 @@ describe("parseCliArgs", () => {
       ),
     ).toEqual({
       command: "run",
-      task: "How is the weather?",
+      task: "-",
       json: true,
       verbose: true,
       workspaceRoot: "C:/workspace",
@@ -505,7 +505,15 @@ describe("parseCliArgs", () => {
 
     expect(
       parseCliArgs(
-        ["mcp", "cleanup", "--unused-days", "45", "--never-used-days", "7", "--apply"],
+        [
+          "mcp",
+          "cleanup",
+          "--unused-days",
+          "45",
+          "--never-used-days",
+          "7",
+          "--apply",
+        ],
         {
           currentWorkingDirectory: "C:/workspace",
         },
@@ -611,16 +619,21 @@ describe("parseCliArgs", () => {
       workspaceRoot: "C:/repo",
     });
 
+    expect(() =>
+      parseCliArgs(["instructions", "assignments", "set-defaults"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrowError(/Unknown instruction command/u);
+
     expect(
       parseCliArgs(
         [
           "instructions",
-          "assignments",
-          "set-defaults",
-          "--profile",
-          "11111111-1111-4111-8111-111111111111",
-          "--expected-revision",
-          "2",
+          "workspaces",
+          "configure",
+          "C:/repo",
+          "--metadata-json",
+          '{"tags":["typescript"],"profileIds":[]}',
         ],
         {
           currentWorkingDirectory: "C:/workspace",
@@ -629,35 +642,15 @@ describe("parseCliArgs", () => {
     ).toEqual({
       command: "instructions",
       instructions: {
-        action: "assignment-set-defaults",
-        group: "assignments",
-        profileIds: ["11111111-1111-4111-8111-111111111111"],
-        expectedRevision: 2,
+        action: "workspace-configure",
+        group: "workspaces",
+        subject: "C:/repo",
+        metadataJson: '{"tags":["typescript"],"profileIds":[]}',
       },
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
     });
-
-    expect(
-      parseCliArgs(
-        ["instructions", "local", "show", "packages/core"],
-        {
-          currentWorkingDirectory: "C:/workspace",
-        },
-      ),
-    ).toEqual({
-      command: "instructions",
-      instructions: {
-        action: "local-show",
-        group: "local",
-        subject: "packages/core",
-      },
-      json: false,
-      verbose: false,
-      workspaceRoot: "C:/workspace",
-    });
-
   });
 
   it("parses Ralph flow commands", () => {
@@ -951,7 +944,7 @@ describe("parseCliArgs", () => {
           "--prompt",
           "/daily-review",
           "--context-pack",
-          "{\"name\":\"release\"}",
+          '{"name":"release"}',
           "--macro",
           "/triage --fast",
           "--missed-run-policy",
@@ -1000,7 +993,7 @@ describe("parseCliArgs", () => {
         cron: "0 9 * * *",
         timezone: "Europe/Berlin",
         prompt: "/daily-review",
-        contextPacks: ["{\"name\":\"release\"}"],
+        contextPacks: ['{"name":"release"}'],
         macros: ["/triage --fast"],
         missedRunPolicy: "enqueue-all",
         missedRunGraceMs: 60000,
@@ -1202,7 +1195,7 @@ describe("parseCliArgs", () => {
           "--event-source",
           "test",
           "--event-payload-json",
-          "{\"path\":\"invoices/june.pdf\"}",
+          '{"path":"invoices/june.pdf"}',
           "--event-dedupe-key",
           "file:june",
           "--event-occurred-at",
@@ -1219,7 +1212,7 @@ describe("parseCliArgs", () => {
         eventType: "workspace-file.created",
         eventKind: "workspace-file",
         eventSource: "test",
-        eventPayloadJson: "{\"path\":\"invoices/june.pdf\"}",
+        eventPayloadJson: '{"path":"invoices/june.pdf"}',
         eventDedupeKey: "file:june",
         eventOccurredAt: 1000,
       },
@@ -1262,10 +1255,7 @@ describe("parseCliArgs", () => {
   it("treats a conversation context file as sufficient to enter interactive chat mode", () => {
     expect(
       parseCliArgs(
-        [
-          "--conversation-context-file",
-          "C:/workspace/.machdoch/context.json",
-        ],
+        ["--conversation-context-file", "C:/workspace/.machdoch/context.json"],
         {
           currentWorkingDirectory: "C:/workspace",
         },
@@ -1409,7 +1399,9 @@ describe("parseCliArgs", () => {
       parseCliArgs(["--executor-turns", "0", "run", "inspect", "config"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("Expected --executor-turns to be followed by a positive integer.");
+    ).toThrow(
+      "Expected --executor-turns to be followed by a positive integer.",
+    );
 
     expect(() =>
       parseCliArgs(["--infinite", "--executor-turns", "128"], {
@@ -1458,7 +1450,9 @@ describe("parseCliArgs", () => {
       parseCliArgs(["ralph", "resume", "run-1"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("`machdoch ralph resume` expects --input-json, --input-json-file, or --retry-current.");
+    ).toThrow(
+      "`machdoch ralph resume` expects --input-json, --input-json-file, or --retry-current.",
+    );
 
     expect(() =>
       parseCliArgs(
@@ -1474,7 +1468,9 @@ describe("parseCliArgs", () => {
           currentWorkingDirectory: "C:/workspace",
         },
       ),
-    ).toThrow("Use either --retry-current or an input response for `machdoch ralph resume`, not both.");
+    ).toThrow(
+      "Use either --retry-current or an input response for `machdoch ralph resume`, not both.",
+    );
 
     expect(() =>
       parseCliArgs(["ralph", "create", "template"], {
@@ -1534,11 +1530,21 @@ describe("parseCliArgs", () => {
       parseCliArgs(["ralph", "run", "template", "--flow-target", "refactor"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("--flow-target is only valid for `machdoch ralph create` or `machdoch ralph interview`.");
+    ).toThrow(
+      "--flow-target is only valid for `machdoch ralph create` or `machdoch ralph interview`.",
+    );
 
     expect(() =>
       parseCliArgs(
-        ["ralph", "create", "template", "--prompt", "x", "--flow-target", "bad"],
+        [
+          "ralph",
+          "create",
+          "template",
+          "--prompt",
+          "x",
+          "--flow-target",
+          "bad",
+        ],
         {
           currentWorkingDirectory: "C:/workspace",
         },
@@ -1562,7 +1568,9 @@ describe("parseCliArgs", () => {
           currentWorkingDirectory: "C:/workspace",
         },
       ),
-    ).toThrow("Expected --generation-mode to be followed by do-it or interview.");
+    ).toThrow(
+      "Expected --generation-mode to be followed by do-it or interview.",
+    );
 
     expect(() =>
       parseCliArgs(["ralph", "list", "--scope", "compatibility"], {
@@ -1574,7 +1582,9 @@ describe("parseCliArgs", () => {
       parseCliArgs(["ralph", "watches", "create"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("`machdoch ralph watches create` expects --watch-json or --watch-json-file.");
+    ).toThrow(
+      "`machdoch ralph watches create` expects --watch-json or --watch-json-file.",
+    );
 
     expect(() =>
       parseCliArgs(["ralph", "watches", "delete"], {
@@ -1670,7 +1680,9 @@ describe("formatExecutionProgressLines", () => {
 describe("createUserConfigSummaryLines", () => {
   it("prints the resolved user config path", () => {
     expect(
-      createUserConfigSummaryLines("/home/ane/.config/machdoch/user-config.json"),
+      createUserConfigSummaryLines(
+        "/home/ane/.config/machdoch/user-config.json",
+      ),
     ).toEqual(["user config: /home/ane/.config/machdoch/user-config.json"]);
   });
 

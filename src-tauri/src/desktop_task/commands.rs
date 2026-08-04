@@ -50,6 +50,18 @@ fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, S
     })
 }
 
+fn is_expected_cancelled_desktop_task_response(
+    exit_code: Option<i32>,
+    response: &DesktopTaskRunResponse,
+) -> bool {
+    exit_code == Some(130)
+        && response
+            .execution
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            == Some("cancelled")
+}
+
 fn resolve_media_asset_reference_paths(
     app_handle: &tauri::AppHandle,
     workspace_path: &Path,
@@ -107,6 +119,7 @@ fn resolve_media_asset_reference_paths(
 fn stop_shared_cli_after_wait_error(
     error: io::Error,
     child: &mut Child,
+    input_worker: JoinHandle<Result<(), String>>,
     stdout_worker: JoinHandle<Result<String, String>>,
     stderr_worker: JoinHandle<Result<Vec<String>, String>>,
     conversation_context_path: Option<&PathBuf>,
@@ -114,8 +127,12 @@ fn stop_shared_cli_after_wait_error(
     terminate_child_process_tree(child);
     let _ = child.wait();
 
-    let cleanup_result =
-        join_cli_output_and_cleanup(stdout_worker, stderr_worker, conversation_context_path);
+    let cleanup_result = join_cli_io_and_cleanup(
+        input_worker,
+        stdout_worker,
+        stderr_worker,
+        conversation_context_path,
+    );
     let message = format!("Failed to wait for the shared CLI to finish: {error}");
 
     match cleanup_result {
@@ -124,6 +141,54 @@ fn stop_shared_cli_after_wait_error(
             format!("{message}. Additionally failed to collect shared CLI output during cleanup: {cleanup_error}")
         }
     }
+}
+
+struct JoinedCliIo {
+    stdout: String,
+    stderr: String,
+    input_error: Option<String>,
+}
+
+fn join_cli_io_and_cleanup(
+    input_worker: JoinHandle<Result<(), String>>,
+    stdout_worker: JoinHandle<Result<String, String>>,
+    stderr_worker: JoinHandle<Result<Vec<String>, String>>,
+    conversation_context_path: Option<&PathBuf>,
+) -> Result<JoinedCliIo, String> {
+    let input_error = input_worker
+        .join()
+        .map_err(|_| "The shared CLI input worker stopped unexpectedly.".to_string())
+        .and_then(|result| result)
+        .err();
+    let (stdout, stderr) =
+        join_cli_output_and_cleanup(stdout_worker, stderr_worker, conversation_context_path)?;
+    Ok(JoinedCliIo {
+        stdout,
+        stderr,
+        input_error,
+    })
+}
+
+fn write_cli_task(mut destination: impl io::Write, task: &[u8]) -> Result<(), String> {
+    destination
+        .write_all(task)
+        .and_then(|()| destination.flush())
+        .map_err(|error| format!("Failed to write the task to shared CLI stdin: {error}"))
+}
+
+const MAX_STDIN_TASK_BYTES: usize = 64 * 1024 * 1024;
+
+fn normalize_desktop_task_input(task: &str, max_bytes: usize) -> Result<&str, String> {
+    if task.len() > max_bytes {
+        return Err(format!(
+            "Task input exceeds the {max_bytes}-byte desktop limit."
+        ));
+    }
+    let normalized = task.trim();
+    if normalized.is_empty() {
+        return Err("Expected a non-empty task before running the desktop executor.".to_string());
+    }
+    Ok(normalized)
 }
 
 pub(super) fn execute_desktop_task(
@@ -157,11 +222,7 @@ pub(super) fn execute_desktop_task(
         return Err("A desktop task can attach at most 20 images.".to_string());
     }
 
-    let normalized_task = task.trim();
-
-    if normalized_task.is_empty() {
-        return Err("Expected a non-empty task before running the desktop executor.".to_string());
-    }
+    let normalized_task = normalize_desktop_task_input(&task, MAX_STDIN_TASK_BYTES)?;
 
     let normalized_provider = normalize_optional_string(provider.as_deref());
     let normalized_mode = normalize_optional_string(mode.as_deref());
@@ -175,7 +236,6 @@ pub(super) fn execute_desktop_task(
 
     let cli_args = build_cli_args(CliCommandOptions {
         workspace_root: &normalized_workspace_root,
-        task: normalized_task,
         mode: normalized_mode.as_deref(),
         provider: normalized_provider.as_deref(),
         model: normalized_model.as_deref(),
@@ -183,7 +243,11 @@ pub(super) fn execute_desktop_task(
         conversation_context_file: conversation_context_path.as_deref(),
         image_paths: &resolved_image_paths,
     });
-    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
+    let mut cli_command =
+        crate::shared_cli::create_shared_cli_command(&cli_args).map_err(|error| {
+            cleanup_temporary_file(conversation_context_path.as_ref());
+            error
+        })?;
 
     cli_command
         .command
@@ -195,6 +259,7 @@ pub(super) fn execute_desktop_task(
                 "false"
             },
         )
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -224,6 +289,18 @@ pub(super) fn execute_desktop_task(
         cleanup_temporary_file(conversation_context_path.as_ref());
         error
     })?;
+
+    let stdin = match child.stdin.take() {
+        Some(stdin) => stdin,
+        None => {
+            terminate_child_process_tree(&mut child);
+            let _ = child.wait();
+            cleanup_temporary_file(conversation_context_path.as_ref());
+            return Err(
+                "The shared CLI did not expose a stdin stream for the desktop bridge.".to_string(),
+            );
+        }
+    };
 
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
@@ -255,6 +332,8 @@ pub(super) fn execute_desktop_task(
 
     let activity = create_desktop_task_activity();
     let stderr_activity = activity.clone();
+    let task_input = normalized_task.as_bytes().to_vec();
+    let input_worker = thread::spawn(move || write_cli_task(stdin, &task_input));
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
     let stderr_worker = thread::spawn(move || {
         read_stderr(stderr, app_handle, window_label, task_id, stderr_activity)
@@ -267,6 +346,7 @@ pub(super) fn execute_desktop_task(
                 return Err(stop_shared_cli_after_wait_error(
                     error,
                     &mut child,
+                    input_worker,
                     stdout_worker,
                     stderr_worker,
                     conversation_context_path.as_ref(),
@@ -290,13 +370,14 @@ pub(super) fn execute_desktop_task(
                     terminate_child_process_tree(&mut child);
                     let _ = child.wait();
 
-                    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+                    let io = join_cli_io_and_cleanup(
+                        input_worker,
                         stdout_worker,
                         stderr_worker,
                         conversation_context_path.as_ref(),
                     )?;
 
-                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    let failure_tail = format_command_failure(&io.stderr, &io.stdout);
                     return Err(format!("The task was cancelled. {}", failure_tail));
                 }
 
@@ -319,13 +400,14 @@ pub(super) fn execute_desktop_task(
                     terminate_child_process_tree(&mut child);
                     let _ = child.wait();
 
-                    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+                    let io = join_cli_io_and_cleanup(
+                        input_worker,
                         stdout_worker,
                         stderr_worker,
                         conversation_context_path.as_ref(),
                     )?;
 
-                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    let failure_tail = format_command_failure(&io.stderr, &io.stdout);
                     return Err(format!(
                         "The shared CLI produced no structured progress for {} and was stopped. {}",
                         format_timeout_duration(DESKTOP_TASK_IDLE_TIMEOUT_MS),
@@ -337,14 +419,35 @@ pub(super) fn execute_desktop_task(
             }
         }
     };
-    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+    let io = join_cli_io_and_cleanup(
+        input_worker,
         stdout_worker,
         stderr_worker,
         conversation_context_path.as_ref(),
     )?;
+    if let Some(input_error) = io.input_error {
+        return Err(format!(
+            "{input_error} {}",
+            format_command_failure(&io.stderr, &io.stdout)
+        ));
+    }
+    let stdout_text = io.stdout;
+    let stderr_text = io.stderr;
 
-    if !stdout_text.trim().is_empty() {
-        if let Ok(mut response) = parse_desktop_task_response(&stdout_text) {
+    let parsed_response = if stdout_text.trim().is_empty() {
+        None
+    } else {
+        parse_desktop_task_response(&stdout_text).ok()
+    };
+
+    if !status.success() {
+        if let Some(mut response) = parsed_response {
+            if !is_expected_cancelled_desktop_task_response(status.code(), &response) {
+                return Err(format!(
+                    "The shared CLI could not complete the task. {}",
+                    format_command_failure(&stderr_text, &stdout_text)
+                ));
+            }
             if let Err(error) = super::file_changes::persist_response(
                 &storage_app_handle,
                 storage_task_id.as_deref(),
@@ -354,16 +457,16 @@ pub(super) fn execute_desktop_task(
             }
             return Ok(response);
         }
-    }
-
-    if !status.success() {
         return Err(format!(
             "The shared CLI could not complete the task. {}",
             format_command_failure(&stderr_text, &stdout_text)
         ));
     }
 
-    let mut response = parse_desktop_task_response(&stdout_text)?;
+    let mut response = match parsed_response {
+        Some(response) => response,
+        None => parse_desktop_task_response(&stdout_text)?,
+    };
     if let Err(error) = super::file_changes::persist_response(
         &storage_app_handle,
         storage_task_id.as_deref(),
@@ -385,11 +488,38 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{parse_desktop_task_response, stop_shared_cli_after_wait_error};
+    use super::{
+        is_expected_cancelled_desktop_task_response, normalize_desktop_task_input,
+        parse_desktop_task_response, stop_shared_cli_after_wait_error, write_cli_task,
+    };
     use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
     use crate::desktop_task::payload::write_conversation_context_file;
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_DESKTOP_TASK_WAIT_ERROR_TEST_CHILD_MODE";
+
+    #[test]
+    fn desktop_task_stdin_preserves_large_multiline_utf8_content() {
+        let task = format!("{}final ünicode line", "first line\n".repeat(40_000));
+        let mut output = Vec::new();
+
+        write_cli_task(&mut output, task.as_bytes()).expect("task write should succeed");
+
+        assert_eq!(output, task.as_bytes());
+    }
+
+    #[test]
+    fn desktop_task_input_limit_counts_discarded_whitespace() {
+        assert_eq!(
+            normalize_desktop_task_input("  task  ", 8).expect("bounded task should normalize"),
+            "task"
+        );
+        assert!(normalize_desktop_task_input("     task", 8)
+            .expect_err("raw oversized padding must be rejected")
+            .contains("8-byte"));
+        assert!(normalize_desktop_task_input(" \r\n ", 8)
+            .expect_err("blank task must be rejected")
+            .contains("non-empty"));
+    }
 
     #[test]
     fn desktop_task_wait_error_cleanup_child_entrypoint() {
@@ -441,6 +571,7 @@ mod tests {
         let error = stop_shared_cli_after_wait_error(
             io::Error::new(io::ErrorKind::Other, "simulated wait failure"),
             &mut child,
+            thread::spawn(|| Ok(())),
             stdout_worker,
             stderr_worker,
             Some(&context_path),
@@ -459,5 +590,26 @@ mod tests {
         assert!(error.contains("Failed to parse the shared CLI JSON response"));
         assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
         assert!(error.len() < 18 * 1024);
+    }
+
+    #[test]
+    fn only_cancelled_responses_may_survive_a_nonzero_cli_exit() {
+        let cancelled = parse_desktop_task_response(r#"{"execution":{"status":"cancelled"}}"#)
+            .expect("cancelled fixture should parse");
+        let executed = parse_desktop_task_response(r#"{"execution":{"status":"executed"}}"#)
+            .expect("executed fixture should parse");
+
+        assert!(is_expected_cancelled_desktop_task_response(
+            Some(130),
+            &cancelled
+        ));
+        assert!(!is_expected_cancelled_desktop_task_response(
+            Some(1),
+            &cancelled
+        ));
+        assert!(!is_expected_cancelled_desktop_task_response(
+            Some(130),
+            &executed
+        ));
     }
 }

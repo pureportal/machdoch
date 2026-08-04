@@ -124,7 +124,7 @@ export const createCliInstructionCapabilityFromProbe = (
         "run-scoped CODEX_HOME config.toml developer_instructions with project configuration disabled",
       evidence: [
         ...base.evidence,
-        "The adapter writes the complete developer instructions to the isolated CODEX_HOME config.toml and marks the invocation workspace and its ancestors untrusted there, so project-local configuration cannot override them.",
+        "The adapter writes the complete developer instructions to the isolated CODEX_HOME config.toml and marks the invocation workspace and its ancestors untrusted there, so provider-native project configuration cannot override them.",
         "Only bounded control settings are passed through --config; request and instruction content are never placed on the command line.",
       ],
     };

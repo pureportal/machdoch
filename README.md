@@ -294,14 +294,14 @@ Marketplace listings are third-party content, not an endorsement. An MCP server 
 
 These features help keep recurring work consistent:
 
-| Term                | Meaning                                                                                                                                                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Session memory      | Facts saved for the current conversation.                                                                                                                                                                                                        |
-| Global memory       | Optional facts that can be reused in later sessions when both global and session memory are enabled. **Settings > Memory** shows every saved global fact and lets you disable global memory; `machdoch memory list` does the same in a terminal. |
-| Instruction profile | Reusable guidance assigned globally, to a workspace, or to a folder. Machdoch can also follow local `AGENTS.md` guidance found in the selected workspace.                                                                                        |
-| Context pack        | A reusable bundle of instructions, a prompt, attachments, variables, and optional matching rules. Packs can be workspace-specific or global.                                                                                                     |
+| Term             | Meaning                                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Session memory   | Facts saved for the current conversation.                                                                                                                                                                                                        |
+| Global memory    | Optional facts that can be reused in later sessions when both global and session memory are enabled. **Settings > Memory** shows every saved global fact and lets you disable global memory; `machdoch memory list` does the same in a terminal. |
+| Instruction file | Reusable Markdown guidance stored centrally and applied globally, by workspace tags, or by manual workspace selection. Repository instruction files are not Machdoch instruction sources.                                                        |
+| Context pack     | A reusable bundle of instructions, a prompt, attachments, variables, and optional matching rules. Packs can be workspace-specific or global.                                                                                                     |
 
-Keep global memory limited to stable, non-sensitive facts. Instruction profiles, prompts, context packs, and imported flows can contain private information or unsafe directions. Review them before use. Creating or editing workspace-local guidance changes files in that workspace.
+Keep global memory limited to stable, non-sensitive facts. Instruction files, prompts, context packs, and imported flows can contain private information or unsafe directions. Review them before use.
 
 ### Web search, Quick Chat, and voice
 
@@ -350,7 +350,6 @@ The desktop **Settings** window is the easiest place to configure the app:
 | Providers         | API keys for chat, media, voice, and speech providers.                                                                                      |
 | Workspace         | Default Ask/Machdoch mode and reasoning level for the selected workspace.                                                                   |
 | Agent limits      | Limits on how long a task can continue, optional unlimited runs, and a separate model for reviewing work.                                   |
-| Instructions      | Profiles, assignments, prompts, local guidance, and previews.                                                                               |
 | Memory            | Global-memory status and the complete list of saved global facts.                                                                           |
 | Web search        | Search provider and matching credential.                                                                                                    |
 | Voice             | AI voice, speech-to-text, microphone, system voice, reply behavior, and speech rate.                                                        |
@@ -358,6 +357,10 @@ The desktop **Settings** window is the easiest place to configure the app:
 | Appearance        | Dark or light theme, comfortable or compact density, accent, and Quick Chat bubble style.                                                   |
 | Desktop & startup | Launch on sign-in, tray behavior, Windows elevation, session retention, context size, Quick Chat shortcut, and local cache/session cleanup. |
 | Settings transfer | Nearby encrypted transfer and passphrase-encrypted file export/import.                                                                      |
+
+Manage central instruction files in **Instructions** and workspace tags and
+manual assignments in **Workspaces**. Instruction files are not part of
+Settings transfer.
 
 ### Session, workspace, and user settings
 

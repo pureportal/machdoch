@@ -4,6 +4,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   symlink,
@@ -19,31 +20,28 @@ import {
   createInstructionDeliveryPlan,
   createInstructionDeliveryReceipt,
   createInstructionProfile,
-  createLocalInstruction,
   deleteInstructionProfile,
-  deleteLocalInstruction,
-  discoverLocalInstructions,
   duplicateInstructionProfile,
   explainInstructionResolution,
   exportInstructionLibrary,
   exportInstructionLibraryRecoveryBackup,
   importInstructionLibrary,
   inspectInstructionLibraryRecovery,
+  INSTRUCTION_LIBRARY_SCHEMA_VERSION,
   inventoryNativeInstructions,
   loadInstructionLibrary,
   mutateInstructionLibrary,
-  normalizeScopePath,
+  parseInstructionLibrary,
   profileNameKey,
   recoverInstructionLibraryFromBackup,
+  removeInstructionWorkspaceConfiguration,
   relinkInstructionWorkspace,
   resetCorruptInstructionLibrary,
-  registerInstructionWorkspace,
+  configureInstructionWorkspace,
   resolveInstructionSet,
-  setDefaultInstructionProfiles,
   setWorkspaceInstructionScope,
   sha256,
   updateInstructionProfile,
-  updateLocalInstruction,
 } from "./index.js";
 
 const roots: string[] = [];
@@ -107,12 +105,12 @@ describe("instruction profiles and assignments", () => {
       },
       { path: first.libraryPath },
     );
-    const firstBinding = await registerInstructionWorkspace(
+    const firstBinding = await configureInstructionWorkspace(
       first.workspace,
       {},
       { path: first.libraryPath, expectedRevision: 1 },
     );
-    const secondBinding = await registerInstructionWorkspace(
+    const secondBinding = await configureInstructionWorkspace(
       secondWorkspace,
       {},
       { path: first.libraryPath, expectedRevision: 2 },
@@ -150,30 +148,149 @@ describe("instruction profiles and assignments", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("applies defaults to unregistered workspaces without negative exceptions", async () => {
+  it("always applies global files without workspace configuration", async () => {
     const fixture = await createTestRoot();
     const created = await createInstructionProfile(
-      { name: "Global", body: "Apply everywhere." },
+      { name: "Global", body: "Apply everywhere.", global: true },
       { path: fixture.libraryPath },
     );
-    await setDefaultInstructionProfiles([created.profile.id], {
-      path: fixture.libraryPath,
-      expectedRevision: 1,
-    });
 
     const resolution = await resolve(fixture.workspace, fixture.libraryPath);
-    expect(resolution.workspaceRegistered).toBe(false);
     expect(resolution.selectedSources).toEqual([
       expect.objectContaining({
-        kind: "profile-default",
+        kind: "profile-global",
         profileId: created.profile.id,
         scopePath: ".",
         body: "Apply everywhere.",
       }),
     ]);
-    expect(resolution.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "WORKSPACE_NOT_REGISTERED" }),
+    expect(resolution.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "WORKSPACE_NOT_CONFIGURED" }),
     );
+  });
+
+  it("rejects legacy library catalogs and missing required settings", () => {
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: 1,
+        revision: 0,
+        profiles: [],
+        defaults: { profiles: [] },
+        workspaces: [],
+      }),
+    ).toThrowError(/schema version 2/u);
+
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+        revision: 0,
+        profiles: [],
+        defaults: { profiles: [] },
+        workspaces: [],
+      }),
+    ).toThrowError(/unsupported fields: defaults/u);
+
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+        revision: 0,
+        profiles: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "Incomplete",
+            body: "Missing tags.",
+            enabled: true,
+            global: false,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        workspaces: [],
+      }),
+    ).toThrowError(/tags is required/u);
+
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+        revision: 0,
+        profiles: [],
+        workspaces: [
+          {
+            id: "00000000-0000-4000-8000-000000000002",
+            root: join(tmpdir(), "machdoch-legacy-identity-hints"),
+            identityHints: { repositoryId: "legacy" },
+            tags: [],
+            scopes: [],
+          },
+        ],
+      }),
+    ).toThrowError(/unsupported fields: identityHints/u);
+  });
+
+  it("rejects instruction text that cannot be transported as exact UTF-8", async () => {
+    const fixture = await createTestRoot();
+
+    await expect(
+      createInstructionProfile(
+        { name: "Invalid Unicode", body: "invalid\ud800body" },
+        { path: fixture.libraryPath },
+      ),
+    ).rejects.toMatchObject({ code: "INSTRUCTION_INVALID_UNICODE" });
+  });
+
+  it("rejects persisted automatic or overlapping manual assignments", () => {
+    const profile = {
+      id: "00000000-0000-4000-8000-000000000001",
+      name: "Automatic",
+      body: "Matched by tag.",
+      enabled: true,
+      global: false,
+      tags: [],
+      match: { op: "tag", tag: "TypeScript" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as const;
+    const workspace = {
+      id: "00000000-0000-4000-8000-000000000002",
+      root: join(tmpdir(), "machdoch-strict-workspace"),
+      tags: ["TypeScript"],
+      scopes: [{ path: ".", profiles: [profile.id] }],
+    };
+
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+        revision: 0,
+        profiles: [profile],
+        workspaces: [workspace],
+      }),
+    ).toThrowError(/tag-matched profile/u);
+
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+        revision: 0,
+        profiles: [{ ...profile, match: undefined }],
+        workspaces: [
+          {
+            ...workspace,
+            scopes: [
+              { path: ".", profiles: [profile.id] },
+              { path: "apps/web", profiles: [profile.id] },
+            ],
+          },
+        ],
+      }),
+    ).toThrowError(/overlapping scopes/u);
+
+    expect(() =>
+      parseInstructionLibrary({
+        schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+        revision: 0,
+        profiles: [{ ...profile, match: undefined }],
+        workspaces: [{ ...workspace, scopes: [{ path: ".", profiles: [] }] }],
+      }),
+    ).toThrowError(/Remove the empty scope/u);
   });
 
   it("blocks redundant new references, stale edits, and deletion of assigned profiles", async () => {
@@ -183,7 +300,7 @@ describe("instruction profiles and assignments", () => {
       { name: "Shared", body: "Shared policy." },
       { path: fixture.libraryPath },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 1 },
@@ -225,6 +342,38 @@ describe("instruction profiles and assignments", () => {
     ).rejects.toMatchObject({ code: "PROFILE_IS_ASSIGNED" });
   });
 
+  it("removes saved workspace configuration only after assigned files are confirmed", async () => {
+    const fixture = await createTestRoot();
+    const created = await createInstructionProfile(
+      { name: "Workspace file", body: "Apply manually." },
+      { path: fixture.libraryPath },
+    );
+    const configured = await configureInstructionWorkspace(
+      fixture.workspace,
+      { tags: ["TypeScript"], profileIds: [created.profile.id] },
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+
+    await expect(
+      removeInstructionWorkspaceConfiguration(configured.workspace.id, {
+        path: fixture.libraryPath,
+        expectedRevision: 2,
+      }),
+    ).rejects.toMatchObject({
+      code: "WORKSPACE_ASSIGNMENT_REMOVAL_CONFIRMATION_REQUIRED",
+    });
+
+    const removed = await removeInstructionWorkspaceConfiguration(
+      configured.workspace.id,
+      {
+        path: fixture.libraryPath,
+        expectedRevision: 2,
+        confirmAssignedRemoval: true,
+      },
+    );
+    expect(removed.library.workspaces).toEqual([]);
+  });
+
   it("duplicates only on an explicit duplicate action and exports roots as unbound records", async () => {
     const fixture = await createTestRoot();
     const created = await createInstructionProfile(
@@ -236,7 +385,7 @@ describe("instruction profiles and assignments", () => {
       "Intentional copy",
       { path: fixture.libraryPath, expectedRevision: 1 },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 2 },
@@ -267,10 +416,60 @@ describe("instruction profiles and assignments", () => {
       name: "Global copy",
       global: false,
     });
-    expect(duplicate.library.defaults.profiles).toEqual([created.profile.id]);
+    expect(
+      duplicate.library.profiles.find(
+        (profile) => profile.id === created.profile.id,
+      ),
+    ).toMatchObject({ global: true, enabled: true });
     await expect(loadInstructionLibrary(fixture.libraryPath)).resolves.toEqual(
       duplicate.library,
     );
+  });
+
+  it("duplicates tag-matched profiles as unassigned files", async () => {
+    const fixture = await createTestRoot();
+    const created = await createInstructionProfile(
+      {
+        name: "Automatic",
+        body: "Apply to tagged workspaces.",
+        match: { op: "tag", tag: "TypeScript" },
+      },
+      { path: fixture.libraryPath },
+    );
+    const duplicate = await duplicateInstructionProfile(
+      created.profile.id,
+      undefined,
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+
+    expect(duplicate.profile).toMatchObject({
+      name: "Automatic copy",
+      global: false,
+    });
+    expect(duplicate.profile).not.toHaveProperty("match");
+  });
+
+  it("generates unique bounded names for repeated default duplicates", async () => {
+    const fixture = await createTestRoot();
+    const created = await createInstructionProfile(
+      { name: "😀".repeat(200), body: "Duplicate safely." },
+      { path: fixture.libraryPath },
+    );
+    const first = await duplicateInstructionProfile(
+      created.profile.id,
+      undefined,
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+    const second = await duplicateInstructionProfile(
+      created.profile.id,
+      undefined,
+      { path: fixture.libraryPath, expectedRevision: 2 },
+    );
+
+    expect(first.profile.name).toBe(`${"😀".repeat(195)} copy`);
+    expect(second.profile.name).toBe(`${"😀".repeat(193)} copy 2`);
+    expect(Array.from(first.profile.name)).toHaveLength(200);
+    expect(Array.from(second.profile.name)).toHaveLength(200);
   });
 
   it("applies schema length limits by Unicode code point", async () => {
@@ -288,6 +487,59 @@ describe("instruction profiles and assignments", () => {
         { path: fixture.libraryPath, expectedRevision: 1 },
       ),
     ).rejects.toMatchObject({ code: "PROFILE_NAME_TOO_LONG" });
+    await expect(
+      createInstructionProfile(
+        { name: "Invalid\nname", body: "Control character." },
+        { path: fixture.libraryPath, expectedRevision: 1 },
+      ),
+    ).rejects.toMatchObject({ code: "PROFILE_NAME_INVALID" });
+  });
+
+  it("removes an optional description when it is cleared", async () => {
+    const fixture = await createTestRoot();
+    const created = await createInstructionProfile(
+      { name: "Described", description: "Optional", body: "Body." },
+      { path: fixture.libraryPath },
+    );
+    const updated = await updateInstructionProfile(
+      created.profile.id,
+      { description: "  " },
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+
+    expect(updated.library.profiles[0]).not.toHaveProperty("description");
+    await expect(
+      updateInstructionProfile(
+        created.profile.id,
+        { description: "Terminal\u001b[31mcontrol" },
+        { path: fixture.libraryPath, expectedRevision: 2 },
+      ),
+    ).rejects.toMatchObject({ code: "INSTRUCTION_LIBRARY_INVALID" });
+  });
+
+  it("normalizes workspace names and rejects empty or control-character names", async () => {
+    const fixture = await createTestRoot();
+    const configured = await configureInstructionWorkspace(
+      fixture.workspace,
+      { displayName: "  Ｗorkspace  " },
+      { path: fixture.libraryPath },
+    );
+    expect(configured.workspace.displayName).toBe("Workspace");
+
+    await expect(
+      configureInstructionWorkspace(
+        fixture.workspace,
+        { displayName: "Workspace\nname" },
+        { path: fixture.libraryPath, expectedRevision: 1 },
+      ),
+    ).rejects.toMatchObject({ code: "INSTRUCTION_LIBRARY_INVALID" });
+    await expect(
+      configureInstructionWorkspace(
+        fixture.workspace,
+        { displayName: "   " },
+        { path: fixture.libraryPath, expectedRevision: 1 },
+      ),
+    ).rejects.toMatchObject({ code: "INSTRUCTION_LIBRARY_INVALID" });
   });
 
   it("relinks only when every retained assigned scope exists at the new root", async () => {
@@ -301,7 +553,7 @@ describe("instruction profiles and assignments", () => {
       { name: "Scoped", body: "Scoped profile." },
       { path: fixture.libraryPath },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 1 },
@@ -352,11 +604,11 @@ describe("instruction profiles and assignments", () => {
 });
 
 describe("deterministic resolution and composition", () => {
-  it("orders defaults, assignments, local files, deeper scopes, and flow guidance exactly", async () => {
+  it("orders global, manual, deeper-scope, and flow instructions exactly", async () => {
     const fixture = await createTestRoot();
     await mkdir(join(fixture.workspace, "apps", "web"), { recursive: true });
-    const global = await createInstructionProfile(
-      { name: "Global", body: "Global policy." },
+    await createInstructionProfile(
+      { name: "Global", body: "Global policy.", global: true },
       { path: fixture.libraryPath },
     );
     const root = await createInstructionProfile(
@@ -367,34 +619,23 @@ describe("deterministic resolution and composition", () => {
       { name: "Web", body: "Web profile policy." },
       { path: fixture.libraryPath, expectedRevision: 2 },
     );
-    await setDefaultInstructionProfiles([global.profile.id], {
-      path: fixture.libraryPath,
-      expectedRevision: 3,
-    });
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
-      { path: fixture.libraryPath, expectedRevision: 4 },
+      { path: fixture.libraryPath, expectedRevision: 3 },
     );
     await setWorkspaceInstructionScope(
       registered.workspace.id,
       ".",
       [root.profile.id],
-      { path: fixture.libraryPath, expectedRevision: 5 },
+      { path: fixture.libraryPath, expectedRevision: 4 },
     );
     await setWorkspaceInstructionScope(
       registered.workspace.id,
       "apps/web",
       [child.profile.id],
-      { path: fixture.libraryPath, expectedRevision: 6 },
+      { path: fixture.libraryPath, expectedRevision: 5 },
     );
-    await createLocalInstruction(fixture.workspace, ".", "Root local policy.");
-    await createLocalInstruction(
-      fixture.workspace,
-      "apps/web",
-      "Web local policy.",
-    );
-
     const resolution = await resolve(fixture.workspace, fixture.libraryPath, {
       model: "gpt-5.5",
       flow: { id: "build", guidance: "Flow guidance." },
@@ -406,11 +647,9 @@ describe("deterministic resolution and composition", () => {
         source.body,
       ]),
     ).toEqual([
-      ["profile-default", ".", "Global policy."],
+      ["profile-global", ".", "Global policy."],
       ["profile-workspace", ".", "Root profile policy."],
-      ["project-local", ".", "Root local policy."],
       ["profile-workspace", "apps/web", "Web profile policy."],
-      ["project-local", "apps/web", "Web local policy."],
       ["flow-guidance", ".", "Flow guidance."],
     ]);
     expect(Object.isFrozen(resolution)).toBe(true);
@@ -419,7 +658,9 @@ describe("deterministic resolution and composition", () => {
     );
     expect(
       resolution.renderedEnvelope.indexOf("Flow guidance."),
-    ).toBeGreaterThan(resolution.renderedEnvelope.indexOf("Web local policy."));
+    ).toBeGreaterThan(
+      resolution.renderedEnvelope.indexOf("Web profile policy."),
+    );
     await expect(
       resolve(fixture.workspace, fixture.libraryPath, {
         model: "gpt-5.5",
@@ -443,7 +684,7 @@ describe("deterministic resolution and composition", () => {
       { name: "Child", body: "Exact policy." },
       { path: fixture.libraryPath, expectedRevision: 2 },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 3 },
@@ -486,7 +727,7 @@ describe("deterministic resolution and composition", () => {
       { name: "Second", body: "Second body." },
       { path: fixture.libraryPath, expectedRevision: 1 },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 2 },
@@ -540,7 +781,7 @@ describe("deterministic resolution and composition", () => {
       { name: "Worker", body: "Worker policy." },
       { path: fixture.libraryPath, expectedRevision: 1 },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 2 },
@@ -579,7 +820,7 @@ describe("deterministic resolution and composition", () => {
       { name: "Web", body: "Web-only policy." },
       { path: fixture.libraryPath },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 1 },
@@ -605,16 +846,55 @@ describe("deterministic resolution and composition", () => {
     });
   });
 
+  it("blocks a configured scope whose parent was replaced by a directory link", async () => {
+    const fixture = await createTestRoot();
+    const scopeParent = join(fixture.workspace, "apps");
+    await mkdir(join(scopeParent, "web"), { recursive: true });
+    const profile = await createInstructionProfile(
+      { name: "Linked scope", body: "Web-only policy." },
+      { path: fixture.libraryPath },
+    );
+    const registered = await configureInstructionWorkspace(
+      fixture.workspace,
+      {},
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+    await setWorkspaceInstructionScope(
+      registered.workspace.id,
+      "apps/web",
+      [profile.profile.id],
+      { path: fixture.libraryPath, expectedRevision: 2 },
+    );
+
+    const linkedTarget = join(fixture.workspace, "linked-apps");
+    await rm(scopeParent, { recursive: true });
+    await mkdir(join(linkedTarget, "web"), { recursive: true });
+    try {
+      await symlink(
+        linkedTarget,
+        scopeParent,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    } catch {
+      // Link creation can be unavailable on locked-down Windows hosts.
+      return;
+    }
+
+    await expect(
+      resolve(fixture.workspace, fixture.libraryPath),
+    ).rejects.toMatchObject({ code: "ASSIGNED_SCOPE_INVALID" });
+  });
+
   it("blocks aggregate envelope overflow with complete contributor accounting and no truncation", async () => {
     const fixture = await createTestRoot();
     const profile = await createInstructionProfile(
-      { name: "Near source limit", body: "x".repeat(131_000) },
+      {
+        name: "Near source limit",
+        body: "x".repeat(131_000),
+        global: true,
+      },
       { path: fixture.libraryPath },
     );
-    await setDefaultInstructionProfiles([profile.profile.id], {
-      path: fixture.libraryPath,
-      expectedRevision: 1,
-    });
 
     await expect(
       resolve(fixture.workspace, fixture.libraryPath),
@@ -627,7 +907,7 @@ describe("deterministic resolution and composition", () => {
             truncation: "none",
             contributors: [
               expect.objectContaining({
-                sourceId: `profile-default:${profile.profile.id}`,
+                sourceId: `profile-global:${profile.profile.id}`,
                 byteLength: 131_000,
               }),
             ],
@@ -845,6 +1125,37 @@ describe("library recovery and import conflicts", () => {
     ).toBe(false);
   });
 
+  it("can explicitly reset a missing primary with an invalid bounded backup", async () => {
+    const fixture = await createTestRoot();
+    const invalidBackup = "{ invalid recovery backup";
+    await writeFile(`${fixture.libraryPath}.bak`, invalidBackup, "utf8");
+
+    const status = await inspectInstructionLibraryRecovery(fixture.libraryPath);
+    expect(status).toMatchObject({
+      primaryValid: false,
+      backupValid: false,
+      resetSource: "backup",
+      resetDigest: sha256(invalidBackup),
+      errorCode: "INSTRUCTION_LIBRARY_MISSING_WITH_BACKUP",
+    });
+    await expect(
+      resetCorruptInstructionLibrary("0".repeat(64), fixture.libraryPath),
+    ).rejects.toMatchObject({
+      code: "INSTRUCTION_LIBRARY_RECOVERY_CONFLICT",
+    });
+
+    const reset = await resetCorruptInstructionLibrary(
+      status.resetDigest!,
+      fixture.libraryPath,
+    );
+    await expect(readFile(reset.corruptCopy, "utf8")).resolves.toBe(
+      invalidBackup,
+    );
+    await expect(loadInstructionLibrary(fixture.libraryPath)).resolves.toEqual(
+      reset.library,
+    );
+  });
+
   it("resets only the reviewed corrupt digest and preserves the corrupt bytes", async () => {
     const fixture = await createTestRoot();
     await createInstructionProfile(
@@ -867,7 +1178,6 @@ describe("library recovery and import conflicts", () => {
     expect(reset.library).toMatchObject({
       revision: 0,
       profiles: [],
-      defaults: { profiles: [] },
       workspaces: [],
     });
     await expect(readFile(reset.corruptCopy, "utf8")).resolves.toBe(
@@ -884,7 +1194,7 @@ describe("library recovery and import conflicts", () => {
       { name: "Portable", body: "Exported body." },
       { path: fixture.libraryPath },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       { displayName: "Portable workspace" },
       { path: fixture.libraryPath, expectedRevision: 1 },
@@ -946,13 +1256,41 @@ describe("library recovery and import conflicts", () => {
     expect(imported.library.profiles[0]?.body).toBe("Receiver body.");
   });
 
+  it("requires a conflict choice when same-id content matches but settings differ", async () => {
+    const fixture = await createTestRoot();
+    const created = await createInstructionProfile(
+      { name: "Portable", body: "Same body.", tags: ["exported"] },
+      { path: fixture.libraryPath },
+    );
+    const exported = exportInstructionLibrary(created.library);
+    await updateInstructionProfile(
+      created.profile.id,
+      { tags: ["receiver"] },
+      { path: fixture.libraryPath, expectedRevision: 1 },
+    );
+
+    await expect(
+      importInstructionLibrary(exported, {
+        path: fixture.libraryPath,
+        expectedRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: "INSTRUCTION_IMPORT_ID_CONFLICT" });
+
+    const replaced = await importInstructionLibrary(exported, {
+      path: fixture.libraryPath,
+      expectedRevision: 2,
+      choices: { conflicts: { [created.profile.id]: "replace-existing" } },
+    });
+    expect(replaced.library.profiles[0]?.tags).toEqual(["exported"]);
+  });
+
   it("remaps unbound workspace assignments when a conflicting profile is duplicated", async () => {
     const fixture = await createTestRoot();
     const created = await createInstructionProfile(
       { name: "Portable", body: "Exported body." },
       { path: fixture.libraryPath },
     );
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       fixture.workspace,
       {},
       { path: fixture.libraryPath, expectedRevision: 1 },
@@ -1018,9 +1356,7 @@ describe("library recovery and import conflicts", () => {
     await expect(
       importInstructionLibrary(exported, {
         path: fixture.libraryPath,
-        choices: {
-          defaults: "invalid" as "merge",
-        },
+        choices: { defaults: "merge" } as never,
       }),
     ).rejects.toMatchObject({ code: "INSTRUCTION_IMPORT_INVALID_CHOICE" });
     await expect(
@@ -1032,110 +1368,7 @@ describe("library recovery and import conflicts", () => {
   });
 });
 
-describe("local discovery, native inventory, delivery, and schemas", () => {
-  it("normalizes explicit local edits, enforces digest CAS, and preserves ignored entries", async () => {
-    const fixture = await createTestRoot();
-    await Promise.all([
-      mkdir(join(fixture.workspace, "apps", "web"), { recursive: true }),
-      mkdir(join(fixture.workspace, "node_modules", "ignored"), {
-        recursive: true,
-      }),
-    ]);
-    const rootLocal = await createLocalInstruction(
-      fixture.workspace,
-      ".",
-      "\uFEFFRoot\r\npolicy\r",
-    );
-    await writeFile(
-      join(fixture.workspace, "node_modules", "ignored", "AGENTS.md"),
-      "Ignored.\n",
-    );
-    expect(rootLocal.body).toBe("Root\npolicy\n");
-    await expect(
-      updateLocalInstruction(
-        fixture.workspace,
-        ".",
-        "Changed.",
-        "0".repeat(64),
-      ),
-    ).rejects.toMatchObject({ code: "LOCAL_INSTRUCTION_REVISION_CONFLICT" });
-    const updated = await updateLocalInstruction(
-      fixture.workspace,
-      ".",
-      "Changed.",
-      rootLocal.digest,
-    );
-    const discovery = await discoverLocalInstructions(fixture.workspace);
-    expect(discovery.files.map((file) => file.relativePath)).toEqual([
-      "AGENTS.md",
-    ]);
-    expect(discovery.diagnostics).toContainEqual(
-      expect.objectContaining({
-        code: "LOCAL_INSTRUCTION_DIRECTORY_IGNORED",
-        relativePath: "node_modules",
-      }),
-    );
-    await deleteLocalInstruction(fixture.workspace, ".", updated.digest);
-    await expect(
-      stat(join(fixture.workspace, "AGENTS.md")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("rejects unsafe edits and skips invalid or linked local discovery", async () => {
-    const fixture = await createTestRoot();
-    expect(() => normalizeScopePath("")).toThrow();
-    expect(() => normalizeScopePath("   ")).toThrow();
-    expect(() => normalizeScopePath("../outside")).toThrow();
-    expect(() => normalizeScopePath("C:outside")).toThrow();
-    await expect(
-      createLocalInstruction(fixture.workspace, ".", "\0bad"),
-    ).rejects.toMatchObject({ code: "INSTRUCTION_NUL_BYTE" });
-    await writeFile(join(fixture.workspace, "AGENTS.md"), Buffer.from([0xff]));
-    await expect(discoverLocalInstructions(fixture.workspace)).resolves.toEqual(
-      expect.objectContaining({
-        files: [],
-        diagnostics: expect.arrayContaining([
-          expect.objectContaining({
-            code: "INSTRUCTION_INVALID_UTF8",
-            severity: "warning",
-            relativePath: "AGENTS.md",
-          }),
-        ]),
-      }),
-    );
-    await rm(join(fixture.workspace, "AGENTS.md"));
-
-    const linkedTarget = join(fixture.root, "linked-target");
-    await mkdir(linkedTarget);
-    await writeFile(join(linkedTarget, "AGENTS.md"), "Must not load.\n");
-    let linkCreated = false;
-    try {
-      await symlink(
-        linkedTarget,
-        join(fixture.workspace, "linked"),
-        process.platform === "win32" ? "junction" : "dir",
-      );
-      linkCreated = true;
-    } catch {
-      // Some Windows CI accounts cannot create links; static link behavior is
-      // covered when the host permits it.
-    }
-    if (linkCreated) {
-      await expect(
-        registerInstructionWorkspace(
-          join(fixture.workspace, "linked"),
-          {},
-          { path: fixture.libraryPath },
-        ),
-      ).rejects.toMatchObject({ code: "WORKSPACE_ROOT_INVALID" });
-      const discovery = await discoverLocalInstructions(fixture.workspace);
-      expect(discovery.files).toEqual([]);
-      expect(discovery.diagnostics).toContainEqual(
-        expect.objectContaining({ code: "LOCAL_INSTRUCTION_LINK_SKIPPED" }),
-      );
-    }
-  });
-
+describe("native inventory, delivery, and schemas", () => {
   it("uses locale-independent Unicode caseless profile identity", () => {
     expect(profileNameKey("Straße")).toBe(profileNameKey("STRASSE"));
     expect(profileNameKey("ς")).toBe(profileNameKey("σ"));
@@ -1211,7 +1444,6 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       workspaceRoot: fixture.workspace,
       providerId: "openai",
       surface: "api",
-      locals: [],
     });
     expect(apiInventory).toEqual(
       expect.arrayContaining([
@@ -1238,7 +1470,6 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       workspaceRoot: fixture.workspace,
       providerId: "copilot-cli",
       surface: "cli",
-      locals: [],
     });
     expect(copilotInventory).toContainEqual(
       expect.objectContaining({
@@ -1336,7 +1567,6 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       workspaceRoot: nestedWorkspace,
       providerId: "claude-cli",
       surface: "cli",
-      locals: [],
     });
     expect(claudeInventory).toEqual(
       expect.arrayContaining([
@@ -1361,7 +1591,6 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
       workspaceRoot: nestedWorkspace,
       providerId: "copilot-cli",
       surface: "cli",
-      locals: [],
     });
     expect(copilotInventory).toEqual(
       expect.arrayContaining([
@@ -1396,6 +1625,34 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     expect(codexAfter.canonicalDigest).toBe(codexBefore.canonicalDigest);
     expect(codexAfter.environmentDigest).not.toBe(
       codexBefore.environmentDigest,
+    );
+
+    await writeFile(join(repository, "AGENTS.md"), "Relocated policy.\n");
+    const beforeRelocation = await resolve(
+      nestedWorkspace,
+      fixture.libraryPath,
+      {
+        providerId: "codex-cli",
+        surface: "cli",
+      },
+    );
+    await rename(
+      join(repository, "AGENTS.md"),
+      join(nestedWorkspace, "AGENTS.md"),
+    );
+    const afterRelocation = await resolve(
+      nestedWorkspace,
+      fixture.libraryPath,
+      {
+        providerId: "codex-cli",
+        surface: "cli",
+      },
+    );
+    expect(afterRelocation.canonicalDigest).toBe(
+      beforeRelocation.canonicalDigest,
+    );
+    expect(afterRelocation.environmentDigest).not.toBe(
+      beforeRelocation.environmentDigest,
     );
   });
 
@@ -1487,30 +1744,49 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     expect(unreadableNativePlan.blockingReasons.join(" ")).toContain(
       "could not be inventoried",
     );
+
+    const unavailableNativeResolution = structuredClone(cliResolution);
+    unavailableNativeResolution.providerId = "claude-cli";
+    unavailableNativeResolution.nativeInventory = [];
+    unavailableNativeResolution.diagnostics = [
+      ...unavailableNativeResolution.diagnostics,
+      {
+        code: "NATIVE_INSTRUCTION_INVENTORY_UNAVAILABLE",
+        severity: "warning",
+        message: "Native inventory failed.",
+      },
+    ];
+    const unavailableNativePlan = createInstructionDeliveryPlan(
+      unavailableNativeResolution,
+    );
+    expect(unavailableNativePlan.grade).toBe("unsupported");
+    expect(unavailableNativePlan.blockingReasons.join(" ")).toContain(
+      "inventory failed",
+    );
   });
 
   it("emits schema-valid closed explanations, plans, and receipts without bodies by default", async () => {
     const fixture = await createTestRoot();
     const created = await createInstructionProfile(
-      { name: "Schema profile", body: "Sensitive profile body." },
+      {
+        name: "Schema profile",
+        body: "Sensitive profile body.",
+        global: true,
+      },
       { path: fixture.libraryPath },
     );
-    await setDefaultInstructionProfiles([created.profile.id], {
-      path: fixture.libraryPath,
-      expectedRevision: 1,
-    });
     await createInstructionProfile(
       {
         name: "Automatic schema profile",
         body: "Automatically selected body.",
         match: { op: "tag", tag: "TypeScript" },
       },
-      { path: fixture.libraryPath, expectedRevision: 2 },
+      { path: fixture.libraryPath, expectedRevision: 1 },
     );
-    await registerInstructionWorkspace(
+    await configureInstructionWorkspace(
       fixture.workspace,
       { tags: ["TypeScript"] },
-      { path: fixture.libraryPath, expectedRevision: 3 },
+      { path: fixture.libraryPath, expectedRevision: 2 },
     );
     const resolution = await resolve(fixture.workspace, fixture.libraryPath, {
       model: "gpt-5.5",
@@ -1596,11 +1872,37 @@ describe("local discovery, native inventory, delivery, and schemas", () => {
     expect(
       validateLibrary({ ...library, revision: 9_007_199_254_740_992 }),
     ).toBe(false);
+    expect(
+      validateLibrary({
+        ...library,
+        profiles: library.profiles.map((profile) =>
+          profile.global ? { ...profile, enabled: false } : profile,
+        ),
+      }),
+    ).toBe(false);
+    expect(
+      validateLibrary({
+        ...library,
+        profiles: library.profiles.map((profile) =>
+          profile.global
+            ? { ...profile, match: { op: "tag", tag: "TypeScript" } }
+            : profile,
+        ),
+      }),
+    ).toBe(false);
     const portable = exportInstructionLibrary(library, true);
     expect(
       validateExport(portable),
       JSON.stringify(validateExport.errors ?? []),
     ).toBe(true);
+    expect(
+      validateExport({
+        ...portable,
+        profiles: portable.profiles.map((profile) =>
+          profile.global ? { ...profile, enabled: false } : profile,
+        ),
+      }),
+    ).toBe(false);
     const invalidWorkspaceExport = {
       ...portable,
       workspaces: [

@@ -12,7 +12,6 @@
     "providerId",
     "surface",
     "libraryRevision",
-    "workspaceRegistered",
     "sources",
     "bodyGroups",
     "nativeInventory",
@@ -21,7 +20,7 @@
     "budget"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "resolutionId": {
       "type": "string",
       "pattern": "^instruction-resolution:[0-9a-f]{64}$"
@@ -46,7 +45,6 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
-    "workspaceRegistered": { "type": "boolean" },
     "workspaceId": { "type": "string", "format": "uuid" },
     "sources": {
       "type": "array",
@@ -97,10 +95,10 @@
         "name": { "type": "string", "minLength": 1 },
         "kind": {
           "enum": [
-            "profile-default",
+            "profile-global",
             "profile-auto",
             "profile-workspace",
-            "project-local",
+            "profile-unassigned",
             "flow-guidance"
           ]
         },
@@ -108,7 +106,8 @@
         "reason": {
           "enum": [
             "NO_APPLICABLE_ASSIGNMENT",
-            "DUPLICATE_INHERITED_ASSIGNMENT"
+            "PROFILE_DISABLED",
+            "TAG_RULE_NOT_MATCHED"
           ]
         },
         "scopePath": { "$ref": "#/$defs/scopePath" },
@@ -119,9 +118,7 @@
         "trusted": { "type": "boolean" },
         "profileId": { "type": "string", "format": "uuid" },
         "workspaceId": { "type": "string", "format": "uuid" },
-        "relativePath": { "type": "string", "minLength": 1 },
         "assignmentPath": { "type": "string", "minLength": 1 },
-        "inheritedFrom": { "type": "string", "minLength": 1 },
         "otherAssignments": {
           "type": "array",
           "items": {
@@ -185,7 +182,6 @@
         },
         "status": {
           "enum": [
-            "canonical",
             "native-extra",
             "suppressed",
             "inactive",

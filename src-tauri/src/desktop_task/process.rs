@@ -30,10 +30,18 @@ pub(super) fn read_stdout(stdout: impl Read) -> Result<String, String> {
 }
 
 pub(super) fn read_bounded_stream_text(
-    mut stream: impl Read,
+    stream: impl Read,
     stream_name: &str,
 ) -> Result<String, String> {
-    let mut captured = Vec::with_capacity(SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES.min(8192));
+    read_bounded_stream_text_with_limit(stream, stream_name, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES)
+}
+
+pub(super) fn read_bounded_stream_text_with_limit(
+    mut stream: impl Read,
+    stream_name: &str,
+    capture_limit_bytes: usize,
+) -> Result<String, String> {
+    let mut captured = Vec::with_capacity(capture_limit_bytes.min(8192));
     let mut truncated = false;
     let mut buffer = [0_u8; 8192];
 
@@ -46,18 +54,28 @@ pub(super) fn read_bounded_stream_text(
             break;
         }
 
-        append_bounded_bytes(&mut captured, &buffer[..bytes_read], &mut truncated);
+        append_bounded_bytes(
+            &mut captured,
+            &buffer[..bytes_read],
+            capture_limit_bytes,
+            &mut truncated,
+        );
     }
 
     Ok(decode_bounded_output(captured, truncated))
 }
 
-fn append_bounded_bytes(captured: &mut Vec<u8>, bytes: &[u8], truncated: &mut bool) {
+fn append_bounded_bytes(
+    captured: &mut Vec<u8>,
+    bytes: &[u8],
+    capture_limit_bytes: usize,
+    truncated: &mut bool,
+) {
     if *truncated {
         return;
     }
 
-    let remaining = SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES.saturating_sub(captured.len());
+    let remaining = capture_limit_bytes.saturating_sub(captured.len());
 
     if bytes.len() <= remaining {
         captured.extend_from_slice(bytes);
@@ -68,7 +86,27 @@ fn append_bounded_bytes(captured: &mut Vec<u8>, bytes: &[u8], truncated: &mut bo
     *truncated = true;
 }
 
-fn decode_bounded_output(captured: Vec<u8>, truncated: bool) -> String {
+fn complete_utf8_prefix_len(bytes: &[u8]) -> usize {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match std::str::from_utf8(&bytes[offset..]) {
+            Ok(_) => return bytes.len(),
+            Err(error) => {
+                offset += error.valid_up_to();
+                match error.error_len() {
+                    Some(invalid_bytes) => offset += invalid_bytes,
+                    None => return offset,
+                }
+            }
+        }
+    }
+    offset
+}
+
+fn decode_bounded_output(mut captured: Vec<u8>, truncated: bool) -> String {
+    if truncated {
+        captured.truncate(complete_utf8_prefix_len(&captured));
+    }
     let mut output = String::from_utf8_lossy(&captured).to_string();
 
     if truncated {
@@ -365,8 +403,8 @@ mod tests {
 
     use super::{
         create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
-        mark_desktop_task_activity, read_stderr_lines, read_stdout,
-        SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
+        mark_desktop_task_activity, read_bounded_stream_text_with_limit, read_stderr_lines,
+        read_stdout, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     };
     use crate::desktop_task::payload::write_conversation_context_file;
 
@@ -445,6 +483,27 @@ mod tests {
         assert!(output.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
         assert!(output.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
         assert!(std::str::from_utf8(output.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn bounded_reader_honors_a_command_specific_capture_limit() {
+        let output =
+            read_bounded_stream_text_with_limit(Cursor::new(vec![b'x'; 128]), "stdout", 256)
+                .expect("stdout should be read");
+
+        assert_eq!(output.len(), 128);
+        assert!(!output.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
+    }
+
+    #[test]
+    fn bounded_reader_drops_only_an_incomplete_trailing_utf8_scalar() {
+        let output =
+            read_bounded_stream_text_with_limit(Cursor::new("a🦊b".as_bytes()), "stdout", 3)
+                .expect("bounded output should decode");
+
+        assert!(output.starts_with("a\n"));
+        assert!(!output.contains('�'));
+        assert!(output.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
     }
 
     #[test]

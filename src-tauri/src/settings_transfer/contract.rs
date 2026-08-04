@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub(crate) const PROTOCOL_MAJOR: u16 = 1;
-pub(crate) const PROTOCOL_MINOR: u16 = 3;
+pub(crate) const PROTOCOL_MAJOR: u16 = 2;
+pub(crate) const PROTOCOL_MINOR: u16 = 0;
 pub(crate) const CATEGORY_SCHEMA_VERSION: u16 = 1;
 pub(crate) const SETTINGS_TRANSFER_EVENT: &str = "machdoch://settings-transfer-state";
 
@@ -20,8 +20,6 @@ pub enum SettingsCategoryId {
     ChatVoicePreferences,
     #[serde(rename = "memory.global")]
     GlobalMemory,
-    #[serde(rename = "instruction-profiles.global")]
-    InstructionProfiles,
     #[serde(rename = "customizations.prompts-global")]
     GlobalPrompts,
     #[serde(rename = "context-packs.global")]
@@ -35,13 +33,12 @@ pub enum SettingsCategoryId {
 }
 
 impl SettingsCategoryId {
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::ApiKeys,
         Self::AgentProviderPreferences,
         Self::DesktopAppearance,
         Self::ChatVoicePreferences,
         Self::GlobalMemory,
-        Self::InstructionProfiles,
         Self::GlobalPrompts,
         Self::GlobalContextPacks,
         Self::GlobalMcp,
@@ -84,13 +81,6 @@ impl SettingsCategoryId {
                 description: "The complete global memory collection and its enabled state.",
                 warning: Some("May contain personal or confidential information."),
                 default_selected: false,
-                sensitive: true,
-            },
-            Self::InstructionProfiles => CategoryMetadata {
-                label: "Instruction Profiles",
-                description: "Reusable instruction profiles and all-workspaces defaults. Workspace bindings and repository files stay local.",
-                warning: Some("Profile text may contain private operational details. Receiver conflicts require explicit resolution."),
-                default_selected: true,
                 sensitive: true,
             },
             Self::GlobalPrompts => CategoryMetadata {

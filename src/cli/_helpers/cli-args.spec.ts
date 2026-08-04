@@ -199,10 +199,12 @@ describe("cli args public parser", () => {
         [
           "instructions",
           "workspaces",
-          "register",
+          "configure",
           "C:/workspace",
+          "--name",
+          "Frontend",
           "--metadata-json",
-          '{"tags":["React","Node.js"]}',
+          '{"tags":["React","Node.js"],"profileIds":[]}',
           "--expected-revision",
           "4",
         ],
@@ -211,10 +213,11 @@ describe("cli args public parser", () => {
     ).toMatchObject({
       command: "instructions",
       instructions: {
-        action: "workspace-register",
+        action: "workspace-configure",
         group: "workspaces",
         subject: "C:/workspace",
-        metadataJson: '{"tags":["React","Node.js"]}',
+        name: "Frontend",
+        metadataJson: '{"tags":["React","Node.js"],"profileIds":[]}',
         expectedRevision: 4,
       },
     });
@@ -224,25 +227,116 @@ describe("cli args public parser", () => {
         [
           "instructions",
           "workspaces",
-          "update",
-          "workspace-id",
-          "--name",
-          "Frontend",
-          "--metadata-json",
-          '{"tags":["React"]}',
+          "remove",
+          "00000000-0000-4000-8000-000000000001",
+          "--confirm-assignment-removal",
         ],
         { currentWorkingDirectory: "C:/workspace" },
       ),
     ).toMatchObject({
       command: "instructions",
       instructions: {
-        action: "workspace-update",
+        action: "workspace-remove",
         group: "workspaces",
-        subject: "workspace-id",
-        name: "Frontend",
-        metadataJson: '{"tags":["React"]}',
+        subject: "00000000-0000-4000-8000-000000000001",
+        confirmAssignmentRemoval: true,
       },
     });
+
+    for (const legacyAction of ["register", "update", "unregister"]) {
+      expect(() =>
+        parseCliArgs(
+          ["instructions", "workspaces", legacyAction, "C:/workspace"],
+          { currentWorkingDirectory: "C:/workspace" },
+        ),
+      ).toThrow("Unknown instruction command");
+    }
+
+    expect(() =>
+      parseCliArgs(
+        [
+          "instructions",
+          "assignments",
+          "remove",
+          "00000000-0000-4000-8000-000000000001",
+          "--path",
+          ".",
+          "--profile",
+          "00000000-0000-4000-8000-000000000002",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("--profile is not valid");
+    expect(() =>
+      parseCliArgs(
+        ["instructions", "profiles", "list", "--metadata-json", "{}"],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("--metadata-json is not valid");
+    expect(() =>
+      parseCliArgs(["instructions", "profiles", "list", "--model", "gpt-5.5"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--model is only valid");
+    expect(() =>
+      parseCliArgs(
+        [
+          "instructions",
+          "profiles",
+          "create",
+          "Review",
+          "--prompt",
+          "",
+          "--prompt-file",
+          "review.md",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("Use either --prompt or --prompt-file");
+
+    expect(() =>
+      parseCliArgs(["instructions", "profile-list"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Unknown instruction command");
+    expect(() =>
+      parseCliArgs(["instructions", "profiles", "list", "ignored"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("does not accept positional arguments");
+    expect(() =>
+      parseCliArgs(
+        ["instructions", "profiles", "list", "--cron", "0 0 * * *"],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("--cron is not valid");
+    expect(() =>
+      parseCliArgs(
+        [
+          "instructions",
+          "assignments",
+          "remove",
+          "00000000-0000-4000-8000-000000000001",
+          ".",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("unexpected positional argument");
+    expect(() =>
+      parseCliArgs(
+        [
+          "instructions",
+          "profiles",
+          "create",
+          "Positional",
+          "--name",
+          "Flagged",
+          "--prompt",
+          "Policy",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("either a positional profile name or --name");
   });
 
   it("parses explicit instruction-library recovery actions", () => {

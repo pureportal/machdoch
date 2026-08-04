@@ -27,7 +27,8 @@ use super::{
     },
     process::{
         create_desktop_task_activity, hide_child_process_window, read_bounded_stream_text,
-        read_stderr,
+        read_bounded_stream_text_with_limit, read_stderr, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+        SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     },
     registry::normalize_task_id,
     InstructionCommandRequest, McpCommandRequest, ProviderSyncCommandRequest,
@@ -50,6 +51,7 @@ struct AuxiliaryCliSpec {
     command_name: &'static str,
     parse_name: &'static str,
     failure_name: &'static str,
+    stdout_capture_limit_bytes: usize,
 }
 
 struct AuxiliaryCliProgressContext {
@@ -58,11 +60,17 @@ struct AuxiliaryCliProgressContext {
     task_id: Option<String>,
 }
 
+// The persisted library is bounded at 64 MiB. Overview responses add hashes,
+// counts, and JSON formatting, so retain a bounded 2x allowance for the
+// desktop editor while other auxiliary commands keep the 1 MiB default.
+const INSTRUCTION_CLI_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+
 const SCHEDULER_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     subcommand: "scheduler",
     command_name: "scheduler",
     parse_name: "scheduler",
     failure_name: "scheduler",
+    stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
 };
 
 const MCP_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -70,6 +78,7 @@ const MCP_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     command_name: "MCP",
     parse_name: "MCP",
     failure_name: "MCP",
+    stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
 };
 
 const PROVIDER_SYNC_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -77,6 +86,7 @@ const PROVIDER_SYNC_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     command_name: "provider sync",
     parse_name: "provider sync",
     failure_name: "provider sync",
+    stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
 };
 
 const INSTRUCTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -84,6 +94,7 @@ const INSTRUCTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     command_name: "instruction",
     parse_name: "instruction",
     failure_name: "instruction",
+    stdout_capture_limit_bytes: INSTRUCTION_CLI_OUTPUT_CAPTURE_LIMIT_BYTES,
 };
 
 const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -91,6 +102,7 @@ const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     command_name: "task interview",
     parse_name: "task interview",
     failure_name: "task interview",
+    stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
 };
 
 fn join_auxiliary_cli_output(
@@ -133,6 +145,7 @@ fn run_bounded_auxiliary_cli_command(
     command_name: &str,
     timeout_ms: Option<u64>,
     progress_context: Option<AuxiliaryCliProgressContext>,
+    stdout_capture_limit_bytes: usize,
 ) -> Result<AuxiliaryCliOutput, String> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     hide_child_process_window(command);
@@ -175,7 +188,9 @@ fn run_bounded_auxiliary_cli_command(
         }
     };
 
-    let stdout_worker = thread::spawn(move || read_bounded_stream_text(stdout, "stdout"));
+    let stdout_worker = thread::spawn(move || {
+        read_bounded_stream_text_with_limit(stdout, "stdout", stdout_capture_limit_bytes)
+    });
     let stderr_worker = match progress_context {
         Some(context) => {
             let activity = create_desktop_task_activity();
@@ -253,25 +268,24 @@ fn build_auxiliary_cli_args(
         subcommand.to_string(),
     ];
 
-    append_normalized_arguments(&mut cli_args, arguments);
+    append_auxiliary_arguments(&mut cli_args, arguments);
 
     Ok(cli_args)
 }
 
-fn append_normalized_arguments(
+fn append_auxiliary_arguments(
     cli_args: &mut Vec<String>,
     arguments: impl IntoIterator<Item = String>,
 ) {
-    for argument in arguments {
-        let normalized = argument.trim();
-
-        if !normalized.is_empty() {
-            cli_args.push(normalized.to_string());
-        }
-    }
+    cli_args.extend(arguments);
 }
 
 fn parse_auxiliary_command_response(stdout: &str, parse_name: &str) -> Result<Value, String> {
+    if stdout.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER) {
+        return Err(format!(
+            "The {parse_name} CLI response exceeded its bounded desktop output limit. No partial response was accepted."
+        ));
+    }
     let trimmed_stdout = stdout.trim();
 
     serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
@@ -312,6 +326,7 @@ fn run_auxiliary_json_command(
         spec.command_name,
         Some(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
         None,
+        spec.stdout_capture_limit_bytes,
     )?;
 
     finish_auxiliary_command_response(output, spec)
@@ -453,7 +468,7 @@ pub(super) fn execute_task_interview_command(
         normalized_workspace_root,
         TASK_INTERVIEW_CLI_SPEC.subcommand.to_string(),
     ];
-    append_normalized_arguments(&mut cli_args, arguments);
+    append_auxiliary_arguments(&mut cli_args, arguments);
 
     let mut cli_command = match crate::shared_cli::create_shared_cli_command(&cli_args) {
         Ok(command) => command,
@@ -472,6 +487,7 @@ pub(super) fn execute_task_interview_command(
             window_label,
             task_id,
         }),
+        TASK_INTERVIEW_CLI_SPEC.stdout_capture_limit_bytes,
     ) {
         Ok(output) => output,
         Err(error) => {
@@ -488,13 +504,45 @@ pub(super) fn execute_task_interview_command(
 mod tests {
     use std::{env, process::Command, thread, time::Duration};
 
-    use super::{parse_auxiliary_command_response, run_bounded_auxiliary_cli_command};
+    use super::{
+        append_auxiliary_arguments, parse_auxiliary_command_response,
+        run_bounded_auxiliary_cli_command, INSTRUCTION_CLI_SPEC,
+    };
     use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
     use crate::desktop_task::process::{
         SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     };
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_AUXILIARY_CLI_TEST_CHILD_MODE";
+
+    #[test]
+    fn auxiliary_arguments_preserve_empty_and_whitespace_values() {
+        let mut arguments = vec!["instructions".to_string()];
+        append_auxiliary_arguments(
+            &mut arguments,
+            [
+                "--description".to_string(),
+                "".to_string(),
+                "  spaced value  ".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            arguments,
+            ["instructions", "--description", "", "  spaced value  "]
+        );
+    }
+
+    #[test]
+    fn instruction_cli_retains_large_but_bounded_library_responses() {
+        assert!(
+            INSTRUCTION_CLI_SPEC.stdout_capture_limit_bytes > SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES
+        );
+        assert_eq!(
+            INSTRUCTION_CLI_SPEC.stdout_capture_limit_bytes,
+            128 * 1024 * 1024
+        );
+    }
 
     fn test_child_command(mode: &str) -> Command {
         let mut command = Command::new(env::current_exe().expect("test executable should resolve"));
@@ -531,9 +579,14 @@ mod tests {
     #[test]
     fn bounded_auxiliary_cli_command_captures_success_output() {
         let mut command = test_child_command("json");
-        let output =
-            run_bounded_auxiliary_cli_command(&mut command, "scheduler", Some(5_000), None)
-                .expect("bounded command should finish");
+        let output = run_bounded_auxiliary_cli_command(
+            &mut command,
+            "scheduler",
+            Some(5_000),
+            None,
+            SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+        )
+        .expect("bounded command should finish");
 
         assert!(output.status.success());
         assert!(output.stdout.contains(r#"{"ok":true}"#));
@@ -543,8 +596,14 @@ mod tests {
     #[test]
     fn bounded_auxiliary_cli_command_times_out_and_stops_child() {
         let mut command = test_child_command("hang");
-        let error = run_bounded_auxiliary_cli_command(&mut command, "scheduler", Some(1_000), None)
-            .expect_err("hanging command should time out");
+        let error = run_bounded_auxiliary_cli_command(
+            &mut command,
+            "scheduler",
+            Some(1_000),
+            None,
+            SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+        )
+        .expect_err("hanging command should time out");
 
         assert!(error.contains("The scheduler CLI exceeded the desktop safety timeout"));
         assert!(error.contains("was stopped"));
@@ -553,9 +612,14 @@ mod tests {
     #[test]
     fn bounded_auxiliary_cli_command_caps_stdout_and_stderr() {
         let mut command = test_child_command("large-output");
-        let output =
-            run_bounded_auxiliary_cli_command(&mut command, "scheduler", Some(10_000), None)
-                .expect("large output command should finish");
+        let output = run_bounded_auxiliary_cli_command(
+            &mut command,
+            "scheduler",
+            Some(10_000),
+            None,
+            SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+        )
+        .expect("large output command should finish");
 
         assert!(output.status.success());
         assert!(output.stdout.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
@@ -574,5 +638,17 @@ mod tests {
         assert!(error.contains("Failed to parse the scheduler CLI JSON response"));
         assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
         assert!(error.len() < 18 * 1024);
+    }
+
+    #[test]
+    fn auxiliary_parse_rejects_truncated_output_without_echoing_content() {
+        let error = parse_auxiliary_command_response(
+            &format!("private-body\n{SUBPROCESS_OUTPUT_TRUNCATED_MARKER}"),
+            "instruction",
+        )
+        .expect_err("truncated JSON should fail");
+
+        assert!(error.contains("exceeded its bounded desktop output limit"));
+        assert!(!error.contains("private-body"));
     }
 }

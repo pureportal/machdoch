@@ -43,15 +43,15 @@ The transferable catalog remains the source of truth:
 3. desktop and appearance preferences
 4. chat and voice preferences
 5. global memory
-6. global instruction files
-7. global prompts
-8. global context packs (workspace-specific packs remain local)
-9. global MCP servers and marketplace registries
-10. global RALPH preferences
-11. global RALPH flows and their instruction files
+6. global prompts
+7. global context packs (workspace-specific packs remain local)
+8. global MCP servers and marketplace registries
+9. global RALPH preferences
+10. global RALPH flows and their inline guidance
 
 Workspace-scoped data remains deliberately unsupported. Import is complete replacement per selected
-category, never merge. Unselected and unavailable categories remain unchanged.
+category, never merge. Unselected and unavailable categories remain unchanged. The central
+instruction library is managed and transferred independently of Settings.
 
 ## Passphrases and sensitive data
 

@@ -1,31 +1,26 @@
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, open, realpath } from "node:fs/promises";
-import {
-  isAbsolute,
-  normalize,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { lstat, realpath } from "node:fs/promises";
+import { isAbsolute, normalize, relative, resolve, sep } from "node:path";
 import {
   compareCanonicalStrings,
   stableJson,
 } from "../provider-enrollment/digests.js";
-import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
-import {
-  sameFileObjectIdentity,
-  sameFileSnapshotIdentity,
-} from "../_helpers/same-file-identity.helper.js";
 import { InstructionSystemError } from "./types.js";
+import {
+  MAX_INSTRUCTION_PROFILE_NAME_LENGTH,
+  MAX_INSTRUCTION_SOURCE_BYTES,
+} from "./limits.js";
+import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
 
-export const MAX_INSTRUCTION_SOURCE_BYTES = 128 * 1024;
-export const MAX_INSTRUCTION_ENVELOPE_BYTES = 128 * 1024;
-export const INSTRUCTION_ADVISORY_BYTES = 32 * 1024;
-export const INSTRUCTION_ADVISORY_LINES = 200;
-export const INSTRUCTION_PROVIDER_RESERVE_TOKENS = 16 * 1024;
-export const MAX_DISCOVERED_DIRECTORIES = 50_000;
-export const MAX_DISCOVERED_LOCAL_FILES = 256;
+export {
+  INSTRUCTION_ADVISORY_BYTES,
+  INSTRUCTION_ADVISORY_LINES,
+  INSTRUCTION_PROVIDER_RESERVE_TOKENS,
+  MAX_DISCOVERED_LOCAL_FILES,
+  MAX_INSTRUCTION_ENVELOPE_BYTES,
+  MAX_INSTRUCTION_SOURCE_FILE_BYTES,
+  MAX_INSTRUCTION_SOURCE_BYTES,
+} from "./limits.js";
 
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const UTF8_ENCODER = new TextEncoder();
@@ -36,6 +31,12 @@ export const utf8ByteLength = (value: string): number =>
 
 export const unicodeCodePointLength = (value: string): number =>
   Array.from(value).length;
+
+export const hasAsciiControlCharacter = (value: string): boolean =>
+  Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+  });
 
 /**
  * A portable admission-control upper bound when the selected provider's exact
@@ -75,6 +76,13 @@ export const normalizeInstructionBody = (
   }
   body = body.replace(/\r\n?/gu, "\n");
 
+  if (hasUnpairedUtf16Surrogate(body)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_INVALID_UNICODE",
+      `${sourceLabel} contains an unpaired UTF-16 surrogate and cannot be transported as exact UTF-8 text.`,
+    );
+  }
+
   if (body.includes("\0")) {
     throw new InstructionSystemError(
       "INSTRUCTION_NUL_BYTE",
@@ -97,115 +105,6 @@ export const normalizeInstructionBody = (
   return body;
 };
 
-export const readNormalizedInstructionFile = async (
-  path: string,
-  sourceLabel = path,
-): Promise<{
-  body: string;
-  digest: string;
-  byteLength: number;
-  lineCount: number;
-  identity: string;
-}> => {
-  let firstIdentity = "";
-  let bytes: Buffer | undefined;
-  const observations: string[] = [];
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const beforePath = await lstat(path);
-    if (!beforePath.isFile() || beforePath.isSymbolicLink()) {
-      throw new InstructionSystemError(
-        "INSTRUCTION_NOT_REGULAR_FILE",
-        `${sourceLabel} is not a regular file or is a link.`,
-      );
-    }
-    if (beforePath.size > MAX_INSTRUCTION_SOURCE_BYTES + 3) {
-      throw new InstructionSystemError(
-        "INSTRUCTION_SOURCE_TOO_LARGE",
-        `${sourceLabel} exceeds the ${MAX_INSTRUCTION_SOURCE_BYTES}-byte source limit.`,
-      );
-    }
-
-    let handle;
-    let before;
-    let after;
-    try {
-      handle = await open(
-        path,
-        constants.O_RDONLY |
-          (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
-      );
-      before = await handle.stat();
-      bytes = await readOpenedFileExactly(handle, before.size);
-      after = await handle.stat();
-    } catch (error) {
-      throw new InstructionSystemError(
-        "INSTRUCTION_SOURCE_UNREADABLE",
-        `${sourceLabel} could not be opened safely for reading.`,
-        [],
-        { cause: error },
-      );
-    } finally {
-      await handle?.close();
-    }
-    const afterPath = await lstat(path);
-    const beforeIdentity = [
-      beforePath.dev,
-      beforePath.ino,
-      beforePath.size,
-      beforePath.mtimeMs,
-    ].join(":");
-    const openedIdentity = [
-      before.dev,
-      before.ino,
-      before.size,
-      before.mtimeMs,
-    ].join(":");
-    const afterIdentity = [
-      afterPath.dev,
-      afterPath.ino,
-      afterPath.size,
-      afterPath.mtimeMs,
-    ].join(":");
-    observations.push(
-      `attempt=${attempt + 1};path-before=${beforeIdentity};opened=${openedIdentity};path-after=${afterIdentity}`,
-    );
-    const stable =
-      !afterPath.isSymbolicLink() &&
-      afterPath.isFile() &&
-      sameFileObjectIdentity(beforePath, before) &&
-      sameFileSnapshotIdentity(before, after) &&
-      sameFileSnapshotIdentity(after, afterPath);
-    if (stable) {
-      firstIdentity = `${beforeIdentity}:${afterIdentity}`;
-      break;
-    }
-    if (attempt === 1) {
-      throw new InstructionSystemError(
-        "SOURCE_CHANGED_DURING_RESOLUTION",
-        `${sourceLabel} changed while it was being read on both bounded attempts.`,
-        [
-          {
-            code: "SOURCE_CHANGED_DURING_RESOLUTION",
-            severity: "error",
-            message: `${sourceLabel} did not retain the same file identity while it was read.`,
-            details: { observations },
-          },
-        ],
-      );
-    }
-  }
-
-  const body = normalizeInstructionBody(bytes ?? new Uint8Array(), sourceLabel);
-  return {
-    body,
-    digest: sha256(body),
-    byteLength: utf8ByteLength(body),
-    lineCount: body.split("\n").length,
-    identity: firstIdentity,
-  };
-};
-
 export const normalizeProfileName = (name: string): string => {
   const normalized = name.trim().normalize("NFKC");
   if (normalized.length === 0) {
@@ -214,10 +113,24 @@ export const normalizeProfileName = (name: string): string => {
       "Profile names cannot be empty.",
     );
   }
-  if (unicodeCodePointLength(normalized) > 200) {
+  if (
+    unicodeCodePointLength(normalized) > MAX_INSTRUCTION_PROFILE_NAME_LENGTH
+  ) {
     throw new InstructionSystemError(
       "PROFILE_NAME_TOO_LONG",
-      "Profile names cannot exceed 200 characters.",
+      `Profile names cannot exceed ${MAX_INSTRUCTION_PROFILE_NAME_LENGTH} characters.`,
+    );
+  }
+  if (hasAsciiControlCharacter(normalized)) {
+    throw new InstructionSystemError(
+      "PROFILE_NAME_INVALID",
+      "Profile names cannot contain control characters.",
+    );
+  }
+  if (hasUnpairedUtf16Surrogate(normalized)) {
+    throw new InstructionSystemError(
+      "PROFILE_NAME_INVALID",
+      "Profile names must contain valid Unicode text.",
     );
   }
   return normalized;
@@ -246,10 +159,11 @@ export const normalizeScopePath = (path: string): string => {
   if (trimmed === "") {
     throw new InstructionSystemError(
       "INVALID_SCOPE_PATH",
-      "Instruction scope paths cannot be empty; use \".\" for the workspace root.",
+      'Instruction scope paths cannot be empty; use "." for the workspace root.',
     );
   }
   if (
+    hasUnpairedUtf16Surrogate(trimmed) ||
     trimmed.includes("\0") ||
     trimmed.startsWith("/") ||
     trimmed.startsWith("//") ||
@@ -265,9 +179,7 @@ export const normalizeScopePath = (path: string): string => {
   if (
     segments.some(
       (segment) =>
-        segment.length === 0 ||
-        segment === ".." ||
-        segment.includes("\0"),
+        segment.length === 0 || segment === ".." || segment.includes("\0"),
     )
   ) {
     throw new InstructionSystemError(
@@ -315,11 +227,7 @@ export const assertContainedPath = (
   code = "PATH_OUTSIDE_WORKSPACE",
 ): void => {
   const rel = relative(resolve(root), resolve(candidate));
-  if (
-    rel === ".." ||
-    rel.startsWith(`..${sep}`) ||
-    isAbsolute(rel)
-  ) {
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     throw new InstructionSystemError(
       code,
       `${candidate} is outside workspace ${root}.`,
@@ -366,15 +274,6 @@ export const canonicalizeExistingWorkspaceRoot = async (
     );
   }
   return canonical;
-};
-
-export const toPortableRelativePath = (
-  root: string,
-  path: string,
-): string => {
-  assertContainedPath(root, path);
-  const value = relative(root, path).split(sep).join("/");
-  return value.length === 0 ? "." : value;
 };
 
 export const deepFreeze = <T>(value: T): Readonly<T> => {

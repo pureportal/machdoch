@@ -17,11 +17,7 @@ vi.mock("./normalization.js", async (importOriginal) => {
   };
 });
 
-import {
-  createInstructionProfile,
-  resolveInstructionSet,
-  setDefaultInstructionProfiles,
-} from "./index.js";
+import { createInstructionProfile, resolveInstructionSet } from "./index.js";
 
 const roots: string[] = [];
 
@@ -39,14 +35,10 @@ it("chooses a collision-free deterministic boundary without rewriting a body", a
   const body = `The candidate boundary is ${collidingBase} and must remain exact.`;
   roots.push(root);
   await mkdir(workspaceRoot);
-  const profile = await createInstructionProfile(
-    { name: "Boundary collision", body },
+  await createInstructionProfile(
+    { name: "Boundary collision", body, global: true },
     { path: libraryPath },
   );
-  await setDefaultInstructionProfiles([profile.profile.id], {
-    path: libraryPath,
-    expectedRevision: 1,
-  });
 
   const resolution = await resolveInstructionSet(
     {

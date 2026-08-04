@@ -307,7 +307,6 @@ export interface TaskInstructionSource {
   body: string;
   scopePath: string;
   precedence: number;
-  relativePath?: string;
 }
 
 export interface TaskSuggestion {

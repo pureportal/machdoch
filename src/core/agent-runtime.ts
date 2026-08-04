@@ -52,10 +52,12 @@ import { renderMcpInitializationInstructionSections } from "./mcp/initialization
 import { createInstructionDeliveryPlanForRuntime } from "./provider-enrollment/instruction-delivery-preflight.js";
 import {
   adaptFrozenInstructionSet,
+  assertInstructionInvocationBudget,
   assertInstructionDeliveryReceiptCertain,
   canonicalDigest,
   compareCanonicalStrings,
   createInstructionDeliveryReceipt,
+  utf8ByteLength,
   type FrozenInstructionSet,
   type InstructionDeliveryPlan,
   type InstructionDeliveryReceipt,
@@ -139,15 +141,9 @@ export const attachInstructionDeliveryMetadata = (
       ...(source.workspaceId === undefined
         ? {}
         : { workspaceId: source.workspaceId }),
-      ...(source.relativePath === undefined
-        ? {}
-        : { relativePath: source.relativePath }),
       ...(source.assignmentPath === undefined
         ? {}
         : { assignmentPath: source.assignmentPath }),
-      ...(source.inheritedFrom === undefined
-        ? {}
-        : { inheritedFrom: source.inheritedFrom }),
       ...(source.reason === undefined ? {} : { reason: source.reason }),
       ...(source.otherAssignments === undefined
         ? {}
@@ -1166,6 +1162,48 @@ const runExecutorCycle = async (
     };
   }
 
+  const executorSystemPrompt = createExecutorSystemPrompt(
+    config,
+    taskContext,
+    toolSpecs,
+    conversationContext,
+    continuationRequest,
+    systemPromptSections ?? [],
+    mcpInitializationSections,
+  );
+  const executorUserPrompt = createExecutorUserPrompt(
+    config,
+    task,
+    taskContext,
+    conversationContext,
+    continuationRequest,
+  );
+  const initialRequestIdentity = {
+    provider: config.provider,
+    model: config.model,
+    reasoning: config.reasoning,
+    systemPrompt: executorSystemPrompt,
+    userPrompt: executorUserPrompt,
+    tools: toolSpecs,
+    imageInputs:
+      imageInputs?.map((image) => ({
+        path: image.path,
+        mediaType: image.mediaType,
+        detail: image.detail,
+        dataDigest: canonicalDigest(image.data),
+        dataBytes: Buffer.byteLength(image.data, "utf8"),
+      })) ?? [],
+    structuredOutput,
+  };
+  const initialRequestJson = JSON.stringify(initialRequestIdentity);
+  let accumulatedRequestBytes = utf8ByteLength(initialRequestJson);
+  assertInstructionInvocationBudget(instructionResolution, {
+    phase: continuationRequest ? "retry" : "initial",
+    assembledRequestBytes: accumulatedRequestBytes,
+  });
+  const initialAssembledRequestDigest = canonicalDigest(initialRequestIdentity);
+  let previousAssembledRequestDigest = initialAssembledRequestDigest;
+
   let modelCallSequence = 1;
   const initialModelCallLabel = `Executor model call ${modelCallSequence}`;
   const initialModelCallStartedAt = Date.now();
@@ -1217,41 +1255,6 @@ const runExecutorCycle = async (
   );
 
   let turn: AgentModelTurn;
-  const executorSystemPrompt = createExecutorSystemPrompt(
-    config,
-    taskContext,
-    toolSpecs,
-    conversationContext,
-    continuationRequest,
-    systemPromptSections ?? [],
-    mcpInitializationSections,
-  );
-  const executorUserPrompt = createExecutorUserPrompt(
-    config,
-    task,
-    taskContext,
-    conversationContext,
-    continuationRequest,
-  );
-  const initialRequestIdentity = {
-    provider: config.provider,
-    model: config.model,
-    reasoning: config.reasoning,
-    systemPrompt: executorSystemPrompt,
-    userPrompt: executorUserPrompt,
-    tools: toolSpecs,
-    imageInputs:
-      imageInputs?.map((image) => ({
-        path: image.path,
-        mediaType: image.mediaType,
-        detail: image.detail,
-        dataDigest: canonicalDigest(image.data),
-        dataBytes: Buffer.byteLength(image.data, "utf8"),
-      })) ?? [],
-    structuredOutput,
-  };
-  const initialAssembledRequestDigest = canonicalDigest(initialRequestIdentity);
-  let previousAssembledRequestDigest = initialAssembledRequestDigest;
 
   try {
     turn = await adapter.startTurn({
@@ -1385,6 +1388,24 @@ const runExecutorCycle = async (
       toolResults: toolResults.length,
     });
 
+    const continuationIdentity = {
+      previousTurn: turn,
+      modelCallSequence,
+      toolResults,
+    };
+    const prospectiveRequestBytes =
+      accumulatedRequestBytes +
+      utf8ByteLength(JSON.stringify(continuationIdentity));
+    assertInstructionInvocationBudget(instructionResolution, {
+      phase: "continuation",
+      assembledRequestBytes: prospectiveRequestBytes,
+    });
+    const assembledRequestDigest = canonicalDigest({
+      previousRequestDigest: previousAssembledRequestDigest,
+      ...continuationIdentity,
+      canonicalDigest: instructionResolution.canonicalDigest,
+    });
+
     await emitAgentProgress(
       task,
       config,
@@ -1408,13 +1429,6 @@ const runExecutorCycle = async (
     );
 
     let nextTurn: AgentModelTurn;
-    const assembledRequestDigest = canonicalDigest({
-      previousRequestDigest: previousAssembledRequestDigest,
-      previousTurn: turn,
-      modelCallSequence,
-      toolResults,
-      canonicalDigest: instructionResolution.canonicalDigest,
-    });
     try {
       nextTurn = await adapter.continueTurn({
         toolResults,
@@ -1440,6 +1454,7 @@ const runExecutorCycle = async (
       });
       instructionReceipts.push(receipt);
       assertInstructionDeliveryReceiptCertain(receipt);
+      accumulatedRequestBytes = prospectiveRequestBytes;
       previousAssembledRequestDigest = assembledRequestDigest;
 
       await modelStreamProgress.flush();
@@ -1971,6 +1986,35 @@ const runAutopilotMonitorPass = async (
     );
   }
 
+  const monitorSystemPrompt = createAutopilotMonitorSystemPrompt(
+    reviewConfig,
+    monitorTaskContext,
+    renderMcpInitializationInstructionSections(
+      reviewInstructionResolution.mcpInitializationInstructions,
+    ),
+  );
+  const monitorUserPrompt = createAutopilotMonitorUserPrompt(
+    task,
+    monitorTaskContext,
+    cycleResult,
+    priorDecisions,
+  );
+  const monitorRequestIdentity = {
+    provider: reviewConfig.provider,
+    model: reviewConfig.model,
+    reasoning: reviewConfig.reasoning,
+    systemPrompt: monitorSystemPrompt,
+    userPrompt: monitorUserPrompt,
+    tools: [monitorTool],
+  };
+  assertInstructionInvocationBudget(reviewInstructionResolution, {
+    phase: "validator",
+    assembledRequestBytes: utf8ByteLength(
+      JSON.stringify(monitorRequestIdentity),
+    ),
+  });
+  const monitorAssembledRequestDigest = canonicalDigest(monitorRequestIdentity);
+
   await emitAgentProgress(
     task,
     reviewConfig,
@@ -2022,29 +2066,7 @@ const runAutopilotMonitorPass = async (
       },
     },
   );
-
   let turn: AgentModelTurn;
-  const monitorSystemPrompt = createAutopilotMonitorSystemPrompt(
-    reviewConfig,
-    monitorTaskContext,
-    renderMcpInitializationInstructionSections(
-      reviewInstructionResolution.mcpInitializationInstructions,
-    ),
-  );
-  const monitorUserPrompt = createAutopilotMonitorUserPrompt(
-    task,
-    monitorTaskContext,
-    cycleResult,
-    priorDecisions,
-  );
-  const monitorAssembledRequestDigest = canonicalDigest({
-    provider: reviewConfig.provider,
-    model: reviewConfig.model,
-    reasoning: reviewConfig.reasoning,
-    systemPrompt: monitorSystemPrompt,
-    userPrompt: monitorUserPrompt,
-    tools: [monitorTool],
-  });
   try {
     turn = await adapter.startTurn({
       model: reviewConfig.model,

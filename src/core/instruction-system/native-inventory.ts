@@ -19,17 +19,13 @@ import {
 } from "./normalization.js";
 import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
 import { sameFileSnapshotIdentity } from "../_helpers/same-file-identity.helper.js";
-import type {
-  LocalInstructionRecord,
-  NativeInstructionRecord,
-} from "./types.js";
+import type { NativeInstructionRecord } from "./types.js";
 import { InstructionSystemError } from "./types.js";
 
 interface NativeCandidate {
   path: string;
   location: "workspace" | "user";
   convention: string;
-  canonical?: boolean;
   suppressible?: boolean;
   maxBytes?: number;
 }
@@ -1093,10 +1089,9 @@ const discoverProviderAncestorInstructions = async (input: {
 const nativeStatusRank: Record<NativeInstructionRecord["status"], number> = {
   inactive: 0,
   unknown: 1,
-  canonical: 2,
-  suppressed: 3,
-  "native-extra": 4,
-  unreadable: 5,
+  suppressed: 2,
+  "native-extra": 3,
+  unreadable: 4,
 };
 
 const mergeNativeRecords = (
@@ -1189,7 +1184,6 @@ export const inventoryNativeInstructions = async (input: {
   workspaceRoot: string;
   providerId: ConfiguredModelProvider;
   surface: "api" | "cli";
-  locals: readonly LocalInstructionRecord[];
 }): Promise<NativeInstructionRecord[]> => {
   const canonicalWorkspaceRoot = await realpath(input.workspaceRoot).catch(() =>
     resolve(input.workspaceRoot),
@@ -1285,41 +1279,6 @@ export const inventoryNativeInstructions = async (input: {
           "user",
         )
       : { candidates: [], diagnostics: [] };
-  const canonicalLocals: NativeInstructionRecord[] = input.locals.map(
-    (local) => ({
-      path: join(input.workspaceRoot, local.relativePath),
-      location: "workspace",
-      convention: "agents-md",
-      status: "canonical",
-      digest: local.digest,
-      byteLength: local.byteLength,
-      note: "Loaded by Machdoch as a canonical project-local instruction.",
-    }),
-  );
-  const canonicalNativeDuplicates: NativeInstructionRecord[] =
-    input.surface === "cli" && input.providerId === "codex-cli"
-      ? input.locals
-          .filter((local) => local.relativePath === "AGENTS.md")
-          .map((local) => ({
-            path: join(input.workspaceRoot, local.relativePath),
-            location: "workspace",
-            convention: "codex-project-agents",
-            status: "suppressed",
-            digest: local.digest,
-            byteLength: local.byteLength,
-            note: "This canonical AGENTS.md is also recognized by Codex, but the run-scoped adapter disables project instruction discovery so it is delivered only through Machdoch's developer instructions.",
-          }))
-      : input.surface === "cli" && input.providerId === "copilot-cli"
-        ? input.locals.map((local) => ({
-            path: join(input.workspaceRoot, local.relativePath),
-            location: "workspace",
-            convention: "copilot-agent-instructions",
-            status: "suppressed",
-            digest: local.digest,
-            byteLength: local.byteLength,
-            note: "This canonical AGENTS.md is also recognized by Copilot CLI, and --no-custom-instructions suppresses that native copy.",
-          }))
-        : [];
   const candidates = [
     ...workspaceCandidates(input.workspaceRoot),
     ...codexFallbacks.candidates,
@@ -1348,8 +1307,6 @@ export const inventoryNativeInstructions = async (input: {
     )
   ).filter((record): record is NativeInstructionRecord => record !== undefined);
   return mergeNativeRecords([
-    ...canonicalLocals,
-    ...canonicalNativeDuplicates,
     ...[
       ...gitRootDiscovery.diagnostics,
       ...codexFallbacks.diagnostics,

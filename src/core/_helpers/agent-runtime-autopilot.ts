@@ -166,23 +166,25 @@ const createTraceTranscript = (
 };
 
 const createValidatorInstructionSection = (
-  taskContext: ResolvedTaskContext | undefined,
+  taskContext: ResolvedTaskContext,
 ): string => {
-  const resolution = taskContext?.instructionResolution;
-  const instructionEnvelope =
-    resolution?.renderedEnvelope ??
-    "MACHDOCH-INSTRUCTION-ENVELOPE/1\nNo canonical instruction snapshot was supplied.\n";
+  const resolution = taskContext.instructionResolution;
+  if (!resolution) {
+    throw new Error(
+      "The validator system prompt requires a frozen instruction resolution.",
+    );
+  }
 
   return [
-    `<validator_instructions digest="${resolution?.canonicalDigest ?? "unresolved"}">`,
-    instructionEnvelope,
+    `<validator_instructions digest="${resolution.canonicalDigest}">`,
+    resolution.renderedEnvelope,
     "</validator_instructions>",
   ].join("\n");
 };
 
 export const createAutopilotMonitorSystemPrompt = (
   config: RuntimeConfig,
-  taskContext?: ResolvedTaskContext,
+  taskContext: ResolvedTaskContext,
   mcpInitializationSections: readonly string[] = [],
 ): string => {
   return [

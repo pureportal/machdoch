@@ -5,6 +5,7 @@ import {
   rm,
   stat,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -68,15 +69,16 @@ vi.mock("./capability-registry.js", async (importOriginal) => {
   };
 });
 
-import { materializeCliEnrollment as materializeCliEnrollmentRaw } from "./materializer.js";
+import {
+  cleanupStaleEnrollmentArtifacts,
+  materializeCliEnrollment as materializeCliEnrollmentRaw,
+} from "./materializer.js";
 import { createCliInstructionCapabilityFromProbe } from "./instruction-delivery-preflight.js";
 import {
   createInstructionProfile,
   createInstructionDeliveryPlan,
-  createLocalInstruction,
-  registerInstructionWorkspace,
+  configureInstructionWorkspace,
   resolveInstructionSet,
-  setDefaultInstructionProfiles,
   setWorkspaceInstructionScope,
 } from "../instruction-system/index.js";
 import type { FrozenInstructionSet } from "../instruction-system/index.js";
@@ -381,8 +383,8 @@ describe("CLI provider enrollment materializer", () => {
     await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
     vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
 
-    const global = await createInstructionProfile(
-      { name: "Global", body: "Global boundary policy." },
+    await createInstructionProfile(
+      { name: "Global", body: "Global boundary policy.", global: true },
       { path: libraryPath },
     );
     const workspace = await createInstructionProfile(
@@ -393,38 +395,23 @@ describe("CLI provider enrollment materializer", () => {
       { name: "Nested", body: "Nested boundary policy." },
       { path: libraryPath, expectedRevision: 2 },
     );
-    await setDefaultInstructionProfiles([global.profile.id], {
-      path: libraryPath,
-      expectedRevision: 3,
-    });
-    const registered = await registerInstructionWorkspace(
+    const registered = await configureInstructionWorkspace(
       workspaceRoot,
       {},
-      { path: libraryPath, expectedRevision: 4 },
+      { path: libraryPath, expectedRevision: 3 },
     );
     await setWorkspaceInstructionScope(
       registered.workspace.id,
       ".",
       [workspace.profile.id],
-      { path: libraryPath, expectedRevision: 5 },
+      { path: libraryPath, expectedRevision: 4 },
     );
     await setWorkspaceInstructionScope(
       registered.workspace.id,
       "apps/web",
       [nested.profile.id],
-      { path: libraryPath, expectedRevision: 6 },
+      { path: libraryPath, expectedRevision: 5 },
     );
-    await createLocalInstruction(
-      workspaceRoot,
-      ".",
-      "Root local boundary policy.",
-    );
-    await createLocalInstruction(
-      workspaceRoot,
-      "apps/web",
-      "Nested local boundary policy.",
-    );
-
     const resolution = await resolveInstructionSet(
       {
         providerId: "copilot-cli",
@@ -448,9 +435,7 @@ describe("CLI provider enrollment materializer", () => {
     const orderedBodies = [
       "Global boundary policy.",
       "Workspace boundary policy.",
-      "Root local boundary policy.",
       "Nested boundary policy.",
-      "Nested local boundary policy.",
     ];
 
     for (const [index, body] of orderedBodies.entries()) {
@@ -731,6 +716,41 @@ describe("CLI provider enrollment materializer", () => {
     });
   });
 
+  it("does not reap an old enrollment owned by a running process", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    const resolution = createInstructionResolutionFixture({
+      providerId: "copilot-cli",
+      surface: "cli",
+      body: "Keep this active enrollment.",
+    });
+    const enrollment = await materializeCliEnrollment({
+      provider: "copilot-cli",
+      executable: process.execPath,
+      runId: "test-active-stale-enrollment",
+      workspaceRoot,
+      resolution,
+      deliveryPlan: createProbedPlan(resolution),
+    });
+
+    const oldTimestamp = new Date(Date.now() - 48 * 60 * 60 * 1_000);
+    await utimes(enrollment.rootPath, oldTimestamp, oldTimestamp);
+    await cleanupStaleEnrollmentArtifacts();
+
+    await expect(stat(enrollment.rootPath)).resolves.toBeDefined();
+    await enrollment.dispose();
+    await expect(stat(enrollment.rootPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("keeps arbitrary Codex content off Windows command wrappers", () => {
     const resolution = createInstructionResolutionFixture({
       providerId: "codex-cli",
@@ -827,7 +847,6 @@ describe("CLI provider enrollment materializer", () => {
         workspaceRoot,
         providerId: "copilot-cli",
         surface: "cli",
-        locals: [],
       }),
     } as FrozenInstructionSet;
     const enrollment = await materializeCliEnrollment({
@@ -898,7 +917,6 @@ describe("CLI provider enrollment materializer", () => {
         workspaceRoot,
         providerId: "copilot-cli",
         surface: "cli",
-        locals: [],
       }),
     } as FrozenInstructionSet;
 

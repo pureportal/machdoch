@@ -8,10 +8,8 @@ vi.mock("../model-capabilities.js", async (importOriginal) => {
     await importOriginal<typeof import("../model-capabilities.js")>();
   return {
     ...actual,
-    getModelContextWindowTokens: (
-      _provider: string,
-      model: string,
-    ) => (model === "fixture-mcp-context" ? 20_000 : 16_500),
+    getModelContextWindowTokens: (_provider: string, model: string) =>
+      model === "fixture-mcp-context" ? 20_000 : 16_500,
   };
 });
 
@@ -21,7 +19,6 @@ import {
   createInstructionDeliveryPlan,
   createInstructionProfile,
   resolveInstructionSet,
-  setDefaultInstructionProfiles,
 } from "./index.js";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
 import { createInstructionDeliveryPlanForRuntime } from "../provider-enrollment/instruction-delivery-preflight.js";
@@ -40,14 +37,14 @@ it("blocks a verified model-specific shortfall before the core byte limit", asyn
   const libraryPath = join(root, "instruction-library.json");
   roots.push(root);
   await mkdir(workspaceRoot);
-  const profile = await createInstructionProfile(
-    { name: "Within core limit", body: "x".repeat(4_096) },
+  await createInstructionProfile(
+    {
+      name: "Within core limit",
+      body: "x".repeat(4_096),
+      global: true,
+    },
     { path: libraryPath },
   );
-  await setDefaultInstructionProfiles([profile.profile.id], {
-    path: libraryPath,
-    expectedRevision: 1,
-  });
 
   await expect(
     resolveInstructionSet(
@@ -151,17 +148,14 @@ it("replans a frozen set for a provider/model switch and blocks an incapable sur
   const libraryPath = join(root, "instruction-library.json");
   roots.push(root);
   await mkdir(workspaceRoot);
-  const profile = await createInstructionProfile(
+  await createInstructionProfile(
     {
       name: "Frozen switch",
       body: `${"line\n".repeat(201)}${"x".repeat(4_096)}`,
+      global: true,
     },
     { path: libraryPath },
   );
-  await setDefaultInstructionProfiles([profile.profile.id], {
-    path: libraryPath,
-    expectedRevision: 1,
-  });
   const initial = await resolveInstructionSet(
     {
       workspaceRoot,
@@ -195,9 +189,7 @@ it("replans a frozen set for a provider/model switch and blocks an incapable sur
     grade: "unsupported",
     canonicalDigest: initial.canonicalDigest,
   });
-  expect(plan.blockingReasons.join(" ")).toContain(
-    "Only 116 tokens remain",
-  );
+  expect(plan.blockingReasons.join(" ")).toContain("Only 116 tokens remain");
 });
 
 it("rechecks growing continuation context and blocks before invocation", () => {
@@ -221,7 +213,9 @@ it("rechecks growing continuation context and blocks before invocation", () => {
       phase: "continuation",
       assembledRequestBytes: fixture.budget.envelopeBytes + 5_000,
     }),
-  ).toThrowError(/continuation request needs.*provider was not invoked.*not truncated/su);
+  ).toThrowError(
+    /continuation request needs.*provider was not invoked.*not truncated/su,
+  );
 });
 
 it("does not claim subagent instruction inheritance for the OpenAI multi-agent beta", async () => {

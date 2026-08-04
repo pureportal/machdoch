@@ -802,7 +802,7 @@ mod tests {
         ));
         assert!(!is_supported_protocol_version(
             PROTOCOL_MAJOR,
-            PROTOCOL_MINOR.saturating_sub(1)
+            PROTOCOL_MINOR.saturating_add(1)
         ));
         assert!(!is_supported_protocol_version(
             PROTOCOL_MAJOR.saturating_add(1),
@@ -943,7 +943,7 @@ mod tests {
         let responder = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("peer should connect");
             match accept_noise_responder(stream, &sid).await {
-                Ok(_) => panic!("a lower protocol minor must fail before Noise"),
+                Ok(_) => panic!("a mismatched protocol minor must fail before Noise"),
                 Err(error) => error,
             }
         });
@@ -952,7 +952,7 @@ mod tests {
             .expect("connect should work");
         let incompatible = ConnectionPreface {
             major: PROTOCOL_MAJOR,
-            minor: PROTOCOL_MINOR.saturating_sub(1),
+            minor: PROTOCOL_MINOR.saturating_add(1),
             sid,
             initiator_nonce: [12; 16],
         };

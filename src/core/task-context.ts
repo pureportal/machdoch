@@ -165,9 +165,6 @@ export const resolveTaskContext = (
         body: source.body,
         scopePath: source.scopePath,
         precedence: source.precedence,
-        ...(source.relativePath === undefined
-          ? {}
-          : { relativePath: source.relativePath }),
       }))
     : [];
 

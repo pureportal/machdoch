@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { getInstructionCapabilityDescriptor } from "./delivery.js";
 import { getModelContextWindowTokens } from "../model-capabilities.js";
 import { loadInstructionLibrary } from "./library-store.js";
-import { discoverLocalInstructions } from "./local-discovery.js";
 import { inventoryNativeInstructions } from "./native-inventory.js";
 import { instructionTagRuleMatches } from "./tag-rules.js";
 import {
@@ -66,30 +65,33 @@ const validateConfiguredScopes = async (
   const diagnostics: InstructionDiagnostic[] = [];
   for (const scope of scopes) {
     if (scope === ".") continue;
-    const path = join(workspaceRoot, ...scope.split("/"));
-    let metadata;
-    try {
-      metadata = await lstat(path);
-    } catch (error) {
-      throw new InstructionSystemError(
-        "SCOPE_PATH_MISSING",
-        `Assigned instruction scope "${scope}" does not exist.`,
-        [
-          {
-            code: "SCOPE_PATH_MISSING",
-            severity: "error",
-            message: `Assigned scope "${scope}" must exist before a run can start.`,
-            relativePath: scope,
-          },
-        ],
-        { cause: error },
-      );
-    }
-    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-      throw new InstructionSystemError(
-        "ASSIGNED_SCOPE_INVALID",
-        `Assigned instruction scope "${scope}" must be a real directory, not a link.`,
-      );
+    let path = workspaceRoot;
+    for (const segment of scope.split("/")) {
+      path = join(path, segment);
+      let metadata;
+      try {
+        metadata = await lstat(path);
+      } catch (error) {
+        throw new InstructionSystemError(
+          "SCOPE_PATH_MISSING",
+          `Assigned instruction scope "${scope}" does not exist.`,
+          [
+            {
+              code: "SCOPE_PATH_MISSING",
+              severity: "error",
+              message: `Assigned scope "${scope}" must exist before a run can start.`,
+              relativePath: scope,
+            },
+          ],
+          { cause: error },
+        );
+      }
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new InstructionSystemError(
+          "ASSIGNED_SCOPE_INVALID",
+          `Assigned instruction scope "${scope}" must contain only real directories, not links.`,
+        );
+      }
     }
     const canonical = await realpath(path);
     assertContainedPath(workspaceRoot, canonical, "SCOPE_OUTSIDE_WORKSPACE");
@@ -124,7 +126,11 @@ const validateConfiguredScopes = async (
 
 const createProfileSource = (input: {
   id: string;
-  kind: "profile-default" | "profile-auto" | "profile-workspace";
+  kind:
+    | "profile-global"
+    | "profile-auto"
+    | "profile-workspace"
+    | "profile-unassigned";
   name: string;
   body: string;
   profileId: string;
@@ -135,7 +141,6 @@ const createProfileSource = (input: {
   sequence: number;
   status?: "selected" | "skipped";
   reason?: ResolvedInstructionSource["reason"];
-  inheritedFrom?: string;
   otherAssignments?: ResolvedInstructionSource["otherAssignments"];
 }): PendingSource => ({
   id: input.id,
@@ -156,9 +161,6 @@ const createProfileSource = (input: {
     : { workspaceId: input.workspaceId }),
   status: input.status ?? "selected",
   ...(input.reason === undefined ? {} : { reason: input.reason }),
-  ...(input.inheritedFrom === undefined
-    ? {}
-    : { inheritedFrom: input.inheritedFrom }),
   ...(input.otherAssignments === undefined
     ? {}
     : {
@@ -215,7 +217,6 @@ const createCanonicalManifest = (
     id: source.id,
     kind: source.kind,
     profileId: source.profileId,
-    relativePath: source.relativePath,
     scopePath: source.scopePath,
     assignmentPath: source.assignmentPath,
     precedence: source.precedence,
@@ -533,84 +534,56 @@ export const resolveInstructionSet = async (
         workspace.scopes.map((scope) => scope.path),
       )
     : [];
-  const localDiscovery = await discoverLocalInstructions(workspaceRoot).catch(
-    (error: unknown) => ({
-      files: [],
-      visitedDirectories: 0,
-      diagnostics: [
-        {
-          code:
-            error instanceof InstructionSystemError
-              ? error.code
-              : "LOCAL_INSTRUCTION_DISCOVERY_SKIPPED",
-          severity: "warning" as const,
-          message: `Project instruction discovery was skipped without blocking execution: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-    }),
-  );
-  const [nativeInventory, mcpInitializationInstructions] = await Promise.all([
-    inventoryNativeInstructions({
-      workspaceRoot,
-      providerId: input.providerId,
-      surface: input.surface,
-      locals: localDiscovery.files,
-    }).catch(() => []),
-    loadMcpInitializationInstructionSnapshot(workspaceRoot).catch(() => []),
-  ]);
+  const [nativeInventoryResult, mcpInitializationInstructions] =
+    await Promise.all([
+      inventoryNativeInstructions({
+        workspaceRoot,
+        providerId: input.providerId,
+        surface: input.surface,
+      })
+        .then((value) => ({ value, error: undefined }))
+        .catch((error: unknown) => ({
+          value: [],
+          error: error instanceof Error ? error.message : String(error),
+        })),
+      loadMcpInitializationInstructionSnapshot(workspaceRoot),
+    ]);
+  const nativeInventory = nativeInventoryResult.value;
   const profileById = new Map(
     library.profiles.map((profile) => [profile.id, profile]),
   );
   const selected: PendingSource[] = [];
   const assignmentEntries: PendingSource[] = [];
-  const selectedProfileScopes = new Map<
-    string,
-    Array<{ path: string; id: string }>
-  >();
   let sequence = 0;
   let precedence = 0;
 
-  for (const profileId of library.defaults.profiles) {
-    const profile = profileById.get(profileId);
-    if (!profile) {
-      throw new InstructionSystemError(
-        "INSTRUCTION_LIBRARY_INVALID_REFERENCE",
-        `Default assignment references missing profile ${profileId}.`,
-      );
-    }
+  for (const profile of library.profiles.filter(
+    (candidate) => candidate.global,
+  )) {
     const source = createProfileSource({
-      id: `profile-default:${profile.id}`,
-      kind: "profile-default",
+      id: `profile-global:${profile.id}`,
+      kind: "profile-global",
       name: profile.name,
       body: profile.body,
       profileId: profile.id,
       scopePath: ".",
-      assignmentPath: "defaults",
+      assignmentPath: "global",
       precedence: precedence++,
       sequence: sequence++,
-      ...(profile.enabled === false
-        ? {
-            status: "skipped" as const,
-            reason: "PROFILE_DISABLED" as const,
-          }
-        : {}),
     });
     assignmentEntries.push(source);
-    if (source.status === "selected") {
-      selected.push(source);
-      selectedProfileScopes.set(profile.id, [{ path: ".", id: source.id }]);
-    }
+    selected.push(source);
   }
 
   for (const profile of library.profiles.filter(
-    (candidate) => candidate.global !== true && candidate.match !== undefined,
+    (candidate) => !candidate.global && candidate.match !== undefined,
   )) {
     const matches =
       workspace !== undefined &&
-      instructionTagRuleMatches(profile.match!, workspace.tags ?? []);
-    const selectedAutomatically = profile.enabled !== false && matches;
+      instructionTagRuleMatches(profile.match!, workspace.tags);
+    const selectedAutomatically = profile.enabled && matches;
     const source = createProfileSource({
-      id: `profile-auto:${workspace?.id ?? "unregistered"}:${profile.id}`,
+      id: `profile-auto:${workspace?.id ?? "unconfigured"}:${profile.id}`,
       kind: "profile-auto",
       name: profile.name,
       body: profile.body,
@@ -624,16 +597,14 @@ export const resolveInstructionSet = async (
         ? {}
         : {
             status: "skipped" as const,
-            reason:
-              profile.enabled === false
-                ? ("PROFILE_DISABLED" as const)
-                : ("TAG_RULE_NOT_MATCHED" as const),
+            reason: !profile.enabled
+              ? ("PROFILE_DISABLED" as const)
+              : ("TAG_RULE_NOT_MATCHED" as const),
           }),
     });
     assignmentEntries.push(source);
     if (selectedAutomatically) {
       selected.push(source);
-      selectedProfileScopes.set(profile.id, [{ path: ".", id: source.id }]);
     }
   }
 
@@ -642,10 +613,9 @@ export const resolveInstructionSet = async (
         compareScope(left.path, right.path),
       )
     : [];
-  const allScopePaths = new Set<string>([
-    ...workspaceScopes.map((scope) => scope.path),
-    ...localDiscovery.files.map((local) => local.scopePath),
-  ]);
+  const allScopePaths = new Set<string>(
+    workspaceScopes.map((scope) => scope.path),
+  );
   const orderedScopePaths = [...allScopePaths].sort(compareScope);
 
   for (const scopePath of orderedScopePaths) {
@@ -660,10 +630,7 @@ export const resolveInstructionSet = async (
           `Workspace assignment references missing profile ${profileId}.`,
         );
       }
-      const ancestor = (selectedProfileScopes.get(profileId) ?? []).find(
-        (candidate) => isScopeAncestor(candidate.path, scopePath),
-      );
-      const disabled = profile.enabled === false;
+      const disabled = !profile.enabled;
       const source = createProfileSource({
         id: `profile-workspace:${workspace.id}:${scopePath}:${profile.id}`,
         kind: "profile-workspace",
@@ -680,43 +647,12 @@ export const resolveInstructionSet = async (
               status: "skipped" as const,
               reason: "PROFILE_DISABLED" as const,
             }
-          : ancestor
-            ? {
-                status: "skipped" as const,
-                reason: "DUPLICATE_INHERITED_ASSIGNMENT" as const,
-                inheritedFrom: ancestor.id,
-              }
-            : {}),
+          : {}),
       });
       assignmentEntries.push(source);
-      if (!ancestor && !disabled) {
+      if (!disabled) {
         selected.push(source);
-        selectedProfileScopes.set(profileId, [
-          ...(selectedProfileScopes.get(profileId) ?? []),
-          { path: scopePath, id: source.id },
-        ]);
       }
-    }
-
-    for (const local of localDiscovery.files.filter(
-      (candidate) =>
-        hostPathKey(candidate.scopePath) === hostPathKey(scopePath),
-    )) {
-      selected.push({
-        id: local.id,
-        kind: "project-local",
-        name: local.relativePath,
-        body: local.body,
-        digest: local.digest,
-        byteLength: local.byteLength,
-        lineCount: local.lineCount,
-        scopePath: local.scopePath,
-        precedence: precedence++,
-        sequence: sequence++,
-        trusted: false,
-        relativePath: local.relativePath,
-        status: "selected",
-      });
     }
   }
 
@@ -748,8 +684,8 @@ export const resolveInstructionSet = async (
     .filter((profile) => !assignedProfileIds.has(profile.id))
     .map((profile) =>
       createProfileSource({
-        id: `profile-default:${profile.id}`,
-        kind: "profile-default",
+        id: `profile-unassigned:${profile.id}`,
+        kind: "profile-unassigned",
         name: profile.name,
         body: profile.body,
         profileId: profile.id,
@@ -797,7 +733,7 @@ export const resolveInstructionSet = async (
         : "INSTRUCTION_INPUT_BUDGET_EXCEEDED";
     throw new InstructionSystemError(
       code,
-      `${budget.blockingErrors.join(" ")} Reduce profile/local guidance, narrow assignments, or select a model with a larger verified context window.`,
+      `${budget.blockingErrors.join(" ")} Reduce instruction content, narrow assignments, or select a model with a larger verified context window.`,
       budget.blockingErrors.map((message) => ({
         code,
         severity: "error",
@@ -842,11 +778,9 @@ export const resolveInstructionSet = async (
       availableInstructionTokens: budget.availableInstructionTokens,
     },
     nativeInventory: nativeInventory
-      .filter(
-        (record) =>
-          record.status !== "inactive" && record.status !== "canonical",
-      )
+      .filter((record) => record.status !== "inactive")
       .map((record) => ({
+        path: record.path,
         location: record.location,
         convention: record.convention,
         recognizingConventions: record.recognizingConventions,
@@ -854,6 +788,7 @@ export const resolveInstructionSet = async (
         digest: record.digest,
         byteLength: record.byteLength,
       })),
+    nativeInventoryError: nativeInventoryResult.error,
     mcpInitializationInstructions: mcpInitializationInstructions.map(
       ({ serverIds, digest, byteLength }) => ({
         serverIds,
@@ -864,7 +799,15 @@ export const resolveInstructionSet = async (
   });
   const diagnostics = [
     ...scopeDiagnostics,
-    ...localDiscovery.diagnostics,
+    ...(nativeInventoryResult.error === undefined
+      ? []
+      : [
+          {
+            code: "NATIVE_INSTRUCTION_INVENTORY_UNAVAILABLE",
+            severity: "warning" as const,
+            message: `Provider-native instruction inventory could not be completed: ${nativeInventoryResult.error}`,
+          },
+        ]),
     ...assignmentEntries
       .filter((source) => source.status === "skipped")
       .map<InstructionDiagnostic>((source) => ({
@@ -875,22 +818,12 @@ export const resolveInstructionSet = async (
             ? `${source.id} is disabled.`
             : source.reason === "TAG_RULE_NOT_MATCHED"
               ? `${source.id} does not match this workspace's tags.`
-              : `${source.id} is already inherited from ${source.inheritedFrom}.`,
+              : `${source.id} was not selected.`,
         sourceId: source.id,
       })),
     ...structuralDiagnostics(selected),
     ...exactBodyDiagnostics(selected, bodyGroups),
     ...createBudgetDiagnostics(selected, budget, input.model),
-    ...(!workspace
-      ? [
-          {
-            code: "WORKSPACE_NOT_REGISTERED",
-            severity: "info" as const,
-            message:
-              "This workspace is not registered; defaults and project-local AGENTS.md files still apply.",
-          },
-        ]
-      : []),
   ];
 
   return deepFreeze({
@@ -900,7 +833,6 @@ export const resolveInstructionSet = async (
     providerId: input.providerId,
     surface: input.surface,
     ...(input.model === undefined ? {} : { model: input.model }),
-    workspaceRegistered: workspace !== undefined,
     ...(workspace === undefined ? {} : { workspaceId: workspace.id }),
     libraryRevision: library.revision,
     selectedSources: selected.map(finalizeSource),
@@ -942,15 +874,13 @@ export const explainInstructionResolution = (
     surface: resolution.surface,
     ...(resolution.model === undefined ? {} : { model: resolution.model }),
     libraryRevision: resolution.libraryRevision,
-    workspaceRegistered: resolution.workspaceRegistered,
     ...(resolution.workspaceId === undefined
       ? {}
       : { workspaceId: resolution.workspaceId }),
     sources: [
       ...resolution.allProfiles,
       ...resolution.selectedSources.filter(
-        (source) =>
-          source.kind === "project-local" || source.kind === "flow-guidance",
+        (source) => source.kind === "flow-guidance",
       ),
     ].map((source) => ({
       id: source.id,
@@ -970,15 +900,9 @@ export const explainInstructionResolution = (
       ...(source.workspaceId === undefined
         ? {}
         : { workspaceId: source.workspaceId }),
-      ...(source.relativePath === undefined
-        ? {}
-        : { relativePath: source.relativePath }),
       ...(source.assignmentPath === undefined
         ? {}
         : { assignmentPath: source.assignmentPath }),
-      ...(source.inheritedFrom === undefined
-        ? {}
-        : { inheritedFrom: source.inheritedFrom }),
       ...(source.otherAssignments === undefined
         ? {}
         : {
@@ -1029,7 +953,7 @@ export const explainInstructionResolution = (
 /**
  * Reuses the frozen canonical sources while recomputing only provider/runtime
  * evidence. This is the provider-switch boundary used by RALPH preflight; it
- * never rereads profiles, assignments, or AGENTS.md bodies.
+ * never rereads instruction files or assignments.
  */
 export const adaptFrozenInstructionSet = async (
   resolution: FrozenInstructionSet,
@@ -1040,30 +964,17 @@ export const adaptFrozenInstructionSet = async (
     model?: string;
   },
 ): Promise<FrozenInstructionSet> => {
-  const locals = resolution.selectedSources
-    .filter(
-      (
-        source,
-      ): source is ResolvedInstructionSource & {
-        relativePath: string;
-      } => source.kind === "project-local" && source.relativePath !== undefined,
-    )
-    .map((source) => ({
-      id: source.id,
-      relativePath: source.relativePath,
-      scopePath: source.scopePath,
-      body: source.body,
-      digest: source.digest,
-      byteLength: source.byteLength,
-      lineCount: source.lineCount,
-      identity: `frozen:${source.digest}`,
-    }));
-  const nativeInventory = await inventoryNativeInstructions({
+  const nativeInventoryResult = await inventoryNativeInstructions({
     workspaceRoot: input.workspaceRoot,
     providerId: input.providerId,
     surface: input.surface,
-    locals,
-  }).catch(() => []);
+  })
+    .then((value) => ({ value, error: undefined }))
+    .catch((error: unknown) => ({
+      value: [],
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  const nativeInventory = nativeInventoryResult.value;
   const capability = getInstructionCapabilityDescriptor(
     input.providerId,
     input.surface,
@@ -1088,11 +999,9 @@ export const adaptFrozenInstructionSet = async (
       availableInstructionTokens: budget.availableInstructionTokens,
     },
     nativeInventory: nativeInventory
-      .filter(
-        (record) =>
-          record.status !== "inactive" && record.status !== "canonical",
-      )
+      .filter((record) => record.status !== "inactive")
       .map((record) => ({
+        path: record.path,
         location: record.location,
         convention: record.convention,
         recognizingConventions: record.recognizingConventions,
@@ -1100,6 +1009,7 @@ export const adaptFrozenInstructionSet = async (
         digest: record.digest,
         byteLength: record.byteLength,
       })),
+    nativeInventoryError: nativeInventoryResult.error,
     mcpInitializationInstructions: resolution.mcpInitializationInstructions.map(
       ({ serverIds, digest, byteLength }) => ({
         serverIds,
@@ -1110,15 +1020,25 @@ export const adaptFrozenInstructionSet = async (
   });
   const providerNeutral = { ...resolution };
   Reflect.deleteProperty(providerNeutral, "model");
-  const budgetDiagnosticCodes = new Set([
+  const refreshedDiagnosticCodes = new Set([
     "LARGE_INSTRUCTION_CONTEXT",
     "LONG_INSTRUCTION_SOURCE",
     "INSTRUCTION_MODEL_BUDGET_UNKNOWN",
+    "NATIVE_INSTRUCTION_INVENTORY_UNAVAILABLE",
   ]);
   const diagnostics = [
     ...resolution.diagnostics.filter(
-      (diagnostic) => !budgetDiagnosticCodes.has(diagnostic.code),
+      (diagnostic) => !refreshedDiagnosticCodes.has(diagnostic.code),
     ),
+    ...(nativeInventoryResult.error === undefined
+      ? []
+      : [
+          {
+            code: "NATIVE_INSTRUCTION_INVENTORY_UNAVAILABLE",
+            severity: "warning" as const,
+            message: `Provider-native instruction inventory could not be completed: ${nativeInventoryResult.error}`,
+          },
+        ]),
     ...createBudgetDiagnostics(resolution.selectedSources, budget, input.model),
   ];
   return deepFreeze({

@@ -1,8 +1,5 @@
 /// <reference types="vitest/globals" />
-import type {
-  ResolvedTaskContext,
-  TaskExecutionResult,
-} from "../types.js";
+import type { ResolvedTaskContext, TaskExecutionResult } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
 import {
@@ -49,6 +46,7 @@ const createTaskContext = (
     suggestedTools: ["filesystem", "network"],
     executionRole: "executor",
     applicableInstructions: [],
+    instructionResolution: createInstructionResolutionFixture(),
     ...overrides,
   };
 };
@@ -88,7 +86,10 @@ const createCycleResult = (): ExecutorCycleOutcome => {
 
 describe("autopilot monitor prompts", () => {
   it("adds explicit review dimensions to the system prompt", () => {
-    const prompt = createAutopilotMonitorSystemPrompt(createRuntimeConfig());
+    const prompt = createAutopilotMonitorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext(),
+    );
 
     expect(prompt).toContain("<review_dimensions>");
     expect(prompt).toContain("Request coverage");
@@ -116,10 +117,10 @@ describe("autopilot monitor prompts", () => {
     expect(prompt).toContain("<validator_instructions digest=");
     expect(prompt).toContain(instructionResolution.canonicalDigest);
     expect(prompt).toContain("MACHDOCH-INSTRUCTION-ENVELOPE/1");
-    expect(prompt).toContain("Reject completion without concrete verification output.");
     expect(prompt).toContain(
-      "MACHDOCH-MCP-INITIALIZATION-INSTRUCTIONS/1",
+      "Reject completion without concrete verification output.",
     );
+    expect(prompt).toContain("MACHDOCH-MCP-INITIALIZATION-INSTRUCTIONS/1");
     expect(prompt).toContain("Use the frozen MCP validation hint.");
   });
 

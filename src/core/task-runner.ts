@@ -137,7 +137,7 @@ const createPlanSteps = (
     {
       title: "Load workspace context",
       description:
-        "Resolve instruction profiles and local AGENTS.md files, discover prompts and skills, and establish the active runtime mode.",
+        "Resolve central instruction files, discover prompts and skills, and establish the active runtime mode.",
     },
     invokedPrompt
       ? {
@@ -150,7 +150,7 @@ const createPlanSteps = (
       : {
           title: "Clarify the task target",
           description: `Interpret the user goal: ${task}`,
-    },
+        },
     {
       title: "Check tool surface",
       description: toolSurfaceDescription,
@@ -236,9 +236,7 @@ export const previewTaskRun = (
   }
 
   if (config.mode === "ask") {
-    notes.push(
-      "Ask mode exposes only read-only function calls.",
-    );
+    notes.push("Ask mode exposes only read-only function calls.");
   }
 
   if (config.mode === "machdoch") {

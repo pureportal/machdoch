@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_store::StoreExt as _;
@@ -74,7 +74,6 @@ pub(crate) const MAX_TEXT_FILE_BYTES: u64 = 128 * 1024;
 pub(crate) const MAX_USER_CONFIG_BYTES: u64 = 8 * 1024 * 1024;
 pub(crate) const MAX_MCP_BYTES: u64 = 2 * 1024 * 1024;
 pub(crate) const MAX_RALPH_FLOW_BYTES: u64 = 4 * 1024 * 1024;
-pub(crate) const MAX_INSTRUCTION_LIBRARY_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_CONTEXT_PACKS: usize = 160;
 const MAX_CONTEXT_PACK_NAME_CHARS: usize = 72;
 const MAX_CONTEXT_PACK_TEXT_CHARS: usize = 8_000;
@@ -765,350 +764,6 @@ fn collect_tree_files(
     Ok(files)
 }
 
-fn valid_instruction_uuid(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 36
-        && bytes.iter().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => *byte == b'-',
-            _ => byte.is_ascii_hexdigit(),
-        })
-        && matches!(bytes[14].to_ascii_lowercase(), b'1'..=b'8')
-        && matches!(bytes[19].to_ascii_lowercase(), b'8' | b'9' | b'a' | b'b')
-}
-
-fn instruction_profile_name_key(value: &str) -> String {
-    value
-        .trim()
-        .nfkc()
-        .flat_map(char::to_uppercase)
-        .flat_map(char::to_lowercase)
-        .nfkc()
-        .collect()
-}
-
-fn normalize_instruction_profile_name(value: &str) -> Result<String, String> {
-    let normalized = value.trim().nfkc().collect::<String>();
-    if normalized.is_empty() || normalized.chars().count() > 200 {
-        return Err("An instruction profile name is invalid.".to_string());
-    }
-    Ok(normalized)
-}
-
-fn normalize_instruction_profile_body(value: &str) -> Result<String, String> {
-    let without_bom = value.strip_prefix('\u{feff}').unwrap_or(value);
-    let normalized = without_bom.replace("\r\n", "\n").replace('\r', "\n");
-    if normalized.contains('\0')
-        || normalized.trim().is_empty()
-        || normalized.len() as u64 > MAX_TEXT_FILE_BYTES
-    {
-        return Err("An instruction profile body is invalid or too large.".to_string());
-    }
-    Ok(normalized)
-}
-
-fn normalize_instruction_export_profiles(value: &mut Value) -> Result<(), String> {
-    let profiles = value
-        .get_mut("profiles")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "The instruction library export has invalid profiles.".to_string())?;
-    for profile in profiles {
-        let object = profile
-            .as_object_mut()
-            .ok_or_else(|| "An instruction profile must be an object.".to_string())?;
-        let name = object
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "An instruction profile name is invalid.".to_string())?
-            .to_string();
-        let body = object
-            .get("body")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "An instruction profile body is invalid or too large.".to_string())?
-            .to_string();
-        object.insert(
-            "name".to_string(),
-            Value::String(normalize_instruction_profile_name(&name)?),
-        );
-        object.insert(
-            "body".to_string(),
-            Value::String(normalize_instruction_profile_body(&body)?),
-        );
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_instruction_transfer_value(value: &Value) -> Result<(), String> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| "The instruction library export must be an object.".to_string())?;
-    require_exact_keys(
-        object,
-        &["schemaVersion", "exportedAt", "profiles", "defaults"],
-    )?;
-    if object.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
-        return Err(
-            "The instruction library export has an unsupported schema version.".to_string(),
-        );
-    }
-    let exported_at = object
-        .get("exportedAt")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "The instruction library export is missing its timestamp.".to_string())?;
-    DateTime::parse_from_rfc3339(exported_at)
-        .map_err(|_| "The instruction library export timestamp is invalid.".to_string())?;
-
-    let profiles = object
-        .get("profiles")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "The instruction library export has invalid profiles.".to_string())?;
-    if profiles.len() > MAX_TOTAL_ITEMS {
-        return Err("The instruction library export contains too many profiles.".to_string());
-    }
-    let mut ids = HashSet::new();
-    let mut names = HashSet::new();
-    for profile in profiles {
-        let profile = profile
-            .as_object()
-            .ok_or_else(|| "An instruction profile must be an object.".to_string())?;
-        let allowed = if profile.contains_key("description") {
-            vec![
-                "id",
-                "name",
-                "description",
-                "body",
-                "createdAt",
-                "updatedAt",
-            ]
-        } else {
-            vec!["id", "name", "body", "createdAt", "updatedAt"]
-        };
-        require_exact_keys(profile, &allowed)?;
-        let id = profile
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| valid_instruction_uuid(id))
-            .ok_or_else(|| "An instruction profile id is invalid.".to_string())?;
-        if !ids.insert(id.to_string()) {
-            return Err(
-                "The instruction library export contains a duplicate profile id.".to_string(),
-            );
-        }
-        let name = profile
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "An instruction profile name is invalid.".to_string())?;
-        let normalized_name = normalize_instruction_profile_name(name)?;
-        if !names.insert(instruction_profile_name_key(&normalized_name)) {
-            return Err(
-                "The instruction library export contains a duplicate normalized profile name."
-                    .to_string(),
-            );
-        }
-        if profile.get("description").is_some_and(|description| {
-            description
-                .as_str()
-                .is_none_or(|description| description.chars().count() > 2_000)
-        }) {
-            return Err("An instruction profile description is invalid.".to_string());
-        }
-        let body = profile
-            .get("body")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "An instruction profile body is invalid or too large.".to_string())?;
-        let _ = normalize_instruction_profile_body(body)?;
-        for field in ["createdAt", "updatedAt"] {
-            let timestamp = profile
-                .get(field)
-                .and_then(Value::as_str)
-                .ok_or_else(|| "An instruction profile timestamp is missing.".to_string())?;
-            DateTime::parse_from_rfc3339(timestamp)
-                .map_err(|_| "An instruction profile timestamp is invalid.".to_string())?;
-        }
-    }
-
-    let defaults = object
-        .get("defaults")
-        .and_then(Value::as_object)
-        .ok_or_else(|| "The instruction library export has invalid defaults.".to_string())?;
-    require_exact_keys(defaults, &["profiles"])?;
-    let defaults = defaults
-        .get("profiles")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "The instruction library export has invalid defaults.".to_string())?;
-    let mut default_ids = HashSet::new();
-    for id in defaults {
-        let id = id.as_str().filter(|id| ids.contains(*id)).ok_or_else(|| {
-            "The instruction library defaults reference a missing profile.".to_string()
-        })?;
-        if !default_ids.insert(id) {
-            return Err(
-                "The instruction library defaults contain a duplicate reference.".to_string(),
-            );
-        }
-    }
-    Ok(())
-}
-
-fn portable_instruction_library(value: &Value, exported_at: String) -> Result<Value, String> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| "The stored instruction library must be an object.".to_string())?;
-    require_exact_keys(
-        object,
-        &[
-            "schemaVersion",
-            "revision",
-            "profiles",
-            "defaults",
-            "workspaces",
-        ],
-    )?;
-    if object.get("schemaVersion").and_then(Value::as_u64) != Some(1)
-        || object
-            .get("revision")
-            .and_then(Value::as_u64)
-            .is_none_or(|revision| revision > MAX_SAFE_INTEGER)
-        || object.get("profiles").and_then(Value::as_array).is_none()
-        || object.get("defaults").and_then(Value::as_object).is_none()
-        || object.get("workspaces").and_then(Value::as_array).is_none()
-    {
-        return Err("The stored instruction library does not match schema version 1.".to_string());
-    }
-    let mut portable = json!({
-        "schemaVersion": 1,
-        "exportedAt": exported_at,
-        "profiles": object["profiles"].clone(),
-        "defaults": object["defaults"].clone(),
-    });
-    normalize_instruction_export_profiles(&mut portable)?;
-    validate_instruction_transfer_value(&portable)?;
-    Ok(portable)
-}
-
-pub(crate) fn merge_instruction_library_transfer(
-    existing: Option<&Value>,
-    incoming: &Value,
-) -> Result<Value, String> {
-    let mut incoming = incoming.clone();
-    normalize_instruction_export_profiles(&mut incoming)?;
-    validate_instruction_transfer_value(&incoming)?;
-    let mut library = existing.cloned().unwrap_or_else(|| {
-        json!({
-            "schemaVersion": 1,
-            "revision": 0,
-            "profiles": [],
-            "defaults": { "profiles": [] },
-            "workspaces": [],
-        })
-    });
-    let existing_portable = portable_instruction_library(&library, Utc::now().to_rfc3339())?;
-    let existing_profiles = existing_portable["profiles"]
-        .as_array()
-        .ok_or_else(|| "The stored instruction profiles are invalid.".to_string())?;
-    let incoming_profiles = incoming["profiles"]
-        .as_array()
-        .ok_or_else(|| "The imported instruction profiles are invalid.".to_string())?;
-    let mut profiles = existing_profiles.clone();
-    let mut ids = BTreeMap::new();
-    let mut names = BTreeMap::new();
-    for (index, profile) in profiles.iter().enumerate() {
-        let id = profile["id"].as_str().unwrap_or_default().to_string();
-        let name = instruction_profile_name_key(profile["name"].as_str().unwrap_or_default());
-        ids.insert(id, index);
-        names.insert(name, index);
-    }
-    let mut changed = false;
-    for profile in incoming_profiles {
-        let id = profile["id"].as_str().unwrap_or_default();
-        if let Some(existing_index) = ids.get(id).copied() {
-            let existing_profile = &profiles[existing_index];
-            if existing_profile["body"] != profile["body"] {
-                return Err(format!(
-                    "Instruction profile id {id} has different content on the receiver. Resolve this conflict explicitly before importing."
-                ));
-            }
-            continue;
-        }
-        let name_key = instruction_profile_name_key(profile["name"].as_str().unwrap_or_default());
-        if names.contains_key(&name_key) {
-            return Err(format!(
-                "Instruction profile name \"{}\" already exists with a different id. Resolve this conflict explicitly before importing.",
-                profile["name"].as_str().unwrap_or_default()
-            ));
-        }
-        profiles.push(profile.clone());
-        ids.insert(id.to_string(), profiles.len() - 1);
-        names.insert(name_key, profiles.len() - 1);
-        changed = true;
-    }
-    let existing_defaults = existing_portable["defaults"]["profiles"]
-        .as_array()
-        .ok_or_else(|| "The stored instruction defaults are invalid.".to_string())?;
-    let incoming_defaults = incoming["defaults"]["profiles"]
-        .as_array()
-        .ok_or_else(|| "The imported instruction defaults are invalid.".to_string())?;
-    let mut defaults = existing_defaults.clone();
-    let mut default_ids = defaults
-        .iter()
-        .filter_map(Value::as_str)
-        .map(str::to_string)
-        .collect::<HashSet<_>>();
-    for id in incoming_defaults {
-        let id = id.as_str().unwrap_or_default();
-        if default_ids.insert(id.to_string()) {
-            defaults.push(Value::String(id.to_string()));
-            changed = true;
-        }
-    }
-    if !changed {
-        return Ok(library);
-    }
-    let object = library
-        .as_object_mut()
-        .ok_or_else(|| "The stored instruction library must be an object.".to_string())?;
-    let revision = object
-        .get("revision")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| "The stored instruction library revision is invalid.".to_string())?;
-    if revision >= MAX_SAFE_INTEGER {
-        return Err(
-            "The stored instruction library revision reached the maximum safe integer.".to_string(),
-        );
-    }
-    object.insert("revision".to_string(), Value::from(revision + 1));
-    object.insert("profiles".to_string(), Value::Array(profiles));
-    object.insert("defaults".to_string(), json!({ "profiles": defaults }));
-    let _ = portable_instruction_library(&library, Utc::now().to_rfc3339())?;
-    Ok(library)
-}
-
-fn snapshot_instruction_profiles(exported_at: &str) -> Result<CategorySnapshot, String> {
-    let root = get_user_config_directory()?;
-    let path = root.join("instruction-library.json");
-    let portable = if path_entry_exists(&path)? {
-        verify_regular_contained_file(&root, &path, MAX_INSTRUCTION_LIBRARY_BYTES)?;
-        let bytes = fs::read(&path)
-            .map_err(|_| "The instruction library could not be read.".to_string())?;
-        let value = serde_json::from_slice::<Value>(&bytes)
-            .map_err(|_| "The instruction library contains invalid JSON.".to_string())?;
-        portable_instruction_library(&value, exported_at.to_string())?
-    } else {
-        json!({
-            "schemaVersion": 1,
-            "exportedAt": exported_at,
-            "profiles": [],
-            "defaults": { "profiles": [] },
-        })
-    };
-    let count = portable["profiles"].as_array().map_or(0, Vec::len);
-    create_json_snapshot(
-        SettingsCategoryId::InstructionProfiles,
-        portable,
-        u32::try_from(count).map_err(|_| "Too many instruction profiles.".to_string())?,
-        count == 0,
-    )
-}
-
 fn snapshot_global_prompts() -> Result<CategorySnapshot, String> {
     let root = get_user_config_directory()?;
     let entries = collect_tree_files(&root, &root.join("prompts"), "prompts", ".prompt.md")?;
@@ -1118,7 +773,7 @@ fn snapshot_global_prompts() -> Result<CategorySnapshot, String> {
 fn snapshot_category_with_exported_at<R: Runtime>(
     app: &AppHandle<R>,
     id: SettingsCategoryId,
-    exported_at: &str,
+    _exported_at: &str,
 ) -> SnapshotAvailability {
     let result = match id {
         SettingsCategoryId::ApiKeys => api_keys::snapshot(),
@@ -1126,7 +781,6 @@ fn snapshot_category_with_exported_at<R: Runtime>(
         SettingsCategoryId::DesktopAppearance => snapshot_desktop_appearance(app),
         SettingsCategoryId::ChatVoicePreferences => snapshot_chat_voice_preferences(app),
         SettingsCategoryId::GlobalMemory => snapshot_global_memory(),
-        SettingsCategoryId::InstructionProfiles => snapshot_instruction_profiles(exported_at),
         SettingsCategoryId::GlobalPrompts => snapshot_global_prompts(),
         SettingsCategoryId::GlobalContextPacks => snapshot_global_context_packs(app),
         SettingsCategoryId::GlobalMcp => global_mcp::snapshot(app),
@@ -1180,9 +834,6 @@ pub(crate) fn category_resource_lock_paths(
         || categories.contains(&SettingsCategoryId::GlobalRalphPreferences)
     {
         paths.push(root.join(STORE_FILE));
-    }
-    if categories.contains(&SettingsCategoryId::InstructionProfiles) {
-        paths.push(root.join("instruction-library.json"));
     }
     if categories.contains(&SettingsCategoryId::GlobalPrompts) {
         paths.push(root.join("prompts.transfer-boundary"));
@@ -1333,9 +984,6 @@ pub(crate) fn validate_category_snapshot(snapshot: &CategorySnapshot) -> Result<
         (SettingsCategoryId::GlobalRalphPreferences, CategorySnapshotData::Json(value)) => {
             validate_global_ralph_preferences_value(value)
         }
-        (SettingsCategoryId::InstructionProfiles, CategorySnapshotData::Json(value)) => {
-            validate_instruction_transfer_value(value)
-        }
         (SettingsCategoryId::GlobalPrompts, CategorySnapshotData::Files(entries)) => {
             validate_file_entries(snapshot.id, entries)
         }
@@ -1398,13 +1046,6 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
         }
         (SettingsCategoryId::GlobalRalphPreferences, CategorySnapshotData::Json(_)) => {
             (RALPH_PREFERENCE_ITEM_COUNT as usize, false)
-        }
-        (
-            SettingsCategoryId::InstructionProfiles,
-            CategorySnapshotData::Json(Value::Object(value)),
-        ) => {
-            let count = value["profiles"].as_array().map_or(0, Vec::len);
-            (count, count == 0)
         }
         (
             SettingsCategoryId::GlobalPrompts | SettingsCategoryId::GlobalRalphFlows,
@@ -2290,7 +1931,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).expect("test root should be created");
         let selected = BTreeSet::from([
-            SettingsCategoryId::InstructionProfiles,
+            SettingsCategoryId::GlobalMemory,
             SettingsCategoryId::GlobalPrompts,
         ]);
         let resources = category_resource_lock_paths(&root, &selected);
@@ -2321,7 +1962,7 @@ mod tests {
 
     #[test]
     fn repeated_snapshot_inspections_reuse_one_export_timestamp() {
-        let selected = BTreeSet::from([SettingsCategoryId::InstructionProfiles]);
+        let selected = BTreeSet::from([SettingsCategoryId::GlobalMemory]);
 
         for _ in 0..3 {
             let timestamps = RefCell::new(Vec::new());
@@ -2331,15 +1972,13 @@ mod tests {
                     create_json_snapshot(
                         id,
                         json!({
-                            "schemaVersion": 1,
                             "exportedAt": exported_at,
-                            "profiles": [],
-                            "defaults": { "profiles": [] },
+                            "items": [],
                         }),
                         0,
                         true,
                     )
-                    .expect("the instruction profile snapshot should serialize"),
+                    .expect("the settings snapshot should serialize"),
                 )
             })
             .expect("generated export metadata must remain stable during one inspection");
@@ -2353,37 +1992,31 @@ mod tests {
 
     #[test]
     fn snapshot_inspection_still_rejects_a_genuine_setting_change() {
-        let selected = BTreeSet::from([SettingsCategoryId::InstructionProfiles]);
+        let selected = BTreeSet::from([SettingsCategoryId::GlobalMemory]);
         let captures = Cell::new(0);
 
         let error = capture_consistent_snapshots(&selected, |id, exported_at| {
             let capture = captures.get();
             captures.set(capture + 1);
-            let profiles = if capture == 0 {
+            let items = if capture == 0 {
                 Vec::new()
             } else {
                 vec![json!({
-                    "id": "8a48df44-d609-4ba9-9c86-6639618d4424",
-                    "name": "Changed during inspection",
-                    "body": "Detect this change.\n",
-                    "createdAt": exported_at,
-                    "updatedAt": exported_at,
+                    "value": "Changed during inspection",
                 })]
             };
-            let count = profiles.len() as u32;
+            let count = items.len() as u32;
             SnapshotAvailability::Available(
                 create_json_snapshot(
                     id,
                     json!({
-                        "schemaVersion": 1,
                         "exportedAt": exported_at,
-                        "profiles": profiles,
-                        "defaults": { "profiles": [] },
+                        "items": items,
                     }),
                     count,
                     count == 0,
                 )
-                .expect("the instruction profile snapshot should serialize"),
+                .expect("the settings snapshot should serialize"),
             )
         })
         .expect_err("a real setting change between inspection passes must still fail");
@@ -2410,145 +2043,6 @@ mod tests {
                 .expect_err("a file cannot also be an ancestor directory")
                 .contains("nested below another file")
         );
-    }
-
-    #[test]
-    fn instruction_transfer_is_portable_and_same_id_conflicts_fail_explicitly() {
-        let profile_id = "8a48df44-d609-4ba9-9c86-6639618d4424";
-        let portable = json!({
-            "schemaVersion": 1,
-            "exportedAt": "2026-07-23T08:00:00.000Z",
-            "profiles": [{
-                "id": profile_id,
-                "name": "TypeScript baseline",
-                "body": "Keep strict mode enabled.\n",
-                "createdAt": "2026-07-23T08:00:00.000Z",
-                "updatedAt": "2026-07-23T08:00:00.000Z"
-            }],
-            "defaults": { "profiles": [profile_id] }
-        });
-        validate_instruction_transfer_value(&portable)
-            .expect("a closed portable instruction export should validate");
-
-        let with_workspace_root = json!({
-            "schemaVersion": 1,
-            "exportedAt": "2026-07-23T08:00:00.000Z",
-            "profiles": portable["profiles"].clone(),
-            "defaults": portable["defaults"].clone(),
-            "workspaces": [{ "root": "C:/must-not-transfer" }]
-        });
-        assert!(validate_instruction_transfer_value(&with_workspace_root)
-            .expect_err("absolute workspace bindings are not portable")
-            .contains("unexpected or missing"));
-
-        let existing = json!({
-            "schemaVersion": 1,
-            "revision": 7,
-            "profiles": [{
-                "id": profile_id,
-                "name": "TypeScript baseline",
-                "body": "Receiver-owned body.\n",
-                "createdAt": "2026-07-23T08:00:00.000Z",
-                "updatedAt": "2026-07-23T09:00:00.000Z"
-            }],
-            "defaults": { "profiles": [] },
-            "workspaces": [{
-                "id": "64bcc7d0-f412-4e08-927c-0ef4eb058a7b",
-                "root": "C:/receiver-workspace",
-                "scopes": [{ "path": ".", "profiles": [profile_id] }]
-            }]
-        });
-        assert!(
-            merge_instruction_library_transfer(Some(&existing), &portable)
-                .expect_err("same-id different-body import needs an explicit merge workflow")
-                .contains("Resolve this conflict explicitly")
-        );
-        assert_eq!(existing["revision"], json!(7));
-        assert_eq!(
-            existing["workspaces"][0]["root"],
-            json!("C:/receiver-workspace")
-        );
-    }
-
-    #[test]
-    fn instruction_transfer_matches_runtime_normalization_and_revision_bounds() {
-        let first_id = "8a48df44-d609-4ba9-9c86-6639618d4424";
-        let second_id = "c77708ce-e256-4a15-8a62-af35cc66582f";
-        let timestamp = "2026-07-23T08:00:00.000Z";
-        let duplicate_names = json!({
-            "schemaVersion": 1,
-            "exportedAt": timestamp,
-            "profiles": [
-                {
-                    "id": first_id,
-                    "name": "Stra\u{00df}e",
-                    "body": "First.\n",
-                    "createdAt": timestamp,
-                    "updatedAt": timestamp
-                },
-                {
-                    "id": second_id,
-                    "name": "STRASSE",
-                    "body": "Second.\n",
-                    "createdAt": timestamp,
-                    "updatedAt": timestamp
-                }
-            ],
-            "defaults": { "profiles": [] }
-        });
-        assert!(validate_instruction_transfer_value(&duplicate_names)
-            .expect_err("Unicode caseless names must collide like the TypeScript runtime")
-            .contains("duplicate normalized profile name"));
-
-        let scalar_boundary = json!({
-            "schemaVersion": 1,
-            "exportedAt": timestamp,
-            "profiles": [{
-                "id": first_id,
-                "name": "\u{1f600}".repeat(200),
-                "body": "Boundary.\n",
-                "createdAt": timestamp,
-                "updatedAt": timestamp
-            }],
-            "defaults": { "profiles": [] }
-        });
-        validate_instruction_transfer_value(&scalar_boundary)
-            .expect("200 supplementary Unicode code points must remain valid");
-        let mut over_scalar_boundary = scalar_boundary;
-        over_scalar_boundary["profiles"][0]["name"] = Value::String("\u{1f600}".repeat(201));
-        assert!(validate_instruction_transfer_value(&over_scalar_boundary)
-            .expect_err("201 Unicode code points must exceed the runtime limit")
-            .contains("profile name is invalid"));
-
-        let incoming = json!({
-            "schemaVersion": 1,
-            "exportedAt": timestamp,
-            "profiles": [{
-                "id": first_id,
-                "name": "\u{fb03} policy",
-                "body": "\u{feff}Use CRLF.\r\n",
-                "createdAt": timestamp,
-                "updatedAt": timestamp
-            }],
-            "defaults": { "profiles": [first_id] }
-        });
-        let existing = json!({
-            "schemaVersion": 1,
-            "revision": MAX_SAFE_INTEGER,
-            "profiles": [],
-            "defaults": { "profiles": [] },
-            "workspaces": []
-        });
-        assert!(
-            merge_instruction_library_transfer(Some(&existing), &incoming)
-                .expect_err("a changed maximum-safe revision cannot be incremented")
-                .contains("maximum safe integer")
-        );
-
-        let merged = merge_instruction_library_transfer(None, &incoming)
-            .expect("a new portable library should normalize like the runtime");
-        assert_eq!(merged["profiles"][0]["name"], json!("ffi policy"));
-        assert_eq!(merged["profiles"][0]["body"], json!("Use CRLF.\n"));
     }
 
     #[test]

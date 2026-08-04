@@ -37,6 +37,15 @@ describe("instruction tag rules", () => {
     ).toEqual(["React", "C++", "Node JS"]);
   });
 
+  it("uses Unicode case folding for tag identity and matching", () => {
+    expect(normalizeInstructionTags(["Straße", "STRASSE"], "tags")).toEqual([
+      "Straße",
+    ]);
+    expect(
+      instructionTagRuleMatches({ op: "tag", tag: "STRASSE" }, ["Straße"]),
+    ).toBe(true);
+  });
+
   it("rejects empty groups and excessive nesting", () => {
     expect(() => normalizeInstructionTagRule({ op: "and", rules: [] })).toThrow(
       /cannot be empty/u,
@@ -46,5 +55,11 @@ describe("instruction tag rules", () => {
       nested = { op: "and", rules: [nested] };
     }
     expect(() => normalizeInstructionTagRule(nested)).toThrow(/complexity/u);
+  });
+
+  it("rejects tags that cannot be represented as exact UTF-8 text", () => {
+    expect(() =>
+      normalizeInstructionTags(["invalid\ud800tag"], "tags"),
+    ).toThrow(/valid Unicode/u);
   });
 });

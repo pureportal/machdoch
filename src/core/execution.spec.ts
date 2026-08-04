@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
 import { executeTask } from "./execution.ts";
+import { createInstructionResolutionFixture } from "./__test__/instruction-test-helpers.ts";
+import { createInstructionDeliveryPlan } from "./instruction-system/index.ts";
+import type { AgentToolDefinition } from "./_helpers/agent-tools-shared.ts";
 import { mcpClientManager } from "./mcp/client.ts";
 import type {
   AgentModelAdapter,
@@ -869,6 +872,135 @@ describe("executeTask", () => {
     expect(result.summary).toBe("Implementation outline is ready.");
     expect(result.response?.markdown).toContain("Apply the targeted edit");
     expect(result.executedTools).toEqual([]);
+  });
+
+  it("blocks an oversized assembled API request before invoking the provider", async () => {
+    const workspaceRoot = await createWorkspace();
+    const baseResolution = createInstructionResolutionFixture({
+      providerId: "openai",
+      surface: "api",
+      model: "fixture-runtime-budget",
+    });
+    const instructionResolution = {
+      ...baseResolution,
+      budget: {
+        ...baseResolution.budget,
+        providerLimitTokens: 20_000,
+        providerReserveTokens: 16_384,
+        availableInstructionTokens: 3_616,
+      },
+    };
+    const startTurn = vi.fn<AgentModelAdapter["startTurn"]>();
+
+    const result = await executeTask(
+      "x".repeat(10_000),
+      createConfig(workspaceRoot, "machdoch", {
+        provider: "openai",
+        model: "fixture-runtime-budget",
+        providerAvailability: configuredProviderAvailability,
+      }),
+      emptyCustomizations(workspaceRoot),
+      {
+        resolvedInstructions: instructionResolution,
+        instructionDeliveryPlan: createInstructionDeliveryPlan(
+          instructionResolution,
+        ),
+        modelAdapter: {
+          startTurn,
+          continueTurn: async (): Promise<never> => {
+            throw new Error("The provider must not be invoked.");
+          },
+        },
+      },
+    );
+
+    expect(startTurn).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "blocked",
+      reason: expect.stringMatching(
+        /initial request needs.*provider was not invoked.*not truncated/su,
+      ),
+    });
+  });
+
+  it("blocks continuation context growth before invoking the provider again", async () => {
+    const workspaceRoot = await createWorkspace();
+    const baseResolution = createInstructionResolutionFixture({
+      providerId: "openai",
+      surface: "api",
+      model: "fixture-continuation-budget",
+    });
+    const instructionResolution = {
+      ...baseResolution,
+      budget: {
+        ...baseResolution.budget,
+        providerLimitTokens: 250_000,
+        providerReserveTokens: 16_384,
+        availableInstructionTokens: 233_616,
+      },
+    };
+    const continueTurn = vi.fn<AgentModelAdapter["continueTurn"]>();
+    const largeOutputTool: AgentToolDefinition = {
+      spec: {
+        name: "return_large_fixture",
+        description: "Return a large deterministic fixture.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {},
+        },
+      },
+      backingTool: "filesystem",
+      riskLevel: "low",
+      effect: "read",
+      execute: async () => ({
+        toolResult: {
+          callId: "fixture-tool-result",
+          name: "return_large_fixture",
+          output: "y".repeat(300_000),
+        },
+        sections: [],
+        traceLines: [],
+      }),
+    };
+
+    const result = await executeTask(
+      "Run the fixture tool and use its result.",
+      createConfig(workspaceRoot, "machdoch", {
+        provider: "openai",
+        model: "fixture-continuation-budget",
+        providerAvailability: configuredProviderAvailability,
+      }),
+      emptyCustomizations(workspaceRoot),
+      {
+        resolvedInstructions: instructionResolution,
+        instructionDeliveryPlan: createInstructionDeliveryPlan(
+          instructionResolution,
+        ),
+        additionalToolDefinitions: [largeOutputTool],
+        modelAdapter: {
+          startTurn: async () => ({
+            text: "",
+            toolCalls: [
+              {
+                id: "fixture-call",
+                name: "return_large_fixture",
+                arguments: {},
+              },
+            ],
+          }),
+          continueTurn,
+        },
+      },
+    );
+
+    expect(continueTurn).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "blocked",
+      reason: expect.stringMatching(
+        /continuation request needs.*provider was not invoked.*not truncated/su,
+      ),
+    });
   });
 
   it("emits final response markdown on terminal progress", async () => {

@@ -18,7 +18,6 @@ static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct CliCommandOptions<'a> {
     pub(super) workspace_root: &'a str,
-    pub(super) task: &'a str,
     pub(super) mode: Option<&'a str>,
     pub(super) provider: Option<&'a str>,
     pub(super) model: Option<&'a str>,
@@ -35,7 +34,7 @@ pub(super) fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
         "--cwd".to_string(),
         options.workspace_root.to_string(),
         "--task".to_string(),
-        options.task.to_string(),
+        "-".to_string(),
     ];
 
     if let Some(mode) = options.mode {
@@ -214,10 +213,9 @@ mod tests {
     }
 
     #[test]
-    fn desktop_cli_args_force_one_shot_json_execution() {
+    fn desktop_cli_args_force_one_shot_json_execution_with_stdin_task() {
         let args = build_cli_args(CliCommandOptions {
             workspace_root: "C:/workspace",
-            task: "How is the weather?",
             mode: Some("ask"),
             provider: Some("openai"),
             model: Some("gpt-5.2"),
@@ -228,8 +226,11 @@ mod tests {
 
         assert_eq!(args[0], "--quick");
         assert!(args.contains(&"--json".to_string()));
-        assert!(args.contains(&"--task".to_string()));
-        assert!(args.contains(&"How is the weather?".to_string()));
+        let task_index = args
+            .iter()
+            .position(|argument| argument == "--task")
+            .expect("the desktop bridge should select task stdin");
+        assert_eq!(args.get(task_index + 1).map(String::as_str), Some("-"));
         assert!(args.contains(&"--reasoning".to_string()));
         assert!(args.contains(&"high".to_string()));
     }
@@ -242,7 +243,6 @@ mod tests {
         ];
         let args = build_cli_args(CliCommandOptions {
             workspace_root: "C:/workspace",
-            task: "Describe the images",
             mode: None,
             provider: Some("openai"),
             model: Some("gpt-5.5"),

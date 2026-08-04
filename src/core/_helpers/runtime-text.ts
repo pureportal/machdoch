@@ -1,4 +1,5 @@
 import type { TaskExecutionSection } from "../types.js";
+import { sliceUtf16PrefixAtCodePointBoundary } from "../../shared/unicode.js";
 
 const DEFAULT_OUTPUT_MAX_CHARS = 12_000;
 const DEFAULT_PREVIEW_LINES = 80;
@@ -10,8 +11,10 @@ export const createLinesFromText = (
   startLine = 1,
 ): string[] => {
   const truncatedByCharacterLimit = text.length > DEFAULT_OUTPUT_MAX_CHARS;
-  const normalized = text
-    .slice(0, DEFAULT_OUTPUT_MAX_CHARS)
+  const normalized = sliceUtf16PrefixAtCodePointBoundary(
+    text,
+    DEFAULT_OUTPUT_MAX_CHARS,
+  )
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n");
   const lines = normalized.split("\n");
@@ -54,7 +57,7 @@ export const limitText = (
     return value;
   }
 
-  return `${value.slice(0, maxChars)}\n… truncated after ${maxChars} characters`;
+  return `${sliceUtf16PrefixAtCodePointBoundary(value, maxChars)}\n… truncated after ${maxChars} characters`;
 };
 
 export const compactTraceText = (value: string): string => {
@@ -64,7 +67,10 @@ export const compactTraceText = (value: string): string => {
     return compacted;
   }
 
-  return `${compacted.slice(0, DEFAULT_TOOL_TRACE_PREVIEW_CHARS)}…`;
+  return `${sliceUtf16PrefixAtCodePointBoundary(
+    compacted,
+    DEFAULT_TOOL_TRACE_PREVIEW_CHARS,
+  )}…`;
 };
 
 export const stringifyUnknown = (value: unknown): string => {

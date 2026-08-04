@@ -464,9 +464,6 @@ const createInstructionContextSection = (
     lines: taskContext.applicableInstructions.flatMap((instruction) => [
       `${instruction.precedence}. ${instruction.name} [${instruction.kind}]`,
       `  scope: ${instruction.scopePath}`,
-      ...(instruction.relativePath
-        ? [`  path: ${instruction.relativePath}`]
-        : []),
       `  digest: ${instruction.digest}`,
       `  body: ${instruction.body}`,
     ]),

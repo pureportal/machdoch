@@ -1,8 +1,5 @@
 /// <reference types="vitest/globals" />
-import type {
-  AgentModelToolSpec,
-  ResolvedTaskContext,
-} from "../types.js";
+import type { AgentModelToolSpec, ResolvedTaskContext } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createExecutorSystemPrompt,
@@ -48,6 +45,7 @@ const createTaskContext = (
     suggestedTools: ["filesystem", "network"],
     executionRole: "executor",
     applicableInstructions: [],
+    instructionResolution: createInstructionResolutionFixture(),
     ...overrides,
   };
 };
@@ -82,8 +80,7 @@ const createTool = (name: string): AgentModelToolSpec => {
   };
 };
 
-const originalDesktopHostElevated =
-  process.env.MACHDOCH_DESKTOP_HOST_ELEVATED;
+const originalDesktopHostElevated = process.env.MACHDOCH_DESKTOP_HOST_ELEVATED;
 
 afterEach(() => {
   if (originalDesktopHostElevated === undefined) {
@@ -95,6 +92,19 @@ afterEach(() => {
 });
 
 describe("createExecutorSystemPrompt", () => {
+  it("rejects a missing frozen instruction resolution", () => {
+    const taskContext = createTaskContext();
+    Reflect.deleteProperty(taskContext, "instructionResolution");
+    expect(() =>
+      createExecutorSystemPrompt(
+        createRuntimeConfig(),
+        taskContext,
+        [],
+        createConversationContext(),
+      ),
+    ).toThrow("requires a frozen instruction resolution");
+  });
+
   it("delivers resolved workspace instructions through the system prompt", () => {
     const instructionResolution = createInstructionResolutionFixture({
       body: "Use the automatically selected React instruction.",

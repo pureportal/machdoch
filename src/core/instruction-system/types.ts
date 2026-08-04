@@ -1,8 +1,8 @@
 import type { ConfiguredModelProvider } from "../runtime-contract.generated.js";
 import type { McpInitializationInstructionSnapshot } from "../mcp/initialization-instructions.js";
 
-export const INSTRUCTION_LIBRARY_SCHEMA_VERSION = 1 as const;
-export const INSTRUCTION_RESOLUTION_SCHEMA_VERSION = 1 as const;
+export const INSTRUCTION_LIBRARY_SCHEMA_VERSION = 2 as const;
+export const INSTRUCTION_RESOLUTION_SCHEMA_VERSION = 2 as const;
 export const INSTRUCTION_DELIVERY_SCHEMA_VERSION = 1 as const;
 
 export type ProfileId = string;
@@ -23,11 +23,9 @@ export interface InstructionProfile {
   name: string;
   description?: string;
   body: string;
-  /** Defaults to true when loading libraries written before this field existed. */
-  enabled?: boolean;
-  /** Mirrors membership in defaults.profiles and is persisted for portable metadata. */
-  global?: boolean;
-  tags?: string[];
+  enabled: boolean;
+  global: boolean;
+  tags: string[];
   match?: InstructionTagRule;
   createdAt: string;
   updatedAt: string;
@@ -42,11 +40,7 @@ export interface InstructionWorkspaceBinding {
   id: WorkspaceId;
   root: string;
   displayName?: string;
-  identityHints?: {
-    gitRemote?: string;
-    repositoryId?: string;
-  };
-  tags?: string[];
+  tags: string[];
   scopes: InstructionScopeAssignment[];
 }
 
@@ -54,9 +48,6 @@ export interface InstructionLibrary {
   schemaVersion: typeof INSTRUCTION_LIBRARY_SCHEMA_VERSION;
   revision: number;
   profiles: InstructionProfile[];
-  defaults: {
-    profiles: ProfileId[];
-  };
   workspaces: InstructionWorkspaceBinding[];
 }
 
@@ -76,10 +67,10 @@ export interface InstructionDiagnostic {
 }
 
 export type InstructionSourceKind =
-  | "profile-default"
+  | "profile-global"
   | "profile-auto"
   | "profile-workspace"
-  | "project-local"
+  | "profile-unassigned"
   | "flow-guidance";
 
 export interface ResolvedInstructionSource {
@@ -95,13 +86,10 @@ export interface ResolvedInstructionSource {
   trusted: boolean;
   profileId?: ProfileId;
   workspaceId?: WorkspaceId;
-  relativePath?: string;
   assignmentPath?: string;
-  inheritedFrom?: string;
   status: "selected" | "skipped";
   reason?:
     | "NO_APPLICABLE_ASSIGNMENT"
-    | "DUPLICATE_INHERITED_ASSIGNMENT"
     | "PROFILE_DISABLED"
     | "TAG_RULE_NOT_MATCHED";
   otherAssignments?: Array<{
@@ -125,19 +113,7 @@ export interface InstructionBodyGroup {
   renderedAtPrecedence: number;
 }
 
-export interface LocalInstructionRecord {
-  id: string;
-  relativePath: string;
-  scopePath: string;
-  body: string;
-  digest: string;
-  byteLength: number;
-  lineCount: number;
-  identity: string;
-}
-
 export type NativeInstructionStatus =
-  | "canonical"
   | "native-extra"
   | "suppressed"
   | "inactive"
@@ -201,7 +177,6 @@ export interface FrozenInstructionSet {
   providerId: ConfiguredModelProvider;
   surface: "api" | "cli";
   model?: string;
-  workspaceRegistered: boolean;
   workspaceId?: WorkspaceId;
   libraryRevision: number;
   selectedSources: readonly ResolvedInstructionSource[];
@@ -231,9 +206,7 @@ export interface InstructionExplanationSource {
   trusted: boolean;
   profileId?: string;
   workspaceId?: string;
-  relativePath?: string;
   assignmentPath?: string;
-  inheritedFrom?: string;
   otherAssignments?: Array<{
     workspaceId: string;
     scopePath: string;
@@ -250,7 +223,6 @@ export interface InstructionResolutionExplanation {
   surface: "api" | "cli";
   model?: string;
   libraryRevision: number;
-  workspaceRegistered: boolean;
   workspaceId?: string;
   sources: InstructionExplanationSource[];
   bodyGroups: Array<Omit<InstructionBodyGroup, "body"> & { body?: string }>;
@@ -401,7 +373,6 @@ export interface InstructionLibraryExport {
   schemaVersion: typeof INSTRUCTION_LIBRARY_SCHEMA_VERSION;
   exportedAt: string;
   profiles: InstructionProfile[];
-  defaults: { profiles: ProfileId[] };
   workspaces?: Array<
     Omit<InstructionWorkspaceBinding, "root"> & {
       root?: never;
@@ -417,7 +388,6 @@ export type InstructionImportConflictChoice =
 export interface InstructionLibraryImportChoices {
   conflicts?: Record<ProfileId, InstructionImportConflictChoice>;
   renamedProfiles?: Record<ProfileId, string>;
-  defaults?: "merge" | "replace" | "keep-existing";
 }
 
 export interface InstructionLibraryRecoveryStatus {
@@ -428,6 +398,8 @@ export interface InstructionLibraryRecoveryStatus {
   backupValid: boolean;
   backupDigest?: string;
   backupRevision?: number;
+  resetDigest?: string;
+  resetSource?: "primary" | "backup";
   errorCode?: string;
   errorMessage?: string;
 }

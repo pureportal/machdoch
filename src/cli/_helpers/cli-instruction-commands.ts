@@ -1,12 +1,10 @@
-import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
+import { readStableRegularFile } from "../../core/_helpers/read-stable-regular-file.helper.js";
 import { loadRuntimeConfig } from "../../core/config.js";
 import {
+  configureInstructionWorkspace,
   createInstructionProfile,
-  createLocalInstruction,
   deleteInstructionProfile,
-  deleteLocalInstruction,
-  discoverLocalInstructions,
   duplicateInstructionProfile,
   explainInstructionResolution,
   exportInstructionLibrary,
@@ -14,30 +12,23 @@ import {
   importInstructionLibrary,
   inspectInstructionLibraryRecovery,
   loadInstructionLibrary,
-  registerInstructionWorkspace,
   recoverInstructionLibraryFromBackup,
   resetCorruptInstructionLibrary,
+  removeInstructionWorkspaceConfiguration,
   relinkInstructionWorkspaceScope,
   relinkInstructionWorkspace,
   resolveInstructionSet,
-  setDefaultInstructionProfiles,
   setWorkspaceInstructionScope,
-  showLocalInstruction,
-  unregisterInstructionWorkspace,
   updateInstructionProfile,
-  updateInstructionWorkspace,
-  instructionTagRuleMatches,
   normalizeInstructionTagRule,
   normalizeInstructionTags,
-  updateLocalInstruction,
   profileNameKey,
   sha256,
   utf8ByteLength,
-  MAX_INSTRUCTION_SOURCE_BYTES,
+  MAX_INSTRUCTION_SOURCE_FILE_BYTES,
   type InstructionLibrary,
   type InstructionDiagnostic,
   InstructionSystemError,
-  type LocalInstructionRecord,
   type InstructionLibraryImportChoices,
   type InstructionTagRule,
 } from "../../core/instruction-system/index.js";
@@ -111,10 +102,10 @@ const parseInstructionProfileMetadata = (
   };
 };
 
-const parseInstructionWorkspaceTags = (
+const parseInstructionWorkspaceConfiguration = (
   raw: string | undefined,
-): string[] | undefined => {
-  if (raw === undefined) return undefined;
+): { tags?: string[]; profileIds?: string[] } => {
+  if (raw === undefined) return {};
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -122,13 +113,27 @@ const parseInstructionWorkspaceTags = (
     return fail("--metadata-json must contain valid JSON.");
   }
   if (!isRecord(value)) return fail("--metadata-json must contain an object.");
-  const unsupported = Object.keys(value).filter((key) => key !== "tags");
+  const unsupported = Object.keys(value).filter(
+    (key) => !["tags", "profileIds"].includes(key),
+  );
   if (unsupported.length > 0) {
     return fail(`Unsupported workspace metadata: ${unsupported.join(", ")}.`);
   }
-  return value.tags === undefined
-    ? undefined
-    : normalizeInstructionTags(value.tags, "metadata.tags");
+  if (
+    value.profileIds !== undefined &&
+    (!Array.isArray(value.profileIds) ||
+      value.profileIds.some((profileId) => typeof profileId !== "string"))
+  ) {
+    return fail("Workspace metadata profileIds must be an array of strings.");
+  }
+  return {
+    ...(value.tags === undefined
+      ? {}
+      : { tags: normalizeInstructionTags(value.tags, "metadata.tags") }),
+    ...(value.profileIds === undefined
+      ? {}
+      : { profileIds: [...value.profileIds] as string[] }),
+  };
 };
 
 const readBoundedUtf8InputFile = async (
@@ -136,25 +141,16 @@ const readBoundedUtf8InputFile = async (
   maxBytes: number,
   label: string,
 ): Promise<string> => {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink()) {
-    fail(`${label} must be a regular, unlinked file.`);
-  }
-  if (before.size > maxBytes) {
-    fail(`${label} exceeds the ${maxBytes}-byte input limit.`);
-  }
-  const bytes = await readFile(path);
-  const after = await lstat(path);
-  if (
-    !after.isFile() ||
-    after.isSymbolicLink() ||
-    before.dev !== after.dev ||
-    before.ino !== after.ino ||
-    before.size !== after.size ||
-    before.mtimeMs !== after.mtimeMs
-  ) {
-    fail(`${label} changed while it was being read.`);
-  }
+  const bytes = await readStableRegularFile(path, {
+    maxBytes,
+    messages: {
+      invalid: () =>
+        `${label} must be a regular, unlinked file no larger than ${maxBytes} bytes.`,
+      changedBeforeOpen: () => `${label} changed before it could be opened.`,
+      changedWhileReading: () => `${label} changed while it was being read.`,
+    },
+  });
+  if (bytes === undefined) fail(`${label} does not exist.`);
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
@@ -162,11 +158,19 @@ const readBoundedUtf8InputFile = async (
   }
 };
 
+const parseJsonInput = (raw: string, label: string): unknown => {
+  try {
+    return JSON.parse(raw.replace(/^\uFEFF/u, "")) as unknown;
+  } catch {
+    return fail(`${label} must contain valid JSON.`);
+  }
+};
+
 const readBody = async (
   args: ParsedCliArgs,
   options: InstructionCliOptions,
   required = true,
-  maxFileBytes = MAX_INSTRUCTION_SOURCE_BYTES + 3,
+  maxFileBytes = MAX_INSTRUCTION_SOURCE_FILE_BYTES,
 ): Promise<string | undefined> => {
   if (options.promptFile) {
     return readBoundedUtf8InputFile(
@@ -188,41 +192,21 @@ const mutationOptions = (
     ? {}
     : { expectedRevision: options.expectedRevision };
 
-const profileReferenceCounts = (
-  library: InstructionLibrary,
-): Map<string, number> => {
-  const counts = new Map(library.profiles.map((profile) => [profile.id, 0]));
-  for (const id of library.defaults.profiles) {
-    counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
-  for (const workspace of library.workspaces) {
-    for (const scope of workspace.scopes) {
-      for (const id of scope.profiles) {
-        counts.set(id, (counts.get(id) ?? 0) + 1);
-      }
-    }
-  }
-  return counts;
-};
-
-const createLocalMetadata = (
-  file: LocalInstructionRecord,
-  includeBody = false,
-): Omit<LocalInstructionRecord, "body" | "identity"> & { body?: string } => ({
-  id: file.id,
-  relativePath: file.relativePath,
-  scopePath: file.scopePath,
-  digest: file.digest,
-  byteLength: file.byteLength,
-  lineCount: file.lineCount,
-  ...(includeBody ? { body: file.body } : {}),
-});
-
 const createLibraryOverview = (
   library: InstructionLibrary,
   includeBodies = false,
 ): unknown => {
-  const references = profileReferenceCounts(library);
+  const manualAssignmentCounts = new Map<string, number>();
+  for (const workspace of library.workspaces) {
+    for (const scope of workspace.scopes) {
+      for (const profileId of scope.profiles) {
+        manualAssignmentCounts.set(
+          profileId,
+          (manualAssignmentCounts.get(profileId) ?? 0) + 1,
+        );
+      }
+    }
+  }
   return {
     schemaVersion: library.schemaVersion,
     revision: library.revision,
@@ -237,34 +221,15 @@ const createLibraryOverview = (
       byteLength: utf8ByteLength(profile.body),
       lineCount: profile.body.split("\n").length,
       digest: sha256(profile.body),
-      assignmentCount: references.get(profile.id) ?? 0,
-      manualAssignmentCount: library.workspaces.reduce(
-        (count, workspace) =>
-          count +
-          workspace.scopes.filter((scope) =>
-            scope.profiles.includes(profile.id),
-          ).length,
-        0,
-      ),
-      automaticWorkspaceIds:
-        profile.enabled === false ||
-        profile.global === true ||
-        profile.match === undefined
-          ? []
-          : library.workspaces
-              .filter((workspace) =>
-                instructionTagRuleMatches(profile.match!, workspace.tags ?? []),
-              )
-              .map((workspace) => workspace.id),
-      enabled: profile.enabled !== false,
-      global: library.defaults.profiles.includes(profile.id),
-      tags: [...(profile.tags ?? [])],
+      manualAssignmentCount: manualAssignmentCounts.get(profile.id) ?? 0,
+      enabled: profile.enabled,
+      global: profile.global,
+      tags: [...profile.tags],
       ...(profile.match === undefined
         ? {}
         : { match: structuredClone(profile.match) }),
       ...(includeBodies ? { body: profile.body } : {}),
     })),
-    defaults: { profiles: [...library.defaults.profiles] },
     workspaces: library.workspaces.map((workspace) => ({
       ...workspace,
       scopes: workspace.scopes.map((scope) => ({
@@ -279,11 +244,11 @@ const printProfileList = (library: InstructionLibrary): void => {
   const overview = createLibraryOverview(library) as {
     profiles: Array<Record<string, unknown>>;
   };
-  writeStdoutLine(`instruction profiles: ${overview.profiles.length}`);
+  writeStdoutLine(`instruction files: ${overview.profiles.length}`);
   for (const profile of overview.profiles) {
     writeStdoutLine(
       `  - ${String(profile.name)} (${String(profile.id)}) assignments=${String(
-        profile.assignmentCount,
+        profile.manualAssignmentCount,
       )} bytes=${String(profile.byteLength)} digest=${String(profile.digest)}`,
     );
     if (profile.description) {
@@ -293,10 +258,11 @@ const printProfileList = (library: InstructionLibrary): void => {
 };
 
 const requireProfile = (library: InstructionLibrary, idOrName: string) => {
+  const exactId = library.profiles.find((profile) => profile.id === idOrName);
+  if (exactId) return exactId;
   const key = profileNameKey(idOrName);
   const matches = library.profiles.filter(
-    (profile) =>
-      profile.id === idOrName || profileNameKey(profile.name) === key,
+    (profile) => profileNameKey(profile.name) === key,
   );
   if (matches.length === 0) {
     return fail(`Instruction profile \`${idOrName}\` was not found.`);
@@ -341,14 +307,11 @@ const resolveProvider = async (
 const validateInstructionSystem = async (
   args: ParsedCliArgs,
 ): Promise<unknown> => {
-  const [{ providerId, model, reasoning }, library, locals] = await Promise.all(
-    [
-      resolveProvider(args),
-      loadInstructionLibrary(),
-      discoverLocalInstructions(args.workspaceRoot),
-    ],
-  );
-  const diagnostics: InstructionDiagnostic[] = [...locals.diagnostics];
+  const [{ providerId, model, reasoning }, library] = await Promise.all([
+    resolveProvider(args),
+    loadInstructionLibrary(),
+  ]);
+  const diagnostics: InstructionDiagnostic[] = [];
   let explanation: ReturnType<typeof explainInstructionResolution> | undefined;
   let deliveryPlan:
     | Awaited<ReturnType<typeof createInstructionDeliveryPlanForRuntime>>
@@ -361,6 +324,13 @@ const validateInstructionSystem = async (
       ...(model ? { model } : {}),
     });
     explanation = explainInstructionResolution(resolution);
+    if (resolution.libraryRevision !== library.revision) {
+      diagnostics.push({
+        code: "INSTRUCTION_LIBRARY_CHANGED_DURING_VALIDATION",
+        severity: "error",
+        message: `The instruction library changed from revision ${library.revision} to ${resolution.libraryRevision} during validation. Retry against a stable revision.`,
+      });
+    }
     deliveryPlan = await createInstructionDeliveryPlanForRuntime(resolution, {
       workspaceRoot: args.workspaceRoot,
       reasoning,
@@ -409,7 +379,6 @@ const validateInstructionSystem = async (
     libraryRevision: library.revision,
     profiles: library.profiles.length,
     workspaces: library.workspaces.length,
-    localFiles: locals.files.map((file) => createLocalMetadata(file)),
     ...(explanation === undefined ? {} : { explanation }),
     ...(deliveryPlan === undefined ? {} : { deliveryPlan }),
     diagnostics,
@@ -551,14 +520,10 @@ export const printInstructionSummary = async (
       const library = await loadInstructionLibrary();
       const value = {
         revision: library.revision,
-        defaults: library.defaults,
         workspaces: library.workspaces,
       };
       if (args.json) printJson(value);
       else {
-        writeStdoutLine(
-          `defaults: ${library.defaults.profiles.join(", ") || "none"}`,
-        );
         for (const workspace of library.workspaces) {
           writeStdoutLine(`${workspace.id}: ${workspace.root}`);
           for (const scope of workspace.scopes) {
@@ -568,32 +533,27 @@ export const printInstructionSummary = async (
       }
       return;
     }
-    case "assignment-set-defaults": {
-      const result = await setDefaultInstructionProfiles(
-        options.profileIds ?? [],
-        mutationOptions(options),
-      );
-      if (args.json) printJson(result);
-      else
-        writeStdoutLine(
-          `updated default order, revision ${result.library.revision}`,
-        );
-      return;
-    }
     case "assignment-set":
     case "assignment-remove": {
       const workspaceId =
         options.subject ?? fail(`${options.action} requires a workspace UUID.`);
       const scopePath =
         options.path ??
-        options.secondarySubject ??
         fail(`${options.action} requires --path <relative-folder>.`);
+      if (
+        options.action === "assignment-set" &&
+        (options.profileIds?.length ?? 0) === 0
+      ) {
+        fail(
+          "Assignment set requires at least one --profile. Use assignments remove to clear a scope.",
+        );
+      }
       const result = await setWorkspaceInstructionScope(
         workspaceId,
         scopePath,
         options.action === "assignment-remove"
           ? []
-          : (options.profileIds ?? []),
+          : (options.profileIds as string[]),
         mutationOptions(options),
       );
       if (args.json) printJson(result);
@@ -626,76 +586,6 @@ export const printInstructionSummary = async (
       }
       return;
     }
-    case "local-list": {
-      const discovery = await discoverLocalInstructions(args.workspaceRoot);
-      const value = {
-        files: discovery.files.map((file) =>
-          createLocalMetadata(file, options.includeContent === true),
-        ),
-        diagnostics: discovery.diagnostics,
-        visitedDirectories: discovery.visitedDirectories,
-      };
-      if (args.json) printJson(value);
-      else {
-        writeStdoutLine(
-          `project-local AGENTS.md files: ${discovery.files.length}`,
-        );
-        for (const file of discovery.files) {
-          writeStdoutLine(
-            `  - ${file.relativePath} bytes=${file.byteLength} digest=${file.digest}`,
-          );
-        }
-      }
-      return;
-    }
-    case "local-show": {
-      const record = await showLocalInstruction(
-        args.workspaceRoot,
-        options.subject ?? options.path ?? ".",
-      );
-      if (args.json) printJson(record);
-      else writeStdoutLine(record.body);
-      return;
-    }
-    case "local-create": {
-      const record = await createLocalInstruction(
-        args.workspaceRoot,
-        options.subject ?? options.path ?? ".",
-        (await readBody(args, options)) as string,
-      );
-      if (args.json) printJson(record);
-      else
-        writeStdoutLine(
-          `created ${record.relativePath} digest=${record.digest}`,
-        );
-      return;
-    }
-    case "local-edit": {
-      const record = await updateLocalInstruction(
-        args.workspaceRoot,
-        options.subject ?? options.path ?? ".",
-        (await readBody(args, options)) as string,
-        options.expectedDigest ??
-          fail("Local edit requires --expected-digest for compare-and-swap."),
-      );
-      if (args.json) printJson(record);
-      else
-        writeStdoutLine(
-          `updated ${record.relativePath} digest=${record.digest}`,
-        );
-      return;
-    }
-    case "local-delete": {
-      await deleteLocalInstruction(
-        args.workspaceRoot,
-        options.subject ?? options.path ?? ".",
-        options.expectedDigest ??
-          fail("Local delete requires --expected-digest for compare-and-swap."),
-      );
-      if (args.json) printJson({ deleted: true });
-      else writeStdoutLine("deleted project-local AGENTS.md");
-      return;
-    }
     case "workspace-list": {
       const library = await loadInstructionLibrary();
       if (args.json)
@@ -710,44 +600,22 @@ export const printInstructionSummary = async (
       }
       return;
     }
-    case "workspace-register": {
-      const tags = parseInstructionWorkspaceTags(options.metadataJson);
-      const result = await registerInstructionWorkspace(
-        options.subject ?? options.path ?? args.workspaceRoot,
+    case "workspace-configure": {
+      const configuration = parseInstructionWorkspaceConfiguration(
+        options.metadataJson,
+      );
+      const result = await configureInstructionWorkspace(
+        options.subject ?? args.workspaceRoot,
         {
           ...(options.name === undefined ? {} : { displayName: options.name }),
-          ...(tags === undefined ? {} : { tags }),
+          ...configuration,
         },
         mutationOptions(options),
       );
       if (args.json) printJson(result);
       else
         writeStdoutLine(
-          `registered ${result.workspace.id}: ${result.workspace.root}`,
-        );
-      return;
-    }
-    case "workspace-update": {
-      const workspaceId =
-        options.subject ?? fail("Workspace update requires a workspace UUID.");
-      const tags = parseInstructionWorkspaceTags(options.metadataJson);
-      if (options.name === undefined && tags === undefined) {
-        fail("Workspace update requires --name or --metadata-json.");
-      }
-      const result = await updateInstructionWorkspace(
-        workspaceId,
-        {
-          ...(options.name === undefined
-            ? {}
-            : { displayName: options.name.length === 0 ? null : options.name }),
-          ...(tags === undefined ? {} : { tags }),
-        },
-        mutationOptions(options),
-      );
-      if (args.json) printJson(result);
-      else
-        writeStdoutLine(
-          `updated workspace ${workspaceId}, revision ${result.library.revision}`,
+          `configured ${result.workspace.id}: ${result.workspace.root}`,
         );
       return;
     }
@@ -755,7 +623,6 @@ export const printInstructionSummary = async (
       const result = await relinkInstructionWorkspace(
         options.subject ?? fail("Workspace relink requires a workspace UUID."),
         options.path ??
-          options.secondarySubject ??
           fail("Workspace relink requires --path <absolute-root>."),
         mutationOptions(options),
       );
@@ -766,10 +633,9 @@ export const printInstructionSummary = async (
         );
       return;
     }
-    case "workspace-unregister": {
-      const result = await unregisterInstructionWorkspace(
-        options.subject ??
-          fail("Workspace unregister requires a workspace UUID."),
+    case "workspace-remove": {
+      const result = await removeInstructionWorkspaceConfiguration(
+        options.subject ?? fail("Workspace remove requires a workspace UUID."),
         {
           ...mutationOptions(options),
           confirmAssignedRemoval: options.confirmAssignmentRemoval === true,
@@ -778,7 +644,7 @@ export const printInstructionSummary = async (
       if (args.json) printJson(result);
       else
         writeStdoutLine(
-          `unregistered workspace, revision ${result.library.revision}`,
+          `removed workspace configuration, revision ${result.library.revision}`,
         );
       return;
     }
@@ -823,7 +689,7 @@ export const printInstructionSummary = async (
       const expectedDigest =
         options.expectedDigest ??
         fail(
-          "Instruction recovery reset requires the reviewed corrupt primary --expected-digest.",
+          "Instruction recovery reset requires the reviewed recovery --expected-digest.",
         );
       const result = await resetCorruptInstructionLibrary(expectedDigest);
       if (args.json) {
@@ -903,26 +769,24 @@ export const printInstructionSummary = async (
       const path =
         options.promptFile ??
         fail("Transfer import requires --prompt-file <export.json>.");
-      const payload = JSON.parse(
-        (
-          await readBoundedUtf8InputFile(
-            resolveInputPath(args.workspaceRoot, path),
-            MAX_INSTRUCTION_CLI_JSON_BYTES,
-            "Instruction library import",
-          )
-        ).replace(/^\uFEFF/u, ""),
+      const payload = parseJsonInput(
+        await readBoundedUtf8InputFile(
+          resolveInputPath(args.workspaceRoot, path),
+          MAX_INSTRUCTION_CLI_JSON_BYTES,
+          "Instruction library import",
+        ),
+        "Instruction library import",
       ) as Parameters<typeof importInstructionLibrary>[0];
       let choices: InstructionLibraryImportChoices | undefined;
       if (options.decisionsFile) {
-        const parsed = JSON.parse(
-          (
-            await readBoundedUtf8InputFile(
-              resolveInputPath(args.workspaceRoot, options.decisionsFile),
-              MAX_INSTRUCTION_CLI_JSON_BYTES,
-              "Instruction import choices",
-            )
-          ).replace(/^\uFEFF/u, ""),
-        ) as unknown;
+        const parsed = parseJsonInput(
+          await readBoundedUtf8InputFile(
+            resolveInputPath(args.workspaceRoot, options.decisionsFile),
+            MAX_INSTRUCTION_CLI_JSON_BYTES,
+            "Instruction import choices",
+          ),
+          "Instruction import choices",
+        );
         if (
           typeof parsed !== "object" ||
           parsed === null ||

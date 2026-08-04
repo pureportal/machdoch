@@ -11,7 +11,6 @@ export type SettingsCategoryId =
   | "preferences.desktop-appearance"
   | "preferences.chat-voice"
   | "memory.global"
-  | "instruction-profiles.global"
   | "customizations.prompts-global"
   | "context-packs.global"
   | "mcp.global"
