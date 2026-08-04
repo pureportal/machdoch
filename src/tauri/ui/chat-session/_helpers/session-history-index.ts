@@ -22,6 +22,7 @@ import {
   type SessionStatusFilter,
   type SessionStatusFilterSelection,
 } from "./session-shell";
+import { compareSessionsBySidebarGroup } from "./session-sidebar-groups";
 
 export const ALL_SESSION_PROJECTS_FILTER = "__all_projects__";
 const NO_WORKSPACE_PROJECT_KEY = "__no_workspace__";
@@ -423,6 +424,15 @@ export const filterSessionHistoryIndex = (
 
     if (leftIsAlwaysVisibleSession !== rightIsAlwaysVisibleSession) {
       return leftIsAlwaysVisibleSession ? -1 : 1;
+    }
+
+    const sidebarGroupDelta = compareSessionsBySidebarGroup(
+      left.session,
+      right.session,
+    );
+
+    if (sidebarGroupDelta !== 0) {
+      return sidebarGroupDelta;
     }
 
     if (left.score !== right.score) {

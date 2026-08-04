@@ -55,6 +55,10 @@ import {
   type SessionHistoryTagFacet,
 } from "../_helpers/session-history-index";
 import {
+  getUnpinnedSessionDividerIndex,
+  isSessionPinnedInSidebar,
+} from "../_helpers/session-sidebar-groups";
+import {
   SESSION_SCOPE_FILTERS,
   SESSION_STATUS_FILTERS,
   SESSION_STATUS_META,
@@ -101,7 +105,10 @@ const clampMenuCoordinate = (
     viewportSize - menuSize - SESSION_CONTEXT_MENU_MARGIN,
   );
 
-  return Math.min(Math.max(coordinate, SESSION_CONTEXT_MENU_MARGIN), maxCoordinate);
+  return Math.min(
+    Math.max(coordinate, SESSION_CONTEXT_MENU_MARGIN),
+    maxCoordinate,
+  );
 };
 
 const createSessionContextMenuPosition = (
@@ -133,8 +140,9 @@ const createSessionDropdownMenuPosition = (
 ): { left: number; top: number } => {
   const triggerRect = trigger.getBoundingClientRect();
   const cardRect =
-    trigger.closest<HTMLElement>(".app-session-card")?.getBoundingClientRect() ??
-    null;
+    trigger
+      .closest<HTMLElement>(".app-session-card")
+      ?.getBoundingClientRect() ?? null;
   const horizontalAnchor =
     cardRect && (cardRect.width > 0 || cardRect.height > 0)
       ? cardRect
@@ -163,10 +171,6 @@ const createSessionDropdownMenuPosition = (
       window.innerHeight,
     ),
   };
-};
-
-const isSessionPinnedInSidebar = (session: ChatSessionRecord): boolean => {
-  return isQuickVoiceSession(session) || typeof session.pinnedAt === "number";
 };
 
 const createSessionActionItems = ({
@@ -283,7 +287,9 @@ const SessionContextActionMenu = ({
     </div>
   );
 
-  return typeof document === "undefined" ? menu : createPortal(menu, document.body);
+  return typeof document === "undefined"
+    ? menu
+    : createPortal(menu, document.body);
 };
 
 export interface SessionsSidebarProps {
@@ -351,10 +357,8 @@ export const SessionsSidebar = ({
     filteredSessions.length === totalSessions
       ? `${totalSessions} saved session${totalSessions === 1 ? "" : "s"}`
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
-  const pinnedSessionCount = renderedSessions.filter(isSessionPinnedInSidebar)
-    .length;
-  const showPinnedSeparator =
-    pinnedSessionCount > 0 && pinnedSessionCount < renderedSessions.length;
+  const unpinnedSessionDividerIndex =
+    getUnpinnedSessionDividerIndex(renderedSessions);
   const showSessionProjectFilter = sessionProjectFacets.length > 1;
 
   useEffect(() => {
@@ -554,7 +558,9 @@ export const SessionsSidebar = ({
                 <Download className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Export visible sessions</TooltipContent>
+            <TooltipContent side="bottom">
+              Export visible sessions
+            </TooltipContent>
           </Tooltip>
           <Button
             type="button"
@@ -717,236 +723,246 @@ export const SessionsSidebar = ({
             />
           ) : (
             <>
-            {renderedSessions.map((session, index) => {
-              const isActive = session.id === activeSessionId;
-              const archived = isSessionArchived(session);
-              const sessionStatus = getSessionOverviewStatus(session);
-              const statusMeta = SESSION_STATUS_META[sessionStatus];
-              const SessionStatusIcon = statusMeta.icon;
-              const showArchiveAction = canArchiveSession(session);
-              const isQuickSession = isQuickVoiceSession(session);
-              const isPinned = isSessionPinnedInSidebar(session);
-              const hasUnreadCompletion =
-                !isActive &&
-                !archived &&
-                hasUnreadCompletedSessionResponse(session);
-              const retentionProgress = getSessionRetentionProgress(
-                session,
-                {
-                  inactiveSessionArchiveDays,
-                  archivedSessionRetentionDays,
-                },
-                retentionNow,
-              );
-              const primaryTag = session.tags[0];
-              const extraTagCount = Math.max(0, session.tags.length - 1);
-              const sessionTitle = getSessionTitle(session);
-              const sessionActionItems = createSessionActionItems({
-                sessionId: session.id,
-                canDuplicate: canDuplicateSession(session),
-                canPin: canPinSession(session),
-                isPinned,
-                isQuickSession,
-                showArchiveAction,
-                onArchiveSession,
-                onDuplicateSession,
-                onTogglePinnedSession,
-              });
-              const hasSessionActionMenu = sessionActionItems.length > 0;
+              {renderedSessions.map((session, index) => {
+                const isActive = session.id === activeSessionId;
+                const archived = isSessionArchived(session);
+                const sessionStatus = getSessionOverviewStatus(session);
+                const statusMeta = SESSION_STATUS_META[sessionStatus];
+                const SessionStatusIcon = statusMeta.icon;
+                const showArchiveAction = canArchiveSession(session);
+                const isQuickSession = isQuickVoiceSession(session);
+                const isPinned = isSessionPinnedInSidebar(session);
+                const hasUnreadCompletion =
+                  !isActive &&
+                  !archived &&
+                  hasUnreadCompletedSessionResponse(session);
+                const retentionProgress = getSessionRetentionProgress(
+                  session,
+                  {
+                    inactiveSessionArchiveDays,
+                    archivedSessionRetentionDays,
+                  },
+                  retentionNow,
+                );
+                const primaryTag = session.tags[0];
+                const extraTagCount = Math.max(0, session.tags.length - 1);
+                const sessionTitle = getSessionTitle(session);
+                const sessionActionItems = createSessionActionItems({
+                  sessionId: session.id,
+                  canDuplicate: canDuplicateSession(session),
+                  canPin: canPinSession(session),
+                  isPinned,
+                  isQuickSession,
+                  showArchiveAction,
+                  onArchiveSession,
+                  onDuplicateSession,
+                  onTogglePinnedSession,
+                });
+                const hasSessionActionMenu = sessionActionItems.length > 0;
 
-              return (
-                <Fragment key={session.id}>
-                  {showPinnedSeparator && index === pinnedSessionCount ? (
-                    <div className="app-session-pin-separator -my-1 flex items-center gap-2 px-1">
-                      <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
-                      <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        Unpinned
-                      </span>
-                      <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
-                    </div>
-                  ) : null}
-                  <div
-                    onContextMenu={(event) =>
-                      openSessionContextMenu(event, session, sessionActionItems)
-                    }
-                    className={cn(
-                      "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
-                      hasUnreadCompletion && "app-session-card--needs-read",
-                      isActive
-                        ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
-                        : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
-                      archived &&
-                        (isActive
-                          ? "border-dashed"
-                          : "border-dashed opacity-80"),
-                    )}
-                  >
-                  <button
-                    type="button"
-                    aria-label={`Open session ${sessionTitle}${
-                      hasUnreadCompletion ? ", new reply ready" : ""
-                    }`}
-                    onClick={() => onActivateSession(session.id)}
-                    className="app-session-open-button min-w-0 flex-1 text-left"
-                  >
-                    <div
-                      className={cn(
-                        "flex w-full min-w-0 items-start gap-2",
-                        hasSessionActionMenu && "pr-6",
-                      )}
-                    >
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            aria-label={`Session status: ${statusMeta.label}`}
-                            className={cn(
-                              "app-session-status-icon flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
-                              statusMeta.containerClassName,
-                            )}
-                          >
-                            <SessionStatusIcon
-                              className={cn("h-3 w-3", statusMeta.iconClassName)}
-                            />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          {statusMeta.label}
-                        </TooltipContent>
-                      </Tooltip>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          {isPinned ? (
-                            <Pin className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-                          ) : null}
-                          {archived ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  aria-label="Archived session"
-                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-500"
-                                >
-                                  <Archive className="h-3.5 w-3.5" />
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                Archived
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : null}
-                          <p
-                            className={cn(
-                              "app-session-title min-w-0 truncate text-sm font-semibold leading-5 placeholder:text-slate-500",
-                              archived ? "text-slate-300" : "text-slate-100",
-                            )}
-                          >
-                            {sessionTitle}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                        {hasUnreadCompletion ? (
-                          <span className="app-session-read-cue inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase">
-                            New reply
-                          </span>
-                        ) : null}
-                        {primaryTag ? (
-                          <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
-                            {extraTagCount > 0
-                              ? `${primaryTag} +${extraTagCount}`
-                              : primaryTag}
-                          </span>
-                        ) : null}
-                        <span className="min-w-0 truncate">
-                          {createSessionSubtitle(session)}
+                return (
+                  <Fragment key={session.id}>
+                    {index === unpinnedSessionDividerIndex ? (
+                      <div className="app-session-pin-separator -my-1 flex items-center gap-2 px-1">
+                        <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
+                        <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                          Unpinned
                         </span>
-                      </span>
-                      <span className="shrink-0">
-                        {formatSessionTimestamp(
-                          getLatestSessionUserRequestAt(session),
-                        )}
-                      </span>
-                    </div>
-                  </button>
-
-                  {hasSessionActionMenu ? (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={`Session actions for ${sessionTitle}`}
-                      title="Session actions"
-                      aria-haspopup="menu"
-                      aria-expanded={
-                        sessionContextMenu?.sessionId === session.id
-                          ? "true"
-                          : "false"
-                      }
-                      onClick={(event) =>
-                        openSessionDropdownMenu(
+                        <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
+                      </div>
+                    ) : null}
+                    <div
+                      onContextMenu={(event) =>
+                        openSessionContextMenu(
                           event,
                           session,
                           sessionActionItems,
                         )
                       }
-                      className="app-session-card-action-button absolute top-1.5 right-1.5 h-5 w-5 rounded-md border border-transparent bg-transparent text-slate-500 opacity-0 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-slate-700 hover:bg-slate-900/80 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
-                    >
-                      <Ellipsis className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : null}
-                  {retentionProgress ? (
-                    <div
-                      aria-label={`${
-                        retentionProgress.phase === "archive"
-                          ? "Auto-archive"
-                          : "Auto-delete"
-                      } progress for ${sessionTitle}`}
                       className={cn(
-                        "app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden",
-                        retentionProgress.phase === "archive"
-                          ? "bg-slate-800/80"
-                          : "bg-transparent",
+                        "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
+                        hasUnreadCompletion && "app-session-card--needs-read",
+                        isActive
+                          ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
+                          : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
+                        archived &&
+                          (isActive
+                            ? "border-dashed"
+                            : "border-dashed opacity-80"),
                       )}
                     >
-                      <div
-                        className={cn(
-                          "h-full transition-[width] duration-500",
-                          retentionProgress.phase === "archive"
-                            ? "bg-sky-400/70"
-                            : "bg-rose-300/45",
-                        )}
-                        style={{
-                          width: `${Math.round(
-                            retentionProgress.progress * 100,
-                          )}%`,
-                        }}
-                      />
+                      <button
+                        type="button"
+                        aria-label={`Open session ${sessionTitle}${
+                          hasUnreadCompletion ? ", new reply ready" : ""
+                        }`}
+                        onClick={() => onActivateSession(session.id)}
+                        className="app-session-open-button min-w-0 flex-1 text-left"
+                      >
+                        <div
+                          className={cn(
+                            "flex w-full min-w-0 items-start gap-2",
+                            hasSessionActionMenu && "pr-6",
+                          )}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                aria-label={`Session status: ${statusMeta.label}`}
+                                className={cn(
+                                  "app-session-status-icon flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                                  statusMeta.containerClassName,
+                                )}
+                              >
+                                <SessionStatusIcon
+                                  className={cn(
+                                    "h-3 w-3",
+                                    statusMeta.iconClassName,
+                                  )}
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              {statusMeta.label}
+                            </TooltipContent>
+                          </Tooltip>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              {isPinned ? (
+                                <Pin className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                              ) : null}
+                              {archived ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span
+                                      aria-label="Archived session"
+                                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-500"
+                                    >
+                                      <Archive className="h-3.5 w-3.5" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    Archived
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : null}
+                              <p
+                                className={cn(
+                                  "app-session-title min-w-0 truncate text-sm font-semibold leading-5 placeholder:text-slate-500",
+                                  archived
+                                    ? "text-slate-300"
+                                    : "text-slate-100",
+                                )}
+                              >
+                                {sessionTitle}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                            {hasUnreadCompletion ? (
+                              <span className="app-session-read-cue inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase">
+                                New reply
+                              </span>
+                            ) : null}
+                            {primaryTag ? (
+                              <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
+                                {extraTagCount > 0
+                                  ? `${primaryTag} +${extraTagCount}`
+                                  : primaryTag}
+                              </span>
+                            ) : null}
+                            <span className="min-w-0 truncate">
+                              {createSessionSubtitle(session)}
+                            </span>
+                          </span>
+                          <span className="shrink-0">
+                            {formatSessionTimestamp(
+                              getLatestSessionUserRequestAt(session),
+                            )}
+                          </span>
+                        </div>
+                      </button>
+
+                      {hasSessionActionMenu ? (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Session actions for ${sessionTitle}`}
+                          title="Session actions"
+                          aria-haspopup="menu"
+                          aria-expanded={
+                            sessionContextMenu?.sessionId === session.id
+                              ? "true"
+                              : "false"
+                          }
+                          onClick={(event) =>
+                            openSessionDropdownMenu(
+                              event,
+                              session,
+                              sessionActionItems,
+                            )
+                          }
+                          className="app-session-card-action-button absolute top-1.5 right-1.5 h-5 w-5 rounded-md border border-transparent bg-transparent text-slate-500 opacity-0 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-slate-700 hover:bg-slate-900/80 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+                        >
+                          <Ellipsis className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
+                      {retentionProgress ? (
+                        <div
+                          aria-label={`${
+                            retentionProgress.phase === "archive"
+                              ? "Auto-archive"
+                              : "Auto-delete"
+                          } progress for ${sessionTitle}`}
+                          className={cn(
+                            "app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden",
+                            retentionProgress.phase === "archive"
+                              ? "bg-slate-800/80"
+                              : "bg-transparent",
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "h-full transition-[width] duration-500",
+                              retentionProgress.phase === "archive"
+                                ? "bg-sky-400/70"
+                                : "bg-rose-300/45",
+                            )}
+                            style={{
+                              width: `${Math.round(
+                                retentionProgress.progress * 100,
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
-                  </div>
-                </Fragment>
-              );
-            })}
-            {renderedSessions.length < filteredSessions.length ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  setRenderedSessionLimit((current) =>
-                    Math.min(
-                      filteredSessions.length,
-                      current + RENDERED_SESSION_PAGE_SIZE,
-                    ),
-                  );
-                }}
-              >
-                Load more sessions ({filteredSessions.length - renderedSessions.length})
-              </Button>
-            ) : null}
+                  </Fragment>
+                );
+              })}
+              {renderedSessions.length < filteredSessions.length ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setRenderedSessionLimit((current) =>
+                      Math.min(
+                        filteredSessions.length,
+                        current + RENDERED_SESSION_PAGE_SIZE,
+                      ),
+                    );
+                  }}
+                >
+                  Load more sessions (
+                  {filteredSessions.length - renderedSessions.length})
+                </Button>
+              ) : null}
             </>
           )}
         </div>
