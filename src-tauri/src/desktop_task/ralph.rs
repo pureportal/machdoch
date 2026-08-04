@@ -1,11 +1,11 @@
 use std::{
-    io,
-    path::PathBuf,
+    fs, io,
+    path::{Path, PathBuf},
     process::{Child, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     sync::Arc,
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(target_os = "windows")]
@@ -37,6 +37,48 @@ use super::{
 #[cfg(target_os = "windows")]
 use super::process::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
+const RALPH_CANCEL_PATH_ENV: &str = "MACHDOCH_RALPH_CANCEL_PATH";
+const RALPH_GRACEFUL_STOP_TIMEOUT_MS: u64 = 30_000;
+static NEXT_RALPH_CANCEL_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
+
+fn create_ralph_cancel_path() -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = NEXT_RALPH_CANCEL_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+
+    std::env::temp_dir().join(format!(
+        "machdoch-ralph-cancel-{}-{timestamp}-{sequence}.request",
+        std::process::id()
+    ))
+}
+
+fn request_ralph_cli_stop(
+    child: &mut Child,
+    cancellation_path: &Path,
+    reason: &str,
+    allow_graceful_stop: bool,
+) {
+    let request_written = fs::write(cancellation_path, reason).is_ok();
+    if request_written && allow_graceful_stop {
+        let deadline = Instant::now() + Duration::from_millis(RALPH_GRACEFUL_STOP_TIMEOUT_MS);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    let _ = child.wait();
+                    return;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(DESKTOP_TASK_WAIT_POLL_MS)),
+                Err(_) => break,
+            }
+        }
+    }
+
+    terminate_child_process_tree(child);
+    let _ = child.wait();
+}
+
 fn parse_ralph_command_response(stdout: &str) -> Result<Value, String> {
     let trimmed_stdout = stdout.trim();
 
@@ -66,9 +108,15 @@ fn stop_ralph_cli_after_wait_error(
     stdout_worker: JoinHandle<Result<String, String>>,
     stderr_worker: JoinHandle<Result<Vec<String>, String>>,
     payload_paths: &[PathBuf],
+    cancellation_path: &Path,
+    allow_graceful_stop: bool,
 ) -> String {
-    terminate_child_process_tree(child);
-    let _ = child.wait();
+    request_ralph_cli_stop(
+        child,
+        cancellation_path,
+        "Desktop lost the Ralph child-process wait handle; finalize the run before stopping.",
+        allow_graceful_stop,
+    );
 
     let cleanup_result = join_cli_output_and_cleanup(stdout_worker, stderr_worker, None);
     cleanup_temporary_files(payload_paths);
@@ -104,8 +152,11 @@ pub(super) fn execute_ralph_command(
         normalized_workspace_root,
         "ralph".to_string(),
     ];
-    let (arguments, payload_paths) =
+    let (arguments, mut payload_paths) =
         rewrite_ralph_payload_arguments(payload_workspace_root.as_str(), request.arguments)?;
+    let cancellation_path = create_ralph_cancel_path();
+    payload_paths.push(cancellation_path.clone());
+    let allow_graceful_stop = matches!(progress_task.as_str(), "run" | "resume");
 
     for argument in arguments {
         let normalized = argument.trim();
@@ -130,6 +181,9 @@ pub(super) fn execute_ralph_command(
         }
     };
     media_bridge.configure_command(&mut cli_command.command);
+    cli_command
+        .command
+        .env(RALPH_CANCEL_PATH_ENV, &cancellation_path);
 
     cli_command
         .command
@@ -162,8 +216,12 @@ pub(super) fn execute_ralph_command(
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            request_ralph_cli_stop(
+                &mut child,
+                &cancellation_path,
+                "Desktop could not attach to Ralph stdout; finalize the run before stopping.",
+                allow_graceful_stop,
+            );
             cleanup_temporary_files(&payload_paths);
             return Err("The Ralph CLI did not expose a stdout stream.".to_string());
         }
@@ -171,8 +229,12 @@ pub(super) fn execute_ralph_command(
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            request_ralph_cli_stop(
+                &mut child,
+                &cancellation_path,
+                "Desktop could not attach to Ralph stderr; finalize the run before stopping.",
+                allow_graceful_stop,
+            );
             cleanup_temporary_files(&payload_paths);
             return Err("The Ralph CLI did not expose a stderr stream.".to_string());
         }
@@ -199,14 +261,20 @@ pub(super) fn execute_ralph_command(
                     stdout_worker,
                     stderr_worker,
                     &payload_paths,
+                    &cancellation_path,
+                    allow_graceful_stop,
                 ));
             }
             Ok(None) => {
                 if let Err(error) =
                     media_bridge.service_pending_request(&app_handle, &workspace_path)
                 {
-                    terminate_child_process_tree(&mut child);
-                    let _ = child.wait();
+                    request_ralph_cli_stop(
+                        &mut child,
+                        &cancellation_path,
+                        "Desktop media handling failed; finalize the Ralph run before stopping.",
+                        allow_graceful_stop,
+                    );
                     let cleanup_result =
                         join_cli_output_and_cleanup(stdout_worker, stderr_worker, None);
                     cleanup_temporary_files(&payload_paths);
@@ -231,8 +299,12 @@ pub(super) fn execute_ralph_command(
                         ),
                     );
 
-                    terminate_child_process_tree(&mut child);
-                    let _ = child.wait();
+                    request_ralph_cli_stop(
+                        &mut child,
+                        &cancellation_path,
+                        "Desktop cancellation requested by the user.",
+                        allow_graceful_stop,
+                    );
 
                     let (stdout_text, stderr_text) =
                         match join_cli_output_and_cleanup(stdout_worker, stderr_worker, None) {
@@ -269,8 +341,12 @@ pub(super) fn execute_ralph_command(
                         ),
                     );
 
-                    terminate_child_process_tree(&mut child);
-                    let _ = child.wait();
+                    request_ralph_cli_stop(
+                        &mut child,
+                        &cancellation_path,
+                        "Desktop Ralph execution exceeded its safety timeout.",
+                        allow_graceful_stop,
+                    );
 
                     let (stdout_text, stderr_text) =
                         match join_cli_output_and_cleanup(stdout_worker, stderr_worker, None) {
@@ -362,7 +438,9 @@ pub(super) fn resolve_ralph_flow_path_for_open(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_ralph_flow_scope, parse_ralph_command_response};
+    use super::{
+        create_ralph_cancel_path, normalize_ralph_flow_scope, parse_ralph_command_response,
+    };
     use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
 
     #[test]
@@ -386,5 +464,18 @@ mod tests {
         assert!(error.contains("Failed to parse the Ralph CLI JSON response"));
         assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
         assert!(error.len() < 18 * 1024);
+    }
+
+    #[test]
+    fn ralph_cancel_paths_are_unique_temporary_files() {
+        let first = create_ralph_cancel_path();
+        let second = create_ralph_cancel_path();
+
+        assert_ne!(first, second);
+        assert!(first.starts_with(std::env::temp_dir()));
+        assert_eq!(
+            first.extension().and_then(|value| value.to_str()),
+            Some("request")
+        );
     }
 }

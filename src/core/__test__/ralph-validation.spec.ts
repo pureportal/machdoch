@@ -227,7 +227,6 @@ describe("validateRalphFlow", () => {
         id: "end",
         type: "END",
         title: "End",
-        status: "success",
       },
     ]);
   });

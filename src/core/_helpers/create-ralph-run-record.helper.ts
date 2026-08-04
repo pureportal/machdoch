@@ -253,6 +253,7 @@ export const createRalphRunRecordBlock = (
       : {}),
     ...(markdown ? { markdown } : {}),
     ...(error ? { error } : {}),
+    ...(blockResult.failure ? { failure: { ...blockResult.failure } } : {}),
     ...(instructionDelivery ? { instructionDelivery } : {}),
   };
 };

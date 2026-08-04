@@ -5,9 +5,38 @@ import type {
 import {
   createActionFeedbackProgressReporter,
   createVerboseProgressReporter,
+  attachCancellationHandlers,
   formatExecutionSummaryLines,
   STRUCTURED_PROGRESS_PREFIX,
 } from "./cli-io.ts";
+
+describe("attachCancellationHandlers", () => {
+  it("turns a desktop cancellation marker into cooperative cancellation", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-cancel-marker-"));
+    const cancellationFilePath = join(directory, "cancel");
+    let resolveCancellation!: (reason: string | undefined) => void;
+    const cancellation = new Promise<string | undefined>((resolve) => {
+      resolveCancellation = resolve;
+    });
+    const detach = attachCancellationHandlers(
+      { cancel: resolveCancellation },
+      { json: true, cancellationFilePath, cancellationPollMs: 10 },
+    );
+
+    try {
+      await writeFile(
+        cancellationFilePath,
+        "Desktop timeout requested.",
+        "utf8",
+      );
+
+      await expect(cancellation).resolves.toBe("Desktop timeout requested.");
+    } finally {
+      detach();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
 
 const createExecution = (
   overrides: Partial<TaskExecutionResult> = {},
@@ -89,9 +118,12 @@ describe("createVerboseProgressReporter", () => {
       outputSections: [],
       cancellable: true,
     };
-    const reporter = createVerboseProgressReporter((line) => {
-      lines.push(line);
-    }, { structured: true });
+    const reporter = createVerboseProgressReporter(
+      (line) => {
+        lines.push(line);
+      },
+      { structured: true },
+    );
 
     reporter(progress);
 
@@ -113,9 +145,12 @@ describe("createVerboseProgressReporter", () => {
       outputSections: [],
       cancellable: false,
     };
-    const reporter = createVerboseProgressReporter((line) => {
-      lines.push(line);
-    }, { structured: true });
+    const reporter = createVerboseProgressReporter(
+      (line) => {
+        lines.push(line);
+      },
+      { structured: true },
+    );
 
     reporter(progress);
 
@@ -137,9 +172,12 @@ describe("createVerboseProgressReporter", () => {
       outputSections: [],
       cancellable: true,
     };
-    const reporter = createVerboseProgressReporter((line) => {
-      lines.push(line);
-    }, { structured: true });
+    const reporter = createVerboseProgressReporter(
+      (line) => {
+        lines.push(line);
+      },
+      { structured: true },
+    );
 
     reporter(progress);
     reporter(progress);
@@ -190,7 +228,9 @@ describe("createActionFeedbackProgressReporter", () => {
     reporter.report(
       createProgress("resolving-context", "Resolve workspace context."),
     );
-    reporter.report(createProgress("executing", "Executor iteration 1 started."));
+    reporter.report(
+      createProgress("executing", "Executor iteration 1 started."),
+    );
     reporter.report(
       createProgress("executing", "Requested run shell command: docker ps."),
     );
@@ -230,3 +270,6 @@ describe("createActionFeedbackProgressReporter", () => {
     ]);
   });
 });
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";

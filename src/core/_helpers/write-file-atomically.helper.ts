@@ -3,12 +3,15 @@ import { mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 const ATOMIC_TEMPORARY_FILE_PATTERN = /^\..+\.\d+\.[0-9a-f-]+\.tmp$/iu;
-const ATOMIC_REPLACE_RETRY_DELAYS_MS = [0, 5, 10, 25, 50, 100, 250] as const;
+const ATOMIC_REPLACE_RETRY_DELAYS_MS = [
+  0, 5, 10, 25, 50, 100, 250, 500, 1_000, 2_000,
+] as const;
 
 const isTransientAtomicReplaceError = (error: unknown): boolean => {
-  const code = typeof error === "object" && error !== null && "code" in error
-    ? String(error.code)
-    : "";
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : "";
 
   return code === "EBUSY" || code === "EACCES" || code === "EPERM";
 };
@@ -45,7 +48,9 @@ export const scavengeAtomicTemporaryFiles = async (
   const now = options.now ?? Date.now();
   let removed = 0;
 
-  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  const entries = await readdir(directory, { withFileTypes: true }).catch(
+    () => [],
+  );
   for (const entry of entries) {
     if (!entry.isFile() || !ATOMIC_TEMPORARY_FILE_PATTERN.test(entry.name)) {
       continue;

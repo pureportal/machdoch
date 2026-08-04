@@ -14,12 +14,17 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { executeTask } from "../execution.js";
 import { mcpClientManager } from "../mcp/client.js";
+import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import {
+  compareRalphRepositorySnapshots,
   createRalphRunLogger,
   readRalphExecutionHistoryResults,
   runRalphFlow,
+  validateRalphFlow,
+  writeRalphRunRecord,
   type RalphRunCheckpoint,
   type RalphRunRecord,
+  type RalphRunResult,
 } from "../ralph.js";
 import {
   createExecutionResult,
@@ -1185,6 +1190,71 @@ describe("runRalphFlow", () => {
       },
     ]);
     expect(executeTask).not.toHaveBeenCalled();
+  });
+
+  it("durably finalizes cooperative desktop cancellation and releases both leases", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-cancel-finalize-"));
+    const flow = createFlow({
+      settings: { autonomy: true },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-success",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    const controller = new AbortController();
+    controller.abort("Desktop cancellation requested by the user.");
+
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "cancelled-run",
+      });
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, signal: controller.signal },
+      );
+      const record = JSON.parse(
+        await readFile(logger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+      const lease = await new RalphRunStore(
+        logger.paths!.directory,
+      ).readLease();
+
+      expect(result).toMatchObject({
+        status: "stopped",
+        outcome: { status: "cancelled" },
+      });
+      expect(record).toMatchObject({
+        status: "stopped",
+        outcome: { status: "cancelled" },
+      });
+      expect(lease).toMatchObject({
+        active: false,
+        lease: { releasedAt: expect.any(String) },
+      });
+      await expect(
+        stat(
+          join(
+            workspace,
+            ".machdoch",
+            "ralph",
+            "runs",
+            ".workspace-writer.ralph.lock",
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   it("keeps running when event observers throw", async () => {
@@ -3089,6 +3159,581 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("writes run-owned PROMPT_JSON artifacts after detecting a nested project", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-nested-artifact-"));
+    const project = join(workspace, "apps", "api");
+    const runId = "nested-project-artifact";
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        summary: "Valid JSON.",
+        response: {
+          markdown: '{"name":"candidate","score":7}',
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    try {
+      await mkdir(project, { recursive: true });
+      await writeFile(
+        join(project, "package.json"),
+        JSON.stringify({ scripts: { test: "vitest run" } }),
+        "utf8",
+      );
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "detect",
+              type: "UTILITY",
+              title: "Detect Commands",
+              utility: {
+                type: "DETECT_PROJECT_COMMANDS",
+                rootPath: "apps/api",
+              },
+            },
+            {
+              id: "prompt-json",
+              type: "UTILITY",
+              title: "Prompt JSON",
+              utility: {
+                type: "PROMPT_JSON",
+                prompt: "Create a candidate score.",
+                outputPath: "{{run:artifactRoot}}/state/candidate.json",
+                schema: {
+                  type: "object",
+                  required: ["name", "score"],
+                  properties: {
+                    name: { type: "string" },
+                    score: { type: "number" },
+                  },
+                },
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            {
+              id: "start-detect",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "detect",
+            },
+            {
+              id: "detect-prompt",
+              from: "detect",
+              fromOutput: "SUCCESS",
+              to: "prompt-json",
+            },
+            {
+              id: "prompt-success",
+              from: "prompt-json",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10, runId },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(executeTask).mock.calls[0]?.[1].workspaceRoot).toBe(
+        project,
+      );
+      await expect(
+        readFile(
+          join(
+            workspace,
+            ".machdoch",
+            "ralph",
+            "runs",
+            runId,
+            "state",
+            "candidate.json",
+          ),
+          "utf8",
+        ),
+      ).resolves.toContain('"score": 7');
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not regenerate valid PROMPT_JSON after a non-retryable persistence failure", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-prompt-persistence-"),
+    );
+    const project = join(workspace, "project");
+    const outsideProject = join(workspace, "shared", "candidate.json");
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({
+        summary: "Valid JSON.",
+        response: {
+          markdown: '{"name":"candidate","score":7}',
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    try {
+      await mkdir(project, { recursive: true });
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "prompt-json",
+            type: "UTILITY",
+            title: "Prompt JSON",
+            settings: {
+              workspace: { mode: "custom", path: project },
+              retry: { mode: "finite", maxRetries: 3, delaySeconds: 0 },
+            },
+            utility: {
+              type: "PROMPT_JSON",
+              prompt: "Create a candidate score.",
+              outputPath: outsideProject,
+              maxAttempts: 2,
+              schema: {
+                type: "object",
+                required: ["name", "score"],
+                properties: {
+                  name: { type: "string" },
+                  score: { type: "number" },
+                },
+              },
+            },
+          },
+          {
+            id: "blocked",
+            type: "END",
+            title: "Blocked",
+            outcome: "blocked",
+          },
+        ],
+        edges: [
+          {
+            id: "start-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt-json",
+          },
+          {
+            id: "prompt-blocked",
+            from: "prompt-json",
+            fromOutput: "ERROR",
+            to: "blocked",
+          },
+        ],
+      });
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "prompt-persistence-failure",
+      });
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, maxTransitions: 10, runId: logger.runId },
+      );
+      const promptResult = result.blockResults.find(
+        (entry) => entry.blockId === "prompt-json",
+      );
+      const record = JSON.parse(
+        await readFile(logger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+
+      expect(result.status).toBe("blocked");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      expect(promptResult).toMatchObject({
+        output: "ERROR",
+        failure: { kind: "persistence", retryable: false },
+        data: expect.objectContaining({
+          output: { name: "candidate", score: 7 },
+          attempts: 1,
+          persistence: expect.objectContaining({ status: "failed" }),
+        }),
+      });
+      expect(promptResult?.summary).toContain(
+        "produced schema-valid JSON but could not persist its artifact",
+      );
+      expect(
+        record.blockResults.find((entry) => entry.blockId === "prompt-json"),
+      ).toMatchObject({
+        failure: { kind: "persistence", retryable: false },
+      });
+      expect(
+        result.events.filter((event) => event.type === "retry"),
+      ).toHaveLength(0);
+      await expect(readFile(outsideProject, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects run artifact writes redirected through a directory link", async () => {
+    const testRoot = await mkdtemp(
+      join(tmpdir(), "ralph-linked-run-artifact-"),
+    );
+    const workspace = join(testRoot, "workspace");
+    const project = join(workspace, "project");
+    const outside = join(testRoot, "outside");
+    const runId = "linked-run-artifact";
+    const artifactRoot = join(workspace, ".machdoch", "ralph", "runs", runId);
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        summary: "Valid JSON.",
+        response: {
+          markdown: '{"name":"candidate"}',
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    try {
+      await mkdir(project, { recursive: true });
+      await mkdir(outside);
+      await mkdir(artifactRoot, { recursive: true });
+      await symlink(
+        outside,
+        join(artifactRoot, "state"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "prompt-json",
+              type: "UTILITY",
+              title: "Prompt JSON",
+              settings: { workspace: { mode: "custom", path: project } },
+              utility: {
+                type: "PROMPT_JSON",
+                prompt: "Create a candidate.",
+                outputPath: "{{run:artifactRoot}}/state/candidate.json",
+                schema: {
+                  type: "object",
+                  required: ["name"],
+                  properties: { name: { type: "string" } },
+                },
+              },
+            },
+            {
+              id: "blocked",
+              type: "END",
+              title: "Blocked",
+              outcome: "blocked",
+            },
+          ],
+          edges: [
+            {
+              id: "start-prompt",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "prompt-json",
+            },
+            {
+              id: "prompt-blocked",
+              from: "prompt-json",
+              fromOutput: "ERROR",
+              to: "blocked",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10, runId },
+      );
+
+      expect(result.status).toBe("blocked");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "prompt-json"),
+      ).toMatchObject({
+        output: "ERROR",
+        failure: { kind: "persistence", retryable: false },
+      });
+      await expect(
+        readFile(join(outside, "candidate.json"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports the finalized outcome in terminal results, events, logs, and records", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-terminal-outcome-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "record-invalid",
+          type: "UTILITY",
+          title: "Record Invalid Outcome",
+          utility: {
+            type: "APPEND_JSONL",
+            path: "outcomes.jsonl",
+            input: '{"outcome":"INVALID"}',
+          },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-record",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "record-invalid",
+        },
+        {
+          id: "record-success",
+          from: "record-invalid",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "terminal-outcome",
+      });
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, maxTransitions: 10, runId: logger.runId },
+      );
+      const record = JSON.parse(
+        await readFile(logger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+      const simpleEntries = (
+        await readFile(logger.paths!.simpleJsonlPath, "utf8")
+      )
+        .trim()
+        .split(/\r?\n/u)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const runEnd = simpleEntries
+        .filter((entry) => entry.kind === "run-end")
+        .at(-1);
+      const terminalEvent = result.events
+        .filter((event) => event.type === "end")
+        .at(-1);
+
+      expect(result).toMatchObject({
+        status: "blocked",
+        outcome: { status: "blocked", retryable: true },
+        checkpoint: { currentBlockId: "record-invalid" },
+      });
+      expect(result.summary).toContain("finished with outcome `blocked`");
+      expect(result.summary).not.toContain("ended at `success`");
+      expect(terminalEvent).toMatchObject({
+        type: "end",
+        status: "blocked",
+        summary: result.summary,
+      });
+      expect(record).toMatchObject({
+        status: "blocked",
+        summary: result.summary,
+        outcome: { status: "blocked", retryable: true },
+        checkpoint: { currentBlockId: "record-invalid" },
+      });
+      expect(runEnd).toMatchObject({
+        status: "blocked",
+        message: result.summary,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("retains the last retryable failure instead of a terminal END checkpoint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-retry-checkpoint-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "read-missing",
+          type: "UTILITY",
+          title: "Read Missing JSON",
+          utility: {
+            type: "READ_JSON",
+            path: "missing.json",
+          },
+        },
+        {
+          id: "record-invalid",
+          type: "UTILITY",
+          title: "Record Invalid Outcome",
+          utility: {
+            type: "APPEND_JSONL",
+            path: "outcomes.jsonl",
+            input: '{"outcome":"INVALID"}',
+          },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-write",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "read-missing",
+        },
+        {
+          id: "read-record",
+          from: "read-missing",
+          fromOutput: "NOT_FOUND",
+          to: "record-invalid",
+        },
+        {
+          id: "record-success",
+          from: "record-invalid",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      const first = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          maxTransitions: 10,
+          runId: "retry-terminal-checkpoint",
+        },
+      );
+
+      expect(first).toMatchObject({
+        status: "blocked",
+        checkpoint: { currentBlockId: "read-missing" },
+      });
+      if (!first.checkpoint) {
+        throw new Error("Expected the blocked run to retain a checkpoint.");
+      }
+
+      const resumed = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          checkpoint: first.checkpoint,
+          maxTransitions: 10,
+          runId: "retry-terminal-checkpoint",
+        },
+      );
+
+      expect(
+        resumed.blockResults.filter(
+          (entry) =>
+            entry.blockId === "read-missing" && entry.output === "NOT_FOUND",
+        ),
+      ).toHaveLength(2);
+      expect(resumed.checkpoint?.currentBlockId).toBe("read-missing");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("checkpoints an inconclusive candidate check at the validation block", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-inconclusive-checkpoint-"),
+    );
+    const unavailableCheck =
+      "node -e \"require('machdoch-intentionally-missing-module')\"";
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "baseline",
+          type: "UTILITY",
+          title: "Baseline",
+          utility: {
+            type: "RUN_CHECK",
+            command: unavailableCheck,
+            verificationRole: "baseline",
+            verificationPlanId: "tests",
+          },
+        },
+        {
+          id: "candidate",
+          type: "UTILITY",
+          title: "Candidate",
+          utility: {
+            type: "RUN_CHECK",
+            command: unavailableCheck,
+            verificationRole: "candidate",
+            baselineBlockId: "baseline",
+            verificationPlanId: "tests",
+          },
+        },
+        { id: "blocked", type: "END", title: "Blocked", status: "failed" },
+      ],
+      edges: [
+        {
+          id: "start-baseline",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "baseline",
+        },
+        {
+          id: "baseline-candidate",
+          from: "baseline",
+          fromOutput: "FAILED",
+          to: "candidate",
+        },
+        {
+          id: "candidate-blocked",
+          from: "candidate",
+          fromOutput: "INCONCLUSIVE",
+          to: "blocked",
+        },
+      ],
+    });
+
+    try {
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10, runId: "inconclusive-checkpoint" },
+      );
+      const candidate = result.blockResults.find(
+        (entry) => entry.blockId === "candidate",
+      );
+
+      expect(candidate).toMatchObject({
+        output: "INCONCLUSIVE",
+        data: {
+          verification: {
+            comparison: { disposition: "ENVIRONMENT_UNAVAILABLE" },
+          },
+        },
+      });
+      expect(result.checkpoint?.currentBlockId).toBe("candidate");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it.runIf(process.platform === "win32")(
     "writes PROMPT_JSON artifacts when Windows workspace paths use equivalent namespace forms",
     async () => {
@@ -3177,6 +3822,37 @@ describe("runRalphFlow", () => {
       } finally {
         await rm(workspace, { recursive: true, force: true });
       }
+    },
+  );
+
+  it.runIf(process.platform === "win32")(
+    "compares repository evidence across equivalent Windows namespace paths",
+    () => {
+      const root = "C:\\Development\\machdoch";
+      const snapshot = {
+        cwd: root,
+        root,
+        head: "abc123",
+        capturedAt: "2026-08-03T00:00:00.000Z",
+        status: "",
+        changedFiles: [],
+        diffStat: "",
+        stagedDiffStat: "",
+        diffFiles: [],
+        stagedDiffFiles: [],
+        files: [],
+      };
+
+      expect(
+        compareRalphRepositorySnapshots(
+          { ...snapshot, cwd: `\\\\?\\${root}`, root: `\\\\?\\${root}` },
+          snapshot,
+        ),
+      ).toMatchObject({
+        known: true,
+        changedFiles: [],
+        headChanged: false,
+      });
     },
   );
 
@@ -7148,6 +7824,114 @@ describe("runRalphFlow", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
+  it("resumes immediately when the independent lease released a stale projected checkpoint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-released-lease-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-success",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    const runId = "released-independent-lease";
+    const startedAt = new Date().toISOString();
+    const activeLease = {
+      ownerId: "finished-owner",
+      generation: 1,
+      acquiredAt: startedAt,
+      heartbeatAt: startedAt,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "start",
+      transitions: 0,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      runId,
+      startedAt,
+      flowId: flow.id,
+      lease: activeLease,
+    };
+
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, { runId });
+      if (!logger.paths) {
+        throw new Error("Expected file-backed Ralph logger paths.");
+      }
+      const runningResult: RalphRunResult = {
+        runId,
+        startedAt,
+        flow: flow.id,
+        status: "running",
+        summary: "Run is active.",
+        events: [],
+        blockResults: [],
+        missingVariables: [],
+        unknownVariables: [],
+        validation: validateRalphFlow(flow),
+        checkpoint,
+      };
+      await writeRalphRunRecord(workspace, flow, runningResult, {
+        paths: logger.paths,
+      });
+
+      const runStore = new RalphRunStore(logger.paths.directory);
+      await runStore.initialize();
+      const releasedAt = new Date().toISOString();
+      await runStore.persistCheckpoint(
+        {
+          ...checkpoint,
+          lease: { ...activeLease, releasedAt },
+        },
+        "Owner finished before the final run projection.",
+      );
+      await runStore.acquireLease(
+        {
+          runId,
+          flowId: flow.id,
+          ownerId: activeLease.ownerId,
+          generation: activeLease.generation,
+          acquiredAt: activeLease.acquiredAt,
+        },
+        60_000,
+      );
+      await runStore.releaseLease({
+        runId,
+        flowId: flow.id,
+        ownerId: activeLease.ownerId,
+        generation: activeLease.generation,
+      });
+
+      const resumed = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId, checkpoint },
+      );
+      const record = JSON.parse(
+        await readFile(logger.paths.recordPath, "utf8"),
+      ) as RalphRunRecord;
+
+      expect(resumed.status).toBe("completed");
+      expect(record.status).toBe("completed");
+      expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("atomically fences simultaneous durable run acquisition", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-run-acquire-race-"));
     const flow = createFlow({
@@ -7512,6 +8296,135 @@ describe("runRalphFlow", () => {
     expect(result.status).toBe("crashed");
     expect(result.durability).toMatchObject({ status: "degraded" });
     expect(result.checkpoint?.lease?.releasedAt).toEqual(expect.any(String));
+  });
+
+  it("does not persist terminal success before the independent lease is released", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-release-failure-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-success",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    const releaseLease = vi
+      .spyOn(RalphRunStore.prototype, "releaseLease")
+      .mockRejectedValueOnce(new Error("simulated lease release failure"));
+
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "release-failure-run",
+      });
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, leaseDurationMs: 1_000 },
+      );
+      const record = JSON.parse(
+        await readFile(logger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+
+      expect(result).toMatchObject({
+        status: "crashed",
+        durability: {
+          status: "degraded",
+          error: "simulated lease release failure",
+        },
+      });
+      expect(record.status).toBe("running");
+      expect(record.status).not.toBe("completed");
+    } finally {
+      releaseLease.mockRestore();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("finalizes an unexpected crash and releases its live workspace writer lock", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-unexpected-crash-"));
+    const flow = createFlow({
+      settings: { autonomy: true },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-success",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      const firstLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "unexpected-writer-crash",
+      });
+      const writeSimpleLog = firstLogger.simple.bind(firstLogger);
+      firstLogger.simple = (entry): void => {
+        if (entry.kind === "block-start") {
+          throw new Error("simulated logger failure");
+        }
+        writeSimpleLog(entry);
+      };
+
+      const crashed = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger: firstLogger, runId: firstLogger.runId },
+      );
+      const crashRecord = JSON.parse(
+        await readFile(firstLogger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+
+      expect(crashed).toMatchObject({
+        status: "crashed",
+        durability: { status: "degraded" },
+      });
+      expect(crashRecord.status).toBe("crashed");
+      await expect(
+        stat(
+          join(
+            workspace,
+            ".machdoch",
+            "ralph",
+            "runs",
+            ".workspace-writer.ralph.lock",
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+
+      const secondLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "writer-after-unexpected-crash",
+      });
+      const followup = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger: secondLogger, runId: secondLogger.runId },
+      );
+
+      expect(followup.summary).not.toContain(
+        "could not acquire the workspace writer lease",
+      );
+      expect(followup.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ blockId: "success", output: "SUCCESS" }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   it("routes unresolved strict utility references as an ERROR result", async () => {

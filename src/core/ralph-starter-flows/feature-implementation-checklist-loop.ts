@@ -820,11 +820,11 @@ const fullFeatureImplementationFlow: RalphFlow = {
     },
     {
       id: "deferred",
-      title: "Deferred After Bounded Attempts",
+      title: "Implementation Deferred",
       position: { x: 1400, y: 240 },
       size: { width: 300, height: 114 },
       type: "END",
-      status: "success",
+      outcome: "deferred",
     },
   ],
   edges: [
@@ -1541,7 +1541,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 13,
+  version: 14,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

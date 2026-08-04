@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 import type {
   TaskActionOutput,
@@ -265,18 +266,28 @@ export const createActionFeedbackProgressReporter = (
 
 export const attachCancellationHandlers = (
   controller: { cancel(reason?: string): void },
-  options: { json: boolean },
+  options: {
+    json: boolean;
+    cancellationFilePath?: string;
+    cancellationPollMs?: number;
+  },
 ): (() => void) => {
   let cancellationRequested = false;
+  let detached = false;
+  let cancellationFileReadPending = false;
+  let cancellationFileObserved = false;
+  const cancellationFilePath =
+    options.cancellationFilePath?.trim() ||
+    process.env.MACHDOCH_RALPH_CANCEL_PATH?.trim();
 
-  const requestCancellation = (signalName: NodeJS.Signals): void => {
+  const requestCancellation = (reason: string): void => {
     if (cancellationRequested) {
       process.exitCode = 130;
       return;
     }
 
     cancellationRequested = true;
-    controller.cancel(`${signalName} received. Execution cancelled by user.`);
+    controller.cancel(reason);
 
     if (!options.json) {
       writeStderrLine(
@@ -286,16 +297,69 @@ export const attachCancellationHandlers = (
   };
 
   const handleSigint = (): void => {
-    requestCancellation("SIGINT");
+    requestCancellation("SIGINT received. Execution cancelled by user.");
   };
   const handleSigterm = (): void => {
-    requestCancellation("SIGTERM");
+    requestCancellation("SIGTERM received. Execution cancelled by user.");
+  };
+
+  let cancellationFileHandle: ReturnType<typeof setInterval> | undefined;
+  const stopCancellationFilePolling = (): void => {
+    if (cancellationFileHandle) {
+      clearInterval(cancellationFileHandle);
+      cancellationFileHandle = undefined;
+    }
+  };
+  const pollCancellationFile = async (): Promise<void> => {
+    if (
+      detached ||
+      cancellationFileObserved ||
+      cancellationFileReadPending ||
+      !cancellationFilePath
+    ) {
+      return;
+    }
+
+    cancellationFileReadPending = true;
+    try {
+      const requestedReason = (
+        await readFile(cancellationFilePath, "utf8")
+      ).trim();
+      if (detached) {
+        return;
+      }
+      cancellationFileObserved = true;
+      stopCancellationFilePolling();
+      requestCancellation(
+        requestedReason || "Desktop requested cancellation of the Ralph run.",
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !detached) {
+        cancellationFileObserved = true;
+        stopCancellationFilePolling();
+        requestCancellation(
+          `Desktop cancellation request could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    } finally {
+      cancellationFileReadPending = false;
+    }
   };
 
   process.on("SIGINT", handleSigint);
   process.on("SIGTERM", handleSigterm);
+  if (cancellationFilePath) {
+    cancellationFileHandle = setInterval(
+      () => void pollCancellationFile(),
+      Math.max(10, options.cancellationPollMs ?? 250),
+    );
+    cancellationFileHandle.unref();
+    void pollCancellationFile();
+  }
 
   return (): void => {
+    detached = true;
+    stopCancellationFilePolling();
     process.off("SIGINT", handleSigint);
     process.off("SIGTERM", handleSigterm);
   };

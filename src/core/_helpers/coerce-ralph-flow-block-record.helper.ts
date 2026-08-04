@@ -663,12 +663,12 @@ export const coerceRalphFlowBlockRecord = (
       return {
         ...base,
         type,
-        status:
-          record.status === "failed" ||
-          record.status === "cancelled" ||
-          record.status === "review"
-            ? record.status
-            : "success",
+        ...(record.status === "success" ||
+        record.status === "failed" ||
+        record.status === "cancelled" ||
+        record.status === "review"
+          ? { status: record.status }
+          : {}),
         ...(record.outcome === "succeeded" ||
         record.outcome === "no-op" ||
         record.outcome === "deferred" ||

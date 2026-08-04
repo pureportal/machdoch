@@ -571,11 +571,11 @@ const securityFixLoopFlow: RalphFlow = {
     },
     {
       id: "deferred",
-      title: "Security Outcome Retained for Retry",
+      title: "Security Work Deferred",
       position: { x: 5780, y: 260 },
       size: { width: 280, height: 114 },
       type: "END",
-      status: "success",
+      outcome: "deferred",
     },
   ],
   edges: [
@@ -664,7 +664,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 8,
+  version: 9,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],

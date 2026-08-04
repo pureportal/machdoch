@@ -141,7 +141,22 @@ describe("coerceRalphFlowBlockRecord", () => {
       id: "end",
       title: "End",
       type: "END",
-      status: "success",
+    });
+  });
+
+  it("preserves a deferred END outcome without fabricating success", () => {
+    expect(
+      coerceRalphFlowBlockRecord({
+        id: "deferred",
+        type: "END",
+        title: "Deferred",
+        outcome: "deferred",
+      }),
+    ).toEqual({
+      id: "deferred",
+      title: "Deferred",
+      type: "END",
+      outcome: "deferred",
     });
   });
 

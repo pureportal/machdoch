@@ -2,9 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   appendFile,
   mkdir,
+  open,
   readdir,
   readFile,
-  stat,
   unlink,
   utimes,
 } from "node:fs/promises";
@@ -36,6 +36,12 @@ export interface RalphRunStoreLease {
   releasedAt?: string;
 }
 
+export interface RalphRunStoreLeaseState {
+  lease: RalphRunStoreLease;
+  heartbeatAt: string;
+  active: boolean;
+}
+
 export interface RalphRunJournalEntry {
   sequence: number;
   at: string;
@@ -64,6 +70,9 @@ const isTransientFileError = (error: unknown): boolean =>
   isRecord(error) &&
   typeof error.code === "string" &&
   TRANSIENT_FILE_ERROR_CODES.has(error.code);
+
+const isMissingFileError = (error: unknown): boolean =>
+  isRecord(error) && error.code === "ENOENT";
 
 const delay = (durationMs: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, durationMs));
@@ -192,15 +201,12 @@ export class RalphRunStore {
     return stored;
   }
 
-  public async readLease(): Promise<
-    | { lease: RalphRunStoreLease; heartbeatAt: string; active: boolean }
-    | undefined
-  > {
+  private async readLeaseOnce(): Promise<RalphRunStoreLeaseState | undefined> {
+    let leaseFile: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      const [raw, leaseStat] = await Promise.all([
-        readFile(this.leasePath, "utf8"),
-        stat(this.leasePath),
-      ]);
+      leaseFile = await open(this.leasePath, "r");
+      const raw = await leaseFile.readFile("utf8");
+      const leaseStat = await leaseFile.stat();
       const value = JSON.parse(raw) as unknown;
       if (
         !isRecord(value) ||
@@ -212,7 +218,9 @@ export class RalphRunStore {
         typeof value.acquiredAt !== "string" ||
         typeof value.durationMs !== "number"
       ) {
-        return undefined;
+        throw new RalphRunStoreOwnershipError(
+          "RALPH durable lease is invalid; refusing to assume that ownership is unclaimed.",
+        );
       }
       const lease = value as unknown as RalphRunStoreLease;
       const heartbeatAt = leaseStat.mtime.toISOString();
@@ -223,8 +231,32 @@ export class RalphRunStore {
           !lease.releasedAt &&
           Date.now() - leaseStat.mtimeMs <= lease.durationMs,
       };
-    } catch {
-      return undefined;
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return undefined;
+      }
+      throw error;
+    } finally {
+      await leaseFile?.close();
+    }
+  }
+
+  public async readLease(
+    retryWindowMs = 1_000,
+  ): Promise<RalphRunStoreLeaseState | undefined> {
+    const deadline = Date.now() + Math.max(0, retryWindowMs);
+    let retryDelayMs = 20;
+
+    for (;;) {
+      try {
+        return await this.readLeaseOnce();
+      } catch (error) {
+        if (!isTransientFileError(error) || Date.now() >= deadline) {
+          throw error;
+        }
+        await delay(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())));
+        retryDelayMs = Math.min(250, retryDelayMs * 2);
+      }
     }
   }
 
@@ -240,7 +272,8 @@ export class RalphRunStore {
 
     for (;;) {
       try {
-        const current = await this.readLease();
+        const remainingMs = Math.max(0, deadline - Date.now());
+        const current = await this.readLease(Math.min(1_000, remainingMs));
         if (
           !current ||
           current.lease.runId !== expected.runId ||
@@ -255,6 +288,21 @@ export class RalphRunStore {
         }
         const now = new Date();
         await utimes(this.leasePath, now, now);
+        const refreshed = await this.readLease(
+          Math.min(1_000, Math.max(0, deadline - Date.now())),
+        );
+        if (
+          !refreshed ||
+          refreshed.lease.runId !== expected.runId ||
+          refreshed.lease.flowId !== expected.flowId ||
+          refreshed.lease.ownerId !== expected.ownerId ||
+          refreshed.lease.generation !== expected.generation ||
+          refreshed.lease.releasedAt
+        ) {
+          throw new RalphRunStoreOwnershipError(
+            "RALPH durable lease ownership changed during heartbeat.",
+          );
+        }
         return;
       } catch (error) {
         if (!isTransientFileError(error) || Date.now() >= deadline) {

@@ -55,6 +55,20 @@ describe("parseRalphDecision", () => {
     expect(parseRalphDecision(result)).toBe("DONE");
   });
 
+  it("retains a final decision marker after long output is truncated", () => {
+    const result = createResult({
+      response: {
+        markdown: `${"x".repeat(MAX_RALPH_RESULT_CHARS + 100)}\nRALPH_DECISION: DONE`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
+      },
+    });
+
+    expect(parseRalphDecision(result)).toBe("DONE");
+  });
+
   it("rejects markers that are unsupported or not on the final line", () => {
     expect(
       parseRalphDecision(
@@ -89,17 +103,15 @@ describe("parseRalphDecision", () => {
       parseRalphDecision(createResult({ summary: "RALPH_DECISION: ERROR" })),
     ).toBe("ERROR");
     expect(
-      parseRalphDecision(
-        {
-          task: "task",
-          mode: "machdoch",
-          status: "blocked",
-          summary: undefined,
-          executedTools: [],
-          outputSections: [],
-          reason: "RALPH_DECISION: RETRY",
-        } as unknown as TaskExecutionResult,
-      ),
+      parseRalphDecision({
+        task: "task",
+        mode: "machdoch",
+        status: "blocked",
+        summary: undefined,
+        executedTools: [],
+        outputSections: [],
+        reason: "RALPH_DECISION: RETRY",
+      } as unknown as TaskExecutionResult),
     ).toBe("RETRY");
   });
 
@@ -173,19 +185,14 @@ describe("truncateRalphResultText", () => {
   });
 
   it("truncates text above the maximum boundary with a marker", () => {
+    const marker = `\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]\n`;
     const result = truncateRalphResultText(
-      "a".repeat(MAX_RALPH_RESULT_CHARS + 1),
+      `HEAD${"a".repeat(MAX_RALPH_RESULT_CHARS)}TAIL`,
     );
 
-    expect(result).toHaveLength(
-      MAX_RALPH_RESULT_CHARS +
-        `\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]`
-          .length,
-    );
-    expect(
-      result.endsWith(
-        `[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]`,
-      ),
-    ).toBe(true);
+    expect(result).toHaveLength(MAX_RALPH_RESULT_CHARS + marker.length);
+    expect(result.startsWith("HEAD")).toBe(true);
+    expect(result).toContain(marker);
+    expect(result.endsWith("TAIL")).toBe(true);
   });
 });

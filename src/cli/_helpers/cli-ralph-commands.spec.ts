@@ -4,9 +4,17 @@ import { createFlow } from "../../core/__test__/ralph-test-helpers.js";
 import {
   createInterruptedRalphRunResult,
   getRalphRunExitCode,
+  isRecoverableRalphRunStatus,
   summarizeRun,
   validateRalphJsonBatch,
 } from "./cli-ralph-commands.js";
+
+describe("isRecoverableRalphRunStatus", () => {
+  it("allows retrying an expired retained run projected as abandoned", () => {
+    expect(isRecoverableRalphRunStatus("running", "abandoned")).toBe(true);
+    expect(isRecoverableRalphRunStatus("running", "running")).toBe(false);
+  });
+});
 
 const createRunResult = (
   overrides: Partial<RalphRunResult> = {},

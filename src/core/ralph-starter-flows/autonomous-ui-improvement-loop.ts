@@ -1062,11 +1062,11 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     },
     {
       id: "deferred",
-      title: "Active UI Improvement Retained for Retry",
+      title: "UI Improvement Deferred",
       position: { x: 4400, y: 520 },
       size: { width: 280, height: 114 },
       type: "END",
-      status: "success",
+      outcome: "deferred",
     },
   ],
   edges: [
@@ -1220,7 +1220,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 9,
+  version: 10,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

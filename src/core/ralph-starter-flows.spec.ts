@@ -358,6 +358,12 @@ describe("Ralph starter flows", () => {
       expect(reachesArchive, `${flowId} DEFER must retain active state`).toBe(
         false,
       );
+      const deferredEnd = flow.blocks.find((block) => block.id === "deferred");
+      expect(deferredEnd).toMatchObject({
+        type: "END",
+        outcome: "deferred",
+      });
+      expect(deferredEnd?.title).not.toMatch(/retained/iu);
     }
 
     const featureFlow = getRalphStarterFlow(
@@ -436,7 +442,11 @@ describe("Ralph starter flows", () => {
           continue;
         }
         expect(reachableWithoutReports.has(terminal.id)).toBe(false);
-        expect(terminal.status).toBe("success");
+        if (terminal.outcome === "deferred") {
+          expect(terminal.status).toBeUndefined();
+        } else {
+          expect(terminal.status).toBe("success");
+        }
       }
     }
   });

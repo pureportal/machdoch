@@ -1238,7 +1238,13 @@ const executeScheduledRalphFlow = async (
   const logger = await createRalphRunLogger(request.workspaceRoot, flow, {
     runId,
     variableValues,
-    ...(recovery ? { paths: recovery.paths, append: true } : {}),
+    ...(recovery
+      ? {
+          paths: recovery.paths,
+          append: true,
+          deferWritesUntilActivated: true,
+        }
+      : {}),
     scope: runLogScope,
   });
   const result = await runRalphFlow(flow, config, customizations, {

@@ -1012,11 +1012,11 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     },
     {
       id: "deferred",
-      title: "Active Improvement Retained for Retry",
+      title: "Improvement Deferred",
       position: { x: 4400, y: 520 },
       size: { width: 280, height: 114 },
       type: "END",
-      status: "success",
+      outcome: "deferred",
     },
   ],
   edges: [
@@ -1168,7 +1168,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 12,
+  version: 13,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

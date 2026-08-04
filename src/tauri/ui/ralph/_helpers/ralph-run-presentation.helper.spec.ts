@@ -29,4 +29,11 @@ describe("RALPH run outcome presentation", () => {
   it("does not show lifecycle completion without an outcome as success", () => {
     expect(getRunStatusPresentation("completed").label).toBe("Unverified");
   });
+
+  it("distinguishes an abandoned durable run from a live run", () => {
+    const presentation = getRunStatusPresentation("abandoned");
+
+    expect(presentation.label).toBe("Abandoned");
+    expect(presentation.spin).toBeUndefined();
+  });
 });

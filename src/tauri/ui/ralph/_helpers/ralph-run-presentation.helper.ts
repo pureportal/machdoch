@@ -170,6 +170,13 @@ export const getRunStatusPresentation = (
         chipClassName: "border-sky-400/30 bg-sky-500/10 text-sky-100",
         spin: true,
       };
+    case "abandoned":
+      return {
+        label: "Abandoned",
+        icon: Octagon,
+        className: "text-rose-200",
+        chipClassName: "border-rose-400/30 bg-rose-500/10 text-rose-100",
+      };
     case "stopping":
       return {
         label: "Stopping",

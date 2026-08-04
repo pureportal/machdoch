@@ -11,7 +11,11 @@ export const truncateRalphResultText = (value: string): string => {
     return value;
   }
 
-  return `${value.slice(0, MAX_RALPH_RESULT_CHARS)}\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]`;
+  const marker = `\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]\n`;
+  const leadingCharacters = Math.ceil(MAX_RALPH_RESULT_CHARS / 2);
+  const trailingCharacters = MAX_RALPH_RESULT_CHARS - leadingCharacters;
+
+  return `${value.slice(0, leadingCharacters)}${marker}${value.slice(-trailingCharacters)}`;
 };
 
 export const getRalphResultMarkdown = (

@@ -138,4 +138,26 @@ describe("resolveRalphRetryDecision", () => {
       usesDefaultErrorRoute: false,
     });
   });
+
+  it("does not retry a result classified as non-retryable", () => {
+    const policy: RalphRetryPolicy = {
+      mode: "finite",
+      maxRetries: 3,
+      delaySeconds: 2,
+    };
+
+    expect(
+      resolveRalphRetryDecision({
+        block: createBlock(policy),
+        currentErrorCount: 1,
+        hasExplicitErrorRoute: false,
+        resultRetryable: false,
+      }),
+    ).toEqual({
+      shouldRetry: false,
+      policy,
+      delaySeconds: 2,
+      usesDefaultErrorRoute: false,
+    });
+  });
 });

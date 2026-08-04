@@ -2340,7 +2340,7 @@ const createFlowGenerationTask = (
         name,
         description: "Short description",
         guidance:
-          "Optional flow-wide guidance delivered after profiles and project-local instructions.",
+          "Optional flow-wide guidance delivered after resolved instruction files.",
         settings: { maxTransitions: 30 },
         blocks: [
           {

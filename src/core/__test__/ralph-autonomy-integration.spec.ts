@@ -141,7 +141,7 @@ describe("RALPH autonomy integration", () => {
         verified: false,
         retryable: true,
       },
-      checkpoint: expect.objectContaining({ currentBlockId: "success" }),
+      checkpoint: expect.objectContaining({ currentBlockId: "gate" }),
     });
   }, 60_000);
 

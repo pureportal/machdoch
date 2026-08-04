@@ -3,7 +3,10 @@ import type {
   RalphRunRecord,
   RalphRunResult,
 } from "../ralph.ts";
-import { createExecutionResult, createFlow } from "../__test__/ralph-test-helpers.ts";
+import {
+  createExecutionResult,
+  createFlow,
+} from "../__test__/ralph-test-helpers.ts";
 import { MAX_RALPH_RESULT_CHARS } from "./parse-ralph-decision.helper.ts";
 import {
   capRalphRunRecordValue,
@@ -14,7 +17,7 @@ import {
 } from "./create-ralph-run-record.helper.ts";
 
 const SCHEMA_VERSION = 1;
-const TRUNCATION_MARKER = `\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]`;
+const TRUNCATION_MARKER = `\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]\n`;
 
 const createBlockResult = (
   overrides: Partial<RalphBlockExecutionResult> = {},
@@ -246,8 +249,10 @@ describe("createRalphRunRecord", () => {
     expect(record.blockResults[0]?.progress?.[0]?.content).toHaveLength(
       MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
     );
+    const leadingCharacters = Math.ceil(MAX_RALPH_RESULT_CHARS / 2);
+    const trailingCharacters = MAX_RALPH_RESULT_CHARS - leadingCharacters;
     expect(record.blockResults[0]?.data).toEqual({
-      value: `${longText.slice(0, MAX_RALPH_RESULT_CHARS)}${TRUNCATION_MARKER}`,
+      value: `${longText.slice(0, leadingCharacters)}${TRUNCATION_MARKER}${longText.slice(-trailingCharacters)}`,
     });
   });
 
@@ -320,9 +325,9 @@ describe("capRalphRunRecordValue", () => {
     );
 
     expect(capRalphRunRecordValue(largeArray)).toHaveLength(100);
-    expect(Object.keys(capRalphRunRecordValue(largeObject) as object)).toHaveLength(
-      100,
-    );
+    expect(
+      Object.keys(capRalphRunRecordValue(largeObject) as object),
+    ).toHaveLength(100);
     expect(
       capRalphRunRecordValue({
         first: { second: { third: { fourth: { fifth: "hidden" } } } },

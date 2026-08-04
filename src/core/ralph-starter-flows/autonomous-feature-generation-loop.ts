@@ -1149,11 +1149,11 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
     },
     {
       id: "deferred",
-      title: "Goal State Retained for Retry",
+      title: "Feature Goal Deferred",
       position: { x: 6160, y: 300 },
       size: { width: 280, height: 114 },
       type: "END",
-      status: "success",
+      outcome: "deferred",
     },
   ],
   edges: [
@@ -2026,7 +2026,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 13,
+  version: 14,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

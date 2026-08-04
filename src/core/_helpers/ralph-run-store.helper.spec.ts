@@ -8,9 +8,12 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RalphRunCheckpoint } from "../ralph.js";
-import { RalphRunStore } from "./ralph-run-store.helper.js";
+import {
+  RalphRunStore,
+  RalphRunStoreOwnershipError,
+} from "./ralph-run-store.helper.js";
 
 const directories: string[] = [];
 const checkpoint = (currentBlockId: string): RalphRunCheckpoint => ({
@@ -26,6 +29,7 @@ const checkpoint = (currentBlockId: string): RalphRunCheckpoint => ({
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     directories
       .splice(0)
@@ -70,6 +74,49 @@ describe("RALPH run store", () => {
     expect(await readFile(store.leasePath, "utf8")).toBe(contents);
     expect(after.size).toBe(before.size);
     expect(after.mtimeMs).toBeGreaterThan(before.mtimeMs);
+  });
+
+  it("fails closed when a durable lease exists but is invalid", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-store-"));
+    directories.push(directory);
+    const store = new RalphRunStore(directory);
+    await store.initialize();
+    await writeFile(store.leasePath, "{truncated", "utf8");
+
+    await expect(store.readLease()).rejects.toBeInstanceOf(SyntaxError);
+  });
+
+  it("detects ownership replacement during a heartbeat", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-store-"));
+    directories.push(directory);
+    const store = new RalphRunStore(directory);
+    await store.initialize();
+    const identity = {
+      runId: "run",
+      flowId: "flow",
+      ownerId: "owner",
+      generation: 1,
+      acquiredAt: new Date().toISOString(),
+    };
+    await store.acquireLease(identity, 5_000);
+    const owned = await store.readLease();
+    vi.spyOn(store, "readLease")
+      .mockResolvedValueOnce(owned)
+      .mockResolvedValueOnce({
+        lease: {
+          ...identity,
+          schemaVersion: 1,
+          durationMs: 5_000,
+          ownerId: "replacement",
+          generation: 2,
+        },
+        heartbeatAt: new Date().toISOString(),
+        active: true,
+      });
+
+    await expect(store.heartbeat(identity, 100)).rejects.toBeInstanceOf(
+      RalphRunStoreOwnershipError,
+    );
   });
 
   it("ignores a truncated journal tail after a crash", async () => {

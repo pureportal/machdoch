@@ -228,6 +228,7 @@ import {
 import {
   RalphRunStore,
   RalphRunStoreOwnershipError,
+  type RalphRunStoreLeaseState,
 } from "./_helpers/ralph-run-store.helper.js";
 import { executeTask } from "./execution.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
@@ -457,7 +458,7 @@ export type RalphRunStatus =
   | "blocked"
   | "stopped"
   | "waiting-for-input";
-export type RalphRunSummaryStatus = RalphRunStatus | "partial";
+export type RalphRunSummaryStatus = RalphRunStatus | "abandoned" | "partial";
 export type RalphUtilityWaitMode =
   | "delay"
   | "until-time"
@@ -1073,12 +1074,18 @@ export interface RalphBlockExecutionResult {
   summary: string;
   markdown?: string;
   error?: string;
+  failure?: RalphBlockFailure;
   recovery?: {
     disposition: "retrying" | "recovered" | "deferred" | "exhausted";
     attempt?: number;
     maxAttempts?: number;
     failedEndBlockId?: string;
   };
+}
+
+export interface RalphBlockFailure {
+  kind: "persistence";
+  retryable: false;
 }
 
 export interface RalphRunRecordBlockProgressEvent {
@@ -1227,6 +1234,7 @@ export interface RalphTraceLogEntry {
 export interface RalphRunLogger {
   runId: string;
   paths?: RalphRunLogPaths;
+  activate?(): void;
   simple(
     entry: Omit<RalphSimpleLogEntry, "sequence" | "createdAt" | "runId">,
   ): void;
@@ -1367,6 +1375,7 @@ export interface RalphRunRecordBlock {
   summary: string;
   markdown?: string;
   error?: string;
+  failure?: RalphBlockFailure;
   instructionDelivery?: {
     resolutionId: string;
     canonicalDigest: string;
@@ -1504,6 +1513,7 @@ interface ResolvedVariableValues {
 interface RalphResultContext {
   runId: string;
   artifactRoot?: string;
+  runWorkspaceRoot: string;
   lastResult?: RalphBlockExecutionResult;
   resultsByBlock: Map<string, RalphBlockExecutionResult>;
   runLog: string[];
@@ -2095,11 +2105,29 @@ class RalphFileRunLogger implements RalphRunLogger {
   private sequence = 0;
   private pending: Promise<void> = Promise.resolve();
   private failure: unknown;
+  private suspended: boolean;
+  private readonly suspendedWrites: Array<() => Promise<void>> = [];
 
-  public constructor(paths: RalphRunLogPaths, initialSequence = 0) {
+  public constructor(
+    paths: RalphRunLogPaths,
+    initialSequence = 0,
+    suspended = false,
+  ) {
     this.runId = paths.id;
     this.paths = paths;
     this.sequence = initialSequence;
+    this.suspended = suspended;
+  }
+
+  public activate(): void {
+    if (!this.suspended) {
+      return;
+    }
+
+    this.suspended = false;
+    for (const write of this.suspendedWrites.splice(0)) {
+      this.enqueue(write);
+    }
   }
 
   public simple(
@@ -2180,6 +2208,10 @@ class RalphFileRunLogger implements RalphRunLogger {
 
   private enqueue(write: () => Promise<void>): void {
     if (this.failure !== undefined) {
+      return;
+    }
+    if (this.suspended) {
+      this.suspendedWrites.push(write);
       return;
     }
 
@@ -2378,6 +2410,30 @@ export interface RalphFileMutationLock {
   release(): Promise<void>;
 }
 
+const activeRalphFileMutationLocks = new Map<
+  string,
+  { ownerId: string; lock: RalphFileMutationLock }
+>();
+
+const releaseActiveRalphFileMutationLocks = async (
+  leaseOwnerId: string,
+): Promise<void> => {
+  const ownedLocks = [...activeRalphFileMutationLocks.values()].filter(
+    ({ ownerId }) =>
+      ownerId === leaseOwnerId || ownerId.endsWith(`:${leaseOwnerId}`),
+  );
+  const releases = await Promise.allSettled(
+    ownedLocks.map(({ lock }) => lock.release()),
+  );
+  const failure = releases.find(
+    (release): release is PromiseRejectedResult =>
+      release.status === "rejected",
+  );
+  if (failure) {
+    throw failure.reason;
+  }
+};
+
 const RALPH_TRANSIENT_MUTATION_LEASE_ERROR_CODES = new Set([
   "EACCES",
   "EBUSY",
@@ -2500,7 +2556,8 @@ export const acquireRalphFileMutationLock = async (
         Math.max(1_000, Math.floor(staleAfterMs / 3)),
       );
 
-      return {
+      let lock: RalphFileMutationLock;
+      lock = {
         path: lockPath,
         assertOwnership,
         release: async () => {
@@ -2524,8 +2581,13 @@ export const acquireRalphFileMutationLock = async (
               retryWindowMs,
             );
           }
+          if (activeRalphFileMutationLocks.get(lockPath)?.lock === lock) {
+            activeRalphFileMutationLocks.delete(lockPath);
+          }
         },
       };
+      activeRalphFileMutationLocks.set(lockPath, { ownerId, lock });
+      return lock;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
         throw error;
@@ -2601,6 +2663,7 @@ export const createRalphRunLogger = async (
     paths?: RalphRunLogPaths;
     append?: boolean;
     forceTakeover?: boolean;
+    deferWritesUntilActivated?: boolean;
     scope?: RalphFlowScope;
   } = {},
 ): Promise<RalphRunLogger> => {
@@ -2656,13 +2719,16 @@ export const createRalphRunLogger = async (
   const logger = new RalphFileRunLogger(
     paths,
     options.append ? await readLastRalphLogSequence(paths) : 0,
+    options.deferWritesUntilActivated === true,
   );
   if (options.append) {
-    await appendFile(
-      paths.simpleMarkdownPath,
-      [``, `## Resumed ${createdAt}`, ``].join("\n"),
-      "utf8",
-    );
+    if (!options.deferWritesUntilActivated) {
+      await appendFile(
+        paths.simpleMarkdownPath,
+        [``, `## Resumed ${createdAt}`, ``].join("\n"),
+        "utf8",
+      );
+    }
   } else {
     await writeFile(
       paths.simpleMarkdownPath,
@@ -2678,6 +2744,14 @@ export const createRalphRunLogger = async (
     await writeFile(paths.simpleJsonlPath, "", "utf8");
     await writeFile(paths.traceJsonlPath, "", "utf8");
     await writeFile(getRalphExecutionHistoryPath(paths), "", "utf8");
+  }
+  if (options.append && options.deferWritesUntilActivated) {
+    logger.simple({
+      kind: "run-start",
+      message: `Ralph run ${paths.id} resumed.`,
+      flowId: flow.id,
+      flowName: flow.name,
+    });
   }
   logger.trace({
     kind: "run-start",
@@ -2891,7 +2965,11 @@ export const readRalphRunRecord = async (
   workspaceRoot: string,
   runId: string,
   options: { scope?: RalphFlowScope } = {},
-): Promise<{ path: string; record: RalphRunRecord }> => {
+): Promise<{
+  path: string;
+  record: RalphRunRecord;
+  effectiveStatus: RalphRunSummaryStatus;
+}> => {
   const path = await resolveRalphRunRecordPath(
     workspaceRoot,
     runId,
@@ -2903,7 +2981,67 @@ export const readRalphRunRecord = async (
     throw new Error(`Ralph run \`${runId}\` is not a valid run record.`);
   }
 
-  return { path, record };
+  const artifactDirectory =
+    basename(path) === "run.json" ? dirname(path) : undefined;
+  const summary = await createLiveAwareRalphRunSummary(
+    record,
+    path,
+    artifactDirectory,
+  );
+
+  return { path, record, effectiveStatus: summary.status };
+};
+
+const createLiveAwareRalphRunSummary = async (
+  record: RalphRunRecord,
+  path: string,
+  artifactDirectory?: string,
+): Promise<RalphRunSummary> => {
+  const summary = createRalphRunSummaryFromRecord(record, path);
+  if (record.status !== "running") {
+    return summary;
+  }
+
+  if (artifactDirectory) {
+    try {
+      const independentLease = await new RalphRunStore(
+        artifactDirectory,
+      ).readLease(0);
+      if (independentLease) {
+        if (
+          independentLease.lease.runId !== record.id ||
+          independentLease.lease.flowId !== record.flowId
+        ) {
+          return summary;
+        }
+        return independentLease.active
+          ? summary
+          : { ...summary, status: "abandoned" };
+      }
+    } catch {
+      // An unreadable lease is not evidence that the owner is gone.
+      return summary;
+    }
+  }
+
+  const checkpointLease = record.checkpoint?.lease;
+  if (
+    checkpointLease &&
+    !checkpointLease.releasedAt &&
+    Date.parse(checkpointLease.expiresAt) > Date.now()
+  ) {
+    return summary;
+  }
+
+  const metadata = await stat(path).catch(() => undefined);
+  if (
+    metadata &&
+    Date.now() - metadata.mtimeMs <= DEFAULT_RALPH_RUN_LEASE_DURATION_MS
+  ) {
+    return summary;
+  }
+
+  return { ...summary, status: "abandoned" };
 };
 
 export const listRalphRunRecords = async (
@@ -2977,7 +3115,9 @@ export const listRalphRunRecords = async (
         continue;
       }
 
-      summaries.push(createRalphRunSummaryFromRecord(record, path));
+      summaries.push(
+        await createLiveAwareRalphRunSummary(record, path, directory),
+      );
       continue;
     }
 
@@ -3003,7 +3143,7 @@ export const listRalphRunRecords = async (
       continue;
     }
 
-    summaries.push(createRalphRunSummaryFromRecord(record, path));
+    summaries.push(await createLiveAwareRalphRunSummary(record, path));
   }
 
   return summaries
@@ -3837,6 +3977,7 @@ const createExecutionOptions = async (
   const runId = context?.runId ?? options.runId;
   const fallbackContext: RalphResultContext = {
     runId: runId ?? "ralph-unscoped",
+    runWorkspaceRoot: config.workspaceRoot,
     resultsByBlock: new Map(),
     runLog: [],
     variables: {},
@@ -10157,15 +10298,48 @@ const maybeWriteJsonArtifact = async (
   path: string | undefined,
   workspaceRoot: string,
   value: unknown,
+  runArtifactOwnership?: {
+    artifactRoot: string;
+    workspaceRoot: string;
+  },
 ): Promise<string | undefined> => {
   if (!path?.trim()) {
     return undefined;
   }
 
-  const resolvedPath = await resolveWorkspaceContainedMutationPath(
-    path,
-    workspaceRoot,
-  );
+  const requestedPath = resolveUtilityPath(path, workspaceRoot);
+  let resolvedPath: string;
+  if (
+    runArtifactOwnership &&
+    isResolvedPathInsideWorkspace(
+      requestedPath,
+      runArtifactOwnership.artifactRoot,
+    )
+  ) {
+    const [resolvedArtifactRoot, resolvedArtifactPath] = await Promise.all([
+      resolveWorkspaceContainedMutationPath(
+        runArtifactOwnership.artifactRoot,
+        runArtifactOwnership.workspaceRoot,
+      ),
+      resolveWorkspaceContainedMutationPath(
+        requestedPath,
+        runArtifactOwnership.workspaceRoot,
+      ),
+    ]);
+    if (
+      !isResolvedPathInsideWorkspace(resolvedArtifactPath, resolvedArtifactRoot)
+    ) {
+      throw new Error(
+        "JSON artifact path must stay inside the run artifact root.",
+      );
+    }
+    resolvedPath = resolvedArtifactPath;
+  } else {
+    resolvedPath = await resolveWorkspaceContainedMutationPath(
+      requestedPath,
+      workspaceRoot,
+    );
+  }
   await writeUtilityJsonOutput(resolvedPath, value);
 
   return resolvedPath;
@@ -11449,6 +11623,7 @@ const createFinalReportExecutionHistory = (
       : {}),
     summary: result.summary,
     ...(result.error ? { error: result.error } : {}),
+    ...(result.failure ? { failure: { ...result.failure } } : {}),
     ...(result.recovery ? { recovery: { ...result.recovery } } : {}),
     metrics: createBlockPerformanceMetrics(result),
   }));
@@ -12100,6 +12275,12 @@ const executePromptJsonUtilityBlock = async (
   let lastValidation: JsonSchemaValidationResult | undefined;
   let repairFeedback: string | undefined;
   const progressEvents: RalphRunRecordBlockProgressEvent[] = [];
+  const runArtifactOwnership = context.artifactRoot
+    ? {
+        artifactRoot: context.artifactRoot,
+        workspaceRoot: context.runWorkspaceRoot,
+      }
+    : undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const task = createPromptJsonTask(
@@ -12130,6 +12311,8 @@ const executePromptJsonUtilityBlock = async (
 
     logBlockInput(options.logger, flow, block, config, task, attempt);
 
+    let json: unknown;
+    let validation: JsonSchemaValidationResult;
     try {
       const result = await executeTask(
         task,
@@ -12156,32 +12339,16 @@ const executePromptJsonUtilityBlock = async (
       }
 
       const parsedJson = parseJsonFromText(lastText);
-      const json = taskExecutionOptions.structuredOutput?.strict
+      json = taskExecutionOptions.structuredOutput?.strict
         ? normalizeStrictStructuredOutputValue(parsedJson, utility.schema)
         : parsedJson;
-      const validation = validateUtilityJsonValue(json, utility.schema);
+      validation = validateUtilityJsonValue(json, utility.schema);
       lastValidation = validation;
 
       if (!validation.valid) {
         repairFeedback = validation.errors.join("\n");
         continue;
       }
-
-      const outputPath = await maybeWriteJsonArtifact(
-        utility.outputPath,
-        config.workspaceRoot,
-        json,
-      );
-
-      return withRalphBlockProgress(
-        createUtilityResult(block, "SUCCESS", `${block.title} produced JSON.`, {
-          output: json,
-          validation,
-          attempts: attempt,
-          ...(outputPath ? { outputPath } : {}),
-        }),
-        progressEvents,
-      );
     } catch (error) {
       appendRalphBlockProgressEvents(
         progressEvents,
@@ -12196,7 +12363,51 @@ const executePromptJsonUtilityBlock = async (
       }
 
       repairFeedback = error instanceof Error ? error.message : String(error);
+      continue;
     }
+
+    let outputPath: string | undefined;
+    try {
+      outputPath = await maybeWriteJsonArtifact(
+        utility.outputPath,
+        config.workspaceRoot,
+        json,
+        runArtifactOwnership,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return withRalphBlockProgress(
+        {
+          ...createUtilityResult(
+            block,
+            "ERROR",
+            `${block.title} produced schema-valid JSON but could not persist its artifact: ${message}`,
+            {
+              output: json,
+              validation,
+              attempts: attempt,
+              persistence: {
+                status: "failed",
+                path: utility.outputPath,
+                error: message,
+              },
+            },
+          ),
+          failure: { kind: "persistence", retryable: false },
+        },
+        progressEvents,
+      );
+    }
+
+    return withRalphBlockProgress(
+      createUtilityResult(block, "SUCCESS", `${block.title} produced JSON.`, {
+        output: json,
+        validation,
+        attempts: attempt,
+        ...(outputPath ? { outputPath } : {}),
+      }),
+      progressEvents,
+    );
   }
 
   return withRalphBlockProgress(
@@ -13476,18 +13687,23 @@ const updateResultContext = (
 };
 
 const normalizeComparableRepositoryPath = (value: string): string => {
-  const normalized = resolve(value).replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const normalized = resolve(normalizeLocalCommandCwd(value))
+    .replace(/\\/gu, "/")
+    .replace(/\/+$/u, "");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 };
 
 const hasRalphGitMetadata = (path: string, workspaceRoot: string): boolean => {
-  const normalizedWorkspace = resolve(workspaceRoot);
-  let current = resolve(path);
+  const normalizedWorkspace = resolve(normalizeLocalCommandCwd(workspaceRoot));
+  let current = resolve(normalizeLocalCommandCwd(path));
   while (isResolvedPathInsideWorkspace(current, normalizedWorkspace)) {
     if (existsSync(join(current, ".git"))) {
       return true;
     }
-    if (current === normalizedWorkspace) {
+    if (
+      normalizeComparableRepositoryPath(current) ===
+      normalizeComparableRepositoryPath(normalizedWorkspace)
+    ) {
       break;
     }
     const parent = dirname(current);
@@ -13514,7 +13730,7 @@ const createRalphRepositorySnapshotFingerprint = (
     )
     .digest("hex");
 
-const compareRalphRepositorySnapshots = (
+export const compareRalphRepositorySnapshots = (
   baseline: RalphGitChangeSnapshot,
   final: RalphGitChangeSnapshot,
 ): RalphRepositoryOutcomeEvidence => {
@@ -13658,6 +13874,7 @@ const RECOVERABLE_RALPH_OUTPUTS = new Set<RalphExecutionOutput>([
   "ERROR",
   "FAILED",
   "INVALID",
+  "INCONCLUSIVE",
   "OUT_OF_SCOPE",
   "TIMEOUT",
   "HTTP_ERROR",
@@ -13671,6 +13888,7 @@ const isRecoverableRalphBlockResult = (
 ): boolean => {
   return (
     block.type !== "END" &&
+    result.failure?.retryable !== false &&
     (result.status === "error" || RECOVERABLE_RALPH_OUTPUTS.has(result.output))
   );
 };
@@ -13959,7 +14177,7 @@ const isLiveForeignRalphRunLease = (
     Date.parse(lease.expiresAt) > Date.now(),
   );
 
-export const runRalphFlow = async (
+const runRalphFlowImpl = async (
   flow: RalphFlow,
   config: RuntimeConfig,
   customizations: CustomizationDiscoveryResult,
@@ -14121,6 +14339,7 @@ export const runRalphFlow = async (
   const runtimeState: {
     resultContext?: RalphResultContext;
     latestCheckpoint?: RalphRunCheckpoint;
+    latestNonTerminalCheckpoint?: RalphRunCheckpoint;
   } = {};
   const markDurabilityDegraded = (error: unknown): void => {
     durability.status = "degraded";
@@ -14168,7 +14387,6 @@ export const runRalphFlow = async (
     assertOwnership = true,
   ): Promise<void> => {
     const lease = workspaceWriterLease;
-    workspaceWriterLease = undefined;
     if (!lease) {
       return;
     }
@@ -14179,6 +14397,9 @@ export const runRalphFlow = async (
       }
     } finally {
       await lease.release();
+      if (workspaceWriterLease === lease) {
+        workspaceWriterLease = undefined;
+      }
     }
   };
   const getOwnershipLostMessage = (): string =>
@@ -14224,6 +14445,7 @@ export const runRalphFlow = async (
   };
   const assertOrAcquireDurableRunOwnership = (
     current: RalphRunRecord | undefined,
+    independentLease: RalphRunStoreLeaseState | undefined,
   ): void => {
     if (current && (current.id !== runId || current.flowId !== flow.id)) {
       throw new RalphRunOwnershipLostError(
@@ -14239,7 +14461,48 @@ export const runRalphFlow = async (
       );
     }
 
-    const currentLease = current?.checkpoint?.lease;
+    const checkpointLease = current?.checkpoint?.lease;
+    const storedLease = independentLease?.lease;
+    if (
+      storedLease &&
+      (storedLease.runId !== runId || storedLease.flowId !== flow.id)
+    ) {
+      throw new RalphRunOwnershipLostError(
+        `Ralph independent lease identity changed from ${runId}/${flow.id} to ${storedLease.runId}/${storedLease.flowId}.`,
+      );
+    }
+    if (
+      checkpointLease &&
+      storedLease &&
+      checkpointLease.generation === storedLease.generation &&
+      checkpointLease.ownerId !== storedLease.ownerId
+    ) {
+      throw new RalphRunOwnershipLostError(
+        `Ralph checkpoint and independent leases disagree on generation ${storedLease.generation} ownership.`,
+      );
+    }
+    const independentCheckpointLease: RalphRunLease | undefined =
+      independentLease
+        ? {
+            ownerId: independentLease.lease.ownerId,
+            generation: independentLease.lease.generation,
+            acquiredAt: independentLease.lease.acquiredAt,
+            heartbeatAt: independentLease.heartbeatAt,
+            expiresAt: new Date(
+              Date.parse(independentLease.heartbeatAt) +
+                independentLease.lease.durationMs,
+            ).toISOString(),
+            ...(independentLease.lease.releasedAt
+              ? { releasedAt: independentLease.lease.releasedAt }
+              : {}),
+          }
+        : undefined;
+    const currentLease =
+      independentCheckpointLease &&
+      (!checkpointLease ||
+        independentCheckpointLease.generation >= checkpointLease.generation)
+        ? independentCheckpointLease
+        : checkpointLease;
     if (ownedLeaseGeneration !== undefined) {
       if (
         !currentLease ||
@@ -14315,7 +14578,23 @@ export const runRalphFlow = async (
 
     try {
       const current = await readCurrentDurableRunRecord();
-      const independentLease = await runStore?.readLease();
+      let independentLease:
+        | Awaited<ReturnType<RalphRunStore["readLease"]>>
+        | undefined;
+      try {
+        independentLease = await runStore?.readLease();
+      } catch (error) {
+        if (!options.forceLeaseTakeover) {
+          throw error;
+        }
+        logger?.trace({
+          kind: "trace",
+          message:
+            "Forced Ralph takeover is replacing an unreadable independent lease.",
+          flowId: flow.id,
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
       if (
         independentLease?.active &&
         independentLease.lease.ownerId !== leaseOwnerId &&
@@ -14325,7 +14604,7 @@ export const runRalphFlow = async (
           `Ralph run is actively leased by ${independentLease.lease.ownerId}; the independent heartbeat was renewed at ${independentLease.heartbeatAt}.`,
         );
       }
-      assertOrAcquireDurableRunOwnership(current);
+      assertOrAcquireDurableRunOwnership(current, independentLease);
       if (runStore && storedLeaseGeneration !== runLease.generation) {
         await runStore.acquireLease(
           {
@@ -14339,6 +14618,7 @@ export const runRalphFlow = async (
         );
         storedLeaseGeneration = runLease.generation;
       }
+      logger.activate?.();
       await mutationLock.assertOwnership();
       const result = await operation(current, mutationLock.assertOwnership);
       await mutationLock.assertOwnership();
@@ -14392,9 +14672,16 @@ export const runRalphFlow = async (
       return createOwnershipLostResult();
     }
 
-    const terminalBlockId = [...result.events]
+    const terminalBlockIds = new Set(
+      flow.blocks.flatMap((block) => (block.type === "END" ? [block.id] : [])),
+    );
+    const terminalEvent = [...result.events]
       .reverse()
-      .find((event) => event.type === "end")?.blockId;
+      .find(
+        (event): event is Extract<RalphRunEvent, { type: "end" }> =>
+          event.type === "end" && terminalBlockIds.has(event.blockId),
+      );
+    const terminalBlockId = terminalEvent?.blockId;
     let repositoryEvidence: RalphRepositoryOutcomeEvidence | undefined;
     const repositoryBaseline = runtimeState.resultContext?.repositoryBaseline;
     if (repositoryBaseline) {
@@ -14434,13 +14721,15 @@ export const runRalphFlow = async (
         };
       }
     }
-    let outcome =
-      result.outcome ??
+    const deriveOutcome = (
+      lifecycleStatus: RalphRunStatus,
+      blockResults: readonly RalphBlockExecutionResult[],
+    ): RalphRunOutcome =>
       deriveRalphRunOutcome({
         flow,
-        lifecycleStatus: result.status,
+        lifecycleStatus,
         ...(terminalBlockId ? { terminalBlockId } : {}),
-        blockResults: result.blockResults,
+        blockResults,
         ...(autonomyMetadata
           ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
           : {}),
@@ -14449,6 +14738,8 @@ export const runRalphFlow = async (
           : {}),
         ...(repositoryEvidence ? { repositoryEvidence } : {}),
       });
+    let outcome =
+      result.outcome ?? deriveOutcome(result.status, result.blockResults);
     const lifecycleStatus =
       result.status === "completed" &&
       outcome.status !== "succeeded" &&
@@ -14459,19 +14750,12 @@ export const runRalphFlow = async (
       lifecycleStatus === "waiting-for-input"
         ? undefined
         : createLogTimestamp();
-    let retainedCheckpoint =
-      result.checkpoint ??
-      (lifecycleStatus !== "completed" || outcome.retryable
-        ? (runtimeState.latestCheckpoint ?? checkpoint)
-        : undefined);
-    retainedCheckpoint = releaseOwnedCheckpoint(retainedCheckpoint);
     let runResult: RalphRunResult = {
       ...result,
       status: lifecycleStatus,
       runId,
       startedAt,
       ...(finishedAt ? { finishedAt } : {}),
-      ...(retainedCheckpoint ? { checkpoint: retainedCheckpoint } : {}),
       ...(autonomyMetadata
         ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
         : {}),
@@ -14485,6 +14769,7 @@ export const runRalphFlow = async (
         : {}),
       durability: { ...durability },
     };
+    delete runResult.checkpoint;
 
     try {
       const persistedHistory = await readRalphExecutionHistoryResults(
@@ -14492,19 +14777,7 @@ export const runRalphFlow = async (
       );
       if (persistedHistory.length > runResult.blockResults.length) {
         runResult.blockResults = persistedHistory;
-        outcome = deriveRalphRunOutcome({
-          flow,
-          lifecycleStatus: runResult.status,
-          ...(terminalBlockId ? { terminalBlockId } : {}),
-          blockResults: persistedHistory,
-          ...(autonomyMetadata
-            ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
-            : {}),
-          ...(runtimeState.resultContext?.progress
-            ? { progress: runtimeState.resultContext.progress }
-            : {}),
-          ...(repositoryEvidence ? { repositoryEvidence } : {}),
-        });
+        outcome = deriveOutcome(runResult.status, persistedHistory);
         runResult.outcome = outcome;
         if (
           runResult.status === "completed" &&
@@ -14518,27 +14791,70 @@ export const runRalphFlow = async (
       markDurabilityDegraded(error);
     }
 
+    const shouldRetainCheckpoint =
+      result.status !== "completed" || runResult.outcome?.retryable === true;
+    const checkpointCandidates = [
+      result.checkpoint,
+      runtimeState.latestNonTerminalCheckpoint,
+      runtimeState.latestCheckpoint,
+      checkpoint,
+    ].filter(
+      (candidate): candidate is RalphRunCheckpoint => candidate !== undefined,
+    );
+    const retainedCheckpoint = shouldRetainCheckpoint
+      ? checkpointCandidates.find(
+          (candidate) => !terminalBlockIds.has(candidate.currentBlockId),
+        )
+      : undefined;
+    const releasedCheckpoint = releaseOwnedCheckpoint(retainedCheckpoint);
+    if (releasedCheckpoint) {
+      runResult.checkpoint = releasedCheckpoint;
+    }
+
+    const synchronizeTerminalReporting = (detail?: string): void => {
+      if (!terminalBlockId || !runResult.outcome) {
+        return;
+      }
+      runResult.summary = `Ralph flow \`${flow.name}\` finished with outcome \`${runResult.outcome.status}\`: ${runResult.outcome.reason}${detail ? ` ${detail}` : ""}`;
+      for (let index = runResult.events.length - 1; index >= 0; index -= 1) {
+        const event = runResult.events[index];
+        if (event?.type === "end" && event.blockId === terminalBlockId) {
+          runResult.events[index] = {
+            ...event,
+            status: runResult.status,
+            summary: runResult.summary,
+          };
+          break;
+        }
+      }
+    };
+    const crashCompletedRunForDurability = (detail: string): void => {
+      if (runResult.status !== "completed") {
+        return;
+      }
+      runResult.status = "crashed";
+      runResult.outcome = deriveOutcome("crashed", runResult.blockResults);
+      synchronizeTerminalReporting(detail);
+      const recoveryCheckpoint = [
+        runtimeState.latestNonTerminalCheckpoint,
+        ...checkpointCandidates,
+      ].find(
+        (candidate) =>
+          candidate !== undefined &&
+          !terminalBlockIds.has(candidate.currentBlockId),
+      );
+      if (recoveryCheckpoint) {
+        runResult.checkpoint = recoveryCheckpoint;
+      } else {
+        delete runResult.checkpoint;
+      }
+    };
+    synchronizeTerminalReporting();
+
     const finalizeOwnedRun = async (
       assertLockOwnership: () => Promise<void> = async () => undefined,
     ): Promise<void> => {
       await assertLockOwnership();
-      logger?.simple({
-        kind: "run-end",
-        message: result.summary,
-        flowId: flow.id,
-        flowName: flow.name,
-        provider: config.provider,
-        model: config.model,
-        status: result.status,
-      });
-      logger?.trace({
-        kind: "run-end",
-        message: result.summary,
-        flowId: flow.id,
-        provider: config.provider,
-        model: config.model,
-        details: runResult,
-      });
       try {
         await logger?.flush();
       } catch (error) {
@@ -14546,18 +14862,10 @@ export const runRalphFlow = async (
       }
       await assertLockOwnership();
 
-      if (
-        durability.status === "degraded" &&
-        runResult.status === "completed"
-      ) {
-        runResult = {
-          ...runResult,
-          status: "crashed",
-          summary: `${runResult.summary} Durability failed: ${durability.error ?? "unknown persistence error"}`,
-          ...(runtimeState.latestCheckpoint
-            ? { checkpoint: runtimeState.latestCheckpoint }
-            : {}),
-        };
+      if (durability.status === "degraded") {
+        crashCompletedRunForDurability(
+          `Durability failed: ${durability.error ?? "unknown persistence error"}`,
+        );
       }
       runResult.durability = { ...durability };
 
@@ -14582,14 +14890,36 @@ export const runRalphFlow = async (
         } catch (error) {
           markDurabilityDegraded(error);
           runResult.durability = { ...durability };
-          if (runResult.status === "completed") {
-            runResult.status = "crashed";
-            runResult.summary = `${runResult.summary} Final-report persistence failed: ${durability.error}.`;
-            if (runtimeState.latestCheckpoint) {
-              runResult.checkpoint = runtimeState.latestCheckpoint;
-            }
-          }
+          crashCompletedRunForDurability(
+            `Final-report persistence failed: ${durability.error}.`,
+          );
         }
+      }
+      logger?.simple({
+        kind: "run-end",
+        message: runResult.summary,
+        flowId: flow.id,
+        flowName: flow.name,
+        provider: config.provider,
+        model: config.model,
+        status: runResult.status,
+      });
+      logger?.trace({
+        kind: "run-end",
+        message: runResult.summary,
+        flowId: flow.id,
+        provider: config.provider,
+        model: config.model,
+        details: runResult,
+      });
+      try {
+        await logger?.flush();
+      } catch (error) {
+        markDurabilityDegraded(error);
+        runResult.durability = { ...durability };
+        crashCompletedRunForDurability(
+          `Run-log persistence failed: ${durability.error}.`,
+        );
       }
       await assertLockOwnership();
       await assertWorkspaceWriterOwnership();
@@ -14607,15 +14937,6 @@ export const runRalphFlow = async (
         }
       }
       if (logger?.paths) {
-        const record = createRalphRunRecord(
-          RALPH_FLOW_SCHEMA_VERSION,
-          logger.runId,
-          startedAt,
-          flow,
-          runResult,
-          runtimeState.resultContext?.variables ?? resolvedVariables.values,
-          logger.paths,
-        );
         await assertLockOwnership();
         if (runStore && runResult.checkpoint) {
           await runStore.persistCheckpoint(
@@ -14647,9 +14968,8 @@ export const runRalphFlow = async (
               : {}),
             ...(repositoryEvidence ? { repositoryEvidence } : {}),
           },
+          { beforeCommit: assertLockOwnership },
         );
-        await assertLockOwnership();
-        await writeJsonAtomically(logger.paths.recordPath, record);
         await assertLockOwnership();
         if (runStore && ownedLeaseGeneration !== undefined) {
           await runStore.releaseLease({
@@ -14659,7 +14979,22 @@ export const runRalphFlow = async (
             generation: ownedLeaseGeneration,
           });
         }
+        await assertLockOwnership();
         durability.lastPersistedAt = createLogTimestamp();
+        runResult.durability = { ...durability };
+        const record = createRalphRunRecord(
+          RALPH_FLOW_SCHEMA_VERSION,
+          logger.runId,
+          startedAt,
+          flow,
+          runResult,
+          runtimeState.resultContext?.variables ?? resolvedVariables.values,
+          logger.paths,
+        );
+        await writeJsonAtomically(logger.paths.recordPath, record, {
+          beforeCommit: assertLockOwnership,
+        });
+        await assertLockOwnership();
       }
     };
 
@@ -14679,17 +15014,24 @@ export const runRalphFlow = async (
 
       markDurabilityDegraded(error);
       runResult.durability = { ...durability };
-      if (runResult.status === "completed") {
-        runResult.status = "crashed";
-        runResult.summary = `${runResult.summary} Final run-record persistence failed: ${durability.error}.`;
-        if (runtimeState.latestCheckpoint) {
-          const releasedCheckpoint = releaseOwnedCheckpoint(
-            runtimeState.latestCheckpoint,
-          );
-          if (releasedCheckpoint) {
-            runResult.checkpoint = releasedCheckpoint;
-          }
+      crashCompletedRunForDurability(
+        `Final run-record persistence failed: ${durability.error}.`,
+      );
+      const recoveryCheckpoint = [
+        runtimeState.latestNonTerminalCheckpoint,
+        ...checkpointCandidates,
+      ].find(
+        (candidate) =>
+          candidate !== undefined &&
+          !terminalBlockIds.has(candidate.currentBlockId),
+      );
+      if (recoveryCheckpoint) {
+        const releasedCheckpoint = releaseOwnedCheckpoint(recoveryCheckpoint);
+        if (releasedCheckpoint) {
+          runResult.checkpoint = releasedCheckpoint;
         }
+      } else {
+        delete runResult.checkpoint;
       }
     }
 
@@ -14700,11 +15042,18 @@ export const runRalphFlow = async (
     return runResult;
   };
   const finishRun = async (result: RalphRunResult): Promise<RalphRunResult> => {
+    let finishedResult: RalphRunResult | undefined;
     try {
-      return await finishRunWithWorkspaceWriterLease(result);
+      finishedResult = await finishRunWithWorkspaceWriterLease(result);
     } finally {
-      await releaseWorkspaceWriterLease(false).catch(() => undefined);
+      await releaseWorkspaceWriterLease(false).catch((error: unknown) => {
+        markDurabilityDegraded(error);
+        if (finishedResult) {
+          finishedResult.durability = { ...durability };
+        }
+      });
     }
+    return finishedResult;
   };
 
   if (
@@ -14897,6 +15246,7 @@ export const runRalphFlow = async (
   const resultContext: RalphResultContext = {
     runId,
     artifactRoot,
+    runWorkspaceRoot: config.workspaceRoot,
     resultsByBlock: restoreRalphResultMap(checkpoint),
     runLog: checkpoint ? [...checkpoint.runLog] : [],
     variables: {
@@ -15166,6 +15516,10 @@ export const runRalphFlow = async (
       await beforeCheckpoint?.();
       runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
       runtimeState.latestCheckpoint = createCheckpoint(blockId);
+      if (blockMap.get(blockId)?.type !== "END") {
+        runtimeState.latestNonTerminalCheckpoint =
+          runtimeState.latestCheckpoint;
+      }
       return;
     }
 
@@ -15211,11 +15565,16 @@ export const runRalphFlow = async (
             resultContext.variables,
             logger.paths!,
           );
-          await writeJsonAtomically(logger.paths!.recordPath, record);
+          await writeJsonAtomically(logger.paths!.recordPath, record, {
+            beforeCommit: assertLockOwnership,
+          });
           lastRunProjectionAt = Date.now();
           await assertLockOwnership();
         }
         runtimeState.latestCheckpoint = checkpoint;
+        if (blockMap.get(blockId)?.type !== "END") {
+          runtimeState.latestNonTerminalCheckpoint = checkpoint;
+        }
       });
       durability.lastPersistedAt = createLogTimestamp();
     } catch (error) {
@@ -15236,15 +15595,19 @@ export const runRalphFlow = async (
   const heartbeatRunOwnership = async (): Promise<void> => {
     await refreshRalphJsonTaskLeases(flow, resultContext, config.workspaceRoot);
     if (runStore && ownedLeaseGeneration !== undefined) {
-      await runStore.heartbeat(
-        {
-          runId,
-          flowId: flow.id,
-          ownerId: leaseOwnerId,
-          generation: ownedLeaseGeneration,
-        },
-        Math.min(55_000, Math.max(250, Math.floor(leaseDurationMs / 2))),
-      );
+      await withDurableRunOwnership(async (_current, assertLockOwnership) => {
+        await assertLockOwnership();
+        await runStore.heartbeat(
+          {
+            runId,
+            flowId: flow.id,
+            ownerId: leaseOwnerId,
+            generation: ownedLeaseGeneration!,
+          },
+          Math.min(55_000, Math.max(250, Math.floor(leaseDurationMs / 2))),
+        );
+        await assertLockOwnership();
+      });
     }
     runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
     durability.lastPersistedAt = createLogTimestamp();
@@ -15287,7 +15650,27 @@ export const runRalphFlow = async (
     return retryCheckpoint;
   };
 
+  if (checkpoint) {
+    for (let index = blockResults.length - 1; index >= 0; index -= 1) {
+      const priorResult = blockResults[index];
+      const priorBlock = priorResult
+        ? blockMap.get(priorResult.blockId)
+        : undefined;
+      if (
+        priorResult &&
+        priorBlock &&
+        isRecoverableRalphBlockResult(priorBlock, priorResult)
+      ) {
+        lastRecoverableCheckpoint = createRetryCheckpoint(priorBlock.id);
+        break;
+      }
+    }
+  }
+
   runtimeState.latestCheckpoint = createCheckpoint(currentBlockId);
+  if (blockMap.get(currentBlockId)?.type !== "END") {
+    runtimeState.latestNonTerminalCheckpoint = runtimeState.latestCheckpoint;
+  }
 
   syncTotalTransitions();
 
@@ -15975,7 +16358,7 @@ export const runRalphFlow = async (
 
     if (block.type === "END") {
       const status = getRunStatusForEndBlock(block);
-      const summary = `Ralph flow \`${flow.name}\` ended at \`${block.id}\`.`;
+      const summary = `Ralph flow \`${flow.name}\` reached terminal block \`${block.id}\`.`;
       const deferred = [...(autonomyMetadata?.deferred ?? [])]
         .reverse()
         .find((entry) => entry.failedEndBlockId === block.id);
@@ -16005,7 +16388,7 @@ export const runRalphFlow = async (
         missingVariables: [],
         unknownVariables: [],
         validation,
-        ...(status === "blocked" && lastRecoverableCheckpoint
+        ...(lastRecoverableCheckpoint
           ? { checkpoint: lastRecoverableCheckpoint }
           : {}),
       });
@@ -16136,6 +16519,9 @@ export const runRalphFlow = async (
         block,
         currentErrorCount: nextErrorCount,
         hasExplicitErrorRoute,
+        ...(result.failure
+          ? { resultRetryable: result.failure.retryable }
+          : {}),
       });
 
       if (retryDecision.shouldRetry) {
@@ -16305,4 +16691,262 @@ export const runRalphFlow = async (
     unknownVariables: [],
     validation,
   });
+};
+
+const createUnexpectedRalphRunResult = (
+  flow: RalphFlow,
+  validation: RalphValidationResult,
+  options: {
+    runId: string;
+    startedAt: string;
+    reason: string;
+    checkpoint?: RalphRunCheckpoint;
+    durabilityRequired: boolean;
+  },
+): RalphRunResult => {
+  const terminalBlockIds = new Set(
+    flow.blocks.flatMap((block) => (block.type === "END" ? [block.id] : [])),
+  );
+  const checkpoint =
+    options.checkpoint &&
+    !terminalBlockIds.has(options.checkpoint.currentBlockId)
+      ? {
+          ...options.checkpoint,
+          ...(options.checkpoint.lease
+            ? {
+                lease: {
+                  ...options.checkpoint.lease,
+                  releasedAt:
+                    options.checkpoint.lease.releasedAt ?? createLogTimestamp(),
+                },
+              }
+            : {}),
+        }
+      : undefined;
+  const summary = `Ralph flow \`${flow.name}\` crashed unexpectedly: ${options.reason}`;
+  const priorEvents = checkpoint?.events ?? [];
+  const blockResults = checkpoint?.blockResults ?? [];
+  const events: RalphRunEvent[] = [
+    ...priorEvents,
+    {
+      type: "crash",
+      blockId: checkpoint?.currentBlockId ?? "run",
+      output: "ERROR",
+      reason: summary,
+    },
+  ];
+  const autonomy = checkpoint?.autonomy
+    ? cloneRalphRunAutonomyMetadata(checkpoint.autonomy)
+    : undefined;
+  const outcome = deriveRalphRunOutcome({
+    flow,
+    lifecycleStatus: "crashed",
+    blockResults,
+    ...(autonomy ? { autonomy } : {}),
+    ...(checkpoint?.progress ? { progress: checkpoint.progress } : {}),
+  });
+
+  return {
+    runId: options.runId,
+    startedAt: options.startedAt,
+    finishedAt: createLogTimestamp(),
+    flow: flow.id,
+    status: "crashed",
+    summary,
+    events,
+    blockResults,
+    missingVariables: [],
+    unknownVariables: [],
+    validation,
+    ...(checkpoint ? { checkpoint } : {}),
+    ...(autonomy ? { autonomy } : {}),
+    outcome,
+    ...(checkpoint?.progress
+      ? { progress: createRalphProgressState(checkpoint.progress) }
+      : {}),
+    durability: {
+      status: "degraded",
+      required: options.durabilityRequired,
+      error: options.reason,
+    },
+  };
+};
+
+export const runRalphFlow = async (
+  flow: RalphFlow,
+  config: RuntimeConfig,
+  customizations: CustomizationDiscoveryResult,
+  options: RalphRunOptions = {},
+): Promise<RalphRunResult> => {
+  const leaseOwnerId = options.leaseOwnerId ?? `${process.pid}:${randomUUID()}`;
+  const startedAt = options.checkpoint?.startedAt ?? createLogTimestamp();
+  const runId =
+    options.logger?.runId ??
+    options.runId ??
+    options.checkpoint?.runId ??
+    `ralph-${flow.id}-${randomUUID()}`;
+
+  try {
+    return await runRalphFlowImpl(flow, config, customizations, {
+      ...options,
+      leaseOwnerId,
+      runId,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    let cleanupError: string | undefined;
+    try {
+      await releaseActiveRalphFileMutationLocks(leaseOwnerId);
+    } catch (releaseError) {
+      cleanupError =
+        releaseError instanceof Error
+          ? releaseError.message
+          : String(releaseError);
+    }
+
+    const failureReason = cleanupError
+      ? `${reason} Lock cleanup also failed: ${cleanupError}`
+      : reason;
+    const validation = validateRalphFlow(flow, {
+      config,
+      ...(options.variableValues
+        ? { variableValues: options.variableValues }
+        : {}),
+    });
+    let recoveryCheckpoint = options.checkpoint;
+    const paths = options.logger?.paths;
+    let mutationLock: RalphFileMutationLock | undefined;
+
+    try {
+      if (paths && !cleanupError) {
+        mutationLock = await acquireRalphFileMutationLock(
+          paths.recordPath,
+          `ralph-crash:${leaseOwnerId}`,
+          30_000,
+          { reapLiveOwner: false },
+        );
+        const currentRaw = await readFile(paths.recordPath, "utf8").catch(
+          (readError: unknown) => {
+            if (isFileNotFoundError(readError)) {
+              return undefined;
+            }
+            throw readError;
+          },
+        );
+        const currentValue = currentRaw
+          ? (JSON.parse(currentRaw) as unknown)
+          : undefined;
+        const current =
+          currentValue === undefined
+            ? undefined
+            : isRalphRunRecord(currentValue, RALPH_FLOW_SCHEMA_VERSION)
+              ? currentValue
+              : (() => {
+                  throw new Error(
+                    `The interrupted Ralph run record at ${paths.recordPath} is invalid.`,
+                  );
+                })();
+        const runStore = new RalphRunStore(paths.directory);
+        await runStore.initialize();
+        const storedCheckpoint = await runStore.readLatestCheckpoint();
+        const independentLease = await runStore.readLease();
+        const latestCheckpoint = storedCheckpoint?.checkpoint;
+        const currentLease = current?.checkpoint?.lease;
+        const latestLease = latestCheckpoint?.lease;
+        const hasForeignOwner =
+          (currentLease &&
+            !currentLease.releasedAt &&
+            currentLease.ownerId !== leaseOwnerId) ||
+          (latestLease &&
+            !latestLease.releasedAt &&
+            latestLease.ownerId !== leaseOwnerId) ||
+          (independentLease?.active &&
+            independentLease.lease.ownerId !== leaseOwnerId);
+        const canFinalize =
+          !hasForeignOwner &&
+          (!current ||
+            (current.status === "running" &&
+              current.id === runId &&
+              current.flowId === flow.id));
+
+        if (canFinalize) {
+          if (
+            latestCheckpoint?.runId === runId &&
+            latestCheckpoint.flowId === flow.id &&
+            (!latestLease || latestLease.ownerId === leaseOwnerId)
+          ) {
+            recoveryCheckpoint = latestCheckpoint;
+          }
+          if (
+            independentLease &&
+            independentLease.lease.ownerId === leaseOwnerId
+          ) {
+            await runStore.releaseLease({
+              runId,
+              flowId: flow.id,
+              ownerId: leaseOwnerId,
+              generation: independentLease.lease.generation,
+            });
+          }
+          const result = createUnexpectedRalphRunResult(flow, validation, {
+            runId,
+            startedAt: recoveryCheckpoint?.startedAt ?? startedAt,
+            reason: failureReason,
+            ...(recoveryCheckpoint ? { checkpoint: recoveryCheckpoint } : {}),
+            durabilityRequired: true,
+          });
+          const record = createRalphRunRecord(
+            RALPH_FLOW_SCHEMA_VERSION,
+            paths.id,
+            result.startedAt ?? startedAt,
+            flow,
+            result,
+            recoveryCheckpoint?.variables ?? options.variableValues ?? {},
+            paths,
+          );
+          await mutationLock.assertOwnership();
+          await writeJsonAtomically(paths.recordPath, record, {
+            beforeCommit: mutationLock.assertOwnership,
+          });
+          await mutationLock.assertOwnership();
+        }
+      }
+    } catch (persistenceError) {
+      cleanupError = `${cleanupError ? `${cleanupError} ` : ""}Crash finalization failed: ${persistenceError instanceof Error ? persistenceError.message : String(persistenceError)}`;
+    } finally {
+      await mutationLock?.release().catch((releaseError: unknown) => {
+        cleanupError = `${cleanupError ? `${cleanupError} ` : ""}Crash-finalization lock release failed: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`;
+      });
+    }
+
+    const result = createUnexpectedRalphRunResult(flow, validation, {
+      runId,
+      startedAt: recoveryCheckpoint?.startedAt ?? startedAt,
+      reason: cleanupError
+        ? `${reason} Recovery finalization was incomplete: ${cleanupError}`
+        : reason,
+      ...(recoveryCheckpoint ? { checkpoint: recoveryCheckpoint } : {}),
+      durabilityRequired: Boolean(paths),
+    });
+    try {
+      options.logger?.simple({
+        kind: "crash",
+        message: result.summary,
+        flowId: flow.id,
+        flowName: flow.name,
+        blockId: result.checkpoint?.currentBlockId ?? "run",
+        output: "ERROR",
+      });
+      options.logger?.trace({
+        kind: "crash",
+        message: result.summary,
+        flowId: flow.id,
+        details: result,
+      });
+      await options.logger?.flush();
+    } catch {
+      // The durable run record above remains the authoritative crash result.
+    }
+    return result;
+  }
 };

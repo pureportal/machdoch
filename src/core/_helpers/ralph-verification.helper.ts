@@ -183,6 +183,9 @@ export const createRalphVerificationObservation = (input: {
     failureClass,
     failureIds,
     missingDependencies,
+    ...(failureClass === "collection"
+      ? { collectionDiagnosticFingerprint: fingerprint(output) }
+      : {}),
     ...(input.exitCode !== 0 &&
     failureIds.length === 0 &&
     missingDependencies.length === 0
@@ -280,7 +283,8 @@ export const compareRalphVerificationObservations = (
   }
   if (
     candidate.failureClass === "dependency" &&
-    baseline.failureClass === "dependency"
+    baseline.failureClass === "dependency" &&
+    newFailureIds.length === 0
   ) {
     return {
       disposition: "ENVIRONMENT_UNAVAILABLE",
@@ -292,7 +296,7 @@ export const compareRalphVerificationObservations = (
   if (
     candidate.failureClass === "collection" &&
     baseline.failureClass === "collection" &&
-    newFailureIds.length === 0
+    baseline.semanticFingerprint === candidate.semanticFingerprint
   ) {
     return {
       disposition: "ENVIRONMENT_UNAVAILABLE",
@@ -304,6 +308,7 @@ export const compareRalphVerificationObservations = (
   if (
     baseline.semanticFingerprint === candidate.semanticFingerprint ||
     (baseline.failureClass === candidate.failureClass &&
+      candidate.failureClass !== "collection" &&
       newFailureIds.length === 0 &&
       newMissingDependencies.length === 0 &&
       baseline.failureIds.length + baseline.missingDependencies.length > 0)

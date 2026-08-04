@@ -704,11 +704,11 @@ const autonomousRefactoringFlow: RalphFlow = {
     },
     {
       id: "deferred",
-      title: "Refactor Outcome Retained for Retry",
+      title: "Refactor Deferred",
       position: { x: 4420, y: 300 },
       size: { width: 280, height: 114 },
       type: "END",
-      status: "success",
+      outcome: "deferred",
     },
   ],
   edges: [
@@ -818,7 +818,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 13,
+  version: 14,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

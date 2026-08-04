@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,9 +23,11 @@ describe("atomic file persistence", () => {
   };
 
   afterEach(async () => {
-    await Promise.all(directories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ));
+    await Promise.all(
+      directories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
   });
 
   it("replaces a file and leaves no temporary artifact", async () => {
@@ -28,7 +38,9 @@ describe("atomic file persistence", () => {
     await writeFileAtomically(path, "second");
 
     expect(await readFile(path, "utf8")).toBe("second");
-    expect(await scavengeAtomicTemporaryFiles(directory, { maxAgeMs: 0 })).toBe(0);
+    expect(await scavengeAtomicTemporaryFiles(directory, { maxAgeMs: 0 })).toBe(
+      0,
+    );
   });
 
   it("runs a final stale-write guard before replacing the destination", async () => {
@@ -49,10 +61,37 @@ describe("atomic file persistence", () => {
     );
   });
 
+  it.runIf(process.platform === "win32")(
+    "waits through short Windows destination locks before replacing a file",
+    async () => {
+      const directory = await createTemporaryDirectory("atomic-lock-");
+      const path = join(directory, "record.json");
+      await writeFile(path, "first", "utf8");
+      const lock = await open(path, "r+");
+      let releaseLock = Promise.resolve();
+      const releaseTimer = setTimeout(() => {
+        releaseLock = lock.close();
+      }, 600);
+
+      try {
+        await writeFileAtomically(path, "second");
+      } finally {
+        clearTimeout(releaseTimer);
+        await releaseLock;
+        await lock.close().catch(() => undefined);
+      }
+
+      expect(await readFile(path, "utf8")).toBe("second");
+    },
+  );
+
   it("removes abandoned atomic temporary files after the retention window", async () => {
     const directory = await createTemporaryDirectory("ralph-atomic-stale-");
     await mkdir(directory, { recursive: true });
-    const path = join(directory, ".run.json.42.11111111-1111-1111-1111-111111111111.tmp");
+    const path = join(
+      directory,
+      ".run.json.42.11111111-1111-1111-1111-111111111111.tmp",
+    );
     await writeFile(path, "partial", "utf8");
     const metadata = await stat(path);
 

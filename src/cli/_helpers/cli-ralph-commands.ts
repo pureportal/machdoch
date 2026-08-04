@@ -39,6 +39,8 @@ import {
   type RalphRunLogger,
   type RalphRunRecord,
   type RalphRunResult,
+  type RalphRunStatus,
+  type RalphRunSummaryStatus,
   type RalphValidationResult,
 } from "../../core/ralph.js";
 import {
@@ -711,6 +713,14 @@ interface RunRalphFlowForCliOptions {
     | "original-boundary"
     | "new-boundary";
 }
+
+export const isRecoverableRalphRunStatus = (
+  status: RalphRunStatus,
+  effectiveStatus: RalphRunSummaryStatus,
+): boolean =>
+  status === "blocked" ||
+  status === "crashed" ||
+  effectiveStatus === "abandoned";
 
 const runRalphFlowForCli = async ({
   json,
@@ -1502,7 +1512,7 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
       writeStdoutLine(
         `flow: ${detail.record.flowName} (${detail.record.flowId})`,
       );
-      writeStdoutLine(`status: ${detail.record.status}`);
+      writeStdoutLine(`status: ${detail.effectiveStatus}`);
       writeStdoutLine(`created: ${detail.record.createdAt}`);
       if (detail.record.finishedAt) {
         writeStdoutLine(`finished: ${detail.record.finishedAt}`);
@@ -1730,11 +1740,11 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
       const subject =
         options.subject ??
         fail("Expected a run id after `machdoch ralph resume`.");
-      const { path: recordPath, record } = await readRalphRunRecord(
-        args.workspaceRoot,
-        subject,
-        { scope },
-      );
+      const {
+        path: recordPath,
+        record,
+        effectiveStatus,
+      } = await readRalphRunRecord(args.workspaceRoot, subject, { scope });
       const retryCurrent = options.retryCurrent === true;
       const checkpoint =
         record.checkpoint ??
@@ -1752,7 +1762,7 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
           );
         }
 
-        if (record.status !== "blocked" && record.status !== "crashed") {
+        if (!isRecoverableRalphRunStatus(record.status, effectiveStatus)) {
           fail(`Ralph run \`${subject}\` is not recoverable.`);
         }
       } else if (record.status !== "waiting-for-input" || !pendingInput) {
@@ -1792,6 +1802,7 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
         variableValues: record.variableValues,
         paths,
         append: true,
+        deferWritesUntilActivated: true,
         scope,
       });
       const result = await runRalphFlowForCli({

@@ -10,6 +10,7 @@ export interface RalphRetryDecisionInput {
   block: Pick<RalphFlowBlock, "settings"> | null | undefined;
   currentErrorCount: number;
   hasExplicitErrorRoute: boolean;
+  resultRetryable?: boolean;
 }
 
 export interface RalphRetryDecision {
@@ -41,11 +42,13 @@ export const resolveRalphRetryDecision = ({
   block,
   currentErrorCount,
   hasExplicitErrorRoute,
+  resultRetryable,
 }: RalphRetryDecisionInput): RalphRetryDecision => {
   const policy = getRalphRetryPolicy(block);
   const usesDefaultErrorRoute =
     hasExplicitErrorRoute && block?.settings?.retry === undefined;
   const shouldRetry =
+    resultRetryable !== false &&
     !usesDefaultErrorRoute &&
     retryAllowsAnotherRalphAttempt(policy, currentErrorCount);
 

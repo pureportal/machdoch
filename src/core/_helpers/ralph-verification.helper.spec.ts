@@ -106,6 +106,34 @@ describe("RALPH semantic verification", () => {
     ).toBe("ENVIRONMENT_UNAVAILABLE");
   });
 
+  it("does not hide a new test failure behind an unchanged missing dependency", () => {
+    const comparison = compareRalphVerificationObservations(
+      observation(1, "Error: Cannot find module 'optional-driver'"),
+      observation(
+        1,
+        "Error: Cannot find module 'optional-driver'\nFAIL src/new.spec.ts",
+      ),
+    );
+
+    expect(comparison.disposition).toBe("REGRESSION");
+    expect(comparison.newFailureIds).toContain("src/new.spec.ts");
+  });
+
+  it("does not call changed collection diagnostics an unavailable environment", () => {
+    expect(
+      compareRalphVerificationObservations(
+        observation(
+          1,
+          "ERROR collecting tests/test_widget.py\nTypeError: baseline diagnostic",
+        ),
+        observation(
+          1,
+          "ERROR collecting tests/test_widget.py\nSyntaxError: candidate diagnostic",
+        ),
+      ).disposition,
+    ).toBe("INCONCLUSIVE");
+  });
+
   it("classifies a timed-out candidate without calling it a source regression", () => {
     const baseline = observation(0, "12 tests passed");
     const candidate = createRalphVerificationObservation({

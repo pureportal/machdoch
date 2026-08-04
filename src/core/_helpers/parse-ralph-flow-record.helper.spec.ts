@@ -228,7 +228,7 @@ describe("parseRalphFlowRecord", () => {
       variables: [{ name: "", type: "path", required: true }],
       blocks: [
         { id: "", title: "", type: "PROMPT", prompt: "" },
-        { id: "end", title: "End", type: "END", status: "success" },
+        { id: "end", title: "End", type: "END" },
       ],
       edges: [{ id: "", from: "", fromOutput: "", to: "" }],
     });

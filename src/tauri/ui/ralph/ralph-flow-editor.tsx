@@ -333,6 +333,8 @@ import {
   getOutputChipClassName,
   getRunStatusPresentation,
 } from "./_helpers/ralph-run-presentation.helper";
+import { createRalphRunResultFromDetail } from "./_helpers/create-ralph-run-result-from-detail.helper";
+export { createRalphRunResultFromDetail } from "./_helpers/create-ralph-run-result-from-detail.helper";
 import {
   applyGenerationActivity,
   createGenerationActivityFromProgress,
@@ -493,55 +495,6 @@ interface RalphAttachmentMutationContext {
   blockId: string;
   attachmentsSnapshot: string;
 }
-
-export const createRalphRunResultFromDetail = (
-  detail: RalphRunDetailResult,
-  variables: ReturnType<typeof discoverRalphFlowVariables> = [],
-): RalphRunResult => {
-  const { record } = detail;
-  const checkpoint = record.checkpoint;
-
-  return {
-    runId: record.id,
-    startedAt: checkpoint?.startedAt ?? record.createdAt,
-    ...(record.finishedAt ? { finishedAt: record.finishedAt } : {}),
-    flow: record.flowId,
-    status: record.status,
-    summary: record.summary,
-    events: record.events,
-    blockResults:
-      checkpoint?.blockResults ??
-      record.blockResults.map((block) => ({
-        blockId: block.blockId,
-        ...(block.operationId ? { operationId: block.operationId } : {}),
-        output: block.output,
-        status: block.status,
-        attempt: block.attempt,
-        ...(block.durationMs !== undefined
-          ? { durationMs: block.durationMs }
-          : {}),
-        ...(block.progress ? { progress: block.progress } : {}),
-        ...(block.data !== undefined ? { data: block.data } : {}),
-        summary: block.summary,
-        ...(block.markdown ? { markdown: block.markdown } : {}),
-        ...(block.error ? { error: block.error } : {}),
-      })),
-    missingVariables: [],
-    unknownVariables: [],
-    validation: {
-      ...record.validation,
-      errorIssues: [],
-      warningIssues: [],
-      variables,
-    },
-    ...(checkpoint?.pendingInput
-      ? { pendingInput: checkpoint.pendingInput }
-      : {}),
-    ...(checkpoint ? { checkpoint } : {}),
-    ...(checkpoint?.autonomy ? { autonomy: checkpoint.autonomy } : {}),
-    ...(record.durability ? { durability: record.durability } : {}),
-  };
-};
 
 export const RalphFlowEditor = ({
   workspaceRoot,

@@ -1,7 +1,15 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.ts";
+import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import {
   MAX_RALPH_RESULT_CHARS,
   createRalphFlowFingerprint,
@@ -670,6 +678,130 @@ describe("Ralph flow storage", () => {
       kind: "trace",
       content: expect.stringContaining("Detailed trace."),
     });
+  });
+
+  it("defers resume-log mutations until durable ownership is activated", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const initialLogger = await createRalphRunLogger(workspaceRoot, flow, {
+      runId: "deferred-resume-log",
+    });
+    await initialLogger.flush();
+    if (!initialLogger.paths) {
+      throw new Error("Expected file-backed Ralph run logger paths.");
+    }
+    const before = await Promise.all([
+      readFile(initialLogger.paths.simpleMarkdownPath, "utf8"),
+      readFile(initialLogger.paths.simpleJsonlPath, "utf8"),
+      readFile(initialLogger.paths.traceJsonlPath, "utf8"),
+    ]);
+
+    const resumeLogger = await createRalphRunLogger(workspaceRoot, flow, {
+      runId: initialLogger.runId,
+      paths: initialLogger.paths,
+      append: true,
+      deferWritesUntilActivated: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    await expect(
+      Promise.all([
+        readFile(initialLogger.paths.simpleMarkdownPath, "utf8"),
+        readFile(initialLogger.paths.simpleJsonlPath, "utf8"),
+        readFile(initialLogger.paths.traceJsonlPath, "utf8"),
+      ]),
+    ).resolves.toEqual(before);
+
+    resumeLogger.activate?.();
+    await resumeLogger.flush();
+    await expect(
+      readFile(initialLogger.paths.simpleMarkdownPath, "utf8"),
+    ).resolves.toContain("resumed");
+    await expect(
+      readFile(initialLogger.paths.traceJsonlPath, "utf8"),
+    ).resolves.toContain("resumed");
+  });
+
+  it("projects an expired running record as abandoned without rewriting it", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const logger = await createRalphRunLogger(workspaceRoot, flow, {
+      runId: "abandoned-run",
+    });
+    if (!logger.paths) {
+      throw new Error("Expected file-backed Ralph run logger paths.");
+    }
+    const runResult: RalphRunResult = {
+      runId: logger.runId,
+      startedAt: new Date().toISOString(),
+      flow: flow.id,
+      status: "running",
+      summary: "Run is active.",
+      events: [],
+      blockResults: [],
+      missingVariables: [],
+      unknownVariables: [],
+      validation: validateRalphFlow(flow),
+    };
+    await writeRalphRunRecord(workspaceRoot, flow, runResult, {
+      paths: logger.paths,
+    });
+    const original = await readFile(logger.paths.recordPath, "utf8");
+
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toEqual([
+      expect.objectContaining({ id: logger.runId, status: "running" }),
+    ]);
+    await expect(
+      readRalphRunRecord(workspaceRoot, logger.runId),
+    ).resolves.toMatchObject({ effectiveStatus: "running" });
+
+    const expiredAt = new Date(Date.now() - 3 * 60_000);
+    await utimes(logger.paths.recordPath, expiredAt, expiredAt);
+
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toEqual([
+      expect.objectContaining({ id: logger.runId, status: "abandoned" }),
+    ]);
+    await expect(
+      readRalphRunRecord(workspaceRoot, logger.runId),
+    ).resolves.toMatchObject({ effectiveStatus: "abandoned" });
+    expect(await readFile(logger.paths.recordPath, "utf8")).toBe(original);
+
+    const runStore = new RalphRunStore(logger.paths.directory);
+    await runStore.initialize();
+    await runStore.acquireLease(
+      {
+        runId: "different-run",
+        flowId: flow.id,
+        ownerId: "mismatched-owner",
+        generation: 1,
+        acquiredAt: new Date().toISOString(),
+        releasedAt: new Date().toISOString(),
+      },
+      5_000,
+    );
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toEqual([
+      expect.objectContaining({ id: logger.runId, status: "running" }),
+    ]);
+    await expect(
+      readRalphRunRecord(workspaceRoot, logger.runId),
+    ).resolves.toMatchObject({ effectiveStatus: "running" });
+
+    await runStore.acquireLease(
+      {
+        runId: logger.runId,
+        flowId: flow.id,
+        ownerId: "live-owner",
+        generation: 1,
+        acquiredAt: new Date().toISOString(),
+      },
+      5_000,
+    );
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toEqual([
+      expect.objectContaining({ id: logger.runId, status: "running" }),
+    ]);
+    await expect(
+      readRalphRunRecord(workspaceRoot, logger.runId),
+    ).resolves.toMatchObject({ effectiveStatus: "running" });
   });
 
   it("does not restore a revision over a concurrently changed flow", async () => {
