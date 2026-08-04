@@ -36,6 +36,7 @@ import type {
   RalphInputResponse,
   RalphRunLogReadResult,
   RalphRunRecord,
+  RalphRunSummaryStatus,
   RalphRunResult,
   RalphRunSummary,
   RalphValidationResult,
@@ -54,6 +55,7 @@ import {
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
+import { MAX_TASK_INPUT_BYTES } from "../../shared/task-input-limits.js";
 import { MCP_PRESETS } from "../../core/mcp/presets.js";
 import {
   MCP_CONFIG_SCHEMA_VERSION,
@@ -95,6 +97,23 @@ import {
   createPreviewFixture,
 } from "./preview/fixtures";
 import { normalizeRemoteControlStatus } from "./_helpers/normalize-remote-control-status.helper";
+import {
+  createPreviewWorkspaceEntry,
+  deletePreviewWorkspaceEntry,
+  discoverPreviewWorkspaceGitRepositories,
+  discoverPreviewWorkspaceShells,
+  listPreviewWorkspaceDirectory,
+  loadPreviewWorkspaceGitDiff,
+  loadPreviewWorkspaceGitOverview,
+  loadPreviewWorkspacePullRequests,
+  readPreviewWorkspaceFile,
+  renamePreviewWorkspaceEntry,
+  resolvePreviewWorkspaceFileSource,
+  savePreviewWorkspaceFile,
+  startPreviewWorkspaceTerminal,
+  stopPreviewWorkspaceTerminal,
+  writePreviewWorkspaceTerminal,
+} from "./workspace-management/workspace-preview-runtime";
 
 export type UserApiKeyProvider = SharedUserApiProvider;
 
@@ -240,9 +259,7 @@ export interface InstructionProfileView {
   byteLength: number;
   lineCount: number;
   digest: string;
-  assignmentCount: number;
   manualAssignmentCount: number;
-  automaticWorkspaceIds: string[];
   enabled: boolean;
   global: boolean;
   tags: string[];
@@ -257,55 +274,6 @@ export interface InstructionWorkspaceView {
   scopes: Array<{ path: string; profiles: string[] }>;
 }
 
-export interface ProjectLocalInstructionView {
-  id: string;
-  relativePath: string;
-  scopePath: string;
-  digest: string;
-  byteLength: number;
-  lineCount: number;
-  body?: string;
-}
-
-export interface InstructionResolutionView {
-  explanation: {
-    schemaVersion: number;
-    resolutionId: string;
-    canonicalDigest: string;
-    environmentDigest: string;
-    providerId: string;
-    surface: "api" | "cli";
-    model?: string;
-    libraryRevision: number;
-    workspaceRegistered: boolean;
-    workspaceId?: string;
-    sources: Array<Record<string, unknown>>;
-    bodyGroups: Array<Record<string, unknown>>;
-    nativeInventory: Array<Record<string, unknown>>;
-    mcpInitializationInstructions: Array<Record<string, unknown>>;
-    diagnostics: Array<Record<string, unknown>>;
-    budget: Record<string, unknown>;
-    pathPreview?: {
-      path: string;
-      applicableSourceIds: string[];
-      effectiveOrder: string[];
-    };
-  };
-  deliveryPlan: {
-    planId: string;
-    resolutionId: string;
-    canonicalDigest: string;
-    environmentDigest: string;
-    providerId: string;
-    surface: "api" | "cli";
-    grade: "full" | "compatible" | "unsupported";
-    route: string;
-    blockingReasons: string[];
-    dimensions: Array<Record<string, unknown>>;
-    capability: Record<string, unknown>;
-  };
-}
-
 export interface InstructionLibraryRecoveryView {
   libraryPath: string;
   backupPath: string;
@@ -314,6 +282,8 @@ export interface InstructionLibraryRecoveryView {
   backupValid: boolean;
   backupDigest?: string;
   backupRevision?: number;
+  resetDigest?: string;
+  resetSource?: "primary" | "backup";
   errorCode?: string;
   errorMessage?: string;
 }
@@ -322,19 +292,34 @@ export interface InstructionRegistryResult {
   schemaVersion: number;
   revision: number;
   profiles: InstructionProfileView[];
-  defaults: { profiles: string[] };
   workspaces: InstructionWorkspaceView[];
-  localFiles: ProjectLocalInstructionView[];
-  localDiagnostics: Array<Record<string, unknown>>;
   recovery?: InstructionLibraryRecoveryView;
   libraryError?: string;
-  resolution?: InstructionResolutionView;
-  resolutionError?: string;
 }
 
 export interface WorkspaceGitChange {
   status: string;
   path: string;
+  originalPath?: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  conflicted: boolean;
+}
+
+export type WorkspaceGitPatchKind = "staged" | "unstaged" | "untracked";
+
+export interface WorkspaceGitPatch {
+  kind: WorkspaceGitPatchKind;
+  content: string;
+  binary: boolean;
+  truncated: boolean;
+}
+
+export interface WorkspaceGitDiff {
+  path: string;
+  originalPath?: string;
+  patches: WorkspaceGitPatch[];
 }
 
 export interface WorkspaceGitBranch {
@@ -370,6 +355,24 @@ export interface WorkspacePullRequest {
   updatedAt?: string;
 }
 
+export interface WorkspacePullRequestOverview {
+  available: boolean;
+  reason?: string;
+  items: WorkspacePullRequest[];
+}
+
+export interface WorkspaceGitRepository {
+  repositoryRoot: string;
+  relativePath: string;
+}
+
+export interface WorkspaceGitRepositoryDiscovery {
+  workspaceRoot: string;
+  repositories: WorkspaceGitRepository[];
+  scanLimited: boolean;
+  issues: string[];
+}
+
 export interface WorkspaceGitOverview {
   workspaceRoot: string;
   repositoryRoot: string;
@@ -383,17 +386,13 @@ export interface WorkspaceGitOverview {
   unstagedCount: number;
   untrackedCount: number;
   conflictedCount: number;
+  totalChanges: number;
   changes: WorkspaceGitChange[];
   changesTruncated: boolean;
   localBranches: WorkspaceGitBranch[];
   remoteBranches: WorkspaceGitBranch[];
   remotes: WorkspaceGitRemote[];
   headCommit?: WorkspaceGitCommit;
-  pullRequests: {
-    available: boolean;
-    reason?: string;
-    items: WorkspacePullRequest[];
-  };
 }
 
 export type WorkspaceGitAction =
@@ -404,6 +403,80 @@ export type WorkspaceGitAction =
   | "create-branch"
   | "add-remote"
   | "remove-remote";
+
+export type WorkspaceEntryKind = "file" | "directory";
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+  kind: "file" | "directory" | "symlink" | "other";
+  targetKind: "file" | "directory" | "other" | null;
+  size: number | null;
+  modifiedAt: number | null;
+}
+
+export interface WorkspaceDirectoryPage {
+  path: string;
+  entries: WorkspaceDirectoryEntry[];
+  nextOffset: number | null;
+  totalEntries: number;
+  limitReached: boolean;
+  omittedEntries: number;
+}
+
+export type WorkspaceFileKind = "text" | "media" | "binary" | "oversized";
+export type WorkspaceFilePreviewKind =
+  | "markdown"
+  | "image"
+  | "pdf"
+  | "audio"
+  | "video";
+
+export interface WorkspaceFileDocument {
+  path: string;
+  name: string;
+  size: number;
+  modifiedAt: number | null;
+  revision: string | null;
+  kind: WorkspaceFileKind;
+  previewKind: WorkspaceFilePreviewKind | null;
+  language: string | null;
+  content: string | null;
+  editable: boolean;
+  bom: boolean;
+  reason: string | null;
+}
+
+export interface WorkspaceFileSaveResult {
+  status: "saved" | "conflict";
+  revision: string;
+  modifiedAt: number | null;
+  size: number;
+}
+
+export interface WorkspaceShell {
+  id: string;
+  label: string;
+  kind: string;
+}
+
+export interface WorkspaceShellDiscovery {
+  platform: string;
+  shells: WorkspaceShell[];
+  defaultShellId: string | null;
+  externalTerminal: { id: string; label: string } | null;
+}
+
+export interface WorkspaceTerminalStarted {
+  sessionId: string;
+  shellId: string;
+  processId: number | null;
+}
+
+export type WorkspaceTerminalEvent =
+  | { type: "output"; data: string }
+  | { type: "exit"; exitCode: number | null }
+  | { type: "error"; message: string };
 
 export type InstructionMutationInput =
   | {
@@ -441,52 +514,11 @@ export type InstructionMutationInput =
       expectedRevision: number;
     }
   | {
-      operation: "defaults-set";
-      profileIds: string[];
-      expectedRevision: number;
-    }
-  | {
-      operation: "scope-set";
-      workspaceId: string;
-      scopePath: string;
-      profileIds: string[];
-      expectedRevision: number;
-    }
-  | {
-      operation: "scope-relink";
-      workspaceId: string;
-      currentScopePath: string;
-      nextScopePath: string;
-      expectedRevision: number;
-    }
-  | {
-      operation: "local-create";
-      scopePath: string;
-      body: string;
-    }
-  | {
-      operation: "local-edit";
-      scopePath: string;
-      body: string;
-      expectedDigest: string;
-    }
-  | {
-      operation: "local-delete";
-      scopePath: string;
-      expectedDigest: string;
-    }
-  | {
-      operation: "workspace-register";
+      operation: "workspace-configure";
       root: string;
       displayName?: string;
       tags?: string[];
-      expectedRevision: number;
-    }
-  | {
-      operation: "workspace-update";
-      workspaceId: string;
-      displayName?: string;
-      tags?: string[];
+      profileIds?: string[];
       expectedRevision: number;
     }
   | {
@@ -496,9 +528,16 @@ export type InstructionMutationInput =
       expectedRevision: number;
     }
   | {
-      operation: "workspace-unregister";
+      operation: "workspace-remove";
       workspaceId: string;
       confirmAssignedRemoval: boolean;
+      expectedRevision: number;
+    }
+  | {
+      operation: "workspace-scope-set";
+      workspaceId: string;
+      path: string;
+      profileIds: string[];
       expectedRevision: number;
     }
   | {
@@ -509,6 +548,15 @@ export type InstructionMutationInput =
       operation: "recovery-reset";
       expectedDigest: string;
     };
+
+export interface InstructionMutationResult {
+  library?: { revision: number } & Record<string, unknown>;
+  previousRevision?: number;
+  profile?: { id: string; name: string } & Record<string, unknown>;
+  workspace?: { id: string; root: string } & Record<string, unknown>;
+  recovered?: boolean;
+  reset?: boolean;
+}
 
 export interface MonitorBoundsInput {
   x: number;
@@ -1461,6 +1509,7 @@ export interface RalphRunDetailResult {
   scope?: RalphFlowScope;
   path: string;
   record: RalphRunRecord;
+  effectiveStatus: RalphRunSummaryStatus;
 }
 
 export type RalphRunLogResult = RalphRunLogReadResult;
@@ -4153,7 +4202,7 @@ const appendInstructionOption = (
   flag: string,
   value: string | number | undefined,
 ): void => {
-  if (value === undefined || value === "") {
+  if (value === undefined) {
     return;
   }
 
@@ -4187,13 +4236,18 @@ export const listInstructions = async (
 ): Promise<InstructionRegistryResult> => {
   if (!canInvokeTauriCommands()) {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       revision: 0,
       profiles: [],
-      defaults: { profiles: [] },
-      workspaces: [],
-      localFiles: [],
-      localDiagnostics: [],
+      workspaces: [
+        {
+          id: "preview-machdoch",
+          root: "C:\\Projects\\machdoch",
+          displayName: "Machdoch",
+          tags: [],
+          scopes: [{ path: ".", profiles: [] }],
+        },
+      ],
     };
   }
   let recovery: InstructionLibraryRecoveryView | undefined;
@@ -4212,7 +4266,10 @@ export const listInstructions = async (
     recovery = {
       libraryPath: "",
       backupPath: "",
-      primaryValid: false,
+      // A status-command failure does not prove that the primary is invalid.
+      // The independent list command below remains the source of truth for
+      // whether the library can be used.
+      primaryValid: true,
       backupValid: false,
       errorCode: "INSTRUCTION_LIBRARY_RECOVERY_STATUS_UNAVAILABLE",
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -4220,12 +4277,11 @@ export const listInstructions = async (
   }
   let library: Pick<
     InstructionRegistryResult,
-    "schemaVersion" | "revision" | "profiles" | "defaults" | "workspaces"
+    "schemaVersion" | "revision" | "profiles" | "workspaces"
   > = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 0,
     profiles: [],
-    defaults: { profiles: [] },
     workspaces: [],
   };
   let libraryError: string | undefined;
@@ -4238,42 +4294,10 @@ export const listInstructions = async (
   } catch (error) {
     libraryError = error instanceof Error ? error.message : String(error);
   }
-  let locals: {
-    files: ProjectLocalInstructionView[];
-    diagnostics: Array<Record<string, unknown>>;
-  } = { files: [], diagnostics: [] };
-  try {
-    locals = await runInstructionCommand(
-      workspaceRoot,
-      ["local", "list", "--include-content"],
-      () => ({ files: [], diagnostics: [] }),
-    );
-  } catch (error) {
-    locals.diagnostics.push({
-      code: "PROJECT_LOCAL_INVENTORY_UNAVAILABLE",
-      severity: "error",
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-  let resolution: InstructionResolutionView | undefined;
-  let resolutionError: string | undefined;
-  try {
-    resolution = await runInstructionCommand<InstructionResolutionView>(
-      workspaceRoot,
-      ["resolve"],
-      assertInstructionDesktopAvailable,
-    );
-  } catch (error) {
-    resolutionError = error instanceof Error ? error.message : String(error);
-  }
   return {
     ...library,
-    localFiles: locals.files,
-    localDiagnostics: locals.diagnostics,
     ...(recovery === undefined ? {} : { recovery }),
     ...(libraryError === undefined ? {} : { libraryError }),
-    ...(resolution === undefined ? {} : { resolution }),
-    ...(resolutionError === undefined ? {} : { resolutionError }),
   };
 };
 
@@ -4343,82 +4367,17 @@ const createInstructionMutationArguments = (
         input.expectedRevision,
       );
       break;
-    case "defaults-set":
-      args.push("assignments", "set-defaults");
-      for (const profileId of input.profileIds) {
-        appendInstructionOption(args, "--profile", profileId);
-      }
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "scope-set":
-      args.push("assignments", "set", input.workspaceId);
-      appendInstructionOption(args, "--path", input.scopePath);
-      for (const profileId of input.profileIds) {
-        appendInstructionOption(args, "--profile", profileId);
-      }
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "scope-relink":
-      args.push(
-        "assignments",
-        "relink",
-        input.workspaceId,
-        input.currentScopePath,
-      );
-      appendInstructionOption(args, "--path", input.nextScopePath);
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "local-create":
-      args.push("local", "create", input.scopePath);
-      appendInstructionOption(args, "--prompt", input.body);
-      break;
-    case "local-edit":
-      args.push("local", "edit", input.scopePath);
-      appendInstructionOption(args, "--prompt", input.body);
-      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
-      break;
-    case "local-delete":
-      args.push("local", "delete", input.scopePath);
-      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
-      break;
-    case "workspace-register":
-      args.push("workspaces", "register", input.root);
+    case "workspace-configure":
+      args.push("workspaces", "configure", input.root);
       appendInstructionOption(args, "--name", input.displayName);
       appendInstructionOption(
         args,
         "--metadata-json",
         JSON.stringify({
           ...(input.tags === undefined ? {} : { tags: input.tags }),
-        }),
-      );
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "workspace-update":
-      args.push("workspaces", "update", input.workspaceId);
-      if (input.displayName !== undefined) {
-        args.push("--name", input.displayName);
-      }
-      appendInstructionOption(
-        args,
-        "--metadata-json",
-        JSON.stringify({
-          ...(input.tags === undefined ? {} : { tags: input.tags }),
+          ...(input.profileIds === undefined
+            ? {}
+            : { profileIds: input.profileIds }),
         }),
       );
       appendInstructionOption(
@@ -4436,11 +4395,27 @@ const createInstructionMutationArguments = (
         input.expectedRevision,
       );
       break;
-    case "workspace-unregister":
-      args.push("workspaces", "unregister", input.workspaceId);
+    case "workspace-remove":
+      args.push("workspaces", "remove", input.workspaceId);
       if (input.confirmAssignedRemoval) {
         args.push("--confirm-assignment-removal");
       }
+      appendInstructionOption(
+        args,
+        "--expected-revision",
+        input.expectedRevision,
+      );
+      break;
+    case "workspace-scope-set":
+      if (input.profileIds.length === 0) {
+        args.push("assignments", "remove", input.workspaceId);
+      } else {
+        args.push("assignments", "set", input.workspaceId);
+        for (const profileId of input.profileIds) {
+          appendInstructionOption(args, "--profile", profileId);
+        }
+      }
+      appendInstructionOption(args, "--path", input.path);
       appendInstructionOption(
         args,
         "--expected-revision",
@@ -4462,29 +4437,121 @@ const createInstructionMutationArguments = (
 export const mutateInstructions = async (
   workspaceRoot: string | null | undefined,
   input: InstructionMutationInput,
-): Promise<unknown> =>
-  runInstructionCommand(
+): Promise<InstructionMutationResult> =>
+  runInstructionCommand<InstructionMutationResult>(
     workspaceRoot,
     createInstructionMutationArguments(input),
     assertInstructionDesktopAvailable,
   );
 
-export const loadWorkspaceGitOverview = async (
+export const loadWorkspaceGitRepositories = async (
   workspaceRoot: string,
-): Promise<WorkspaceGitOverview> => {
+): Promise<WorkspaceGitRepositoryDiscovery> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
   if (!normalizedWorkspaceRoot) {
     throw new Error("Select a workspace before loading Git information.");
   }
   if (!canInvokeTauriCommands()) {
-    throw new Error(
-      "Workspace Git information is only available in the desktop app.",
+    return discoverPreviewWorkspaceGitRepositories(normalizedWorkspaceRoot);
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceGitRepositoryDiscovery>(
+      "discover_workspace_git_repositories",
+      { workspaceRoot: normalizedWorkspaceRoot },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitOverview = async (
+  workspaceRoot: string,
+  repositoryRoot: string,
+): Promise<WorkspaceGitOverview> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
+  if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
+    throw new Error("Select a Git repository before loading its status.");
+  }
+  if (!canInvokeTauriCommands()) {
+    return loadPreviewWorkspaceGitOverview(
+      normalizedWorkspaceRoot,
+      normalizedRepositoryRoot,
     );
   }
   try {
     return await tauriCore.invoke<WorkspaceGitOverview>(
       "get_workspace_git_overview",
-      { workspaceRoot: normalizedWorkspaceRoot },
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          repositoryRoot: normalizedRepositoryRoot,
+        },
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitDiff = async (
+  workspaceRoot: string,
+  repositoryRoot: string,
+  relativePath: string,
+): Promise<WorkspaceGitDiff> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
+  const normalizedRelativePath = relativePath;
+  if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
+    throw new Error("Select a Git repository before loading a diff.");
+  }
+  if (!normalizedRelativePath) {
+    throw new Error("Select a changed file to view its diff.");
+  }
+  if (!canInvokeTauriCommands()) {
+    return loadPreviewWorkspaceGitDiff(
+      normalizedWorkspaceRoot,
+      normalizedRepositoryRoot,
+      normalizedRelativePath,
+    );
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceGitDiff>("get_workspace_git_diff", {
+      request: {
+        workspaceRoot: normalizedWorkspaceRoot,
+        repositoryRoot: normalizedRepositoryRoot,
+        relativePath: normalizedRelativePath,
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspacePullRequests = async (
+  workspaceRoot: string,
+  repositoryRoot: string,
+): Promise<WorkspacePullRequestOverview> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
+  if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
+    throw new Error("Select a Git repository before loading pull requests.");
+  }
+  if (!canInvokeTauriCommands()) {
+    return loadPreviewWorkspacePullRequests(
+      normalizedWorkspaceRoot,
+      normalizedRepositoryRoot,
+    );
+  }
+  try {
+    return await tauriCore.invoke<WorkspacePullRequestOverview>(
+      "get_workspace_pull_requests",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          repositoryRoot: normalizedRepositoryRoot,
+        },
+      },
     );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
@@ -4493,6 +4560,7 @@ export const loadWorkspaceGitOverview = async (
 
 export const runWorkspaceGitAction = async (
   workspaceRoot: string,
+  repositoryRoot: string,
   action: WorkspaceGitAction,
   options: {
     branchName?: string;
@@ -4501,12 +4569,14 @@ export const runWorkspaceGitAction = async (
   } = {},
 ): Promise<WorkspaceGitOverview> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
-  if (!normalizedWorkspaceRoot) {
-    throw new Error("Select a workspace before running a Git action.");
+  const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
+  if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
+    throw new Error("Select a Git repository before running an action.");
   }
   if (!canInvokeTauriCommands()) {
-    throw new Error(
-      "Workspace Git actions are only available in the desktop app.",
+    return loadPreviewWorkspaceGitOverview(
+      normalizedWorkspaceRoot,
+      normalizedRepositoryRoot,
     );
   }
   try {
@@ -4515,6 +4585,7 @@ export const runWorkspaceGitAction = async (
       {
         request: {
           workspaceRoot: normalizedWorkspaceRoot,
+          repositoryRoot: normalizedRepositoryRoot,
           action,
           ...(options.branchName?.trim()
             ? { branchName: options.branchName.trim() }
@@ -4530,6 +4601,269 @@ export const runWorkspaceGitAction = async (
     );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+const requireWorkspaceRoot = (workspaceRoot: string): string => {
+  const normalized = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalized) throw new Error("Select a workspace first.");
+  return normalized;
+};
+
+const requireWorkspaceRelativePath = (relativePath: string): string => {
+  if (!relativePath) throw new Error("Expected a workspace-relative path.");
+  return relativePath;
+};
+
+const normalizeWorkspaceToolsError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
+export const listWorkspaceDirectory = async (
+  workspaceRoot: string,
+  relativePath = ".",
+  offset = 0,
+): Promise<WorkspaceDirectoryPage> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const path = requireWorkspaceRelativePath(relativePath);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error("The directory page offset is invalid.");
+  }
+  if (!canInvokeTauriCommands()) {
+    return listPreviewWorkspaceDirectory(path, offset);
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceDirectoryPage>(
+      "list_workspace_directory",
+      { workspaceRoot: root, relativePath: path, offset },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const readWorkspaceFile = async (
+  workspaceRoot: string,
+  relativePath: string,
+): Promise<WorkspaceFileDocument> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const path = requireWorkspaceRelativePath(relativePath);
+  if (!canInvokeTauriCommands()) return readPreviewWorkspaceFile(path);
+  try {
+    return await tauriCore.invoke<WorkspaceFileDocument>(
+      "read_workspace_file",
+      { workspaceRoot: root, relativePath: path },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const saveWorkspaceFile = async (
+  workspaceRoot: string,
+  relativePath: string,
+  content: string,
+  expectedRevision: string,
+  options: { force?: boolean; bom?: boolean } = {},
+): Promise<WorkspaceFileSaveResult> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const path = requireWorkspaceRelativePath(relativePath);
+  if (!expectedRevision) throw new Error("Reload the file before saving.");
+  if (!canInvokeTauriCommands()) {
+    return savePreviewWorkspaceFile(
+      path,
+      content,
+      expectedRevision,
+      options.force ?? false,
+      options.bom ?? false,
+    );
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceFileSaveResult>(
+      "save_workspace_file",
+      {
+        request: {
+          workspaceRoot: root,
+          relativePath: path,
+          content,
+          expectedRevision,
+          force: options.force ?? false,
+          bom: options.bom ?? false,
+        },
+      },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const createWorkspaceEntry = async (
+  workspaceRoot: string,
+  parentPath: string,
+  name: string,
+  kind: WorkspaceEntryKind,
+): Promise<string> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const parent = requireWorkspaceRelativePath(parentPath);
+  if (!name) throw new Error("Enter a name.");
+  if (!canInvokeTauriCommands()) {
+    return createPreviewWorkspaceEntry(parent, name, kind);
+  }
+  try {
+    return await tauriCore.invoke<string>("create_workspace_entry", {
+      request: { workspaceRoot: root, parentPath: parent, name, kind },
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const renameWorkspaceEntry = async (
+  workspaceRoot: string,
+  relativePath: string,
+  name: string,
+): Promise<string> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const path = requireWorkspaceRelativePath(relativePath);
+  if (!name) throw new Error("Enter a name.");
+  if (!canInvokeTauriCommands()) {
+    return renamePreviewWorkspaceEntry(path, name);
+  }
+  try {
+    return await tauriCore.invoke<string>("rename_workspace_entry", {
+      request: { workspaceRoot: root, relativePath: path, name },
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const deleteWorkspaceEntry = async (
+  workspaceRoot: string,
+  relativePath: string,
+  recursive: boolean,
+): Promise<void> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const path = requireWorkspaceRelativePath(relativePath);
+  if (!canInvokeTauriCommands()) {
+    deletePreviewWorkspaceEntry(path);
+    return;
+  }
+  try {
+    await tauriCore.invoke("delete_workspace_entry", {
+      request: { workspaceRoot: root, relativePath: path, recursive },
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const discoverWorkspaceShells =
+  async (): Promise<WorkspaceShellDiscovery> => {
+    if (!canInvokeTauriCommands()) return discoverPreviewWorkspaceShells();
+    try {
+      return await tauriCore.invoke<WorkspaceShellDiscovery>(
+        "discover_workspace_shells",
+      );
+    } catch (error) {
+      throw normalizeWorkspaceToolsError(error);
+    }
+  };
+
+export const startWorkspaceTerminal = async (
+  workspaceRoot: string,
+  shellId: string,
+  columns: number,
+  rows: number,
+  onEvent: (event: WorkspaceTerminalEvent) => void,
+): Promise<WorkspaceTerminalStarted> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!shellId) throw new Error("Choose a shell.");
+  if (!canInvokeTauriCommands()) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
+    return startPreviewWorkspaceTerminal(onEvent);
+  }
+  const channel = new tauriCore.Channel<WorkspaceTerminalEvent>();
+  channel.onmessage = onEvent;
+  try {
+    return await tauriCore.invoke<WorkspaceTerminalStarted>(
+      "start_workspace_terminal",
+      {
+        request: {
+          workspaceRoot: root,
+          shellId,
+          columns: Math.round(columns),
+          rows: Math.round(rows),
+        },
+        onEvent: channel,
+      },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const writeWorkspaceTerminal = async (
+  sessionId: string,
+  data: string,
+): Promise<void> => {
+  if (!sessionId) throw new Error("This terminal is no longer running.");
+  if (!canInvokeTauriCommands()) {
+    writePreviewWorkspaceTerminal(sessionId, data);
+    return;
+  }
+  try {
+    await tauriCore.invoke("write_workspace_terminal", { sessionId, data });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const resizeWorkspaceTerminal = async (
+  sessionId: string,
+  columns: number,
+  rows: number,
+): Promise<void> => {
+  if (!sessionId || !canInvokeTauriCommands()) return;
+  try {
+    await tauriCore.invoke("resize_workspace_terminal", {
+      sessionId,
+      columns: Math.round(columns),
+      rows: Math.round(rows),
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const stopWorkspaceTerminal = async (
+  sessionId: string,
+): Promise<void> => {
+  if (!sessionId) return;
+  if (!canInvokeTauriCommands()) {
+    stopPreviewWorkspaceTerminal(sessionId);
+    return;
+  }
+  try {
+    await tauriCore.invoke("stop_workspace_terminal", { sessionId });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const openWorkspaceTerminalHost = async (
+  workspaceRoot: string,
+  terminalId: string,
+): Promise<void> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!terminalId) return;
+  if (!canInvokeTauriCommands()) return;
+  try {
+    await tauriCore.invoke("open_workspace_terminal_host", {
+      workspaceRoot: root,
+      terminalId,
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
   }
 };
 
@@ -6145,6 +6479,12 @@ export const runDesktopTask = async (
     taskId?: string;
   } = {},
 ): Promise<DesktopTaskRunResponse> => {
+  const taskBytes = new TextEncoder().encode(task).byteLength;
+  if (taskBytes > MAX_TASK_INPUT_BYTES) {
+    throw new Error(
+      `Task input exceeds the ${MAX_TASK_INPUT_BYTES}-byte desktop limit.`,
+    );
+  }
   const normalizedTask = task.trim();
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
 
@@ -6451,6 +6791,10 @@ export const resolveWorkspaceFilePreviewSource = async (
 
   if (!normalizedRelativePath) {
     throw new Error("Expected a workspace-relative path to preview.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return resolvePreviewWorkspaceFileSource(normalizedRelativePath);
   }
 
   let resolvedPath = normalizedRelativePath;

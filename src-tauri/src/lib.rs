@@ -16,6 +16,7 @@ mod ui_control;
 mod ui_operation;
 mod voice;
 mod workspace_git;
+mod workspace_tools;
 
 use tauri::Manager as _;
 #[cfg(desktop)]
@@ -154,6 +155,7 @@ pub fn run() {
         .manage(settings_transfer::SettingsTransferState::default())
         .manage(ui_operation::CrossWindowOperationState::default())
         .manage(runtime_snapshot::McpConfigWriteLock::default())
+        .manage(workspace_tools::WorkspaceTerminalState::default())
         .on_window_event(|window, event| {
             desktop_shell::handle_window_event(window, event);
         })
@@ -230,8 +232,23 @@ pub fn run() {
             desktop_task::run_task_interview_command,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
+            workspace_git::discover_workspace_git_repositories,
             workspace_git::get_workspace_git_overview,
+            workspace_git::get_workspace_git_diff,
+            workspace_git::get_workspace_pull_requests,
             workspace_git::run_workspace_git_action,
+            workspace_tools::files::create_workspace_entry,
+            workspace_tools::files::delete_workspace_entry,
+            workspace_tools::files::list_workspace_directory,
+            workspace_tools::files::read_workspace_file,
+            workspace_tools::files::rename_workspace_entry,
+            workspace_tools::files::save_workspace_file,
+            workspace_tools::terminal::discover_workspace_shells,
+            workspace_tools::terminal::open_workspace_terminal_host,
+            workspace_tools::terminal::resize_workspace_terminal,
+            workspace_tools::terminal::start_workspace_terminal,
+            workspace_tools::terminal::stop_workspace_terminal,
+            workspace_tools::terminal::write_workspace_terminal,
             media::media_cancel_run,
             media::media_analyze_image_quality,
             media::media_enqueue_fixture_run,

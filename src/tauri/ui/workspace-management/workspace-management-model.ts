@@ -8,23 +8,29 @@ export interface ManagedWorkspaceView {
 
 export const createWorkspaceRootKey = (workspaceRoot: string): string => {
   const trimmedRoot = workspaceRoot.trim();
-  const normalizedSeparators = trimmedRoot.replace(/\\/gu, "/");
+  const windowsStyle = /^(?:[a-z]:[\\/]|[\\/]{2}(?:\?|[^\\/]))/iu.test(
+    trimmedRoot,
+  );
+  const normalizedSeparators = windowsStyle
+    ? trimmedRoot.replace(/\\/gu, "/")
+    : trimmedRoot;
   const withoutTrailingSeparators = normalizedSeparators.replace(/\/+$/gu, "");
   const normalizedRoot =
-    /^[a-z]:$/iu.test(withoutTrailingSeparators) &&
+    windowsStyle &&
+    /^(?:\/\/\?\/)?[a-z]:$/iu.test(withoutTrailingSeparators) &&
     normalizedSeparators.endsWith("/")
       ? `${withoutTrailingSeparators}/`
       : withoutTrailingSeparators || normalizedSeparators;
 
-  return normalizedRoot.toLocaleLowerCase();
+  return windowsStyle
+    ? normalizedRoot.toLocaleLowerCase("en-US")
+    : normalizedRoot;
 };
 
 export const createManagedWorkspaceViews = (
   workspaceRoots: readonly string[],
   instructionWorkspaces: readonly InstructionWorkspaceView[],
 ): ManagedWorkspaceView[] => {
-  // Global roots define membership. Instruction bindings only enrich matching
-  // entries with optional names, tags, and profile assignments.
   const instructionWorkspacesByRoot = new Map<
     string,
     InstructionWorkspaceView
@@ -55,6 +61,21 @@ export const createManagedWorkspaceViews = (
       root,
       instructionWorkspace: instructionWorkspacesByRoot.get(key) ?? null,
     });
+  }
+
+  // Keep bindings visible even if recent-workspace history was cleared or the
+  // binding was created by the CLI. Otherwise assignments could only be found
+  // and removed through another CLI invocation.
+  for (const instructionWorkspace of instructionWorkspaces) {
+    const root = instructionWorkspace.root.trim();
+    const key = createWorkspaceRootKey(root);
+
+    if (!root || !key || seenRoots.has(key)) {
+      continue;
+    }
+
+    seenRoots.add(key);
+    workspaces.push({ key, root, instructionWorkspace });
   }
 
   return workspaces;

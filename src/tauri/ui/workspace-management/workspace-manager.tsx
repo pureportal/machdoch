@@ -8,7 +8,6 @@ import {
   FolderGit2,
   FolderPlus,
   GitBranch,
-  GitCommitHorizontal,
   GitFork,
   GitPullRequest,
   LoaderCircle,
@@ -20,7 +19,21 @@ import {
   Unplug,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
+import { MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH } from "../../../core/instruction-system/limits.js";
+import { hasUnpairedUtf16Surrogate } from "../../../shared/unicode.js";
+import {
+  instructionTagKey,
+  instructionTagRuleMatches,
+} from "../../../core/instruction-system/tag-rules.js";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
@@ -29,6 +42,8 @@ import { SearchField } from "../components/ui/search-field";
 import { cn } from "../lib/utils";
 import {
   loadWorkspaceGitOverview,
+  loadWorkspaceGitRepositories,
+  loadWorkspacePullRequests,
   openExternalUrl,
   runWorkspaceGitAction,
   type InstructionMutationInput,
@@ -36,11 +51,11 @@ import {
   type InstructionWorkspaceView,
   type WorkspaceGitAction,
   type WorkspaceGitOverview,
+  type WorkspaceGitRepositoryDiscovery,
+  type WorkspacePullRequestOverview,
 } from "../runtime";
-import type {
-  InstructionSettingsControls,
-  WorkspaceManagementControls,
-} from "../chat-session/components/settings-dialog-panels/types";
+import type { InstructionManagementControls } from "../instruction-management/types";
+import { hasAsciiControlCharacter } from "../instruction-management/instruction-form";
 import { TagEditor } from "../instruction-management/tag-editor";
 import {
   createManagedWorkspaceViews,
@@ -48,118 +63,50 @@ import {
   getManagedWorkspaceName,
   getManagedWorkspaceTags,
 } from "./workspace-management-model";
+import { WorkspaceGitStatus } from "./workspace-git-status";
+import type { WorkspaceManagementControls } from "./types";
+import {
+  selectWorkspaceGitRepository,
+  workspaceGitActionChangesFiles,
+  workspaceGitOverviewForSelection,
+  workspaceGitRepositoryLabel,
+} from "./workspace-git-model";
+import {
+  startExclusiveWorkspaceOperation,
+  type WorkspaceOperationLock,
+} from "./workspace-operation-lock";
+import { WorkspaceTools } from "./workspace-tools";
 
 type GitSection = "status" | "branches" | "remotes" | "pull-requests";
 
 const profileIsEnabled = (profile: InstructionProfileView): boolean =>
-  profile.enabled !== false;
+  profile.enabled;
 
-const profileSourcesForWorkspace = (
+const profileIsAutomaticForWorkspace = (
   profile: InstructionProfileView,
-  workspace: InstructionWorkspaceView,
-): string[] => {
-  const manual = workspace.scopes.some((scope) =>
-    scope.profiles.includes(profile.id),
-  );
-  const automatic = (profile.automaticWorkspaceIds ?? []).includes(
-    workspace.id,
-  );
-  return [
-    ...(profile.global ? ["Global"] : []),
-    ...(manual ? ["Manual"] : []),
-    ...(automatic ? ["Automatic"] : []),
-    ...(!profileIsEnabled(profile) ? ["Disabled"] : []),
-  ];
-};
+  workspace: InstructionWorkspaceView | null,
+): boolean =>
+  workspace !== null &&
+  profile.match !== undefined &&
+  instructionTagRuleMatches(profile.match, workspace.tags);
 
-const SourceBadges = ({ labels }: { labels: string[] }): JSX.Element | null =>
-  labels.length === 0 ? null : (
-    <div className="flex flex-wrap gap-1">
-      {labels.map((label) => (
-        <Badge
-          key={label}
-          variant={label === "Disabled" ? "destructive" : "outline"}
-          className="px-1.5 py-0 text-[10px]"
-        >
-          {label}
-        </Badge>
-      ))}
-    </div>
-  );
-
-const GitStatusView = ({
-  overview,
-}: {
-  overview: WorkspaceGitOverview;
-}): JSX.Element => (
-  <div className="space-y-4">
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {[
-        ["Staged", overview.stagedCount],
-        ["Changed", overview.unstagedCount],
-        ["Untracked", overview.untrackedCount],
-        ["Conflicts", overview.conflictedCount],
-      ].map(([label, value]) => (
-        <div
-          key={label}
-          className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"
-        >
-          <p className="text-xs text-slate-500">{label}</p>
-          <p className="mt-1 text-xl font-semibold text-slate-100">{value}</p>
-        </div>
-      ))}
-    </div>
-    {overview.headCommit ? (
-      <div className="flex min-w-0 items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/45 p-3">
-        <GitCommitHorizontal className="mt-0.5 size-4 shrink-0 text-slate-500" />
-        <div className="min-w-0">
-          <p className="truncate text-sm text-slate-200">
-            {overview.headCommit.subject}
-          </p>
-          <p className="mt-1 truncate text-xs text-slate-500">
-            {overview.headCommit.shortHash} · {overview.headCommit.author} ·{" "}
-            {new Date(overview.headCommit.authoredAt).toLocaleString()}
-          </p>
-        </div>
-      </div>
-    ) : null}
-    {overview.changes.length === 0 ? (
-      <EmptyState icon={Check} title="Working tree clean" size="compact" />
-    ) : (
-      <div className="overflow-hidden rounded-lg border border-slate-800">
-        <div className="max-h-80 overflow-y-auto">
-          {overview.changes.map((change, index) => (
-            <div
-              key={`${change.status}:${change.path}:${index}`}
-              className="flex min-w-0 items-center gap-3 border-b border-slate-900 px-3 py-2 last:border-b-0"
-            >
-              <code className="w-7 shrink-0 text-xs text-sky-300">
-                {change.status}
-              </code>
-              <code className="min-w-0 flex-1 truncate text-xs text-slate-300">
-                {change.path}
-              </code>
-            </div>
-          ))}
-        </div>
-        {overview.changesTruncated ? (
-          <p className="border-t border-slate-800 px-3 py-2 text-xs text-slate-500">
-            Showing the first {overview.changes.length} changes.
-          </p>
-        ) : null}
-      </div>
-    )}
-  </div>
-);
+const sameStrings = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean =>
+  left.length === right.length &&
+  left.every((value, index) => value === right[index]);
 
 export const WorkspaceManager = ({
   setup,
   workspaceSetup,
   activeWorkspaceRoot,
+  onDirtyChange,
 }: {
-  setup: InstructionSettingsControls;
+  setup: InstructionManagementControls;
   workspaceSetup: WorkspaceManagementControls;
   activeWorkspaceRoot: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
 }): JSX.Element => {
   const registry = setup.registry;
   const workspaces = useMemo(
@@ -177,16 +124,46 @@ export const WorkspaceManager = ({
   >(null);
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [tagDraftPending, setTagDraftPending] = useState(false);
   const [gitSection, setGitSection] = useState<GitSection>("status");
   const [gitOverview, setGitOverview] = useState<WorkspaceGitOverview | null>(
     null,
   );
+  const [gitRepositories, setGitRepositories] =
+    useState<WorkspaceGitRepositoryDiscovery | null>(null);
+  const [gitRepositoriesLoading, setGitRepositoriesLoading] = useState(false);
+  const [gitRepositoriesError, setGitRepositoriesError] = useState<
+    string | null
+  >(null);
+  const [selectedGitRepositoryRoot, setSelectedGitRepositoryRoot] = useState<
+    string | null
+  >(null);
   const [gitLoading, setGitLoading] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
   const [gitAction, setGitAction] = useState<WorkspaceGitAction | null>(null);
+  const [pullRequests, setPullRequests] =
+    useState<WorkspacePullRequestOverview | null>(null);
+  const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
+  const [pullRequestsError, setPullRequestsError] = useState<string | null>(
+    null,
+  );
   const [branchName, setBranchName] = useState("");
   const [remoteName, setRemoteName] = useState("");
   const [remoteUrl, setRemoteUrl] = useState("");
+  const [workspaceToolsDirty, setWorkspaceToolsDirty] = useState(false);
+  const [workspaceToolsRefreshToken, setWorkspaceToolsRefreshToken] =
+    useState(0);
+  const displayNameErrorId = useId();
+  const pendingTagMessageId = useId();
+  const selectedRootRef = useRef<string | null>(null);
+  const selectedGitRepositoryRootRef = useRef<string | null>(null);
+  const gitOverviewWorkspaceRootRef = useRef<string | null>(null);
+  const gitRepositoriesRequestRef = useRef(0);
+  const gitOverviewRequestRef = useRef(0);
+  const gitActionRequestRef = useRef(0);
+  const pullRequestRef = useRef(0);
+  const gitActionLockRef = useRef<WorkspaceOperationLock>({ pending: false });
+  const hydratedWorkspaceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     void setup.onRefresh();
@@ -212,40 +189,280 @@ export const WorkspaceManager = ({
     null;
   const selectedInstructionWorkspace =
     selectedWorkspace?.instructionWorkspace ?? null;
+  const savedDisplayName = selectedWorkspace
+    ? (selectedInstructionWorkspace?.displayName ??
+      getManagedWorkspaceName(selectedWorkspace))
+    : "";
+  const savedTags = selectedWorkspace
+    ? getManagedWorkspaceTags(selectedWorkspace)
+    : [];
+  const normalizedSavedDisplayName = savedDisplayName.trim().normalize("NFKC");
+  const selectedWorkspaceFormSnapshotRef = useRef<{
+    key: string;
+    displayName: string;
+    tags: string[];
+  } | null>(null);
+  selectedWorkspaceFormSnapshotRef.current = selectedWorkspace
+    ? {
+        key: selectedWorkspace.key,
+        displayName: savedDisplayName,
+        tags: [...savedTags],
+      }
+    : null;
+  const normalizedDisplayName = displayName.trim().normalize("NFKC");
+  const displayNameError = !normalizedDisplayName
+    ? "Enter a name."
+    : Array.from(normalizedDisplayName).length >
+        MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH
+      ? `Name cannot exceed ${MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH} characters.`
+      : hasAsciiControlCharacter(normalizedDisplayName)
+        ? "Name cannot contain control characters."
+        : hasUnpairedUtf16Surrogate(normalizedDisplayName)
+          ? "Name must contain valid Unicode text."
+          : null;
+  const workspaceSettingsDirty = Boolean(
+    selectedWorkspace &&
+    hydratedWorkspaceKeyRef.current === selectedWorkspace.key &&
+    (tagDraftPending ||
+      normalizedDisplayName !== normalizedSavedDisplayName ||
+      !sameStrings(tags, savedTags)),
+  );
+  const workspaceDraftDirty = workspaceSettingsDirty || workspaceToolsDirty;
 
   useEffect(() => {
-    if (!selectedWorkspace) return;
-    setDisplayName(
-      selectedWorkspace.instructionWorkspace?.displayName ??
-        getManagedWorkspaceName(selectedWorkspace),
-    );
-    setTags([...getManagedWorkspaceTags(selectedWorkspace)]);
-  }, [selectedWorkspace]);
+    onDirtyChange?.(workspaceDraftDirty);
+  }, [onDirtyChange, workspaceDraftDirty]);
 
-  const refreshGit = useCallback(async (): Promise<void> => {
-    if (!selectedWorkspace) {
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  selectedRootRef.current = selectedWorkspace?.root ?? null;
+  selectedGitRepositoryRootRef.current = selectedGitRepositoryRoot;
+
+  useEffect(() => {
+    const snapshot = selectedWorkspaceFormSnapshotRef.current;
+    hydratedWorkspaceKeyRef.current = snapshot?.key ?? null;
+    setDisplayName(snapshot?.displayName ?? "");
+    setTags(snapshot?.tags ?? []);
+    setTagDraftPending(false);
+  }, [registry?.revision, selectedWorkspace?.key]);
+
+  const refreshGitOverview = useCallback(
+    async (
+      repositoryRoot = selectedGitRepositoryRootRef.current,
+    ): Promise<void> => {
+      const workspaceRoot = selectedRootRef.current;
+      if (!workspaceRoot || !repositoryRoot) {
+        gitOverviewRequestRef.current += 1;
+        gitOverviewWorkspaceRootRef.current = null;
+        setGitOverview(null);
+        setGitError(null);
+        setGitLoading(false);
+        return;
+      }
+      const requestId = ++gitOverviewRequestRef.current;
+      setGitLoading(true);
+      setGitError(null);
+      try {
+        const overview = await loadWorkspaceGitOverview(
+          workspaceRoot,
+          repositoryRoot,
+        );
+        if (
+          requestId === gitOverviewRequestRef.current &&
+          selectedRootRef.current === workspaceRoot &&
+          selectedGitRepositoryRootRef.current === repositoryRoot
+        ) {
+          gitOverviewWorkspaceRootRef.current = workspaceRoot;
+          setGitOverview(overview);
+        }
+      } catch (error) {
+        if (
+          requestId === gitOverviewRequestRef.current &&
+          selectedRootRef.current === workspaceRoot &&
+          selectedGitRepositoryRootRef.current === repositoryRoot
+        ) {
+          gitOverviewWorkspaceRootRef.current = null;
+          setGitOverview(null);
+          setGitError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (
+          requestId === gitOverviewRequestRef.current &&
+          selectedRootRef.current === workspaceRoot &&
+          selectedGitRepositoryRootRef.current === repositoryRoot
+        ) {
+          setGitLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const refreshGitRepositories = useCallback(async (): Promise<
+    string | null
+  > => {
+    const workspaceRoot = selectedRootRef.current;
+    if (!workspaceRoot) {
+      gitRepositoriesRequestRef.current += 1;
+      gitOverviewRequestRef.current += 1;
+      selectedGitRepositoryRootRef.current = null;
+      setGitRepositories(null);
+      setSelectedGitRepositoryRoot(null);
+      gitOverviewWorkspaceRootRef.current = null;
       setGitOverview(null);
       setGitError(null);
-      return;
-    }
-    setGitLoading(true);
-    setGitError(null);
-    try {
-      setGitOverview(await loadWorkspaceGitOverview(selectedWorkspace.root));
-    } catch (error) {
-      setGitOverview(null);
-      setGitError(error instanceof Error ? error.message : String(error));
-    } finally {
       setGitLoading(false);
+      return null;
     }
-  }, [selectedWorkspace]);
+    const requestId = ++gitRepositoriesRequestRef.current;
+    setGitRepositoriesLoading(true);
+    setGitRepositoriesError(null);
+    try {
+      const discovery = await loadWorkspaceGitRepositories(workspaceRoot);
+      if (
+        requestId !== gitRepositoriesRequestRef.current ||
+        selectedRootRef.current !== workspaceRoot
+      ) {
+        return null;
+      }
+      const selectedRepository = selectWorkspaceGitRepository(
+        discovery.repositories,
+        selectedGitRepositoryRootRef.current,
+      );
+      const nextRepositoryRoot = selectedRepository?.repositoryRoot ?? null;
+      const repositoryChanged =
+        nextRepositoryRoot !== selectedGitRepositoryRootRef.current;
+      setGitRepositories(discovery);
+      selectedGitRepositoryRootRef.current = nextRepositoryRoot;
+      setSelectedGitRepositoryRoot(nextRepositoryRoot);
+      if (repositoryChanged) {
+        gitOverviewRequestRef.current += 1;
+        gitOverviewWorkspaceRootRef.current = null;
+        setGitOverview(null);
+        setGitLoading(false);
+        setGitError(null);
+        pullRequestRef.current += 1;
+        setPullRequests(null);
+        setPullRequestsLoading(false);
+        setPullRequestsError(null);
+      }
+      if (!nextRepositoryRoot) {
+        gitOverviewRequestRef.current += 1;
+        gitOverviewWorkspaceRootRef.current = null;
+        setGitOverview(null);
+        setGitError(null);
+        setGitLoading(false);
+        return null;
+      }
+      await refreshGitOverview(nextRepositoryRoot);
+      return nextRepositoryRoot;
+    } catch (error) {
+      if (
+        requestId === gitRepositoriesRequestRef.current &&
+        selectedRootRef.current === workspaceRoot
+      ) {
+        setGitRepositoriesError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      return null;
+    } finally {
+      if (
+        requestId === gitRepositoriesRequestRef.current &&
+        selectedRootRef.current === workspaceRoot
+      ) {
+        setGitRepositoriesLoading(false);
+      }
+    }
+  }, [refreshGitOverview]);
 
   useEffect(() => {
-    void refreshGit();
-  }, [refreshGit]);
+    gitRepositoriesRequestRef.current += 1;
+    gitOverviewRequestRef.current += 1;
+    gitActionRequestRef.current += 1;
+    pullRequestRef.current += 1;
+    selectedGitRepositoryRootRef.current = null;
+    gitOverviewWorkspaceRootRef.current = null;
+    setGitRepositories(null);
+    setGitRepositoriesLoading(false);
+    setGitRepositoriesError(null);
+    setSelectedGitRepositoryRoot(null);
+    setGitAction(null);
+    setGitOverview(null);
+    setGitLoading(false);
+    setGitError(null);
+    setPullRequests(null);
+    setPullRequestsLoading(false);
+    setPullRequestsError(null);
+    void refreshGitRepositories();
+  }, [refreshGitRepositories, selectedWorkspace?.root]);
+
+  const refreshPullRequests = useCallback(
+    async (
+      repositoryRoot = selectedGitRepositoryRootRef.current,
+    ): Promise<void> => {
+      const workspaceRoot = selectedRootRef.current;
+      if (!workspaceRoot || !repositoryRoot) return;
+      const requestId = ++pullRequestRef.current;
+      setPullRequestsLoading(true);
+      setPullRequestsError(null);
+      try {
+        const overview = await loadWorkspacePullRequests(
+          workspaceRoot,
+          repositoryRoot,
+        );
+        if (
+          requestId === pullRequestRef.current &&
+          selectedRootRef.current === workspaceRoot &&
+          selectedGitRepositoryRootRef.current === repositoryRoot
+        ) {
+          setPullRequests(overview);
+        }
+      } catch (error) {
+        if (
+          requestId === pullRequestRef.current &&
+          selectedRootRef.current === workspaceRoot &&
+          selectedGitRepositoryRootRef.current === repositoryRoot
+        ) {
+          setPullRequests(null);
+          setPullRequestsError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      } finally {
+        if (
+          requestId === pullRequestRef.current &&
+          selectedRootRef.current === workspaceRoot &&
+          selectedGitRepositoryRootRef.current === repositoryRoot
+        ) {
+          setPullRequestsLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      gitSection === "pull-requests" &&
+      gitOverview &&
+      !pullRequests &&
+      !pullRequestsLoading &&
+      !pullRequestsError
+    ) {
+      void refreshPullRequests();
+    }
+  }, [
+    gitOverview,
+    gitSection,
+    pullRequests,
+    pullRequestsError,
+    pullRequestsLoading,
+    refreshPullRequests,
+  ]);
 
   const mutate = async (input: InstructionMutationInput): Promise<boolean> =>
-    (await setup.onManualSave(input)) !== false;
+    (await setup.onSave(input)) !== false;
 
   const chooseDirectory = async (): Promise<string | null> => {
     const result = await open({ directory: true, multiple: false });
@@ -256,23 +473,6 @@ export const WorkspaceManager = ({
     const selectedRoot = root ?? (await chooseDirectory());
     if (!selectedRoot) return;
     workspaceSetup.onAdd(selectedRoot);
-
-    if (
-      !registry ||
-      registry.workspaces.some(
-        (workspace) =>
-          createWorkspaceRootKey(workspace.root) ===
-          createWorkspaceRootKey(selectedRoot),
-      )
-    ) {
-      return;
-    }
-
-    await mutate({
-      operation: "workspace-register",
-      root: selectedRoot,
-      expectedRevision: registry.revision,
-    });
   };
 
   const runGitAction = async (
@@ -283,21 +483,86 @@ export const WorkspaceManager = ({
       remoteUrl?: string;
     } = {},
   ): Promise<void> => {
-    if (!selectedWorkspace) return;
-    setGitAction(action);
-    setGitError(null);
-    try {
-      setGitOverview(
-        await runWorkspaceGitAction(selectedWorkspace.root, action, options),
-      );
-      setBranchName("");
-      setRemoteName("");
-      setRemoteUrl("");
-    } catch (error) {
-      setGitError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setGitAction(null);
-    }
+    const repositoryRoot = selectedGitRepositoryRootRef.current;
+    if (
+      !selectedWorkspace ||
+      !repositoryRoot ||
+      gitOverviewWorkspaceRootRef.current !== selectedWorkspace.root ||
+      gitOverview?.repositoryRoot !== repositoryRoot ||
+      gitActionLockRef.current.pending
+    )
+      return;
+    const operation = startExclusiveWorkspaceOperation(
+      gitActionLockRef.current,
+      async () => {
+        const changesFiles = workspaceGitActionChangesFiles(action);
+        if (
+          changesFiles &&
+          workspaceToolsDirty &&
+          !window.confirm(
+            "Run this Git action with unsaved changes? Your draft will be kept.",
+          )
+        ) {
+          return;
+        }
+        const workspaceRoot = selectedWorkspace.root;
+        const actionRequestId = ++gitActionRequestRef.current;
+        gitOverviewRequestRef.current += 1;
+        setGitAction(action);
+        setGitError(null);
+        try {
+          const overview = await runWorkspaceGitAction(
+            workspaceRoot,
+            repositoryRoot,
+            action,
+            options,
+          );
+          if (
+            actionRequestId === gitActionRequestRef.current &&
+            selectedRootRef.current === workspaceRoot &&
+            selectedGitRepositoryRootRef.current === repositoryRoot
+          ) {
+            gitOverviewRequestRef.current += 1;
+            gitOverviewWorkspaceRootRef.current = workspaceRoot;
+            setGitOverview(overview);
+            if (changesFiles) {
+              setWorkspaceToolsRefreshToken((current) => current + 1);
+            }
+            setBranchName("");
+            setRemoteName("");
+            setRemoteUrl("");
+            if (
+              action === "fetch" ||
+              action === "pull" ||
+              action === "add-remote" ||
+              action === "remove-remote"
+            ) {
+              pullRequestRef.current += 1;
+              setPullRequests(null);
+              setPullRequestsLoading(false);
+              setPullRequestsError(null);
+            }
+          }
+        } catch (error) {
+          if (
+            actionRequestId === gitActionRequestRef.current &&
+            selectedRootRef.current === workspaceRoot &&
+            selectedGitRepositoryRootRef.current === repositoryRoot
+          ) {
+            setGitError(error instanceof Error ? error.message : String(error));
+          }
+        } finally {
+          if (
+            actionRequestId === gitActionRequestRef.current &&
+            selectedRootRef.current === workspaceRoot &&
+            selectedGitRepositoryRootRef.current === repositoryRoot
+          ) {
+            setGitAction(null);
+          }
+        }
+      },
+    );
+    if (operation) await operation;
   };
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -322,17 +587,93 @@ export const WorkspaceManager = ({
       activeWorkspaceRoot &&
       workspace.key === createWorkspaceRootKey(activeWorkspaceRoot),
   );
+  const instructionLibraryError =
+    registry?.libraryError ??
+    (registry?.recovery?.primaryValid === false
+      ? (registry.recovery.errorMessage ?? "Instruction library unavailable.")
+      : null);
+  const instructionLibraryAvailable =
+    registry !== null && instructionLibraryError === null;
   const effectiveInstructionProfileCount = profiles.filter((profile) => {
     if (!profileIsEnabled(profile)) {
       return false;
     }
 
-    return selectedInstructionWorkspace
-      ? profileSourcesForWorkspace(profile, selectedInstructionWorkspace).some(
-          (source) => source !== "Disabled",
-        )
-      : profile.global;
+    const rootProfiles =
+      selectedInstructionWorkspace?.scopes.find((scope) => scope.path === ".")
+        ?.profiles ?? [];
+    return (
+      profile.global ||
+      rootProfiles.includes(profile.id) ||
+      profileIsAutomaticForWorkspace(profile, selectedInstructionWorkspace)
+    );
   }).length;
+  const selectedGitRepository = selectWorkspaceGitRepository(
+    gitRepositories?.repositories ?? [],
+    selectedGitRepositoryRoot,
+  );
+  const selectedGitOverview = workspaceGitOverviewForSelection(
+    gitOverview,
+    gitOverviewWorkspaceRootRef.current,
+    selectedWorkspace?.root ?? null,
+    selectedGitRepositoryRoot,
+  );
+  const gitBusy = gitRepositoriesLoading || gitLoading;
+  const gitDiscoveryNotice = gitRepositories?.scanLimited
+    ? "Repository scan limit reached. Some repositories may be missing."
+    : (gitRepositories?.issues[0] ?? null);
+
+  const confirmDiscardWorkspaceDraft = (action: string): boolean =>
+    !workspaceDraftDirty ||
+    window.confirm(`Discard unsaved changes and ${action}?`);
+
+  const selectWorkspace = (workspaceKey: string): void => {
+    if (
+      workspaceKey !== selectedWorkspaceKey &&
+      !confirmDiscardWorkspaceDraft("switch workspaces")
+    ) {
+      return;
+    }
+    setWorkspaceToolsDirty(false);
+    setTagDraftPending(false);
+    setSelectedWorkspaceKey(workspaceKey);
+  };
+
+  const refreshWorkspaces = (): void => {
+    if (setup.saving) return;
+    if (
+      workspaceSettingsDirty &&
+      !window.confirm("Discard unsaved workspace settings and refresh?")
+    )
+      return;
+    setDisplayName(savedDisplayName);
+    setTags([...savedTags]);
+    setTagDraftPending(false);
+    void setup.onRefresh();
+  };
+
+  const selectGitRepository = (repositoryRoot: string): void => {
+    if (repositoryRoot === selectedGitRepositoryRootRef.current) return;
+    gitOverviewRequestRef.current += 1;
+    pullRequestRef.current += 1;
+    selectedGitRepositoryRootRef.current = repositoryRoot;
+    setSelectedGitRepositoryRoot(repositoryRoot);
+    gitOverviewWorkspaceRootRef.current = null;
+    setGitOverview(null);
+    setGitLoading(false);
+    setGitError(null);
+    setPullRequests(null);
+    setPullRequestsLoading(false);
+    setPullRequestsError(null);
+    setBranchName("");
+    setRemoteName("");
+    setRemoteUrl("");
+    void refreshGitOverview(repositoryRoot);
+  };
+
+  const refreshWorkspaceState = useCallback((): void => {
+    void refreshGitOverview();
+  }, [refreshGitOverview]);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
@@ -346,6 +687,7 @@ export const WorkspaceManager = ({
         <div className="flex items-center gap-2">
           {activeWorkspaceRoot && !activeWorkspaceConfigured ? (
             <Button
+              type="button"
               size="sm"
               variant="outline"
               disabled={setup.saving || workspaceSetup.loading}
@@ -356,6 +698,7 @@ export const WorkspaceManager = ({
             </Button>
           ) : null}
           <Button
+            type="button"
             size="sm"
             disabled={setup.saving || workspaceSetup.loading}
             onClick={() => void addWorkspace()}
@@ -364,11 +707,12 @@ export const WorkspaceManager = ({
             Workspace
           </Button>
           <Button
+            type="button"
             size="icon"
             variant="ghost"
-            disabled={setup.loading}
+            disabled={setup.loading || setup.saving}
             aria-label="Refresh workspaces"
-            onClick={() => void setup.onRefresh()}
+            onClick={refreshWorkspaces}
           >
             <RefreshCw
               className={cn("size-4", setup.loading && "animate-spin")}
@@ -379,7 +723,7 @@ export const WorkspaceManager = ({
 
       {setup.message ? (
         <div
-          role="status"
+          role={setup.message.tone === "error" ? "alert" : "status"}
           className={cn(
             "shrink-0 border-b px-6 py-2 text-sm",
             setup.message.tone === "error"
@@ -391,7 +735,7 @@ export const WorkspaceManager = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(12rem,35vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[10rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)] xl:grid-rows-1">
         <aside className="flex min-h-0 flex-col border-r border-slate-900">
           <div className="border-b border-slate-900 p-4">
             <SearchField
@@ -410,10 +754,15 @@ export const WorkspaceManager = ({
             ) : filteredWorkspaces.length === 0 ? (
               <EmptyState
                 icon={FolderGit2}
-                title="No workspaces"
+                title={
+                  workspaces.length === 0
+                    ? "No workspaces"
+                    : "No matching workspaces"
+                }
                 size="compact"
                 action={
                   <Button
+                    type="button"
                     size="sm"
                     disabled={workspaceSetup.loading}
                     onClick={() => void addWorkspace()}
@@ -435,9 +784,10 @@ export const WorkspaceManager = ({
                     <button
                       key={workspace.key}
                       type="button"
-                      onClick={() => setSelectedWorkspaceKey(workspace.key)}
+                      aria-pressed={selected}
+                      onClick={() => selectWorkspace(workspace.key)}
                       className={cn(
-                        "w-full rounded-lg border px-3 py-2.5 text-left",
+                        "w-full rounded-lg border px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
                         selected
                           ? "border-sky-800/70 bg-sky-950/25"
                           : "border-transparent hover:border-slate-800 hover:bg-slate-900/55",
@@ -460,13 +810,12 @@ export const WorkspaceManager = ({
                           {getManagedWorkspaceTags(workspace)
                             .slice(0, 4)
                             .map((tag) => (
-                              <Badge
-                                key={tag.toLocaleLowerCase()}
-                                variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
+                              <span
+                                key={instructionTagKey(tag)}
+                                className="text-[10px] text-slate-500"
                               >
-                                {tag}
-                              </Badge>
+                                #{tag}
+                              </span>
                             ))}
                         </div>
                       ) : null}
@@ -484,7 +833,7 @@ export const WorkspaceManager = ({
               <EmptyState icon={FolderGit2} title="Select a workspace" />
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-6xl space-y-6 p-5 sm:p-6">
+            <div className="mx-auto w-full max-w-360 space-y-6 p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="truncate text-base font-semibold text-slate-100">
@@ -496,10 +845,25 @@ export const WorkspaceManager = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
+                    type="button"
                     size="sm"
                     variant="outline"
-                    disabled={setup.saving}
+                    disabled={
+                      setup.saving ||
+                      workspaceSetup.loading ||
+                      !instructionLibraryAvailable
+                    }
+                    title={
+                      instructionLibraryAvailable
+                        ? undefined
+                        : "Instruction library unavailable."
+                    }
                     onClick={async () => {
+                      if (
+                        !confirmDiscardWorkspaceDraft("relink this workspace")
+                      ) {
+                        return;
+                      }
                       const root = await chooseDirectory();
                       if (!root) return;
                       if (selectedInstructionWorkspace && registry) {
@@ -510,16 +874,29 @@ export const WorkspaceManager = ({
                           expectedRevision: registry.revision,
                         });
                         if (!saved) return;
+                      } else {
+                        workspaceSetup.onRelink(selectedWorkspace.root, root);
                       }
-                      workspaceSetup.onRelink(selectedWorkspace.root, root);
+                      setWorkspaceToolsDirty(false);
+                      setTagDraftPending(false);
                     }}
                   >
                     Relink
                   </Button>
                   <Button
+                    type="button"
                     size="icon"
                     variant="ghost"
-                    disabled={setup.saving}
+                    disabled={
+                      setup.saving ||
+                      workspaceSetup.loading ||
+                      !instructionLibraryAvailable
+                    }
+                    title={
+                      instructionLibraryAvailable
+                        ? undefined
+                        : "Instruction library unavailable."
+                    }
                     aria-label="Remove workspace"
                     onClick={async () => {
                       const hasAssignments =
@@ -527,22 +904,29 @@ export const WorkspaceManager = ({
                           (scope) => scope.profiles.length > 0,
                         ) ?? false;
                       if (
-                        hasAssignments &&
                         !window.confirm(
-                          "Remove this workspace and its manual instruction assignments?",
+                          hasAssignments && workspaceDraftDirty
+                            ? "Remove this workspace from Machdoch? Unsaved changes and manual instruction assignments will be discarded. Files on disk will not be deleted."
+                            : hasAssignments
+                              ? "Remove this workspace and its manual instruction assignments from Machdoch? Files on disk will not be deleted."
+                              : workspaceDraftDirty
+                                ? "Remove this workspace from Machdoch? Unsaved changes will be discarded. Files on disk will not be deleted."
+                                : "Remove this workspace from Machdoch? Files on disk will not be deleted.",
                         )
                       ) {
                         return;
                       }
                       if (selectedInstructionWorkspace && registry) {
                         const saved = await mutate({
-                          operation: "workspace-unregister",
+                          operation: "workspace-remove",
                           workspaceId: selectedInstructionWorkspace.id,
                           confirmAssignedRemoval: hasAssignments,
                           expectedRevision: registry.revision,
                         });
                         if (!saved) return;
                       }
+                      setWorkspaceToolsDirty(false);
+                      setTagDraftPending(false);
                       workspaceSetup.onRemove(selectedWorkspace.root);
                     }}
                   >
@@ -551,48 +935,86 @@ export const WorkspaceManager = ({
                 </div>
               </div>
 
+              <WorkspaceTools
+                key={selectedWorkspace.key}
+                workspaceRoot={selectedWorkspace.root}
+                refreshToken={workspaceToolsRefreshToken}
+                onDirtyChange={setWorkspaceToolsDirty}
+                onWorkspaceMutation={refreshWorkspaceState}
+              />
+
               <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
                 <label className="grid gap-1.5 text-xs font-medium text-slate-400">
                   Name
                   <Input
                     value={displayName}
+                    maxLength={
+                      MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH * 2
+                    }
+                    disabled={setup.saving || !instructionLibraryAvailable}
+                    aria-invalid={displayNameError !== null}
+                    aria-describedby={
+                      displayNameError && workspaceSettingsDirty
+                        ? displayNameErrorId
+                        : undefined
+                    }
                     onChange={(event) => setDisplayName(event.target.value)}
                     className="h-9 border-slate-800 bg-slate-950"
                   />
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-slate-400">
                   Tags
-                  <TagEditor value={tags} onChange={setTags} />
+                  <TagEditor
+                    value={tags}
+                    disabled={setup.saving || !instructionLibraryAvailable}
+                    onChange={setTags}
+                    onPendingChange={setTagDraftPending}
+                  />
                 </label>
                 <Button
+                  type="button"
                   size="sm"
                   disabled={
-                    setup.saving || !displayName.trim() || registry === null
+                    setup.saving ||
+                    !instructionLibraryAvailable ||
+                    !workspaceSettingsDirty ||
+                    tagDraftPending ||
+                    displayNameError !== null
+                  }
+                  aria-describedby={
+                    tagDraftPending ? pendingTagMessageId : undefined
                   }
                   onClick={() => {
-                    if (!registry) return;
-                    void mutate(
-                      selectedInstructionWorkspace
-                        ? {
-                            operation: "workspace-update",
-                            workspaceId: selectedInstructionWorkspace.id,
-                            displayName,
-                            tags,
-                            expectedRevision: registry.revision,
-                          }
-                        : {
-                            operation: "workspace-register",
-                            root: selectedWorkspace.root,
-                            displayName,
-                            tags,
-                            expectedRevision: registry.revision,
-                          },
-                    );
+                    if (!registry || !instructionLibraryAvailable) return;
+                    void mutate({
+                      operation: "workspace-configure",
+                      root: selectedWorkspace.root,
+                      displayName,
+                      tags,
+                      expectedRevision: registry.revision,
+                    });
                   }}
                 >
                   <Save className="size-4" />
-                  {selectedInstructionWorkspace ? "Save" : "Register"}
+                  Save
                 </Button>
+                {displayNameError && workspaceSettingsDirty ? (
+                  <p
+                    id={displayNameErrorId}
+                    role="alert"
+                    className="text-xs text-red-300 md:col-span-3"
+                  >
+                    {displayNameError}
+                  </p>
+                ) : null}
+                {tagDraftPending ? (
+                  <p
+                    id={pendingTagMessageId}
+                    className="text-xs text-slate-500 md:col-span-3"
+                  >
+                    Add or clear the pending tag before saving.
+                  </p>
+                ) : null}
               </section>
 
               <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
@@ -600,35 +1022,71 @@ export const WorkspaceManager = ({
                   <GitBranch className="size-4 text-sky-300" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-medium text-slate-100">
-                        {gitOverview?.branch ?? "Git"}
-                      </h3>
-                      {gitOverview ? (
-                        <Badge
-                          variant={gitOverview.clean ? "outline" : "secondary"}
+                      {(gitRepositories?.repositories.length ?? 0) > 1 ? (
+                        <select
+                          aria-label="Git repository"
+                          value={selectedGitRepositoryRoot ?? ""}
+                          disabled={gitBusy || gitAction !== null}
+                          onChange={(event) =>
+                            selectGitRepository(event.currentTarget.value)
+                          }
+                          className="h-8 min-w-0 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-200 outline-none focus-visible:border-sky-500 focus-visible:ring-1 focus-visible:ring-sky-500/50 disabled:opacity-50"
                         >
-                          {gitOverview.clean
+                          {gitRepositories?.repositories.map((repository) => (
+                            <option
+                              key={repository.repositoryRoot}
+                              value={repository.repositoryRoot}
+                            >
+                              {workspaceGitRepositoryLabel(repository)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <h3 className="truncate text-sm font-medium text-slate-100">
+                          {selectedGitRepository
+                            ? workspaceGitRepositoryLabel(selectedGitRepository)
+                            : "Git"}
+                        </h3>
+                      )}
+                      {selectedGitOverview ? (
+                        <Badge
+                          variant={
+                            selectedGitOverview.clean ? "outline" : "secondary"
+                          }
+                        >
+                          {selectedGitOverview.clean
                             ? "Clean"
-                            : `${gitOverview.changes.length} changed`}
+                            : `${selectedGitOverview.totalChanges} changed`}
                         </Badge>
                       ) : null}
-                      {gitOverview?.ahead ? (
-                        <Badge variant="outline">↑ {gitOverview.ahead}</Badge>
+                      {selectedGitOverview?.ahead ? (
+                        <Badge variant="outline">
+                          ↑ {selectedGitOverview.ahead}
+                        </Badge>
                       ) : null}
-                      {gitOverview?.behind ? (
-                        <Badge variant="outline">↓ {gitOverview.behind}</Badge>
+                      {selectedGitOverview?.behind ? (
+                        <Badge variant="outline">
+                          ↓ {selectedGitOverview.behind}
+                        </Badge>
                       ) : null}
                     </div>
-                    {gitOverview?.upstream ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {gitOverview.upstream}
+                    {selectedGitOverview ? (
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {selectedGitOverview.branch}
+                        {selectedGitOverview.upstream
+                          ? ` · ${selectedGitOverview.upstream}`
+                          : ""}
                       </p>
                     ) : null}
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={gitLoading || gitAction !== null}
+                    disabled={
+                      gitBusy ||
+                      gitAction !== null ||
+                      selectedGitOverview === null
+                    }
                     onClick={() => void runGitAction("fetch")}
                   >
                     {gitAction === "fetch" ? (
@@ -642,7 +1100,9 @@ export const WorkspaceManager = ({
                     size="sm"
                     variant="outline"
                     disabled={
-                      gitLoading || gitAction !== null || !gitOverview?.upstream
+                      gitBusy ||
+                      gitAction !== null ||
+                      !selectedGitOverview?.upstream
                     }
                     onClick={() => void runGitAction("pull")}
                   >
@@ -656,12 +1116,19 @@ export const WorkspaceManager = ({
                   <Button
                     size="icon"
                     variant="ghost"
-                    disabled={gitLoading || gitAction !== null}
+                    disabled={gitBusy || gitAction !== null}
                     aria-label="Refresh Git"
-                    onClick={() => void refreshGit()}
+                    onClick={() => {
+                      void (async () => {
+                        const repositoryRoot = await refreshGitRepositories();
+                        if (gitSection === "pull-requests" && repositoryRoot) {
+                          await refreshPullRequests(repositoryRoot);
+                        }
+                      })();
+                    }}
                   >
                     <RefreshCw
-                      className={cn("size-4", gitLoading && "animate-spin")}
+                      className={cn("size-4", gitBusy && "animate-spin")}
                     />
                   </Button>
                 </div>
@@ -683,8 +1150,38 @@ export const WorkspaceManager = ({
                       key={value}
                       type="button"
                       role="tab"
+                      id={`workspace-git-tab-${value}`}
+                      aria-controls={`workspace-git-panel-${value}`}
                       aria-selected={gitSection === value}
+                      tabIndex={gitSection === value ? 0 : -1}
                       onClick={() => setGitSection(value)}
+                      onKeyDown={(event) => {
+                        if (
+                          !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                            event.key,
+                          )
+                        ) {
+                          return;
+                        }
+                        event.preventDefault();
+                        const tabs = Array.from(
+                          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                            '[role="tab"]',
+                          ) ?? [],
+                        );
+                        const currentIndex = tabs.indexOf(event.currentTarget);
+                        const nextIndex =
+                          event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? tabs.length - 1
+                              : event.key === "ArrowRight"
+                                ? (currentIndex + 1) % tabs.length
+                                : (currentIndex - 1 + tabs.length) %
+                                  tabs.length;
+                        tabs[nextIndex]?.focus();
+                        tabs[nextIndex]?.click();
+                      }}
                       className={cn(
                         "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs",
                         gitSection === value
@@ -698,19 +1195,61 @@ export const WorkspaceManager = ({
                   ))}
                 </div>
 
-                <div className="p-4">
-                  {gitLoading && !gitOverview ? (
+                <div
+                  id={`workspace-git-panel-${gitSection}`}
+                  role="tabpanel"
+                  aria-labelledby={`workspace-git-tab-${gitSection}`}
+                  className="p-4"
+                >
+                  {gitRepositoriesLoading && !gitRepositories ? (
                     <div className="grid h-40 place-items-center">
                       <LoaderCircle className="size-5 animate-spin text-slate-500" />
                     </div>
-                  ) : gitError && !gitOverview ? (
+                  ) : gitRepositoriesError && !gitRepositories ? (
                     <EmptyState
                       icon={Unplug}
                       title="Git unavailable"
+                      description={gitRepositoriesError}
+                    />
+                  ) : gitRepositories?.repositories.length === 0 ? (
+                    <EmptyState
+                      icon={
+                        gitRepositories.issues.length > 0 ? Unplug : FolderGit2
+                      }
+                      title={
+                        gitRepositories.issues.length > 0
+                          ? "Repositories unavailable"
+                          : "No Git repositories"
+                      }
+                      description={gitDiscoveryNotice ?? undefined}
+                    />
+                  ) : gitLoading && !selectedGitOverview ? (
+                    <div className="grid h-40 place-items-center">
+                      <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                    </div>
+                  ) : gitError && !selectedGitOverview ? (
+                    <EmptyState
+                      icon={Unplug}
+                      title="Repository unavailable"
                       description={gitError}
                     />
-                  ) : gitOverview ? (
+                  ) : selectedGitOverview ? (
                     <>
+                      {gitRepositoriesError ? (
+                        <p
+                          role="alert"
+                          className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
+                        >
+                          {gitRepositoriesError}
+                        </p>
+                      ) : gitDiscoveryNotice ? (
+                        <p
+                          role="status"
+                          className="mb-4 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
+                        >
+                          {gitDiscoveryNotice}
+                        </p>
+                      ) : null}
                       {gitError ? (
                         <p
                           role="alert"
@@ -720,7 +1259,14 @@ export const WorkspaceManager = ({
                         </p>
                       ) : null}
                       {gitSection === "status" ? (
-                        <GitStatusView overview={gitOverview} />
+                        <WorkspaceGitStatus
+                          workspaceRoot={selectedWorkspace.root}
+                          repositoryRoot={
+                            selectedGitRepository?.repositoryRoot ??
+                            selectedGitOverview.repositoryRoot
+                          }
+                          overview={selectedGitOverview}
+                        />
                       ) : null}
                       {gitSection === "branches" ? (
                         <div className="grid gap-4 xl:grid-cols-2">
@@ -749,7 +1295,7 @@ export const WorkspaceManager = ({
                                 Create
                               </Button>
                             </div>
-                            {gitOverview.localBranches.map((branch) => (
+                            {selectedGitOverview.localBranches.map((branch) => (
                               <div
                                 key={branch.name}
                                 className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
@@ -781,39 +1327,41 @@ export const WorkspaceManager = ({
                             ))}
                           </div>
                           <div className="space-y-2">
-                            {gitOverview.remoteBranches.length === 0 ? (
+                            {selectedGitOverview.remoteBranches.length === 0 ? (
                               <EmptyState
                                 icon={GitBranch}
                                 title="No remote branches"
                                 size="compact"
                               />
                             ) : (
-                              gitOverview.remoteBranches.map((branch) => (
-                                <div
-                                  key={branch.name}
-                                  className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
-                                >
-                                  <Network className="size-3.5 shrink-0 text-slate-500" />
-                                  <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                    {branch.name}
-                                  </span>
-                                  <code className="text-[11px] text-slate-600">
-                                    {branch.commit}
-                                  </code>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    disabled={gitAction !== null}
-                                    onClick={() =>
-                                      void runGitAction("checkout-remote", {
-                                        branchName: branch.name,
-                                      })
-                                    }
+                              selectedGitOverview.remoteBranches.map(
+                                (branch) => (
+                                  <div
+                                    key={branch.name}
+                                    className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
                                   >
-                                    Track
-                                  </Button>
-                                </div>
-                              ))
+                                    <Network className="size-3.5 shrink-0 text-slate-500" />
+                                    <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                                      {branch.name}
+                                    </span>
+                                    <code className="text-[11px] text-slate-600">
+                                      {branch.commit}
+                                    </code>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={gitAction !== null}
+                                      onClick={() =>
+                                        void runGitAction("checkout-remote", {
+                                          branchName: branch.name,
+                                        })
+                                      }
+                                    >
+                                      Track
+                                    </Button>
+                                  </div>
+                                ),
+                              )
                             )}
                           </div>
                         </div>
@@ -855,14 +1403,14 @@ export const WorkspaceManager = ({
                               Add
                             </Button>
                           </div>
-                          {gitOverview.remotes.length === 0 ? (
+                          {selectedGitOverview.remotes.length === 0 ? (
                             <EmptyState
                               icon={Network}
                               title="No remotes"
                               size="compact"
                             />
                           ) : (
-                            gitOverview.remotes.map((remote) => (
+                            selectedGitOverview.remotes.map((remote) => (
                               <div
                                 key={remote.name}
                                 className="flex min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3"
@@ -901,14 +1449,35 @@ export const WorkspaceManager = ({
                         </div>
                       ) : null}
                       {gitSection === "pull-requests" ? (
-                        !gitOverview.pullRequests.available ? (
+                        pullRequestsLoading && !pullRequests ? (
+                          <div className="grid h-36 place-items-center">
+                            <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                          </div>
+                        ) : pullRequestsError ? (
                           <EmptyState
                             icon={GitPullRequest}
                             title="Pull requests unavailable"
-                            description={gitOverview.pullRequests.reason}
+                            description={pullRequestsError}
+                            size="compact"
+                            action={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void refreshPullRequests()}
+                              >
+                                <RefreshCw className="size-3.5" />
+                                Retry
+                              </Button>
+                            }
+                          />
+                        ) : pullRequests && !pullRequests.available ? (
+                          <EmptyState
+                            icon={GitPullRequest}
+                            title="Pull requests unavailable"
+                            description={pullRequests.reason}
                             size="compact"
                           />
-                        ) : gitOverview.pullRequests.items.length === 0 ? (
+                        ) : pullRequests?.items.length === 0 ? (
                           <EmptyState
                             icon={GitPullRequest}
                             title="No open pull requests"
@@ -916,33 +1485,31 @@ export const WorkspaceManager = ({
                           />
                         ) : (
                           <div className="space-y-2">
-                            {gitOverview.pullRequests.items.map(
-                              (pullRequest) => (
-                                <button
-                                  key={pullRequest.number}
-                                  type="button"
-                                  onClick={() =>
-                                    void openExternalUrl(pullRequest.url)
-                                  }
-                                  className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3 text-left hover:border-slate-700 hover:bg-slate-950/50"
-                                >
-                                  <GitPullRequest className="mt-0.5 size-4 shrink-0 text-emerald-300" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm text-slate-200">
-                                      #{pullRequest.number} {pullRequest.title}
-                                    </p>
-                                    <p className="mt-1 truncate text-xs text-slate-500">
-                                      {pullRequest.headBranch} →{" "}
-                                      {pullRequest.baseBranch}
-                                    </p>
-                                  </div>
-                                  {pullRequest.draft ? (
-                                    <Badge variant="outline">Draft</Badge>
-                                  ) : null}
-                                  <ExternalLink className="size-3.5 text-slate-600" />
-                                </button>
-                              ),
-                            )}
+                            {pullRequests?.items.map((pullRequest) => (
+                              <button
+                                key={pullRequest.number}
+                                type="button"
+                                onClick={() =>
+                                  void openExternalUrl(pullRequest.url)
+                                }
+                                className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3 text-left hover:border-slate-700 hover:bg-slate-950/50"
+                              >
+                                <GitPullRequest className="mt-0.5 size-4 shrink-0 text-emerald-300" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm text-slate-200">
+                                    #{pullRequest.number} {pullRequest.title}
+                                  </p>
+                                  <p className="mt-1 truncate text-xs text-slate-500">
+                                    {pullRequest.headBranch} →{" "}
+                                    {pullRequest.baseBranch}
+                                  </p>
+                                </div>
+                                {pullRequest.draft ? (
+                                  <Badge variant="outline">Draft</Badge>
+                                ) : null}
+                                <ExternalLink className="size-3.5 text-slate-600" />
+                              </button>
+                            ))}
                           </div>
                         )
                       ) : null}
@@ -960,7 +1527,11 @@ export const WorkspaceManager = ({
                     {effectiveInstructionProfileCount} effective
                   </span>
                 </div>
-                {!registry ? (
+                {instructionLibraryError ? (
+                  <p role="alert" className="text-sm text-red-300">
+                    {instructionLibraryError}
+                  </p>
+                ) : !registry ? (
                   setup.loading ? (
                     <div className="grid h-24 place-items-center">
                       <LoaderCircle className="size-5 animate-spin text-slate-500" />
@@ -972,122 +1543,173 @@ export const WorkspaceManager = ({
                       size="compact"
                     />
                   )
-                ) : !selectedInstructionWorkspace ? (
-                  <EmptyState
-                    icon={FolderGit2}
-                    title="Workspace instructions not configured"
-                    description="Register this workspace only if it needs workspace-specific profile assignments."
-                    size="compact"
-                    action={
-                      <Button
-                        size="sm"
-                        disabled={setup.saving}
-                        onClick={() =>
-                          void mutate({
-                            operation: "workspace-register",
-                            root: selectedWorkspace.root,
-                            displayName,
-                            tags,
-                            expectedRevision: registry.revision,
-                          })
-                        }
-                      >
-                        Register for instructions
-                      </Button>
-                    }
-                  />
                 ) : profiles.length === 0 ? (
                   <EmptyState
                     icon={FolderGit2}
-                    title="No library instructions"
+                    title="No instruction files"
                     size="compact"
                   />
                 ) : (
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {profiles.map((profile) => {
-                      const rootScope =
-                        selectedInstructionWorkspace.scopes.find(
-                          (scope) => scope.path === ".",
+                  <div className="space-y-2">
+                    {workspaceSettingsDirty ? (
+                      <p className="text-xs text-slate-500">
+                        Save workspace settings before changing assignments.
+                      </p>
+                    ) : null}
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {profiles.map((profile) => {
+                        const rootScope =
+                          selectedInstructionWorkspace?.scopes.find(
+                            (scope) => scope.path === ".",
+                          ) ?? null;
+                        const rootAssigned =
+                          rootScope?.profiles.includes(profile.id) ?? false;
+                        const scopedAssignments =
+                          selectedInstructionWorkspace?.scopes.filter(
+                            (scope) =>
+                              scope.path !== "." &&
+                              scope.profiles.includes(profile.id),
+                          ) ?? [];
+                        const automatic = profileIsAutomaticForWorkspace(
+                          profile,
+                          selectedInstructionWorkspace,
                         );
-                      const rootAssigned =
-                        rootScope?.profiles.includes(profile.id) ?? false;
-                      const folderScopes =
-                        selectedInstructionWorkspace.scopes.filter(
-                          (scope) =>
-                            scope.path !== "." &&
-                            scope.profiles.includes(profile.id),
-                        );
-                      const labels = profileSourcesForWorkspace(
-                        profile,
-                        selectedInstructionWorkspace,
-                      );
-                      return (
-                        <div
-                          key={profile.id}
-                          className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/45 px-3 py-2.5"
-                        >
-                          <label className="flex min-w-0 items-start gap-2">
-                            <input
-                              type="checkbox"
-                              checked={rootAssigned}
-                              disabled={
-                                setup.saving ||
-                                (profile.global && !rootAssigned)
-                              }
-                              onChange={(event) => {
-                                const current = rootScope?.profiles ?? [];
-                                void mutate({
-                                  operation: "scope-set",
-                                  workspaceId: selectedInstructionWorkspace.id,
-                                  scopePath: ".",
-                                  profileIds: event.target.checked
-                                    ? [...current, profile.id]
-                                    : current.filter((id) => id !== profile.id),
-                                  expectedRevision: registry.revision,
-                                });
-                              }}
-                              className="mt-0.5 accent-sky-500"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm text-slate-200">
-                                {profile.name}
-                              </p>
-                              <div className="mt-1.5">
-                                <SourceBadges labels={labels} />
-                              </div>
-                            </div>
-                          </label>
-                          {folderScopes.length > 0 ? (
-                            <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
-                              {folderScopes.map((scope) => (
-                                <button
-                                  key={scope.path}
-                                  type="button"
-                                  disabled={setup.saving}
-                                  aria-label={`Remove ${profile.name} from ${scope.path}`}
-                                  onClick={() =>
-                                    void mutate({
-                                      operation: "scope-set",
-                                      workspaceId:
-                                        selectedInstructionWorkspace.id,
-                                      scopePath: scope.path,
-                                      profileIds: scope.profiles.filter(
-                                        (profileId) => profileId !== profile.id,
-                                      ),
-                                      expectedRevision: registry.revision,
-                                    })
-                                  }
-                                  className="flex min-w-0 max-w-full items-center gap-1 rounded-md border border-slate-800 px-2 py-1 font-mono text-[10px] text-slate-400 hover:border-slate-700 hover:text-slate-200 disabled:opacity-50"
+                        const active =
+                          profileIsEnabled(profile) &&
+                          (profile.global || automatic || rootAssigned);
+                        const state = !profileIsEnabled(profile)
+                          ? `${profile.match !== undefined ? "Tag match" : "Manual"} · Disabled`
+                          : profile.global
+                            ? "Always applied"
+                            : profile.match !== undefined
+                              ? automatic
+                                ? "Tag match"
+                                : "No tag match"
+                              : rootAssigned
+                                ? "Manual"
+                                : scopedAssignments.length > 0
+                                  ? `${scopedAssignments.length} scoped`
+                                  : "Available";
+                        const readOnly =
+                          profile.global || profile.match !== undefined;
+                        return (
+                          <div
+                            key={profile.id}
+                            className={cn(
+                              "min-w-0 rounded-lg border bg-slate-950/45 px-3 py-2.5",
+                              active ? "border-sky-900/80" : "border-slate-800",
+                              !profileIsEnabled(profile) && "opacity-55",
+                            )}
+                          >
+                            <div className="flex min-w-0 items-start gap-2">
+                              {readOnly ? (
+                                <span
+                                  aria-hidden="true"
+                                  className={cn(
+                                    "mt-0.5 grid size-4 place-items-center rounded-sm border",
+                                    active
+                                      ? "border-sky-500/70 text-sky-300"
+                                      : "border-slate-700 text-transparent",
+                                  )}
                                 >
-                                  <span className="truncate">{scope.path}</span>
-                                  <X className="size-3 shrink-0" />
-                                </button>
-                              ))}
+                                  <Check className="size-3" />
+                                </span>
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Assign ${profile.name} manually`}
+                                  checked={rootAssigned}
+                                  disabled={
+                                    setup.saving ||
+                                    workspaceSettingsDirty ||
+                                    !instructionLibraryAvailable ||
+                                    (!profileIsEnabled(profile) &&
+                                      !rootAssigned)
+                                  }
+                                  onChange={(event) => {
+                                    const current = rootScope?.profiles ?? [];
+                                    void mutate({
+                                      operation: "workspace-configure",
+                                      root: selectedWorkspace.root,
+                                      displayName,
+                                      tags,
+                                      profileIds: event.target.checked
+                                        ? [...current, profile.id]
+                                        : current.filter(
+                                            (id) => id !== profile.id,
+                                          ),
+                                      expectedRevision: registry.revision,
+                                    });
+                                  }}
+                                  className="mt-0.5 accent-sky-500"
+                                />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm text-slate-200">
+                                  {profile.name}
+                                </p>
+                                {profile.description ? (
+                                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                    {profile.description}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <span
+                                className={cn(
+                                  "shrink-0 text-[11px]",
+                                  active ? "text-sky-300" : "text-slate-600",
+                                )}
+                              >
+                                {state}
+                              </span>
                             </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                            {scopedAssignments.length > 0 ? (
+                              <ul className="mt-2 space-y-1 border-t border-slate-800 pt-2">
+                                {scopedAssignments.map((scope) => (
+                                  <li
+                                    key={scope.path}
+                                    className="flex min-w-0 items-center gap-1.5 pl-6"
+                                  >
+                                    <code className="min-w-0 flex-1 truncate text-xs text-slate-500">
+                                      {scope.path}
+                                    </code>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      aria-label={`Remove ${profile.name} from ${scope.path}`}
+                                      disabled={
+                                        setup.saving ||
+                                        workspaceSettingsDirty ||
+                                        !instructionLibraryAvailable
+                                      }
+                                      onClick={() => {
+                                        if (!selectedInstructionWorkspace) {
+                                          return;
+                                        }
+                                        void mutate({
+                                          operation: "workspace-scope-set",
+                                          workspaceId:
+                                            selectedInstructionWorkspace.id,
+                                          path: scope.path,
+                                          profileIds: scope.profiles.filter(
+                                            (id) => id !== profile.id,
+                                          ),
+                                          expectedRevision: registry.revision,
+                                        });
+                                      }}
+                                      className="text-slate-600 hover:text-red-300"
+                                    >
+                                      <X />
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </section>
