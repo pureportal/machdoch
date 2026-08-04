@@ -14,10 +14,18 @@ export const PROMPT_ENHANCEMENT_MODES = [
 
 export type PromptEnhancementMode = (typeof PROMPT_ENHANCEMENT_MODES)[number];
 
-export type ActivePromptEnhancementMode = Exclude<
-  PromptEnhancementMode,
-  "off"
->;
+export type ActivePromptEnhancementMode = Exclude<PromptEnhancementMode, "off">;
+
+export type PromptEnhancementPendingPlacement =
+  | "composer-blocker"
+  | "edit-composer"
+  | "message"
+  | "queued-message";
+
+export interface StagedPromptEnhancement {
+  mode: ActivePromptEnhancementMode;
+  originalContent: string;
+}
 
 export const PROMPT_ENHANCEMENT_LABELS = {
   off: "Off",
@@ -79,6 +87,43 @@ export const shouldDeferPromptEnhancementUntilQueuedDispatch = (
   );
 };
 
+export const resolveImmediatePromptEnhancementPlacement = (input: {
+  conversationCutoffMessageId?: string;
+  interviewEnabled: boolean;
+  runningAction: "steer" | "stop-and-send" | "queue" | null;
+}): PromptEnhancementPendingPlacement => {
+  if (input.conversationCutoffMessageId?.trim()) {
+    return "edit-composer";
+  }
+
+  return input.interviewEnabled && !input.runningAction
+    ? "composer-blocker"
+    : "message";
+};
+
+export const shouldRenderPromptEnhancementSessionMessages = (
+  placement: PromptEnhancementPendingPlacement,
+): boolean => placement !== "edit-composer";
+
+export const resolveStagedPromptEnhancementSubmission = (
+  selectedMode: PromptEnhancementMode,
+  staged: StagedPromptEnhancement | undefined,
+): {
+  mode: PromptEnhancementMode;
+  originalContent?: string;
+} => {
+  const originalContent = staged?.originalContent.trim();
+
+  if (staged?.mode !== selectedMode || !originalContent) {
+    return { mode: selectedMode };
+  }
+
+  return {
+    mode: "off",
+    originalContent,
+  };
+};
+
 export interface QueuedMessageDispatchPrompt {
   task: string;
   visibleMessageContent: string;
@@ -86,8 +131,7 @@ export interface QueuedMessageDispatchPrompt {
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
 }
 
-export interface QueuedMessagePromptAfterOperationConflict
-  extends QueuedMessageDispatchPrompt {
+export interface QueuedMessagePromptAfterOperationConflict extends QueuedMessageDispatchPrompt {
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
 }
 
@@ -151,7 +195,9 @@ export const createQueuedMessageDispatchPrompt = (
   };
 };
 
-const formatAttachmentKind = (attachment: ChatSessionContextAttachment): string => {
+const formatAttachmentKind = (
+  attachment: ChatSessionContextAttachment,
+): string => {
   switch (attachment.kind) {
     case "directory":
       return "folder";

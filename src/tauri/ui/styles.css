@@ -318,12 +318,7 @@ body {
     cursor: pointer;
 }
 
-:where(
-    button:disabled,
-    select:disabled,
-    [aria-disabled="true"],
-    [data-disabled]
-) {
+:where(button:disabled, select:disabled, [aria-disabled="true"], [data-disabled]) {
     cursor: not-allowed;
 }
 
@@ -382,6 +377,68 @@ body {
     }
 }
 
+.app-prompt-enhancement-editor::before {
+    position: absolute;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    background:
+        radial-gradient(
+            circle at 2.75rem 50%,
+            color-mix(in srgb, var(--app-violet-400) 16%, transparent),
+            transparent 34%
+        ),
+        linear-gradient(
+            100deg,
+            color-mix(in srgb, var(--app-violet-500) 5%, transparent),
+            color-mix(in srgb, var(--app-sky-500) 4%, transparent)
+        );
+}
+
+.app-prompt-enhancement-editor-icon {
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, white 3%, transparent),
+        0 0 1.25rem color-mix(in srgb, var(--app-violet-400) 12%, transparent);
+}
+
+.app-prompt-enhancement-editor-dots > span {
+    width: 0.25rem;
+    height: 0.25rem;
+    border-radius: 9999px;
+    background-color: var(--app-violet-300);
+    animation: app-prompt-enhancement-dot 1.25s ease-in-out infinite;
+}
+
+.app-prompt-enhancement-editor-dots > span:nth-child(2) {
+    animation-delay: 140ms;
+}
+
+.app-prompt-enhancement-editor-dots > span:nth-child(3) {
+    animation-delay: 280ms;
+}
+
+@keyframes app-prompt-enhancement-dot {
+    0%,
+    60%,
+    100% {
+        transform: translateY(0) scale(0.72);
+        opacity: 0.35;
+    }
+
+    30% {
+        transform: translateY(-0.16rem) scale(1);
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-prompt-enhancement-editor-dots > span {
+        animation: none;
+        transform: none;
+        opacity: 0.7;
+    }
+}
+
 .app-message-markdown > * + * {
     margin-top: 0.65rem;
 }
@@ -390,74 +447,64 @@ body {
     margin-top: 0.25rem;
 }
 
-.app-message-markdown
-    > [data-md-field="recommendation"]
-    + [data-md-field="severity"] {
+.app-message-markdown > [data-md-field="recommendation"] + [data-md-field="severity"] {
     margin-top: 0.9rem;
 }
 
 .app-message-table-scroll {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-inline: contain;
-  border: 1px solid var(--app-border-strong);
-  border-radius: 0.875rem;
-  background-color: color-mix(in srgb, var(--app-surface) 88%, transparent);
-  scrollbar-width: thin;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 0.875rem;
+    background-color: color-mix(in srgb, var(--app-surface) 88%, transparent);
+    scrollbar-width: thin;
 }
 
 .app-message-table-scroll:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--app-sky-400) 70%, transparent);
-  outline-offset: 2px;
+    outline: 2px solid color-mix(in srgb, var(--app-sky-400) 70%, transparent);
+    outline-offset: 2px;
 }
 
 .app-message-table {
-  width: 100%;
-  border-spacing: 0;
-  border-collapse: separate;
-  table-layout: auto;
-  color: inherit;
-  font-size: 0.92em;
-  line-height: 1.4rem;
+    width: 100%;
+    border-spacing: 0;
+    border-collapse: separate;
+    table-layout: auto;
+    color: inherit;
+    font-size: 0.92em;
+    line-height: 1.4rem;
 }
 
 .app-message-table :is(th, td) {
-  min-width: 8.5rem;
-  max-width: 28rem;
-  padding: 0.625rem 0.75rem;
-  vertical-align: top;
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
+    min-width: 8.5rem;
+    max-width: 28rem;
+    padding: 0.625rem 0.75rem;
+    vertical-align: top;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .app-message-table :is(th, td):not(:last-child) {
-  border-right: 1px solid var(--app-border);
+    border-right: 1px solid var(--app-border);
 }
 
 .app-message-table thead th {
-  border-bottom: 1px solid var(--app-border-strong);
-  background-color: color-mix(
-    in srgb,
-    var(--app-surface-muted) 74%,
-    transparent
-  );
-  color: var(--app-text);
-  font-weight: 600;
+    border-bottom: 1px solid var(--app-border-strong);
+    background-color: color-mix(in srgb, var(--app-surface-muted) 74%, transparent);
+    color: var(--app-text);
+    font-weight: 600;
 }
 
 .app-message-table tbody tr:not(:last-child) td {
-  border-bottom: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--app-border);
 }
 
 .app-message-table tbody tr:nth-child(even) td {
-  background-color: color-mix(
-    in srgb,
-    var(--app-surface-muted) 24%,
-    transparent
-  );
+    background-color: color-mix(in srgb, var(--app-surface-muted) 24%, transparent);
 }
 
 .app-file-preview-code .hljs-keyword,
@@ -618,13 +665,12 @@ body {
     position: relative;
     overflow: hidden;
     border-color: rgb(16 185 129 / 0.48) !important;
-    background:
-        linear-gradient(
-            90deg,
-            rgb(16 185 129 / 0.14),
-            rgb(14 165 233 / 0.08) 58%,
-            rgb(15 23 42 / 0.72)
-        ) !important;
+    background: linear-gradient(
+        90deg,
+        rgb(16 185 129 / 0.14),
+        rgb(14 165 233 / 0.08) 58%,
+        rgb(15 23 42 / 0.72)
+    ) !important;
     box-shadow:
         0 0 0 1px rgb(16 185 129 / 0.12),
         0 10px 24px rgb(2 44 34 / 0.2);
@@ -699,19 +745,19 @@ body {
     --quick-bubble-border-strong: color-mix(in srgb, var(--app-sky-300) 48%, transparent);
     --quick-bubble-icon: var(--app-sky-100);
     --quick-bubble-zap: var(--app-sky-300);
-    --quick-bubble-shadow: 0 18px 30px -16px hsl(220 50% 3% / 0.58), 0 10px 22px -12px hsl(220 50% 3% / 0.42);
+    --quick-bubble-shadow:
+        0 18px 30px -16px hsl(220 50% 3% / 0.58), 0 10px 22px -12px hsl(220 50% 3% / 0.42);
 
     width: 4.25rem !important;
     height: 4.25rem !important;
     isolation: isolate;
     overflow: visible;
     border-color: var(--quick-bubble-border) !important;
-    background:
-        linear-gradient(
-            180deg,
-            color-mix(in srgb, white 3%, var(--quick-bubble-bg)),
-            var(--quick-bubble-bg)
-        ) !important;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, white 3%, var(--quick-bubble-bg)),
+        var(--quick-bubble-bg)
+    ) !important;
     color: var(--app-text) !important;
     box-shadow: var(--quick-bubble-shadow) !important;
     transform-origin: 70% 70%;
@@ -727,10 +773,15 @@ body {
     --quick-bubble-bg: color-mix(in srgb, var(--app-surface) 90%, var(--app-sky-50) 10%);
     --quick-bubble-surface: color-mix(in srgb, var(--app-sky-100) 82%, transparent);
     --quick-bubble-border: color-mix(in srgb, var(--app-sky-500) 32%, var(--app-border));
-    --quick-bubble-border-strong: color-mix(in srgb, var(--app-sky-500) 48%, var(--app-border-strong));
+    --quick-bubble-border-strong: color-mix(
+        in srgb,
+        var(--app-sky-500) 48%,
+        var(--app-border-strong)
+    );
     --quick-bubble-icon: var(--app-sky-700);
     --quick-bubble-zap: var(--app-sky-600);
-    --quick-bubble-shadow: 0 18px 30px -16px hsl(220 35% 40% / 0.28), 0 10px 22px -12px hsl(220 35% 40% / 0.22);
+    --quick-bubble-shadow:
+        0 18px 30px -16px hsl(220 35% 40% / 0.28), 0 10px 22px -12px hsl(220 35% 40% / 0.22);
 }
 
 .quick-chat-bubble:hover {
@@ -797,8 +848,16 @@ body {
     z-index: 0;
     border-radius: 1.65rem;
     background:
-        radial-gradient(circle at 65% 25%, color-mix(in srgb, var(--app-sky-400) 34%, transparent), transparent 42%),
-        radial-gradient(circle at 25% 85%, color-mix(in srgb, var(--app-violet-400) 30%, transparent), transparent 46%);
+        radial-gradient(
+            circle at 65% 25%,
+            color-mix(in srgb, var(--app-sky-400) 34%, transparent),
+            transparent 42%
+        ),
+        radial-gradient(
+            circle at 25% 85%,
+            color-mix(in srgb, var(--app-violet-400) 30%, transparent),
+            transparent 46%
+        );
     opacity: 0;
     transform: scale(0.92);
     transition:
@@ -850,12 +909,11 @@ body {
 
 .quick-chat-voice-button {
     border-color: color-mix(in srgb, var(--app-violet-300) 54%, transparent) !important;
-    background:
-        linear-gradient(
-            180deg,
-            color-mix(in srgb, white 8%, var(--app-violet-500)),
-            var(--app-violet-500)
-        ) !important;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, white 8%, var(--app-violet-500)),
+        var(--app-violet-500)
+    ) !important;
     color: white !important;
     box-shadow:
         0 12px 22px -12px hsl(263 50% 8% / 0.62),
@@ -913,22 +971,20 @@ body {
 
 .quick-chat-bubble[data-style="glass"] {
     border-radius: 999px !important;
-    background:
-        linear-gradient(
-            135deg,
-            color-mix(in srgb, var(--quick-bubble-bg) 88%, transparent),
-            color-mix(in srgb, var(--app-sky-500) 12%, var(--quick-bubble-bg))
-        ) !important;
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--quick-bubble-bg) 88%, transparent),
+        color-mix(in srgb, var(--app-sky-500) 12%, var(--quick-bubble-bg))
+    ) !important;
 }
 
 @supports (backdrop-filter: blur(1px)) {
     .quick-chat-bubble[data-style="glass"] {
-        background:
-            linear-gradient(
-                135deg,
-                color-mix(in srgb, var(--quick-bubble-bg) 78%, transparent),
-                color-mix(in srgb, var(--app-sky-500) 16%, var(--quick-bubble-bg))
-            ) !important;
+        background: linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--quick-bubble-bg) 78%, transparent),
+            color-mix(in srgb, var(--app-sky-500) 16%, var(--quick-bubble-bg))
+        ) !important;
         backdrop-filter: blur(12px) saturate(1.22);
     }
 }
@@ -936,21 +992,19 @@ body {
 .quick-chat-bubble[data-style="glass"] .quick-chat-bubble-surface {
     inset: 0.45rem;
     border-radius: 999px;
-    background:
-        linear-gradient(
-            135deg,
-            color-mix(in srgb, white 12%, transparent),
-            color-mix(in srgb, var(--app-sky-400) 12%, transparent)
-        );
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, white 12%, transparent),
+        color-mix(in srgb, var(--app-sky-400) 12%, transparent)
+    );
 }
 
 :root[data-theme="light"] .quick-chat-bubble[data-style="glass"] .quick-chat-bubble-surface {
-    background:
-        linear-gradient(
-            135deg,
-            color-mix(in srgb, white 74%, transparent),
-            color-mix(in srgb, var(--app-sky-200) 34%, transparent)
-        );
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, white 74%, transparent),
+        color-mix(in srgb, var(--app-sky-200) 34%, transparent)
+    );
 }
 
 .quick-chat-bubble[data-style="pulse"] {
@@ -969,7 +1023,8 @@ body {
     animation: quick-chat-bubble-pulse 1.8s ease-in-out infinite;
 }
 
-.quick-chat-bubble[data-style="pulse"][data-has-notification="true"]:not([data-running="true"]) .quick-chat-bubble-aura {
+.quick-chat-bubble[data-style="pulse"][data-has-notification="true"]:not([data-running="true"])
+    .quick-chat-bubble-aura {
     opacity: 0.42;
     animation: quick-chat-bubble-attention 900ms var(--quick-ease-emphasized) 1;
 }
@@ -980,14 +1035,13 @@ body {
 }
 
 .quick-chat-bubble[data-style="orbit"]::before {
-    background:
-        conic-gradient(
-            from 160deg,
-            color-mix(in srgb, var(--app-sky-300) 86%, transparent),
-            color-mix(in srgb, var(--app-violet-400) 68%, transparent),
-            color-mix(in srgb, var(--app-emerald-400) 62%, transparent),
-            color-mix(in srgb, var(--app-sky-300) 86%, transparent)
-        );
+    background: conic-gradient(
+        from 160deg,
+        color-mix(in srgb, var(--app-sky-300) 86%, transparent),
+        color-mix(in srgb, var(--app-violet-400) 68%, transparent),
+        color-mix(in srgb, var(--app-emerald-400) 62%, transparent),
+        color-mix(in srgb, var(--app-sky-300) 86%, transparent)
+    );
     opacity: 0.82;
 }
 
@@ -999,7 +1053,9 @@ body {
     animation: quick-chat-bubble-orbit-spin 2.8s linear infinite;
 }
 
-.quick-chat-bubble[data-style="orbit"][data-has-notification="true"]:not([data-running="true"])::before {
+.quick-chat-bubble[data-style="orbit"][data-has-notification="true"]:not(
+    [data-running="true"]
+)::before {
     animation: quick-chat-bubble-attention 900ms var(--quick-ease-emphasized) 1;
 }
 
@@ -1113,25 +1169,25 @@ body {
 }
 
 @media (max-height: 800px) {
-  .app-shell-rail {
-    padding-top: 0.75rem !important;
-    padding-bottom: 0.75rem !important;
-  }
+    .app-shell-rail {
+        padding-top: 0.75rem !important;
+        padding-bottom: 0.75rem !important;
+    }
 
-  .app-shell-rail-group {
-    gap: 0.5rem !important;
-  }
+    .app-shell-rail-group {
+        gap: 0.5rem !important;
+    }
 
-  .app-shell-logo,
-  .app-shell-rail-button {
-    width: 2.5rem !important;
-    height: 2.5rem !important;
-    border-radius: 0.9rem !important;
-  }
+    .app-shell-logo,
+    .app-shell-rail-button {
+        width: 2.5rem !important;
+        height: 2.5rem !important;
+        border-radius: 0.9rem !important;
+    }
 
-  .app-shell-version {
-    display: none !important;
-  }
+    .app-shell-version {
+        display: none !important;
+    }
 }
 
 :root[data-density="compact"] .app-sessions-sidebar {
@@ -1470,10 +1526,7 @@ body {
     margin-top: 0.45rem !important;
 }
 
-:root[data-density="compact"]
-    .app-message-markdown
-    > [data-md-field]
-    + [data-md-field] {
+:root[data-density="compact"] .app-message-markdown > [data-md-field] + [data-md-field] {
     margin-top: 0.18rem !important;
 }
 
@@ -1508,16 +1561,16 @@ body {
 }
 
 :root[data-density="compact"] .app-message-table-scroll {
-  border-radius: 0.65rem !important;
+    border-radius: 0.65rem !important;
 }
 
 :root[data-density="compact"] .app-message-table {
-  line-height: 1.2rem !important;
+    line-height: 1.2rem !important;
 }
 
 :root[data-density="compact"] .app-message-table :is(th, td) {
-  min-width: 7.5rem !important;
-  padding: 0.4rem 0.55rem !important;
+    min-width: 7.5rem !important;
+    padding: 0.4rem 0.55rem !important;
 }
 
 :root[data-density="compact"] .app-execution-insight-row,
@@ -1585,7 +1638,15 @@ body {
     height: 1.85rem !important;
 }
 
-:root[data-density="compact"] :is(.app-model-picker-button, .app-composer-toolbar-pill, .app-mode-picker-button, .app-reasoning-picker-button, .app-composer-toggle-button) svg {
+:root[data-density="compact"]
+    :is(
+        .app-model-picker-button,
+        .app-composer-toolbar-pill,
+        .app-mode-picker-button,
+        .app-reasoning-picker-button,
+        .app-composer-toggle-button
+    )
+    svg {
     width: 0.8rem !important;
     height: 0.8rem !important;
 }
@@ -1625,23 +1686,26 @@ body {
     line-height: 1.3rem !important;
 }
 
-:root[data-density="compact"] :is(
-    .app-composer-attachment-button,
-    .app-composer-icon-button,
-    .app-composer-send-button,
-    .app-composer-cancel-button
-) {
+:root[data-density="compact"]
+    :is(
+        .app-composer-attachment-button,
+        .app-composer-icon-button,
+        .app-composer-send-button,
+        .app-composer-cancel-button
+    ) {
     width: 2.15rem !important;
     height: 2.15rem !important;
     border-radius: 0.8rem !important;
 }
 
-:root[data-density="compact"] :is(
-    .app-composer-attachment-button,
-    .app-composer-icon-button,
-    .app-composer-send-button,
-    .app-composer-cancel-button
-) svg {
+:root[data-density="compact"]
+    :is(
+        .app-composer-attachment-button,
+        .app-composer-icon-button,
+        .app-composer-send-button,
+        .app-composer-cancel-button
+    )
+    svg {
     width: 0.9rem !important;
     height: 0.9rem !important;
 }
@@ -1974,11 +2038,7 @@ body {
 }
 
 :root[data-theme="light"] .app-user-message-bubble {
-    background: linear-gradient(
-        180deg,
-        hsl(213 48% 96%),
-        hsl(211 44% 93%)
-    ) !important;
+    background: linear-gradient(180deg, hsl(213 48% 96%), hsl(211 44% 93%)) !important;
     color: var(--app-text) !important;
     box-shadow: 0 12px 26px hsl(214 28% 38% / 0.14) !important;
 }
@@ -1994,11 +2054,7 @@ body {
 }
 
 :root[data-theme="light"] .app-thinking-card {
-    background: linear-gradient(
-        180deg,
-        hsl(204 68% 97%),
-        hsl(213 44% 96%)
-    ) !important;
+    background: linear-gradient(180deg, hsl(204 68% 97%), hsl(213 44% 96%)) !important;
     border-color: hsl(202 42% 78%) !important;
     color: var(--app-text) !important;
 }
@@ -2046,13 +2102,12 @@ body {
 }
 
 :root[data-theme="light"] .app-session-card--needs-read {
-    background:
-        linear-gradient(
-            90deg,
-            hsl(154 70% 92%),
-            hsl(197 82% 94%) 58%,
-            hsl(0 0% 100%)
-        ) !important;
+    background: linear-gradient(
+        90deg,
+        hsl(154 70% 92%),
+        hsl(197 82% 94%) 58%,
+        hsl(0 0% 100%)
+    ) !important;
     border-color: hsl(158 54% 51%) !important;
     box-shadow:
         0 0 0 1px hsl(158 54% 51% / 0.12),

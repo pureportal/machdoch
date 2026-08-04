@@ -1,18 +1,66 @@
-import { LoaderCircle, WandSparkles } from "lucide-react";
+import { LoaderCircle, WandSparkles, X } from "lucide-react";
 import type { JSX } from "react";
+import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
 
 export interface PromptEnhancementPendingProps {
   modeLabel: string;
-  variant?: "panel" | "bubble";
+  variant?: "panel" | "bubble" | "editor";
   className?: string;
+  onCancel?: () => void;
 }
 
 export const PromptEnhancementPending = ({
   modeLabel,
   variant = "panel",
   className,
+  onCancel,
 }: PromptEnhancementPendingProps): JSX.Element => {
+  if (variant === "editor") {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy="true"
+        className={cn(
+          "app-prompt-enhancement-editor relative flex min-h-14 min-w-0 items-center gap-3 overflow-hidden rounded-[1.25rem] border border-fuchsia-400/25 bg-slate-950/90 px-3.5 py-3 text-left shadow-[0_16px_44px_rgba(2,6,23,0.38)]",
+          className,
+        )}
+      >
+        <span
+          className="app-prompt-enhancement-editor-icon relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-fuchsia-300/20 bg-fuchsia-400/10 text-fuchsia-100"
+          aria-hidden="true"
+        >
+          <WandSparkles className="h-4 w-4" />
+        </span>
+        <span className="relative z-10 truncate text-sm font-medium text-slate-100">
+          Enhance ongoing
+        </span>
+        <span
+          className="app-prompt-enhancement-editor-dots relative z-10 flex items-center gap-1"
+          aria-hidden="true"
+        >
+          <span />
+          <span />
+          <span />
+        </span>
+        {onCancel ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Cancel edit"
+            onClick={onCancel}
+            className="relative z-10 ml-auto h-8 w-8 shrink-0 rounded-full text-slate-500 hover:bg-slate-800/80 hover:text-slate-100"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   const isBubble = variant === "bubble";
 
   return (
