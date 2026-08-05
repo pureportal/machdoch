@@ -5,9 +5,46 @@ import { XIcon } from "lucide-react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "../../lib/utils"
+import { useCommandOverlay } from "../../commands/use-command-overlay"
 
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+type SheetProps = React.ComponentProps<typeof SheetPrimitive.Root> & {
+  commandOverlayId?: string
+  commandOverlayAllowGlobalCommands?: readonly string[]
+}
+
+function Sheet({
+  commandOverlayId,
+  commandOverlayAllowGlobalCommands,
+  open: controlledOpen,
+  defaultOpen,
+  onOpenChange,
+  ...props
+}: SheetProps) {
+  const generatedId = React.useId()
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+    },
+    [controlledOpen, onOpenChange],
+  )
+  useCommandOverlay({
+    open,
+    id: commandOverlayId ?? `sheet:${generatedId}`,
+    kind: "modal",
+    allowGlobalCommands: commandOverlayAllowGlobalCommands,
+    dismiss: () => setOpen(false),
+  })
+  return (
+    <SheetPrimitive.Root
+      data-slot="sheet"
+      open={open}
+      onOpenChange={setOpen}
+      {...props}
+    />
+  )
 }
 
 function SheetTrigger({

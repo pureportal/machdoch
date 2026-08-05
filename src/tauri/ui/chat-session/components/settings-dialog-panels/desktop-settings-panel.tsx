@@ -1,5 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type JSX } from "react";
+import { detectCommandPlatform } from "../../../commands/command-context";
+import { findDefaultShortcutConflict } from "../../../commands/command-defaults";
 import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
@@ -178,8 +180,15 @@ export const DesktopSettingsPanel = ({
   const lastExternalSettingsRef = useRef(setup.settings);
   const suppressUnmountFlushRef = useRef(false);
   const normalizedDraft = normalizeDesktopSettingsDraft(draft);
+  const shortcutConflict = draft.quickVoiceEnabled
+    ? findDefaultShortcutConflict(
+        draft.quickVoiceShortcut.trim(),
+        detectCommandPlatform(),
+      )
+    : null;
   const shortcutInvalid =
-    draft.quickVoiceEnabled && draft.quickVoiceShortcut.trim().length === 0;
+    draft.quickVoiceEnabled &&
+    (draft.quickVoiceShortcut.trim().length === 0 || shortcutConflict !== null);
   const dirty =
     hasDesktopSettingsDraftChanges(normalizedDraft, setup.settings) ||
     draft.quickVoiceShortcut !== normalizedDraft.quickVoiceShortcut;
@@ -530,7 +539,9 @@ export const DesktopSettingsPanel = ({
             />
             {shortcutInvalid ? (
               <p role="alert" className="text-xs text-rose-300">
-                Enter a shortcut before saving.
+                {shortcutConflict
+                  ? "This shortcut is already used in Machdoch. Choose another shortcut."
+                  : "Enter a shortcut before saving."}
               </p>
             ) : null}
           </div>

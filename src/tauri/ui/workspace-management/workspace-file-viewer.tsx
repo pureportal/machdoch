@@ -651,15 +651,17 @@ export const WorkspaceFileViewer = ({
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {document.kind === "text" && mode === "edit" ? (
-          <CodeMirror
-            key={document.path}
-            value={draft}
-            height="100%"
-            theme={oneDark}
-            extensions={editorExtensions}
-            className="h-full text-[13px] [&_.cm-editor]:h-full [&_.cm-editor]:bg-slate-950/35 [&_.cm-gutters]:border-r-slate-800 [&_.cm-gutters]:bg-slate-950/70 [&_.cm-scroller]:font-mono"
-            onChange={setDraft}
-          />
+          <div className="h-full" data-command-focus="editor">
+            <CodeMirror
+              key={document.path}
+              value={draft}
+              height="100%"
+              theme={oneDark}
+              extensions={editorExtensions}
+              className="h-full text-[13px] [&_.cm-editor]:h-full [&_.cm-editor]:bg-slate-950/35 [&_.cm-gutters]:border-r-slate-800 [&_.cm-gutters]:bg-slate-950/70 [&_.cm-scroller]:font-mono"
+              onChange={setDraft}
+            />
+          </div>
         ) : document.previewKind === "markdown" ? (
           <article className="h-full overflow-auto px-6 py-5 text-sm leading-6 text-slate-300 [&_a]:text-sky-300 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-700 [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-slate-900 [&_code]:px-1 [&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:text-slate-100 [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-slate-100 [&_h3]:mb-2 [&_h3]:mt-5 [&_h3]:text-base [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_p]:my-3 [&_pre]:my-4 [&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-slate-800 [&_pre]:bg-slate-950 [&_pre]:p-4">
             <ReactMarkdown

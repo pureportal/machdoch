@@ -21,6 +21,7 @@ import {
 } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import type { MainAppId } from "../lib/shell-store";
+import { useCommandShortcut } from "../commands/command-context";
 
 declare const __MACHDOCH_VERSION__: string | undefined;
 
@@ -47,6 +48,7 @@ interface AppRailButtonProps {
   icon: LucideIcon;
   activity?: AppActivityState;
   onClick: () => void;
+  shortcutId?: string;
 }
 
 const appVersion =
@@ -107,7 +109,9 @@ const AppRailButton = ({
   icon: Icon,
   activity = "idle",
   onClick,
+  shortcutId,
 }: AppRailButtonProps): JSX.Element => {
+  const shortcut = useCommandShortcut(shortcutId ?? "");
   const ariaLabel =
     activity === "idle" ? label : `${label}, ${getActivityLabel(activity)}`;
 
@@ -120,6 +124,7 @@ const AppRailButton = ({
           size="icon"
           aria-label={ariaLabel}
           aria-current={active ? "page" : undefined}
+          aria-keyshortcuts={shortcut?.ariaKeyShortcuts}
           onClick={onClick}
           className={cn(
             "app-shell-rail-button relative h-12 w-12 rounded-2xl border border-transparent text-slate-400 hover:bg-slate-900 hover:text-slate-100",
@@ -140,6 +145,7 @@ const AppRailButton = ({
         {activity === "idle"
           ? label
           : `${label}: ${getActivityLabel(activity)}`}
+        {shortcut ? ` (${shortcut.label})` : null}
       </TooltipContent>
     </Tooltip>
   );
@@ -171,6 +177,7 @@ export const AppRail = ({
             active={activeApp === "chat"}
             activity={chatActivity}
             onClick={() => onSelectApp("chat")}
+            shortcutId="app.view.chat"
           />
           <AppRailButton
             label="Ralph"
@@ -178,6 +185,7 @@ export const AppRail = ({
             active={activeApp === "ralph"}
             activity={ralphActivity}
             onClick={() => onSelectApp("ralph")}
+            shortcutId="app.view.ralph"
           />
           <AppRailButton
             label="Media Studio"
@@ -185,18 +193,21 @@ export const AppRail = ({
             active={activeApp === "media"}
             activity={mediaActivity}
             onClick={() => onSelectApp("media")}
+            shortcutId="app.view.media"
           />
           <AppRailButton
             label="Marketplace"
             icon={Store}
             active={activeApp === "marketplace"}
             onClick={() => onSelectApp("marketplace")}
+            shortcutId="app.view.marketplace"
           />
           <AppRailButton
             label="Instructions"
             icon={FileSliders}
             active={activeApp === "instructions"}
             onClick={() => onSelectApp("instructions")}
+            shortcutId="app.view.instructions"
           />
           <Separator className="my-1 w-8 bg-slate-900" />
           <AppRailButton
@@ -204,6 +215,7 @@ export const AppRail = ({
             icon={FolderGit2}
             active={activeApp === "workspaces"}
             onClick={() => onSelectApp("workspaces")}
+            shortcutId="app.view.workspaces"
           />
         </div>
       </div>
@@ -219,7 +231,12 @@ export const AppRail = ({
           icon={RadioTower}
           onClick={onOpenMissionControl}
         />
-        <AppRailButton label="Settings" icon={Cog} onClick={onOpenSettings} />
+        <AppRailButton
+          label="Settings"
+          icon={Cog}
+          onClick={onOpenSettings}
+          shortcutId="app.settings.open"
+        />
         <Tooltip>
           <TooltipTrigger asChild>
             <span

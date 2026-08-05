@@ -1,6 +1,7 @@
 import { ExternalLink, Loader2, X } from "lucide-react";
 import type { JSX } from "react";
 import { Button } from "../../components/ui/button";
+import { useCommandOverlay } from "../../commands/use-command-overlay";
 import type { FilePreview } from "./file-preview-dialog";
 
 export interface FilePreviewDialogFallbackProps {
@@ -14,6 +15,11 @@ export const FilePreviewDialogFallback = ({
   onOpenChange,
   onOpenExternal,
 }: FilePreviewDialogFallbackProps): JSX.Element => {
+  useCommandOverlay({
+    open: true,
+    id: "file-preview-loading",
+    kind: "modal",
+  });
   return (
     <div
       role="dialog"

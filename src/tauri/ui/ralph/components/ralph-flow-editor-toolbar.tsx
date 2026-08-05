@@ -11,6 +11,7 @@ import type { JSX } from "react";
 
 import type { RalphBlockType, RalphFlowScope } from "../../../../core/ralph.js";
 import { Button } from "../../components/ui/button";
+import { useOptionalCommandShortcut } from "../../commands/command-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,6 +63,9 @@ export const RalphFlowEditorToolbar = ({
   onShowInspector,
   onAddBlock,
 }: RalphFlowEditorToolbarProps): JSX.Element => {
+  const undoShortcut = useOptionalCommandShortcut("ralph.flow.undo");
+  const redoShortcut = useOptionalCommandShortcut("ralph.flow.redo");
+  const layoutShortcut = useOptionalCommandShortcut("ralph.flow.clean-layout");
   return (
     <div className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/80 px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
@@ -90,7 +94,8 @@ export const RalphFlowEditorToolbar = ({
                 type="button"
                 variant="ghost"
                 aria-label="Undo Ralph edit"
-                title="Undo Ralph edit (Ctrl+Z)"
+                aria-keyshortcuts={undoShortcut?.ariaKeyShortcuts}
+                title={`Undo Ralph edit${undoShortcut ? ` (${undoShortcut.label})` : ""}`}
                 disabled={!canUndo}
                 onClick={onUndo}
                 className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -98,7 +103,9 @@ export const RalphFlowEditorToolbar = ({
                 <Undo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Undo · Ctrl+Z</TooltipContent>
+            <TooltipContent side="bottom">
+              Undo{undoShortcut ? ` · ${undoShortcut.label}` : null}
+            </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -106,7 +113,8 @@ export const RalphFlowEditorToolbar = ({
                 type="button"
                 variant="ghost"
                 aria-label="Redo Ralph edit"
-                title="Redo Ralph edit (Ctrl+Shift+Z)"
+                aria-keyshortcuts={redoShortcut?.ariaKeyShortcuts}
+                title={`Redo Ralph edit${redoShortcut ? ` (${redoShortcut.label})` : ""}`}
                 disabled={!canRedo}
                 onClick={onRedo}
                 className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -114,7 +122,9 @@ export const RalphFlowEditorToolbar = ({
                 <Redo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Redo · Ctrl+Shift+Z</TooltipContent>
+            <TooltipContent side="bottom">
+              Redo{redoShortcut ? ` · ${redoShortcut.label}` : null}
+            </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -122,7 +132,8 @@ export const RalphFlowEditorToolbar = ({
                 type="button"
                 variant="ghost"
                 aria-label="Clean Ralph layout"
-                title="Clean Ralph layout (Ctrl+L)"
+                aria-keyshortcuts={layoutShortcut?.ariaKeyShortcuts}
+                title={`Clean Ralph layout${layoutShortcut ? ` (${layoutShortcut.label})` : ""}`}
                 disabled={!canCleanLayout}
                 onClick={onCleanLayout}
                 className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -130,7 +141,9 @@ export const RalphFlowEditorToolbar = ({
                 <LayoutGrid className="h-4 w-4 text-slate-300" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Clean layout · Ctrl+L</TooltipContent>
+            <TooltipContent side="bottom">
+              Clean layout{layoutShortcut ? ` · ${layoutShortcut.label}` : null}
+            </TooltipContent>
           </Tooltip>
           {canShowInspector ? (
             <Tooltip>

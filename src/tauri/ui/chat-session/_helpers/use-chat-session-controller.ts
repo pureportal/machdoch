@@ -7286,6 +7286,7 @@ export const useChatSessionController = (
       onCreateSession: handleCreateSession,
       onActivateSession: state.setActiveSessionId,
       onArchiveSession: lifecycleActions.archiveSession,
+      onDeleteSession: lifecycleActions.deleteSession,
       onTogglePinnedSession: lifecycleActions.togglePinnedSession,
       onDuplicateSession: (sessionId: string) =>
         lifecycleActions.cloneSession(sessionId, "duplicate"),

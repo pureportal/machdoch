@@ -2,11 +2,48 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "../../lib/utils"
+import { useCommandOverlay } from "../../commands/use-command-overlay"
+
+type PopoverProps = React.ComponentProps<typeof PopoverPrimitive.Root> & {
+  commandOverlayId?: string
+  commandOverlayAllowGlobalCommands?: readonly string[]
+}
 
 function Popover({
+  commandOverlayId,
+  commandOverlayAllowGlobalCommands,
+  open: controlledOpen,
+  defaultOpen,
+  onOpenChange,
+  modal,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+}: PopoverProps) {
+  const generatedId = React.useId()
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+    },
+    [controlledOpen, onOpenChange],
+  )
+  useCommandOverlay({
+    open,
+    id: commandOverlayId ?? `popover:${generatedId}`,
+    kind: modal ? "modal" : "non-modal",
+    allowGlobalCommands: commandOverlayAllowGlobalCommands,
+    dismiss: () => setOpen(false),
+  })
+  return (
+    <PopoverPrimitive.Root
+      data-slot="popover"
+      open={open}
+      onOpenChange={setOpen}
+      modal={modal}
+      {...props}
+    />
+  )
 }
 
 function PopoverTrigger({

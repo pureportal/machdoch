@@ -28,6 +28,7 @@ import {
   type MouseEvent,
   type RefObject,
 } from "react";
+import { useCommandOverlay } from "../../commands/use-command-overlay";
 import {
   INTERRUPTED_TASK_CRASH_PREFIX,
   type ChatSessionContextAttachment,
@@ -713,6 +714,12 @@ export const ConversationFeed = ({
 }: ConversationFeedProps): JSX.Element => {
   const [messageContextMenu, setMessageContextMenu] =
     useState<MessageContextMenuState | null>(null);
+  useCommandOverlay({
+    open: messageContextMenu !== null,
+    id: "message-context-menu",
+    kind: "non-modal",
+    dismiss: () => setMessageContextMenu(null),
+  });
   const [expandedOriginalPromptIds, setExpandedOriginalPromptIds] = useState<
     ReadonlySet<string>
   >(() => new Set());

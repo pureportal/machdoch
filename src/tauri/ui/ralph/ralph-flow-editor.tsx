@@ -60,6 +60,13 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  useOptionalCommandShortcut,
+  useOptionalRegisterCommands,
+} from "../commands/command-context";
+import { getDefaultCommandShortcut } from "../commands/command-defaults";
+import { useCommandOverlay } from "../commands/use-command-overlay";
+import type { CommandDefinition } from "../commands/command-types";
+import {
   createImageInputUnsupportedModelMessage,
   getSupportedImageInputExtensions,
   modelSupportsImageInput,
@@ -212,7 +219,6 @@ import {
   getCanvasNodePositions,
   getFlowLayoutKey,
   getFlowSnapshot,
-  isEditableShortcutTarget,
   isGroupChildMoveSuppressed,
   isLockedNodePositionChange,
   shouldSyncUtilityTitle,
@@ -419,6 +425,25 @@ import {
 } from "./components/ralph-flow-library-panel";
 
 export type { RalphFlowLibraryMode } from "./_helpers/normalize-ralph-flow-scope.helper";
+
+const RalphShortcutHelpRow = ({
+  label,
+  commandId,
+}: {
+  label: string;
+  commandId: string;
+}): JSX.Element | null => {
+  const shortcut = useOptionalCommandShortcut(commandId);
+  if (!shortcut) return null;
+  return (
+    <div className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-xs text-slate-300">
+      <span>{label}</span>
+      <kbd className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[0.65rem] text-slate-200">
+        {shortcut.label}
+      </kbd>
+    </div>
+  );
+};
 
 export interface RalphFlowEditorProps {
   workspaceRoot: string | null;
@@ -6753,6 +6778,173 @@ export const RalphFlowEditor = ({
     };
   }, [flowListMenu]);
 
+  useCommandOverlay({
+    open: canvasMenu !== null || flowListMenu !== null,
+    id: "ralph-context-menu",
+    kind: "non-modal",
+    dismiss: () => {
+      closeCanvasMenu();
+      closeFlowListMenu();
+    },
+  });
+  useCommandOverlay({
+    open: shortcutHelpOpen,
+    id: "ralph-shortcut-help",
+    kind: "non-modal",
+    dismiss: () => setShortcutHelpOpen(false),
+  });
+
+  const ralphCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "ralph.flow.save",
+        title: "Save flow",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("ralph.flow.save"),
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        availability: () =>
+          canSaveFlow
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No unsaved flow changes" },
+        execute: () => saveFlow(),
+      },
+      {
+        id: "ralph.flow.undo",
+        title: "Undo flow edit",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [{ chord: getDefaultCommandShortcut("ralph.flow.undo") }],
+        palette: "visible",
+        availability: () =>
+          canUndo
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Nothing to undo" },
+        execute: () => undoFlowEdit(),
+      },
+      {
+        id: "ralph.flow.redo",
+        title: "Redo flow edit",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [
+          { chord: getDefaultCommandShortcut("ralph.flow.redo") },
+          { chord: getDefaultCommandShortcut("ralph.flow.redo-alternate") },
+        ],
+        palette: "visible",
+        availability: () =>
+          canRedo
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Nothing to redo" },
+        execute: () => redoFlowEdit(),
+      },
+      {
+        id: "ralph.selection.duplicate",
+        title: "Duplicate selected block",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [
+          { chord: getDefaultCommandShortcut("ralph.selection.duplicate") },
+        ],
+        palette: "visible",
+        availability: () =>
+          selectedBlockId
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select a block to duplicate" },
+        execute: () => {
+          if (selectedBlockId) duplicateBlock(selectedBlockId);
+        },
+      },
+      {
+        id: "ralph.flow.clean-layout",
+        title: "Clean flow layout",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("ralph.flow.clean-layout"),
+            runtimes: ["tauri"],
+          },
+        ],
+        palette: "visible",
+        availability: () =>
+          draftFlow
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Open a flow first" },
+        execute: () => cleanFlowLayout(),
+      },
+      {
+        id: "ralph.flow.run",
+        title: selectedFlowPrimaryActiveRun ? "Open active run" : "Run flow",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [{ chord: getDefaultCommandShortcut("ralph.flow.run") }],
+        palette: "visible",
+        availability: () =>
+          canRunAction
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "The flow is not ready to run" },
+        execute: () => runFlow(),
+      },
+      {
+        id: "ralph.selection.delete",
+        title: selectedEdgeId ? "Delete selected connection" : "Delete selection",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [
+          { chord: getDefaultCommandShortcut("ralph.selection.delete") },
+          {
+            chord: getDefaultCommandShortcut(
+              "ralph.selection.delete-backspace",
+            ),
+          },
+        ],
+        palette: "visible",
+        availability: () =>
+          selectedEdgeId || selectedBlock || selectedCanvasBlockIds.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select a block or connection" },
+        execute: () => {
+          if (selectedEdgeId) removeEdge(selectedEdgeId);
+          else deleteSelectedCanvasBlocks();
+        },
+      },
+    ],
+    [
+      canRedo,
+      canRunAction,
+      canSaveFlow,
+      canUndo,
+      cleanFlowLayout,
+      deleteSelectedCanvasBlocks,
+      draftFlow,
+      duplicateBlock,
+      redoFlowEdit,
+      removeEdge,
+      runFlow,
+      saveFlow,
+      selectedBlock,
+      selectedBlockId,
+      selectedCanvasBlockIds,
+      selectedEdgeId,
+      selectedFlowPrimaryActiveRun,
+      undoFlowEdit,
+    ],
+  );
+  useOptionalRegisterCommands(ralphCommands);
+  const saveShortcut = useOptionalCommandShortcut("ralph.flow.save");
+  const runShortcut = useOptionalCommandShortcut("ralph.flow.run");
+
   useEffect(() => {
     if (!isActive) {
       return;
@@ -6760,76 +6952,15 @@ export const RalphFlowEditor = ({
 
     const handleEditorShortcut = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase();
-      const hasModifier = event.ctrlKey || event.metaKey;
-
-      if (key === "escape" && (canvasMenu || flowListMenu)) {
+      if (
+        key === "escape" &&
+        (canvasMenu || flowListMenu || shortcutHelpOpen)
+      ) {
         event.preventDefault();
         closeCanvasMenu();
         closeFlowListMenu();
+        setShortcutHelpOpen(false);
         return;
-      }
-
-      if (hasModifier && key === "s") {
-        event.preventDefault();
-        if (canSaveFlow) {
-          void saveFlow();
-        }
-        return;
-      }
-
-      if (isEditableShortcutTarget(event.target)) {
-        return;
-      }
-
-      if (hasModifier && key === "z") {
-        event.preventDefault();
-        if (event.shiftKey) {
-          redoFlowEdit();
-        } else {
-          undoFlowEdit();
-        }
-        return;
-      }
-
-      if (hasModifier && key === "y") {
-        event.preventDefault();
-        redoFlowEdit();
-        return;
-      }
-
-      if (hasModifier && key === "d") {
-        event.preventDefault();
-        if (selectedBlockId) {
-          duplicateBlock(selectedBlockId);
-        }
-        return;
-      }
-
-      if (hasModifier && key === "l") {
-        event.preventDefault();
-        cleanFlowLayout();
-        return;
-      }
-
-      if (hasModifier && key === "enter") {
-        event.preventDefault();
-        if (canRunAction) {
-          void runFlow();
-        }
-        return;
-      }
-
-      if (key === "delete" || key === "backspace") {
-        if (selectedEdgeId) {
-          event.preventDefault();
-          removeEdge(selectedEdgeId);
-          return;
-        }
-
-        if (selectedBlock || selectedCanvasBlockIds.length > 0) {
-          event.preventDefault();
-          deleteSelectedCanvasBlocks();
-        }
       }
     };
 
@@ -6838,19 +6969,7 @@ export const RalphFlowEditor = ({
     return () => {
       window.removeEventListener("keydown", handleEditorShortcut);
     };
-  }, [
-    canRunAction,
-    canSaveFlow,
-    canvasMenu,
-    flowListMenu,
-    isActive,
-    selectedBlock,
-    selectedCanvasBlockIds,
-    selectedBlockId,
-    selectedEdgeId,
-    undoStack,
-    redoStack,
-  ]);
+  }, [canvasMenu, flowListMenu, isActive, shortcutHelpOpen]);
 
   const renderFlowListContextMenu = (): JSX.Element | null => (
     <RalphFlowListContextMenu
@@ -8621,16 +8740,12 @@ export const RalphFlowEditor = ({
                 <div className="px-2 pb-2 text-xs font-semibold text-white">
                   Editor shortcuts
                 </div>
-                {RALPH_EDITOR_SHORTCUTS.map(([label, shortcut]) => (
-                  <div
+                {RALPH_EDITOR_SHORTCUTS.map(([label, commandId]) => (
+                  <RalphShortcutHelpRow
                     key={label}
-                    className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-xs text-slate-300"
-                  >
-                    <span>{label}</span>
-                    <kbd className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[0.65rem] text-slate-200">
-                      {shortcut}
-                    </kbd>
-                  </div>
+                    label={label}
+                    commandId={commandId}
+                  />
                 ))}
               </div>
             ) : null}
@@ -8639,6 +8754,7 @@ export const RalphFlowEditor = ({
             <Button
               type="button"
               disabled={!canSaveFlow}
+              aria-keyshortcuts={saveShortcut?.ariaKeyShortcuts}
               onClick={() => void saveFlow()}
               className="h-8 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500 disabled:border disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-500"
             >
@@ -8656,7 +8772,8 @@ export const RalphFlowEditor = ({
               variant="outline"
               disabled={!canRunAction}
               aria-label="Run Ralph flow"
-              title={runActionMessage}
+              aria-keyshortcuts={runShortcut?.ariaKeyShortcuts}
+              title={`${runActionMessage}${runShortcut ? ` (${runShortcut.label})` : ""}`}
               onClick={() => void runFlow()}
               className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
             >
@@ -11699,6 +11816,7 @@ export const RalphFlowEditor = ({
             <button
               type="button"
               onClick={() => setEditorMode("run")}
+              aria-keyshortcuts={runShortcut?.ariaKeyShortcuts}
               className="flex min-w-0 items-center justify-between gap-3 px-4 text-left hover:bg-lime-500/5"
             >
               <span className="flex min-w-0 items-center gap-2">
@@ -11726,9 +11844,11 @@ export const RalphFlowEditor = ({
                   </span>
                 </span>
               </span>
-              <kbd className="hidden shrink-0 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[0.62rem] text-slate-400 xl:inline">
-                Ctrl+Enter
-              </kbd>
+              {runShortcut ? (
+                <kbd className="hidden shrink-0 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[0.62rem] text-slate-400 xl:inline">
+                  {runShortcut.label}
+                </kbd>
+              ) : null}
             </button>
           </section>
         ) : (
@@ -12184,6 +12304,7 @@ export const RalphFlowEditor = ({
                       variant="outline"
                       disabled={!canRunAction}
                       aria-label="Run Ralph flow"
+                      aria-keyshortcuts={runShortcut?.ariaKeyShortcuts}
                       onClick={(event) => {
                         event.stopPropagation();
                         void runFlow();

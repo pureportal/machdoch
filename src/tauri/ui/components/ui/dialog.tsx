@@ -3,6 +3,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "../../lib/utils"
+import { useCommandOverlay } from "../../commands/use-command-overlay"
 import { Button } from "./button"
 
 interface DialogInteractOutsideConfirmationOptions {
@@ -38,10 +39,44 @@ const getDialogInteractOutsideConfirmationOptions = (
   }
 }
 
+type DialogProps = React.ComponentProps<typeof DialogPrimitive.Root> & {
+  commandOverlayId?: string
+  commandOverlayAllowGlobalCommands?: readonly string[]
+}
+
 function Dialog({
+  commandOverlayId,
+  commandOverlayAllowGlobalCommands,
+  open: controlledOpen,
+  defaultOpen,
+  onOpenChange,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+}: DialogProps) {
+  const generatedId = React.useId()
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+    },
+    [controlledOpen, onOpenChange],
+  )
+  useCommandOverlay({
+    open,
+    id: commandOverlayId ?? `dialog:${generatedId}`,
+    kind: "modal",
+    allowGlobalCommands: commandOverlayAllowGlobalCommands,
+    dismiss: () => setOpen(false),
+  })
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      open={open}
+      onOpenChange={setOpen}
+      {...props}
+    />
+  )
 }
 
 function DialogTrigger({

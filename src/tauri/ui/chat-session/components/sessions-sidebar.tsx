@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   Tag,
+  Trash2,
   Upload,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const INITIAL_RENDERED_SESSION_LIMIT = 100;
 const RENDERED_SESSION_PAGE_SIZE = 100;
 import {
   canArchiveSession,
+  canDeleteSession,
   canDuplicateSession,
   canPinSession,
   getLatestSessionUserRequestAt,
@@ -43,6 +45,7 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "../../components/ui/search-field";
+import { useCommandOverlay } from "../../commands/use-command-overlay";
 import {
   Tooltip,
   TooltipContent,
@@ -76,7 +79,7 @@ const SESSION_CONTEXT_MENU_HEIGHT = 144;
 const SESSION_CONTEXT_MENU_MARGIN = 8;
 
 interface SessionActionItem {
-  id: "pin" | "duplicate" | "archive";
+  id: "pin" | "duplicate" | "archive" | "delete";
   label: string;
   icon: LucideIcon;
   iconClassName: string;
@@ -173,14 +176,16 @@ const createSessionDropdownMenuPosition = (
   };
 };
 
-const createSessionActionItems = ({
+export const createSessionActionItems = ({
   sessionId,
   canDuplicate,
   canPin,
   isPinned,
   isQuickSession,
   showArchiveAction,
+  showDeleteAction,
   onArchiveSession,
+  onDeleteSession,
   onDuplicateSession,
   onTogglePinnedSession,
 }: {
@@ -190,7 +195,9 @@ const createSessionActionItems = ({
   isPinned: boolean;
   isQuickSession: boolean;
   showArchiveAction: boolean;
+  showDeleteAction: boolean;
   onArchiveSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
 }): SessionActionItem[] => {
@@ -227,6 +234,16 @@ const createSessionActionItems = ({
       icon: Archive,
       iconClassName: "text-slate-400",
       onSelect: () => onArchiveSession(sessionId),
+    });
+  }
+
+  if (showDeleteAction) {
+    items.push({
+      id: "delete",
+      label: "Delete",
+      icon: Trash2,
+      iconClassName: "text-rose-300",
+      onSelect: () => onDeleteSession(sessionId),
     });
   }
 
@@ -313,10 +330,12 @@ export interface SessionsSidebarProps {
   onCreateSession: () => void;
   onActivateSession: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
   onExportSessions: () => void;
   onImportSessions: (file: File) => void;
+  searchInputRef?: React.Ref<HTMLInputElement>;
 }
 
 export const SessionsSidebar = ({
@@ -340,10 +359,12 @@ export const SessionsSidebar = ({
   onCreateSession,
   onActivateSession,
   onArchiveSession,
+  onDeleteSession,
   onTogglePinnedSession,
   onDuplicateSession,
   onExportSessions,
   onImportSessions,
+  searchInputRef,
 }: SessionsSidebarProps): JSX.Element => {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [retentionNow, setRetentionNow] = useState(() => Date.now());
@@ -400,6 +421,12 @@ export const SessionsSidebar = ({
   const closeSessionContextMenu = useCallback((): void => {
     setSessionContextMenu(null);
   }, []);
+  useCommandOverlay({
+    open: sessionContextMenu !== null,
+    id: "sessions-context-menu",
+    kind: "non-modal",
+    dismiss: closeSessionContextMenu,
+  });
 
   const openSessionContextMenu = useCallback(
     (
@@ -498,7 +525,11 @@ export const SessionsSidebar = ({
         isPinned: isSessionPinnedInSidebar(contextMenuSession),
         isQuickSession: contextMenuSessionIsQuick,
         showArchiveAction: canArchiveSession(contextMenuSession),
+        showDeleteAction:
+          getSessionOverviewStatus(contextMenuSession) === "empty" &&
+          canDeleteSession(contextMenuSession),
         onArchiveSession,
+        onDeleteSession,
         onDuplicateSession,
         onTogglePinnedSession,
       })
@@ -581,6 +612,7 @@ export const SessionsSidebar = ({
         <div className="app-sessions-scroll-content grid gap-4 px-5 py-5 pr-6">
           <div className="app-sessions-filter-stack grid gap-3">
             <SearchField
+              ref={searchInputRef}
               value={sessionSearchQuery}
               aria-label="Search sessions"
               placeholder="Search sessions"
@@ -754,7 +786,10 @@ export const SessionsSidebar = ({
                   isPinned,
                   isQuickSession,
                   showArchiveAction,
+                  showDeleteAction:
+                    sessionStatus === "empty" && canDeleteSession(session),
                   onArchiveSession,
+                  onDeleteSession,
                   onDuplicateSession,
                   onTogglePinnedSession,
                 });

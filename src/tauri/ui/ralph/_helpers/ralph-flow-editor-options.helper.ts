@@ -170,13 +170,13 @@ export const RALPH_VARIABLE_SNIPPETS = [
 ] as const;
 
 export const RALPH_EDITOR_SHORTCUTS = [
-  ["Save flow", "Ctrl+S"],
-  ["Undo", "Ctrl+Z"],
-  ["Redo", "Ctrl+Shift+Z"],
-  ["Duplicate block", "Ctrl+D"],
-  ["Clean layout", "Ctrl+L"],
-  ["Run flow", "Ctrl+Enter"],
-  ["Remove selection", "Delete"],
+  ["Save flow", "ralph.flow.save"],
+  ["Undo", "ralph.flow.undo"],
+  ["Redo", "ralph.flow.redo"],
+  ["Duplicate block", "ralph.selection.duplicate"],
+  ["Clean layout", "ralph.flow.clean-layout"],
+  ["Run flow", "ralph.flow.run"],
+  ["Remove selection", "ralph.selection.delete"],
 ] as const;
 
 export const PROVIDER_OPTIONS: readonly RalphProviderOption[] = [

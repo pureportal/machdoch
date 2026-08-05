@@ -101,22 +101,6 @@ export const getCanvasMenuPlacement = (
   };
 };
 
-export const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
-  if (
-    typeof HTMLElement === "undefined" ||
-    !(target instanceof HTMLElement)
-  ) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select";
-};
-
 export const formatSaveFlowMessage = (
   result: RalphPersistedFlowValidationResult,
 ): string => {

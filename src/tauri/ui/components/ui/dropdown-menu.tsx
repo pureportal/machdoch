@@ -5,11 +5,46 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "../../lib/utils"
+import { useCommandOverlay } from "../../commands/use-command-overlay"
+
+type DropdownMenuProps = React.ComponentProps<typeof DropdownMenuPrimitive.Root> & {
+  commandOverlayId?: string
+  commandOverlayAllowGlobalCommands?: readonly string[]
+}
 
 function DropdownMenu({
+  commandOverlayId,
+  commandOverlayAllowGlobalCommands,
+  open: controlledOpen,
+  defaultOpen,
+  onOpenChange,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+}: DropdownMenuProps) {
+  const generatedId = React.useId()
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+    },
+    [controlledOpen, onOpenChange],
+  )
+  useCommandOverlay({
+    open,
+    id: commandOverlayId ?? `dropdown:${generatedId}`,
+    kind: "non-modal",
+    allowGlobalCommands: commandOverlayAllowGlobalCommands,
+    dismiss: () => setOpen(false),
+  })
+  return (
+    <DropdownMenuPrimitive.Root
+      data-slot="dropdown-menu"
+      open={open}
+      onOpenChange={setOpen}
+      {...props}
+    />
+  )
 }
 
 function DropdownMenuPortal({

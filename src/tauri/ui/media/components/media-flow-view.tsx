@@ -145,6 +145,14 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { cn } from "../../lib/utils";
+import {
+  useOptionalCommandPageLauncher,
+  useOptionalCommandShortcut,
+  useOptionalRegisterCommands,
+} from "../../commands/command-context";
+import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+import type { CommandDefinition } from "../../commands/command-types";
+import { createMediaNodeCommandPage } from "../media-node-command-page";
 
 interface MediaFlowViewProps {
   flow: MediaFlow;
@@ -426,11 +434,6 @@ const MediaAssetThumbnail = ({
     </span>
   );
 };
-
-const isEditableShortcutTarget = (target: EventTarget | null): boolean =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable ||
-    ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 
 const MediaFlowNodeCard = ({
   data,
@@ -2322,6 +2325,7 @@ const NodeInspector = ({
   onNodeRemove: (nodeId: string) => void;
   onClose: () => void;
 }): JSX.Element => {
+  const copyShortcut = useOptionalCommandShortcut("media.selection.copy");
   const definition = getMediaNodeDefinition(node.type);
   const groups = INSPECTOR_GROUPS.filter((group) =>
     definition?.fields.some((field) => field.group === group),
@@ -2396,7 +2400,8 @@ const NodeInspector = ({
             variant="ghost"
             size="icon-sm"
             aria-label={`Copy ${node.label}`}
-            title="Copy node (Ctrl+C)"
+            aria-keyshortcuts={copyShortcut?.ariaKeyShortcuts}
+            title={`Copy node${copyShortcut ? ` (${copyShortcut.label})` : ""}`}
             onClick={() => onNodeCopy(node.id)}
             className="text-slate-500 hover:bg-cyan-400/10 hover:text-cyan-300"
           >
@@ -3598,15 +3603,130 @@ export const MediaFlowView = ({
     setPalettePanelOpen(true);
   }, []);
 
+  const addNodeFromCommand = useCallback(
+    (nodeType: MediaNodeType): boolean => {
+      const nodeId = onNodeAdd(nodeType);
+      if (!nodeId) return false;
+      setPalettePanelOpen(false);
+      setGroupsPanelOpen(false);
+      setSelectionPanelOpen(false);
+      setSelectedNodeId(nodeId);
+      return true;
+    },
+    [onNodeAdd],
+  );
+  const nodeCommandPage = useMemo(
+    () => createMediaNodeCommandPage(flow, addNodeFromCommand),
+    [addNodeFromCommand, flow],
+  );
+  const openCommandPage = useOptionalCommandPageLauncher();
+  const mediaCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "media.flow.node.add",
+        title: "Add node",
+        group: "Media",
+        keywords: ["find node", "semantic node"],
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        children: () => nodeCommandPage,
+      },
+      {
+        id: "media.flow.undo",
+        title: "Undo semantic change",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [{ chord: getDefaultCommandShortcut("media.flow.undo") }],
+        palette: "visible",
+        availability: () =>
+          canUndoSemantic
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Nothing to undo" },
+        execute: () => onUndoSemantic(),
+      },
+      {
+        id: "media.flow.redo",
+        title: "Redo semantic change",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          { chord: getDefaultCommandShortcut("media.flow.redo") },
+          { chord: getDefaultCommandShortcut("media.flow.redo-alternate") },
+        ],
+        palette: "visible",
+        availability: () =>
+          canRedoSemantic
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Nothing to redo" },
+        execute: () => onRedoSemantic(),
+      },
+      {
+        id: "media.selection.copy",
+        title: selectedNodeIds.length > 1 ? "Copy selected nodes" : "Copy selected node",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          { chord: getDefaultCommandShortcut("media.selection.copy") },
+        ],
+        palette: "visible",
+        availability: () =>
+          selectedNodeIds.length > 0 || selectedNodeId
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select a node to copy" },
+        execute: () => {
+          if (selectedNodeIds.length > 0) onNodesCopy(selectedNodeIds);
+          else if (selectedNodeId) onNodeCopy(selectedNodeId);
+        },
+      },
+      {
+        id: "media.flow.paste",
+        title: clipboardLabel ? `Paste ${clipboardLabel}` : "Paste copied node",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [{ chord: getDefaultCommandShortcut("media.flow.paste") }],
+        palette: "visible",
+        availability: () =>
+          canPasteNode
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: pasteBlockedReason ?? "Copy a node before pasting",
+              },
+        execute: () => {
+          const nodeId = onNodePaste();
+          if (nodeId) {
+            setPalettePanelOpen(false);
+            setGroupsPanelOpen(false);
+            setSelectionPanelOpen(false);
+            setSelectedNodeId(nodeId);
+          }
+        },
+      },
+    ],
+    [
+      canPasteNode,
+      canRedoSemantic,
+      canUndoSemantic,
+      clipboardLabel,
+      nodeCommandPage,
+      onNodeCopy,
+      onNodePaste,
+      onNodesCopy,
+      onRedoSemantic,
+      onUndoSemantic,
+      pasteBlockedReason,
+      selectedNodeId,
+      selectedNodeIds,
+    ],
+  );
+  useOptionalRegisterCommands(mediaCommands);
+  const undoShortcut = useOptionalCommandShortcut("media.flow.undo");
+  const redoShortcut = useOptionalCommandShortcut("media.flow.redo");
+  const copyShortcut = useOptionalCommandShortcut("media.selection.copy");
+  const pasteShortcut = useOptionalCommandShortcut("media.flow.paste");
+
   useEffect(() => {
     const handleKeyboardShortcut = (event: KeyboardEvent): void => {
-      const modifier = event.ctrlKey || event.metaKey;
-      const key = event.key.toLocaleLowerCase();
-      if (modifier && key === "k") {
-        event.preventDefault();
-        openNodePalette();
-        return;
-      }
       if (
         event.key === "Escape" &&
         (palettePanelOpen ||
@@ -3620,65 +3740,14 @@ export const MediaFlowView = ({
         setTemplatesPanelOpen(false);
         return;
       }
-      if (!modifier || isEditableShortcutTarget(event.target)) return;
-      if (key === "z" && event.shiftKey) {
-        if (canRedoSemantic) {
-          event.preventDefault();
-          onRedoSemantic();
-        }
-        return;
-      }
-      if (key === "y") {
-        if (canRedoSemantic) {
-          event.preventDefault();
-          onRedoSemantic();
-        }
-        return;
-      }
-      if (key === "z" && canUndoSemantic) {
-        event.preventDefault();
-        onUndoSemantic();
-        return;
-      }
-      if (key === "c" && selectedNodeIds.length > 0) {
-        event.preventDefault();
-        onNodesCopy(selectedNodeIds);
-        return;
-      }
-      if (key === "c" && selectedNodeId) {
-        event.preventDefault();
-        onNodeCopy(selectedNodeId);
-        return;
-      }
-      if (key === "v" && canPasteNode) {
-        event.preventDefault();
-        const nodeId = onNodePaste();
-        if (nodeId) {
-          setPalettePanelOpen(false);
-          setGroupsPanelOpen(false);
-          setSelectionPanelOpen(false);
-          setSelectedNodeId(nodeId);
-        }
-      }
     };
     window.addEventListener("keydown", handleKeyboardShortcut);
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
   }, [
-    canPasteNode,
-    canRedoSemantic,
-    canUndoSemantic,
-    onNodeCopy,
-    onNodesCopy,
-    onNodePaste,
-    onRedoSemantic,
-    onUndoSemantic,
-    openNodePalette,
     palettePanelOpen,
     selectionPanelOpen,
     variablesPanelOpen,
     templatesPanelOpen,
-    selectedNodeId,
-    selectedNodeIds,
   ]);
 
   useEffect(() => {
@@ -4041,7 +4110,8 @@ export const MediaFlowView = ({
               variant="ghost"
               size="icon-sm"
               aria-label="Undo semantic change"
-              title="Undo semantic change (Ctrl+Z)"
+              aria-keyshortcuts={undoShortcut?.ariaKeyShortcuts}
+              title={`Undo semantic change${undoShortcut ? ` (${undoShortcut.label})` : ""}`}
               disabled={!canUndoSemantic}
               onClick={onUndoSemantic}
               className="text-cyan-300/70 hover:bg-cyan-400/10 hover:text-cyan-200"
@@ -4053,7 +4123,8 @@ export const MediaFlowView = ({
               variant="ghost"
               size="icon-sm"
               aria-label="Redo semantic change"
-              title="Redo semantic change (Ctrl+Shift+Z)"
+              aria-keyshortcuts={redoShortcut?.ariaKeyShortcuts}
+              title={`Redo semantic change${redoShortcut ? ` (${redoShortcut.label})` : ""}`}
               disabled={!canRedoSemantic}
               onClick={onRedoSemantic}
               className="text-cyan-300/70 hover:bg-cyan-400/10 hover:text-cyan-200"
@@ -4067,9 +4138,10 @@ export const MediaFlowView = ({
               aria-label={
                 clipboardLabel ? `Paste ${clipboardLabel}` : "Paste copied node"
               }
+              aria-keyshortcuts={pasteShortcut?.ariaKeyShortcuts}
               title={
                 canPasteNode
-                  ? `Paste ${clipboardLabel ?? "copied node"} (Ctrl+V)`
+                  ? `Paste ${clipboardLabel ?? "copied node"}${pasteShortcut ? ` (${pasteShortcut.label})` : ""}`
                   : (pasteBlockedReason ?? "Copy a node before pasting")
               }
               disabled={!canPasteNode}
@@ -4127,7 +4199,8 @@ export const MediaFlowView = ({
                 variant="ghost"
                 size="icon-sm"
                 aria-label={`Copy ${selectedNodeIds.length} selected nodes`}
-                title="Copy selected semantic nodes and their internal connections (Ctrl+C)"
+                aria-keyshortcuts={copyShortcut?.ariaKeyShortcuts}
+                title={`Copy selected semantic nodes and their internal connections${copyShortcut ? ` (${copyShortcut.label})` : ""}`}
                 disabled={selectedNodeIds.length === 0}
                 onClick={() => onNodesCopy(selectedNodeIds)}
                 className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
@@ -4316,10 +4389,15 @@ export const MediaFlowView = ({
             type="button"
             variant="outline"
             size="sm"
-            aria-expanded={palettePanelOpen}
-            title="Add or find a semantic node (Ctrl+K)"
-            onClick={() => {
-              if (palettePanelOpen) {
+            aria-expanded={openCommandPage ? undefined : palettePanelOpen}
+            title="Add node"
+            onClick={(event) => {
+              if (openCommandPage) {
+                openCommandPage(nodeCommandPage, {
+                  presentation: "popover",
+                  anchor: event.currentTarget,
+                });
+              } else if (palettePanelOpen) {
                 setPalettePanelOpen(false);
               } else {
                 openNodePalette();

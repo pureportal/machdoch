@@ -1,12 +1,14 @@
 import {
   Suspense,
   lazy,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type JSX,
 } from "react";
+import { canArchiveSession } from "./chat-session.model";
 import { AppRail, type AppActivityState } from "./app-shell/app-rail";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
@@ -49,6 +51,10 @@ import {
   syncScheduledPrompts,
 } from "./runtime";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { CommandProvider } from "./commands/command-context";
+import { getDefaultCommandShortcut } from "./commands/command-defaults";
+import { useCommandOverlay } from "./commands/use-command-overlay";
+import type { CommandDefinition } from "./commands/command-types";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -183,6 +189,7 @@ export const ChatSession = (): JSX.Element => {
   >(null);
   const [instructionDraftDirty, setInstructionDraftDirty] = useState(false);
   const [workspaceDraftDirty, setWorkspaceDraftDirty] = useState(false);
+  const sessionSearchInputRef = useRef<HTMLInputElement | null>(null);
   const previousChatRunningRef = useRef(false);
   const appShellInteractionRevisionRef = useRef(0);
   const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -199,6 +206,16 @@ export const ChatSession = (): JSX.Element => {
   const ralphActivity = useRalphActivity(activeApp);
   const mediaActivity = useMediaActivity(activeApp);
   useMediaShutdownGuard();
+  useCommandOverlay({
+    open: onboardingOpen && !controller.catalogOpen,
+    id: "onboarding",
+    kind: "modal",
+  });
+  useCommandOverlay({
+    open: controller.voiceInputOverlay.visible,
+    id: "voice-input",
+    kind: "modal",
+  });
 
   const chatRunning = controller.hasRunningSession;
   const chatActivity = toActivityState(chatRunning, chatCompletedSinceView);
@@ -261,26 +278,212 @@ export const ChatSession = (): JSX.Element => {
     };
   }, [appShellLoaded]);
 
-  const selectApp = (nextApp: MainAppId): void => {
-    if (
-      nextApp !== activeApp &&
-      unsavedChangesMessage &&
-      !window.confirm(unsavedChangesMessage)
-    ) {
-      return;
-    }
-    if (activeApp === "instructions") setInstructionDraftDirty(false);
-    if (activeApp === "workspaces") setWorkspaceDraftDirty(false);
-    appShellInteractionRevisionRef.current += 1;
-    setAppShellState((current) => ({
-      version: 1,
-      activeApp: nextApp,
-      lastViewedAt: {
-        ...current.lastViewedAt,
-        [nextApp]: Date.now(),
+  const selectApp = useCallback(
+    (nextApp: MainAppId): boolean => {
+      if (
+        nextApp !== activeApp &&
+        unsavedChangesMessage &&
+        !window.confirm(unsavedChangesMessage)
+      ) {
+        return false;
+      }
+      if (activeApp === "instructions") setInstructionDraftDirty(false);
+      if (activeApp === "workspaces") setWorkspaceDraftDirty(false);
+      appShellInteractionRevisionRef.current += 1;
+      setAppShellState((current) => ({
+        version: 1,
+        activeApp: nextApp,
+        lastViewedAt: {
+          ...current.lastViewedAt,
+          [nextApp]: Date.now(),
+        },
+      }));
+      return true;
+    },
+    [activeApp, unsavedChangesMessage],
+  );
+
+  const shellCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const viewCommands: Array<{
+      id: keyof typeof import("./commands/command-defaults").DEFAULT_COMMAND_SHORTCUTS;
+      app: MainAppId;
+      title: string;
+    }> = [
+      { id: "app.view.chat", app: "chat", title: "Open Chat" },
+      { id: "app.view.ralph", app: "ralph", title: "Open Ralph" },
+      { id: "app.view.media", app: "media", title: "Open Media Studio" },
+      {
+        id: "app.view.marketplace",
+        app: "marketplace",
+        title: "Open Marketplace",
       },
-    }));
-  };
+      {
+        id: "app.view.instructions",
+        app: "instructions",
+        title: "Open Instructions",
+      },
+      {
+        id: "app.view.workspaces",
+        app: "workspaces",
+        title: "Open Workspace Management",
+      },
+    ];
+    const activeSession = controller.header.activeSession;
+    const disabled = (reason: string) => ({ state: "disabled" as const, reason });
+    const enabled = { state: "enabled" as const };
+    return [
+      {
+        id: "app.settings.open",
+        title: "Open Settings",
+        group: "Navigation",
+        keywords: ["preferences", "configuration"],
+        scope: { kind: "global", ownerId: "app" },
+        shortcuts: [{ chord: getDefaultCommandShortcut("app.settings.open") }],
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        execute: () => controller.openProviderSettings(),
+      },
+      ...viewCommands.map(
+        ({ id, app, title }, order): CommandDefinition => ({
+          id,
+          title,
+          group: "Navigation",
+          scope: { kind: "global", ownerId: "app" },
+          shortcuts: [
+            {
+              chord: getDefaultCommandShortcut(id),
+              runtimes: ["tauri"],
+            },
+          ],
+          palette: "visible",
+          order: order + 10,
+          current: () => activeApp === app,
+          overlayPolicy: "replace-non-modal",
+          execute: () =>
+            selectApp(app) ? { type: "close" } : { type: "cancelled" },
+        }),
+      ),
+      {
+        id: "app.scheduler.open",
+        title: "Open Smart Scheduler",
+        group: "Navigation",
+        keywords: ["scheduled prompts", "jobs"],
+        scope: { kind: "global", ownerId: "app" },
+        palette: "visible",
+        order: 20,
+        overlayPolicy: "replace-non-modal",
+        execute: () => setSchedulerOpen(true),
+      },
+      {
+        id: "app.mission-control.open",
+        title: "Open Mission Control",
+        group: "Navigation",
+        keywords: ["remote control"],
+        scope: { kind: "global", ownerId: "app" },
+        palette: "visible",
+        order: 21,
+        overlayPolicy: "replace-non-modal",
+        execute: () => controller.missionControl.setOpen(true),
+      },
+      {
+        id: "chat.session.new",
+        title: "New session",
+        group: "Chat",
+        keywords: ["conversation", "task"],
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        execute: () => controller.sidebar.onCreateSession(),
+      },
+      {
+        id: "chat.sessions.search",
+        title: "Search sessions",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        execute: () => {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              sessionSearchInputRef.current?.focus({ preventScroll: true });
+            });
+          });
+        },
+      },
+      {
+        id: typeof activeSession.pinnedAt === "number"
+          ? "chat.session.unpin"
+          : "chat.session.pin",
+        title: typeof activeSession.pinnedAt === "number"
+          ? "Unpin active session"
+          : "Pin active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          controller.header.canPinSession ? enabled : disabled("This session cannot be pinned"),
+        execute: () => controller.header.onTogglePinnedSession(),
+      },
+      {
+        id: "chat.session.duplicate",
+        title: "Duplicate active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          controller.header.canBranchSession
+            ? enabled
+            : disabled("This session cannot be duplicated"),
+        execute: () => controller.sidebar.onDuplicateSession(activeSession.id),
+      },
+      {
+        id: "chat.session.archive",
+        title: "Archive active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          canArchiveSession(activeSession)
+            ? enabled
+            : disabled("This session cannot be archived"),
+        execute: () => controller.sidebar.onArchiveSession(activeSession.id),
+      },
+      {
+        id: "chat.session.rename",
+        title: "Rename active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          controller.header.canRenameSession
+            ? enabled
+            : disabled("This session cannot be renamed"),
+        execute: () => {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              controller.header.onStartRename();
+            });
+          });
+        },
+      },
+      {
+        id: "chat.session.delete",
+        title: "Delete active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          controller.header.canDeleteSession
+            ? enabled
+            : disabled("This session cannot be deleted"),
+        execute: () => {
+          if (!window.confirm(`Delete “${controller.header.currentSessionTitle}”?`)) {
+            return { type: "cancelled" };
+          }
+          controller.header.onDeleteSession();
+          return { type: "close" };
+        },
+      },
+    ];
+  }, [activeApp, controller, selectApp]);
 
   useEffect(() => {
     if (activeApp === "chat") {
@@ -451,6 +654,7 @@ export const ChatSession = (): JSX.Element => {
 
   return (
     <TooltipProvider delayDuration={300}>
+      <CommandProvider activeView={activeApp} commands={shellCommands}>
       <Dialog
         open={controller.catalogOpen}
         onOpenChange={controller.setCatalogOpen}
@@ -549,7 +753,10 @@ export const ChatSession = (): JSX.Element => {
 
             {activeApp === "chat" ? (
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <SessionsSidebar {...controller.sidebar} />
+                <SessionsSidebar
+                  {...controller.sidebar}
+                  searchInputRef={sessionSearchInputRef}
+                />
 
                 {controller.isDesktop && !controller.hasAnyProvider ? (
                   <ProviderEmptyState
@@ -771,6 +978,7 @@ export const ChatSession = (): JSX.Element => {
       <ChatInputNeededDialog {...controller.inputNeeded} />
 
       <ChatInterviewDialog {...controller.chatInterview} />
+      </CommandProvider>
     </TooltipProvider>
   );
 };
