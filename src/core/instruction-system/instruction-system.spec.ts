@@ -227,6 +227,109 @@ describe("instruction profiles and assignments", () => {
     ).toThrowError(/unsupported fields: identityHints/u);
   });
 
+  it("loads schema 1 stores and persists schema 2 on the next mutation", async () => {
+    const fixture = await createTestRoot();
+    const globalId = "00000000-0000-4000-8000-000000000011";
+    const manualId = "00000000-0000-4000-8000-000000000012";
+    const workspaceId = "00000000-0000-4000-8000-000000000013";
+    await writeFile(
+      fixture.libraryPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          revision: 3,
+          profiles: [
+            {
+              id: globalId,
+              name: "Global",
+              body: "Apply everywhere.",
+              global: true,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+            {
+              id: manualId,
+              name: "Manual",
+              body: "Apply in this workspace.",
+              enabled: true,
+              global: false,
+              tags: [],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          defaults: { profiles: [globalId] },
+          workspaces: [
+            {
+              id: workspaceId,
+              root: fixture.workspace,
+              displayName: " Legacy workspace ",
+              identityHints: { repositoryId: "removed-in-schema-2" },
+              scopes: [
+                { path: ".", profiles: [globalId, manualId] },
+                { path: "src", profiles: [manualId] },
+                { path: "empty", profiles: [] },
+              ],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const loaded = await loadInstructionLibrary(fixture.libraryPath);
+    expect(loaded).toMatchObject({
+      schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+      revision: 3,
+      profiles: [
+        { id: globalId, enabled: true, global: true, tags: [] },
+        { id: manualId, enabled: true, global: false, tags: [] },
+      ],
+      workspaces: [
+        {
+          id: workspaceId,
+          displayName: "Legacy workspace",
+          tags: [],
+          scopes: [{ path: ".", profiles: [manualId] }],
+        },
+      ],
+    });
+    await expect(
+      readFile(fixture.libraryPath, "utf8").then(
+        (content) => JSON.parse(content) as { schemaVersion: number },
+      ),
+    ).resolves.toMatchObject({ schemaVersion: 1 });
+
+    await updateInstructionProfile(
+      globalId,
+      { body: "Apply everywhere after the edit." },
+      {
+        path: fixture.libraryPath,
+        expectedRevision: 3,
+      },
+    );
+    const [persisted, backup] = await Promise.all([
+      readFile(fixture.libraryPath, "utf8").then(
+        (content) => JSON.parse(content) as Record<string, unknown>,
+      ),
+      readFile(`${fixture.libraryPath}.bak`, "utf8").then(
+        (content) => JSON.parse(content) as Record<string, unknown>,
+      ),
+    ]);
+    expect(persisted).toMatchObject({
+      schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+      revision: 4,
+    });
+    expect(persisted).not.toHaveProperty("defaults");
+    expect(backup).toMatchObject({
+      schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+      revision: 3,
+    });
+    expect(backup).not.toHaveProperty("defaults");
+  });
+
   it("rejects instruction text that cannot be transported as exact UTF-8", async () => {
     const fixture = await createTestRoot();
 

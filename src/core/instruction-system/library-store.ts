@@ -50,6 +50,7 @@ import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
 
 const MAX_INSTRUCTION_LIBRARY_BYTES = 64 * 1024 * 1024;
 const MAX_INSTRUCTION_AUDIT_READ_BYTES = 2 * 1024 * 1024;
+const LEGACY_INSTRUCTION_LIBRARY_SCHEMA_VERSION = 1;
 
 export const getInstructionLibraryPath = (): string =>
   join(dirname(getUserConfigPath()), "instruction-library.json");
@@ -594,6 +595,290 @@ export const parseInstructionLibrary = (value: unknown): InstructionLibrary => {
   };
 };
 
+const parseLegacyProfileIds = (
+  value: unknown,
+  field: string,
+  knownIds: ReadonlySet<string>,
+): string[] => {
+  if (!Array.isArray(value)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      `${field} must be an array.`,
+    );
+  }
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, id] of value.entries()) {
+    if (!isUuid(id) || !knownIds.has(id)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID_REFERENCE",
+        `${field}[${index}] references unknown profile ${String(id)}.`,
+      );
+    }
+    if (seen.has(id)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_DUPLICATE_REFERENCE",
+        `${field} contains profile ${id} more than once.`,
+      );
+    }
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+};
+
+/**
+ * Schema 1 was the persisted format through v0.45. Its defaults list became
+ * per-profile global metadata in schema 2, while identity hints and empty
+ * scopes were removed. Keep the public parser strict; compatibility belongs
+ * only at the persisted-store boundary so imports still require the current
+ * contract.
+ */
+const migrateLegacyInstructionLibrary = (
+  value: unknown,
+): InstructionLibrary => {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== LEGACY_INSTRUCTION_LIBRARY_SCHEMA_VERSION ||
+    !Number.isSafeInteger(value.revision) ||
+    Number(value.revision) < 0 ||
+    !Array.isArray(value.profiles) ||
+    !Array.isArray(value.workspaces) ||
+    !isRecord(value.defaults)
+  ) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_LIBRARY_INVALID",
+      "The legacy instruction library does not match schema version 1.",
+    );
+  }
+  assertExactKeys(
+    value,
+    ["schemaVersion", "revision", "profiles", "defaults", "workspaces"],
+    "legacy instruction library",
+  );
+  assertExactKeys(
+    value.defaults,
+    ["profiles"],
+    "legacy instruction library defaults",
+  );
+
+  const profileIds = new Set<string>();
+  for (const [index, profile] of value.profiles.entries()) {
+    if (!isRecord(profile) || !isUuid(profile.id)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `profiles[${index}] must contain a UUID id.`,
+      );
+    }
+    assertExactKeys(
+      profile,
+      [
+        "id",
+        "name",
+        "description",
+        "body",
+        "enabled",
+        "global",
+        "tags",
+        "match",
+        "createdAt",
+        "updatedAt",
+      ],
+      `profiles[${index}]`,
+    );
+    if (profileIds.has(profile.id)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_DUPLICATE_ID",
+        `Duplicate profile id ${profile.id}.`,
+      );
+    }
+    if (profile.enabled !== undefined && typeof profile.enabled !== "boolean") {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `profiles[${index}].enabled must be a boolean.`,
+      );
+    }
+    if (profile.global !== undefined && typeof profile.global !== "boolean") {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `profiles[${index}].global must be a boolean.`,
+      );
+    }
+    profileIds.add(profile.id);
+  }
+
+  const defaultProfiles = parseLegacyProfileIds(
+    value.defaults.profiles,
+    "defaults.profiles",
+    profileIds,
+  );
+  const defaultProfileIds = new Set(defaultProfiles);
+  const migratedProfiles = value.profiles.map((rawProfile) => {
+    const profile = rawProfile as Record<string, unknown>;
+    const id = profile.id as string;
+    const enabled = profile.enabled !== false;
+    const wasGlobal = defaultProfileIds.has(id);
+    if (profile.global !== undefined && profile.global !== wasGlobal) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `Profile ${id} global metadata does not match defaults.profiles.`,
+      );
+    }
+    if (wasGlobal && profile.match !== undefined) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `Global profile ${id} cannot also have an automatic tag rule.`,
+      );
+    }
+    return {
+      id,
+      name: profile.name,
+      ...(profile.description === undefined
+        ? {}
+        : { description: profile.description }),
+      body: profile.body,
+      enabled,
+      // Schema 2 global files must be active. A disabled schema 1 default
+      // remains disabled and becomes unassigned, preserving effective output.
+      global: wasGlobal && enabled,
+      tags: profile.tags === undefined ? [] : profile.tags,
+      ...(profile.match === undefined ? {} : { match: profile.match }),
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+    };
+  });
+  const manuallyAssignableIds = new Set(
+    migratedProfiles
+      .filter(
+        (profile) =>
+          !defaultProfileIds.has(profile.id) && profile.match === undefined,
+      )
+      .map((profile) => profile.id),
+  );
+
+  const migratedWorkspaces = value.workspaces.map((rawWorkspace, index) => {
+    if (!isRecord(rawWorkspace) || !isUuid(rawWorkspace.id)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `workspaces[${index}] must contain a UUID id.`,
+      );
+    }
+    assertExactKeys(
+      rawWorkspace,
+      ["id", "root", "displayName", "identityHints", "tags", "scopes"],
+      `workspaces[${index}]`,
+    );
+    if (rawWorkspace.identityHints !== undefined) {
+      if (!isRecord(rawWorkspace.identityHints)) {
+        throw new InstructionSystemError(
+          "INSTRUCTION_LIBRARY_INVALID",
+          `workspaces[${index}].identityHints must be an object.`,
+        );
+      }
+      assertExactKeys(
+        rawWorkspace.identityHints,
+        ["gitRemote", "repositoryId"],
+        `workspaces[${index}].identityHints`,
+      );
+      requireString(
+        rawWorkspace.identityHints.gitRemote,
+        `workspaces[${index}].identityHints.gitRemote`,
+        { optional: true, max: 2_000 },
+      );
+      requireString(
+        rawWorkspace.identityHints.repositoryId,
+        `workspaces[${index}].identityHints.repositoryId`,
+        { optional: true, max: 500 },
+      );
+    }
+    if (!Array.isArray(rawWorkspace.scopes)) {
+      throw new InstructionSystemError(
+        "INSTRUCTION_LIBRARY_INVALID",
+        `workspaces[${index}].scopes must be an array.`,
+      );
+    }
+    const normalizedScopes = rawWorkspace.scopes.map((rawScope, scopeIndex) => {
+      if (!isRecord(rawScope)) {
+        throw new InstructionSystemError(
+          "INSTRUCTION_LIBRARY_INVALID",
+          `workspaces[${index}].scopes[${scopeIndex}] must be an object.`,
+        );
+      }
+      assertExactKeys(
+        rawScope,
+        ["path", "profiles"],
+        `workspaces[${index}].scopes[${scopeIndex}]`,
+      );
+      const path = normalizeScopePath(
+        requireString(
+          rawScope.path,
+          `workspaces[${index}].scopes[${scopeIndex}].path`,
+        ) ?? "",
+      );
+      return {
+        path,
+        profiles: parseLegacyProfileIds(
+          rawScope.profiles,
+          `workspaces[${index}].scopes[${scopeIndex}].profiles`,
+          profileIds,
+        ).filter((id) => manuallyAssignableIds.has(id)),
+      };
+    });
+    const scopes = normalizedScopes
+      .map((scope, scopeIndex) => ({
+        path: scope.path,
+        profiles: scope.profiles.filter(
+          (profileId) =>
+            !normalizedScopes.some(
+              (candidate, candidateIndex) =>
+                candidateIndex !== scopeIndex &&
+                candidate.path !== scope.path &&
+                candidate.profiles.includes(profileId) &&
+                isScopeAncestor(candidate.path, scope.path),
+            ),
+        ),
+      }))
+      .filter((scope) => scope.profiles.length > 0);
+    const rawDisplayName = requireString(
+      rawWorkspace.displayName,
+      `workspaces[${index}].displayName`,
+      {
+        optional: true,
+        max: MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH,
+      },
+    );
+    const displayName =
+      rawDisplayName === undefined || rawDisplayName.trim().length === 0
+        ? undefined
+        : normalizeWorkspaceDisplayName(
+            rawDisplayName,
+            `workspaces[${index}].displayName`,
+          );
+    return {
+      id: rawWorkspace.id,
+      root: rawWorkspace.root,
+      ...(displayName === undefined ? {} : { displayName }),
+      tags: rawWorkspace.tags === undefined ? [] : rawWorkspace.tags,
+      scopes,
+    };
+  });
+
+  return parseInstructionLibrary({
+    schemaVersion: INSTRUCTION_LIBRARY_SCHEMA_VERSION,
+    revision: Number(value.revision),
+    profiles: migratedProfiles,
+    workspaces: migratedWorkspaces,
+  });
+};
+
+const parsePersistedInstructionLibrary = (
+  value: unknown,
+): InstructionLibrary =>
+  isRecord(value) &&
+  value.schemaVersion === LEGACY_INSTRUCTION_LIBRARY_SCHEMA_VERSION
+    ? migrateLegacyInstructionLibrary(value)
+    : parseInstructionLibrary(value);
+
 const readInstructionLibraryBytes = async (path: string): Promise<Buffer> => {
   const metadata = await lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
@@ -684,7 +969,7 @@ const readAndParseInstructionLibrary = async (
   }
   try {
     return {
-      library: parseInstructionLibrary(
+      library: parsePersistedInstructionLibrary(
         JSON.parse(raw.replace(/^\uFEFF/u, "")) as unknown,
       ),
       bytes,
