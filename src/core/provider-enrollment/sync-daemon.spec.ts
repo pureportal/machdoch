@@ -1,5 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +30,9 @@ const wait = async (delayMs: number): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 };
 
-const loadDiagnostic = async (): Promise<ProviderSyncDaemonDiagnostic | undefined> => {
+const loadDiagnostic = async (): Promise<
+  ProviderSyncDaemonDiagnostic | undefined
+> => {
   try {
     return JSON.parse(
       await readFile(getProviderSyncDaemonDiagnosticPath(), "utf8"),
@@ -59,7 +68,9 @@ describe("provider sync daemon", () => {
     expect(isProviderSyncWorkspaceWatchPath(".ENV")).toBe(
       process.platform === "win32",
     );
-    expect(isProviderSyncWorkspaceWatchPath(".machdoch/mcp/mcp.json")).toBe(true);
+    expect(isProviderSyncWorkspaceWatchPath(".machdoch/mcp/mcp.json")).toBe(
+      true,
+    );
     expect(
       isProviderSyncWorkspaceWatchPath(
         ".github/instructions/review.instructions.md",
@@ -67,11 +78,15 @@ describe("provider sync daemon", () => {
     ).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath("src/index.ts")).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath(".git/index")).toBe(false);
-    expect(isProviderSyncWorkspaceWatchPath("node_modules/package/index.js")).toBe(false);
+    expect(
+      isProviderSyncWorkspaceWatchPath("node_modules/package/index.js"),
+    ).toBe(false);
 
     expect(isProviderSyncUserWatchPath("user-config.json")).toBe(true);
     expect(isProviderSyncUserWatchPath("mcp.json")).toBe(true);
-    expect(isProviderSyncUserWatchPath("provider-enrollment/sync-status.json")).toBe(false);
+    expect(
+      isProviderSyncUserWatchPath("provider-enrollment/sync-status.json"),
+    ).toBe(false);
     expect(isProviderSyncUserWatchPath("scheduler.json")).toBe(false);
   });
 
@@ -88,24 +103,28 @@ describe("provider sync daemon", () => {
     vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
     await writeFile(
       join(userConfigRoot, "user-config.json"),
-      `${JSON.stringify({
-        providerEnrollment: {
-          schemaVersion: 1,
-          enabled: true,
-          persistentSync: {
+      `${JSON.stringify(
+        {
+          providerEnrollment: {
+            schemaVersion: 1,
             enabled: true,
-            watch: true,
-            daemonAtLogin: false,
-            debounceMs: 50,
-            fullRescanIntervalMs: 10_000,
-          },
-          providers: {
-            "codex-cli": { enabled: false },
-            "claude-cli": { enabled: false },
-            "copilot-cli": { enabled: false },
+            persistentSync: {
+              enabled: true,
+              watch: true,
+              daemonAtLogin: false,
+              debounceMs: 50,
+              fullRescanIntervalMs: 10_000,
+            },
+            providers: {
+              "codex-cli": { enabled: false },
+              "claude-cli": { enabled: false },
+              "copilot-cli": { enabled: false },
+            },
           },
         },
-      }, null, 2)}\n`,
+        null,
+        2,
+      )}\n`,
       "utf8",
     );
 
@@ -136,7 +155,11 @@ describe("provider sync daemon", () => {
       await expect(runProviderSyncDaemon(workspaceRoot)).rejects.toThrow(
         new RegExp(`already running with PID ${process.pid}`, "u"),
       );
-      await writeFile(join(workspaceRoot, "src", "noise.txt"), "noise\n", "utf8");
+      await writeFile(
+        join(workspaceRoot, "src", "noise.txt"),
+        "noise\n",
+        "utf8",
+      );
       await wait(300);
       await expect(loadDiagnostic()).resolves.toMatchObject({
         runCompletedAt: initial.runCompletedAt,
@@ -158,7 +181,11 @@ describe("provider sync daemon", () => {
       await daemon;
     }
 
-    const daemonPath = join(userConfigRoot, "provider-enrollment", "daemon.json");
+    const daemonPath = join(
+      userConfigRoot,
+      "provider-enrollment",
+      "daemon.json",
+    );
     await expect(stat(daemonPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -174,24 +201,28 @@ describe("provider sync daemon", () => {
     vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
     await writeFile(
       join(userConfigRoot, "user-config.json"),
-      `${JSON.stringify({
-        providerEnrollment: {
-          schemaVersion: 1,
-          enabled: true,
-          persistentSync: {
+      `${JSON.stringify(
+        {
+          providerEnrollment: {
+            schemaVersion: 1,
             enabled: true,
-            watch: true,
-            daemonAtLogin: false,
-            debounceMs: 50,
-            fullRescanIntervalMs: 10_000,
-          },
-          providers: {
-            "codex-cli": { enabled: false },
-            "claude-cli": { enabled: false },
-            "copilot-cli": { enabled: false },
+            persistentSync: {
+              enabled: true,
+              watch: true,
+              daemonAtLogin: false,
+              debounceMs: 50,
+              fullRescanIntervalMs: 10_000,
+            },
+            providers: {
+              "codex-cli": { enabled: false },
+              "claude-cli": { enabled: false },
+              "copilot-cli": { enabled: false },
+            },
           },
         },
-      }, null, 2)}\n`,
+        null,
+        2,
+      )}\n`,
       "utf8",
     );
 
@@ -216,11 +247,7 @@ describe("provider sync daemon", () => {
 
     await waitForDiagnostic((diagnostic) => diagnostic.outcome === "success");
     const heldLock = withCooperativeFileLock(
-      join(
-        userConfigRoot,
-        "provider-enrollment",
-        "reconcile.state",
-      ),
+      join(userConfigRoot, "provider-enrollment", "reconcile.state"),
       async () => {
         notifyLockAcquired?.();
         await new Promise<void>((resolveHeld) => {
@@ -269,6 +296,65 @@ describe("provider sync daemon", () => {
     await expect(getCurrentProviderSyncDaemonPid()).rejects.toThrow(
       "not a valid provider-sync daemon record",
     );
+  });
+
+  it("stops a fully validated daemon record written before schema versioning", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-daemon-legacy-"));
+    roots.push(root);
+    const userConfigRoot = join(root, "user-config");
+    const daemonPath = join(
+      userConfigRoot,
+      "provider-enrollment",
+      "daemon.json",
+    );
+    await mkdir(join(userConfigRoot, "provider-enrollment"), {
+      recursive: true,
+    });
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    const child = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => undefined, 1000)"],
+      {
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
+    const childPid = child.pid;
+    if (!childPid) {
+      child.kill();
+      throw new Error(
+        "Expected the legacy daemon test process to expose a PID.",
+      );
+    }
+    await writeFile(
+      daemonPath,
+      `${JSON.stringify(
+        {
+          pid: childPid,
+          workspaceRoot: root,
+          startedAt: new Date().toISOString(),
+          token: "legacy-runtime-test",
+          runtimeId: "0".repeat(64),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    try {
+      await expect(getProviderSyncDaemonPid()).resolves.toBe(childPid);
+      await expect(getCurrentProviderSyncDaemonPid()).resolves.toBeUndefined();
+      await expect(
+        stopProviderSyncDaemon({
+          onlyIfRuntimeMismatch: true,
+          timeoutMs: 5_000,
+        }),
+      ).resolves.toBe(true);
+      await expect(stat(daemonPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      child.kill();
+    }
   });
 
   it("stops a daemon launched by a different runtime", async () => {

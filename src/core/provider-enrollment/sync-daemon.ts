@@ -26,9 +26,16 @@ const DAEMON_RECORD_KEYS = new Set([
   "token",
   "runtimeId",
 ]);
+const LEGACY_DAEMON_RECORD_KEYS = new Set([
+  "pid",
+  "workspaceRoot",
+  "startedAt",
+  "token",
+  "runtimeId",
+]);
 
 interface DaemonRecord {
-  schemaVersion: 1;
+  schemaVersion: 0 | 1;
   pid: number;
   workspaceRoot: string;
   startedAt: string;
@@ -115,10 +122,18 @@ const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
   } catch (error) {
     throw invalidDaemonRecordError(path, error);
   }
+  const recordKeys = isRecord(parsed) ? Object.keys(parsed) : [];
+  const isCurrentRecord =
+    isRecord(parsed) &&
+    parsed.schemaVersion === 1 &&
+    recordKeys.every((key) => DAEMON_RECORD_KEYS.has(key));
+  const isLegacyRecord =
+    isRecord(parsed) &&
+    !Object.hasOwn(parsed, "schemaVersion") &&
+    recordKeys.every((key) => LEGACY_DAEMON_RECORD_KEYS.has(key));
   if (
     !isRecord(parsed) ||
-    !Object.keys(parsed).every((key) => DAEMON_RECORD_KEYS.has(key)) ||
-    parsed.schemaVersion !== 1 ||
+    (!isCurrentRecord && !isLegacyRecord) ||
     typeof parsed.pid !== "number" ||
     !Number.isInteger(parsed.pid) ||
     parsed.pid <= 0 ||
@@ -133,7 +148,7 @@ const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
     throw invalidDaemonRecordError(path);
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: isCurrentRecord ? 1 : 0,
     pid: parsed.pid,
     workspaceRoot: parsed.workspaceRoot,
     startedAt: parsed.startedAt,
@@ -191,6 +206,7 @@ export const getCurrentProviderSyncDaemonPid = async (): Promise<
   const record = await loadDaemonRecord();
   if (
     !record ||
+    record.schemaVersion !== 1 ||
     record.runtimeId !== getProviderSyncDaemonRuntimeId() ||
     !isProcessAlive(record.pid)
   ) {
@@ -222,6 +238,7 @@ export const stopProviderSyncDaemon = async (
   if (!record || !isProcessAlive(record.pid)) return false;
   if (
     options.onlyIfRuntimeMismatch &&
+    record.schemaVersion === 1 &&
     record.runtimeId === getProviderSyncDaemonRuntimeId()
   ) {
     return false;
