@@ -97,20 +97,7 @@ pub(crate) fn assign_child_process_to_kill_on_close_job(
 pub(crate) fn terminate_child_process_tree(child: &mut Child) {
     #[cfg(target_os = "windows")]
     {
-        let pid = child.id().to_string();
-        let mut command = Command::new("taskkill");
-        command.creation_flags(CREATE_NO_WINDOW);
-        let taskkill_result = command
-            .args(["/PID", pid.as_str(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        if taskkill_result
-            .map(|status| status.success())
-            .unwrap_or(false)
-        {
+        if terminate_child_process_tree_by_id(child.id()) {
             return;
         }
     }
@@ -143,4 +130,19 @@ pub(crate) fn terminate_child_process_tree(child: &mut Child) {
     }
 
     let _ = child.kill();
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn terminate_child_process_tree_by_id(process_id: u32) -> bool {
+    let pid = process_id.to_string();
+    let mut command = Command::new("taskkill");
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+        .args(["/PID", pid.as_str(), "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }

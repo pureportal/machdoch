@@ -875,7 +875,10 @@ export const WorkspaceManager = ({
                         });
                         if (!saved) return;
                       } else {
-                        workspaceSetup.onRelink(selectedWorkspace.root, root);
+                        await workspaceSetup.onRelink(
+                          selectedWorkspace.root,
+                          root,
+                        );
                       }
                       setWorkspaceToolsDirty(false);
                       setTagDraftPending(false);
@@ -927,7 +930,7 @@ export const WorkspaceManager = ({
                       }
                       setWorkspaceToolsDirty(false);
                       setTagDraftPending(false);
-                      workspaceSetup.onRemove(selectedWorkspace.root);
+                      await workspaceSetup.onRemove(selectedWorkspace.root);
                     }}
                   >
                     <Trash2 className="size-4 text-red-300" />

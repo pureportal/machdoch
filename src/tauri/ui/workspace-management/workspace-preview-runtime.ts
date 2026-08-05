@@ -29,6 +29,9 @@ interface PreviewFile {
 }
 
 interface PreviewTerminalSession {
+  sessionId: string;
+  workspaceRoot: string;
+  shellId: string;
   onEvent: (event: WorkspaceTerminalEvent) => void;
   stopped: boolean;
 }
@@ -223,7 +226,11 @@ const encodeOutput = (value: string): string => {
 
 const emitOutput = (session: PreviewTerminalSession, output: string): void => {
   if (!session.stopped) {
-    session.onEvent({ type: "output", data: encodeOutput(output) });
+    session.onEvent({
+      type: "output",
+      sessionId: session.sessionId,
+      data: encodeOutput(output),
+    });
   }
 };
 
@@ -457,16 +464,29 @@ export const discoverPreviewWorkspaceShells = (): WorkspaceShellDiscovery => ({
 });
 
 export const startPreviewWorkspaceTerminal = (
+  workspaceRoot: string,
+  shellId: string,
   onEvent: (event: WorkspaceTerminalEvent) => void,
 ): WorkspaceTerminalStarted => {
   previewTerminalId += 1;
   const sessionId = `preview-terminal-${previewTerminalId}`;
-  const session: PreviewTerminalSession = { onEvent, stopped: false };
+  const session: PreviewTerminalSession = {
+    sessionId,
+    workspaceRoot,
+    shellId,
+    onEvent,
+    stopped: false,
+  };
   previewTerminals.set(sessionId, session);
   window.setTimeout(() => {
-    emitOutput(session, "PowerShell 7.6.0\r\nPS C:\\Development\\machdoch> ");
+    emitOutput(
+      session,
+      shellId === "cmd"
+        ? "Microsoft Windows [Version 10.0.26100]\r\nC:\\Development\\machdoch>"
+        : "PowerShell 7.6.0\r\nPS C:\\Development\\machdoch> ",
+    );
   }, 20);
-  return { sessionId, shellId: "pwsh", processId: null };
+  return { sessionId, shellId, processId: null };
 };
 
 export const writePreviewWorkspaceTerminal = (
@@ -479,7 +499,12 @@ export const writePreviewWorkspaceTerminal = (
   }
   emitOutput(
     session,
-    data.replaceAll("\r", "\r\nPS C:\\Development\\machdoch> "),
+    data.replaceAll(
+      "\r",
+      session.shellId === "cmd"
+        ? "\r\nC:\\Development\\machdoch>"
+        : "\r\nPS C:\\Development\\machdoch> ",
+    ),
   );
 };
 
@@ -489,6 +514,18 @@ export const stopPreviewWorkspaceTerminal = (sessionId: string): void => {
   session.stopped = true;
   session.onEvent({ type: "exit", exitCode: 0 });
   previewTerminals.delete(sessionId);
+};
+
+export const stopPreviewWorkspaceTerminals = (
+  workspaceRoot: string,
+): number => {
+  const matchingIds = [...previewTerminals]
+    .filter(([, session]) => session.workspaceRoot === workspaceRoot)
+    .map(([sessionId]) => sessionId);
+  for (const sessionId of matchingIds) {
+    stopPreviewWorkspaceTerminal(sessionId);
+  }
+  return matchingIds.length;
 };
 
 const previewGitOverview: WorkspaceGitOverview = {

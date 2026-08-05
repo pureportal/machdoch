@@ -1038,11 +1038,17 @@ export const useChatSessionController = (
 
       try {
         const previousWorkspaceRoot =
-          input.operation === "workspace-relink"
+          input.operation === "workspace-relink" ||
+          input.operation === "workspace-remove"
             ? instructionRegistry?.workspaces.find(
                 (workspace) => workspace.id === input.workspaceId,
               )?.root
             : undefined;
+        if (previousWorkspaceRoot) {
+          const { disposeWorkspaceTerminals } =
+            await import("../../workspace-management/workspace-terminal-store");
+          await disposeWorkspaceTerminals(previousWorkspaceRoot);
+        }
         const result = await mutateInstructions(
           state.activeSession.workspace,
           input,
@@ -2152,7 +2158,18 @@ export const useChatSessionController = (
   );
 
   const removeWorkspaceFromHistory = useCallback(
-    (workspace: string): void => {
+    async (workspace: string): Promise<void> => {
+      try {
+        const { disposeWorkspaceTerminals } =
+          await import("../../workspace-management/workspace-terminal-store");
+        await disposeWorkspaceTerminals(workspace);
+      } catch (error) {
+        console.error("Failed to stop workspace terminals", error);
+        window.alert(
+          "The workspace could not be removed because its terminals could not be stopped. Try again.",
+        );
+        return;
+      }
       state.applyShellState((prev) => ({
         ...prev,
         recentWorkspaces: removeRecentWorkspace(
@@ -2178,7 +2195,21 @@ export const useChatSessionController = (
   );
 
   const relinkWorkspaceInHistory = useCallback(
-    (currentWorkspace: string, nextWorkspace: string): void => {
+    async (currentWorkspace: string, nextWorkspace: string): Promise<void> => {
+      try {
+        const { disposeWorkspaceTerminals } =
+          await import("../../workspace-management/workspace-terminal-store");
+        await disposeWorkspaceTerminals(currentWorkspace);
+      } catch (error) {
+        console.error(
+          "Failed to stop terminals for the relinked workspace",
+          error,
+        );
+        window.alert(
+          "The workspace could not be relinked because its terminals could not be stopped. Try again.",
+        );
+        return;
+      }
       state.applyShellState((prev) => ({
         ...prev,
         recentWorkspaces: rememberRecentWorkspace(

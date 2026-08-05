@@ -112,6 +112,7 @@ import {
   savePreviewWorkspaceFile,
   startPreviewWorkspaceTerminal,
   stopPreviewWorkspaceTerminal,
+  stopPreviewWorkspaceTerminals,
   writePreviewWorkspaceTerminal,
 } from "./workspace-management/workspace-preview-runtime";
 
@@ -474,7 +475,7 @@ export interface WorkspaceTerminalStarted {
 }
 
 export type WorkspaceTerminalEvent =
-  | { type: "output"; data: string }
+  | { type: "output"; sessionId: string; data: string }
   | { type: "exit"; exitCode: number | null }
   | { type: "error"; message: string };
 
@@ -4780,7 +4781,7 @@ export const startWorkspaceTerminal = async (
   if (!shellId) throw new Error("Choose a shell.");
   if (!canInvokeTauriCommands()) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
-    return startPreviewWorkspaceTerminal(onEvent);
+    return startPreviewWorkspaceTerminal(root, shellId, onEvent);
   }
   const channel = new tauriCore.Channel<WorkspaceTerminalEvent>();
   channel.onmessage = onEvent;
@@ -4818,6 +4819,45 @@ export const writeWorkspaceTerminal = async (
   }
 };
 
+export const writeWorkspaceTerminalBinary = async (
+  sessionId: string,
+  data: string,
+): Promise<void> => {
+  if (!sessionId) throw new Error("This terminal is no longer running.");
+  let binary = "";
+  for (let index = 0; index < data.length; index += 1) {
+    binary += String.fromCharCode(data.charCodeAt(index) & 0xff);
+  }
+  const encoded = btoa(binary);
+  if (!canInvokeTauriCommands()) {
+    writePreviewWorkspaceTerminal(sessionId, data);
+    return;
+  }
+  try {
+    await tauriCore.invoke("write_workspace_terminal_binary", {
+      sessionId,
+      data: encoded,
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const acknowledgeWorkspaceTerminalOutput = async (
+  sessionId: string,
+  bytes: number,
+): Promise<void> => {
+  if (!sessionId || !canInvokeTauriCommands()) return;
+  try {
+    await tauriCore.invoke("acknowledge_workspace_terminal_output", {
+      sessionId,
+      bytes: Math.max(0, Math.round(bytes)),
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
 export const resizeWorkspaceTerminal = async (
   sessionId: string,
   columns: number,
@@ -4845,6 +4885,22 @@ export const stopWorkspaceTerminal = async (
   }
   try {
     await tauriCore.invoke("stop_workspace_terminal", { sessionId });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const stopWorkspaceTerminals = async (
+  workspaceRoot: string,
+): Promise<number> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands()) {
+    return stopPreviewWorkspaceTerminals(root);
+  }
+  try {
+    return await tauriCore.invoke<number>("stop_workspace_terminals", {
+      workspaceRoot: root,
+    });
   } catch (error) {
     throw normalizeWorkspaceToolsError(error);
   }

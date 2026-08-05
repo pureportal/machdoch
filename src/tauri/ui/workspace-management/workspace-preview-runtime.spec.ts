@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   discoverPreviewWorkspaceGitRepositories,
   listPreviewWorkspaceDirectory,
@@ -7,6 +7,10 @@ import {
   loadPreviewWorkspacePullRequests,
   readPreviewWorkspaceFile,
   resolvePreviewWorkspaceFileSource,
+  startPreviewWorkspaceTerminal,
+  stopPreviewWorkspaceTerminal,
+  stopPreviewWorkspaceTerminals,
+  writePreviewWorkspaceTerminal,
 } from "./workspace-preview-runtime";
 
 describe("workspace browser preview runtime", () => {
@@ -103,5 +107,39 @@ describe("workspace browser preview runtime", () => {
       loadPreviewWorkspacePullRequests(workspaceRoot, desktopRepository)
         .items[0]?.number,
     ).toBe(42);
+  });
+
+  it("keeps terminal sessions isolated when a workspace is removed", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { setTimeout });
+    const firstEvents: string[] = [];
+    const secondEvents: string[] = [];
+    const first = startPreviewWorkspaceTerminal(
+      "C:\\Projects\\first",
+      "pwsh",
+      (event) => firstEvents.push(event.type),
+    );
+    const second = startPreviewWorkspaceTerminal(
+      "C:\\Projects\\second",
+      "cmd",
+      (event) => secondEvents.push(event.type),
+    );
+
+    vi.runAllTimers();
+    expect(first.shellId).toBe("pwsh");
+    expect(second.shellId).toBe("cmd");
+    expect(stopPreviewWorkspaceTerminals("C:\\Projects\\first")).toBe(1);
+    expect(firstEvents).toContain("exit");
+    expect(() =>
+      writePreviewWorkspaceTerminal(first.sessionId, "echo stopped\r"),
+    ).toThrow("no longer running");
+    expect(() =>
+      writePreviewWorkspaceTerminal(second.sessionId, "echo alive\r"),
+    ).not.toThrow();
+    expect(secondEvents).not.toContain("exit");
+
+    stopPreviewWorkspaceTerminal(second.sessionId);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 });

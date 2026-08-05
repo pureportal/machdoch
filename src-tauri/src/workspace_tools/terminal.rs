@@ -6,7 +6,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc, Condvar, Mutex,
     },
     thread,
     time::Duration,
@@ -23,13 +23,17 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 
+#[cfg(windows)]
+use crate::child_process::terminate_child_process_tree_by_id;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
-const MAX_TERMINAL_SESSIONS: usize = 8;
+const MAX_TERMINAL_SESSIONS: usize = 32;
+const MAX_WORKSPACE_TERMINAL_SESSIONS: usize = 8;
 const MAX_TERMINAL_INPUT_BYTES: usize = 64 * 1024;
 const MAX_TERMINAL_COLUMNS: u16 = 500;
 const MAX_TERMINAL_ROWS: u16 = 300;
 const TERMINAL_READ_BUFFER_BYTES: usize = 16 * 1024;
+const TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone)]
 struct ShellSpec {
@@ -104,15 +108,21 @@ pub struct StartedWorkspaceTerminal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum WorkspaceTerminalEvent {
-    Output { data: String },
+    Output { session_id: String, data: String },
     Exit { exit_code: Option<u32> },
     Error { message: String },
 }
 
 struct TerminalSession {
+    workspace_key: String,
+    canonical_workspace_key: String,
+    #[cfg(windows)]
+    process_id: Option<u32>,
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     writer: Mutex<Option<Box<dyn Write + Send>>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    pending_output_bytes: Mutex<usize>,
+    output_acknowledged: Condvar,
     stopped: AtomicBool,
 }
 
@@ -128,6 +138,16 @@ impl TerminalSession {
 
     fn stop(&self) -> Result<(), String> {
         if self.stopped.swap(true, Ordering::SeqCst) {
+            self.output_acknowledged.notify_all();
+            self.close_handles();
+            return Ok(());
+        }
+        self.output_acknowledged.notify_all();
+        #[cfg(windows)]
+        if self
+            .process_id
+            .is_some_and(terminate_child_process_tree_by_id)
+        {
             self.close_handles();
             return Ok(());
         }
@@ -145,15 +165,61 @@ impl TerminalSession {
         self.close_handles();
         result
     }
+
+    fn record_output(&self, bytes: usize) {
+        if let Ok(mut pending) = self.pending_output_bytes.lock() {
+            *pending = pending.saturating_add(bytes);
+        }
+    }
+
+    fn acknowledge_output(&self, bytes: usize) {
+        if let Ok(mut pending) = self.pending_output_bytes.lock() {
+            *pending = pending.saturating_sub(bytes);
+            self.output_acknowledged.notify_all();
+        }
+    }
+
+    fn clear_pending_output(&self) {
+        if let Ok(mut pending) = self.pending_output_bytes.lock() {
+            *pending = 0;
+            self.output_acknowledged.notify_all();
+        }
+    }
+
+    fn wait_for_output_capacity(&self) {
+        let Ok(mut pending) = self.pending_output_bytes.lock() else {
+            return;
+        };
+        while *pending >= TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES
+            && !self.stopped.load(Ordering::SeqCst)
+        {
+            let Ok((next_pending, _)) = self
+                .output_acknowledged
+                .wait_timeout(pending, Duration::from_secs(1))
+            else {
+                return;
+            };
+            pending = next_pending;
+        }
+    }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         if !self.stopped.swap(true, Ordering::SeqCst) {
-            if let Ok(killer) = self.killer.get_mut() {
-                let _ = killer.kill();
+            #[cfg(windows)]
+            let tree_stopped = self
+                .process_id
+                .is_some_and(terminate_child_process_tree_by_id);
+            #[cfg(not(windows))]
+            let tree_stopped = false;
+            if !tree_stopped {
+                if let Ok(killer) = self.killer.get_mut() {
+                    let _ = killer.kill();
+                }
             }
         }
+        self.output_acknowledged.notify_all();
         if let Ok(writer) = self.writer.get_mut() {
             writer.take();
         }
@@ -200,6 +266,57 @@ fn canonical_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
         return Err("Select a workspace first.".to_string());
     }
     resolve_workspace_root_path(workspace_root)
+}
+
+fn normalized_workspace_key(workspace_root: &str) -> String {
+    let normalized = workspace_root.trim().replace('\\', "/");
+    let without_trailing_separators = normalized.trim_end_matches('/');
+    let key = if without_trailing_separators.is_empty() {
+        normalized
+    } else {
+        without_trailing_separators.to_string()
+    };
+    if cfg!(windows) {
+        key.to_lowercase()
+    } else {
+        key
+    }
+}
+
+fn terminal_session_matches_workspace(
+    session: &TerminalSession,
+    requested_key: &str,
+    canonical_key: Option<&str>,
+) -> bool {
+    session.workspace_key == requested_key
+        || session.canonical_workspace_key == requested_key
+        || canonical_key.is_some_and(|key| {
+            session.workspace_key == key || session.canonical_workspace_key == key
+        })
+}
+
+fn validate_terminal_session_capacity(
+    sessions: &HashMap<String, Arc<TerminalSession>>,
+    workspace_key: &str,
+    canonical_workspace_key: &str,
+) -> Result<(), String> {
+    if sessions.len() >= MAX_TERMINAL_SESSIONS {
+        return Err("Close an existing terminal before starting another.".to_string());
+    }
+    let workspace_session_count = sessions
+        .values()
+        .filter(|session| {
+            terminal_session_matches_workspace(
+                session,
+                workspace_key,
+                Some(canonical_workspace_key),
+            )
+        })
+        .count();
+    if workspace_session_count >= MAX_WORKSPACE_TERMINAL_SESSIONS {
+        return Err("Close a terminal in this workspace before starting another.".to_string());
+    }
+    Ok(())
 }
 
 fn path_extensions(pathext: Option<&str>) -> Vec<String> {
@@ -597,19 +714,19 @@ fn start_terminal_sync(
 ) -> Result<StartedWorkspaceTerminal, String> {
     let size = validate_terminal_size(request.columns, request.rows)?;
     let workspace = canonical_workspace_root(&request.workspace_root)?;
+    let workspace_key = normalized_workspace_key(&request.workspace_root);
+    let canonical_workspace_key = normalized_workspace_key(&workspace.to_string_lossy());
     let shell = discover_shell_specs()
         .into_iter()
         .find(|shell| shell.id == request.shell_id)
         .ok_or_else(|| "That shell is no longer available.".to_string())?;
     let session_id = next_session_id()?;
 
-    if sessions
-        .lock()
-        .map_err(|_| "The terminal session registry is unavailable.".to_string())?
-        .len()
-        >= MAX_TERMINAL_SESSIONS
     {
-        return Err("Close an existing terminal before starting another.".to_string());
+        let registry = sessions
+            .lock()
+            .map_err(|_| "The terminal session registry is unavailable.".to_string())?;
+        validate_terminal_session_capacity(&registry, &workspace_key, &canonical_workspace_key)?;
     }
 
     let pair = native_pty_system()
@@ -645,9 +762,15 @@ fn start_terminal_sync(
         }
     };
     let session = Arc::new(TerminalSession {
+        workspace_key,
+        canonical_workspace_key,
+        #[cfg(windows)]
+        process_id,
         master: Mutex::new(Some(pair.master)),
         writer: Mutex::new(Some(writer)),
         killer: Mutex::new(killer),
+        pending_output_bytes: Mutex::new(0),
+        output_acknowledged: Condvar::new(),
         stopped: AtomicBool::new(false),
     });
 
@@ -655,9 +778,13 @@ fn start_terminal_sync(
         let mut registry = sessions
             .lock()
             .map_err(|_| "The terminal session registry is unavailable.".to_string())?;
-        if registry.len() >= MAX_TERMINAL_SESSIONS {
+        if let Err(error) = validate_terminal_session_capacity(
+            &registry,
+            &session.workspace_key,
+            &session.canonical_workspace_key,
+        ) {
             let _ = session.stop();
-            return Err("Close an existing terminal before starting another.".to_string());
+            return Err(error);
         }
         registry.insert(session_id.clone(), Arc::clone(&session));
     }
@@ -687,13 +814,20 @@ fn start_terminal_sync(
                 match event {
                     TerminalWorkerEvent::Output(bytes) => {
                         if channel_open {
+                            let byte_count = bytes.len();
                             let data = BASE64_STANDARD.encode(bytes);
+                            aggregator_session.record_output(byte_count);
                             if !send_terminal_event(
                                 &on_event,
-                                WorkspaceTerminalEvent::Output { data },
+                                WorkspaceTerminalEvent::Output {
+                                    session_id: aggregator_session_id.clone(),
+                                    data,
+                                },
                             ) {
                                 channel_open = false;
-                                let _ = aggregator_session.stop();
+                                aggregator_session.clear_pending_output();
+                            } else {
+                                aggregator_session.wait_for_output_capacity();
                             }
                         }
                     }
@@ -731,6 +865,7 @@ fn start_terminal_sync(
             if let Ok(mut registry) = aggregator_sessions.lock() {
                 registry.remove(&aggregator_session_id);
             }
+            aggregator_session.clear_pending_output();
             if channel_open && exit_received {
                 let _ = send_terminal_event(&on_event, WorkspaceTerminalEvent::Exit { exit_code });
             }
@@ -789,6 +924,7 @@ fn start_terminal_sync(
         .spawn(move || {
             let result = child.wait();
             wait_session.stopped.store(true, Ordering::SeqCst);
+            wait_session.output_acknowledged.notify_all();
             wait_session.close_handles();
             let event = match result {
                 Ok(status) => TerminalWorkerEvent::Exit {
@@ -853,6 +989,10 @@ pub async fn write_workspace_terminal(
         return Err("Terminal input is too large.".to_string());
     }
     let session = find_session(&state.sessions, &session_id)?;
+    write_terminal_input(session, data.into_bytes()).await
+}
+
+async fn write_terminal_input(session: Arc<TerminalSession>, data: Vec<u8>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         if session.stopped.load(Ordering::SeqCst) {
             return Err("This terminal is no longer running.".to_string());
@@ -865,12 +1005,52 @@ pub async fn write_workspace_terminal(
             .as_mut()
             .ok_or_else(|| "This terminal is no longer running.".to_string())?;
         writer
-            .write_all(data.as_bytes())
+            .write_all(&data)
             .and_then(|_| writer.flush())
             .map_err(|error| format!("Unable to write terminal input: {error}"))
     })
     .await
     .map_err(|error| format!("Terminal input stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+pub async fn write_workspace_terminal_binary(
+    state: tauri::State<'_, WorkspaceTerminalState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    if data.len() > MAX_TERMINAL_INPUT_BYTES.saturating_mul(2) {
+        return Err("Terminal input is too large.".to_string());
+    }
+    let data = BASE64_STANDARD
+        .decode(data)
+        .map_err(|_| "Terminal input is not valid binary data.".to_string())?;
+    if data.len() > MAX_TERMINAL_INPUT_BYTES {
+        return Err("Terminal input is too large.".to_string());
+    }
+    let session = find_session(&state.sessions, &session_id)?;
+    write_terminal_input(session, data).await
+}
+
+#[tauri::command]
+pub async fn acknowledge_workspace_terminal_output(
+    state: tauri::State<'_, WorkspaceTerminalState>,
+    session_id: String,
+    bytes: usize,
+) -> Result<(), String> {
+    if bytes > TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES.saturating_mul(2) {
+        return Err("The terminal output acknowledgement is too large.".to_string());
+    }
+    let session = state
+        .sessions
+        .lock()
+        .map_err(|_| "The terminal session registry is unavailable.".to_string())?
+        .get(&session_id)
+        .cloned();
+    if let Some(session) = session {
+        session.acknowledge_output(bytes);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -913,6 +1093,63 @@ pub async fn stop_workspace_terminal(
     tauri::async_runtime::spawn_blocking(move || session.stop())
         .await
         .map_err(|error| format!("Terminal shutdown stopped unexpectedly: {error}"))?
+}
+
+fn stop_workspace_terminals_sync(
+    sessions: &TerminalSessions,
+    workspace_root: &str,
+) -> Result<usize, String> {
+    let requested_key = normalized_workspace_key(workspace_root);
+    let canonical_key = canonical_workspace_root(workspace_root)
+        .ok()
+        .map(|workspace| normalized_workspace_key(&workspace.to_string_lossy()));
+    let removed = {
+        let mut registry = sessions
+            .lock()
+            .map_err(|_| "The terminal session registry is unavailable.".to_string())?;
+        let matching_ids = registry
+            .iter()
+            .filter_map(|(session_id, session)| {
+                terminal_session_matches_workspace(
+                    session,
+                    &requested_key,
+                    canonical_key.as_deref(),
+                )
+                .then(|| session_id.clone())
+            })
+            .collect::<Vec<_>>();
+        matching_ids
+            .into_iter()
+            .filter_map(|session_id| registry.remove(&session_id))
+            .collect::<Vec<_>>()
+    };
+
+    let count = removed.len();
+    let failures = removed
+        .into_iter()
+        .filter_map(|session| session.stop().err())
+        .collect::<Vec<_>>();
+    if failures.is_empty() {
+        Ok(count)
+    } else {
+        Err(format!(
+            "Unable to stop every terminal in this workspace: {}",
+            failures.join("; ")
+        ))
+    }
+}
+
+#[tauri::command]
+pub async fn stop_workspace_terminals(
+    state: tauri::State<'_, WorkspaceTerminalState>,
+    workspace_root: String,
+) -> Result<usize, String> {
+    let sessions = Arc::clone(&state.sessions);
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_workspace_terminals_sync(&sessions, &workspace_root)
+    })
+    .await
+    .map_err(|error| format!("Workspace terminal shutdown stopped unexpectedly: {error}"))?
 }
 
 fn open_external_terminal_sync(workspace_root: &str, terminal_id: &str) -> Result<(), String> {
@@ -1027,6 +1264,267 @@ mod tests {
     }
 
     #[test]
+    fn terminal_workspace_keys_are_stable_for_platform_paths() {
+        if cfg!(windows) {
+            assert_eq!(
+                normalized_workspace_key(r"C:\Projects\Machdoch\"),
+                "c:/projects/machdoch"
+            );
+            assert_eq!(
+                normalized_workspace_key(r"c:/projects/machdoch"),
+                "c:/projects/machdoch"
+            );
+        } else {
+            assert_eq!(normalized_workspace_key("/tmp/machdoch/"), "/tmp/machdoch");
+        }
+    }
+
+    #[test]
+    fn workspace_cleanup_keeps_other_workspace_terminals_running() {
+        let shells = discover_shell_specs();
+        let preferred_id = if cfg!(windows) { "cmd" } else { "sh" };
+        let Some(shell) = shells
+            .iter()
+            .find(|shell| shell.id == preferred_id)
+            .or_else(|| shells.first())
+            .cloned()
+        else {
+            return;
+        };
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let first_workspace = env::temp_dir().join(format!("machdoch-pty-first-{unique}"));
+        let second_workspace = env::temp_dir().join(format!("machdoch-pty-second-{unique}"));
+        fs::create_dir_all(&first_workspace).expect("first PTY workspace should create");
+        fs::create_dir_all(&second_workspace).expect("second PTY workspace should create");
+        let sessions: TerminalSessions = Arc::new(Mutex::new(HashMap::new()));
+        let first = start_terminal_sync(
+            Arc::clone(&sessions),
+            StartWorkspaceTerminalRequest {
+                workspace_root: first_workspace.to_string_lossy().into_owned(),
+                shell_id: shell.id.clone(),
+                columns: 80,
+                rows: 24,
+            },
+            Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
+        )
+        .expect("first PTY should start");
+        let second = start_terminal_sync(
+            Arc::clone(&sessions),
+            StartWorkspaceTerminalRequest {
+                workspace_root: second_workspace.to_string_lossy().into_owned(),
+                shell_id: shell.id,
+                columns: 80,
+                rows: 24,
+            },
+            Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
+        )
+        .expect("second PTY should start");
+
+        assert_eq!(
+            stop_workspace_terminals_sync(&sessions, &first_workspace.to_string_lossy())
+                .expect("first workspace terminals should stop"),
+            1
+        );
+        let registry = sessions.lock().expect("session registry should lock");
+        assert!(!registry.contains_key(&first.session_id));
+        assert!(registry.contains_key(&second.session_id));
+        assert!(!registry
+            .get(&second.session_id)
+            .expect("second terminal should remain")
+            .stopped
+            .load(Ordering::SeqCst));
+        drop(registry);
+
+        assert_eq!(
+            stop_workspace_terminals_sync(&sessions, &second_workspace.to_string_lossy())
+                .expect("second workspace terminals should stop"),
+            1
+        );
+        let _ = fs::remove_dir_all(first_workspace);
+        let _ = fs::remove_dir_all(second_workspace);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn workspace_supports_mixed_powershell_and_command_prompt_sessions() {
+        let shells = discover_shell_specs();
+        let Some(powershell) = shells
+            .iter()
+            .find(|shell| shell.kind == "powershell")
+            .cloned()
+        else {
+            return;
+        };
+        let Some(command_prompt) = shells.iter().find(|shell| shell.id == "cmd").cloned() else {
+            return;
+        };
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let workspace = env::temp_dir().join(format!("machdoch-pty-mixed-{unique}"));
+        fs::create_dir_all(&workspace).expect("mixed-shell PTY workspace should create");
+        let sessions: TerminalSessions = Arc::new(Mutex::new(HashMap::new()));
+        let powershell_session = start_terminal_sync(
+            Arc::clone(&sessions),
+            StartWorkspaceTerminalRequest {
+                workspace_root: workspace.to_string_lossy().into_owned(),
+                shell_id: powershell.id.clone(),
+                columns: 80,
+                rows: 24,
+            },
+            Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
+        )
+        .expect("PowerShell PTY should start");
+        let command_prompt_session = start_terminal_sync(
+            Arc::clone(&sessions),
+            StartWorkspaceTerminalRequest {
+                workspace_root: workspace.to_string_lossy().into_owned(),
+                shell_id: command_prompt.id.clone(),
+                columns: 80,
+                rows: 24,
+            },
+            Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
+        )
+        .expect("Command Prompt PTY should start");
+
+        assert_eq!(powershell_session.shell_id, powershell.id);
+        assert_eq!(command_prompt_session.shell_id, command_prompt.id);
+        assert_ne!(
+            powershell_session.session_id,
+            command_prompt_session.session_id
+        );
+        assert_eq!(sessions.lock().expect("registry should lock").len(), 2);
+        assert_eq!(
+            stop_workspace_terminals_sync(&sessions, &workspace.to_string_lossy())
+                .expect("mixed workspace terminals should stop"),
+            2
+        );
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn long_running_command_continues_until_workspace_cleanup() {
+        let shells = discover_shell_specs();
+        let preferred_id = if cfg!(windows) { "cmd" } else { "sh" };
+        let Some(shell) = shells
+            .iter()
+            .find(|shell| shell.id == preferred_id)
+            .or_else(|| shells.first())
+            .cloned()
+        else {
+            return;
+        };
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let workspace = env::temp_dir().join(format!("machdoch-pty-background-{unique}"));
+        fs::create_dir_all(&workspace).expect("background PTY workspace should create");
+        let output = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let callback_output = Arc::clone(&output);
+        let channel = Channel::<WorkspaceTerminalEvent>::new(move |body| {
+            if let WorkspaceTerminalEvent::Output { data, .. } =
+                body.deserialize::<WorkspaceTerminalEvent>()?
+            {
+                callback_output
+                    .lock()
+                    .expect("background output should lock")
+                    .extend(
+                        BASE64_STANDARD
+                            .decode(data)
+                            .map_err(|error| tauri::Error::Anyhow(error.into()))?,
+                    );
+            }
+            Ok(())
+        });
+        let sessions: TerminalSessions = Arc::new(Mutex::new(HashMap::new()));
+        let started = start_terminal_sync(
+            Arc::clone(&sessions),
+            StartWorkspaceTerminalRequest {
+                workspace_root: workspace.to_string_lossy().into_owned(),
+                shell_id: shell.id,
+                columns: 80,
+                rows: 24,
+            },
+            channel,
+        )
+        .expect("background PTY should start");
+        let session = sessions
+            .lock()
+            .expect("session registry should lock")
+            .get(&started.session_id)
+            .cloned()
+            .expect("background session should be registered");
+        let startup_deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < startup_deadline
+            && output
+                .lock()
+                .expect("background output should lock")
+                .is_empty()
+        {
+            thread::sleep(Duration::from_millis(25));
+        }
+        if output
+            .lock()
+            .expect("background output should lock")
+            .windows(4)
+            .any(|bytes| bytes == b"\x1b[6n")
+        {
+            let mut writer = session.writer.lock().expect("PTY writer should lock");
+            let writer = writer.as_mut().expect("PTY writer should be open");
+            writer
+                .write_all(b"\x1b[1;1R")
+                .expect("terminal status response should write");
+            writer
+                .flush()
+                .expect("terminal status response should flush");
+        }
+        let command = if cfg!(windows) {
+            b"ping -n 3 127.0.0.1 >nul & echo MACHDOCH_BACKGROUND_DONE\r".as_slice()
+        } else {
+            b"sleep 1; echo MACHDOCH_BACKGROUND_DONE\n".as_slice()
+        };
+        {
+            let mut writer = session.writer.lock().expect("PTY writer should lock");
+            let writer = writer.as_mut().expect("PTY writer should be open");
+            writer
+                .write_all(command)
+                .expect("background command should write");
+            writer.flush().expect("background command should flush");
+        }
+
+        thread::sleep(Duration::from_millis(200));
+        assert!(sessions
+            .lock()
+            .expect("session registry should lock")
+            .contains_key(&started.session_id));
+        assert!(!session.stopped.load(Ordering::SeqCst));
+
+        let output_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < output_deadline
+            && !String::from_utf8_lossy(&output.lock().expect("background output should lock"))
+                .contains("MACHDOCH_BACKGROUND_DONE")
+        {
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert!(
+            String::from_utf8_lossy(&output.lock().expect("background output should lock"))
+                .contains("MACHDOCH_BACKGROUND_DONE"),
+            "delayed terminal output should arrive while the session is in the background"
+        );
+        assert_eq!(
+            stop_workspace_terminals_sync(&sessions, &workspace.to_string_lossy())
+                .expect("background workspace terminals should stop"),
+            1
+        );
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
     fn terminal_starts_resizes_streams_and_stops() {
         let shells = discover_shell_specs();
         let preferred_id = if cfg!(windows) { "cmd" } else { "sh" };
@@ -1047,7 +1545,7 @@ mod tests {
         let output = Arc::new(Mutex::new(Vec::<u8>::new()));
         let callback_output = Arc::clone(&output);
         let channel = Channel::<WorkspaceTerminalEvent>::new(move |body| {
-            if let WorkspaceTerminalEvent::Output { data } =
+            if let WorkspaceTerminalEvent::Output { data, .. } =
                 body.deserialize::<WorkspaceTerminalEvent>()?
             {
                 let bytes = BASE64_STANDARD
