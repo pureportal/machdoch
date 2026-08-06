@@ -89,14 +89,14 @@ afterEach(async () => {
 });
 
 describe("hasConfiguredValue", () => {
-  it("treats placeholder values as unconfigured", () => {
+  it("uses explicit presence instead of guessing from secret text", () => {
     expect(hasConfiguredValue(undefined)).toBe(false);
     expect(hasConfiguredValue("   ")).toBe(false);
-    expect(hasConfiguredValue("YOUR_OPENAI_API_KEY_HERE")).toBe(false);
-    expect(hasConfiguredValue("CHANGE_ME")).toBe(false);
-    expect(hasConfiguredValue("api-key-PLACEHOLDER")).toBe(false);
-    expect(hasConfiguredValue("sk-user-config")).toBe(false);
-    expect(hasConfiguredValue("pplx-live")).toBe(false);
+    expect(hasConfiguredValue("YOUR_OPENAI_API_KEY_HERE")).toBe(true);
+    expect(hasConfiguredValue("CHANGE_ME")).toBe(true);
+    expect(hasConfiguredValue("api-key-PLACEHOLDER")).toBe(true);
+    expect(hasConfiguredValue("sk-user-config")).toBe(true);
+    expect(hasConfiguredValue("pplx-live")).toBe(true);
     expect(hasConfiguredValue("sk-real-value")).toBe(true);
   });
 });

@@ -4,6 +4,8 @@ use std::{
     sync::Mutex,
 };
 
+use serde::Serialize;
+
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -16,10 +18,29 @@ use super::{
 
 const MCP_CONFIG_FILE_NAME: &str = "mcp.json";
 const MCP_WORKSPACE_CONFIG_DIRECTORY: [&str; 2] = [".machdoch", "mcp"];
-pub(super) const MCP_CONFIG_CONFLICT_PREFIX: &str = "MACHDOCH_MCP_CONFIG_CONFLICT:";
-
 #[derive(Default)]
 pub struct McpConfigWriteLock(pub(super) Mutex<()>);
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum McpConfigSaveError {
+    Conflict { path: String },
+    Runtime { message: String },
+}
+
+impl McpConfigSaveError {
+    pub(super) fn runtime(message: impl Into<String>) -> Self {
+        Self::Runtime {
+            message: message.into(),
+        }
+    }
+}
+
+impl From<String> for McpConfigSaveError {
+    fn from(message: String) -> Self {
+        Self::runtime(message)
+    }
+}
 
 pub(super) fn get_user_mcp_config_path() -> Result<PathBuf, String> {
     Ok(get_user_config_directory()?.join(MCP_CONFIG_FILE_NAME))
@@ -150,20 +171,21 @@ pub(super) fn save_mcp_config_document_if_unchanged(
     config_path: PathBuf,
     raw: &str,
     expected_raw: Option<&str>,
-) -> Result<McpConfigDocument, String> {
+) -> Result<McpConfigDocument, McpConfigSaveError> {
     with_cooperative_file_lock(&config_path, || {
         if let Some(expected_raw) = expected_raw {
-            let current_document = load_mcp_config_document(scope, config_path.clone())?;
+            let current_document = load_mcp_config_document(scope, config_path.clone())
+                .map_err(McpConfigSaveError::runtime)?;
 
             if current_document.raw != expected_raw {
-                return Err(format!(
-                    "{MCP_CONFIG_CONFLICT_PREFIX}{}",
-                    config_path.display(),
-                ));
+                return Err(McpConfigSaveError::Conflict {
+                    path: config_path.display().to_string(),
+                });
             }
         }
 
         save_mcp_config_document_unlocked(scope, config_path.clone(), raw)
+            .map_err(McpConfigSaveError::runtime)
     })
 }
 
@@ -285,10 +307,22 @@ mod tests {
             Some(&original.raw),
         )
         .expect_err("stale MCP config should be rejected");
-        let loaded = load_mcp_config_document("user", config_path)
+        let loaded = load_mcp_config_document("user", config_path.clone())
             .expect("current MCP config should remain readable");
 
-        assert!(error.starts_with(MCP_CONFIG_CONFLICT_PREFIX));
+        assert_eq!(
+            error,
+            McpConfigSaveError::Conflict {
+                path: config_path.display().to_string(),
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&error).expect("MCP config conflict should serialize"),
+            serde_json::json!({
+                "kind": "conflict",
+                "path": config_path.display().to_string()
+            })
+        );
         assert_eq!(loaded.raw, external.raw);
 
         cleanup(&directory);

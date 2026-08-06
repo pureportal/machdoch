@@ -240,13 +240,14 @@ async fn post_remote_web_command(
     };
     let record_outcome = match control_state.record_command(&event) {
         Ok(outcome) => outcome,
-        Err(error) => {
-            let status = if error.starts_with("MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:") {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::SERVICE_UNAVAILABLE
-            };
-            return json_response(status, json!({ "error": error }));
+        Err(super::state::RecordCommandError::CommandIdConflict) => {
+            return json_response(
+                StatusCode::CONFLICT,
+                json!({ "error": "The command id was already used for a different command." }),
+            );
+        }
+        Err(super::state::RecordCommandError::Unavailable(error)) => {
+            return json_response(StatusCode::SERVICE_UNAVAILABLE, json!({ "error": error }));
         }
     };
 

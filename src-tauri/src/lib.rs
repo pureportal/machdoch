@@ -199,10 +199,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_shell::clear_webview_cache,
-            desktop_shell::clear_machdoch_codex_sessions,
             desktop_shell::ensure_assistant_window,
             desktop_shell::get_desktop_launch_id,
-            desktop_shell::get_machdoch_codex_session_usage,
             desktop_shell::hide_main_window_to_tray,
             desktop_shell::quit_machdoch,
             desktop_shell::reveal_main_window,

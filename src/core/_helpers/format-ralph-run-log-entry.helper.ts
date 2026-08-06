@@ -4,29 +4,51 @@ const MAX_RALPH_TRACE_TEXT_CHARS = 32_000;
 const MAX_RALPH_TRACE_VALUE_DEPTH = 6;
 const MAX_RALPH_TRACE_COLLECTION_ENTRIES = 200;
 
-const SENSITIVE_LOG_KEY_PATTERN =
-  /(?:api[-_]?key|authorization|bearer|credential|password|secret|token)/iu;
-const SENSITIVE_INLINE_PATTERN =
-  /\b(?:sk-[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|(?:api[-_]?key|authorization|password|secret|token)\s*[:=]\s*["']?[^"'\s,;]+)/giu;
+const SENSITIVE_LOG_KEYS = new Set([
+  "access_token",
+  "api_key",
+  "apikey",
+  "authorization",
+  "client_secret",
+  "credential",
+  "password",
+  "private_key",
+  "secret",
+  "token",
+]);
+const SENSITIVE_VALUE_CONTAINER_KEYS = new Set(["env", "headers"]);
+const SECRET_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CODEX_ACCESS_TOKEN",
+  "CODEX_API_KEY",
+  "COPILOT_GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GOOGLE_API_KEY",
+  "OPENAI_API_KEY",
+] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
 const redactLogText = (value: string): string => {
-  return value.replace(SENSITIVE_INLINE_PATTERN, (match) => {
-    const separatorIndex = Math.max(match.indexOf(":"), match.indexOf("="));
+  let redacted = value;
 
-    if (separatorIndex > 0) {
-      return `${match.slice(0, separatorIndex + 1)} [redacted]`;
+  for (const key of SECRET_ENV_KEYS) {
+    const secret = process.env[key];
+    if (secret) {
+      redacted = redacted.replaceAll(secret, "[redacted]");
     }
+  }
 
-    if (/^Bearer\s+/iu.test(match)) {
-      return "Bearer [redacted]";
-    }
-
-    return "[redacted]";
-  });
+  return redacted;
 };
 
 export const capLogText = (value: string, limit: number): string => {
@@ -39,7 +61,14 @@ export const capLogText = (value: string, limit: number): string => {
   return `${redacted.slice(0, limit)}\n[Ralph log text truncated at ${limit} characters.]`;
 };
 
-export const sanitizeTraceValue = (value: unknown, depth = 0): unknown => {
+export const sanitizeTraceValue = (
+  value: unknown,
+  depth = 0,
+  redactValue = false,
+): unknown => {
+  if (redactValue) {
+    return "[redacted]";
+  }
   if (typeof value === "string") {
     return capLogText(value, MAX_RALPH_TRACE_TEXT_CHARS);
   }
@@ -76,12 +105,18 @@ export const sanitizeTraceValue = (value: unknown, depth = 0): unknown => {
     return Object.fromEntries(
       Object.entries(value)
         .slice(0, MAX_RALPH_TRACE_COLLECTION_ENTRIES)
-        .map(([key, entry]) => [
-          key,
-          SENSITIVE_LOG_KEY_PATTERN.test(key)
-            ? "[redacted]"
-            : sanitizeTraceValue(entry, depth + 1),
-        ]),
+        .map(([key, entry]) => {
+          const normalizedKey = key.toLowerCase();
+          return [
+            key,
+            sanitizeTraceValue(
+              entry,
+              depth + 1,
+              SENSITIVE_LOG_KEYS.has(normalizedKey) ||
+                SENSITIVE_VALUE_CONTAINER_KEYS.has(normalizedKey),
+            ),
+          ];
+        }),
     );
   }
 

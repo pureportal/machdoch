@@ -1,8 +1,4 @@
-import {
-  getRalphResultMarkdown,
-  parseLastRalphDecisionMarker,
-  parseRalphDecision,
-} from "./parse-ralph-decision.helper.js";
+import { getRalphResultMarkdown } from "./ralph-result-text.helper.js";
 import type {
   RalphBlockExecutionResult,
   RalphDecisionBlock,
@@ -75,7 +71,10 @@ export const createRalphValidatorExecutionResult = (
   block: RalphValidatorBlock,
   result: TaskExecutionResult,
 ): RalphBlockExecutionResult => {
-  const decision = parseRalphDecision(result) ?? "ERROR";
+  const decision =
+    result.control?.kind === "ralph-validator"
+      ? result.control.decision
+      : "ERROR";
   const isError = decision === "ERROR" || result.status !== "executed";
 
   return {
@@ -93,7 +92,6 @@ export const createRalphValidatorExecutionResult = (
 const createDecisionOutputError = (
   block: RalphDecisionBlock,
   result: TaskExecutionResult,
-  parsed: string | undefined,
 ): string => {
   const expectedLabels = block.labels.join(", ");
   const markdown = getRalphResultMarkdown(result);
@@ -103,30 +101,24 @@ const createDecisionOutputError = (
       ? ` Reason: ${result.reason}`
       : "";
 
-  if (parsed) {
-    return `${block.title} returned unsupported decision label \`${parsed}\`. Expected one of: ${expectedLabels}.${outputExcerpt}`;
-  }
-
-  return `${block.title} did not return a supported RALPH_DECISION marker. Expected one of: ${expectedLabels}.${outputExcerpt}`;
+  return `${block.title} did not return a valid structured route. Expected one of: ${expectedLabels}.${outputExcerpt}`;
 };
 
 export const createRalphDecisionExecutionResult = (
   block: RalphDecisionBlock,
   result: TaskExecutionResult,
 ): RalphBlockExecutionResult => {
-  const parsed = parseLastRalphDecisionMarker(result);
-  const labelByNormalizedValue = new Map(
-    block.labels.map((label) => [label.toUpperCase(), label] as const),
-  );
-  const parsedOutput = parsed
-    ? labelByNormalizedValue.get(parsed)
-    : undefined;
+  const parsedOutput =
+    result.control?.kind === "ralph-route" &&
+    block.labels.includes(result.control.label)
+      ? result.control.label
+      : undefined;
   const output =
     result.status === "executed" && parsedOutput ? parsedOutput : "ERROR";
   const error =
     output === "ERROR"
       ? result.status === "executed"
-        ? createDecisionOutputError(block, result, parsed)
+        ? createDecisionOutputError(block, result)
         : result.reason ?? result.summary
       : undefined;
 

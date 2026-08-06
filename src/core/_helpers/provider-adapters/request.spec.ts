@@ -109,6 +109,54 @@ describe("withProviderRequest", () => {
     ]);
   });
 
+  it("does not replay a request based on untrusted error prose", async () => {
+    let attempts = 0;
+    const proseOnlyError = new Error(
+      "rate limit temporarily unavailable overloaded timeout",
+    );
+
+    await expect(
+      withProviderRequest(
+        {
+          provider: "openai",
+          operation: "startTurn",
+          maxAttempts: 3,
+          retryDelayMs: () => 0,
+        },
+        async () => {
+          attempts += 1;
+          throw proseOnlyError;
+        },
+      ),
+    ).rejects.toBe(proseOnlyError);
+
+    expect(attempts).toBe(1);
+  });
+
+  it("retries exact transport error codes without consulting prose", async () => {
+    let attempts = 0;
+
+    await expect(
+      withProviderRequest(
+        {
+          provider: "openai",
+          operation: "startTurn",
+          maxAttempts: 2,
+          retryDelayMs: () => 0,
+        },
+        async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw Object.assign(new Error("arbitrary"), { code: "ETIMEDOUT" });
+          }
+          return "ok";
+        },
+      ),
+    ).resolves.toBe("ok");
+
+    expect(attempts).toBe(2);
+  });
+
   it("does not retry aborts", async () => {
     const controller = new AbortController();
     let attempts = 0;
@@ -137,6 +185,7 @@ describe("withProviderRequest", () => {
   it("adds Langdock endpoint guidance to 400 No body provider errors", async () => {
     const providerError = Object.assign(new Error("400 No body"), {
       status: 400,
+      code: "no_body",
     });
 
     await expect(
@@ -202,6 +251,26 @@ describe("withProviderRequest", () => {
       withProviderRequest(
         {
           provider: "openai",
+          operation: "startTurn",
+          maxAttempts: 2,
+          retryDelayMs: () => 0,
+        },
+        async () => {
+          throw providerError;
+        },
+      ),
+    ).rejects.toBe(providerError);
+  });
+
+  it("does not attach diagnostics based only on quoted status prose", async () => {
+    const providerError = new Error(
+      'The response quoted "429 Too Many Requests" and "400 No body".',
+    );
+
+    await expect(
+      withProviderRequest(
+        {
+          provider: "langdock",
           operation: "startTurn",
           maxAttempts: 2,
           retryDelayMs: () => 0,

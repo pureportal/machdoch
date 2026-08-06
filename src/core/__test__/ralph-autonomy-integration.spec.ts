@@ -393,7 +393,7 @@ describe("RALPH autonomy integration", () => {
       ...registry,
       scopes: registry.scopes.map((scope) => ({
         ...scope,
-        lastOutcome: "DEFER",
+        lastOutcome: "deferred",
         lastOutcomeAt: new Date().toISOString(),
         eligibleAfter: "2099-01-01T00:00:00.000Z",
       })),

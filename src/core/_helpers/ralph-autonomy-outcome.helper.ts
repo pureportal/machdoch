@@ -52,19 +52,35 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const getRecordedWorkOutcome = (
+  flow: RalphFlow,
   results: readonly RalphBlockExecutionResult[],
-): { outcome: string; blockId: string } | undefined => {
+): { outcome: "DONE" | "DEFER" | "STOP" | "BLOCKED" | "INVALID"; blockId: string } | undefined => {
+  const outcomeByBlockId = new Map(
+    flow.blocks.flatMap((block) =>
+      block.type === "UTILITY" &&
+      block.utility.type === "APPEND_JSONL" &&
+      (block.utility.workOutcome === "DONE" ||
+        block.utility.workOutcome === "DEFER" ||
+        block.utility.workOutcome === "STOP" ||
+        block.utility.workOutcome === "BLOCKED" ||
+        block.utility.workOutcome === "INVALID")
+        ? [[block.id, block.utility.workOutcome] as const]
+        : [],
+    ),
+  );
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index]!;
-    const json = isRecord(result.data) ? result.data.json : undefined;
-    if (isRecord(json) && typeof json.outcome === "string") {
-      return { outcome: json.outcome.toUpperCase(), blockId: result.blockId };
+    const outcome = isRecord(result.data) ? result.data.workOutcome : undefined;
+    const configuredOutcome = outcomeByBlockId.get(result.blockId);
+    if (configuredOutcome !== undefined && configuredOutcome === outcome) {
+      return { outcome: configuredOutcome, blockId: result.blockId };
     }
   }
   return undefined;
 };
 
 const getVerification = (
+  flow: RalphFlow,
   results: readonly RalphBlockExecutionResult[],
 ):
   | {
@@ -74,8 +90,20 @@ const getVerification = (
       fingerprint?: string;
     }
   | undefined => {
+  const candidateBlockIds = new Set(
+    flow.blocks.flatMap((block) =>
+      block.type === "UTILITY" &&
+      block.utility.type === "RUN_CHECK" &&
+      block.utility.verificationRole === "candidate"
+        ? [block.id]
+        : [],
+    ),
+  );
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index]!;
+    if (!candidateBlockIds.has(result.blockId)) {
+      continue;
+    }
     const verification = isRecord(result.data)
       ? result.data.verification
       : undefined;
@@ -114,11 +142,23 @@ const getVerification = (
 };
 
 const getChangedFiles = (
+  flow: RalphFlow,
   results: readonly RalphBlockExecutionResult[],
 ): { known: boolean; files: string[]; blockId?: string } => {
+  const repositoryEvidenceBlockIds = new Set(
+    flow.blocks.flatMap((block) =>
+      block.type === "UTILITY" &&
+      (block.utility.type === "GIT_STATUS" ||
+        block.utility.type === "GIT_SNAPSHOT" ||
+        block.utility.type === "GIT_DIFF_SUMMARY" ||
+        block.utility.type === "CHANGE_SCOPE_GUARD")
+        ? [block.id]
+        : [],
+    ),
+  );
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index]!;
-    if (!isRecord(result.data)) {
+    if (!repositoryEvidenceBlockIds.has(result.blockId) || !isRecord(result.data)) {
       continue;
     }
     if (Array.isArray(result.data.guardedFiles)) {
@@ -159,15 +199,23 @@ const getChangedFiles = (
 };
 
 const getScopeEvidence = (
+  flow: RalphFlow,
   results: readonly RalphBlockExecutionResult[],
 ): { output: string; blockId: string } | undefined => {
+  const scopeBlockIds = new Set(
+    flow.blocks.flatMap((block) =>
+      block.type === "UTILITY" && block.utility.type === "CHANGE_SCOPE_GUARD"
+        ? [block.id]
+        : [],
+    ),
+  );
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index]!;
     if (
-      result.output === "IN_SCOPE" ||
-      result.output === "OUT_OF_SCOPE" ||
-      (result.output === "EMPTY" &&
-        /scope/iu.test(`${result.blockId} ${result.summary}`))
+      scopeBlockIds.has(result.blockId) &&
+      (result.output === "IN_SCOPE" ||
+        result.output === "OUT_OF_SCOPE" ||
+        result.output === "EMPTY")
     ) {
       return { output: result.output, blockId: result.blockId };
     }
@@ -234,9 +282,9 @@ export const deriveRalphRunOutcome = (input: {
     (block): block is RalphEndBlock =>
       block.id === terminalBlockId && block.type === "END",
   );
-  const recorded = getRecordedWorkOutcome(blockResults);
-  const verification = getVerification(blockResults);
-  const graphChanges = getChangedFiles(blockResults);
+  const recorded = getRecordedWorkOutcome(flow, blockResults);
+  const verification = getVerification(flow, blockResults);
+  const graphChanges = getChangedFiles(flow, blockResults);
   const changes = repositoryEvidence
     ? {
         known: repositoryEvidence.known,
@@ -244,7 +292,7 @@ export const deriveRalphRunOutcome = (input: {
         blockId: graphChanges.blockId,
       }
     : graphChanges;
-  const scope = getScopeEvidence(blockResults);
+  const scope = getScopeEvidence(flow, blockResults);
   const report = hasFinalReport(flow, blockResults);
   const evidence: RalphRunOutcomeEvidence[] = [];
   const limitations: string[] = [];

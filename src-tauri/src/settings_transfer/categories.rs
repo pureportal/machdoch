@@ -1755,12 +1755,9 @@ fn validate_context_pack(value: &Value) -> Result<usize, String> {
         .get("trigger")
         .and_then(Value::as_object)
         .ok_or_else(|| "A context pack trigger is invalid.".to_string())?;
-    require_exact_keys(trigger, &["phrases", "pathPatterns", "autoApply"])?;
+    require_exact_keys(trigger, &["phrases", "pathPatterns"])?;
     validate_context_pack_token_array(trigger.get("phrases"))?;
     validate_context_pack_token_array(trigger.get("pathPatterns"))?;
-    if !trigger.get("autoApply").is_some_and(Value::is_boolean) {
-        return Err("A context pack trigger is invalid.".to_string());
-    }
 
     let attachments = pack
         .get("contextAttachments")
@@ -2171,7 +2168,7 @@ mod tests {
                 "prompt": "Review the current task.",
                 "contextAttachments": [],
                 "variables": [],
-                "trigger": { "phrases": [], "pathPatterns": [], "autoApply": false },
+                "trigger": { "phrases": [], "pathPatterns": [] },
                 "createdAt": 1,
                 "updatedAt": 1,
                 "useCount": 0

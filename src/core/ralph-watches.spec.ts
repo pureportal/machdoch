@@ -24,7 +24,9 @@ describe("Ralph watches", () => {
 
   beforeEach(async () => {
     previousUserConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;
-    process.env.MACHDOCH_USER_CONFIG_DIR = await createRoot("machdoch-ralph-watch-user-");
+    process.env.MACHDOCH_USER_CONFIG_DIR = await createRoot(
+      "machdoch-ralph-watch-user-",
+    );
   });
 
   afterEach(async () => {
@@ -35,7 +37,9 @@ describe("Ralph watches", () => {
     }
 
     await Promise.all(
-      rootsToClean.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+      rootsToClean
+        .splice(0)
+        .map((root) => rm(root, { recursive: true, force: true })),
     );
   });
 
@@ -56,9 +60,14 @@ describe("Ralph watches", () => {
       },
     });
 
-    expect(await listRalphWatches()).toEqual([expect.objectContaining({ id: "docs" })]);
+    expect(await listRalphWatches()).toEqual([
+      expect.objectContaining({ id: "docs" }),
+    ]);
     expect(
-      watchRootMatchesPath(watch.roots[0]!, join(watch.roots[0]!.path, "guide.md")),
+      watchRootMatchesPath(
+        watch.roots[0]!,
+        join(watch.roots[0]!.path, "guide.md"),
+      ),
     ).toBe(true);
     expect(
       watchRootMatchesPath(
@@ -124,12 +133,37 @@ describe("Ralph watches", () => {
     });
     await syncRalphWatchSchedulerJobs(scheduler);
     expect(await scheduler.listJobs()).toEqual([
-      expect.objectContaining({ dedupeKey: "ralph-watch:docs" }),
+      expect.objectContaining({
+        dedupeKey: "ralph-watch:docs",
+        provenance: { kind: "ralph-watch", watchId: "docs" },
+      }),
     ]);
 
     await deleteRalphWatch("docs");
     await syncRalphWatchSchedulerJobs(scheduler);
     expect(await scheduler.listJobs()).toEqual([]);
+  });
+
+  it("never treats a user-controlled dedupe key as Ralph-watch ownership", async () => {
+    const scheduler = createUserRalphWatchScheduler();
+    const userJob = await scheduler.upsertJob({
+      name: "Quoted watch key",
+      schedule: {
+        type: "delay",
+        delayMs: 60_000,
+      },
+      target: { workspaceRoot: process.cwd(), prompt: "Do nothing." },
+      dedupeKey: "ralph-watch:adversarial",
+    });
+
+    await syncRalphWatchSchedulerJobs(scheduler);
+
+    expect(await scheduler.listJobs()).toEqual([
+      expect.objectContaining({
+        id: userJob.id,
+        provenance: { kind: "user" },
+      }),
+    ]);
   });
 
   it("rejects execution workspaces outside the watch permission roots", async () => {

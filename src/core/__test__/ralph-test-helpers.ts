@@ -47,7 +47,7 @@ export const createFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
       type: "VALIDATOR",
       title: "Validate",
       prompt:
-        "Validate {{scope:path=ALL}} using {{lastResultSummary}}. End with RALPH_DECISION.",
+        "Validate {{scope:path=ALL}} using {{lastResultSummary}}.",
       validationScope: { mode: "sinceLastValidator" },
     },
     {

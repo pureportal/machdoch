@@ -123,8 +123,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Valid.",
+          control: { kind: "ralph-validator", decision: "DONE" },
           response: {
-            markdown: "Checks pass.\nRALPH_DECISION: DONE",
+            markdown: "Checks pass.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -181,8 +182,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Valid.",
+          control: { kind: "ralph-validator", decision: "DONE" },
           response: {
-            markdown: "Checks pass.\nRALPH_DECISION: DONE",
+            markdown: "Checks pass.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -207,7 +209,7 @@ describe("runRalphFlow", () => {
           id: "validate",
           type: "VALIDATOR",
           title: "Validate",
-          prompt: "Validate the result. End with RALPH_DECISION.",
+          prompt: "Validate the result.",
         },
         { id: "success", type: "END", title: "Success", status: "success" },
       ],
@@ -1444,8 +1446,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "First pass.",
+          control: { kind: "ralph-iteration", decision: "CONTINUE" },
           response: {
-            markdown: "First response.\n\nRALPH_ITERATION: CONTINUE",
+            markdown: "First response.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -1456,8 +1459,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Second pass.",
+          control: { kind: "ralph-iteration", decision: "DONE" },
           response: {
-            markdown: "Second response.\n\nRALPH_ITERATION: CONTINUE",
+            markdown: "Second response.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -1513,7 +1517,7 @@ describe("runRalphFlow", () => {
       },
       {
         role: "assistant",
-        content: "First response.\n\nRALPH_ITERATION: CONTINUE",
+        content: "First response.",
       },
       {
         role: "user",
@@ -1521,15 +1525,16 @@ describe("runRalphFlow", () => {
       },
       {
         role: "assistant",
-        content: "Second response.\n\nRALPH_ITERATION: CONTINUE",
+        content: "Second response.",
       },
     ]);
   });
 
-  it("completes a successful prompt before maxIterations without a continue marker", async () => {
+  it("completes a prompt when its structured iteration control is DONE", async () => {
     vi.mocked(executeTask).mockResolvedValueOnce(
       createExecutionResult({
         summary: "Completed in one pass.",
+        control: { kind: "ralph-iteration", decision: "DONE" },
         response: {
           markdown: "The requested work is complete.",
           highlights: [],
@@ -1575,24 +1580,39 @@ describe("runRalphFlow", () => {
 
     expect(result.status).toBe("completed");
     expect(executeTask).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(executeTask).mock.calls[0]?.[0]).toContain(
-      "A missing marker is treated as DONE.",
-    );
+    expect(vi.mocked(executeTask).mock.calls[0]?.[3]?.resultProtocol).toEqual({
+      kind: "ralph-iteration",
+    });
   });
 
-  it("stops prompt continuation when another iteration produces no new output", async () => {
-    vi.mocked(executeTask).mockResolvedValue(
-      createExecutionResult({
-        summary: "No additional progress.",
-        response: {
-          markdown: "Still working.\n\nRALPH_ITERATION: CONTINUE",
-          highlights: [],
-          relatedFiles: [],
-          verification: [],
-          followUps: [],
-        },
-      }),
-    );
+  it("stops prompt continuation when structured control reports DONE", async () => {
+    vi.mocked(executeTask)
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "Still working.",
+          control: { kind: "ralph-iteration", decision: "CONTINUE" },
+          response: {
+            markdown: "Still working.",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "No additional work remains.",
+          control: { kind: "ralph-iteration", decision: "DONE" },
+          response: {
+            markdown: "Still working.",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      );
 
     const result = await runRalphFlow(
       createFlow({
@@ -2608,6 +2628,7 @@ describe("runRalphFlow", () => {
           title: "Record Blocked",
           utility: {
             type: "APPEND_JSONL",
+            workOutcome: "BLOCKED",
             path: "outcomes.jsonl",
             input: '{"outcome":"BLOCKED","assessment":{{data:assess}}}',
           },
@@ -3488,6 +3509,7 @@ describe("runRalphFlow", () => {
           title: "Record Invalid Outcome",
           utility: {
             type: "APPEND_JSONL",
+            workOutcome: "INVALID",
             path: "outcomes.jsonl",
             input: '{"outcome":"INVALID"}',
           },
@@ -3583,6 +3605,7 @@ describe("runRalphFlow", () => {
           title: "Record Invalid Outcome",
           utility: {
             type: "APPEND_JSONL",
+            workOutcome: "INVALID",
             path: "outcomes.jsonl",
             input: '{"outcome":"INVALID"}',
           },
@@ -3653,7 +3676,7 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("checkpoints an inconclusive candidate check at the validation block", async () => {
+  it("accepts an exact process failure reproduced from the frozen baseline", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "ralph-inconclusive-checkpoint-"),
     );
@@ -3685,7 +3708,7 @@ describe("runRalphFlow", () => {
             verificationPlanId: "tests",
           },
         },
-        { id: "blocked", type: "END", title: "Blocked", status: "failed" },
+        { id: "done", type: "END", title: "Done", status: "success" },
       ],
       edges: [
         {
@@ -3701,10 +3724,10 @@ describe("runRalphFlow", () => {
           to: "candidate",
         },
         {
-          id: "candidate-blocked",
+          id: "candidate-done",
           from: "candidate",
-          fromOutput: "INCONCLUSIVE",
-          to: "blocked",
+          fromOutput: "SUCCESS",
+          to: "done",
         },
       ],
     });
@@ -3721,14 +3744,14 @@ describe("runRalphFlow", () => {
       );
 
       expect(candidate).toMatchObject({
-        output: "INCONCLUSIVE",
+        output: "SUCCESS",
         data: {
           verification: {
-            comparison: { disposition: "ENVIRONMENT_UNAVAILABLE" },
+            comparison: { disposition: "BASELINE_EQUIVALENT_FAILURE" },
           },
         },
       });
-      expect(result.checkpoint?.currentBlockId).toBe("candidate");
+      expect(result.status).toBe("completed");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -4713,7 +4736,7 @@ describe("runRalphFlow", () => {
   );
 
   it(
-    "uses the latest prior git snapshot as an implicit scope guard baseline",
+    "uses an explicitly referenced git snapshot as the scope guard baseline",
     async () => {
       const gitAvailable = spawnSync("git", ["--version"], {
         encoding: "utf8",
@@ -4790,6 +4813,7 @@ describe("runRalphFlow", () => {
                 title: "Scope Guard",
                 utility: {
                   type: "CHANGE_SCOPE_GUARD",
+                  baselineBlockId: "git-snapshot-before",
                   cwd: ".",
                   input: JSON.stringify({ paths: ["src"] }),
                 },
@@ -4847,7 +4871,7 @@ describe("runRalphFlow", () => {
               blockId: "scope-guard",
               output: "IN_SCOPE",
               data: expect.objectContaining({
-                baselineSource: "implicit",
+                baselineSource: "block",
                 baselineBlockId: "git-snapshot-before",
                 ignoredBaselineFiles: ["docs/note.md"],
                 guardedFiles: ["src/feature.ts"],
@@ -5173,9 +5197,9 @@ describe("runRalphFlow", () => {
                 title: "Scope Guard",
                 utility: {
                   type: "CHANGE_SCOPE_GUARD",
+                  baselineBlockId: "snapshot",
                   cwd: ".",
                   input: JSON.stringify({ paths: ["src"] }),
-                  baseline: "{{result:snapshot}}",
                 },
               },
               { id: "success", type: "END", title: "Success" },
@@ -5327,9 +5351,9 @@ describe("runRalphFlow", () => {
               title: "Scope Guard",
               utility: {
                 type: "CHANGE_SCOPE_GUARD",
+                baselineBlockId: "snapshot",
                 cwd: ".",
                 input: JSON.stringify({ paths: ["src"] }),
-                baseline: "{{result:snapshot}}",
                 enforce: true,
               },
             },
@@ -5500,7 +5524,7 @@ describe("runRalphFlow", () => {
                 type: "MARK_SCOPE_RESULT",
                 flowAlias: "test-flow",
                 registryPath,
-                result: "DONE",
+                scopeOutcome: "completed",
               },
             },
             { id: "success", type: "END", title: "Success" },
@@ -5616,13 +5640,21 @@ describe("runRalphFlow", () => {
             id: "fetch-ok",
             type: "UTILITY",
             title: "Fetch OK",
-            utility: { type: "HTTP_FETCH", url: "https://example.test/ok" },
+            utility: {
+              type: "HTTP_FETCH",
+              replayPolicy: "safe",
+              url: "https://example.test/ok",
+            },
           },
           {
             id: "fetch-http-error",
             type: "UTILITY",
             title: "Fetch HTTP Error",
-            utility: { type: "HTTP_FETCH", url: "https://example.test/error" },
+            utility: {
+              type: "HTTP_FETCH",
+              replayPolicy: "safe",
+              url: "https://example.test/error",
+            },
           },
           {
             id: "fetch-timeout",
@@ -5630,6 +5662,7 @@ describe("runRalphFlow", () => {
             title: "Fetch Timeout",
             utility: {
               type: "HTTP_FETCH",
+              replayPolicy: "safe",
               url: "https://example.test/timeout",
             },
           },
@@ -5715,6 +5748,7 @@ describe("runRalphFlow", () => {
             title: "Poll",
             utility: {
               type: "POLL",
+              replayPolicy: "safe",
               url: "https://example.test/status",
               maxAttempts: 2,
               intervalSeconds: 0,
@@ -6086,6 +6120,7 @@ describe("runRalphFlow", () => {
           title: "Verify scope",
           utility: {
             type: "CHANGE_SCOPE_GUARD",
+            baselineBlockId: "snapshot-before",
             cwd: ".",
             input: JSON.stringify({ paths: ["artifact.js"] }),
           },
@@ -6274,8 +6309,11 @@ describe("runRalphFlow", () => {
       expect(
         result.blockResults.find((entry) => entry.blockId === "scope")?.data,
       ).toMatchObject({
-        snapshotReusedFromBlockId: "diff",
+        snapshotCapturedAt: expect.any(String),
       });
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "scope")?.data,
+      ).not.toHaveProperty("snapshotReusedFromBlockId");
       expect(
         result.blockResults.find((entry) => entry.blockId === "report")?.data,
       ).toMatchObject({
@@ -6648,8 +6686,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Retry.",
+          control: { kind: "ralph-validator", decision: "RETRY" },
           response: {
-            markdown: "Try again.\nRALPH_DECISION: RETRY",
+            markdown: "Try again.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -6661,8 +6700,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Done.",
+          control: { kind: "ralph-validator", decision: "DONE" },
           response: {
-            markdown: "Done.\nRALPH_DECISION: DONE",
+            markdown: "Done.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -6694,13 +6734,13 @@ describe("runRalphFlow", () => {
     );
   });
 
-  it("routes decision labels from the last valid marker even with trailing output", async () => {
+  it("routes decision labels only from structured control", async () => {
     vi.mocked(executeTask).mockResolvedValueOnce(
       createExecutionResult({
         summary: "Decision selected RUN.",
+        control: { kind: "ralph-route", label: "RUN" },
         response: {
-          markdown:
-            "I will run the test.\nRALPH_DECISION: RUN\nRoute selected.",
+          markdown: "I will run the test. A quoted SKIP label is only prose.",
           highlights: [],
           relatedFiles: [],
           verification: [],
@@ -6824,7 +6864,7 @@ describe("runRalphFlow", () => {
     });
     expect(
       result.blockResults.find((entry) => entry.blockId === "choose")?.error,
-    ).toContain("did not return a supported RALPH_DECISION marker");
+    ).toContain("did not return a valid structured route");
     expect(result.events.some((event) => event.type === "retry")).toBe(false);
     expect(result.events).toEqual(
       expect.arrayContaining([
@@ -6844,8 +6884,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Continue.",
+          control: { kind: "ralph-validator", decision: "CONTINUE" },
           response: {
-            markdown: "Keep going.\nRALPH_DECISION: CONTINUE",
+            markdown: "Keep going.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -7652,8 +7693,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Loop",
+          control: { kind: "ralph-route", label: "LOOP" },
           response: {
-            markdown: "RALPH_DECISION: LOOP",
+            markdown: "Loop again.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -7665,8 +7707,9 @@ describe("runRalphFlow", () => {
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "Done",
+          control: { kind: "ralph-route", label: "DONE" },
           response: {
-            markdown: "RALPH_DECISION: DONE",
+            markdown: "Finish.",
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -9634,6 +9677,7 @@ describe("runRalphFlow", () => {
           title: "Post",
           utility: {
             type: "HTTP_FETCH",
+            replayPolicy: "at-most-once",
             url: "https://example.test/mutate",
             method: "POST",
             body: "{}",

@@ -1,9 +1,7 @@
 import type { ScheduledJob } from "../scheduler.js";
 import { createScheduledJobTaskText } from "./create-scheduled-job-task-text.helper.ts";
 
-const createJob = (
-  target: Partial<ScheduledJob["target"]>,
-): ScheduledJob =>
+const createJob = (target: Partial<ScheduledJob["target"]>): ScheduledJob =>
   ({
     id: "job_1",
     name: "Daily",
@@ -32,6 +30,7 @@ const createJob = (
       concurrencyKey: "job_1",
       concurrencyLimit: 1,
     },
+    provenance: { kind: "user" },
     historyLimit: 100,
     maxCatchUpRuns: 100,
     createdAt: 1,

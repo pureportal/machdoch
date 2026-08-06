@@ -18,7 +18,6 @@ import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 import { SHELL_TIMEOUT_MS } from "./agent-tools-shared.ts";
 import {
   createShellNetworkToolDefinitions,
-  isReadOnlyShellCommand,
   resolveShellCommandInvocation,
   startDetachedShellCommand,
 } from "./shell-network-tool-definitions.ts";
@@ -508,60 +507,6 @@ describe("run_shell_command", () => {
       "Command output handler failed: sink failed",
     );
     expect(result.toolResult.output).toContain("partial output");
-  });
-});
-
-describe("isReadOnlyShellCommand", () => {
-  it("allows simple inspection commands", () => {
-    expect(isReadOnlyShellCommand({ command: "rg plan src" })).toBe(true);
-    expect(isReadOnlyShellCommand({ command: "git status --short" })).toBe(
-      true,
-    );
-    expect(isReadOnlyShellCommand({ command: "Get-Content README.md" })).toBe(
-      true,
-    );
-  });
-
-  it("rejects pipelines, redirection, and command chaining", () => {
-    expect(
-      isReadOnlyShellCommand({
-        command: "dir | Tee-Object plan-mode-check.txt",
-      }),
-    ).toBe(false);
-    expect(
-      isReadOnlyShellCommand({ command: "rg plan src > plan-mode-check.txt" }),
-    ).toBe(false);
-    expect(
-      isReadOnlyShellCommand({ command: "git status; npm test" }),
-    ).toBe(false);
-  });
-
-  it("rejects commands with write-capable options", () => {
-    expect(
-      isReadOnlyShellCommand({
-        command: "git diff --output=plan-mode-check.patch",
-      }),
-    ).toBe(false);
-    expect(
-      isReadOnlyShellCommand({
-        command: "rg plan src --pre node",
-      }),
-    ).toBe(false);
-  });
-
-  it("rejects obvious out-of-workspace path forms", () => {
-    expect(
-      isReadOnlyShellCommand({
-        command: "Get-Content C:\\Users\\someone\\.ssh\\id_rsa",
-      }),
-    ).toBe(false);
-    expect(
-      isReadOnlyShellCommand({ command: "cat ../outside-workspace.txt" }),
-    ).toBe(false);
-    expect(isReadOnlyShellCommand({ command: "ls /etc" })).toBe(false);
-    expect(
-      isReadOnlyShellCommand({ command: "type %USERPROFILE%\\.ssh\\config" }),
-    ).toBe(false);
   });
 });
 

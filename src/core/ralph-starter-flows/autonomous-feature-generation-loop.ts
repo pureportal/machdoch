@@ -650,7 +650,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "lastData?.output && Array.isArray(lastData.output.tasks) && lastData.output.tasks.length > 0 && !['deferred', 'no_action', 'completed'].includes(String(lastData.output.status ?? '').toLowerCase())",
+            "(() => { const output = lastData?.output; const status = output?.status; if (!['planned', 'implementing', 'completed', 'deferred', 'no_action'].includes(status)) throw new Error('Feature goal status is missing or invalid.'); return Array.isArray(output.tasks) && output.tasks.length > 0 && (status === 'planned' || status === 'implementing'); })()",
         },
       },
     },
@@ -665,7 +665,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "String(context.resultsByBlock?.['improve-feature-goal']?.data?.output?.status ?? '').toLowerCase() === 'deferred'",
+            "(() => { const status = context.resultsByBlock?.['improve-feature-goal']?.data?.output?.status; if (!['planned', 'implementing', 'completed', 'deferred', 'no_action'].includes(status)) throw new Error('Feature goal status is missing or invalid.'); return status === 'deferred'; })()",
         },
       },
     },
@@ -1065,6 +1065,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "DONE",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"DONE","goalId":"{{data:read-completed-goal:json.id}}"}',
@@ -1079,6 +1080,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "DEFER",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","goalPath":"{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}","reason":"Bounded repair exhausted or external state unavailable."}',
@@ -1093,6 +1095,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "BLOCKED",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"BLOCKED","goalPath":"{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}","reason":"Persisted goal tasks have no currently selectable work.","assessment":{{data:assess-goal-tasks}}}',
@@ -1107,6 +1110,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "STOP",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"STOP","goalPath":"{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}","reason":"No evidence-backed feature cleared the meaningful-work threshold."}',
@@ -1121,6 +1125,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "INVALID",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","reason":"Goal discovery, state recovery, or validation produced invalid structured data."}',
@@ -2026,9 +2031,24 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 14,
+  version: 15,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],
+  protocol: {
+    schemaVersion: 1,
+    verification: {
+      planId: "starter-autonomous-feature-generation-loop:frozen-verification",
+      baselineBlockId: "baseline-verification",
+      candidateBlockId: "run-verification",
+      baselineInconclusiveTargetId: "count-implementation-pass",
+      candidateInconclusiveTargetId: "visual-decision",
+      routeOverrides: [],
+    },
+    terminalOutcomes: [
+      { blockId: "success", outcome: "succeeded" },
+      { blockId: "deferred", outcome: "deferred" },
+    ],
+  },
   flow: autonomousFeatureGenerationLoopFlow,
 } as const satisfies RalphStarterFlow;

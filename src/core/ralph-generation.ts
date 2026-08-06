@@ -303,7 +303,7 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     outputs: ["SUCCESS", "ERROR"],
     generationNotes: [
       "Use PROMPT blocks for agent work that benefits from model reasoning.",
-      "Normal PROMPT blocks do not need RALPH_DECISION markers.",
+      "Normal PROMPT blocks route through their typed SUCCESS and ERROR outputs.",
     ],
   },
   VALIDATOR: {
@@ -319,7 +319,7 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     ],
     outputs: ["DONE", "CONTINUE", "RETRY", "ERROR"],
     generationNotes: [
-      "The validator prompt must instruct the model to end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+      "VALIDATOR routing uses the runtime's structured DONE, CONTINUE, RETRY, or ERROR result protocol.",
       "VALIDATOR.CONTINUE needs an explicit edge.",
       "VALIDATOR.RETRY may omit an edge when the validator belongs to a group with a start boundary.",
     ],
@@ -332,7 +332,7 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     outputs: ["labels[]", "ERROR"],
     generationNotes: [
       "Labels become valid fromOutput values.",
-      "The decision prompt must instruct the model to end with RALPH_DECISION: <LABEL>.",
+      "DECISION routing uses the runtime's structured result protocol and one declared label.",
     ],
   },
   PACK: {
@@ -846,18 +846,18 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
   MARK_SCOPE_RESULT: {
     type: "MARK_SCOPE_RESULT",
     role: "Mark the selected scope as completed for this coverage cycle.",
-    requiredFields: ["type", "flowAlias"],
+    requiredFields: ["type", "flowAlias", "scopeOutcome"],
     optionalFields: [
       "registryPath",
       "path",
       "scopeId",
-      "result",
       "includeMarkdown",
       "outputPath",
     ],
     outputs: ["SUCCESS", "NOT_FOUND", "ERROR"],
     generationNotes: [
       "Use after a validator or verification step so SELECT_SCOPE can cover every active scope before repeating.",
+      "scopeOutcome must be one of completed, deferred, external-state, failed, invalid, or no-meaningful-work.",
     ],
   },
   SEARCH_FILES: {
@@ -2287,11 +2287,11 @@ const createFlowGenerationTask = (
     "- Use the exact top-level id and alias shown in the minimal schema example. Ralph owns generated flow identity and may repair aliases for uniqueness.",
     "- Use exactly one START block and one or more END blocks.",
     "- Visual organization policy: omit NOTE and GROUP blocks by default. Add them only when the graph is complex enough that annotations or containers materially improve readability. A generated flow may have zero, one, or multiple NOTE/GROUP blocks depending on the request. Put visible note body text in NOTE.text. Use parentGroupId on executable blocks or GROUP.childBlockIds to describe group membership; Ralph normalizes group bounds around those children.",
-    "- Normal PROMPT blocks route with SUCCESS and ERROR; they do not need RALPH_DECISION markers.",
-    "- VALIDATOR blocks must end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+    "- Normal PROMPT blocks route with typed SUCCESS and ERROR outputs.",
+    "- VALIDATOR blocks route through the runtime's structured DONE, CONTINUE, RETRY, or ERROR result protocol.",
     "- VALIDATOR.CONTINUE needs an explicit edge.",
     "- VALIDATOR.RETRY may omit an edge; Ralph falls back to the validator group start.",
-    "- DECISION blocks must define labels and end with RALPH_DECISION: <LABEL>.",
+    "- DECISION blocks must define labels used by the runtime's structured route protocol.",
     "- UTILITY blocks usually run deterministic operations without an LLM. PROMPT_JSON is the explicit exception and must be used only when structured AI output is genuinely needed. Available utility.type values come from the utilityTypes contract list.",
     "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, INCONCLUSIVE, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; ASSESS_JSON_TASKS uses READY, COMPLETE, BLOCKED, EMPTY, NOT_FOUND, INVALID, ERROR; SELECT_JSON_TASK uses SELECTED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR, but OUT_OF_SCOPE requires enforce=true; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; SELECT_SCOPE uses SELECTED, EMPTY, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
     "- Add variables directly in prompts using {{name:type=default}}, for example {{scope:path=ALL}}.",
@@ -2365,8 +2365,7 @@ const createFlowGenerationTask = (
             id: "review-result",
             type: "VALIDATOR",
             title: "Review Result",
-            prompt:
-              "Validate the completed work for {{scope:path=ALL}}. End with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+            prompt: "Validate the completed work for {{scope:path=ALL}}.",
             validationScope: { mode: "sinceLastValidator" },
             position: { x: 520, y: 0 },
           },

@@ -3,9 +3,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  extractExplicitInspectionPathReference,
   extractTaskPathReferences,
-  resolveDeterministicCreateFileTarget,
+  resolveWorkspacePathReference,
 } from "./task-paths.ts";
 
 const workspacesToClean: string[] = [];
@@ -151,32 +150,8 @@ describe("extractTaskPathReferences", () => {
   });
 });
 
-describe("extractExplicitInspectionPathReference", () => {
-  it("requires an inspection-style action before returning a path reference", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await writeFile(join(workspaceRoot, "README.md"), "# machdoch\n");
-
-    expect(
-      extractExplicitInspectionPathReference("review README.md", workspaceRoot),
-    ).toBeUndefined();
-
-    expect(
-      extractExplicitInspectionPathReference(
-        "show (README.md).",
-        workspaceRoot,
-      ),
-    ).toEqual({
-      requestedPath: "README.md",
-      resolvedPath: resolveExistingPath(workspaceRoot, "README.md"),
-      insideWorkspace: true,
-      workspacePath: "README.md",
-    });
-  });
-});
-
-describe("resolveDeterministicCreateFileTarget", () => {
-  it("marks inferred create targets under symlinked directories as outside the workspace", async () => {
+describe("resolveWorkspacePathReference", () => {
+  it("marks an explicit structured target under a symlinked directory as outside the workspace", async () => {
     const workspaceRoot = await createWorkspace();
     const externalRoot = await createWorkspace();
 
@@ -187,9 +162,9 @@ describe("resolveDeterministicCreateFileTarget", () => {
     );
 
     expect(
-      resolveDeterministicCreateFileTarget(
-        'create "linked-shared/new.txt"',
+      resolveWorkspacePathReference(
         workspaceRoot,
+        "linked-shared/new.txt",
       ),
     ).toEqual({
       requestedPath: "linked-shared/new.txt",
@@ -198,7 +173,6 @@ describe("resolveDeterministicCreateFileTarget", () => {
         "new.txt",
       ),
       insideWorkspace: false,
-      inferredPath: false,
     });
   });
 });

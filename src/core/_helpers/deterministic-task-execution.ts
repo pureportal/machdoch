@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
-import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
+import type { ReadOnlyInspectionTarget } from "../types.js";
 import type {
   CreateFilePathReference,
   TaskPathReference,
@@ -17,7 +17,6 @@ import {
   createDirectoryPreviewSection,
   createFilePreviewSection,
   createFileTargetSection,
-  createInitialFileContent,
   createPromptFilesSection,
   createProviderAvailabilitySection,
   createRuntimeConfigSection,
@@ -64,6 +63,7 @@ export const executeCreateFileTarget = async (
   config: RuntimeConfig,
   contextSections: TaskExecutionSection[],
   fileTarget: CreateFilePathReference,
+  content: string,
 ): Promise<TaskExecutionResult> => {
   if (!fileTarget.insideWorkspace) {
     return createExecutionResult(
@@ -100,8 +100,6 @@ export const executeCreateFileTarget = async (
       `The path \`${fileTarget.requestedPath}\` already exists inside the workspace.`,
     );
   }
-
-  const content = createInitialFileContent(task, fileTarget);
 
   await mkdir(dirname(fileTarget.resolvedPath), { recursive: true });
   await writeFile(fileTarget.resolvedPath, content, "utf8");

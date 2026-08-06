@@ -6,7 +6,7 @@ use std::{
 
 use serde::Serialize;
 
-use super::DesktopTaskRunResponse;
+use super::{DesktopTaskRunError, DesktopTaskRunResponse};
 
 const MAX_PENDING_CANCEL_IDS: usize = 256;
 const MAX_RECENT_COMPLETED_TASK_RESULTS: usize = 128;
@@ -54,6 +54,13 @@ pub(super) struct ActiveDesktopTaskRegistration {
     pub(super) operation_key: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ActiveDesktopTaskClaim {
+    Claimed,
+    TaskAlreadyActive,
+    OperationAlreadyActive { active_task_id: String },
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveDesktopTaskSummary {
@@ -68,7 +75,7 @@ pub struct ActiveDesktopTaskSummary {
 #[serde(rename_all = "camelCase", tag = "status")]
 pub enum RecentDesktopTaskOutcome {
     Succeeded { response: DesktopTaskRunResponse },
-    Failed { error: String },
+    Failed { failure: DesktopTaskRunError },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,7 +97,7 @@ impl RecentDesktopTaskResult {
         arguments: Vec<String>,
         started_at: u64,
         finished_at: u64,
-        result: &Result<DesktopTaskRunResponse, String>,
+        result: &Result<DesktopTaskRunResponse, DesktopTaskRunError>,
     ) -> Self {
         Self {
             id,
@@ -103,8 +110,8 @@ impl RecentDesktopTaskResult {
                 Ok(response) => RecentDesktopTaskOutcome::Succeeded {
                     response: response.clone(),
                 },
-                Err(error) => RecentDesktopTaskOutcome::Failed {
-                    error: error.clone(),
+                Err(failure) => RecentDesktopTaskOutcome::Failed {
+                    failure: failure.clone(),
                 },
             },
         }
@@ -290,7 +297,7 @@ pub(super) fn acknowledge_completed_task_results(
 pub(super) fn completed_desktop_task_result(
     state: &DesktopTaskCancelMap,
     task_id: &str,
-) -> Result<Option<Result<DesktopTaskRunResponse, String>>, String> {
+) -> Result<Option<Result<DesktopTaskRunResponse, DesktopTaskRunError>>, String> {
     let Some(task_id) = normalize_task_id(Some(task_id)) else {
         return Ok(None);
     };
@@ -304,28 +311,28 @@ pub(super) fn completed_desktop_task_result(
         .get(&task_id)
         .map(|result| match &result.outcome {
             RecentDesktopTaskOutcome::Succeeded { response } => Ok(response.clone()),
-            RecentDesktopTaskOutcome::Failed { error } => Err(error.clone()),
+            RecentDesktopTaskOutcome::Failed { failure } => Err(failure.clone()),
         }))
 }
 
 pub(super) fn register_active_task(
     state: &DesktopTaskCancelMap,
     registration: ActiveDesktopTaskRegistration,
-) -> Result<bool, String> {
+) -> Result<ActiveDesktopTaskClaim, String> {
     let mut cancel_state = state.0.lock().map_err(|_| {
         "Unable to claim the desktop task because the task registry lock is unavailable."
             .to_string()
     })?;
 
     if cancel_state.claimed.contains(&registration.task_id) {
-        return Ok(false);
+        return Ok(ActiveDesktopTaskClaim::TaskAlreadyActive);
     }
 
     if let Some(operation_key) = registration.operation_key.as_deref() {
         if let Some(active_task_id) = cancel_state.active_operation_owners.get(operation_key) {
-            return Err(format!(
-                "MACHDOCH_OPERATION_ALREADY_ACTIVE:{active_task_id}"
-            ));
+            return Ok(ActiveDesktopTaskClaim::OperationAlreadyActive {
+                active_task_id: active_task_id.clone(),
+            });
         }
     }
 
@@ -356,7 +363,7 @@ pub(super) fn register_active_task(
 
     trim_claimed_task_ids(&mut cancel_state);
 
-    Ok(true)
+    Ok(ActiveDesktopTaskClaim::Claimed)
 }
 
 pub(super) fn remember_completed_task_result(
@@ -431,14 +438,14 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        recent_completed_task_results, register_active_task, remember_completed_task_result,
-        remember_pending_cancel, trim_claimed_task_ids, ActiveDesktopTask,
-        ActiveDesktopTaskRegistration, DesktopTaskCancelMap, DesktopTaskCancelState,
-        RecentDesktopTaskOutcome, RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS,
-        MAX_PENDING_CANCEL_IDS, MAX_RECENT_COMPLETED_TASK_RESULTS,
-        MAX_RECENT_COMPLETED_TASK_RESULT_BYTES,
+        completed_desktop_task_result, recent_completed_task_results, register_active_task,
+        remember_completed_task_result, remember_pending_cancel, trim_claimed_task_ids,
+        ActiveDesktopTask, ActiveDesktopTaskClaim, ActiveDesktopTaskRegistration,
+        DesktopTaskCancelMap, DesktopTaskCancelState, RecentDesktopTaskOutcome,
+        RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS, MAX_PENDING_CANCEL_IDS,
+        MAX_RECENT_COMPLETED_TASK_RESULTS, MAX_RECENT_COMPLETED_TASK_RESULT_BYTES,
     };
-    use crate::desktop_task::DesktopTaskRunResponse;
+    use crate::desktop_task::{DesktopTaskRunError, DesktopTaskRunResponse};
 
     #[test]
     fn pending_cancel_ids_are_bounded() {
@@ -530,8 +537,14 @@ mod tests {
             operation_key: None,
         };
 
-        assert_eq!(register_active_task(&state, registration()), Ok(true));
-        assert_eq!(register_active_task(&state, registration()), Ok(false));
+        assert_eq!(
+            register_active_task(&state, registration()),
+            Ok(ActiveDesktopTaskClaim::Claimed)
+        );
+        assert_eq!(
+            register_active_task(&state, registration()),
+            Ok(ActiveDesktopTaskClaim::TaskAlreadyActive)
+        );
     }
 
     #[test]
@@ -549,17 +562,19 @@ mod tests {
 
         assert_eq!(
             register_active_task(&state, registration("task-1")),
-            Ok(true)
+            Ok(ActiveDesktopTaskClaim::Claimed)
         );
         assert_eq!(
             register_active_task(&state, registration("task-2")),
-            Err("MACHDOCH_OPERATION_ALREADY_ACTIVE:task-1".to_string())
+            Ok(ActiveDesktopTaskClaim::OperationAlreadyActive {
+                active_task_id: "task-1".to_string(),
+            })
         );
 
         super::finish_active_task(&state, Some("task-1"));
         assert_eq!(
             register_active_task(&state, registration("task-2")),
-            Ok(true)
+            Ok(ActiveDesktopTaskClaim::Claimed)
         );
     }
 
@@ -603,6 +618,31 @@ mod tests {
             results[0].outcome,
             RecentDesktopTaskOutcome::Succeeded { .. }
         ));
+    }
+
+    #[test]
+    fn completed_failures_preserve_structured_kind_without_reading_prose() {
+        let state = DesktopTaskCancelMap::default();
+        let result = Err(DesktopTaskRunError::Runtime {
+            message: "Quoted text says the task timed out and was cancelled.".to_string(),
+        });
+        remember_completed_task_result(
+            &state,
+            RecentDesktopTaskResult::desktop(
+                "failed-task".to_string(),
+                "workspace".to_string(),
+                Vec::new(),
+                1,
+                2,
+                &result,
+            ),
+        );
+
+        let replayed = completed_desktop_task_result(&state, "failed-task")
+            .expect("registry read should succeed")
+            .expect("completed result should exist")
+            .expect_err("result should remain a failure");
+        assert!(matches!(replayed, DesktopTaskRunError::Runtime { .. }));
     }
 
     #[test]

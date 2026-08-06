@@ -57,6 +57,8 @@ Task options:
   --image <path>                Attach an image; repeatable
   --conversation-context-file <path>
                                 Load conversation history and memory JSON
+  --deterministic-action-json <json>
+                                Execute one validated local action
   --session-memory <on|off>     Override session memory
   --global-memory <inherit|on|off>
                                 Override global memory

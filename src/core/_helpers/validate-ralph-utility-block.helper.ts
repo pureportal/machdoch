@@ -1,4 +1,5 @@
 import { hasRalphPlaceholders } from "./ralph-placeholders.helper.js";
+import { isRalphScopeOutcome } from "./ralph-scope-registry.helper.js";
 import type { RalphUtilityBlock, RalphValidationIssue } from "../ralph.js";
 
 const MIN_RALPH_UI_VIEWPORT_SIZE = 320;
@@ -284,6 +285,18 @@ export const validateRalphUtilityBlock = (
       break;
     case "HTTP_FETCH":
     case "POLL":
+      if (
+        utility.replayPolicy !== "safe" &&
+        utility.replayPolicy !== "at-most-once"
+      ) {
+        addUtilityIssue(
+          errors,
+          "utility-replay-policy-required",
+          `${blockLabel} requires an explicit replayPolicy.`,
+          { blockId: block.id },
+        );
+      }
+
       if (!utility.url?.trim()) {
         addUtilityIssue(
           errors,
@@ -396,7 +409,16 @@ export const validateRalphUtilityBlock = (
     case "SCAN_SCOPE_EVIDENCE":
     case "UPDATE_SCOPE_REGISTRY":
     case "SELECT_SCOPE":
+      break;
     case "MARK_SCOPE_RESULT":
+      if (!isRalphScopeOutcome(utility.scopeOutcome)) {
+        addUtilityIssue(
+          errors,
+          "utility-scope-outcome-required",
+          `${blockLabel} requires scopeOutcome.`,
+          { blockId: block.id },
+        );
+      }
       break;
     case "SEARCH_FILES":
       if (!utility.pattern?.trim() && !utility.glob?.trim()) {

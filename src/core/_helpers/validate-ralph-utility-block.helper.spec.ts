@@ -37,9 +37,14 @@ describe("validateRalphUtilityBlock", () => {
   it("accepts valid utility configurations without adding errors", () => {
     const utilities: RalphUtilityConfig[] = [
       { type: "WAIT", mode: "delay", delaySeconds: 0 },
-      { type: "HTTP_FETCH", url: "https://example.com" },
+      {
+        type: "HTTP_FETCH",
+        replayPolicy: "safe",
+        url: "https://example.com",
+      },
       {
         type: "POLL",
+        replayPolicy: "safe",
         url: "https://example.com/status",
         condition: { style: "json-path", path: "$.ready", operator: "truthy" },
       },
@@ -80,7 +85,7 @@ describe("validateRalphUtilityBlock", () => {
       { type: "SCAN_SCOPE_EVIDENCE", rootPath: "." },
       { type: "UPDATE_SCOPE_REGISTRY", flowAlias: "security-review-fix-loop" },
       { type: "SELECT_SCOPE", strategy: "round-robin" },
-      { type: "MARK_SCOPE_RESULT" },
+      { type: "MARK_SCOPE_RESULT", scopeOutcome: "completed" },
       { type: "SEARCH_FILES", glob: "**/*.ts" },
       { type: "SET_VARIABLE", variableName: "result", value: "" },
       { type: "TRANSFORM_JSON", expression: "input" },
@@ -96,6 +101,25 @@ describe("validateRalphUtilityBlock", () => {
     for (const utility of utilities) {
       expect(validateUtility(utility)).toEqual([]);
     }
+  });
+
+  it("requires an explicit crash-replay policy for remote requests", () => {
+    expect(
+      getCodes(
+        validateUtility({
+          type: "HTTP_FETCH",
+          url: "https://example.com",
+        }),
+      ),
+    ).toContain("utility-replay-policy-required");
+    expect(
+      validateUtility({
+        type: "HTTP_FETCH",
+        replayPolicy: "at-most-once",
+        method: "POST",
+        url: "https://example.com",
+      }),
+    ).toEqual([]);
   });
 
   it("rejects missing required config for utility families", () => {
@@ -182,6 +206,17 @@ describe("validateRalphUtilityBlock", () => {
       {
         utility: { type: "MARK_JSON_TASK", path: "tmp/tasks.json" },
         expectedCodes: ["utility-status-required"],
+      },
+      {
+        utility: { type: "MARK_SCOPE_RESULT" },
+        expectedCodes: ["utility-scope-outcome-required"],
+      },
+      {
+        utility: {
+          type: "MARK_SCOPE_RESULT",
+          scopeOutcome: "completed because output said DONE" as never,
+        },
+        expectedCodes: ["utility-scope-outcome-required"],
       },
       {
         utility: { type: "MOVE_FILE", path: "a.txt" },

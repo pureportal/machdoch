@@ -1,6 +1,5 @@
 import { resolvePromptInvocation } from "./prompt-resolution.js";
 import { extractTaskPathReferences } from "./task-paths.js";
-import { inferSuggestedTools } from "./tools.js";
 import type {
   CustomizationDiscoveryResult,
   ResolvedPromptInvocation,
@@ -81,7 +80,7 @@ const uniqueWorkspacePaths = (workspacePaths: string[]): string[] => {
 };
 
 /**
- * Builds the text used to infer tools and rank prompt or skill matches.
+ * Builds the text used for presentation-only prompt and skill suggestions.
  */
 const createTaskContextText = (
   task: string,
@@ -152,10 +151,7 @@ export const resolveTaskContext = (
     effectiveTask,
     customizations.workspaceRoot,
   );
-  const suggestedTools = uniqueToolNames([
-    ...(invokedPrompt?.tools ?? []),
-    ...inferSuggestedTools(taskContextText),
-  ]);
+  const suggestedTools = uniqueToolNames(invokedPrompt?.tools ?? []);
   const applicableInstructions = options.instructionResolution
     ? options.instructionResolution.selectedSources.map((source) => ({
         id: source.id,

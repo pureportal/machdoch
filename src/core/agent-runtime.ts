@@ -30,6 +30,7 @@ import {
   type ExecutorContinuationRequest,
   type ExecutorCycleOutcome,
   type ModelDrivenExecutionParams,
+  type TaskFinalResponseStatus,
 } from "./_helpers/agent-runtime-types.js";
 import {
   createToolDefinitions,
@@ -737,6 +738,7 @@ const finalizeExecutedResult = (
       ? { memoryUpdates: loopState.memoryUpdates }
       : {}),
     ...(loopState.finalResponse ? { response: loopState.finalResponse } : {}),
+    ...(loopState.control ? { control: loopState.control } : {}),
   });
 };
 
@@ -779,6 +781,7 @@ const finalizeBlockedResult = (
         ? { memoryUpdates: loopState.memoryUpdates }
         : {}),
       ...(loopState.finalResponse ? { response: loopState.finalResponse } : {}),
+      ...(loopState.control ? { control: loopState.control } : {}),
     },
     reason,
   );
@@ -847,10 +850,6 @@ const createToolCallSignature = (
   return `${name}:${stableSerializeValue(args)}`;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
 const getStringArg = (
   args: Record<string, unknown>,
   key: string,
@@ -871,99 +870,6 @@ const getNumberArg = (
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
-};
-
-const LINEAR_ISSUE_REFERENCE_PATTERNS = [
-  /\bLinear\s*:\s*([A-Z][A-Z0-9]+-\d+)\b/iu,
-  /\bLinear\s+(?:issue|ticket)\s+([A-Z][A-Z0-9]+-\d+)\b/iu,
-] as const;
-
-const extractLinearIssueReference = (
-  task: string,
-  taskContext: ResolvedTaskContext,
-): string | undefined => {
-  const candidateTexts =
-    taskContext.effectiveTask === task
-      ? [task]
-      : [task, taskContext.effectiveTask];
-
-  for (const candidateText of candidateTexts) {
-    for (const pattern of LINEAR_ISSUE_REFERENCE_PATTERNS) {
-      const match = pattern.exec(candidateText);
-
-      if (match?.[1]) {
-        return match[1].toUpperCase();
-      }
-    }
-  }
-
-  return undefined;
-};
-
-const isLinearMcpGetIssueCall = (call: AgentModelToolCall): boolean => {
-  if (call.name === "mcp_call_tool" || call.name === "mcp_call_readonly_tool") {
-    return (
-      getStringArg(call.arguments, "serverId")?.toLowerCase() === "linear" &&
-      getStringArg(call.arguments, "toolName") === "get_issue"
-    );
-  }
-
-  return /(?:^|__)linear__get_issue$/u.test(call.name.toLowerCase());
-};
-
-const repairLinearIssueToolCallArguments = (
-  call: AgentModelToolCall,
-  task: string,
-  taskContext: ResolvedTaskContext,
-): { call: AgentModelToolCall; traceLine?: string } => {
-  if (!isLinearMcpGetIssueCall(call)) {
-    return { call };
-  }
-
-  const issueId = extractLinearIssueReference(task, taskContext);
-
-  if (!issueId) {
-    return { call };
-  }
-
-  if (call.name === "mcp_call_tool" || call.name === "mcp_call_readonly_tool") {
-    const remoteArguments = isRecord(call.arguments.arguments)
-      ? call.arguments.arguments
-      : {};
-
-    if (getStringArg(remoteArguments, "id")) {
-      return { call };
-    }
-
-    return {
-      call: {
-        ...call,
-        arguments: {
-          ...call.arguments,
-          arguments: {
-            ...remoteArguments,
-            id: issueId,
-          },
-        },
-      },
-      traceLine: `tool_args: populated linear.get_issue arguments.id from current task reference ${issueId}.`,
-    };
-  }
-
-  if (getStringArg(call.arguments, "id")) {
-    return { call };
-  }
-
-  return {
-    call: {
-      ...call,
-      arguments: {
-        ...call.arguments,
-        id: issueId,
-      },
-    },
-    traceLine: `tool_args: populated linear.get_issue id from current task reference ${issueId}.`,
-  };
 };
 
 const formatToolName = (name: string): string => {
@@ -1044,39 +950,27 @@ const createToolResultProgressMessage = (
   }`;
 };
 
-const hasResolvedGroundingContext = (
+const hasDeclaredPromptToolRequirement = (
   taskContext: ResolvedTaskContext,
 ): boolean => {
-  return (
-    taskContext.workspacePaths.length > 0 ||
-    (taskContext.invokedPrompt?.tools.length ?? 0) > 0
-  );
-};
-
-const hasRunnableSuggestedTool = (
-  taskContext: ResolvedTaskContext,
-): boolean => {
-  return taskContext.suggestedTools.length > 0;
+  return (taskContext.invokedPrompt?.tools.length ?? 0) > 0;
 };
 
 const shouldRejectPrematureBlockedFinalResponse = (
   taskContext: ResolvedTaskContext,
   loopState: AgentLoopState,
-  status: string,
+  status: TaskFinalResponseStatus,
 ): boolean => {
   if (status !== "blocked" || loopState.executedTools.length > 0) {
     return false;
   }
 
-  return (
-    hasResolvedGroundingContext(taskContext) &&
-    hasRunnableSuggestedTool(taskContext)
-  );
+  return hasDeclaredPromptToolRequirement(taskContext);
 };
 
 const createPrematureBlockedFinalResponseMessage = (): string => {
   return [
-    "Premature final response rejected: this task has resolved workspace context or declared prompt tools, but no tool has run yet.",
+    "Premature final response rejected: the invoked prompt declares required tools, but no tool has run yet.",
     "Treat the current `<original_task>` and `<effective_task>` as authoritative over prior conversation.",
     "Use the available tools for the resolved context before blocking.",
     "Infer labels from repository URLs, domains, target folders, and file paths when they are provided instead of asking the user for a generic name.",
@@ -1095,6 +989,7 @@ const runExecutorCycle = async (
   additionalToolDefinitions: ModelDrivenExecutionParams["additionalToolDefinitions"],
   systemPromptSections: ModelDrivenExecutionParams["systemPromptSections"],
   structuredOutput: ModelDrivenExecutionParams["structuredOutput"],
+  resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
   continuationRequest: ExecutorContinuationRequest | undefined,
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
@@ -1119,7 +1014,7 @@ const runExecutorCycle = async (
     ),
     ...(additionalToolDefinitions ?? []),
   ];
-  const finalResponseTool = createFinalResponseTool();
+  const finalResponseTool = createFinalResponseTool(resultProtocol);
   const toolSpecs = [
     ...toolDefinitions.map((toolDefinition) => toolDefinition.spec),
     finalResponseTool,
@@ -1630,6 +1525,7 @@ const runExecutorCycle = async (
 
       const parsedPayload = parseFinalResponsePayload(
         finalResponseCall.arguments as Record<string, unknown>,
+        resultProtocol,
       );
 
       if (!parsedPayload) {
@@ -1682,6 +1578,9 @@ const runExecutorCycle = async (
         verification: parsedPayload.verification,
         followUps: parsedPayload.followUps,
       };
+      if (parsedPayload.control) {
+        loopState.control = parsedPayload.control;
+      }
       loopState.lastAssistantText = parsedPayload.markdown;
       loopState.traceLines.push(
         `${FINAL_RESPONSE_TOOL_NAME}(${parsedPayload.status}): ${compactTraceText(parsedPayload.summary)}`,
@@ -1718,15 +1617,8 @@ const runExecutorCycle = async (
 
     const toolResults: AgentModelToolResult[] = [];
 
-    for (const rawCall of turn.toolCalls) {
+    for (const call of turn.toolCalls) {
       throwIfExecutionAborted(signal);
-
-      const { call, traceLine: argumentRepairTraceLine } =
-        repairLinearIssueToolCallArguments(rawCall, task, taskContext);
-
-      if (argumentRepairTraceLine) {
-        loopState.traceLines.push(argumentRepairTraceLine);
-      }
 
       const callSignature = createToolCallSignature(call.name, call.arguments);
 
@@ -2256,6 +2148,7 @@ const runModelDrivenLoop = async (
   additionalToolDefinitions: ModelDrivenExecutionParams["additionalToolDefinitions"],
   systemPromptSections: ModelDrivenExecutionParams["systemPromptSections"],
   structuredOutput: ModelDrivenExecutionParams["structuredOutput"],
+  resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
@@ -2306,6 +2199,7 @@ const runModelDrivenLoop = async (
     additionalToolDefinitions,
     systemPromptSections,
     structuredOutput,
+    resultProtocol,
     undefined,
     signal,
     onStateChange,
@@ -2323,7 +2217,11 @@ const runModelDrivenLoop = async (
   const autopilotExecutorIterationLimit =
     resolveRuntimeAgentLimits(config).autopilotExecutorIterations;
 
-  if (config.mode !== "machdoch" || cycleResult.result.status !== "executed") {
+  if (
+    resultProtocol ||
+    config.mode !== "machdoch" ||
+    cycleResult.result.status !== "executed"
+  ) {
     return finish(cycleResult.result);
   }
 
@@ -2408,6 +2306,7 @@ const runModelDrivenLoop = async (
       additionalToolDefinitions,
       systemPromptSections,
       structuredOutput,
+      resultProtocol,
       {
         continuationIndex: autopilotReport.continuationCount,
         rationale: decision.rationale,
@@ -2498,6 +2397,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.additionalToolDefinitions,
       params.systemPromptSections,
       params.structuredOutput,
+      params.resultProtocol,
       params.signal,
       params.onStateChange,
       params.onActionOutput,

@@ -713,7 +713,7 @@ describe("McpClientManager lifecycle", () => {
     }
   });
 
-  it("falls back to task streams when a tool requires task-based execution", async () => {
+  it("does not replay a direct tool call based on remote error prose", async () => {
     const workspaceRoot = await createWorkspace();
     const task = {
       taskId: "task-1",
@@ -722,11 +722,11 @@ describe("McpClientManager lifecycle", () => {
       lastUpdatedAt: "2026-06-13T00:00:00.000Z",
       ttl: null,
     };
-    const progressMessages: string[] = [];
+    const remoteError = new Error(
+      'Tool "long_search" requires task-based execution. Use client.experimental.tasks.callToolStream() instead.',
+    );
     const callTool = vi.fn(async () => {
-      throw new Error(
-        'Tool "long_search" requires task-based execution. Use client.experimental.tasks.callToolStream() instead.',
-      );
+      throw remoteError;
     });
     const callToolStream = vi.fn(async function* () {
       yield {
@@ -763,37 +763,33 @@ describe("McpClientManager lifecycle", () => {
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
-
-    await expect(
-      manager.callTool(
-        workspaceRoot,
-        "test",
-        "long_search",
-        { query: "mcp" },
+    await saveWorkspaceMcpDiscovery(workspaceRoot, {
+      serverId: "test",
+      discoveredAt: "2026-06-13T00:00:00.000Z",
+      transportType: "stdio",
+      tools: [
         {
-          onProgress: (message) => {
-            progressMessages.push(message);
+          name: "long_search",
+          inputSchema: {
+            type: "object",
+            required: ["query"],
+            properties: { query: { type: "string" } },
+            additionalProperties: false,
           },
+          taskSupport: "optional",
         },
-      ),
-    ).resolves.toMatchObject({
-      content: [{ text: "streamed result" }],
+      ],
+      resources: [],
+      resourceTemplates: [],
+      prompts: [],
     });
 
-    expect(callToolStream).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "long_search",
-        arguments: { query: "mcp" },
-      }),
-      expect.anything(),
-      expect.objectContaining({
-        task: {},
-      }),
-    );
-    expect(progressMessages).toEqual([
-      "task task-1 created",
-      "task task-1 completed: done",
-    ]);
+    await expect(
+      manager.callTool(workspaceRoot, "test", "long_search", { query: "mcp" }),
+    ).rejects.toBe(remoteError);
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callToolStream).not.toHaveBeenCalled();
   });
 
   it("uses cached task metadata to stream required task tools immediately", async () => {
@@ -863,6 +859,44 @@ describe("McpClientManager lifecycle", () => {
     expect(callToolStream).toHaveBeenCalledTimes(1);
   });
 
+  it("blocks malformed tool arguments against authoritative discovery metadata", async () => {
+    const workspaceRoot = await createWorkspace();
+    const callTool = vi.fn(async () => ({ content: [] }));
+    const manager = new McpClientManager({
+      createClient: () => createClient({ callTool } as Partial<Client>),
+      createTransport,
+      loadWorkspaceEnv: async () => ({}),
+    });
+
+    await writeWorkspaceMcpConfig(workspaceRoot);
+    await saveWorkspaceMcpDiscovery(workspaceRoot, {
+      serverId: "test",
+      discoveredAt: "2026-06-13T00:00:00.000Z",
+      transportType: "stdio",
+      tools: [
+        {
+          name: "get_issue",
+          inputSchema: {
+            type: "object",
+            required: ["id"],
+            properties: { id: { type: "string", minLength: 1 } },
+            additionalProperties: false,
+          },
+        },
+      ],
+      resources: [],
+      resourceTemplates: [],
+      prompts: [],
+    });
+
+    await expect(
+      manager.callTool(workspaceRoot, "test", "get_issue", {
+        quotedTask: "get CLOUD-999",
+      }),
+    ).rejects.toThrow("do not match the discovered input schema");
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
   it("delegates task listing to the SDK task client", async () => {
     const workspaceRoot = await createWorkspace();
     const listTasks = vi.fn(async () => ({
@@ -922,6 +956,25 @@ describe("McpClientManager lifecycle", () => {
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
+    await saveWorkspaceMcpDiscovery(workspaceRoot, {
+      serverId: "test",
+      discoveredAt: "2026-06-13T00:00:00.000Z",
+      transportType: "stdio",
+      tools: [
+        {
+          name: "search",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+      ],
+      resources: [],
+      resourceTemplates: [],
+      prompts: [],
+    });
 
     const options = {
       cache: {
@@ -956,6 +1009,23 @@ describe("McpClientManager lifecycle", () => {
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
+    await saveWorkspaceMcpDiscovery(workspaceRoot, {
+      serverId: "test",
+      discoveredAt: "2026-06-13T00:00:00.000Z",
+      transportType: "stdio",
+      tools: [
+        {
+          name: "create_issue",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+          },
+        },
+      ],
+      resources: [],
+      resourceTemplates: [],
+      prompts: [],
+    });
 
     const options = {
       cache: {

@@ -2,7 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createFlow } from "../__test__/ralph-test-helpers.ts";
-import { readRalphFlow, writeRalphFlow } from "../ralph.ts";
+import {
+  RalphFlowAliasConflictError,
+  readRalphFlow,
+  writeRalphFlow,
+} from "../ralph.ts";
 import { createRalphFlowFingerprint } from "./create-ralph-flow-fingerprint.helper.ts";
 import {
   createAvailableGeneratedFlowAlias,
@@ -28,12 +32,21 @@ describe("createGeneratedFlowAliasCandidate", () => {
 });
 
 describe("isRalphFlowAliasCollisionError", () => {
-  it("accepts the Ralph alias collision error shape only", () => {
+  it("accepts only the typed Ralph alias collision state", () => {
+    expect(
+      isRalphFlowAliasCollisionError(
+        new RalphFlowAliasConflictError({
+          alias: "release",
+          conflictingFlowId: "existing",
+          conflictingFlowName: "Existing",
+        }),
+      ),
+    ).toBe(true);
     expect(
       isRalphFlowAliasCollisionError(
         new Error("Ralph flow alias `release` is already used by `existing`."),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(isRalphFlowAliasCollisionError(new Error("other"))).toBe(false);
     expect(isRalphFlowAliasCollisionError(null)).toBe(false);
     expect(isRalphFlowAliasCollisionError(undefined)).toBe(false);
@@ -90,7 +103,12 @@ describe("createAvailableGeneratedFlowAlias", () => {
 
     try {
       await expect(
-        createAvailableGeneratedFlowAlias(workspaceRoot, "workspace", "", "new-flow"),
+        createAvailableGeneratedFlowAlias(
+          workspaceRoot,
+          "workspace",
+          "",
+          "new-flow",
+        ),
       ).rejects.toThrow("Expected a Ralph flow alias before generation.");
       await expect(
         createAvailableGeneratedFlowAlias(
@@ -108,7 +126,9 @@ describe("createAvailableGeneratedFlowAlias", () => {
 
 describe("writeGeneratedRalphFlowWithAliasFallback", () => {
   it("rejects a generated replacement when the persisted flow changed", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "ralph-generation-cas-"));
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "ralph-generation-cas-"),
+    );
 
     try {
       const original = createFlow({ id: "current-flow", alias: "release" });
@@ -130,7 +150,9 @@ describe("writeGeneratedRalphFlowWithAliasFallback", () => {
           },
         ),
       ).rejects.toThrow("Ralph flow CAS conflict");
-      await expect(readRalphFlow(workspaceRoot, original.id)).resolves.toMatchObject({
+      await expect(
+        readRalphFlow(workspaceRoot, original.id),
+      ).resolves.toMatchObject({
         name: "Changed while generation was running",
       });
     } finally {
@@ -139,7 +161,9 @@ describe("writeGeneratedRalphFlowWithAliasFallback", () => {
   });
 
   it("writes a generated flow with a fallback alias when the preferred alias collides", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "ralph-alias-fallback-"));
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "ralph-alias-fallback-"),
+    );
 
     try {
       await writeRalphFlow(
@@ -158,7 +182,9 @@ describe("writeGeneratedRalphFlowWithAliasFallback", () => {
       );
 
       expect(writtenFlow.alias).toBe("release-1");
-      await expect(readRalphFlow(workspaceRoot, "new-flow")).resolves.toMatchObject({
+      await expect(
+        readRalphFlow(workspaceRoot, "new-flow"),
+      ).resolves.toMatchObject({
         alias: "release-1",
       });
     } finally {
@@ -167,7 +193,9 @@ describe("writeGeneratedRalphFlowWithAliasFallback", () => {
   });
 
   it("rethrows alias collisions when fallback is disabled", async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), "ralph-alias-no-fallback-"));
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "ralph-alias-no-fallback-"),
+    );
 
     try {
       await writeRalphFlow(

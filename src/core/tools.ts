@@ -1,5 +1,3 @@
-import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";
-import { createTokenSet, tokenSetIncludesKeyword } from "./text.js";
 import type { ToolDefinition } from "./types.js";
 import type { ToolName } from "./runtime-contract.generated.js";
 
@@ -225,20 +223,6 @@ const TOOL_REGISTRY: ToolDefinition[] = [
 ];
 
 /**
- * Deduplicates tool names while preserving the first-seen order.
- */
-const uniqueTools = (tools: ToolName[]): ToolName[] => {
-  return Array.from(new Set(tools));
-};
-
-const CODE_CHANGE_TASK_PATTERN =
-  /\b(add|build|change|code|debug|edit|fix|implement|improve|modify|patch|refactor|repair|rewrite)\b/i;
-
-const needsWorkspaceEditAndVerification = (task: string): boolean => {
-  return CODE_CHANGE_TASK_PATTERN.test(task);
-};
-
-/**
  * Returns a defensive copy of the built-in tool registry.
  */
 export const getToolRegistry = (): ToolDefinition[] => {
@@ -246,35 +230,6 @@ export const getToolRegistry = (): ToolDefinition[] => {
     ...tool,
     keywords: [...tool.keywords],
   }));
-};
-
-/**
- * Infers the most relevant tools for a task using keyword matches, with a
- * filesystem-and-shell fallback when nothing matches.
- */
-export const inferSuggestedTools = (task: string): ToolName[] => {
-  if (resolveReadOnlyInspectionTarget(task)) {
-    return ["filesystem"];
-  }
-
-  const normalizedTask = task.toLowerCase();
-  const taskTokens = createTokenSet(task);
-  const matchedTools = TOOL_REGISTRY.flatMap((tool) =>
-    tool.keywords.some((keyword) =>
-      tokenSetIncludesKeyword(taskTokens, normalizedTask, keyword),
-    )
-      ? [tool.name]
-      : [],
-  );
-  const inferredTools = needsWorkspaceEditAndVerification(task)
-    ? uniqueTools(["filesystem", "shell", ...matchedTools])
-    : matchedTools;
-
-  if (inferredTools.length === 0) {
-    return ["filesystem", "shell"];
-  }
-
-  return uniqueTools(inferredTools);
 };
 
 /**

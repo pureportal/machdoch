@@ -10,7 +10,12 @@ import type {
 } from "../instruction-system/types.js";
 
 export const PROVIDER_ENROLLMENT_SCHEMA_VERSION = 1;
-export const PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION = 1;
+export const PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION = 2;
+
+export type EnrollmentRenderedFileRole =
+  | "instruction-transport"
+  | "mcp-configuration"
+  | "instruction-and-mcp-configuration";
 
 export type ProviderSurface = ConfiguredModelProvider;
 export type EnrollmentFidelity =
@@ -163,7 +168,12 @@ export interface EnrollmentManifest {
       capabilities: string[];
     }>;
   };
-  renderedFiles: Array<{ path: string; digest: string; purpose: string }>;
+  renderedFiles: Array<{
+    path: string;
+    digest: string;
+    role: EnrollmentRenderedFileRole;
+    purpose: string;
+  }>;
   nativeSources: Array<{
     path: string;
     location: NativeInstructionRecord["location"];

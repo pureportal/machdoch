@@ -6,6 +6,7 @@ import type {
   RunMode,
   UserApiProvider,
 } from "../../core/runtime-contract.generated.js";
+import type { TaskDeterministicAction } from "../../core/types.js";
 
 export type CommandName =
   | "run"
@@ -310,6 +311,7 @@ export interface ParsedCliArgs {
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
+  deterministicAction?: TaskDeterministicAction;
   json: boolean;
   verbose: boolean;
   workspaceRoot: string;

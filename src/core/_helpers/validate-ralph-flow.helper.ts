@@ -230,6 +230,64 @@ export const validateRalphFlow = (
   }
 
   for (const block of flow.blocks) {
+    if (
+      block.type === "UTILITY" &&
+      block.utility.type === "RUN_CHECK" &&
+      block.utility.verificationRole === "candidate"
+    ) {
+      const baselineBlockId = block.utility.baselineBlockId;
+      const baselineBlock = baselineBlockId
+        ? blocksById.get(baselineBlockId)
+        : undefined;
+
+      if (!baselineBlockId || !baselineBlock) {
+        addRalphValidationIssue(
+          errors,
+          "verification-baseline-block-missing",
+          `${block.id} must reference an existing baseline RUN_CHECK block.`,
+          { blockId: block.id },
+        );
+      } else if (
+        baselineBlock.type !== "UTILITY" ||
+        baselineBlock.utility.type !== "RUN_CHECK" ||
+        baselineBlock.utility.verificationRole !== "baseline"
+      ) {
+        addRalphValidationIssue(
+          errors,
+          "verification-baseline-block-invalid",
+          `${block.id} baselineBlockId must reference a baseline RUN_CHECK utility block.`,
+          { blockId: block.id },
+        );
+      }
+    }
+
+    if (
+      block.type === "UTILITY" &&
+      block.utility.type === "CHANGE_SCOPE_GUARD" &&
+      block.utility.baselineBlockId
+    ) {
+      const baselineBlock = blocksById.get(block.utility.baselineBlockId);
+
+      if (!baselineBlock) {
+        addRalphValidationIssue(
+          errors,
+          "scope-baseline-block-missing",
+          `${block.id} baselineBlockId references missing block \`${block.utility.baselineBlockId}\`.`,
+          { blockId: block.id },
+        );
+      } else if (
+        baselineBlock.type !== "UTILITY" ||
+        baselineBlock.utility.type !== "GIT_SNAPSHOT"
+      ) {
+        addRalphValidationIssue(
+          errors,
+          "scope-baseline-block-invalid",
+          `${block.id} baselineBlockId must reference a GIT_SNAPSHOT utility block.`,
+          { blockId: block.id },
+        );
+      }
+    }
+
     if (block.parentGroupId) {
       const parent = blocksById.get(block.parentGroupId);
 

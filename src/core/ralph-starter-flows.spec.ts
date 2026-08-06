@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   STARTER_RALPH_FLOWS,
+  applyRalphStarterFlowProtocol,
   createImportedRalphStarterFlow,
   createRalphStarterFlowSummary,
   createUpgradedRalphStarterFlowWithReport,
@@ -15,6 +16,90 @@ import {
   type RalphFlow,
   type RalphUtilityBlock,
 } from "./ralph.js";
+
+const evaluateStarterTransform = (
+  block: RalphUtilityBlock,
+  sourceBlockId: string,
+  sourceOutput: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (block.utility.type !== "TRANSFORM_JSON" || !block.utility.expression) {
+    throw new Error(`Expected ${block.id} to contain a transform expression.`);
+  }
+
+  const evaluator = new Function(
+    "input",
+    "variables",
+    "lastResult",
+    "context",
+    `"use strict"; return (${block.utility.expression});`,
+  ) as (
+    input: unknown,
+    variables: Record<string, string>,
+    lastResult: unknown,
+    context: unknown,
+  ) => unknown;
+  const output = evaluator({}, {}, undefined, {
+    resultsByBlock: new Map<string, unknown>([
+      [sourceBlockId, { data: { output: sourceOutput } }],
+      [
+        "detect-project-commands",
+        {
+          data: {
+            focusedVerificationCommand: "focused-check",
+            standardVerificationCommand: "standard-check",
+            broadVerificationCommand: "broad-check",
+            verificationCommand: "fallback-check",
+          },
+        },
+      ],
+    ]),
+  });
+
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    throw new Error(`Expected ${block.id} to return an object.`);
+  }
+
+  return output as Record<string, unknown>;
+};
+
+const evaluateStarterCondition = (
+  block: RalphUtilityBlock,
+  lastOutput: Record<string, unknown>,
+  resultsByBlock: Record<string, unknown> = {},
+  lastDataOverride?: Record<string, unknown>,
+): boolean => {
+  if (
+    block.utility.type !== "CONDITION" ||
+    block.utility.condition?.style !== "javascript" ||
+    !block.utility.condition.expression
+  ) {
+    throw new Error(`Expected ${block.id} to contain a JavaScript condition.`);
+  }
+
+  const lastResult = { data: lastDataOverride ?? { output: lastOutput } };
+  const evaluator = new Function(
+    "context",
+    "result",
+    "variables",
+    "lastResult",
+    "lastData",
+    `"use strict"; return Boolean(${block.utility.condition.expression});`,
+  ) as (
+    context: Record<string, unknown>,
+    result: unknown,
+    variables: Record<string, string>,
+    lastResult: unknown,
+    lastData: unknown,
+  ) => boolean;
+
+  return evaluator(
+    { resultsByBlock },
+    undefined,
+    {},
+    lastResult,
+    lastResult.data,
+  );
+};
 
 function calculateReachableDominators(flow: RalphFlow): {
   dominators: Map<string, Set<string>>;
@@ -104,6 +189,78 @@ function omitPermissiveModelText(value: unknown): unknown {
   );
 }
 
+const createStarterProtocolFixture = (): RalphStarterFlow => ({
+  id: "autonomous-code-improvement-loop",
+  version: 1,
+  defaultAlias: "protocol-fixture",
+  category: "Test",
+  tags: [],
+  protocol: {
+    schemaVersion: 1,
+    verification: {
+      planId: "fixture:frozen-verification",
+      baselineBlockId: "ordinary-check",
+      candidateBlockId: "candidate-check",
+      baselineInconclusiveTargetId: "done",
+      candidateInconclusiveTargetId: "done",
+      routeOverrides: [{ edgeId: "start-route", toBlockId: "ordinary-check" }],
+    },
+    terminalOutcomes: [{ blockId: "done", outcome: "succeeded" }],
+  },
+  flow: {
+    schemaVersion: 1,
+    id: "starter-protocol-fixture",
+    name: "Starter protocol fixture",
+    blocks: [
+      { id: "start", type: "START", title: "Start" },
+      {
+        id: "ordinary-check",
+        type: "UTILITY",
+        title: "Quoted candidate and baseline words are inert",
+        utility: { type: "RUN_CHECK", command: "old command" },
+      },
+      {
+        id: "candidate-check",
+        type: "UTILITY",
+        title: "Candidate",
+        utility: { type: "RUN_CHECK", command: "pnpm test" },
+      },
+      {
+        id: "baseline-review-defer-incidental",
+        type: "UTILITY",
+        title: "Not authoritative",
+        utility: { type: "RUN_CHECK", command: "pnpm lint" },
+      },
+      {
+        id: "review-choose-incidental",
+        type: "UTILITY",
+        title: "Schema prose does not define a verdict",
+        utility: {
+          type: "PROMPT_JSON",
+          schema: {
+            type: "object",
+            properties: { decision: { type: "string" } },
+          },
+        },
+      },
+      {
+        id: "done",
+        type: "END",
+        title: 'Quoted "deferred" and negated not deferred text',
+        status: "success",
+      },
+    ],
+    edges: [
+      {
+        id: "start-route",
+        from: "start",
+        fromOutput: "SUCCESS",
+        to: "baseline-review-defer-incidental",
+      },
+    ],
+  },
+});
+
 describe("Ralph starter flows", () => {
   it("bundles valid starter flows with useful summaries", () => {
     expect(STARTER_RALPH_FLOWS).toHaveLength(6);
@@ -191,6 +348,76 @@ describe("Ralph starter flows", () => {
         "Reaching an END block alone never proves completion",
       );
     }
+  });
+
+  it("routes starter execution only from the explicit protocol", () => {
+    const applied = applyRalphStarterFlowProtocol(
+      createStarterProtocolFixture(),
+    );
+    const ordinaryCheck = applied.flow.blocks.find(
+      (block) => block.id === "ordinary-check",
+    );
+    const incidentalCheck = applied.flow.blocks.find(
+      (block) => block.id === "baseline-review-defer-incidental",
+    );
+    const schemaBlock = applied.flow.blocks.find(
+      (block) => block.id === "review-choose-incidental",
+    );
+    const terminal = applied.flow.blocks.find((block) => block.id === "done");
+
+    expect(ordinaryCheck).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        command: "pnpm test",
+        verificationRole: "baseline",
+        verificationPlanId: "fixture:frozen-verification",
+      },
+    });
+    expect(incidentalCheck).toMatchObject({
+      type: "UTILITY",
+      utility: { verificationRole: "supplemental" },
+    });
+    expect(
+      applied.flow.edges.find((edge) => edge.id === "start-route"),
+    ).toMatchObject({ to: "ordinary-check" });
+    expect(terminal).toMatchObject({ type: "END", outcome: "succeeded" });
+    expect(
+      schemaBlock?.type === "UTILITY"
+        ? (
+            schemaBlock.utility.schema as {
+              properties?: { decision?: { enum?: string[] } };
+            }
+          ).properties?.decision?.enum
+        : undefined,
+    ).toBeUndefined();
+  });
+
+  it("rejects missing, unknown, and inconsistent starter protocols", () => {
+    const missing = createStarterProtocolFixture() as unknown as {
+      protocol?: unknown;
+    };
+    delete missing.protocol;
+    expect(() =>
+      applyRalphStarterFlowProtocol(missing as RalphStarterFlow),
+    ).toThrow("invalid execution protocol");
+
+    const unknownVersion = createStarterProtocolFixture();
+    unknownVersion.protocol.schemaVersion = 2 as 1;
+    expect(() => applyRalphStarterFlowProtocol(unknownVersion)).toThrow(
+      "invalid execution protocol",
+    );
+
+    const unknownBlock = createStarterProtocolFixture();
+    unknownBlock.protocol.verification.baselineBlockId = "missing-check";
+    expect(() => applyRalphStarterFlowProtocol(unknownBlock)).toThrow(
+      "unknown or duplicate block",
+    );
+
+    const incompleteOutcomes = createStarterProtocolFixture();
+    incompleteOutcomes.protocol.terminalOutcomes = [];
+    expect(() => applyRalphStarterFlowProtocol(incompleteOutcomes)).toThrow(
+      "must assign every terminal outcome exactly once",
+    );
   });
 
   it("persists every autonomous outcome before retiring active state", () => {
@@ -856,6 +1083,245 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("routes autonomous scope cycles only from exact utility protocol state", () => {
+    for (const testCase of [
+      {
+        flowId: "autonomous-ui-improvement-loop",
+        scanId: "scan-ui-scopes",
+        markerId: "mark-scope-result",
+        error: "UI scope",
+      },
+      {
+        flowId: "security-fix-loop",
+        scanId: "scan-scopes",
+        markerId: "mark-scope-result",
+        error: "Security scope",
+      },
+    ] as const) {
+      const block = getRalphStarterFlow(testCase.flowId)?.flow.blocks.find(
+        (candidate) => candidate.id === "scope-cycle-complete",
+      );
+      if (block?.type !== "UTILITY" || block.utility.type !== "CONDITION") {
+        throw new Error(`Expected ${testCase.flowId} scope-cycle condition.`);
+      }
+
+      const activeCycle = {
+        [testCase.scanId]: { output: "SUCCESS" },
+        "select-scope": {
+          output: "SELECTED",
+          data: { note: 'Quoted incidental prose: "EMPTY ERROR".' },
+        },
+      };
+
+      expect(evaluateStarterCondition(block, {}, activeCycle)).toBe(false);
+      expect(
+        evaluateStarterCondition(
+          block,
+          {},
+          {
+            ...activeCycle,
+            [testCase.markerId]: { data: { cycleCompleted: true } },
+          },
+        ),
+      ).toBe(true);
+      expect(
+        evaluateStarterCondition(
+          block,
+          {},
+          {
+            [testCase.scanId]: { output: "EMPTY" },
+          },
+        ),
+      ).toBe(true);
+      expect(() =>
+        evaluateStarterCondition(
+          block,
+          {},
+          {
+            [testCase.scanId]: { output: 'Quoted outcome: "EMPTY".' },
+          },
+        ),
+      ).toThrow(`${testCase.error} scan outcome is missing or invalid.`);
+      expect(() =>
+        evaluateStarterCondition(
+          block,
+          {},
+          {
+            ...activeCycle,
+            [testCase.markerId]: { data: { cycleCompleted: "true" } },
+          },
+        ),
+      ).toThrow(`${testCase.error} completion state is invalid.`);
+    }
+  });
+
+  it("routes autonomous improvement decisions only from exact schema enums", () => {
+    for (const testCase of [
+      {
+        flowId: "autonomous-code-improvement-loop",
+        actionableId: "has-actionable-improvement",
+        choiceId: "choose-improvement",
+        reviewId: "independent-review",
+        errorPrefix: "Code improvement",
+      },
+      {
+        flowId: "autonomous-ui-improvement-loop",
+        actionableId: "has-actionable-ui-improvement",
+        choiceId: "choose-ui-improvement",
+        reviewId: "independent-ui-review",
+        errorPrefix: "UI improvement",
+      },
+    ] as const) {
+      const flow = getRalphStarterFlow(testCase.flowId)?.flow;
+      const findCondition = (id: string): RalphUtilityBlock => {
+        const block = flow?.blocks.find((candidate) => candidate.id === id);
+        if (block?.type !== "UTILITY" || block.utility.type !== "CONDITION") {
+          throw new Error(`Expected ${testCase.flowId} condition ${id}.`);
+        }
+        return block;
+      };
+      const actionable = findCondition(testCase.actionableId);
+      const deferred = findCondition("selection-is-deferred");
+      const reviewDeferred = findCondition("review-is-deferred");
+      const reviewFix = findCondition("review-needs-fix");
+      const implementResult = {
+        [testCase.choiceId]: {
+          data: {
+            output: {
+              decision: "IMPLEMENT",
+              selectedCandidate: {
+                id: "candidate",
+                evidence: ['Quoted prose: "STOP DEFER".'],
+              },
+            },
+          },
+        },
+      };
+
+      expect(evaluateStarterCondition(actionable, {}, implementResult)).toBe(
+        true,
+      );
+      expect(
+        evaluateStarterCondition(
+          deferred,
+          {},
+          {
+            [testCase.choiceId]: { data: { output: { decision: "DEFER" } } },
+          },
+        ),
+      ).toBe(true);
+      expect(() =>
+        evaluateStarterCondition(
+          actionable,
+          {},
+          {
+            [testCase.choiceId]: {
+              data: {
+                output: { decision: "implement", selectedCandidate: {} },
+              },
+            },
+          },
+        ),
+      ).toThrow(
+        `${testCase.errorPrefix} selection decision is missing or invalid.`,
+      );
+      expect(() =>
+        evaluateStarterCondition(
+          actionable,
+          {},
+          {
+            [testCase.choiceId]: {
+              data: {
+                output: { decision: "IMPLEMENT", selectedCandidate: {} },
+              },
+            },
+          },
+        ),
+      ).toThrow(/IMPLEMENT requires a structured selected/u);
+      expect(
+        evaluateStarterCondition(
+          reviewDeferred,
+          {},
+          {
+            [testCase.reviewId]: { data: { output: { decision: "DEFER" } } },
+          },
+        ),
+      ).toBe(true);
+      expect(
+        evaluateStarterCondition(
+          reviewFix,
+          {},
+          {
+            [testCase.reviewId]: { data: { output: { decision: "FIX" } } },
+          },
+        ),
+      ).toBe(true);
+      expect(() =>
+        evaluateStarterCondition(
+          reviewFix,
+          {},
+          {
+            [testCase.reviewId]: {
+              data: { output: { decision: 'Quoted verdict: "FIX".' } },
+            },
+          },
+        ),
+      ).toThrow(
+        `${testCase.errorPrefix} review decision is missing or invalid.`,
+      );
+    }
+  });
+
+  it("does not expose dynamically named environment variables to UI flows", () => {
+    const serialized = JSON.stringify(
+      getRalphStarterFlow("autonomous-ui-improvement-loop")?.flow,
+    );
+
+    expect(serialized).not.toContain("process.env");
+    expect(serialized).not.toContain("targetUrlEnvKey");
+    expect(serialized).not.toContain("healthUrlEnvKey");
+  });
+
+  it("resumes feature checklists only by exact structured identity", () => {
+    const block = getRalphStarterFlow(
+      "full-feature-implementation",
+    )?.flow.blocks.find(
+      (candidate) => candidate.id === "checklist-matches-feature",
+    );
+    if (block?.type !== "UTILITY" || block.utility.type !== "CONDITION") {
+      throw new Error("Expected the checklist identity condition.");
+    }
+    const expected = {
+      "resolve-checklist-path": {
+        data: {
+          output: {
+            featureId: "billing-settings",
+            note: 'Quoted prose: "BILLING-SETTINGS".',
+          },
+        },
+      },
+    };
+
+    expect(
+      evaluateStarterCondition(block, {}, expected, {
+        json: { featureId: "billing-settings" },
+      }),
+    ).toBe(true);
+    expect(
+      evaluateStarterCondition(block, {}, expected, {
+        json: { featureId: "BILLING-SETTINGS" },
+      }),
+    ).toBe(false);
+    expect(
+      evaluateStarterCondition(block, {}, expected, {
+        json: { featureId: " billing-settings " },
+      }),
+    ).toBe(false);
+    expect(() =>
+      evaluateStarterCondition(block, {}, expected, { json: {} }),
+    ).toThrow("Checklist feature identity is missing or invalid.");
+  });
+
   it("includes an autonomous feature-generation loop with bounded goal selection", () => {
     const starterFlow = getRalphStarterFlow(
       "autonomous-feature-generation-loop",
@@ -932,6 +1398,70 @@ describe("Ralph starter flows", () => {
         },
       },
     });
+
+    if (
+      hasActionableGoal?.type !== "UTILITY" ||
+      hasActionableGoal.utility.type !== "CONDITION"
+    ) {
+      throw new Error("Expected the actionable-goal condition block.");
+    }
+
+    const selectionIsDeferred = flow?.blocks.find(
+      (block) => block.id === "selection-is-deferred",
+    );
+    if (
+      selectionIsDeferred?.type !== "UTILITY" ||
+      selectionIsDeferred.utility.type !== "CONDITION"
+    ) {
+      throw new Error("Expected the deferred-selection condition block.");
+    }
+
+    expect(
+      evaluateStarterCondition(hasActionableGoal, {
+        status: "planned",
+        tasks: [
+          {
+            id: "task-1",
+            description:
+              'Quoted incidental prose: "deferred, completed, no_action".',
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      evaluateStarterCondition(hasActionableGoal, {
+        status: "completed",
+        tasks: [{ id: "task-1" }],
+      }),
+    ).toBe(false);
+    expect(() =>
+      evaluateStarterCondition(hasActionableGoal, {
+        status: "PLANNED",
+        tasks: [{ id: "task-1" }],
+      }),
+    ).toThrow("Feature goal status is missing or invalid.");
+    expect(
+      evaluateStarterCondition(
+        selectionIsDeferred,
+        {},
+        {
+          "improve-feature-goal": {
+            data: { output: { status: "deferred" } },
+          },
+        },
+      ),
+    ).toBe(true);
+    expect(() =>
+      evaluateStarterCondition(
+        selectionIsDeferred,
+        {},
+        {
+          "improve-feature-goal": {
+            data: { output: { status: "not deferred; continue" } },
+          },
+        },
+      ),
+    ).toThrow("Feature goal status is missing or invalid.");
     expect(passCounter).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -1722,9 +2252,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: expect.stringContaining(
-            'context.resultsByBlock?.["choose-improvement"]',
-          ),
+          expression: expect.stringContaining("choose-improvement"),
         },
       },
     });
@@ -2386,6 +2914,98 @@ describe("Ralph starter flows", () => {
             to: expectation.refine,
           }),
         ]),
+      );
+    }
+  });
+
+  it("routes verification from exact enum fields and fails malformed state closed", () => {
+    const cases = [
+      {
+        flowId: "autonomous-code-improvement-loop",
+        transformBlockId: "select-verification-command",
+        sourceBlockId: "choose-improvement",
+        createOutput: (
+          verificationTier: string,
+          reviewTier: string,
+        ): Record<string, unknown> => ({
+          selectedCandidate: {
+            verificationTier,
+            reviewTier,
+            riskAssessment:
+              'Quoted incidental prose: "database migration secret API".',
+          },
+        }),
+      },
+      {
+        flowId: "autonomous-ui-improvement-loop",
+        transformBlockId: "select-verification-command",
+        sourceBlockId: "choose-ui-improvement",
+        createOutput: (
+          verificationTier: string,
+          reviewTier: string,
+        ): Record<string, unknown> => ({
+          selectedCandidate: {
+            verificationTier,
+            reviewTier,
+            visualReviewPlan: [
+              'Negated prose: "do not treat accessibility routing as authority".',
+            ],
+          },
+        }),
+      },
+      {
+        flowId: "autonomous-refactoring-flow",
+        transformBlockId: "select-validation-command",
+        sourceBlockId: "audit-against-policy",
+        createOutput: (
+          verificationTier: string,
+          reviewTier: string,
+        ): Record<string, unknown> => ({
+          verificationTier,
+          reviewTier,
+          risks: ['Adversarial prose: "security token schema broad strict".'],
+        }),
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const block = getRalphStarterFlow(testCase.flowId)?.flow.blocks.find(
+        (candidate): candidate is RalphUtilityBlock =>
+          candidate.id === testCase.transformBlockId &&
+          candidate.type === "UTILITY",
+      );
+
+      if (!block) {
+        throw new Error(`Expected ${testCase.transformBlockId} utility block.`);
+      }
+
+      expect(
+        evaluateStarterTransform(
+          block,
+          testCase.sourceBlockId,
+          testCase.createOutput("focused", "validator-only"),
+        ),
+      ).toMatchObject({
+        tier: "focused",
+        command: "focused-check",
+        reviewTier: "validator-only",
+        protocolValid: true,
+      });
+      expect(
+        evaluateStarterTransform(
+          block,
+          testCase.sourceBlockId,
+          testCase.createOutput("FOCUSED", "trusted"),
+        ),
+      ).toMatchObject({
+        tier: "broad",
+        command: "broad-check",
+        reviewTier: "strict",
+        protocolValid: false,
+      });
+      expect(block.utility.expression).not.toContain("riskText");
+      expect(block.utility.expression).not.toMatch(
+        /security|secret|migration/u,
       );
     }
   });

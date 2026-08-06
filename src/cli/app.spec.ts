@@ -503,6 +503,12 @@ describe("parseCliArgs", () => {
       workspaceRoot: "C:/workspace",
     });
 
+    expect(() =>
+      parseCliArgs(["mcp", "lifecycle-hook", "--agent", "claude-cli"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--phase is required for `machdoch mcp lifecycle-hook`.");
+
     expect(
       parseCliArgs(
         [

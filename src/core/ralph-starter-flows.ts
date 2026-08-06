@@ -1,6 +1,11 @@
 import { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
 import { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
-import type { RalphFlow, RalphFlowBlock, RalphUtilityBlock } from "./ralph.js";
+import type {
+  RalphEndBlock,
+  RalphFlow,
+  RalphFlowBlock,
+  RalphUtilityBlock,
+} from "./ralph.js";
 import { autonomousCodeImprovementLoopStarterFlow } from "./ralph-starter-flows/autonomous-code-improvement-loop.js";
 import { autonomousFeatureGenerationLoopStarterFlow } from "./ralph-starter-flows/autonomous-feature-generation-loop.js";
 import { autonomousUiImprovementLoopStarterFlow } from "./ralph-starter-flows/autonomous-ui-improvement-loop.js";
@@ -22,7 +27,31 @@ export interface RalphStarterFlow {
   defaultAlias: string;
   category: string;
   tags: string[];
+  protocol: RalphStarterFlowProtocol;
   flow: RalphFlow;
+}
+
+export interface RalphStarterFlowProtocolRouteOverride {
+  edgeId: string;
+  toBlockId: string;
+}
+
+export interface RalphStarterFlowProtocolTerminalOutcome {
+  blockId: string;
+  outcome: NonNullable<RalphEndBlock["outcome"]>;
+}
+
+export interface RalphStarterFlowProtocol {
+  schemaVersion: 1;
+  verification: {
+    planId: string;
+    baselineBlockId: string;
+    candidateBlockId: string;
+    baselineInconclusiveTargetId: string;
+    candidateInconclusiveTargetId: string;
+    routeOverrides: RalphStarterFlowProtocolRouteOverride[];
+  };
+  terminalOutcomes: RalphStarterFlowProtocolTerminalOutcome[];
 }
 
 export interface RalphStarterFlowSummary {
@@ -186,13 +215,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const hardenStructuredSchema = (
-  value: unknown,
-  blockId: string,
-  path: string[] = [],
-): unknown => {
+const closeStructuredObjectSchemas = (value: unknown): unknown => {
   if (Array.isArray(value)) {
-    return value.map((entry) => hardenStructuredSchema(entry, blockId, path));
+    return value.map(closeStructuredObjectSchemas);
   }
   if (!isRecord(value)) {
     return value;
@@ -201,7 +226,7 @@ const hardenStructuredSchema = (
   const result = Object.fromEntries(
     Object.entries(value).map(([key, entry]) => [
       key,
-      hardenStructuredSchema(entry, blockId, [...path, key]),
+      closeStructuredObjectSchemas(entry),
     ]),
   );
 
@@ -211,21 +236,6 @@ const hardenStructuredSchema = (
     Object.keys(result.properties).length > 0
   ) {
     result.additionalProperties = false;
-  }
-
-  const propertyName = path.at(-1);
-  if (result.type === "string" && propertyName === "decision" && !result.enum) {
-    if (blockId.includes("review")) {
-      result.enum = ["PASS", "FIX", "DEFER"];
-    } else if (blockId.includes("choose")) {
-      result.enum = ["IMPLEMENT", "STOP", "DEFER"];
-    }
-  }
-  if (result.type === "string" && propertyName === "verificationTier") {
-    result.enum = ["focused", "standard", "broad"];
-  }
-  if (result.type === "string" && propertyName === "reviewTier") {
-    result.enum = ["validator-only", "strict"];
   }
 
   return result;
@@ -251,157 +261,325 @@ const isModelBackedBlock = (block: RalphFlowBlock): boolean => {
 const RALPH_REPOSITORY_ROOT =
   "{{data:detect-project-commands:repositoryContext.worktreeRoot}}";
 
-const configureAutonomyEvidence = (flow: RalphFlow): void => {
-  const runChecks = flow.blocks.filter(
-    (block): block is RalphUtilityBlock =>
-      block.type === "UTILITY" && block.utility.type === "RUN_CHECK",
+const STARTER_FLOW_OUTCOMES = new Set<NonNullable<RalphEndBlock["outcome"]>>([
+  "succeeded",
+  "no-op",
+  "deferred",
+  "blocked",
+  "failed",
+  "cancelled",
+]);
+
+const hasExactKeys = (
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+): boolean => {
+  const actualKeys = Object.keys(value).sort();
+  const sortedExpectedKeys = [...expectedKeys].sort();
+
+  return (
+    actualKeys.length === sortedExpectedKeys.length &&
+    actualKeys.every((key, index) => key === sortedExpectedKeys[index])
   );
-  const baseline =
-    runChecks.find((block) => /baseline/iu.test(block.id)) ?? runChecks[0];
-  const candidate = runChecks.find((block) => block.id !== baseline?.id);
-  const verificationPlanId = `${flow.id}:frozen-verification`;
+};
 
-  if (baseline && candidate) {
-    const selectorId =
-      candidate.utility.command?.match(/\{\{data:([^:}]+):/u)?.[1];
-    if (selectorId && flow.blocks.some((block) => block.id === selectorId)) {
-      const selectorSuccessTarget =
-        flow.edges.find(
-          (edge) => edge.from === selectorId && edge.fromOutput === "SUCCESS",
-        )?.to ?? flow.edges.find((edge) => edge.from === selectorId)?.to;
-      if (selectorSuccessTarget) {
-        flow.edges = flow.edges.map((edge) => {
-          if (edge.to === baseline.id) {
-            return { ...edge, to: selectorId };
-          }
-          if (edge.from === selectorId) {
-            return { ...edge, to: baseline.id };
-          }
-          if (edge.to === selectorId) {
-            return { ...edge, to: selectorSuccessTarget };
-          }
-          return edge;
-        });
-      }
-    }
+const readProtocolString = (value: unknown): string | undefined => {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+};
 
-    const baselineUtility: RalphUtilityBlock["utility"] = {
-      ...baseline.utility,
-      verificationRole: "baseline",
-      verificationPlanId,
-    };
-    delete baselineUtility.command;
-    delete baselineUtility.fallbackCommand;
-    delete baselineUtility.cwd;
-    if (candidate.utility.command !== undefined) {
-      baselineUtility.command = candidate.utility.command;
-    }
-    if (candidate.utility.fallbackCommand !== undefined) {
-      baselineUtility.fallbackCommand = candidate.utility.fallbackCommand;
-    }
-    if (candidate.utility.cwd !== undefined) {
-      baselineUtility.cwd = candidate.utility.cwd;
-    }
-    baseline.utility = baselineUtility;
-    candidate.utility = {
-      ...candidate.utility,
-      verificationRole: "candidate",
-      baselineBlockId: baseline.id,
-      verificationPlanId,
-    };
-    const successEdge = flow.edges.find(
-      (edge) => edge.from === candidate.id && edge.fromOutput === "SUCCESS",
+const readStarterFlowProtocol = (
+  value: unknown,
+  starterFlowId: string,
+): RalphStarterFlowProtocol => {
+  const invalid = (): never => {
+    throw new Error(
+      `Starter flow \`${starterFlowId}\` has an invalid execution protocol.`,
     );
-    const baselineSuccessEdge = flow.edges.find(
-      (edge) => edge.from === baseline.id && edge.fromOutput === "SUCCESS",
-    );
-    if (
-      baselineSuccessEdge &&
-      !flow.edges.some(
-        (edge) =>
-          edge.from === baseline.id && edge.fromOutput === "INCONCLUSIVE",
-      )
-    ) {
-      flow.edges.push({
-        id: `${baseline.id}-inconclusive-to-work`,
-        from: baseline.id,
-        fromOutput: "INCONCLUSIVE",
-        to: baselineSuccessEdge.to,
-      });
-    }
-    if (
-      successEdge &&
-      !flow.edges.some(
-        (edge) =>
-          edge.from === candidate.id && edge.fromOutput === "INCONCLUSIVE",
-      )
-    ) {
-      flow.edges.push({
-        id: `${candidate.id}-inconclusive-to-evidence`,
-        from: candidate.id,
-        fromOutput: "INCONCLUSIVE",
-        to: successEdge.to,
-      });
-    }
+  };
+
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "schemaVersion",
+      "terminalOutcomes",
+      "verification",
+    ]) ||
+    value.schemaVersion !== 1 ||
+    !isRecord(value.verification) ||
+    !hasExactKeys(value.verification, [
+      "baselineBlockId",
+      "baselineInconclusiveTargetId",
+      "candidateBlockId",
+      "candidateInconclusiveTargetId",
+      "planId",
+      "routeOverrides",
+    ]) ||
+    !Array.isArray(value.verification.routeOverrides) ||
+    !Array.isArray(value.terminalOutcomes)
+  ) {
+    return invalid();
   }
 
-  for (const block of runChecks) {
-    if (block.id !== baseline?.id && block.id !== candidate?.id) {
+  const verification = value.verification;
+  const planId = readProtocolString(verification.planId);
+  const baselineBlockId = readProtocolString(verification.baselineBlockId);
+  const candidateBlockId = readProtocolString(verification.candidateBlockId);
+  const baselineInconclusiveTargetId = readProtocolString(
+    verification.baselineInconclusiveTargetId,
+  );
+  const candidateInconclusiveTargetId = readProtocolString(
+    verification.candidateInconclusiveTargetId,
+  );
+  if (
+    !planId ||
+    !baselineBlockId ||
+    !candidateBlockId ||
+    baselineBlockId === candidateBlockId ||
+    !baselineInconclusiveTargetId ||
+    !candidateInconclusiveTargetId
+  ) {
+    return invalid();
+  }
+
+  const routeOverrides = (verification.routeOverrides as unknown[]).map(
+    (entry: unknown) => {
+      if (!isRecord(entry) || !hasExactKeys(entry, ["edgeId", "toBlockId"])) {
+        return invalid();
+      }
+      const edgeId = readProtocolString(entry.edgeId);
+      const toBlockId = readProtocolString(entry.toBlockId);
+      if (!edgeId || !toBlockId) {
+        return invalid();
+      }
+      return { edgeId, toBlockId };
+    },
+  );
+  const terminalOutcomes = value.terminalOutcomes.map((entry) => {
+    if (!isRecord(entry) || !hasExactKeys(entry, ["blockId", "outcome"])) {
+      return invalid();
+    }
+    const blockId = readProtocolString(entry.blockId);
+    const outcome = entry.outcome;
+    if (
+      !blockId ||
+      typeof outcome !== "string" ||
+      !STARTER_FLOW_OUTCOMES.has(
+        outcome as NonNullable<RalphEndBlock["outcome"]>,
+      )
+    ) {
+      return invalid();
+    }
+    return {
+      blockId,
+      outcome: outcome as NonNullable<RalphEndBlock["outcome"]>,
+    };
+  });
+
+  return {
+    schemaVersion: 1,
+    verification: {
+      planId,
+      baselineBlockId,
+      candidateBlockId,
+      baselineInconclusiveTargetId,
+      candidateInconclusiveTargetId,
+      routeOverrides,
+    },
+    terminalOutcomes,
+  };
+};
+
+const requireUniqueBlock = (
+  flow: RalphFlow,
+  blockId: string,
+): RalphFlowBlock => {
+  const matches = flow.blocks.filter((block) => block.id === blockId);
+  if (matches.length !== 1) {
+    throw new Error(
+      `Starter flow \`${flow.id}\` protocol references an unknown or duplicate block \`${blockId}\`.`,
+    );
+  }
+  return matches[0] as RalphFlowBlock;
+};
+
+const requireRunCheckBlock = (
+  flow: RalphFlow,
+  blockId: string,
+): RalphUtilityBlock => {
+  const block = requireUniqueBlock(flow, blockId);
+  if (block.type !== "UTILITY" || block.utility.type !== "RUN_CHECK") {
+    throw new Error(
+      `Starter flow \`${flow.id}\` protocol block \`${blockId}\` is not a run check.`,
+    );
+  }
+  return block;
+};
+
+const assertUniqueProtocolIds = (
+  values: readonly string[],
+  flowId: string,
+  kind: string,
+): void => {
+  if (new Set(values).size !== values.length) {
+    throw new Error(
+      `Starter flow \`${flowId}\` protocol contains duplicate ${kind} identifiers.`,
+    );
+  }
+};
+
+const applyVerificationProtocol = (
+  flow: RalphFlow,
+  protocol: RalphStarterFlowProtocol["verification"],
+): void => {
+  const baseline = requireRunCheckBlock(flow, protocol.baselineBlockId);
+  const candidate = requireRunCheckBlock(flow, protocol.candidateBlockId);
+  if (
+    typeof candidate.utility.command !== "string" ||
+    candidate.utility.command.trim().length === 0
+  ) {
+    throw new Error(
+      `Starter flow \`${flow.id}\` candidate check has no explicit command.`,
+    );
+  }
+
+  assertUniqueProtocolIds(
+    protocol.routeOverrides.map((override) => override.edgeId),
+    flow.id,
+    "route",
+  );
+  for (const override of protocol.routeOverrides) {
+    requireUniqueBlock(flow, override.toBlockId);
+    const matches = flow.edges.filter((edge) => edge.id === override.edgeId);
+    if (matches.length !== 1) {
+      throw new Error(
+        `Starter flow \`${flow.id}\` protocol references an unknown or duplicate edge \`${override.edgeId}\`.`,
+      );
+    }
+  }
+  const routeOverrides = new Map(
+    protocol.routeOverrides.map((override) => [
+      override.edgeId,
+      override.toBlockId,
+    ]),
+  );
+  flow.edges = flow.edges.map((edge) => {
+    const to = routeOverrides.get(edge.id);
+    return to ? { ...edge, to } : edge;
+  });
+
+  const baselineUtility: RalphUtilityBlock["utility"] = {
+    ...baseline.utility,
+    command: candidate.utility.command,
+    verificationRole: "baseline",
+    verificationPlanId: protocol.planId,
+  };
+  delete baselineUtility.fallbackCommand;
+  delete baselineUtility.cwd;
+  if (candidate.utility.fallbackCommand !== undefined) {
+    baselineUtility.fallbackCommand = candidate.utility.fallbackCommand;
+  }
+  if (candidate.utility.cwd !== undefined) {
+    baselineUtility.cwd = candidate.utility.cwd;
+  }
+  baseline.utility = baselineUtility;
+  candidate.utility = {
+    ...candidate.utility,
+    verificationRole: "candidate",
+    baselineBlockId: baseline.id,
+    verificationPlanId: protocol.planId,
+  };
+
+  for (const block of flow.blocks) {
+    if (
+      block.type === "UTILITY" &&
+      block.utility.type === "RUN_CHECK" &&
+      block.id !== baseline.id &&
+      block.id !== candidate.id
+    ) {
       block.utility = {
         ...block.utility,
         verificationRole: "supplemental",
-        verificationPlanId,
+        verificationPlanId: protocol.planId,
       };
     }
   }
 
-  flow.blocks = flow.blocks.map((block) => {
-    if (
-      block.type === "UTILITY" &&
-      (block.utility.type === "GIT_SNAPSHOT" ||
-        block.utility.type === "GIT_DIFF_SUMMARY" ||
-        block.utility.type === "CHANGE_SCOPE_GUARD")
-    ) {
-      return {
-        ...block,
-        utility: { ...block.utility, cwd: RALPH_REPOSITORY_ROOT },
-      };
-    }
-    if (block.type === "END") {
-      const outcome =
-        block.status === "cancelled"
-          ? ("cancelled" as const)
-          : block.status === "failed" || block.status === "review"
-            ? ("blocked" as const)
-            : /defer/iu.test(`${block.id} ${block.title}`)
-              ? ("deferred" as const)
-              : ("succeeded" as const);
-      return { ...block, outcome };
-    }
-    return block;
-  });
-
-  const autonomy =
-    typeof flow.settings?.autonomy === "object"
-      ? flow.settings.autonomy
-      : { enabled: flow.settings?.autonomy !== false };
-  flow.settings = {
-    ...flow.settings,
-    autonomy: {
-      ...autonomy,
-      maxStagnantTransitions: 48,
-      maxRepeatedCycle: 3,
+  const inconclusiveEdges = [
+    {
+      id: `${baseline.id}-inconclusive-to-work`,
+      from: baseline.id,
+      to: protocol.baselineInconclusiveTargetId,
     },
-  };
-  flow.guidance = [
-    flow.guidance,
-    "Autonomy contract: repository changes, scope, and a frozen baseline/candidate verification plan are engine-owned evidence. Reaching an END block alone never proves completion. Deferred, blocked, stagnant, and inconclusive outcomes retain a resumable checkpoint.",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    {
+      id: `${candidate.id}-inconclusive-to-evidence`,
+      from: candidate.id,
+      to: protocol.candidateInconclusiveTargetId,
+    },
+  ];
+  for (const edge of inconclusiveEdges) {
+    requireUniqueBlock(flow, edge.to);
+    if (
+      flow.edges.some(
+        (candidateEdge) =>
+          candidateEdge.id === edge.id ||
+          (candidateEdge.from === edge.from &&
+            candidateEdge.fromOutput === "INCONCLUSIVE"),
+      )
+    ) {
+      throw new Error(
+        `Starter flow \`${flow.id}\` protocol would create a duplicate inconclusive route for \`${edge.from}\`.`,
+      );
+    }
+    flow.edges.push({ ...edge, fromOutput: "INCONCLUSIVE" });
+  }
 };
 
-const hardenStarterFlow = (starterFlow: RalphStarterFlow): RalphStarterFlow => {
+const applyTerminalOutcomeProtocol = (
+  flow: RalphFlow,
+  terminalOutcomes: readonly RalphStarterFlowProtocolTerminalOutcome[],
+): void => {
+  const endBlocks = flow.blocks.filter(
+    (block): block is RalphEndBlock => block.type === "END",
+  );
+  assertUniqueProtocolIds(
+    terminalOutcomes.map((entry) => entry.blockId),
+    flow.id,
+    "terminal outcome",
+  );
+  if (
+    terminalOutcomes.length !== endBlocks.length ||
+    terminalOutcomes.some(
+      (entry) => !endBlocks.some((endBlock) => endBlock.id === entry.blockId),
+    )
+  ) {
+    throw new Error(
+      `Starter flow \`${flow.id}\` protocol must assign every terminal outcome exactly once.`,
+    );
+  }
+  const outcomes = new Map(
+    terminalOutcomes.map((entry) => [entry.blockId, entry.outcome]),
+  );
+  flow.blocks = flow.blocks.map((block) =>
+    block.type === "END"
+      ? {
+          ...block,
+          outcome: outcomes.get(block.id) as NonNullable<
+            RalphEndBlock["outcome"]
+          >,
+        }
+      : block,
+  );
+};
+
+export const applyRalphStarterFlowProtocol = (
+  starterFlow: RalphStarterFlow,
+): RalphStarterFlow => {
+  const protocol = readStarterFlowProtocol(
+    (starterFlow as { protocol?: unknown }).protocol,
+    starterFlow.id,
+  );
   const flow = cloneRalphFlow(starterFlow.flow);
 
   if (flow.variables) {
@@ -440,7 +618,7 @@ const hardenStarterFlow = (starterFlow: RalphStarterFlow): RalphStarterFlow => {
     ) {
       const utility = {
         ...block.utility,
-        schema: hardenStructuredSchema(block.utility.schema, block.id),
+        schema: closeStructuredObjectSchemas(block.utility.schema),
       };
       return settings ? { ...block, settings, utility } : { ...block, utility };
     }
@@ -448,13 +626,52 @@ const hardenStarterFlow = (starterFlow: RalphStarterFlow): RalphStarterFlow => {
     return settings ? { ...block, settings } : block;
   });
 
-  configureAutonomyEvidence(flow);
+  applyVerificationProtocol(flow, protocol.verification);
+  applyTerminalOutcomeProtocol(flow, protocol.terminalOutcomes);
+  flow.blocks = flow.blocks.map((block) => {
+    if (
+      block.type === "UTILITY" &&
+      (block.utility.type === "GIT_SNAPSHOT" ||
+        block.utility.type === "GIT_DIFF_SUMMARY" ||
+        block.utility.type === "CHANGE_SCOPE_GUARD")
+    ) {
+      return {
+        ...block,
+        utility: { ...block.utility, cwd: RALPH_REPOSITORY_ROOT },
+      };
+    }
+    return block;
+  });
 
-  return { ...starterFlow, version: starterFlow.version + 1, flow };
+  const autonomy =
+    typeof flow.settings?.autonomy === "object"
+      ? flow.settings.autonomy
+      : { enabled: flow.settings?.autonomy !== false };
+  flow.settings = {
+    ...flow.settings,
+    autonomy: {
+      ...autonomy,
+      maxStagnantTransitions: 48,
+      maxRepeatedCycle: 3,
+    },
+  };
+  flow.guidance = [
+    flow.guidance,
+    "Autonomy contract: repository changes, scope, and a frozen baseline/candidate verification plan are engine-owned evidence. Reaching an END block alone never proves completion. Deferred, blocked, stagnant, and inconclusive outcomes retain a resumable checkpoint.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return {
+    ...starterFlow,
+    protocol,
+    version: starterFlow.version + 1,
+    flow,
+  };
 };
 
 export const STARTER_RALPH_FLOWS: readonly RalphStarterFlow[] =
-  RAW_STARTER_RALPH_FLOWS.map(hardenStarterFlow);
+  RAW_STARTER_RALPH_FLOWS.map(applyRalphStarterFlowProtocol);
 
 export const getRalphStarterFlow = (
   id: string,

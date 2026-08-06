@@ -1,6 +1,8 @@
 import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
+import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action.js";
+import type { TaskDeterministicAction } from "../../core/types.js";
 import type {
   AgentCliProvider,
   ModelProvider,
@@ -131,6 +133,7 @@ export const parseCliArgs = (
         "autopilot-iterations"?: string;
         infinite?: boolean;
         "conversation-context-file"?: string;
+        "deterministic-action-json"?: string;
         context?: string[];
         image?: string[];
         cwd?: string;
@@ -264,6 +267,7 @@ export const parseCliArgs = (
         "autopilot-iterations": { type: "string" },
         infinite: { type: "boolean" },
         "conversation-context-file": { type: "string" },
+        "deterministic-action-json": { type: "string" },
         context: { type: "string", multiple: true },
         image: { type: "string", multiple: true },
         cwd: { type: "string" },
@@ -410,6 +414,9 @@ export const parseCliArgs = (
   );
   const rawConversationContextFile = normalizeOptionalString(
     values?.["conversation-context-file"],
+  );
+  const rawDeterministicActionJson = normalizeOptionalString(
+    values?.["deterministic-action-json"],
   );
   const rawContextPaths = normalizeContextPaths(values?.context);
   const rawImagePaths = normalizeImagePaths(values?.image);
@@ -776,6 +783,32 @@ export const parseCliArgs = (
     fail("Expected --conversation-context-file to be followed by a file path.");
   }
 
+  if (
+    values?.["deterministic-action-json"] !== undefined &&
+    !rawDeterministicActionJson
+  ) {
+    fail(
+      "Expected --deterministic-action-json to be followed by a JSON object.",
+    );
+  }
+
+  let deterministicAction: TaskDeterministicAction | undefined;
+  if (rawDeterministicActionJson) {
+    let parsedAction: unknown;
+    try {
+      parsedAction = JSON.parse(rawDeterministicActionJson);
+    } catch {
+      fail("--deterministic-action-json must contain valid JSON.");
+    }
+
+    const validation = validateTaskDeterministicAction(parsedAction);
+    if (validation.state === "invalid") {
+      fail(`Invalid --deterministic-action-json: ${validation.reason}`);
+    } else {
+      deterministicAction = validation.action;
+    }
+  }
+
   const sessionMemoryEnabled = rawSessionMemory
     ? parseBooleanToggle(rawSessionMemory, "--session-memory")
     : undefined;
@@ -812,6 +845,18 @@ export const parseCliArgs = (
 
   if (rawTask && positionals.length > 0) {
     fail("Use either positional task text or --task, not both.");
+  }
+
+  if (
+    deterministicAction &&
+    !(
+      (quickRunRequested && rawTask) ||
+      (positionals[0] === "run" && positionals.length > 1)
+    )
+  ) {
+    fail(
+      "--deterministic-action-json is only valid for a one-shot task execution.",
+    );
   }
 
   if (rawDefaultModel && rawContextPaths) {
@@ -911,6 +956,7 @@ export const parseCliArgs = (
       : {}),
     ...(rawContextPaths ? { contextPaths: rawContextPaths } : {}),
     ...(rawImagePaths ? { imagePaths: rawImagePaths } : {}),
+    ...(deterministicAction ? { deterministicAction } : {}),
   });
 
   if (setGlobalMemoryEnabled !== undefined) {
@@ -1181,6 +1227,10 @@ export const parseCliArgs = (
 
     if (rawMcpPhase && action !== "lifecycle-hook") {
       fail("--phase is only valid for `machdoch mcp lifecycle-hook`.");
+    }
+
+    if (action === "lifecycle-hook" && !rawMcpPhase) {
+      fail("--phase is required for `machdoch mcp lifecycle-hook`.");
     }
 
     if (rawMcpUnusedDays && action !== "cleanup") {

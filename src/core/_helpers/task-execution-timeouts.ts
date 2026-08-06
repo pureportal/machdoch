@@ -4,8 +4,6 @@ import type {
 } from "../types.js";
 
 export const TASK_EXECUTION_IDLE_TIMEOUT_MS = 20 * 60 * 1_000;
-export const TASK_EXECUTION_TIMEOUT_REASON_PREFIX =
-  "Execution stopped after exceeding the safety timeout";
 
 export interface ResolvedTaskExecutionTimeouts {
   idleTimeoutMs: number | undefined;
@@ -77,17 +75,27 @@ const formatExecutionDuration = (durationMs: number): string => {
   return `${durationMs}ms`;
 };
 
-const createAbsoluteTimeoutReason = (durationMs: number): string => {
-  return `${TASK_EXECUTION_TIMEOUT_REASON_PREFIX} of ${formatExecutionDuration(durationMs)}.`;
-};
+export class TaskExecutionTimeoutError extends Error {
+  readonly kind = "task-execution-timeout" as const;
+  readonly timeoutKind: "absolute" | "idle";
+  readonly durationMs: number;
 
-const createIdleTimeoutReason = (durationMs: number): string => {
-  return `${TASK_EXECUTION_TIMEOUT_REASON_PREFIX} of ${formatExecutionDuration(durationMs)} without meaningful progress.`;
-};
+  constructor(timeoutKind: "absolute" | "idle", durationMs: number) {
+    super(
+      timeoutKind === "idle"
+        ? `Execution stopped after exceeding the safety timeout of ${formatExecutionDuration(durationMs)} without meaningful progress.`
+        : `Execution stopped after exceeding the safety timeout of ${formatExecutionDuration(durationMs)}.`,
+    );
+    this.name = "TaskExecutionTimeoutError";
+    this.timeoutKind = timeoutKind;
+    this.durationMs = durationMs;
+  }
+}
 
-export const isTaskExecutionTimeoutReason = (reason: string): boolean => {
-  return reason.startsWith(TASK_EXECUTION_TIMEOUT_REASON_PREFIX);
-};
+export const isTaskExecutionTimeoutReason = (
+  reason: unknown,
+): reason is TaskExecutionTimeoutError =>
+  reason instanceof TaskExecutionTimeoutError;
 
 export const createManagedTaskExecutionTimeout = (
   sourceSignal: AbortSignal | undefined,
@@ -146,7 +154,7 @@ export const createManagedTaskExecutionTimeout = (
     clearIdleTimeout();
     idleTimeoutHandle = setTimeout(() => {
       idleTimeoutHandle = undefined;
-      abort(createIdleTimeoutReason(idleTimeoutMs));
+      abort(new TaskExecutionTimeoutError("idle", idleTimeoutMs));
     }, idleTimeoutMs);
     unrefTimer(idleTimeoutHandle);
   };
@@ -157,12 +165,15 @@ export const createManagedTaskExecutionTimeout = (
     sourceSignal.addEventListener("abort", forwardAbort, { once: true });
   }
 
-  if (!abortController.signal.aborted && timeouts.absoluteTimeoutMs !== undefined) {
+  if (
+    !abortController.signal.aborted &&
+    timeouts.absoluteTimeoutMs !== undefined
+  ) {
     const { absoluteTimeoutMs } = timeouts;
 
     absoluteTimeoutHandle = setTimeout(() => {
       absoluteTimeoutHandle = undefined;
-      abort(createAbsoluteTimeoutReason(absoluteTimeoutMs));
+      abort(new TaskExecutionTimeoutError("absolute", absoluteTimeoutMs));
     }, absoluteTimeoutMs);
     unrefTimer(absoluteTimeoutHandle);
   }

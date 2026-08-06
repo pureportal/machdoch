@@ -129,17 +129,17 @@ export const recordMcpLifecycleHook = async (
   options: McpCliOptions,
 ): Promise<void> => {
   const agent = options.agent
-    ? normalizeMcpLifecycleAgent(options.agent) ??
+    ? (normalizeMcpLifecycleAgent(options.agent) ??
       fail(
         "Expected --agent to be one of machdoch, codex-cli, claude-cli, copilot-cli, openai-api, or anthropic-api.",
-      )
+      ))
     : "codex-cli";
   const phase = options.phase
-    ? normalizeMcpLifecyclePhase(options.phase) ??
+    ? (normalizeMcpLifecyclePhase(options.phase) ??
       fail(
         "Expected --phase to be one of invoked, cache-hit, remote-started, succeeded, or failed.",
-      )
-    : undefined;
+      ))
+    : fail("Expected --phase for `machdoch mcp lifecycle-hook`.");
   const payloadText = (await readStdinText()).trim();
 
   if (!payloadText) {
@@ -149,7 +149,7 @@ export const recordMcpLifecycleHook = async (
   const payload = JSON.parse(payloadText) as unknown;
   const event = createMcpUsageEventFromHookPayload(payload, {
     agent,
-    ...(phase ? { phase } : {}),
+    phase,
     workspaceRoot: args.workspaceRoot,
   });
 
@@ -181,7 +181,9 @@ export const printMcpLifecycleCleanup = async (
   options: McpCliOptions,
 ): Promise<void> => {
   const plan = await createMcpLifecycleCleanupPlan({
-    ...(options.unusedDays !== undefined ? { unusedDays: options.unusedDays } : {}),
+    ...(options.unusedDays !== undefined
+      ? { unusedDays: options.unusedDays }
+      : {}),
     ...(options.neverUsedDays !== undefined
       ? { neverUsedDays: options.neverUsedDays }
       : {}),

@@ -375,6 +375,9 @@ export const printTaskPreview = async (
           : {}),
       ...(conversationContext ? { conversationContext } : {}),
       ...(imageInputs.length > 0 ? { imageInputs } : {}),
+      ...(args.deterministicAction
+        ? { deterministicAction: args.deterministicAction }
+        : {}),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {

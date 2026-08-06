@@ -5,6 +5,7 @@ import type {
   RunMode,
   UserApiProvider,
 } from "../../core/runtime-contract.generated.js";
+import type { TaskDeterministicAction } from "../../core/types.js";
 import type {
   ConfigCliOptions,
   InstructionCliOptions,
@@ -42,6 +43,7 @@ export const createParsedArgs = (
     | "conversationContextFile"
     | "contextPaths"
     | "imagePaths"
+    | "deterministicAction"
   >,
   options?: {
     helpTopic?: string;
@@ -59,6 +61,7 @@ export const createParsedArgs = (
     conversationContextFile?: string;
     contextPaths?: string[];
     imagePaths?: string[];
+    deterministicAction?: TaskDeterministicAction;
     interview?: TaskInterviewCliOptions;
     ralph?: RalphCliOptions;
     scheduler?: SchedulerCliOptions;
@@ -100,6 +103,9 @@ export const createParsedArgs = (
     ...(options?.imagePaths && options.imagePaths.length > 0
       ? { imagePaths: options.imagePaths }
       : {}),
+    ...(options?.deterministicAction
+      ? { deterministicAction: options.deterministicAction }
+      : {}),
     ...(options?.task ? { task: options.task } : {}),
     ...(options?.interview ? { interview: options.interview } : {}),
     ...(options?.ralph ? { ralph: options.ralph } : {}),
@@ -126,6 +132,7 @@ export const createSharedParsedOptions = (options: {
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
+  deterministicAction?: TaskDeterministicAction;
 }): Omit<ParsedCliArgs, "command" | "task"> => {
   return {
     json: options.json,
@@ -153,6 +160,9 @@ export const createSharedParsedOptions = (options: {
       : {}),
     ...(options.imagePaths && options.imagePaths.length > 0
       ? { imagePaths: options.imagePaths }
+      : {}),
+    ...(options.deterministicAction
+      ? { deterministicAction: options.deterministicAction }
       : {}),
   };
 };

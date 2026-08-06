@@ -273,8 +273,8 @@ export const previewTaskRun = (
     task,
     mode: config.mode,
     summary: taskContext.invokedPrompt
-      ? "This preview resolved a direct prompt invocation, merged its declared tools with the task context, and staged a run that should continue until the task is complete or blocked."
-      : "This preview combines config, suggested tools, and customization discovery to show how the agent should stage and continue the next task until it is complete or blocked.",
+      ? "This preview resolved a direct prompt invocation, loaded its declared tools, and staged a run that should continue until the task is complete or blocked."
+      : "This preview combines config and customization discovery to show how the agent should stage and continue the next task until it is complete or blocked.",
     suggestedTools: taskContext.suggestedTools,
     ...(taskContext.invokedPrompt
       ? { invokedPrompt: taskContext.invokedPrompt }

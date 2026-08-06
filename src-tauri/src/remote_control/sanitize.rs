@@ -107,7 +107,10 @@ fn sanitize_shell_message(mut message: RemoteShellMessage) -> Option<RemoteShell
     message.role = sanitize_text(message.role, MAX_REMOTE_SHORT_TEXT_CHARS);
     message.content = sanitize_text(message.content, MAX_REMOTE_TEXT_CHARS);
     message.task_id = sanitize_optional_text(message.task_id, MAX_REMOTE_SHORT_TEXT_CHARS);
-    message.intent = sanitize_optional_text(message.intent, MAX_REMOTE_SHORT_TEXT_CHARS);
+    message.task_action = message.task_action.and_then(|mut task_action| {
+        task_action.objective = sanitize_text(task_action.objective, MAX_REMOTE_TEXT_CHARS);
+        (!task_action.objective.is_empty()).then_some(task_action)
+    });
     message.attachments = message
         .attachments
         .into_iter()

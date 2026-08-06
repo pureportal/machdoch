@@ -1,4 +1,4 @@
-import { truncateRalphResultText } from "./parse-ralph-decision.helper.js";
+import { truncateRalphResultText } from "./ralph-result-text.helper.js";
 import type {
   RalphBlockExecutionResult,
   RalphFlow,

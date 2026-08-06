@@ -10,6 +10,7 @@ import {
 import {
   getUserRalphDirectory,
   acquireRalphFileMutationLock,
+  RalphMutationLeaseActiveError,
   type RalphFlowScope,
 } from "./ralph.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
@@ -17,9 +18,7 @@ import {
   normalizeRalphWatchId,
   normalizeRalphWatchInput,
 } from "./_helpers/normalize-ralph-watch-input.helper.js";
-import {
-  watchRootMatchesPath,
-} from "./_helpers/watch-root-matches-path.helper.js";
+import { watchRootMatchesPath } from "./_helpers/watch-root-matches-path.helper.js";
 import {
   scanRalphWatchFiles,
   waitForStableRalphWatchFile,
@@ -144,7 +143,10 @@ export interface RalphWatchFileEvent {
 
 export interface RalphWatchServiceOptions {
   scheduler: DurableSmartScheduler;
-  onError?: (watch: RalphWatchDefinition, error: unknown) => void | Promise<void>;
+  onError?: (
+    watch: RalphWatchDefinition,
+    error: unknown,
+  ) => void | Promise<void>;
   onEvent?: (
     watch: RalphWatchDefinition,
     event: RalphWatchFileEvent,
@@ -199,11 +201,7 @@ const withRalphWatchStateMutation = async <Result>(
       }
     } catch (error) {
       lastError = error;
-      if (
-        !(error instanceof Error) ||
-        !error.message.startsWith("Ralph mutation lease is active for") ||
-        attempt === 79
-      ) {
+      if (!(error instanceof RalphMutationLeaseActiveError) || attempt === 79) {
         throw error;
       }
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
@@ -240,14 +238,18 @@ export const upsertRalphWatch = async (
     await writeRalphWatchStateUnlocked({
       ...state,
       updatedAt: new Date().toISOString(),
-      watches: nextWatches.sort((left, right) => left.id.localeCompare(right.id)),
+      watches: nextWatches.sort((left, right) =>
+        left.id.localeCompare(right.id),
+      ),
     });
 
     return watchDefinition;
   });
 };
 
-export const deleteRalphWatch = async (id: string): Promise<RalphWatchDefinition> => {
+export const deleteRalphWatch = async (
+  id: string,
+): Promise<RalphWatchDefinition> => {
   return withRalphWatchStateMutation(async () => {
     const normalizedId = normalizeRalphWatchId(id);
     const state = await loadRalphWatchState();
@@ -268,15 +270,19 @@ export const deleteRalphWatch = async (id: string): Promise<RalphWatchDefinition
 };
 
 export const syncRalphWatchSchedulerJobs = async (
-  scheduler = new DurableSmartScheduler({ statePath: getUserSchedulerStatePath() }),
+  scheduler = new DurableSmartScheduler({
+    statePath: getUserSchedulerStatePath(),
+  }),
 ): Promise<void> => {
   const watches = await listRalphWatches();
-  const activeDedupeKeys = new Set<string>();
+  const activeWatchIds = new Set<string>();
 
   for (const watchDefinition of watches) {
-    activeDedupeKeys.add(`ralph-watch:${watchDefinition.id}`);
+    activeWatchIds.add(watchDefinition.id);
     const job = await scheduler.upsertJob(
       createRalphWatchSchedulerJobInput(watchDefinition),
+      undefined,
+      { kind: "ralph-watch", watchId: watchDefinition.id },
     );
 
     if (watchDefinition.enabled && job.status === "paused") {
@@ -290,8 +296,8 @@ export const syncRalphWatchSchedulerJobs = async (
 
   for (const job of jobs) {
     if (
-      job.dedupeKey?.startsWith("ralph-watch:") &&
-      !activeDedupeKeys.has(job.dedupeKey)
+      job.provenance.kind === "ralph-watch" &&
+      !activeWatchIds.has(job.provenance.watchId)
     ) {
       await scheduler.deleteJob(job.id);
     }
@@ -332,8 +338,8 @@ export class RalphWatchService {
 
   async start(): Promise<void> {
     await syncRalphWatchSchedulerJobs(this.scheduler);
-    const watches = (await listRalphWatches()).filter((watchDefinition) =>
-      watchDefinition.enabled,
+    const watches = (await listRalphWatches()).filter(
+      (watchDefinition) => watchDefinition.enabled,
     );
 
     this.stopped = false;
@@ -367,12 +373,21 @@ export class RalphWatchService {
   ): Promise<WatchHandle> {
     if (process.platform === "win32" || process.platform === "darwin") {
       try {
-        const watcher = watch(root.path, { recursive: true }, (eventName, fileName) => {
-          const candidatePath = fileName
-            ? resolve(root.path, String(fileName))
-            : root.path;
-          void this.queueNativeEvent(watchDefinition, root, eventName, candidatePath);
-        });
+        const watcher = watch(
+          root.path,
+          { recursive: true },
+          (eventName, fileName) => {
+            const candidatePath = fileName
+              ? resolve(root.path, String(fileName))
+              : root.path;
+            void this.queueNativeEvent(
+              watchDefinition,
+              root,
+              eventName,
+              candidatePath,
+            );
+          },
+        );
 
         watcher.on("error", (error) => {
           void this.reportError(watchDefinition, error);
@@ -415,7 +430,10 @@ export class RalphWatchService {
         const current = await scanRalphWatchFiles(root);
         const now = Date.now();
 
-        for (const event of collectRalphWatchSnapshotEvents(previous, current)) {
+        for (const event of collectRalphWatchSnapshotEvents(
+          previous,
+          current,
+        )) {
           this.queueEvent(
             watchDefinition,
             root,
@@ -461,13 +479,16 @@ export class RalphWatchService {
       watchDefinition.stabilityMs,
     );
     const eventType: RalphWatchEventType =
-      eventName === "rename"
-        ? snapshot
-          ? "created"
-          : "deleted"
-        : "changed";
+      eventName === "rename" ? (snapshot ? "created" : "deleted") : "changed";
 
-    this.queueEvent(watchDefinition, root, eventType, candidatePath, snapshot, Date.now());
+    this.queueEvent(
+      watchDefinition,
+      root,
+      eventType,
+      candidatePath,
+      snapshot,
+      Date.now(),
+    );
   }
 
   private queueEvent(
@@ -491,7 +512,14 @@ export class RalphWatchService {
 
     const timer = setTimeout(() => {
       this.debounceTimers.delete(key);
-      void this.emit(watchDefinition, root, eventType, path, snapshot, occurredAt);
+      void this.emit(
+        watchDefinition,
+        root,
+        eventType,
+        path,
+        snapshot,
+        occurredAt,
+      );
     }, watchDefinition.debounceMs);
 
     this.debounceTimers.set(key, timer);
@@ -518,7 +546,11 @@ export class RalphWatchService {
     });
 
     try {
-      const result = await emitRalphWatchEvent(this.scheduler, watchDefinition, event);
+      const result = await emitRalphWatchEvent(
+        this.scheduler,
+        watchDefinition,
+        event,
+      );
       await this.scheduler.runQueuedRuns({ maxRuns: 1 });
       await this.onEvent?.(watchDefinition, event, result);
     } catch (error) {

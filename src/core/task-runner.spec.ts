@@ -222,7 +222,7 @@ describe("previewTaskRun", () => {
     ).toBe(true);
   });
 
-  it("uses resolved prompt body content to infer additional tools", () => {
+  it("does not infer tool authority from resolved prompt prose", () => {
     const customizations = createCustomizations();
 
     customizations.prompts.push({
@@ -241,7 +241,7 @@ describe("previewTaskRun", () => {
     );
 
     expect(preview.invokedPrompt?.resolvedBody).toContain("shell");
-    expect(preview.suggestedTools).toContain("shell");
+    expect(preview.suggestedTools).toEqual([]);
   });
 
   it("warns when an invoked prompt still has unresolved input placeholders", () => {

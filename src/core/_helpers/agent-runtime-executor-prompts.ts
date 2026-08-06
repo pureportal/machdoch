@@ -3,13 +3,6 @@ import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 
-const BROAD_REASONING_TASK_PATTERN =
-  /\b(debug|diagnos(?:e|is)|investigat(?:e|ion)|root cause|analy(?:ze|sis)|compare|research|benchmark|best\s+practices?|optimi(?:se|ze|sation|zation)|performance|security|architecture|design|redesign|migration|workflow|agent|autopilot|orchestrat(?:e|ion)|refactor|whole|entire|system|multi(?:ple|-)?step|multi(?:ple|-)?file)\b/i;
-const EXTERNAL_RESEARCH_PATTERN =
-  /\b(research|online|web|internet|best\s+practices?|official|docs?|documentation|guide|latest|recent|current|release\s+notes?|changelog|benchmark|compare)\b/i;
-const CHANGE_OR_VALIDATION_TASK_PATTERN =
-  /\b(fix|implement|build|create|change|update|edit|modify|refactor|rewrite|repair|improve|optimi(?:se|ze)|debug|test|validate|verify|benchmark)\b/i;
-
 export interface TaskStrategyProfile {
   reasoningEffort: "low" | "medium" | "high";
   requirePlanning: boolean;
@@ -18,48 +11,20 @@ export interface TaskStrategyProfile {
   signals: string[];
 }
 
-const createTaskSignalText = (
-  task: string,
-  taskContext: ResolvedTaskContext,
-  continuationRequest?: ExecutorContinuationRequest,
-): string => {
-  return [
-    task,
-    taskContext.effectiveTask,
-    continuationRequest?.rationale,
-    continuationRequest?.missingRequirements.join(" "),
-    continuationRequest?.requiredActions.join(" "),
-  ]
-    .filter((part): part is string => typeof part === "string")
-    .join(" ");
-};
-
 export const inferTaskStrategyProfile = (
-  task: string,
   taskContext: ResolvedTaskContext,
   continuationRequest?: ExecutorContinuationRequest,
 ): TaskStrategyProfile => {
-  const signalText = createTaskSignalText(
-    task,
-    taskContext,
-    continuationRequest,
-  );
   const signals: string[] = [];
   let score = 0;
+  const declaredTools = taskContext.invokedPrompt?.tools ?? [];
 
-  if (BROAD_REASONING_TASK_PATTERN.test(signalText)) {
-    score += 2;
-    signals.push("task looks broad, ambiguous, or reasoning-heavy");
-  }
-
-  if (task.trim().split(/\s+/u).length >= 18) {
+  if (declaredTools.length >= 3) {
+    score += 3;
+    signals.push("the invoked prompt declares several tool capabilities");
+  } else if (declaredTools.length > 0) {
     score += 1;
-    signals.push("task description is long enough to suggest multiple steps");
-  }
-
-  if (taskContext.workspacePaths.length >= 2) {
-    score += 1;
-    signals.push("multiple workspace paths are in play");
+    signals.push("the invoked prompt declares tool capabilities");
   }
 
   if (taskContext.applicableInstructions.length >= 2) {
@@ -72,11 +37,11 @@ export const inferTaskStrategyProfile = (
     signals.push("monitor feedback requires another executor iteration");
   }
 
-  const requireResearch = EXTERNAL_RESEARCH_PATTERN.test(signalText);
+  const requireResearch = declaredTools.includes("network");
 
   if (requireResearch) {
     score += 1;
-    signals.push("task asks for current external guidance or best practices");
+    signals.push("the invoked prompt declares the network capability");
   }
 
   const reasoningEffort: TaskStrategyProfile["reasoningEffort"] =
@@ -85,8 +50,7 @@ export const inferTaskStrategyProfile = (
     continuationRequest !== undefined || reasoningEffort !== "low";
   const requireVerification =
     continuationRequest !== undefined ||
-    CHANGE_OR_VALIDATION_TASK_PATTERN.test(signalText) ||
-    taskContext.suggestedTools.some(
+    declaredTools.some(
       (tool) => tool === "shell" || tool === "git" || tool === "packages",
     );
 
@@ -225,7 +189,6 @@ export const createExecutorSystemPrompt = (
   mcpInitializationSections: readonly string[] = [],
 ): string => {
   const strategyProfile = inferTaskStrategyProfile(
-    taskContext.task,
     taskContext,
     continuationRequest,
   );

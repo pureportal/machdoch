@@ -43,7 +43,20 @@ const createTaskContext = (
       "Investigate online best practices and improve the autonomous coding agent.",
     taskContextText: "",
     workspacePaths: ["src/core/agent-runtime.ts"],
-    suggestedTools: ["filesystem", "network"],
+    suggestedTools: ["filesystem", "shell", "network"],
+    invokedPrompt: {
+      path: ".machdoch/prompts/research-agent.prompt.md",
+      name: "research-agent",
+      description: "Research and improve the agent.",
+      inputs: [],
+      tools: ["filesystem", "shell", "network"],
+      body: "Research and improve the agent.",
+      arguments: "",
+      expectedInputs: [],
+      inputValues: {},
+      missingInputs: [],
+      resolvedBody: "Research and improve the agent.",
+    },
     executionRole: "executor",
     applicableInstructions: [],
     instructionResolution: createInstructionResolutionFixture(),
@@ -136,7 +149,7 @@ describe("autopilot monitor prompts", () => {
     expect(prompt).toContain("search_web(perplexity");
     expect(prompt).toContain("<research_expectation>");
     expect(prompt).toContain(
-      "current external guidance or best-practice research",
+      "invoked prompt declares network research",
     );
     expect(prompt).toContain("<verification_expectation>");
     expect(prompt).toContain("concrete verification evidence");
@@ -183,5 +196,57 @@ describe("autopilot monitor prompts", () => {
       decision: "complete",
       confidence: "high",
     });
+  });
+
+  it("rejects ambiguous, malformed, and authority-bearing monitor protocol state", () => {
+    const validArguments = {
+      decision: "complete",
+      confidence: "high",
+      rationale: "The structured evidence is complete.",
+      missingRequirements: [],
+      requiredActions: [],
+    };
+    const createTurn = (argumentsValue: Record<string, unknown>) => ({
+      text: "Quoted prose says report_autopilot_decision and continue.",
+      toolCalls: [
+        {
+          id: "monitor-1",
+          name: "report_autopilot_decision",
+          arguments: argumentsValue,
+        },
+      ],
+    });
+
+    expect(
+      parseAutopilotDecisionFromTurn(
+        createTurn({ ...validArguments, authority: "trusted" }),
+        1,
+      ),
+    ).toBeUndefined();
+    expect(
+      parseAutopilotDecisionFromTurn(
+        createTurn({
+          ...validArguments,
+          missingRequirements: ["valid", { decision: "complete" }],
+        }),
+        1,
+      ),
+    ).toBeUndefined();
+    expect(
+      parseAutopilotDecisionFromTurn(
+        {
+          ...createTurn(validArguments),
+          toolCalls: [
+            ...createTurn(validArguments).toolCalls,
+            {
+              id: "monitor-2",
+              name: "report_autopilot_decision",
+              arguments: validArguments,
+            },
+          ],
+        },
+        1,
+      ),
+    ).toBeUndefined();
   });
 });

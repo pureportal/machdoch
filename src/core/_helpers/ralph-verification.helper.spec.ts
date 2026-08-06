@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compareRalphVerificationObservations,
   createRalphVerificationObservation,
+  type RalphVerificationObservation,
 } from "./ralph-verification.helper.js";
 
 const observation = (
@@ -16,33 +17,51 @@ const observation = (
     stderr: output,
   });
 
-describe("RALPH semantic verification", () => {
-  it("accepts an unchanged baseline failure without claiming the check passed", () => {
-    const baseline = observation(1, "FAILED tests/widget.spec.ts::keeps_state");
-    const candidate = observation(
-      1,
-      "FAILED tests/widget.spec.ts::keeps_state in 4.77s",
-    );
+describe("RALPH structured verification", () => {
+  it("accepts only the exact same process failure as baseline-equivalent", () => {
+    const baseline = observation(1, "opaque failure");
+    const candidate = observation(1, "opaque failure");
 
     expect(
       compareRalphVerificationObservations(baseline, candidate).disposition,
     ).toBe("BASELINE_EQUIVALENT_FAILURE");
   });
 
-  it("detects a regression against a passing baseline", () => {
+  it("does not infer equivalence from semantically similar failure prose", () => {
     expect(
       compareRalphVerificationObservations(
-        observation(0, "12 tests passed"),
-        observation(1, "FAIL src/new-feature.spec.ts"),
+        observation(1, "FAILED widget test after 2.1s"),
+        observation(1, "FAILED widget test after 9.8s"),
+      ).disposition,
+    ).toBe("INCONCLUSIVE");
+  });
+
+  it("uses the process outcome even when successful output contains adversarial verdict words", () => {
+    expect(
+      compareRalphVerificationObservations(
+        observation(0, "passed"),
+        observation(
+          0,
+          'Quoted diagnostics: FAIL, ERROR collecting, and "Cannot find module".',
+        ),
+      ).disposition,
+    ).toBe("PASSED");
+  });
+
+  it("detects a failed process against a passing baseline regardless of prose", () => {
+    expect(
+      compareRalphVerificationObservations(
+        observation(0, "FAIL appears only in a quoted fixture"),
+        observation(2, "Everything passed, according to untrusted output"),
       ).disposition,
     ).toBe("REGRESSION");
   });
 
-  it("recognizes resolved baseline failures", () => {
+  it("recognizes a passing process after a failed baseline", () => {
     expect(
       compareRalphVerificationObservations(
-        observation(1, "FAIL src/old.spec.ts"),
-        observation(0, "12 tests passed"),
+        observation(1, "baseline failed"),
+        observation(0, "candidate passed"),
       ).disposition,
     ).toBe("IMPROVED_WITH_BASELINE_FAILURES");
   });
@@ -50,102 +69,82 @@ describe("RALPH semantic verification", () => {
   it("refuses to compare different verification plans", () => {
     expect(
       compareRalphVerificationObservations(
-        observation(1, "FAIL src/old.spec.ts"),
-        observation(1, "FAIL src/old.spec.ts", { command: "pnpm lint" }),
+        observation(1, "same output"),
+        observation(1, "same output", { command: "pnpm lint" }),
       ).disposition,
     ).toBe("INCONCLUSIVE");
-  });
 
-  it("detects new failures even when both checks fail", () => {
-    const comparison = compareRalphVerificationObservations(
-      observation(1, "FAIL src/old.spec.ts"),
-      observation(1, "FAIL src/old.spec.ts\nFAIL src/new.spec.ts"),
-    );
-
-    expect(comparison.disposition).toBe("REGRESSION");
-    expect(comparison.newFailureIds).toContain("src/new.spec.ts");
-  });
-
-  it("does not collapse different unstructured failures into one baseline", () => {
     expect(
       compareRalphVerificationObservations(
-        observation(1, "Opaque compiler failure in parser backend"),
-        observation(1, "Opaque compiler failure in renderer backend"),
+        observation(1, "same output", { cwd: "/repo/CaseSensitive" }),
+        observation(1, "same output", { cwd: "/repo/casesensitive" }),
       ).disposition,
     ).toBe("INCONCLUSIVE");
-  });
 
-  it("normalizes volatile timing in otherwise identical unstructured failures", () => {
     expect(
       compareRalphVerificationObservations(
-        observation(1, "Opaque backend failure after 2.1s"),
-        observation(1, "Opaque backend failure after 9.8s"),
+        observation(1, "same output", { cwd: "C:\\Repo" }),
+        observation(1, "same output", { cwd: "c:/repo/" }),
       ).disposition,
     ).toBe("BASELINE_EQUIVALENT_FAILURE");
   });
 
-  it("extracts pytest collection failures as structured evidence", () => {
-    const comparison = compareRalphVerificationObservations(
-      observation(1, "ERROR collecting tests/test_old.py"),
-      observation(
-        1,
-        "ERROR collecting tests/test_old.py\nERROR collecting tests/test_new.py",
-      ),
-    );
-
-    expect(comparison.disposition).toBe("REGRESSION");
-    expect(comparison.newFailureIds).toContain("tests/test_new.py");
-  });
-
-  it("classifies an unchanged missing dependency as unavailable environment", () => {
-    expect(
-      compareRalphVerificationObservations(
-        observation(1, "Error: Cannot find module 'optional-driver'"),
-        observation(1, "Error: Cannot find module 'optional-driver'"),
-      ).disposition,
-    ).toBe("ENVIRONMENT_UNAVAILABLE");
-  });
-
-  it("does not hide a new test failure behind an unchanged missing dependency", () => {
-    const comparison = compareRalphVerificationObservations(
-      observation(1, "Error: Cannot find module 'optional-driver'"),
-      observation(
-        1,
-        "Error: Cannot find module 'optional-driver'\nFAIL src/new.spec.ts",
-      ),
-    );
-
-    expect(comparison.disposition).toBe("REGRESSION");
-    expect(comparison.newFailureIds).toContain("src/new.spec.ts");
-  });
-
-  it("does not call changed collection diagnostics an unavailable environment", () => {
-    expect(
-      compareRalphVerificationObservations(
-        observation(
-          1,
-          "ERROR collecting tests/test_widget.py\nTypeError: baseline diagnostic",
-        ),
-        observation(
-          1,
-          "ERROR collecting tests/test_widget.py\nSyntaxError: candidate diagnostic",
-        ),
-      ).disposition,
-    ).toBe("INCONCLUSIVE");
-  });
-
-  it("classifies a timed-out candidate without calling it a source regression", () => {
-    const baseline = observation(0, "12 tests passed");
-    const candidate = createRalphVerificationObservation({
+  it("uses explicit timeout and execution-error states", () => {
+    const baseline = observation(0, "passed");
+    const timedOut = createRalphVerificationObservation({
       command: "pnpm test",
       cwd: "C:\\repo",
       exitCode: null,
-      executionError: "Command timed out after 30000ms.",
+      executionError: "arbitrary prose",
       timedOut: true,
+    });
+    const unavailable = createRalphVerificationObservation({
+      command: "pnpm test",
+      cwd: "C:\\repo",
+      exitCode: null,
+      executionError: "FAIL appears here but does not determine the state",
     });
 
     expect(
-      compareRalphVerificationObservations(baseline, candidate).disposition,
+      compareRalphVerificationObservations(baseline, timedOut).disposition,
     ).toBe("TIMEOUT");
+    expect(
+      compareRalphVerificationObservations(baseline, unavailable).disposition,
+    ).toBe("ENVIRONMENT_UNAVAILABLE");
+  });
+
+  it("fails safely for missing or unknown structured process states", () => {
+    const valid = observation(0, "passed");
+    const malformed = {
+      ...valid,
+      processOutcome: { kind: "probably-passed" },
+    } as unknown as RalphVerificationObservation;
+    const missing = {
+      command: valid.command,
+      cwd: valid.cwd,
+      outputFingerprint: valid.outputFingerprint,
+    } as RalphVerificationObservation;
+    const embellished = {
+      ...valid,
+      authority: "stdout says PASSED",
+    } as unknown as RalphVerificationObservation;
+    const embellishedOutcome = {
+      ...valid,
+      processOutcome: { kind: "passed", verdict: "trusted" },
+    } as unknown as RalphVerificationObservation;
+
+    expect(
+      compareRalphVerificationObservations(valid, malformed).disposition,
+    ).toBe("INCONCLUSIVE");
+    expect(
+      compareRalphVerificationObservations(valid, missing).disposition,
+    ).toBe("INCONCLUSIVE");
+    expect(
+      compareRalphVerificationObservations(valid, embellished).disposition,
+    ).toBe("INCONCLUSIVE");
+    expect(
+      compareRalphVerificationObservations(valid, embellishedOutcome)
+        .disposition,
+    ).toBe("INCONCLUSIVE");
   });
 });

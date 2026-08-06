@@ -46,6 +46,13 @@ interface SpawnedAgentResult {
   signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+  providerShutdownRecovery?: {
+    kind: "final-output-exit-timeout" | "child-exit-close-timeout";
+    graceMs: number;
+    childExitObservedBeforeRecovery: boolean;
+    childExitCode: number | null;
+    childExitSignal: NodeJS.Signals | null;
+  };
 }
 
 interface ExternalAgentExecutionParams extends ModelDrivenExecutionParams {
@@ -54,6 +61,7 @@ interface ExternalAgentExecutionParams extends ModelDrivenExecutionParams {
 
 const MAX_DIAGNOSTIC_CHARS = 12_000;
 const EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS = 5_000;
+const CODEX_COMPLETION_SHUTDOWN_GRACE_MS = 10_000;
 const MAX_CAPTURED_STDOUT_CHARS = 512_000;
 const MAX_CAPTURED_STDERR_CHARS = 128_000;
 const MAX_ACTION_OUTPUT_BATCH_CHARS = 32_000;
@@ -449,16 +457,28 @@ const terminateExternalAgentProcessTree = async (
   child: ChildProcess,
   signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
 ): Promise<void> => {
+  const killDirectChild = (): void => {
+    try {
+      child.kill(signal);
+    } catch {
+      // Process cleanup is best effort. Callers still close their inherited
+      // stream handles so a failed kill cannot keep Machdoch pending.
+    }
+  };
+
   if (process.platform === "win32" && typeof child.pid === "number") {
     await new Promise<void>((resolve) => {
-      const killer = spawn(
-        "taskkill",
-        ["/PID", String(child.pid), "/T", "/F"],
-        {
+      let killer: ChildProcess;
+      try {
+        killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
           stdio: "ignore",
           windowsHide: true,
-        },
-      );
+        });
+      } catch {
+        killDirectChild();
+        resolve();
+        return;
+      }
       let settled = false;
       const settle = (): void => {
         if (settled) {
@@ -470,21 +490,25 @@ const terminateExternalAgentProcessTree = async (
         resolve();
       };
       const timeoutHandle = setTimeout(() => {
-        killer.kill();
-        child.kill();
+        try {
+          killer.kill();
+        } catch {
+          // The taskkill helper may already have exited.
+        }
+        killDirectChild();
         settle();
       }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS);
 
       unrefTimer(timeoutHandle);
       killer.once("close", (exitCode) => {
         if (exitCode !== 0) {
-          child.kill();
+          killDirectChild();
         }
 
         settle();
       });
       killer.once("error", () => {
-        child.kill();
+        killDirectChild();
         settle();
       });
     });
@@ -501,7 +525,7 @@ const terminateExternalAgentProcessTree = async (
     }
   }
 
-  child.kill(signal);
+  killDirectChild();
 };
 
 const CORE_CHILD_ENV_KEYS = new Set([
@@ -515,6 +539,13 @@ const CORE_CHILD_ENV_KEYS = new Set([
   "HTTPS_PROXY",
   "HTTP_PROXY",
   "LANG",
+  "LC_ALL",
+  "LC_COLLATE",
+  "LC_CTYPE",
+  "LC_MESSAGES",
+  "LC_MONETARY",
+  "LC_NUMERIC",
+  "LC_TIME",
   "LOCALAPPDATA",
   "NODE_EXTRA_CA_CERTS",
   "NO_PROXY",
@@ -526,6 +557,11 @@ const CORE_CHILD_ENV_KEYS = new Set([
   "PROGRAMFILES",
   "PROGRAMFILES(X86)",
   "PROGRAMW6432",
+  "PROCESSOR_ARCHITECTURE",
+  "PROCESSOR_ARCHITEW6432",
+  "PROCESSOR_IDENTIFIER",
+  "PROCESSOR_LEVEL",
+  "PROCESSOR_REVISION",
   "SSL_CERT_DIR",
   "SSL_CERT_FILE",
   "SSH_AUTH_SOCK",
@@ -540,49 +576,66 @@ const CORE_CHILD_ENV_KEYS = new Set([
   "WINDIR",
 ]);
 
+interface ProviderChildEnvDescriptor {
+  key: string;
+  sensitivity: "public" | "secret";
+}
+
+const publicEnv = (key: string): ProviderChildEnvDescriptor => ({
+  key,
+  sensitivity: "public",
+});
+const secretEnv = (key: string): ProviderChildEnvDescriptor => ({
+  key,
+  sensitivity: "secret",
+});
+
 const PROVIDER_CHILD_ENV_KEYS = {
   "codex-cli": [
-    "CODEX_ACCESS_TOKEN",
-    "CODEX_API_KEY",
-    "CODEX_CA_CERTIFICATE",
-    "CODEX_HOME",
-    "CODEX_SQLITE_HOME",
-    "RUST_LOG",
+    secretEnv("CODEX_ACCESS_TOKEN"),
+    secretEnv("CODEX_API_KEY"),
+    publicEnv("CODEX_CA_CERTIFICATE"),
+    publicEnv("CODEX_HOME"),
+    publicEnv("CODEX_SQLITE_HOME"),
+    publicEnv("RUST_LOG"),
   ],
   "claude-cli": [
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_WORKSPACE_ID",
-    "API_FORCE_IDLE_TIMEOUT",
-    "API_TIMEOUT_MS",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_BEARER_TOKEN_BEDROCK",
-    "AWS_DEFAULT_REGION",
-    "AWS_PROFILE",
-    "AWS_REGION",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "BASH_DEFAULT_TIMEOUT_MS",
-    "BASH_MAX_OUTPUT_LENGTH",
-    "BASH_MAX_TIMEOUT_MS",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "CLAUDE_CONFIG_DIR",
-    "DISABLE_TELEMETRY",
-    "DO_NOT_TRACK",
-    "ENABLE_TOOL_SEARCH",
-    "GCLOUD_PROJECT",
-    "GOOGLE_APPLICATION_CREDENTIALS",
-    "GOOGLE_CLOUD_PROJECT",
-    "MAX_THINKING_TOKENS",
+    secretEnv("ANTHROPIC_API_KEY"),
+    secretEnv("ANTHROPIC_AUTH_TOKEN"),
+    publicEnv("ANTHROPIC_WORKSPACE_ID"),
+    publicEnv("API_FORCE_IDLE_TIMEOUT"),
+    publicEnv("API_TIMEOUT_MS"),
+    secretEnv("AWS_ACCESS_KEY_ID"),
+    secretEnv("AWS_BEARER_TOKEN_BEDROCK"),
+    publicEnv("AWS_DEFAULT_REGION"),
+    publicEnv("AWS_PROFILE"),
+    publicEnv("AWS_REGION"),
+    secretEnv("AWS_SECRET_ACCESS_KEY"),
+    secretEnv("AWS_SESSION_TOKEN"),
+    publicEnv("BASH_DEFAULT_TIMEOUT_MS"),
+    publicEnv("BASH_MAX_OUTPUT_LENGTH"),
+    publicEnv("BASH_MAX_TIMEOUT_MS"),
+    secretEnv("CLAUDE_CODE_OAUTH_TOKEN"),
+    publicEnv("CLAUDE_CONFIG_DIR"),
+    publicEnv("DISABLE_TELEMETRY"),
+    publicEnv("DO_NOT_TRACK"),
+    publicEnv("ENABLE_TOOL_SEARCH"),
+    publicEnv("GCLOUD_PROJECT"),
+    publicEnv("GOOGLE_APPLICATION_CREDENTIALS"),
+    publicEnv("GOOGLE_CLOUD_PROJECT"),
+    publicEnv("MAX_THINKING_TOKENS"),
   ],
   "copilot-cli": [
-    "COPILOT_CACHE_HOME",
-    "COPILOT_GITHUB_TOKEN",
-    "COPILOT_HOME",
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
+    publicEnv("COPILOT_CACHE_HOME"),
+    secretEnv("COPILOT_GITHUB_TOKEN"),
+    publicEnv("COPILOT_HOME"),
+    secretEnv("GH_TOKEN"),
+    secretEnv("GITHUB_TOKEN"),
   ],
-} as const satisfies Record<AgentCliProvider, readonly string[]>;
+} as const satisfies Record<
+  AgentCliProvider,
+  readonly ProviderChildEnvDescriptor[]
+>;
 
 const PROVIDER_CHILD_ENV_DENY_KEYS = {
   "codex-cli": ["OPENAI_API_KEY"],
@@ -590,21 +643,16 @@ const PROVIDER_CHILD_ENV_DENY_KEYS = {
   "copilot-cli": ["COPILOT_ALLOW_ALL", "COPILOT_MODEL"],
 } as const satisfies Record<AgentCliProvider, readonly string[]>;
 
-const isCoreChildEnvKey = (key: string): boolean => {
+const getCoreChildEnvKey = (key: string): string | undefined => {
   const normalizedKey = key.toUpperCase();
 
-  return (
-    CORE_CHILD_ENV_KEYS.has(normalizedKey) ||
-    normalizedKey.startsWith("LC_") ||
-    normalizedKey.startsWith("PROCESSOR_") ||
-    normalizedKey.endsWith("_PROXY")
-  );
+  return CORE_CHILD_ENV_KEYS.has(normalizedKey) ? normalizedKey : undefined;
 };
 
-const isProviderChildEnvKey = (
+const getProviderChildEnvKey = (
   key: string,
   provider: AgentCliProvider,
-): boolean => {
+): string | undefined => {
   const normalizedKey = key.toUpperCase();
 
   if (
@@ -612,13 +660,18 @@ const isProviderChildEnvKey = (
       normalizedKey,
     )
   ) {
-    return false;
+    return undefined;
   }
 
-  return (PROVIDER_CHILD_ENV_KEYS[provider] as readonly string[]).includes(
-    normalizedKey,
-  );
+  return PROVIDER_CHILD_ENV_KEYS[provider].find(
+    (descriptor) => descriptor.key === normalizedKey,
+  )?.key;
 };
+
+const getProviderSecretEnvKeys = (provider: AgentCliProvider): string[] =>
+  PROVIDER_CHILD_ENV_KEYS[provider]
+    .filter((descriptor) => descriptor.sensitivity === "secret")
+    .map((descriptor) => descriptor.key);
 
 const createChildEnv = (
   provider: AgentCliProvider,
@@ -629,11 +682,10 @@ const createChildEnv = (
   };
 
   for (const [key, value] of Object.entries(process.env)) {
-    if (
-      value !== undefined &&
-      (isCoreChildEnvKey(key) || isProviderChildEnvKey(key, provider))
-    ) {
-      childEnv[key] = value;
+    const canonicalKey =
+      getProviderChildEnvKey(key, provider) ?? getCoreChildEnvKey(key);
+    if (value !== undefined && canonicalKey) {
+      childEnv[canonicalKey] = value;
     }
   }
 
@@ -806,15 +858,49 @@ const runExternalAgentCommand = async (
     let abortError: Error | undefined;
     let abortTerminationPromise: Promise<void> | undefined;
     let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
+    let codexCompletionShutdownHandle:
+      | ReturnType<typeof setTimeout>
+      | undefined;
+    let providerShutdownRecovery:
+      | SpawnedAgentResult["providerShutdownRecovery"]
+      | undefined;
+    let providerShutdownTerminationPromise: Promise<void> | undefined;
+    let providerShutdownSettlementHandle:
+      | ReturnType<typeof setTimeout>
+      | undefined;
+    let providerShutdownFinalizationStarted = false;
+    let observedChildExit:
+      | {
+          exitCode: number | null;
+          signal: NodeJS.Signals | null;
+        }
+      | undefined;
 
     const cleanup = (): void => {
       signal?.removeEventListener("abort", handleAbort);
       child.stdin?.removeListener("error", handleStdinError);
+      child.stdin?.removeListener("drain", handleStdinDrain);
+      child.stdout?.removeListener("data", handleStdoutData);
+      child.stderr?.removeListener("data", handleStderrData);
+      child.removeListener("exit", handleChildExit);
+      child.removeListener("error", handleChildError);
+      child.removeListener("close", handleChildClose);
       actionOutputBatcher.dispose();
       if (abortSettlementHandle) {
         clearTimeout(abortSettlementHandle);
         abortSettlementHandle = undefined;
       }
+      if (codexCompletionShutdownHandle) {
+        clearTimeout(codexCompletionShutdownHandle);
+        codexCompletionShutdownHandle = undefined;
+      }
+      if (providerShutdownSettlementHandle) {
+        clearTimeout(providerShutdownSettlementHandle);
+        providerShutdownSettlementHandle = undefined;
+      }
+      child.stdin?.destroy();
+      child.stdout?.destroy();
+      child.stderr?.destroy();
     };
 
     const rejectOnce = (error: Error): void => {
@@ -830,6 +916,7 @@ const runExternalAgentCommand = async (
     const resolveOnce = (
       exitCode: number | null,
       exitSignal: NodeJS.Signals | null,
+      shutdownRecovery?: SpawnedAgentResult["providerShutdownRecovery"],
     ): void => {
       if (settled) {
         return;
@@ -842,14 +929,136 @@ const runExternalAgentCommand = async (
         signal: exitSignal,
         stdout: finalizeBoundedOutput(stdout),
         stderr: finalizeBoundedOutput(stderr),
+        ...(shutdownRecovery
+          ? { providerShutdownRecovery: shutdownRecovery }
+          : {}),
       });
+    };
+
+    const resolveProviderShutdownRecovery = (): void => {
+      if (settled || !providerShutdownRecovery) {
+        return;
+      }
+
+      resolveOnce(
+        providerShutdownRecovery.childExitObservedBeforeRecovery
+          ? providerShutdownRecovery.childExitCode
+          : null,
+        providerShutdownRecovery.childExitObservedBeforeRecovery
+          ? providerShutdownRecovery.childExitSignal
+          : null,
+        providerShutdownRecovery,
+      );
+    };
+
+    const finalizeProviderShutdownRecovery = (escalate: boolean): void => {
+      if (
+        settled ||
+        !providerShutdownRecovery ||
+        providerShutdownFinalizationStarted
+      ) {
+        return;
+      }
+
+      providerShutdownFinalizationStarted = true;
+      if (providerShutdownSettlementHandle) {
+        clearTimeout(providerShutdownSettlementHandle);
+        providerShutdownSettlementHandle = undefined;
+      }
+
+      const initialTermination =
+        providerShutdownTerminationPromise ?? Promise.resolve();
+      const finalTermination =
+        process.platform !== "win32" && escalate
+          ? initialTermination.then(() =>
+              terminateExternalAgentProcessTree(child, "SIGKILL"),
+            )
+          : initialTermination;
+      void finalTermination.then(
+        resolveProviderShutdownRecovery,
+        resolveProviderShutdownRecovery,
+      );
+    };
+
+    const beginProviderShutdownRecovery = (): void => {
+      const finalOutputObserved = cleanCliText(stdout.text).length > 0;
+      if (
+        settled ||
+        abortError ||
+        providerShutdownRecovery ||
+        provider !== "codex-cli" ||
+        (!finalOutputObserved && observedChildExit === undefined)
+      ) {
+        return;
+      }
+
+      providerShutdownRecovery = {
+        kind:
+          observedChildExit === undefined
+            ? "final-output-exit-timeout"
+            : "child-exit-close-timeout",
+        graceMs: CODEX_COMPLETION_SHUTDOWN_GRACE_MS,
+        childExitObservedBeforeRecovery: observedChildExit !== undefined,
+        childExitCode: observedChildExit?.exitCode ?? null,
+        childExitSignal: observedChildExit?.signal ?? null,
+      };
+      providerShutdownTerminationPromise = terminateExternalAgentProcessTree(
+        child,
+        "SIGTERM",
+      );
+
+      if (process.platform === "win32") {
+        finalizeProviderShutdownRecovery(false);
+        return;
+      }
+
+      providerShutdownSettlementHandle = setTimeout(() => {
+        finalizeProviderShutdownRecovery(true);
+      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
+      unrefTimer(providerShutdownSettlementHandle);
+    };
+
+    const scheduleCodexCompletionShutdownCheck = (): void => {
+      if (
+        provider !== "codex-cli" ||
+        settled ||
+        abortError ||
+        providerShutdownRecovery
+      ) {
+        return;
+      }
+
+      const hasCompletionEvidence =
+        cleanCliText(stdout.text).length > 0 || observedChildExit !== undefined;
+      if (!hasCompletionEvidence) {
+        if (codexCompletionShutdownHandle) {
+          clearTimeout(codexCompletionShutdownHandle);
+          codexCompletionShutdownHandle = undefined;
+        }
+        return;
+      }
+
+      if (codexCompletionShutdownHandle) {
+        return;
+      }
+
+      // Non-JSON `codex exec` reserves stdout for the final answer and emits it
+      // once, during shutdown. Use a fixed drain window from the first evidence
+      // of completion: later inherited or whitespace output must not postpone
+      // cleanup indefinitely. A successful/failed `exit` is also definitive even
+      // when Codex produced an empty final message and only stdio remains open.
+      codexCompletionShutdownHandle = setTimeout(() => {
+        codexCompletionShutdownHandle = undefined;
+        beginProviderShutdownRecovery();
+      }, CODEX_COMPLETION_SHUTDOWN_GRACE_MS);
+      unrefTimer(codexCompletionShutdownHandle);
     };
 
     const beginTermination = (
       error: Error,
       initialSignal: "SIGTERM" | "SIGKILL" = "SIGTERM",
     ): void => {
-      if (settled || abortError) {
+      if (settled || abortError || providerShutdownRecovery) {
         return;
       }
 
@@ -857,25 +1066,25 @@ const runExternalAgentCommand = async (
       abortTerminationPromise = terminateExternalAgentProcessTree(
         child,
         initialSignal,
-      ).catch(() => {
-        child.kill(initialSignal);
-      });
+      );
       if (process.platform === "win32") {
-        void abortTerminationPromise.finally(() =>
-          rejectOnce(abortError ?? new Error("Execution cancelled.")),
+        void abortTerminationPromise.then(
+          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
         );
       }
 
       abortSettlementHandle = setTimeout(() => {
         if (process.platform === "win32") {
-          void (abortTerminationPromise ?? Promise.resolve()).finally(() => {
-            child.kill();
-            rejectOnce(abortError ?? new Error("Execution cancelled."));
-          });
+          void (abortTerminationPromise ?? Promise.resolve()).then(
+            () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+            () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+          );
           return;
         }
-        void terminateExternalAgentProcessTree(child, "SIGKILL").finally(() =>
-          rejectOnce(abortError ?? new Error("Execution cancelled.")),
+        void terminateExternalAgentProcessTree(child, "SIGKILL").then(
+          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
         );
       }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
       unrefTimer(abortSettlementHandle);
@@ -894,43 +1103,111 @@ const runExternalAgentCommand = async (
       );
     }
 
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
-      actionOutputBatcher.enqueue("stdout", chunk);
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
-      actionOutputBatcher.enqueue("stderr", chunk);
-    });
-    child.on("error", (error) => {
-      if (!abortError) {
-        rejectOnce(error);
+    function handleStdinDrain(): void {
+      if (!settled && !abortError) {
+        child.stdin?.end();
+      }
+    }
+
+    function handleStdoutData(chunk: string): void {
+      if (settled) {
         return;
       }
-      void (abortTerminationPromise ?? Promise.resolve()).finally(() =>
-        rejectOnce(abortError ?? error),
+
+      appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
+      actionOutputBatcher.enqueue("stdout", chunk);
+      scheduleCodexCompletionShutdownCheck();
+    }
+
+    function handleStderrData(chunk: string): void {
+      if (settled) {
+        return;
+      }
+
+      appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
+      actionOutputBatcher.enqueue("stderr", chunk);
+    }
+
+    function handleChildExit(
+      exitCode: number | null,
+      exitSignal: NodeJS.Signals | null,
+    ): void {
+      if (settled) {
+        return;
+      }
+
+      observedChildExit = { exitCode, signal: exitSignal };
+      scheduleCodexCompletionShutdownCheck();
+    }
+
+    function handleChildError(error: Error): void {
+      if (settled) {
+        return;
+      }
+      if (providerShutdownRecovery) {
+        finalizeProviderShutdownRecovery(true);
+        return;
+      }
+      if (!abortError) {
+        if (typeof child.pid === "number") {
+          beginTermination(
+            error,
+            process.platform === "win32" ? "SIGTERM" : "SIGKILL",
+          );
+        } else {
+          rejectOnce(error);
+        }
+        return;
+      }
+      void (abortTerminationPromise ?? Promise.resolve()).then(
+        () => rejectOnce(abortError ?? error),
+        () => rejectOnce(abortError ?? error),
       );
-    });
-    child.on("close", (exitCode, exitSignal) => {
+    }
+
+    function handleChildClose(
+      exitCode: number | null,
+      exitSignal: NodeJS.Signals | null,
+    ): void {
+      if (settled) {
+        return;
+      }
+      if (providerShutdownRecovery) {
+        // On Unix the direct child can exit before descendants in its group.
+        // Escalate the already-requested group shutdown before settling.
+        finalizeProviderShutdownRecovery(true);
+        return;
+      }
       if (abortError) {
         if (process.platform === "win32") {
-          void (abortTerminationPromise ?? Promise.resolve()).finally(() =>
-            rejectOnce(abortError as Error),
+          void (abortTerminationPromise ?? Promise.resolve()).then(
+            () => rejectOnce(abortError as Error),
+            () => rejectOnce(abortError as Error),
           );
         } else {
           // The direct child can exit before descendants in its process group.
           // Force the remaining group down before disposing run-scoped files.
-          void (abortTerminationPromise ?? Promise.resolve())
-            .then(() => terminateExternalAgentProcessTree(child, "SIGKILL"))
-            .finally(() => rejectOnce(abortError as Error));
+          const finalTermination = (
+            abortTerminationPromise ?? Promise.resolve()
+          ).then(() => terminateExternalAgentProcessTree(child, "SIGKILL"));
+          void finalTermination.then(
+            () => rejectOnce(abortError as Error),
+            () => rejectOnce(abortError as Error),
+          );
         }
         return;
       }
 
       resolveOnce(exitCode, exitSignal);
-    });
+    }
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", handleStdoutData);
+    child.stderr?.on("data", handleStderrData);
+    child.on("exit", handleChildExit);
+    child.on("error", handleChildError);
+    child.on("close", handleChildClose);
 
     signal?.addEventListener("abort", handleAbort, { once: true });
     child.stdin?.once("error", handleStdinError);
@@ -952,7 +1229,7 @@ const runExternalAgentCommand = async (
       }
 
       if (!inputAccepted) {
-        child.stdin?.once("drain", () => child.stdin?.end());
+        child.stdin?.once("drain", handleStdinDrain);
         return;
       }
     }
@@ -1149,11 +1426,12 @@ const createCopilotCommand = ({
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);
   const maxTurns = getExecutorTurnLimit(config);
+  const secretEnvKeys = getProviderSecretEnvKeys("copilot-cli");
   const args = [
     "-s",
     "--autopilot",
     "--no-ask-user",
-    "--secret-env-vars=GH_TOKEN",
+    `--secret-env-vars=${secretEnvKeys.join(",")}`,
     ...enrollmentArgs,
   ];
 
@@ -1190,7 +1468,7 @@ const createCopilotCommand = ({
     commandLines: [
       "access: allow-all",
       "autopilot: enabled",
-      "secret env redaction: GH_TOKEN",
+      `secret env redaction: ${secretEnvKeys.join(", ")}`,
       `model argument: ${config.model}`,
       ...(effort ? [`effort: ${effort}`] : []),
       ...(maxTurns !== undefined
@@ -1200,7 +1478,7 @@ const createCopilotCommand = ({
     metadata: {
       access: "allow-all",
       autopilot: true,
-      secretEnvRedaction: "GH_TOKEN",
+      secretEnvRedaction: secretEnvKeys.join(","),
       reasoning: config.reasoning,
       modelArgument: config.model,
       ...(effort ? { effort } : {}),
@@ -1429,8 +1707,10 @@ const executeExternalAgentCliTask = async (
   const instructionReceipts = params.instructionDeliveryReceipts ?? [];
   const receiptEvidence = [
     ...enrollment.manifest.renderedFiles
-      .filter((file) =>
-        file.purpose.toLocaleLowerCase("en-US").includes("instruction"),
+      .filter(
+        (file) =>
+          file.role === "instruction-transport" ||
+          file.role === "instruction-and-mcp-configuration",
       )
       .map((file) => ({
         kind: "temporary-file" as const,
@@ -1500,6 +1780,21 @@ const executeExternalAgentCliTask = async (
   });
   instructionReceipts.push(deliveryReceipt);
   assertInstructionDeliveryReceiptCertain(deliveryReceipt);
+  const providerShutdownMetadata: Record<string, string | number | boolean> =
+    result.providerShutdownRecovery
+      ? {
+          providerShutdownRecovered: true,
+          providerShutdownRecoveryKind: result.providerShutdownRecovery.kind,
+          providerShutdownRecoveryGraceMs:
+            result.providerShutdownRecovery.graceMs,
+          providerChildExitObservedBeforeRecovery:
+            result.providerShutdownRecovery.childExitObservedBeforeRecovery,
+          providerChildExitCode:
+            result.providerShutdownRecovery.childExitCode ?? "unknown",
+          providerChildExitSignal:
+            result.providerShutdownRecovery.childExitSignal ?? "none",
+        }
+      : {};
   const instructionMetadata = {
     instructionResolutionId: resolution.resolutionId,
     instructionCanonicalDigest: resolution.canonicalDigest,
@@ -1608,10 +1903,16 @@ const executeExternalAgentCliTask = async (
       evidence: receipt.evidence.map((entry) => ({ ...entry })),
       bodyStored: false,
     })),
+    ...providerShutdownMetadata,
   };
   const stdout = cleanCliText(result.stdout);
   const stderr = cleanCliText(result.stderr);
   const durationMs = Date.now() - startedAt;
+  const providerShutdownDetail = result.providerShutdownRecovery
+    ? result.providerShutdownRecovery.kind === "child-exit-close-timeout"
+      ? `provider shutdown: child exited but inherited stdio did not close within ${result.providerShutdownRecovery.graceMs / 1_000} seconds; descendant-tree termination requested and inherited streams closed`
+      : `provider shutdown: final answer received; process-tree termination requested after the child did not exit within ${result.providerShutdownRecovery.graceMs / 1_000} seconds`
+    : undefined;
   const commandSection: TaskExecutionSection = {
     title: providerLabel,
     lines: [
@@ -1630,10 +1931,19 @@ const executeExternalAgentCliTask = async (
       ...command.commandLines,
       `exit code: ${result.exitCode ?? "unknown"}`,
       ...(result.signal ? [`signal: ${result.signal}`] : []),
+      ...(result.providerShutdownRecovery && providerShutdownDetail
+        ? [
+            providerShutdownDetail,
+            `provider child exit before recovery: ${result.providerShutdownRecovery.childExitObservedBeforeRecovery ? `yes (code ${result.providerShutdownRecovery.childExitCode ?? "unknown"}, signal ${result.providerShutdownRecovery.childExitSignal ?? "none"})` : "no"}`,
+          ]
+        : []),
     ],
   };
 
-  if (result.exitCode !== 0) {
+  const finalAnswerRecoveredWithoutChildExit =
+    result.providerShutdownRecovery !== undefined &&
+    !result.providerShutdownRecovery.childExitObservedBeforeRecovery;
+  if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutChildExit) {
     const reason = createExternalAgentFailureReason(
       providerLabel,
       stdout,
@@ -1660,6 +1970,7 @@ const executeExternalAgentCliTask = async (
           model: params.config.model,
           metadata: {
             durationMs,
+            ...providerShutdownMetadata,
           },
         },
       },
@@ -1705,12 +2016,17 @@ const executeExternalAgentCliTask = async (
         kind: "model-call",
         phase: "completed",
         label: providerLabel,
-        detail: command.successDetail,
-        tone: "success",
+        detail: result.providerShutdownRecovery
+          ? result.providerShutdownRecovery.kind === "child-exit-close-timeout"
+            ? `${providerLabel} exited, but inherited stdio stayed open. Machdoch requested descendant-tree termination, closed the inherited streams, and preserved the result.`
+            : `${providerLabel} produced its final answer but did not exit within ${result.providerShutdownRecovery.graceMs / 1_000} seconds. Machdoch requested process-tree termination, closed the inherited streams, and preserved the answer.`
+          : command.successDetail,
+        tone: result.providerShutdownRecovery ? "warning" : "success",
         provider,
         model: params.config.model,
         metadata: {
           durationMs,
+          ...providerShutdownMetadata,
         },
       },
     },

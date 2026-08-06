@@ -12,6 +12,7 @@ import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import {
   MAX_RALPH_RESULT_CHARS,
+  RalphFlowNotFoundError,
   createRalphFlowFingerprint,
   createRalphRunLogger,
   deleteRalphFlow,
@@ -124,7 +125,7 @@ describe("Ralph flow storage", () => {
       ]);
       await expect(
         readRalphFlow(workspaceRoot, "global-refactor"),
-      ).rejects.toThrow("was not found");
+      ).rejects.toBeInstanceOf(RalphFlowNotFoundError);
     } finally {
       if (previousUserConfigRoot === undefined) {
         delete process.env.MACHDOCH_USER_CONFIG_DIR;

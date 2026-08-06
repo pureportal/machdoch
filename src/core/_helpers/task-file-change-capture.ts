@@ -78,6 +78,13 @@ class GitCommandError extends Error {
   }
 }
 
+class UnstableRepositorySnapshotError extends GitCommandError {
+  constructor() {
+    super("The workspace kept changing while its file snapshot was captured.");
+    this.name = "UnstableRepositorySnapshotError";
+  }
+}
+
 const parseGitInteger = (value: string): number => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
@@ -480,9 +487,7 @@ const captureStableTree = async (
     previousTree = tree;
   }
 
-  throw new GitCommandError(
-    "The workspace kept changing while its file snapshot was captured.",
-  );
+  throw new UnstableRepositorySnapshotError();
 };
 
 const createEmptyTree = async (
@@ -1117,8 +1122,7 @@ const finishCapture = async (
             {
               stage: "finishSnapshots",
               code:
-                error instanceof GitCommandError &&
-                error.message.includes("kept changing")
+                error instanceof UnstableRepositorySnapshotError
                   ? "snapshot-unstable"
                   : "snapshot-failed",
               message: error instanceof Error ? error.message : String(error),
@@ -1199,8 +1203,7 @@ export const startTaskFileChangeCapture = async (
           issues.push({
             stage: "startSnapshots",
             code:
-              error instanceof GitCommandError &&
-              error.message.includes("kept changing")
+              error instanceof UnstableRepositorySnapshotError
                 ? "snapshot-unstable"
                 : "snapshot-failed",
             message: error instanceof Error ? error.message : String(error),

@@ -11,7 +11,6 @@ import {
   createHostElevationRuntimeLine,
   inferTaskStrategyProfile,
 } from "./agent-runtime-executor-prompts.js";
-import { coerceString, coerceStringArray } from "./agent-runtime-shared.js";
 import type { ExecutorCycleOutcome } from "./agent-runtime-types.js";
 import { limitText } from "./runtime-text.js";
 
@@ -101,20 +100,48 @@ const parseAutopilotDecisionRecord = (
   record: Record<string, unknown>,
   pass: number,
 ): TaskAutopilotDecision | undefined => {
-  const decision = coerceString(record, "decision");
-  const confidence = coerceString(record, "confidence");
-  const rationale = coerceString(record, "rationale");
-  const missingRequirements = coerceStringArray(record, "missingRequirements");
-  const requiredActions = coerceStringArray(record, "requiredActions");
+  const expectedKeys = [
+    "confidence",
+    "decision",
+    "missingRequirements",
+    "rationale",
+    "requiredActions",
+  ];
+  const actualKeys = Object.keys(record).sort();
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    return undefined;
+  }
+
+  const decision = record.decision;
+  const confidence = record.confidence;
+  const rationale =
+    typeof record.rationale === "string" ? record.rationale.trim() : "";
+  const readExactStringArray = (value: unknown): string[] | undefined => {
+    if (
+      !Array.isArray(value) ||
+      value.some(
+        (entry) => typeof entry !== "string" || entry.trim().length === 0,
+      )
+    ) {
+      return undefined;
+    }
+
+    return value.map((entry) => entry.trim());
+  };
+  const missingRequirements = readExactStringArray(record.missingRequirements);
+  const requiredActions = readExactStringArray(record.requiredActions);
 
   if (
     (decision !== "complete" && decision !== "continue") ||
     (confidence !== "low" &&
       confidence !== "medium" &&
       confidence !== "high") ||
-    !rationale ||
-    !missingRequirements ||
-    !requiredActions
+    rationale.length === 0 ||
+    missingRequirements === undefined ||
+    requiredActions === undefined
   ) {
     return undefined;
   }
@@ -133,13 +160,14 @@ export const parseAutopilotDecisionFromTurn = (
   turn: AgentModelTurn,
   pass: number,
 ): TaskAutopilotDecision | undefined => {
-  const toolCall = turn.toolCalls.find(
-    (call) => call.name === AUTOPILOT_MONITOR_TOOL_NAME,
-  );
+  if (
+    turn.toolCalls.length !== 1 ||
+    turn.toolCalls[0]?.name !== AUTOPILOT_MONITOR_TOOL_NAME
+  ) {
+    return undefined;
+  }
 
-  return toolCall
-    ? parseAutopilotDecisionRecord(toolCall.arguments, pass)
-    : undefined;
+  return parseAutopilotDecisionRecord(turn.toolCalls[0].arguments, pass);
 };
 
 const createSectionTranscript = (
@@ -227,7 +255,7 @@ export const createAutopilotMonitorUserPrompt = (
   cycleResult: ExecutorCycleOutcome,
   priorDecisions: TaskAutopilotDecision[],
 ): string => {
-  const strategyProfile = inferTaskStrategyProfile(task, taskContext);
+  const strategyProfile = inferTaskStrategyProfile(taskContext);
   const priorDecisionLines =
     priorDecisions.length > 0
       ? priorDecisions.flatMap((decision) => [
@@ -252,7 +280,7 @@ export const createAutopilotMonitorUserPrompt = (
     `<assistant_answer>${cycleResult.loopState.lastAssistantText ?? "(none)"}</assistant_answer>`,
     `<tool_trace>${createTraceTranscript(cycleResult.loopState.traceLines)}</tool_trace>`,
     `<prior_validator_history>${priorDecisionLines.join("\n")}</prior_validator_history>`,
-    `<research_expectation>${strategyProfile.requireResearch ? "The task explicitly asks for current external guidance or best-practice research, so acceptance requires grounded evidence that such research happened when the required tools were available." : "No explicit external-research requirement was detected from the task itself."}</research_expectation>`,
+    `<research_expectation>${strategyProfile.requireResearch ? "The invoked prompt declares network research, so acceptance requires grounded evidence that research happened when the required tools were available." : "No network-research requirement was declared in structured task metadata."}</research_expectation>`,
     `<verification_expectation>${strategyProfile.requireVerification ? "Expect concrete verification evidence proportionate to the task, especially for code changes, fixes, or claimed improvements." : "Verification is still preferred when feasible, but the task may be primarily explanatory."}</verification_expectation>`,
     `<grounded_evidence>${createSectionTranscript(cycleResult.result.outputSections)}</grounded_evidence>`,
     "<decision_rule>Return `continue` if any user requirement appears incomplete, unverified, or contradicted by the evidence. Return `complete` only when the evidence shows the task is done as requested.</decision_rule>",

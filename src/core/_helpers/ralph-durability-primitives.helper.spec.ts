@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   acquireRalphFileMutationLock,
   readRalphExecutionHistoryResults,
+  releaseActiveRalphFileMutationLocks,
 } from "../ralph.js";
 import type { RalphRunLogPaths } from "./create-ralph-storage-paths.helper.js";
 
@@ -59,6 +60,41 @@ describe("Ralph durability primitives", () => {
       await second.release();
       await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("releases locks by explicit owner group instead of owner-id suffix", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-lock-group-"));
+    const ownerGroupId = "owner-1";
+    const groupedTarget = join(directory, "grouped.json");
+    const incidentalTarget = join(directory, "incidental.json");
+    let incidentalLock: Awaited<
+      ReturnType<typeof acquireRalphFileMutationLock>
+    > | undefined;
+
+    try {
+      await acquireRalphFileMutationLock(
+        groupedTarget,
+        `run:${ownerGroupId}`,
+        undefined,
+        { ownerGroupId },
+      );
+      incidentalLock = await acquireRalphFileMutationLock(
+        incidentalTarget,
+        `unrelated:${ownerGroupId}`,
+      );
+
+      await releaseActiveRalphFileMutationLocks(ownerGroupId);
+
+      await expect(readFile(`${groupedTarget}.ralph.lock`, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(
+        readFile(`${incidentalTarget}.ralph.lock`, "utf8"),
+      ).resolves.toContain(`unrelated:${ownerGroupId}`);
+    } finally {
+      await incidentalLock?.release();
       await rm(directory, { recursive: true, force: true });
     }
   });

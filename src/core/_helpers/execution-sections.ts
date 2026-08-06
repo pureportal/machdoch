@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { join } from "node:path";
 import { sortEntryNames } from "../../helpers/sort-entry-names.helper.js";
 import { resolveRuntimeAgentLimits } from "./agent-runtime-types.js";
 import type { CreateFilePathReference } from "../task-paths.js";
@@ -32,80 +32,6 @@ const formatAgentLimit = (limit: number | null): string => {
   return limit === null ? "infinite" : String(limit);
 };
 
-const toTitleCase = (value: string): string => {
-  return value
-    .split(/[^A-Za-z0-9]+/u)
-    .filter((segment) => segment.length > 0)
-    .map((segment) => `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}`)
-    .join(" ");
-};
-
-export const createInitialFileContent = (
-  task: string,
-  fileTarget: CreateFilePathReference,
-): string => {
-  const fileName = fileTarget.workspacePath ?? fileTarget.requestedPath;
-  const extension = extname(fileName).toLowerCase();
-  const baseName = basename(fileName, extension);
-  const normalizedTask = task.toLowerCase();
-  const humanTitle = toTitleCase(baseName) || "Untitled";
-
-  if (normalizedTask.includes("empty file")) {
-    return "";
-  }
-
-  switch (extension) {
-    case ".json": {
-      return '{\n  "createdBy": "machdoch"\n}\n';
-    }
-
-    case ".md": {
-      return `# ${humanTitle}\n\nCreated by machdoch.\n`;
-    }
-
-    case ".ts":
-    case ".js":
-    case ".mjs":
-    case ".cjs": {
-      return "export {};\n";
-    }
-
-    case ".html": {
-      return [
-        "<!doctype html>",
-        '<html lang="en">',
-        "  <head>",
-        '    <meta charset="utf-8" />',
-        `    <title>${humanTitle}</title>`,
-        "  </head>",
-        "  <body>",
-        "  </body>",
-        "</html>",
-        "",
-      ].join("\n");
-    }
-
-    case ".css": {
-      return "/* Created by machdoch */\n";
-    }
-
-    case ".yaml":
-    case ".yml": {
-      return "createdBy: machdoch\n";
-    }
-
-    case ".toml": {
-      return 'created_by = "machdoch"\n';
-    }
-
-    default: {
-      return normalizedTask.includes("test file")
-        ? "This is a test file created by machdoch.\n"
-        : "Created by machdoch.\n";
-    }
-  }
-};
-
 export const createFileTargetSection = (
   fileTarget: CreateFilePathReference,
 ): TaskExecutionSection => {
@@ -114,7 +40,7 @@ export const createFileTargetSection = (
     lines: [
       `requested: ${fileTarget.requestedPath}`,
       `workspace path: ${fileTarget.workspacePath ?? "outside workspace"}`,
-      `path source: ${fileTarget.inferredPath ? "inferred default" : "explicit request"}`,
+      "path source: structured action",
     ],
   };
 };

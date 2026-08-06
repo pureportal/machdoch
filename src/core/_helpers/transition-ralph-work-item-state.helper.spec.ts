@@ -1,11 +1,11 @@
 import {
-  normalizeRalphWorkItemState,
+  parseRalphWorkItemState,
   transitionRalphWorkItemState,
 } from "./transition-ralph-work-item-state.helper.ts";
 
 describe("transitionRalphWorkItemState", () => {
   it("allows the canonical lifecycle", () => {
-    expect(normalizeRalphWorkItemState("implementing")).toBe("implementing");
+    expect(parseRalphWorkItemState("implementing")).toBe("implementing");
     expect(transitionRalphWorkItemState("planned", "implementing")).toEqual({
       from: "planned",
       to: "implementing",
@@ -27,15 +27,20 @@ describe("transitionRalphWorkItemState", () => {
     expect(transitionRalphWorkItemState("repairing", "repairing").changed).toBe(
       false,
     );
-    expect(normalizeRalphWorkItemState("in_progress")).toBeUndefined();
+    expect(parseRalphWorkItemState("in_progress")).toBeUndefined();
+    expect(parseRalphWorkItemState(" IMPLEMENTING ")).toBeUndefined();
+    expect(parseRalphWorkItemState("IMPLEMENTING")).toBeUndefined();
+    expect(() =>
+      transitionRalphWorkItemState(undefined, "implementing"),
+    ).toThrow("Unsupported current work-item state");
     expect(() =>
       transitionRalphWorkItemState("pending", "implementing"),
     ).toThrow("Unsupported current work-item state");
     expect(() => transitionRalphWorkItemState("planned", "completed")).toThrow(
       "Invalid work-item state transition planned -> completed.",
     );
-    expect(() => transitionRalphWorkItemState("completed", "repairing")).toThrow(
-      "Invalid work-item state transition completed -> repairing.",
-    );
+    expect(() =>
+      transitionRalphWorkItemState("completed", "repairing"),
+    ).toThrow("Invalid work-item state transition completed -> repairing.");
   });
 });

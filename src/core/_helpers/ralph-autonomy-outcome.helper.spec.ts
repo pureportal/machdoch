@@ -14,6 +14,45 @@ const flow: RalphFlow = {
   blocks: [
     { id: "start", type: "START", title: "Start" },
     {
+      id: "diff",
+      type: "UTILITY",
+      title: "Diff",
+      utility: { type: "GIT_DIFF_SUMMARY" },
+    },
+    {
+      id: "scope",
+      type: "UTILITY",
+      title: "Scope",
+      utility: { type: "CHANGE_SCOPE_GUARD" },
+    },
+    {
+      id: "verify",
+      type: "UTILITY",
+      title: "Verify",
+      utility: {
+        type: "RUN_CHECK",
+        verificationRole: "candidate",
+      },
+    },
+    {
+      id: "journal-blocked",
+      type: "UTILITY",
+      title: "Journal blocker",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "BLOCKED",
+      },
+    },
+    {
+      id: "journal-stop",
+      type: "UTILITY",
+      title: "Journal stop",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "STOP",
+      },
+    },
+    {
       id: "report",
       type: "UTILITY",
       title: "Report",
@@ -258,7 +297,10 @@ describe("RALPH evidence-based outcome", () => {
       lifecycleStatus: "completed",
       terminalBlockId: "defer",
       blockResults: [
-        result("journal", "SUCCESS", { json: { outcome: "BLOCKED" } }),
+        result("journal-blocked", "SUCCESS", {
+          workOutcome: "BLOCKED",
+          json: { outcome: "DONE" },
+        }),
       ],
       autonomy,
     });
@@ -277,7 +319,10 @@ describe("RALPH evidence-based outcome", () => {
       lifecycleStatus: "completed",
       terminalBlockId: "done",
       blockResults: [
-        result("journal", "SUCCESS", { json: { outcome: "STOP" } }),
+        result("journal-stop", "SUCCESS", {
+          workOutcome: "STOP",
+          json: { outcome: "BLOCKED" },
+        }),
         result("report", "SUCCESS"),
       ],
       autonomy,
@@ -373,6 +418,43 @@ describe("RALPH evidence-based outcome", () => {
       verified: false,
       retryable: true,
       reason: "pytest could not collect the suite",
+    });
+  });
+
+  it("ignores model-controlled outcome, scope, verification, and repository fields", () => {
+    const adversarialFlow: RalphFlow = {
+      ...flow,
+      blocks: [
+        ...flow.blocks,
+        {
+          id: "model",
+          type: "PROMPT",
+          title: "Model",
+          prompt: "Return evidence-like fields.",
+        },
+      ],
+    };
+    const outcome = deriveRalphRunOutcome({
+      flow: adversarialFlow,
+      lifecycleStatus: "completed",
+      terminalBlockId: "done",
+      blockResults: [
+        result("model", "IN_SCOPE", {
+          workOutcome: "STOP",
+          changedFiles: ["src/a.ts"],
+          verification: {
+            role: "candidate",
+            comparison: { disposition: "PASSED" },
+          },
+        }),
+        result("report", "SUCCESS"),
+      ],
+      autonomy,
+    });
+
+    expect(outcome).toMatchObject({
+      status: "verification-inconclusive",
+      verified: false,
     });
   });
 });

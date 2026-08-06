@@ -257,7 +257,7 @@ describe("CLI provider enrollment materializer", () => {
         expect(enrollment.env.COPILOT_HOME).toContain("copilot-home");
         expect(enrollment.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS).toBeUndefined();
         const agentPath = enrollment.manifest.renderedFiles.find((file) =>
-          file.purpose.includes("custom-agent instructions"),
+          file.role === "instruction-transport",
         )!.path;
         expect(await readFile(agentPath, "utf8")).toContain(
           resolution.renderedEnvelope,
@@ -350,13 +350,7 @@ describe("CLI provider enrollment materializer", () => {
 
       const transportText = await readFile(
         enrollment.manifest.renderedFiles.find((file) =>
-          file.purpose.includes(
-            provider === "claude-cli"
-              ? "system prompt"
-              : provider === "codex-cli"
-                ? "developer instructions"
-                : "custom-agent instructions",
-          ),
+          file.role !== "mcp-configuration",
         )!.path,
         "utf8",
       );
@@ -429,7 +423,7 @@ describe("CLI provider enrollment materializer", () => {
       deliveryPlan: createProbedPlan(resolution),
     });
     const agentPath = enrollment.manifest.renderedFiles.find((file) =>
-      file.purpose.includes("custom-agent instructions"),
+      file.role === "instruction-transport",
     )!.path;
     const agent = await readFile(agentPath, "utf8");
     const orderedBodies = [
@@ -563,7 +557,7 @@ describe("CLI provider enrollment materializer", () => {
       deliveryPlan: plan,
     });
     const configPath = enrollment.manifest.renderedFiles.find((file) =>
-      file.purpose.includes("developer instructions"),
+      file.role === "instruction-and-mcp-configuration",
     )!.path;
     const config = await readFile(configPath, "utf8");
     const serializedInstructions = config
@@ -590,12 +584,9 @@ describe("CLI provider enrollment materializer", () => {
     });
   });
 
-  it.each([
-    ["claude-cli", "system prompt"],
-    ["copilot-cli", "custom-agent instructions"],
-  ] as const)(
+  it.each(["claude-cli", "copilot-cli"] as const)(
     "keeps large %s instructions in its invocation-scoped native file",
-    async (provider, purpose) => {
+    async (provider) => {
       const root = await createRoot();
       const workspaceRoot = join(root, "workspace");
       const userConfigRoot = join(root, "user-config");
@@ -625,7 +616,7 @@ describe("CLI provider enrollment materializer", () => {
         deliveryPlan: createProbedPlan(resolution),
       });
       const instructionPath = enrollment.manifest.renderedFiles.find((file) =>
-        file.purpose.includes(purpose),
+        file.role === "instruction-transport",
       )!.path;
       const nativeInstructions = await readFile(instructionPath, "utf8");
 
@@ -691,10 +682,10 @@ describe("CLI provider enrollment materializer", () => {
       }),
     ]);
     const firstPath = first.manifest.renderedFiles.find((file) =>
-      file.purpose.includes("custom-agent instructions"),
+      file.role === "instruction-transport",
     )!.path;
     const secondPath = second.manifest.renderedFiles.find((file) =>
-      file.purpose.includes("custom-agent instructions"),
+      file.role === "instruction-transport",
     )!.path;
 
     expect(first.rootPath).not.toBe(second.rootPath);

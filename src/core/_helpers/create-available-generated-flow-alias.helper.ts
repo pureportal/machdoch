@@ -2,6 +2,7 @@ import { normalizeRalphFlowLayout } from "../ralph-layout.js";
 import {
   listRalphFlows,
   normalizeFlowAlias,
+  RalphFlowAliasConflictError,
   writeRalphFlow,
   type RalphFlow,
   type RalphFlowScope,
@@ -12,10 +13,7 @@ const MAX_RALPH_GENERATED_FLOW_ALIAS_ATTEMPTS = 1_000;
 const MAX_RALPH_GENERATED_FLOW_ALIAS_WRITE_ATTEMPTS = 5;
 
 export const isRalphFlowAliasCollisionError = (error: unknown): boolean => {
-  return (
-    error instanceof Error &&
-    /^Ralph flow alias `[^`]+` is already used by `[^`]+`\.$/u.test(error.message)
-  );
+  return error instanceof RalphFlowAliasConflictError;
 };
 
 export const createGeneratedFlowAliasCandidate = (

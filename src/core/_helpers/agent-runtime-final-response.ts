@@ -3,12 +3,10 @@ import type {
   AgentModelToolSpec,
   TaskExecutionNarrative,
   TaskExecutionSection,
+  TaskExecutionControl,
+  TaskResultProtocol,
 } from "../types.js";
-import {
-  coerceFileReferenceArray,
-  coerceString,
-  coerceStringArray,
-} from "./agent-runtime-shared.js";
+import { coerceString } from "./agent-runtime-shared.js";
 import {
   MAX_FINAL_RESPONSE_ITEMS,
   type TaskFinalResponsePayload,
@@ -17,7 +15,106 @@ import { createTextSection, limitText } from "./runtime-text.js";
 
 export const FINAL_RESPONSE_TOOL_NAME = "submit_final_response";
 
-export const createFinalResponseTool = (): AgentModelToolSpec => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const hasExactKeys = (
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+): boolean => {
+  const keys = Object.keys(value).sort();
+  const expected = [...expectedKeys].sort();
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === expected[index])
+  );
+};
+
+const validateResultProtocol = (
+  value: unknown,
+): TaskResultProtocol | undefined => {
+  if (!isRecord(value) || typeof value.kind !== "string") {
+    return undefined;
+  }
+
+  if (value.kind === "ralph-iteration") {
+    return hasExactKeys(value, ["kind"])
+      ? { kind: "ralph-iteration" }
+      : undefined;
+  }
+  if (value.kind === "ralph-validator") {
+    return hasExactKeys(value, ["kind"])
+      ? { kind: "ralph-validator" }
+      : undefined;
+  }
+  if (
+    value.kind === "ralph-route" &&
+    hasExactKeys(value, ["kind", "labels"]) &&
+    Array.isArray(value.labels) &&
+    value.labels.length > 0 &&
+    value.labels.every(
+      (label, index, labels) =>
+        typeof label === "string" &&
+        label.length > 0 &&
+        label.trim() === label &&
+        labels.indexOf(label) === index,
+    )
+  ) {
+    return { kind: "ralph-route", labels: [...value.labels] };
+  }
+
+  return undefined;
+};
+
+const createControlSchema = (
+  rawProtocol: TaskResultProtocol,
+): Record<string, unknown> => {
+  const protocol = validateResultProtocol(rawProtocol);
+  if (!protocol) {
+    throw new Error("The structured result protocol is missing or invalid.");
+  }
+
+  switch (protocol.kind) {
+    case "ralph-iteration":
+      return {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          kind: { const: "ralph-iteration" },
+          decision: { type: "string", enum: ["DONE", "CONTINUE"] },
+        },
+        required: ["kind", "decision"],
+      };
+    case "ralph-validator":
+      return {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          kind: { const: "ralph-validator" },
+          decision: {
+            type: "string",
+            enum: ["DONE", "CONTINUE", "RETRY", "ERROR"],
+          },
+        },
+        required: ["kind", "decision"],
+      };
+    case "ralph-route": {
+      return {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          kind: { const: "ralph-route" },
+          label: { type: "string", enum: protocol.labels },
+        },
+        required: ["kind", "label"],
+      };
+    }
+  }
+};
+
+export const createFinalResponseTool = (
+  resultProtocol?: TaskResultProtocol,
+): AgentModelToolSpec => {
   return {
     name: FINAL_RESPONSE_TOOL_NAME,
     description:
@@ -89,6 +186,11 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
           description:
             "Short remaining caveats or next steps. Use an empty array when none remain.",
         },
+        ...(resultProtocol
+          ? {
+              control: createControlSchema(resultProtocol),
+            }
+          : {}),
       },
       required: [
         "summary",
@@ -99,14 +201,117 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
         "relatedFiles",
         "verification",
         "followUps",
+        ...(resultProtocol ? ["control"] : []),
       ],
     },
   };
 };
 
+const parseControl = (
+  value: unknown,
+  protocol: TaskResultProtocol,
+): TaskExecutionControl | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (!hasExactKeys(record, ["decision", "kind"]) && protocol.kind !== "ralph-route") {
+    return undefined;
+  }
+  if (protocol.kind === "ralph-route" && !hasExactKeys(record, ["kind", "label"])) {
+    return undefined;
+  }
+
+  switch (protocol.kind) {
+    case "ralph-iteration":
+      return record.kind === "ralph-iteration" &&
+        (record.decision === "DONE" || record.decision === "CONTINUE")
+        ? { kind: "ralph-iteration", decision: record.decision }
+        : undefined;
+    case "ralph-validator":
+      return record.kind === "ralph-validator" &&
+        (record.decision === "DONE" ||
+          record.decision === "CONTINUE" ||
+          record.decision === "RETRY" ||
+          record.decision === "ERROR")
+        ? { kind: "ralph-validator", decision: record.decision }
+        : undefined;
+    case "ralph-route":
+      return record.kind === "ralph-route" &&
+        typeof record.label === "string" &&
+        protocol.labels.includes(record.label)
+        ? { kind: "ralph-route", label: record.label }
+        : undefined;
+  }
+};
+
+const readExactStringArray = (
+  record: Record<string, unknown>,
+  field: string,
+): string[] | undefined => {
+  const value = record[field];
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_FINAL_RESPONSE_ITEMS ||
+    value.some(
+      (entry) => typeof entry !== "string" || entry.trim().length === 0,
+    )
+  ) {
+    return undefined;
+  }
+
+  return value.map((entry) => entry.trim());
+};
+
+const readExactFileReferences = (
+  record: Record<string, unknown>,
+): TaskExecutionNarrative["relatedFiles"] | undefined => {
+  const value = record.relatedFiles;
+  if (!Array.isArray(value) || value.length > MAX_FINAL_RESPONSE_ITEMS) {
+    return undefined;
+  }
+
+  const references: TaskExecutionNarrative["relatedFiles"] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || !hasExactKeys(entry, ["description", "path"])) {
+      return undefined;
+    }
+    const path = coerceString(entry, "path");
+    const description = coerceString(entry, "description");
+    if (!path || !description) {
+      return undefined;
+    }
+    references.push({ path, description });
+  }
+
+  return references;
+};
+
 export const parseFinalResponsePayload = (
   record: Record<string, unknown>,
+  resultProtocol?: TaskResultProtocol,
 ): TaskFinalResponsePayload | undefined => {
+  const validatedProtocol =
+    resultProtocol === undefined
+      ? undefined
+      : validateResultProtocol(resultProtocol);
+  if (resultProtocol !== undefined && validatedProtocol === undefined) {
+    return undefined;
+  }
+  const expectedKeys = [
+    "blockerReason",
+    ...(validatedProtocol ? ["control"] : []),
+    "followUps",
+    "highlights",
+    "markdown",
+    "relatedFiles",
+    "status",
+    "summary",
+    "verification",
+  ];
+  if (!hasExactKeys(record, expectedKeys)) {
+    return undefined;
+  }
   const summary = coerceString(record, "summary");
   const status = record.status;
   const blockerReason =
@@ -114,21 +319,26 @@ export const parseFinalResponsePayload = (
       ? record.blockerReason.trim()
       : undefined;
   const markdown = coerceString(record, "markdown");
-  const highlights = coerceStringArray(record, "highlights");
-  const relatedFiles = coerceFileReferenceArray(record, "relatedFiles");
-  const verification = coerceStringArray(record, "verification");
-  const followUps = coerceStringArray(record, "followUps");
+  const highlights = readExactStringArray(record, "highlights");
+  const relatedFiles = readExactFileReferences(record);
+  const verification = readExactStringArray(record, "verification");
+  const followUps = readExactStringArray(record, "followUps");
+  const control = validatedProtocol
+    ? parseControl(record.control, validatedProtocol)
+    : undefined;
 
   if (
     !summary ||
     (status !== "completed" && status !== "blocked") ||
     blockerReason === undefined ||
     (status === "blocked" && blockerReason.length === 0) ||
+    (status === "completed" && blockerReason.length > 0) ||
     !markdown ||
     !highlights ||
     !relatedFiles ||
     !verification ||
-    !followUps
+    !followUps ||
+    (resultProtocol !== undefined && control === undefined)
   ) {
     return undefined;
   }
@@ -142,6 +352,7 @@ export const parseFinalResponsePayload = (
     relatedFiles,
     verification,
     followUps,
+    ...(control ? { control } : {}),
   };
 };
 

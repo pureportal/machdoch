@@ -14,6 +14,7 @@ import {
 import { basename, dirname, join, relative, resolve } from "node:path";
 import {
   createRalphFlowFingerprint,
+  RalphFlowNotFoundError,
   readRalphFlow,
   type RalphFlow,
   type RalphFlowVariable,
@@ -79,7 +80,7 @@ export type {
 } from "./_helpers/parse-cron-expression.helper.js";
 
 export const SMART_SCHEDULER_SCHEMA = "machdoch.smartScheduler" as const;
-export const SMART_SCHEDULER_SCHEMA_VERSION = 1 as const;
+export const SMART_SCHEDULER_SCHEMA_VERSION = 2 as const;
 export const SMART_SCHEDULER_FILE_NAME = "scheduler.json";
 export const SMART_SCHEDULER_WORKSPACE_REGISTRY_FILE_NAME =
   "scheduler-workspaces.json";
@@ -114,14 +115,32 @@ const SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS = 2_000;
 const SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS = [
   0, 10, 25, 50, 100, 250,
 ] as const;
-const SCHEDULER_TIMEOUT_REASON_PREFIX = "Scheduled run exceeded max duration";
-const SCHEDULER_HEARTBEAT_FAILURE_PREFIX =
-  "Scheduled run heartbeat persistence failed";
-
 class StaleScheduledRunClaimError extends Error {
   constructor(runId: string) {
     super(`Scheduled run claim is no longer current: ${runId}`);
     this.name = "StaleScheduledRunClaimError";
+  }
+}
+
+class ScheduledRunTimeoutError extends Error {
+  readonly maxDurationMs: number;
+
+  constructor(maxDurationMs: number) {
+    super(`Scheduled run exceeded max duration of ${maxDurationMs}ms.`);
+    this.name = "ScheduledRunTimeoutError";
+    this.maxDurationMs = maxDurationMs;
+  }
+}
+
+class ScheduledRunHeartbeatPersistenceError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `Scheduled run heartbeat persistence failed: ${errorToMessage(cause)}`,
+      {
+        cause,
+      },
+    );
+    this.name = "ScheduledRunHeartbeatPersistenceError";
   }
 }
 
@@ -391,6 +410,11 @@ export interface ScheduledQueuePolicy {
   concurrencyLimit: number;
 }
 
+export type ScheduledJobProvenance =
+  | { kind: "user" }
+  | { kind: "workspace-prompt"; definitionPath: string }
+  | { kind: "ralph-watch"; watchId: string };
+
 export interface ScheduledJob {
   id: string;
   name: string;
@@ -402,6 +426,7 @@ export interface ScheduledJob {
   missedRunGraceMs: number;
   retry: ScheduledRetryPolicy;
   queue: ScheduledQueuePolicy;
+  provenance: ScheduledJobProvenance;
   historyLimit: number;
   maxCatchUpRuns: number;
   createdAt: number;
@@ -973,12 +998,28 @@ const isCurrentScheduledJobRecord = (value: unknown): value is ScheduledJob => {
     !isRecordValue(value) ||
     !Array.isArray(value.triggers) ||
     value.triggers.length === 0 ||
-    !isRecordValue(value.target)
+    !isRecordValue(value.target) ||
+    !isRecordValue(value.provenance)
   ) {
     return false;
   }
 
-  return value.target.type === "prompt" || value.target.type === "ralph-flow";
+  const provenance = value.provenance;
+  const validProvenance =
+    (provenance.kind === "user" && Object.keys(provenance).length === 1) ||
+    (provenance.kind === "workspace-prompt" &&
+      Object.keys(provenance).length === 2 &&
+      typeof provenance.definitionPath === "string" &&
+      provenance.definitionPath.length > 0) ||
+    (provenance.kind === "ralph-watch" &&
+      Object.keys(provenance).length === 2 &&
+      typeof provenance.watchId === "string" &&
+      provenance.watchId.length > 0);
+
+  return (
+    validProvenance &&
+    (value.target.type === "prompt" || value.target.type === "ralph-flow")
+  );
 };
 
 export const readSmartSchedulerState = async (
@@ -1829,9 +1870,9 @@ export const inspectScheduledRalphTarget = async (
     variableValues: resolvedVariables,
   });
   errors.push(
-    ...validation.errors.filter(
-      (message) => !message.startsWith("missing required Ralph variable"),
-    ),
+    ...validation.errorIssues
+      .filter((issue) => issue.code !== "variable-missing")
+      .map((issue) => issue.message),
   );
   warnings.push(...validation.warnings);
 
@@ -1983,7 +2024,7 @@ const normalizeRalphTargetForStorage = async (
   } catch (error) {
     const message = errorToMessage(error);
 
-    if (!/^Ralph flow `.+` was not found\.$/u.test(message)) {
+    if (!(error instanceof RalphFlowNotFoundError)) {
       throw error;
     }
 
@@ -2464,19 +2505,20 @@ export const syncScheduledPromptJobs = async (
 ): Promise<ScheduledPromptSyncResult> => {
   const discovered = await discoverScheduledPromptDefinitions(workspaceRoot);
   const syncedJobs: ScheduledJob[] = [];
-  const enabledPromptDedupeKeys = new Set<string>();
+  const enabledPromptDefinitionPaths = new Set<string>();
 
   for (const definition of discovered) {
     if (!definition.enabled || !definition.input) {
       continue;
     }
 
-    const job = await scheduler.upsertJob(definition.input);
+    const job = await scheduler.upsertJob(definition.input, undefined, {
+      kind: "workspace-prompt",
+      definitionPath: definition.path,
+    });
 
     syncedJobs.push(job);
-    if (job.dedupeKey) {
-      enabledPromptDedupeKeys.add(job.dedupeKey);
-    }
+    enabledPromptDefinitionPaths.add(definition.path);
   }
 
   const pausedJobs: ScheduledJob[] = [];
@@ -2484,9 +2526,9 @@ export const syncScheduledPromptJobs = async (
 
   for (const job of jobs) {
     if (
-      job.dedupeKey?.startsWith("prompt:") &&
-      !enabledPromptDedupeKeys.has(job.dedupeKey) &&
-      job.status !== "paused"
+      job.provenance.kind === "workspace-prompt" &&
+      !enabledPromptDefinitionPaths.has(job.provenance.definitionPath) &&
+      job.status === "active"
     ) {
       pausedJobs.push(await scheduler.pauseJob(job.id));
     }
@@ -2665,10 +2707,6 @@ const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
   candidate.unref?.();
 };
 
-const createSchedulerTimeoutReason = (maxDurationMs: number): string => {
-  return `${SCHEDULER_TIMEOUT_REASON_PREFIX} of ${maxDurationMs}ms.`;
-};
-
 const attachMaxDurationTimer = (
   controller: AbortController,
   maxDurationMs: number | undefined,
@@ -2679,7 +2717,7 @@ const attachMaxDurationTimer = (
 
   const timeoutHandle = setTimeout(() => {
     if (!controller.signal.aborted) {
-      controller.abort(createSchedulerTimeoutReason(maxDurationMs));
+      controller.abort(new ScheduledRunTimeoutError(maxDurationMs));
     }
   }, maxDurationMs);
   unrefTimer(timeoutHandle);
@@ -2687,12 +2725,11 @@ const attachMaxDurationTimer = (
   return () => clearTimeout(timeoutHandle);
 };
 
-const isTimeoutReason = (value: unknown): boolean => {
-  return (
-    typeof value === "string" &&
-    value.startsWith(SCHEDULER_TIMEOUT_REASON_PREFIX)
-  );
-};
+const isTimeoutReason = (value: unknown): boolean =>
+  value instanceof ScheduledRunTimeoutError;
+
+const isHeartbeatPersistenceFailure = (value: unknown): boolean =>
+  value instanceof ScheduledRunHeartbeatPersistenceError;
 
 const getNextRunAfter = (
   schedule: ScheduledJobSchedule,
@@ -3145,16 +3182,39 @@ export class DurableSmartScheduler {
   async upsertJob(
     input: CreateScheduledJobInput,
     requestId?: string,
+    provenance: ScheduledJobProvenance = { kind: "user" },
   ): Promise<ScheduledJob> {
     return this.mutateState(
       async (state) => {
         const now = this.now();
         const dedupeKey = normalizeSchedulerText(input.dedupeKey);
-        const existingJob = dedupeKey
-          ? state.jobs.find(
-              (job) => job.dedupeKey === dedupeKey && job.status !== "deleted",
-            )
-          : undefined;
+        const existingJob = (() => {
+          switch (provenance.kind) {
+            case "workspace-prompt":
+              return state.jobs.find(
+                (job) =>
+                  job.provenance.kind === "workspace-prompt" &&
+                  job.provenance.definitionPath === provenance.definitionPath &&
+                  job.status !== "deleted",
+              );
+            case "ralph-watch":
+              return state.jobs.find(
+                (job) =>
+                  job.provenance.kind === "ralph-watch" &&
+                  job.provenance.watchId === provenance.watchId &&
+                  job.status !== "deleted",
+              );
+            case "user":
+              return dedupeKey
+                ? state.jobs.find(
+                    (job) =>
+                      job.provenance.kind === "user" &&
+                      job.dedupeKey === dedupeKey &&
+                      job.status !== "deleted",
+                  )
+                : undefined;
+          }
+        })();
         const id = existingJob?.id ?? createJobId();
         const triggers = normalizeJobTriggers(input, now, existingJob);
         const schedule = getJobScheduleSummary(triggers);
@@ -3194,6 +3254,7 @@ export class DurableSmartScheduler {
           ),
           retry,
           queue,
+          provenance: { ...provenance },
           historyLimit: normalizeSchedulerPositiveInteger(
             input.historyLimit,
             DEFAULT_HISTORY_LIMIT,
@@ -3232,8 +3293,13 @@ export class DurableSmartScheduler {
       {
         key: requestId,
         operation: "upsert-job",
-        target: normalizeSchedulerText(input.dedupeKey) ?? "new-job",
-        payload: input,
+        target:
+          provenance.kind === "workspace-prompt"
+            ? provenance.definitionPath
+            : provenance.kind === "ralph-watch"
+              ? provenance.watchId
+              : (normalizeSchedulerText(input.dedupeKey) ?? "new-job"),
+        payload: { input, provenance },
       },
     );
   }
@@ -3373,6 +3439,7 @@ export class DurableSmartScheduler {
             : refreshDefaultQueue
               ? normalizeQueuePolicy(existingJob.id, undefined, target)
               : existingJob.queue,
+          provenance: existingJob.provenance,
           historyLimit:
             input.historyLimit !== undefined
               ? normalizeSchedulerPositiveInteger(
@@ -4323,9 +4390,7 @@ export class DurableSmartScheduler {
         this.touchRunningRun(runId, claimToken)
       ).catch((error) => {
         if (!controller.signal.aborted) {
-          controller.abort(
-            `${SCHEDULER_HEARTBEAT_FAILURE_PREFIX}: ${errorToMessage(error)}`,
-          );
+          controller.abort(new ScheduledRunHeartbeatPersistenceError(error));
         }
       });
     }, this.runningHeartbeatMs);
@@ -4408,14 +4473,11 @@ export class DurableSmartScheduler {
     controller: AbortController,
     result: TaskExecutionResult,
   ): Promise<ScheduledJobRun> {
-    if (
-      typeof controller.signal.reason === "string" &&
-      controller.signal.reason.startsWith(SCHEDULER_HEARTBEAT_FAILURE_PREFIX)
-    ) {
+    if (isHeartbeatPersistenceFailure(controller.signal.reason)) {
       return this.finishRunAttempt(runId, claimToken, {
         status: "failed",
         result,
-        error: controller.signal.reason,
+        error: errorToMessage(controller.signal.reason),
       });
     }
 
@@ -4423,7 +4485,7 @@ export class DurableSmartScheduler {
       return this.finishRunAttempt(runId, claimToken, {
         status: "timed_out",
         result,
-        error: String(controller?.signal.reason),
+        error: errorToMessage(controller.signal.reason),
       });
     }
 
@@ -4470,7 +4532,7 @@ export class DurableSmartScheduler {
         ? String(controller.signal.reason)
         : errorToMessage(error);
 
-    if (message.startsWith(SCHEDULER_HEARTBEAT_FAILURE_PREFIX)) {
+    if (isHeartbeatPersistenceFailure(controller.signal.reason)) {
       return this.finishRunAttempt(runId, claimToken, {
         status: "failed",
         error: message,

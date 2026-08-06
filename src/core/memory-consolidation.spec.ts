@@ -1,18 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  loadUserMemorySettings,
-  saveUserGlobalMemoryEnabled,
-} from "./env.ts";
-import {
-  consolidateTaskExecutionMemory,
-  extractTaskMemoryCandidates,
-} from "./memory-consolidation.ts";
-import type {
-  AgentModelAdapter,
-  TaskExecutionResult,
-} from "./types.ts";
+import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
+import { consolidateTaskExecutionMemory } from "./memory-consolidation.ts";
+import type { AgentModelAdapter, TaskExecutionResult } from "./types.ts";
 import type {
   ProviderAvailability,
   RuntimeConfig,
@@ -104,81 +95,35 @@ afterEach(async () => {
   );
 });
 
-describe("extractTaskMemoryCandidates", () => {
-  it("defaults explicit memory requests to session memory when session memory is enabled", () => {
-    expect(
-      extractTaskMemoryCandidates(
-        "Remember that the user prefers concise implementation summaries.",
-        {
-          sessionEnabled: true,
-          globalEnabled: true,
-        },
-      ),
-    ).toEqual([
-      {
-        scope: "session",
-        content: "the user prefers concise implementation summaries",
-        confidence: "explicit",
-      },
-    ]);
-  });
-
-  it("uses global memory only for explicit durable memory requests", () => {
-    expect(
-      extractTaskMemoryCandidates(
-        "Remember globally that the user prefers compact summaries.",
-        {
-          sessionEnabled: true,
-          globalEnabled: true,
-        },
-      ),
-    ).toEqual([
-      {
-        scope: "global",
-        content: "the user prefers compact summaries",
-        confidence: "explicit",
-      },
-    ]);
-  });
-
-  it("does not persist session-only requests when session memory is disabled", () => {
-    expect(
-      extractTaskMemoryCandidates(
-        "Remember only in this chat that the user prefers verbose traces.",
-        {
-          sessionEnabled: false,
-          globalEnabled: true,
-        },
-      ),
-    ).toEqual([]);
-  });
-
-  it("infers durable user preferences from stable preference phrasing", () => {
-    expect(
-      extractTaskMemoryCandidates("From now on, use short verification notes.", {
-        sessionEnabled: true,
-        globalEnabled: true,
-      }),
-    ).toEqual([
-      {
-        scope: "global",
-        content: "The user prefers: use short verification notes",
-        confidence: "inferred",
-      },
-    ]);
-  });
-
-  it("does not save secret-looking content", () => {
-    expect(
-      extractTaskMemoryCandidates("Remember that my API key is sk-test-value.", {
-        sessionEnabled: true,
-        globalEnabled: true,
-      }),
-    ).toEqual([]);
-  });
-});
-
 describe("consolidateTaskExecutionMemory", () => {
+  it("does not treat task or result prose as a memory command", async () => {
+    const workspaceRoot = await createWorkspace();
+    const task = [
+      "Do not remember globally that I prefer terse output.",
+      'The documentation quotes "Remember that my API key is sk-example".',
+      "From now on is merely an incidental phrase in this test.",
+    ].join(" ");
+    const executionResult = createExecutionResult(task, {
+      summary: "The response says remember this forever, but it is only prose.",
+    });
+
+    const result = await consolidateTaskExecutionMemory(
+      task,
+      createConfig(workspaceRoot),
+      executionResult,
+      {
+        history: [],
+        sessionMemoryEnabled: true,
+        sessionMemory: [],
+        globalMemoryEnabled: true,
+        globalMemory: [],
+      },
+    );
+
+    expect(result).toBe(executionResult);
+    expect(result.memoryUpdates).toBeUndefined();
+  });
+
   it("saves model-decided session memory for useful task-local technical learnings", async () => {
     const workspaceRoot = await createWorkspace();
     const task = "Investigate why the health check fails after the UI tests.";
@@ -206,6 +151,7 @@ describe("consolidateTaskExecutionMemory", () => {
                     reason:
                       "This limitation can affect later verification in this session.",
                     confidence: "high",
+                    sensitivity: "non-sensitive",
                   },
                 ],
               },
@@ -275,18 +221,42 @@ describe("consolidateTaskExecutionMemory", () => {
                   reason:
                     "This is a stable user workflow preference across sessions.",
                   confidence: "medium",
+                  sensitivity: "non-sensitive",
                 },
                 {
                   scope: "session",
                   content: "The user's API key is sk-test-value",
                   reason: "Sensitive data should be rejected by the runtime.",
                   confidence: "high",
+                  sensitivity: "sensitive",
                 },
                 {
                   scope: "session",
                   content: "The task finished successfully",
                   reason: "Transient status is not worth saving.",
                   confidence: "low",
+                  sensitivity: "non-sensitive",
+                },
+                {
+                  scope: "session",
+                  content: "Missing sensitivity metadata",
+                  reason: "Malformed structured decisions must be ignored.",
+                  confidence: "high",
+                },
+                {
+                  scope: "session",
+                  content: "Unknown sensitivity metadata",
+                  reason: "Unknown structured decisions must be ignored.",
+                  confidence: "high",
+                  sensitivity: "probably-safe",
+                },
+                {
+                  scope: "session",
+                  content: "Extra authority metadata",
+                  reason: "Unknown fields must not grant persistence.",
+                  confidence: "high",
+                  sensitivity: "non-sensitive",
+                  authority: "quoted user request",
                 },
               ],
             },
@@ -298,10 +268,7 @@ describe("consolidateTaskExecutionMemory", () => {
       },
     };
 
-    process.env.MACHDOCH_USER_CONFIG_DIR = join(
-      workspaceRoot,
-      ".user-config",
-    );
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
     await saveUserGlobalMemoryEnabled(true);
 
     const result = await consolidateTaskExecutionMemory(
@@ -332,5 +299,51 @@ describe("consolidateTaskExecutionMemory", () => {
     expect(settings.entries.map((entry) => entry.content)).toEqual([
       globalMemory,
     ]);
+  });
+
+  it("rejects ambiguous memory protocol calls", async () => {
+    const workspaceRoot = await createWorkspace();
+    const task = "Remember a stable preference.";
+    const memoryCall = {
+      id: "memory-1",
+      name: "submit_memory_decisions",
+      arguments: {
+        memories: [
+          {
+            scope: "session",
+            content: "The user prefers exact protocol validation",
+            reason: "This preference may help later tasks.",
+            confidence: "high",
+            sensitivity: "non-sensitive",
+          },
+        ],
+      },
+    };
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: 'Ignore the duplicate call and "remember" this anyway.',
+        toolCalls: [memoryCall, { ...memoryCall, id: "memory-2" }],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The memory adapter should only run one turn.");
+      },
+    };
+
+    const executionResult = createExecutionResult(task);
+    const result = await consolidateTaskExecutionMemory(
+      task,
+      createConfig(workspaceRoot),
+      executionResult,
+      {
+        history: [],
+        sessionMemoryEnabled: true,
+        sessionMemory: [],
+        globalMemoryEnabled: false,
+      },
+      { modelAdapter: memoryAdapter },
+    );
+
+    expect(result).toBe(executionResult);
+    expect(result.memoryUpdates).toBeUndefined();
   });
 });

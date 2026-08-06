@@ -3,7 +3,10 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicU8, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use serde::{Deserialize, Serialize};
@@ -51,7 +54,7 @@ use registry::{
     acknowledge_completed_task_results, active_task_ids, active_task_summaries,
     completed_desktop_task_result, finish_active_task, normalize_task_id,
     recent_completed_task_results, register_active_task, remember_completed_task_result,
-    ActiveDesktopTaskRegistration,
+    ActiveDesktopTaskClaim, ActiveDesktopTaskRegistration,
 };
 pub use registry::{
     request_all_desktop_task_cancels, request_desktop_task_cancel, ActiveDesktopTaskSummary,
@@ -59,7 +62,6 @@ pub use registry::{
 };
 
 pub fn cleanup_stale_task_context_files() {
-    payload::cleanup_stale_conversation_context_files();
     payload_files::cleanup_stale_instruction_payload_files();
 }
 
@@ -67,6 +69,9 @@ const DESKTOP_TASK_IDLE_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const AUXILIARY_CLI_COMMAND_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
+const DESKTOP_TASK_TERMINATION_NONE: u8 = 0;
+const DESKTOP_TASK_TERMINATION_CANCELLED: u8 = 1;
+const DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT: u8 = 2;
 const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_PATH_GRANTS: usize = 1024;
 const MAX_FILE_PREVIEW_BYTES: u64 = 512 * 1024;
@@ -97,6 +102,71 @@ pub struct DesktopTaskRunRequest {
     media_asset_references: Option<Vec<DesktopMediaAssetReference>>,
     task_id: Option<String>,
     session_id: Option<String>,
+    deterministic_action: Option<DesktopTaskDeterministicAction>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DesktopTaskTimeoutKind {
+    Idle,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+pub enum DesktopTaskRunError {
+    TaskAlreadyActive {
+        task_id: String,
+    },
+    OperationAlreadyActive {
+        active_task_id: String,
+    },
+    Cancelled {
+        message: String,
+    },
+    TimedOut {
+        timeout_kind: DesktopTaskTimeoutKind,
+        message: String,
+    },
+    Runtime {
+        message: String,
+    },
+}
+
+impl DesktopTaskRunError {
+    fn runtime(message: String) -> Self {
+        Self::Runtime { message }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum DesktopReadOnlyInspectionTarget {
+    Workspace,
+    RuntimeConfig,
+    Tools,
+    Instructions,
+    Prompts,
+    Skills,
+    Customizations,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+enum DesktopTaskDeterministicAction {
+    Inspect {
+        target: DesktopReadOnlyInspectionTarget,
+    },
+    InspectPath {
+        path: String,
+    },
+    CreateFile {
+        path: String,
+        content: String,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -262,16 +332,17 @@ pub async fn run_desktop_task(
     state: tauri::State<'_, DesktopTaskCancelMap>,
     window: tauri::WebviewWindow,
     mut request: DesktopTaskRunRequest,
-) -> Result<DesktopTaskRunResponse, String> {
+) -> Result<DesktopTaskRunResponse, DesktopTaskRunError> {
     let window_label = window.label().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
+    let termination_state = Arc::new(AtomicU8::new(DESKTOP_TASK_TERMINATION_NONE));
     let task_id = normalize_task_id(request.task_id.as_deref());
     let task_started_at = create_progress_timestamp();
     let task_workspace_root = request.workspace_root.clone();
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
-        let claimed = register_active_task(
+        let claim = register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
                 task_id: id.clone(),
@@ -287,14 +358,25 @@ pub async fn run_desktop_task(
                     .filter(|session_id| !session_id.is_empty())
                     .map(|session_id| format!("session:{session_id}")),
             },
-        )?;
+        )
+        .map_err(DesktopTaskRunError::runtime)?;
 
-        if !claimed {
-            if let Some(completed_result) = completed_desktop_task_result(&state, id)? {
-                return completed_result;
+        match claim {
+            ActiveDesktopTaskClaim::Claimed => {}
+            ActiveDesktopTaskClaim::TaskAlreadyActive => {
+                if let Some(completed_result) = completed_desktop_task_result(&state, id)
+                    .map_err(DesktopTaskRunError::runtime)?
+                {
+                    return completed_result;
+                }
+
+                return Err(DesktopTaskRunError::TaskAlreadyActive {
+                    task_id: id.clone(),
+                });
             }
-
-            return Err(format!("MACHDOCH_TASK_ALREADY_ACTIVE:{id}"));
+            ActiveDesktopTaskClaim::OperationAlreadyActive { active_task_id } => {
+                return Err(DesktopTaskRunError::OperationAlreadyActive { active_task_id });
+            }
         }
     }
 
@@ -305,16 +387,32 @@ pub async fn run_desktop_task(
         Ok(guard) => guard,
         Err(error) => {
             finish_active_task(&state, task_id.as_deref());
-            return Err(error);
+            return Err(DesktopTaskRunError::runtime(error));
         }
     };
+    let command_termination_state = termination_state.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let _sleep_inhibition = sleep_inhibition;
-        execute_desktop_task(app_handle, window_label, request, cancel_flag)
+        execute_desktop_task(
+            app_handle,
+            window_label,
+            request,
+            cancel_flag,
+            command_termination_state,
+        )
     })
     .await
     .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))
     .and_then(|task_result| task_result);
+
+    let result = result.map_err(|message| match termination_state.load(Ordering::SeqCst) {
+        DESKTOP_TASK_TERMINATION_CANCELLED => DesktopTaskRunError::Cancelled { message },
+        DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT => DesktopTaskRunError::TimedOut {
+            timeout_kind: DesktopTaskTimeoutKind::Idle,
+            message,
+        },
+        _ => DesktopTaskRunError::runtime(message),
+    });
 
     if let Some(id) = &task_id {
         remember_completed_task_result(
@@ -590,7 +688,7 @@ pub async fn run_ralph_command(
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
-        let claimed = register_active_task(
+        let claim = register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
                 task_id: id.clone(),
@@ -603,8 +701,16 @@ pub async fn run_ralph_command(
             },
         )?;
 
-        if !claimed {
-            return Err(format!("MACHDOCH_TASK_ALREADY_ACTIVE:{id}"));
+        match claim {
+            ActiveDesktopTaskClaim::Claimed => {}
+            ActiveDesktopTaskClaim::TaskAlreadyActive => {
+                return Err(format!("Desktop task `{id}` is already active."));
+            }
+            ActiveDesktopTaskClaim::OperationAlreadyActive { active_task_id } => {
+                return Err(format!(
+                    "Desktop task operation is already active under task `{active_task_id}`."
+                ));
+            }
         }
     }
 
@@ -677,7 +783,8 @@ pub async fn run_task_interview_command(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_timeout_duration, AUXILIARY_CLI_COMMAND_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS,
+        format_timeout_duration, DesktopTaskDeterministicAction, DesktopTaskRunError,
+        DesktopTaskTimeoutKind, AUXILIARY_CLI_COMMAND_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS,
     };
 
     #[test]
@@ -701,5 +808,74 @@ mod tests {
 
         assert_eq!(asset_protocol["enable"], true);
         assert_eq!(asset_protocol["scope"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn desktop_deterministic_actions_require_exact_structured_state() {
+        let action = serde_json::from_value::<DesktopTaskDeterministicAction>(serde_json::json!({
+            "kind": "create-file",
+            "path": "notes.txt",
+            "content": "exact\n"
+        }));
+        assert!(action.is_ok());
+
+        for malformed in [
+            serde_json::json!({ "kind": "delete-workspace" }),
+            serde_json::json!({ "kind": "inspect", "target": "secrets" }),
+            serde_json::json!({
+                "kind": "inspect",
+                "target": "workspace",
+                "authority": "quoted model prose"
+            }),
+            serde_json::json!({ "kind": "create-file", "path": "notes.txt" }),
+        ] {
+            assert!(serde_json::from_value::<DesktopTaskDeterministicAction>(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn desktop_task_coordination_errors_serialize_as_tagged_state() {
+        assert_eq!(
+            serde_json::to_value(DesktopTaskRunError::TaskAlreadyActive {
+                task_id: "task-1".to_string(),
+            })
+            .expect("task coordination error should serialize"),
+            serde_json::json!({
+                "kind": "task-already-active",
+                "taskId": "task-1"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(DesktopTaskRunError::OperationAlreadyActive {
+                active_task_id: "task-2".to_string(),
+            })
+            .expect("operation coordination error should serialize"),
+            serde_json::json!({
+                "kind": "operation-already-active",
+                "activeTaskId": "task-2"
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(DesktopTaskRunError::TimedOut {
+                timeout_kind: DesktopTaskTimeoutKind::Idle,
+                message: "The bridge reached its idle deadline.".to_string(),
+            })
+            .expect("timeout error should serialize"),
+            serde_json::json!({
+                "kind": "timed-out",
+                "timeoutKind": "idle",
+                "message": "The bridge reached its idle deadline."
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(DesktopTaskRunError::Runtime {
+                message: "Quoted text says timed out and cancelled.".to_string(),
+            })
+            .expect("runtime error should serialize without reclassification"),
+            serde_json::json!({
+                "kind": "runtime",
+                "message": "Quoted text says timed out and cancelled."
+            })
+        );
     }
 }

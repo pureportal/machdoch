@@ -83,6 +83,33 @@ export type ConversationRole = "user" | "assistant";
 
 export type ConversationMemoryScope = "session" | "global";
 
+export type ReadOnlyInspectionTarget =
+  | "workspace"
+  | "runtime-config"
+  | "tools"
+  | "instructions"
+  | "prompts"
+  | "skills"
+  | "customizations";
+
+export type TaskDeterministicAction =
+  | { kind: "inspect"; target: ReadOnlyInspectionTarget }
+  | { kind: "inspect-path"; path: string }
+  | { kind: "create-file"; path: string; content: string };
+
+export type TaskResultProtocol =
+  | { kind: "ralph-iteration" }
+  | { kind: "ralph-validator" }
+  | { kind: "ralph-route"; labels: string[] };
+
+export type TaskExecutionControl =
+  | { kind: "ralph-iteration"; decision: "DONE" | "CONTINUE" }
+  | {
+      kind: "ralph-validator";
+      decision: "DONE" | "CONTINUE" | "RETRY" | "ERROR";
+    }
+  | { kind: "ralph-route"; label: string };
+
 export type UiControlPlatform = "windows" | "macos" | "linux" | "unknown";
 
 export interface UiControlAvailability {
@@ -616,6 +643,10 @@ export interface TaskExecutionOptions {
   maxDurationMs?: number | null;
   /** Inactivity limit. Use `null` to disable it independently. */
   idleTimeoutMs?: number | null;
+  /** Explicit local action selected by trusted application state. */
+  deterministicAction?: TaskDeterministicAction;
+  /** Structured completion state required by an orchestrating protocol. */
+  resultProtocol?: TaskResultProtocol;
 }
 
 export interface TaskExecutionResult {
@@ -631,4 +662,5 @@ export interface TaskExecutionResult {
   fileChanges?: TaskExecutionFileChanges;
   autopilot?: TaskAutopilotReport;
   memoryUpdates?: TaskExecutionMemoryUpdate[];
+  control?: TaskExecutionControl;
 }

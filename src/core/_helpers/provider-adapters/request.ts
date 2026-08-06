@@ -134,16 +134,7 @@ export const isRetryableProviderRequestError = (error: unknown): boolean => {
     return true;
   }
 
-  const name = getStringProperty(error, "name")?.toLowerCase() ?? "";
-  const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error);
-
-  return (
-    name.includes("timeout") ||
-    message.includes("rate limit") ||
-    message.includes("temporarily unavailable") ||
-    message.includes("overloaded")
-  );
+  return false;
 };
 
 export const createProviderRequestSignal = (
@@ -351,16 +342,8 @@ const getErrorMessage = (error: unknown): string => {
 
 const isNoBodyProviderError = (error: unknown): boolean => {
   const status = getNumericStatus(error);
-  const message = getErrorMessage(error);
-
-  if (!/\bNo body\b/i.test(message)) {
-    return false;
-  }
-
-  return (
-    status === 400 ||
-    (status === undefined && /\b400\s+No body\b/i.test(message))
-  );
+  const code = getStringProperty(error, "code");
+  return status === 400 && (code === "no_body" || code === "empty_body");
 };
 
 const isRateLimitProviderError = (error: unknown): boolean => {
@@ -369,13 +352,11 @@ const isRateLimitProviderError = (error: unknown): boolean => {
   if (status === 429) {
     return true;
   }
-
-  const message = getErrorMessage(error);
-
+  const code = getStringProperty(error, "code");
   return (
-    /\b429\b/u.test(message) ||
-    /\btoo many requests\b/iu.test(message) ||
-    /\brate limit(?:ed)?\b/iu.test(message)
+    code === "rate_limit" ||
+    code === "rate_limit_exceeded" ||
+    code === "too_many_requests"
   );
 };
 

@@ -7,16 +7,6 @@ use super::{
     merge_user_web_search_api_keys_into_env,
 };
 
-const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
-const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
-    "sk-user-config",
-    "sk-live",
-    "pplx-live",
-    "tvly-live",
-    "tavily-live",
-    "serper-live",
-];
-
 pub(crate) fn load_global_env() -> Result<HashMap<String, String>, String> {
     let mut values = HashMap::new();
     merge_user_api_keys_into_env(&mut values)?;
@@ -50,15 +40,7 @@ pub(super) fn has_configured_value(value: Option<&str>) -> bool {
         return false;
     };
 
-    if value.is_empty() {
-        return false;
-    }
-
-    if KNOWN_SAMPLE_SECRET_VALUES.contains(&value) {
-        return false;
-    }
-
-    !PLACEHOLDER_TOKENS.iter().any(|token| value.contains(token))
+    !value.is_empty()
 }
 
 pub(super) use env_commands::resolve_agent_cli_binary;
@@ -68,10 +50,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn configured_value_rejects_placeholders_samples_and_blanks() {
+    fn configured_value_requires_only_an_explicit_non_empty_value() {
         assert!(!has_configured_value(Some("")));
-        assert!(!has_configured_value(Some("YOUR_API_KEY")));
-        assert!(!has_configured_value(Some("sk-live")));
+        assert!(has_configured_value(Some("YOUR_API_KEY")));
+        assert!(has_configured_value(Some("sk-live")));
+        assert!(has_configured_value(Some("real-PLACEHOLDER-token")));
         assert!(has_configured_value(Some("sk-real-value")));
     }
 }

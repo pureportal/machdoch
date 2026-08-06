@@ -7,7 +7,7 @@ import {
   createExecutionResult,
   createFlow,
 } from "../__test__/ralph-test-helpers.ts";
-import { MAX_RALPH_RESULT_CHARS } from "./parse-ralph-decision.helper.ts";
+import { MAX_RALPH_RESULT_CHARS } from "./ralph-result-text.helper.ts";
 import {
   capRalphRunRecordValue,
   createRalphRunRecord,

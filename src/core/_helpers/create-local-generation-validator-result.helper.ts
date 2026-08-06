@@ -8,7 +8,6 @@ export const createLocalGenerationValidatorResult = (
   validation: RalphGenerationStructureValidation,
   durationMs: number,
 ): TaskExecutionResult => {
-  const decisionLine = `RALPH_DECISION: ${validation.decision}`;
   const issueLines =
     validation.issues.length > 0
       ? validation.issues.map((issue) => `- ${issue}`)
@@ -36,11 +35,15 @@ export const createLocalGenerationValidatorResult = (
       },
     ],
     response: {
-      markdown: [...issueLines, ...warningLines, decisionLine].join("\n"),
+      markdown: [...issueLines, ...warningLines].join("\n"),
       highlights: [],
       relatedFiles: [],
       verification: [],
       followUps: [],
+    },
+    control: {
+      kind: "ralph-validator",
+      decision: validation.decision,
     },
   };
 };

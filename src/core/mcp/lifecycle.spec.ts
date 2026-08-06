@@ -36,7 +36,9 @@ describe("MCP lifecycle", () => {
     expect(createManagedMcpId("Playwright Browser")).toBe(
       "machdoch_playwright-browser",
     );
-    expect(createManagedMcpId("machdoch_playwright")).toBe("machdoch_playwright");
+    expect(createManagedMcpId("machdoch_playwright")).toBe(
+      "machdoch_playwright",
+    );
   });
 
   it("rejects lifecycle state without the current schema version", async () => {
@@ -59,7 +61,9 @@ describe("MCP lifecycle", () => {
       remoteName: "browser_click",
     });
 
-    expect(parseManagedMcpToolName("mcp__filesystem__read_file")).toBeUndefined();
+    expect(
+      parseManagedMcpToolName("mcp__filesystem__read_file"),
+    ).toBeUndefined();
   });
 
   it("records durable native MCP usage without storing tool arguments", async () => {
@@ -134,6 +138,7 @@ describe("MCP lifecycle", () => {
       },
       {
         agent: "claude-cli",
+        phase: "succeeded",
         workspaceRoot: "C:/repo",
       },
     );
@@ -150,10 +155,13 @@ describe("MCP lifecycle", () => {
       workspaceRoot: "C:/repo",
     });
     expect(
-      createMcpUsageEventFromHookPayload({
-        hook_event_name: "PreToolUse",
-        tool_name: "Read",
-      }),
+      createMcpUsageEventFromHookPayload(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: "Read",
+        },
+        { phase: "invoked" },
+      ),
     ).toBeUndefined();
   });
 
@@ -167,6 +175,7 @@ describe("MCP lifecycle", () => {
         },
         {
           agent: "openai-api",
+          phase: "succeeded",
           workspaceRoot: "C:/repo",
         },
       ),
@@ -190,6 +199,7 @@ describe("MCP lifecycle", () => {
         },
         {
           agent: "anthropic-api",
+          phase: "failed",
           workspaceRoot: "C:/repo",
         },
       ),
@@ -199,6 +209,30 @@ describe("MCP lifecycle", () => {
       sourceServerId: "linear",
       phase: "failed",
     });
+  });
+
+  it("never derives lifecycle state from event names or result prose", () => {
+    const event = createMcpUsageEventFromHookPayload(
+      {
+        hook_event_name: "QuotedPostToolUseFailure",
+        server_label: "machdoch_github",
+        name: "inspect_issue",
+        error: "This quoted failure is payload content, not protocol state.",
+        success: false,
+      },
+      { phase: "invoked" },
+    );
+
+    expect(event?.phase).toBe("invoked");
+    expect(
+      createMcpUsageEventFromHookPayload(
+        {
+          hook_event_name: "PostToolUse",
+          server_label: "machdoch_github",
+        },
+        undefined,
+      ),
+    ).toBeUndefined();
   });
 
   it("serializes concurrent usage writes in the current process", async () => {

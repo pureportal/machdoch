@@ -1,8 +1,4 @@
-import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
-import type {
-  CreateFilePathReference,
-  TaskPathReference,
-} from "../task-paths.js";
+import type { ResolvedDeterministicAction } from "./deterministic-action.js";
 import type {
   ResolvedTaskContext,
   TaskExecutionOptions,
@@ -11,10 +7,7 @@ import type {
   TaskExecutionSection,
   TaskExecutionState,
 } from "../types.js";
-import type {
-  RuntimeConfig,
-  ToolName,
-} from "../runtime-contract.generated.js";
+import type { RuntimeConfig, ToolName } from "../runtime-contract.generated.js";
 import { isTerminalTaskExecutionState } from "./execution-progress.js";
 import { limitText } from "./runtime-text.js";
 import { isTaskExecutionTimeoutReason } from "./task-execution-timeouts.js";
@@ -22,9 +15,7 @@ import { isTaskExecutionTimeoutReason } from "./task-execution-timeouts.js";
 export interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;
   contextSections: TaskExecutionSection[];
-  explicitPathReference: TaskPathReference | undefined;
-  createFileTarget: CreateFilePathReference | undefined;
-  inspectionTarget: ReadOnlyInspectionTarget | undefined;
+  deterministicAction: ResolvedDeterministicAction | undefined;
   pendingResult: TaskExecutionResult | undefined;
   executedTools: ToolName[];
 }
@@ -66,7 +57,10 @@ const getProgressAssistantText = (
     return undefined;
   }
 
-  return result.response?.markdown.trim() || getAssistantTextFromOutputSections(result);
+  return (
+    result.response?.markdown.trim() ||
+    getAssistantTextFromOutputSections(result)
+  );
 };
 
 export const createExecutionResult = (
@@ -125,7 +119,12 @@ const createProgressSnapshot = (
     cancellable: !isTerminalTaskExecutionState(state),
     ...(result?.reason ? { reason: result.reason } : {}),
     ...(assistantText
-      ? { assistantText: limitText(assistantText, PROGRESS_ASSISTANT_TEXT_LIMIT) }
+      ? {
+          assistantText: limitText(
+            assistantText,
+            PROGRESS_ASSISTANT_TEXT_LIMIT,
+          ),
+        }
       : {}),
   };
 };
@@ -144,29 +143,39 @@ export const emitExecutionState = async (
   );
 };
 
-const getCancellationReason = (signal: AbortSignal | undefined): string => {
+interface CancellationDescriptor {
+  reason: string;
+  timedOut: boolean;
+}
+
+const getCancellationDescriptor = (
+  signal: AbortSignal | undefined,
+): CancellationDescriptor => {
   const reason = signal?.reason;
 
+  if (isTaskExecutionTimeoutReason(reason)) {
+    return { reason: reason.message, timedOut: true };
+  }
+
   if (reason instanceof Error && reason.message.trim().length > 0) {
-    return reason.message;
+    return { reason: reason.message, timedOut: false };
   }
 
   if (typeof reason === "string" && reason.trim().length > 0) {
-    return reason;
+    return { reason, timedOut: false };
   }
 
-  return "Execution cancelled by user.";
+  return { reason: "Execution cancelled by user.", timedOut: false };
 };
 
 const createCancellationSection = (
   state: TaskExecutionState,
   message: string,
   reason: string,
+  timedOut: boolean,
 ): TaskExecutionSection => {
   return {
-    title: isTaskExecutionTimeoutReason(reason)
-      ? "Execution limit"
-      : "Cancellation",
+    title: timedOut ? "Execution limit" : "Cancellation",
     lines: [`state: ${state}`, `message: ${message}`, `reason: ${reason}`],
   };
 };
@@ -184,8 +193,7 @@ const createCancelledResult = (
     runtime.pendingResult.outputSections.length > 0
       ? runtime.pendingResult.outputSections
       : runtime.contextSections;
-  const reason = getCancellationReason(signal);
-  const timedOut = isTaskExecutionTimeoutReason(reason);
+  const { reason, timedOut } = getCancellationDescriptor(signal);
 
   return createExecutionResult(
     {
@@ -199,7 +207,7 @@ const createCancelledResult = (
         runtime.pendingResult?.executedTools ?? runtime.executedTools,
       outputSections: [
         ...baseSections,
-        createCancellationSection(state, message, reason),
+        createCancellationSection(state, message, reason, timedOut),
       ],
     },
     reason,

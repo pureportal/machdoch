@@ -276,7 +276,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "String(lastData?.json?.featureId ?? '').trim().toLowerCase() === String(context.resultsByBlock?.['resolve-checklist-path']?.data?.output?.featureId ?? '').trim().toLowerCase()",
+            "(() => { const storedFeatureId = lastData?.json?.featureId; const expectedFeatureId = context.resultsByBlock?.['resolve-checklist-path']?.data?.output?.featureId; if (typeof storedFeatureId !== 'string' || storedFeatureId.length === 0 || typeof expectedFeatureId !== 'string' || expectedFeatureId.length === 0) throw new Error('Checklist feature identity is missing or invalid.'); return storedFeatureId === expectedFeatureId; })()",
         },
       },
     },
@@ -681,6 +681,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "DONE",
         path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"DONE","featureId":"{{data:resolve-checklist-path:output.featureId}}","checklistPath":"{{data:resolve-checklist-path:output.path}}"}',
@@ -695,6 +696,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "DEFER",
         path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","reason":"Bounded autonomous recovery exhausted."}',
@@ -709,6 +711,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "BLOCKED",
         path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"BLOCKED","reason":"Persisted checklist tasks have no currently selectable work.","assessment":{{data:assess-checklist-tasks}}}',
@@ -723,6 +726,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
+        workOutcome: "INVALID",
         path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","reason":"Autonomous checklist preparation or state recovery produced invalid data."}',
@@ -1541,9 +1545,24 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 14,
+  version: 15,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],
+  protocol: {
+    schemaVersion: 1,
+    verification: {
+      planId: "starter-full-feature-implementation:frozen-verification",
+      baselineBlockId: "baseline-verification",
+      candidateBlockId: "run-configured-checks",
+      baselineInconclusiveTargetId: "count-implementation-pass",
+      candidateInconclusiveTargetId: "visual-decision",
+      routeOverrides: [],
+    },
+    terminalOutcomes: [
+      { blockId: "complete", outcome: "succeeded" },
+      { blockId: "deferred", outcome: "deferred" },
+    ],
+  },
   flow: fullFeatureImplementationFlow,
 } as const satisfies RalphStarterFlow;

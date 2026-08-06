@@ -119,16 +119,17 @@ describe("createRalphPromptExecutionResult", () => {
 });
 
 describe("createRalphValidatorExecutionResult", () => {
-  it("uses the final valid decision marker for executed validator output", () => {
+  it("uses the structured validator control for executed output", () => {
     const result = createExecutionResult({
       summary: "Ready.",
       response: {
-        markdown: "Looks good.\nRALPH_DECISION: DONE",
+        markdown: "Looks good. Quoted RALPH_DECISION: ERROR is prose.",
         highlights: [],
         relatedFiles: [],
         verification: [],
         followUps: [],
       },
+      control: { kind: "ralph-validator", decision: "DONE" },
     });
 
     expect(createRalphValidatorExecutionResult(validatorBlock, result)).toEqual({
@@ -138,11 +139,11 @@ describe("createRalphValidatorExecutionResult", () => {
       attempt: 1,
       result,
       summary: "Ready.",
-      markdown: "Looks good.\nRALPH_DECISION: DONE",
+      markdown: "Looks good. Quoted RALPH_DECISION: ERROR is prose.",
     });
   });
 
-  it("treats missing or invalid validator markers as errors", () => {
+  it("treats missing structured validator control as an error", () => {
     const result = createExecutionResult({
       summary: "No marker.",
       response: {
@@ -162,7 +163,7 @@ describe("createRalphValidatorExecutionResult", () => {
     });
   });
 
-  it("keeps a non-executed validator task as an error even with a marker", () => {
+  it("keeps a non-executed validator task as an error even with control", () => {
     const result = createExecutionResult({
       status: "blocked",
       summary: "Blocked.",
@@ -174,6 +175,7 @@ describe("createRalphValidatorExecutionResult", () => {
         verification: [],
         followUps: [],
       },
+      control: { kind: "ralph-validator", decision: "DONE" },
     });
 
     expect(createRalphValidatorExecutionResult(validatorBlock, result)).toMatchObject({
@@ -185,16 +187,17 @@ describe("createRalphValidatorExecutionResult", () => {
 });
 
 describe("createRalphDecisionExecutionResult", () => {
-  it("maps normalized decision markers back to the configured label value", () => {
+  it("uses an exact structured route label", () => {
     const result = createExecutionResult({
       summary: "Route selected.",
       response: {
-        markdown: "Use the review path.\nRALPH_DECISION: NEEDS-WORK",
+        markdown: "Use the review path. RALPH_DECISION: approved is quoted.",
         highlights: [],
         relatedFiles: [],
         verification: [],
         followUps: [],
       },
+      control: { kind: "ralph-route", label: "needs-work" },
     });
 
     expect(createRalphDecisionExecutionResult(decisionBlock, result)).toEqual({
@@ -204,11 +207,11 @@ describe("createRalphDecisionExecutionResult", () => {
       attempt: 1,
       result,
       summary: "Route selected.",
-      markdown: "Use the review path.\nRALPH_DECISION: NEEDS-WORK",
+      markdown: "Use the review path. RALPH_DECISION: approved is quoted.",
     });
   });
 
-  it("reports unsupported decision labels with the expected labels and output excerpt", () => {
+  it("ignores unsupported labels present only in prose", () => {
     const result = createExecutionResult({
       summary: "Unsupported.",
       response: {
@@ -224,9 +227,9 @@ describe("createRalphDecisionExecutionResult", () => {
       output: "ERROR",
       status: "error",
       summary:
-        "Route returned unsupported decision label `REJECTED`. Expected one of: approved, needs-work. Output: Try something else.\nRALPH_DECISION: REJECTED",
+        "Route did not return a valid structured route. Expected one of: approved, needs-work. Output: Try something else.\nRALPH_DECISION: REJECTED",
       error:
-        "Route returned unsupported decision label `REJECTED`. Expected one of: approved, needs-work. Output: Try something else.\nRALPH_DECISION: REJECTED",
+        "Route did not return a valid structured route. Expected one of: approved, needs-work. Output: Try something else.\nRALPH_DECISION: REJECTED",
     });
   });
 

@@ -73,6 +73,7 @@ describe("coerceRalphUtilityConfig", () => {
         flowAlias: "security-review-fix-loop",
         strategy: "least-validated",
         scopeId: "src-core",
+        scopeOutcome: "completed",
         jsonPath: "tasks",
         taskId: "task-1",
         status: "completed",
@@ -109,6 +110,7 @@ describe("coerceRalphUtilityConfig", () => {
       flowAlias: "security-review-fix-loop",
       strategy: "least-validated",
       scopeId: "src-core",
+      scopeOutcome: "completed",
       jsonPath: "tasks",
       taskId: "task-1",
       status: "completed",
@@ -161,6 +163,7 @@ describe("coerceRalphUtilityConfig", () => {
         env: { NODE_ENV: "test", DEBUG: true },
         acceptedExitCodes: [0, 1.5, "2", 3, Number.NaN],
         waitUntil: "quiet",
+        scopeOutcome: "DONE because validation passed",
       }),
     ).toEqual({
       type: "WAIT",

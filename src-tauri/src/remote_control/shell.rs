@@ -67,7 +67,7 @@ pub(super) struct RemoteShellMessage {
     pub(super) content: String,
     pub(super) created_at: Option<u64>,
     pub(super) task_id: Option<String>,
-    pub(super) intent: Option<String>,
+    pub(super) task_action: Option<RemoteShellTaskAction>,
     pub(super) attachments: Vec<RemoteShellAttachment>,
     pub(super) source: Option<RemoteShellMessageSource>,
     pub(super) actions: RemoteShellMessageActions,
@@ -226,6 +226,20 @@ pub(super) struct RemoteShellContextPack {
     pub(super) model: Option<String>,
     pub(super) mode: Option<String>,
     pub(super) reasoning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct RemoteShellTaskAction {
+    pub(super) kind: RemoteShellTaskActionKind,
+    pub(super) objective: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum RemoteShellTaskActionKind {
+    RetryTask,
+    ContinueTask,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

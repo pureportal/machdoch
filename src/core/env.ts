@@ -52,15 +52,6 @@ import type {
   WebSearchProviderAvailability,
 } from "./runtime-contract.generated.js";
 
-const PLACEHOLDER_TOKENS = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
-const KNOWN_SAMPLE_SECRET_VALUES = new Set([
-  "sk-user-config",
-  "sk-live",
-  "pplx-live",
-  "tvly-live",
-  "tavily-live",
-  "serper-live",
-]);
 const USER_CONFIG_FILE_NAME = "user-config.json";
 const WORKSPACE_ENV_FILE_NAME = ".env";
 export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
@@ -808,23 +799,12 @@ export const rememberUserGlobalMemory = async (
 };
 
 /**
- * Returns whether a configuration value looks usable instead of empty or a
- * placeholder token.
+ * Returns whether a configuration value was explicitly provided.
  */
 export const hasConfiguredValue = (value: string | undefined): boolean => {
   if (!value) {
     return false;
   }
 
-  const trimmed = value.trim();
-
-  if (trimmed.length === 0) {
-    return false;
-  }
-
-  if (KNOWN_SAMPLE_SECRET_VALUES.has(trimmed)) {
-    return false;
-  }
-
-  return !PLACEHOLDER_TOKENS.some((token) => trimmed.includes(token));
+  return value.trim().length > 0;
 };

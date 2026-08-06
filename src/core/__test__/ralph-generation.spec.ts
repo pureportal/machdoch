@@ -510,7 +510,7 @@ describe("createRalphFlowWithAgent", () => {
             type: "VALIDATOR",
             title: "Validate Code",
             prompt:
-              "Validate the code improvement loop and end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+              "Validate the code improvement loop using the runtime's structured validator result.",
             validationScope: { mode: "sinceLastValidator" },
           },
           {

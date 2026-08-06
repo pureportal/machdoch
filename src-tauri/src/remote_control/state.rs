@@ -31,6 +31,18 @@ pub(super) enum RecordCommandOutcome {
     Duplicate,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RecordCommandError {
+    CommandIdConflict,
+    Unavailable(String),
+}
+
+impl From<String> for RecordCommandError {
+    fn from(message: String) -> Self {
+        Self::Unavailable(message)
+    }
+}
+
 impl Default for RemoteControlState {
     fn default() -> Self {
         Self {
@@ -162,13 +174,12 @@ impl RemoteControlState {
     pub(super) fn record_command(
         &self,
         event: &RemoteControlCommandEvent,
-    ) -> Result<RecordCommandOutcome, String> {
-        self.ensure_config_loaded()?;
-        let mut inner = self
-            .shared
-            .inner
-            .lock()
-            .map_err(|_| "Unable to record the remote command.".to_string())?;
+    ) -> Result<RecordCommandOutcome, RecordCommandError> {
+        self.ensure_config_loaded()
+            .map_err(RecordCommandError::from)?;
+        let mut inner = self.shared.inner.lock().map_err(|_| {
+            RecordCommandError::Unavailable("Unable to record the remote command.".to_string())
+        })?;
 
         if let Some(existing) = inner
             .pending_commands
@@ -178,10 +189,7 @@ impl RemoteControlState {
             return if command_payloads_match(existing, event) {
                 Ok(RecordCommandOutcome::Duplicate)
             } else {
-                Err(
-                    "MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:The command id was already used for a different command."
-                        .to_string(),
-                )
+                Err(RecordCommandError::CommandIdConflict)
             };
         }
 
@@ -193,18 +201,15 @@ impl RemoteControlState {
             return if existing.payload_hash == command_payload_hash(event) {
                 Ok(RecordCommandOutcome::Duplicate)
             } else {
-                Err(
-                    "MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:The command id was already used for a different command."
-                        .to_string(),
-                )
+                Err(RecordCommandError::CommandIdConflict)
             };
         }
 
         if inner.pending_commands.len() >= MAX_PENDING_COMMAND_ENTRIES {
-            return Err(
+            return Err(RecordCommandError::Unavailable(
                 "Mission Control has too many unacknowledged commands; retry after they are processed."
                     .to_string(),
-            );
+            ));
         }
 
         inner.pending_commands.push_back(event.clone());
@@ -212,7 +217,7 @@ impl RemoteControlState {
         if let Err(error) = persist_config_locked(&mut inner) {
             inner.pending_commands.pop_back();
             inner.config.pending_commands = inner.pending_commands.iter().cloned().collect();
-            return Err(error);
+            return Err(RecordCommandError::Unavailable(error));
         }
         push_bounded(
             &mut inner.commands,

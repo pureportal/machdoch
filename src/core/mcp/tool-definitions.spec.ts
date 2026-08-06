@@ -512,6 +512,32 @@ describe("createMcpToolDefinitions", () => {
     const workspaceRoot = await createWorkspace();
     const context = createExecutionContext(workspaceRoot);
     const callToolSpy = vi.spyOn(mcpClientManager, "callTool");
+
+    await writeWorkspaceMcpConfig(workspaceRoot, "linear");
+    await writeDiscoveryCache(workspaceRoot, {
+      linear: {
+        serverId: "linear",
+        discoveredAt: "2026-07-03T00:00:00.000Z",
+        transportType: "streamable-http",
+        tools: [
+          {
+            name: "get_issue",
+            inputSchema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id"],
+              properties: {
+                id: { type: "string", minLength: 1 },
+              },
+            },
+          },
+        ],
+        resources: [],
+        resourceTemplates: [],
+        prompts: [],
+      },
+    });
+
     const mcpCallTool = createMcpToolDefinitions(workspaceRoot).find(
       (definition) => definition.spec.name === "mcp_call_tool",
     );
@@ -547,7 +573,7 @@ describe("createMcpToolDefinitions", () => {
       isError: true,
     });
     expect(missingIdResult.toolResult.output).toContain(
-      "requires `arguments.id`",
+      "arguments do not match the discovered input schema",
     );
     expect(callToolSpy).not.toHaveBeenCalled();
   });

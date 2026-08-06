@@ -4,9 +4,11 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 
-export const RALPH_SCOPE_EVIDENCE_SCHEMA = "machdoch.ralph.scopeEvidence" as const;
-export const RALPH_SCOPE_REGISTRY_SCHEMA = "machdoch.ralph.scopeRegistry" as const;
-export const RALPH_SCOPE_REGISTRY_SCHEMA_VERSION = 1 as const;
+export const RALPH_SCOPE_EVIDENCE_SCHEMA =
+  "machdoch.ralph.scopeEvidence" as const;
+export const RALPH_SCOPE_REGISTRY_SCHEMA =
+  "machdoch.ralph.scopeRegistry" as const;
+export const RALPH_SCOPE_REGISTRY_SCHEMA_VERSION = 2 as const;
 
 export const RALPH_SCOPE_SELECTION_STRATEGIES = [
   "start-to-end",
@@ -23,7 +25,18 @@ export const RALPH_SCOPE_SELECTION_STRATEGIES = [
 export type RalphScopeSelectionStrategy =
   (typeof RALPH_SCOPE_SELECTION_STRATEGIES)[number];
 export type RalphScopeRegistryScopeStatus = "active" | "removed";
-export type RalphScopeRegistryRisk = "low" | "medium" | "high";
+export const RALPH_SCOPE_REGISTRY_RISKS = ["low", "medium", "high"] as const;
+export type RalphScopeRegistryRisk =
+  (typeof RALPH_SCOPE_REGISTRY_RISKS)[number];
+export const RALPH_SCOPE_OUTCOMES = [
+  "completed",
+  "deferred",
+  "external-state",
+  "failed",
+  "invalid",
+  "no-meaningful-work",
+] as const;
+export type RalphScopeOutcome = (typeof RALPH_SCOPE_OUTCOMES)[number];
 export type RalphScopeRegistryKind =
   | "workspace"
   | "app"
@@ -65,7 +78,7 @@ export interface RalphScopeRegistryScope extends RalphScopeEvidenceScope {
   lastValidatedAt?: string | null;
   selectedCount: number;
   validatedCount: number;
-  lastOutcome?: string | null;
+  lastOutcome?: RalphScopeOutcome | null;
   lastOutcomeAt?: string | null;
   eligibleAfter?: string | null;
 }
@@ -84,7 +97,7 @@ export interface RalphScopeRegistryHistoryEntry {
   type: "registry-updated" | "scope-selected" | "scope-marked";
   scopeId?: string;
   cycle?: number;
-  outcome?: string;
+  outcome?: RalphScopeOutcome;
   eligibleAfter?: string;
   summary?: string;
   added?: string[];
@@ -296,37 +309,6 @@ const isEntrypointFileName = (fileName: string): boolean => {
   return COMMON_ENTRYPOINT_FILE_NAMES.has(fileName.toLowerCase());
 };
 
-const HIGH_RISK_TOKENS = [
-  "auth",
-  "security",
-  "session",
-  "token",
-  "payment",
-  "billing",
-  "permission",
-  "secret",
-  "crypto",
-  "database",
-  "migration",
-  "ipc",
-  "api",
-  "server",
-  "backend",
-  "src-tauri",
-] as const;
-
-const MEDIUM_RISK_TOKENS = [
-  "route",
-  "service",
-  "store",
-  "state",
-  "upload",
-  "download",
-  "config",
-  "worker",
-  "job",
-] as const;
-
 const normalizeRegistryPath = (path: string): string => {
   const normalized = path.replace(/\\/gu, "/").replace(/^\.\/+/u, "");
 
@@ -334,8 +316,8 @@ const normalizeRegistryPath = (path: string): string => {
 };
 
 const normalizePathList = (paths: readonly string[]): string[] => {
-  return [...new Set(paths.map(normalizeRegistryPath).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b),
+  return [...new Set(paths.map(normalizeRegistryPath).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b),
   );
 };
 
@@ -364,7 +346,9 @@ export const normalizeRalphScopeSelectionStrategy = (
   return value;
 };
 
-export const createDefaultRalphScopeRegistryPath = (flowAlias: string): string => {
+export const createDefaultRalphScopeRegistryPath = (
+  flowAlias: string,
+): string => {
   const safeAlias = normalizeScopeId(flowAlias || "default");
 
   return `.machdoch/ralph/scope-registry/${safeAlias}.scope-registry.json`;
@@ -373,12 +357,16 @@ export const createDefaultRalphScopeRegistryPath = (flowAlias: string): string =
 export const parseRalphScopeExcludePaths = (
   value: string | undefined,
 ): string[] => {
-  const configured = value
-    ?.split(/[\n,]/u)
-    .map((entry) => normalizeRegistryPath(entry.trim()))
-    .filter(Boolean) ?? [];
+  const configured =
+    value
+      ?.split(/[\n,]/u)
+      .map((entry) => normalizeRegistryPath(entry.trim()))
+      .filter(Boolean) ?? [];
 
-  return normalizePathList([...DEFAULT_SCOPE_SCAN_EXCLUDE_PATHS, ...configured]);
+  return normalizePathList([
+    ...DEFAULT_SCOPE_SCAN_EXCLUDE_PATHS,
+    ...configured,
+  ]);
 };
 
 export const isResolvedPathInside = (path: string, root: string): boolean => {
@@ -397,7 +385,9 @@ export const createRalphScopeRegistryMarkdownPath = (
 };
 
 const getPathSegments = (path: string): string[] => {
-  return normalizeRegistryPath(path).split("/").filter((segment) => segment !== ".");
+  return normalizeRegistryPath(path)
+    .split("/")
+    .filter((segment) => segment !== ".");
 };
 
 export const normalizeScopeId = (value: string): string => {
@@ -413,10 +403,7 @@ export const normalizeScopeId = (value: string): string => {
 const titleFromPath = (path: string): string => {
   const segments = getPathSegments(path);
   const last = segments.at(-1) ?? "workspace";
-  const words = last
-    .replace(/[-_]+/gu, " ")
-    .split(/\s+/u)
-    .filter(Boolean);
+  const words = last.replace(/[-_]+/gu, " ").split(/\s+/u).filter(Boolean);
 
   return words.length > 0
     ? words
@@ -432,22 +419,22 @@ const hashStableValue = (value: unknown): string => {
     .slice(0, 16);
 };
 
-const determineRisk = (
-  path: string,
-  tags: readonly string[],
-): RalphScopeRegistryRisk => {
-  const searchable = `${path} ${tags.join(" ")}`.toLowerCase();
-
-  if (HIGH_RISK_TOKENS.some((token) => searchable.includes(token))) {
-    return "high";
-  }
-
-  if (MEDIUM_RISK_TOKENS.some((token) => searchable.includes(token))) {
-    return "medium";
-  }
-
-  return "low";
+const DISCOVERED_SCOPE_RISK_BY_KIND: Record<
+  RalphScopeRegistryKind,
+  RalphScopeRegistryRisk
+> = {
+  workspace: "high",
+  app: "high",
+  package: "high",
+  config: "high",
+  "source-root": "medium",
+  module: "medium",
+  test: "low",
+  docs: "low",
 };
+
+const determineRisk = (kind: RalphScopeRegistryKind): RalphScopeRegistryRisk =>
+  DISCOVERED_SCOPE_RISK_BY_KIND[kind];
 
 const determinePriority = (
   kind: RalphScopeRegistryKind,
@@ -479,7 +466,9 @@ const getDirectoryKind = (
   const segments = getPathSegments(relPath);
   const baseName = segments.at(-1) ?? "";
   const parentName = segments.at(-2) ?? "";
-  const hasManifest = fileNames.some((fileName) => MANIFEST_FILE_NAMES.has(fileName));
+  const hasManifest = fileNames.some((fileName) =>
+    MANIFEST_FILE_NAMES.has(fileName),
+  );
   const implementationFileNames = fileNames.filter(
     (fileName) => isSourceFileName(fileName) && !isTestFileName(fileName),
   );
@@ -535,7 +524,8 @@ const createDirectoryEvidenceScope = (
     (fileName) => !isTestFileName(fileName),
   );
   const testFileNames = sourceFileNames.filter(isTestFileName);
-  const entrypointFileNames = implementationFileNames.filter(isEntrypointFileName);
+  const entrypointFileNames =
+    implementationFileNames.filter(isEntrypointFileName);
   const hasLocalTestDirectory = dirNames.some((dirName) =>
     COMMON_TEST_DIR_NAMES.has(dirName.toLowerCase()),
   );
@@ -571,7 +561,7 @@ const createDirectoryEvidenceScope = (
     ...(hasLocalTests ? ["test-covered"] : []),
     ...(hasLocalTestGap ? ["missing-local-tests"] : []),
   ]);
-  const risk = determineRisk(normalizedPath, tags);
+  const risk = determineRisk(kind);
   const paths = [normalizedPath];
   const globs = [`${normalizedPath === "." ? "" : `${normalizedPath}/`}**/*`];
   const semanticPriorityBoost =
@@ -586,7 +576,10 @@ const createDirectoryEvidenceScope = (
     paths,
     globs,
     tags,
-    priority: Math.min(100, determinePriority(kind, risk) + semanticPriorityBoost),
+    priority: Math.min(
+      100,
+      determinePriority(kind, risk) + semanticPriorityBoost,
+    ),
     risk,
     fingerprint: hashStableValue({ paths, globs, tags, evidence }),
     evidence,
@@ -605,7 +598,7 @@ const createConfigEvidenceScope = (
   }
 
   const tags = ["config", "workspace"];
-  const risk = determineRisk(paths.join(" "), tags);
+  const risk = determineRisk("config");
 
   return {
     id: "repository-configuration",
@@ -666,11 +659,12 @@ const addScopeEvidence = (
     tags,
     evidence,
     priority: Math.max(existing.priority, scope.priority),
-    risk: existing.risk === "high" || scope.risk === "high"
-      ? "high"
-      : existing.risk === "medium" || scope.risk === "medium"
-        ? "medium"
-        : "low",
+    risk:
+      existing.risk === "high" || scope.risk === "high"
+        ? "high"
+        : existing.risk === "medium" || scope.risk === "medium"
+          ? "medium"
+          : "low",
     fingerprint: hashStableValue({ paths, globs, tags, evidence }),
   });
 };
@@ -687,7 +681,8 @@ export const discoverRalphScopeEvidence = async (
 ): Promise<RalphScopeEvidenceDocument> => {
   const rootPath = normalizeRegistryPath(options.rootPath ?? ".");
   const scanRoot = resolve(workspaceRoot, rootPath);
-  const excludePaths = options.excludePaths ?? parseRalphScopeExcludePaths(undefined);
+  const excludePaths =
+    options.excludePaths ?? parseRalphScopeExcludePaths(undefined);
   const maxDepth = Math.max(0, Math.trunc(options.maxDepth ?? 4));
   const maxResults = Math.max(1, Math.trunc(options.maxResults ?? 200));
   const scopes = new Map<string, RalphScopeEvidenceScope>();
@@ -802,12 +797,17 @@ const coerceStringArray = (value: unknown): string[] => {
     : [];
 };
 
-const coerceScopeRisk = (value: unknown): RalphScopeRegistryRisk => {
-  return value === "high" || value === "medium" || value === "low" ? value : "low";
+const parseScopeRisk = (value: unknown): RalphScopeRegistryRisk => {
+  if (value === "high" || value === "medium" || value === "low") {
+    return value;
+  }
+
+  throw new Error("Expected Ralph scope risk to be low, medium, or high.");
 };
 
-const coerceScopeKind = (value: unknown): RalphScopeRegistryKind => {
-  return value === "workspace" ||
+const parseScopeKind = (value: unknown): RalphScopeRegistryKind => {
+  if (
+    value === "workspace" ||
     value === "app" ||
     value === "package" ||
     value === "source-root" ||
@@ -815,67 +815,98 @@ const coerceScopeKind = (value: unknown): RalphScopeRegistryKind => {
     value === "docs" ||
     value === "config" ||
     value === "module"
-    ? value
-    : "module";
+  ) {
+    return value;
+  }
+
+  throw new Error("Expected a valid Ralph scope kind.");
 };
 
-const coerceScopeStatus = (value: unknown): RalphScopeRegistryScopeStatus => {
-  return value === "removed" ? "removed" : "active";
+const parseScopeStatus = (
+  value: unknown,
+  required: boolean,
+): RalphScopeRegistryScopeStatus => {
+  if (value === "active" || value === "removed") {
+    return value;
+  }
+  if (!required && value === undefined) {
+    return "active";
+  }
+
+  throw new Error("Expected Ralph scope status to be active or removed.");
 };
 
 const normalizeRegistryScope = (
   value: unknown,
   now: string,
-): RalphScopeRegistryScope | undefined => {
+  options: { requireStatus: boolean },
+): RalphScopeRegistryScope => {
   if (!isRecord(value)) {
-    return undefined;
+    throw new Error("Expected a Ralph scope record.");
   }
 
   const paths = normalizePathList(coerceStringArray(value.paths));
   if (paths.length === 0) {
-    return undefined;
+    throw new Error("Expected a Ralph scope to contain at least one path.");
   }
 
-  const id = typeof value.id === "string" ? normalizeScopeId(value.id) : normalizeScopeId(paths[0] ?? "scope");
+  const id =
+    typeof value.id === "string"
+      ? normalizeScopeId(value.id)
+      : normalizeScopeId(paths[0] ?? "scope");
   const tags = normalizePathList(coerceStringArray(value.tags));
   const evidence = normalizePathList(coerceStringArray(value.evidence));
   const globs = normalizePathList(coerceStringArray(value.globs));
-  const kind = coerceScopeKind(value.kind);
-  const risk = coerceScopeRisk(value.risk);
+  const kind = parseScopeKind(value.kind);
+  const risk = parseScopeRisk(value.risk);
+  const lastOutcome =
+    value.lastOutcome === undefined || value.lastOutcome === null
+      ? null
+      : isRalphScopeOutcome(value.lastOutcome)
+        ? value.lastOutcome
+        : (() => {
+            throw new Error("Expected a valid persisted Ralph scope outcome.");
+          })();
 
   return {
     id,
-    title: typeof value.title === "string" && value.title.trim()
-      ? value.title
-      : titleFromPath(paths[0] ?? id),
+    title:
+      typeof value.title === "string" && value.title.trim()
+        ? value.title
+        : titleFromPath(paths[0] ?? id),
     kind,
-    status: coerceScopeStatus(value.status),
+    status: parseScopeStatus(value.status, options.requireStatus),
     paths,
     globs: globs.length > 0 ? globs : paths,
     tags,
-    priority: typeof value.priority === "number" && Number.isFinite(value.priority)
-      ? Math.max(0, Math.min(100, Math.trunc(value.priority)))
-      : determinePriority(kind, risk),
+    priority:
+      typeof value.priority === "number" && Number.isFinite(value.priority)
+        ? Math.max(0, Math.min(100, Math.trunc(value.priority)))
+        : determinePriority(kind, risk),
     risk,
-    fingerprint: typeof value.fingerprint === "string" && value.fingerprint.trim()
-      ? value.fingerprint
-      : hashStableValue({ paths, globs, tags, evidence }),
+    fingerprint:
+      typeof value.fingerprint === "string" && value.fingerprint.trim()
+        ? value.fingerprint
+        : hashStableValue({ paths, globs, tags, evidence }),
     evidence,
-    discoveredAt: typeof value.discoveredAt === "string" ? value.discoveredAt : now,
+    discoveredAt:
+      typeof value.discoveredAt === "string" ? value.discoveredAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
     lastSelectedAt:
       typeof value.lastSelectedAt === "string" ? value.lastSelectedAt : null,
     lastValidatedAt:
       typeof value.lastValidatedAt === "string" ? value.lastValidatedAt : null,
     selectedCount:
-      typeof value.selectedCount === "number" && Number.isFinite(value.selectedCount)
+      typeof value.selectedCount === "number" &&
+      Number.isFinite(value.selectedCount)
         ? Math.max(0, Math.trunc(value.selectedCount))
         : 0,
     validatedCount:
-      typeof value.validatedCount === "number" && Number.isFinite(value.validatedCount)
+      typeof value.validatedCount === "number" &&
+      Number.isFinite(value.validatedCount)
         ? Math.max(0, Math.trunc(value.validatedCount))
         : 0,
-    lastOutcome: typeof value.lastOutcome === "string" ? value.lastOutcome : null,
+    lastOutcome,
     lastOutcomeAt:
       typeof value.lastOutcomeAt === "string" ? value.lastOutcomeAt : null,
     eligibleAfter:
@@ -892,21 +923,36 @@ export const parseRalphScopeRegistry = (
   },
 ): RalphScopeRegistry => {
   const now = options.now ?? new Date().toISOString();
-  if (!isRecord(value)) {
+  if (value === undefined || value === null) {
     return createDefaultRegistry(options.flowAlias, options.strategy, now);
   }
 
-  const selectionRecord = isRecord(value.selection) ? value.selection : {};
-  const strategy =
-    normalizeRalphScopeSelectionStrategy(selectionRecord.strategy) ??
-    options.strategy;
-  const scopes = Array.isArray(value.scopes)
-    ? value.scopes.flatMap((scope): RalphScopeRegistryScope[] => {
-        const normalized = normalizeRegistryScope(scope, now);
+  if (!isRecord(value)) {
+    throw new Error("Expected a Ralph scope registry record.");
+  }
+  if (
+    value.schema !== RALPH_SCOPE_REGISTRY_SCHEMA ||
+    value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION
+  ) {
+    throw new Error("Expected a supported Ralph scope registry schema.");
+  }
+  if (!isRecord(value.selection)) {
+    throw new Error("Expected Ralph scope registry selection state.");
+  }
+  if (!Array.isArray(value.scopes)) {
+    throw new Error("Expected Ralph scope registry scopes to be an array.");
+  }
 
-        return normalized ? [normalized] : [];
-      })
-    : [];
+  const selectionRecord = value.selection;
+  const strategy = normalizeRalphScopeSelectionStrategy(
+    selectionRecord.strategy,
+  );
+  if (!strategy) {
+    throw new Error("Expected a valid Ralph scope selection strategy.");
+  }
+  const scopes = value.scopes.map((scope) =>
+    normalizeRegistryScope(scope, now, { requireStatus: true }),
+  );
   const activeIds = new Set(
     scopes
       .filter((scope) => scope.status === "active")
@@ -929,11 +975,13 @@ export const parseRalphScopeRegistry = (
     selection: {
       strategy,
       cursor:
-        typeof selectionRecord.cursor === "number" && Number.isFinite(selectionRecord.cursor)
+        typeof selectionRecord.cursor === "number" &&
+        Number.isFinite(selectionRecord.cursor)
           ? Math.max(0, Math.trunc(selectionRecord.cursor))
           : 0,
       cycle:
-        typeof selectionRecord.cycle === "number" && Number.isFinite(selectionRecord.cycle)
+        typeof selectionRecord.cycle === "number" &&
+        Number.isFinite(selectionRecord.cycle)
           ? Math.max(1, Math.trunc(selectionRecord.cycle))
           : 1,
       seed:
@@ -948,21 +996,36 @@ export const parseRalphScopeRegistry = (
     scopes,
     history: Array.isArray(value.history)
       ? value.history
-          .filter(isRecord)
           .map((entry): RalphScopeRegistryHistoryEntry => {
-            const type: RalphScopeRegistryHistoryEntry["type"] =
-              entry.type === "scope-selected" || entry.type === "scope-marked"
-                ? entry.type
-                : "registry-updated";
+            if (!isRecord(entry)) {
+              throw new Error(
+                "Expected a Ralph scope registry history record.",
+              );
+            }
+            if (
+              entry.type !== "registry-updated" &&
+              entry.type !== "scope-selected" &&
+              entry.type !== "scope-marked"
+            ) {
+              throw new Error("Expected a valid Ralph scope history type.");
+            }
+            if (
+              entry.outcome !== undefined &&
+              !isRalphScopeOutcome(entry.outcome)
+            ) {
+              throw new Error("Expected a valid Ralph scope history outcome.");
+            }
 
             return {
               at: typeof entry.at === "string" ? entry.at : now,
-              type,
+              type: entry.type,
               ...(typeof entry.scopeId === "string"
                 ? { scopeId: normalizeScopeId(entry.scopeId) }
                 : {}),
-              ...(typeof entry.cycle === "number" ? { cycle: entry.cycle } : {}),
-              ...(typeof entry.outcome === "string"
+              ...(typeof entry.cycle === "number"
+                ? { cycle: entry.cycle }
+                : {}),
+              ...(isRalphScopeOutcome(entry.outcome)
                 ? { outcome: entry.outcome }
                 : {}),
               ...(typeof entry.eligibleAfter === "string"
@@ -990,7 +1053,12 @@ export const parseRalphScopeRegistry = (
 export const parseRalphScopeEvidence = (
   value: unknown,
 ): RalphScopeEvidenceDocument | undefined => {
-  if (!isRecord(value) || !Array.isArray(value.scopes)) {
+  if (
+    !isRecord(value) ||
+    value.schema !== RALPH_SCOPE_EVIDENCE_SCHEMA ||
+    value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION ||
+    !Array.isArray(value.scopes)
+  ) {
     return undefined;
   }
 
@@ -999,11 +1067,9 @@ export const parseRalphScopeEvidence = (
       ? value.generatedAt
       : new Date().toISOString();
   const scopes = value.scopes.flatMap((scope): RalphScopeEvidenceScope[] => {
-    const normalized = normalizeRegistryScope(scope, now);
-
-    if (!normalized) {
-      return [];
-    }
+    const normalized = normalizeRegistryScope(scope, now, {
+      requireStatus: false,
+    });
 
     return [
       {
@@ -1025,7 +1091,8 @@ export const parseRalphScopeEvidence = (
     schema: RALPH_SCOPE_EVIDENCE_SCHEMA,
     schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     generatedAt: now,
-    workspaceRoot: typeof value.workspaceRoot === "string" ? value.workspaceRoot : "",
+    workspaceRoot:
+      typeof value.workspaceRoot === "string" ? value.workspaceRoot : "",
     rootPath: typeof value.rootPath === "string" ? value.rootPath : ".",
     excludePaths: coerceStringArray(value.excludePaths),
     scopes,
@@ -1062,8 +1129,12 @@ export const updateRalphScopeRegistryFromEvidence = (
       currentScopeId: existingRegistry.selection.currentScopeId ?? null,
     },
   };
-  const evidenceById = new Map(evidence.scopes.map((scope) => [scope.id, scope]));
-  const existingById = new Map(registry.scopes.map((scope) => [scope.id, scope]));
+  const evidenceById = new Map(
+    evidence.scopes.map((scope) => [scope.id, scope]),
+  );
+  const existingById = new Map(
+    registry.scopes.map((scope) => [scope.id, scope]),
+  );
   const added: string[] = [];
   const updated: string[] = [];
   const removed: string[] = [];
@@ -1132,7 +1203,9 @@ export const updateRalphScopeRegistryFromEvidence = (
   }
 
   const activeIds = new Set(
-    nextScopes.filter((scope) => scope.status === "active").map((scope) => scope.id),
+    nextScopes
+      .filter((scope) => scope.status === "active")
+      .map((scope) => scope.id),
   );
   const nextRegistry = appendHistory(
     {
@@ -1149,8 +1222,8 @@ export const updateRalphScopeRegistryFromEvidence = (
       }),
       selection: {
         ...registry.selection,
-        completedScopeIds: registry.selection.completedScopeIds.filter((scopeId) =>
-          activeIds.has(scopeId),
+        completedScopeIds: registry.selection.completedScopeIds.filter(
+          (scopeId) => activeIds.has(scopeId),
         ),
         currentScopeId:
           registry.selection.currentScopeId &&
@@ -1178,52 +1251,40 @@ const getActiveScopes = (
   return registry.scopes.filter((scope) => scope.status === "active");
 };
 
-const COMPLETED_SCOPE_OUTCOMES = new Set([
-  "COMPLETED",
-  "DONE",
-  "SUCCESS",
-  "VALIDATED",
-]);
 const DEFAULT_SCOPE_OUTCOME_COOLDOWN_MS = 15 * 60_000;
 const INVALID_SCOPE_OUTCOME_COOLDOWN_MS = 5 * 60_000;
 const DEFERRED_SCOPE_OUTCOME_COOLDOWN_MS = 30 * 60_000;
 const EXTERNAL_STATE_SCOPE_OUTCOME_COOLDOWN_MS = 60 * 60_000;
 const NO_MEANINGFUL_WORK_SCOPE_OUTCOME_COOLDOWN_MS = 24 * 60 * 60_000;
 
-const normalizeScopeOutcome = (outcome: string): string => {
-  return outcome.trim().toUpperCase().replace(/[\s-]+/gu, "_");
-};
-
-export const isCompletedRalphScopeOutcome = (outcome: string): boolean => {
-  const normalized = normalizeScopeOutcome(outcome);
-
+export const isRalphScopeOutcome = (
+  value: unknown,
+): value is RalphScopeOutcome => {
   return (
-    COMPLETED_SCOPE_OUTCOMES.has(normalized) ||
-    normalized.startsWith("DONE_") ||
-    normalized.startsWith("COMPLETED_")
+    typeof value === "string" &&
+    RALPH_SCOPE_OUTCOMES.includes(value as RalphScopeOutcome)
   );
 };
 
-const getScopeOutcomeCooldownMs = (outcome: string): number => {
-  const normalized = normalizeScopeOutcome(outcome);
+export const isCompletedRalphScopeOutcome = (
+  outcome: RalphScopeOutcome,
+): boolean => outcome === "completed";
 
-  if (normalized.includes("NO_MEANINGFUL_WORK") || normalized.startsWith("STOP")) {
-    return NO_MEANINGFUL_WORK_SCOPE_OUTCOME_COOLDOWN_MS;
+const getScopeOutcomeCooldownMs = (outcome: RalphScopeOutcome): number => {
+  switch (outcome) {
+    case "no-meaningful-work":
+      return NO_MEANINGFUL_WORK_SCOPE_OUTCOME_COOLDOWN_MS;
+    case "external-state":
+      return EXTERNAL_STATE_SCOPE_OUTCOME_COOLDOWN_MS;
+    case "deferred":
+      return DEFERRED_SCOPE_OUTCOME_COOLDOWN_MS;
+    case "invalid":
+      return INVALID_SCOPE_OUTCOME_COOLDOWN_MS;
+    case "failed":
+      return DEFAULT_SCOPE_OUTCOME_COOLDOWN_MS;
+    case "completed":
+      return 0;
   }
-
-  if (normalized.includes("EXTERNAL_STATE")) {
-    return EXTERNAL_STATE_SCOPE_OUTCOME_COOLDOWN_MS;
-  }
-
-  if (normalized.startsWith("DEFER")) {
-    return DEFERRED_SCOPE_OUTCOME_COOLDOWN_MS;
-  }
-
-  if (normalized.startsWith("INVALID")) {
-    return INVALID_SCOPE_OUTCOME_COOLDOWN_MS;
-  }
-
-  return DEFAULT_SCOPE_OUTCOME_COOLDOWN_MS;
 };
 
 const isScopeEligibleAt = (
@@ -1265,15 +1326,6 @@ const pathsAreRelated = (a: string, b: string): boolean => {
   );
 };
 
-const countSharedTerms = (
-  left: readonly string[],
-  right: readonly string[],
-): number => {
-  const leftTerms = new Set(left.map((term) => term.toLowerCase()));
-
-  return right.filter((term) => leftTerms.has(term.toLowerCase())).length;
-};
-
 const scoreRelatedScope = (
   selected: RalphScopeRegistryScope,
   candidate: RalphScopeRegistryScope,
@@ -1292,19 +1344,15 @@ const scoreRelatedScope = (
     rationale.push("path relationship");
   }
 
-  const selectedPrefixes = new Set(selected.paths.map(firstPathSegment).filter(Boolean));
+  const selectedPrefixes = new Set(
+    selected.paths.map(firstPathSegment).filter(Boolean),
+  );
   const sharedTopLevel = candidate.paths.some((path) =>
     selectedPrefixes.has(firstPathSegment(path)),
   );
   if (sharedTopLevel) {
     score += 42;
     rationale.push("same top-level area");
-  }
-
-  const sharedTags = countSharedTerms(selected.tags, candidate.tags);
-  if (sharedTags > 0) {
-    score += sharedTags * 8;
-    rationale.push(`${sharedTags} shared tag${sharedTags === 1 ? "" : "s"}`);
   }
 
   if (
@@ -1334,7 +1382,10 @@ const createScopeCluster = (
 ): RalphScopeRegistryScopeCluster => {
   const relatedScopes = getActiveScopes(registry)
     .filter((scope) => scope.id !== selectedScope.id)
-    .map((scope) => ({ scope, relation: scoreRelatedScope(selectedScope, scope) }))
+    .map((scope) => ({
+      scope,
+      relation: scoreRelatedScope(selectedScope, scope),
+    }))
     .filter((entry) => entry.relation.score >= 32)
     .sort((a, b) => {
       const scoreDelta = b.relation.score - a.relation.score;
@@ -1345,11 +1396,21 @@ const createScopeCluster = (
     })
     .slice(0, 3);
   const scopes = [selectedScope, ...relatedScopes.map((entry) => entry.scope)];
-  const paths = normalizePathList(scopes.flatMap((scope) => scope.paths)).slice(0, 24);
-  const globs = normalizePathList(scopes.flatMap((scope) => scope.globs)).slice(0, 24);
-  const tags = normalizePathList(scopes.flatMap((scope) => scope.tags)).slice(0, 36);
+  const paths = normalizePathList(scopes.flatMap((scope) => scope.paths)).slice(
+    0,
+    24,
+  );
+  const globs = normalizePathList(scopes.flatMap((scope) => scope.globs)).slice(
+    0,
+    24,
+  );
+  const tags = normalizePathList(scopes.flatMap((scope) => scope.tags)).slice(
+    0,
+    36,
+  );
   const risk = scopes.reduce<RalphScopeRegistryRisk>(
-    (current, scope) => (riskRank[scope.risk] > riskRank[current] ? scope.risk : current),
+    (current, scope) =>
+      riskRank[scope.risk] > riskRank[current] ? scope.risk : current,
     selectedScope.risk,
   );
   const rationale = [
@@ -1371,7 +1432,10 @@ const createScopeCluster = (
   };
 };
 
-const compareNullableIsoDates = (a?: string | null, b?: string | null): number => {
+const compareNullableIsoDates = (
+  a?: string | null,
+  b?: string | null,
+): number => {
   if (!a && !b) {
     return 0;
   }
@@ -1387,66 +1451,6 @@ const compareNullableIsoDates = (a?: string | null, b?: string | null): number =
   return a.localeCompare(b);
 };
 
-const UI_SCOPE_TERMS = new Set([
-  "app",
-  "apps",
-  "asset",
-  "assets",
-  "astro",
-  "client",
-  "component",
-  "components",
-  "css",
-  "design",
-  "docs",
-  "frontend",
-  "html",
-  "layout",
-  "layouts",
-  "mobile",
-  "openapi",
-  "page",
-  "pages",
-  "public",
-  "rapidoc",
-  "responsive",
-  "route",
-  "routes",
-  "screen",
-  "screens",
-  "scss",
-  "style",
-  "styles",
-  "svelte",
-  "swagger",
-  "tailwind",
-  "theme",
-  "themes",
-  "ui",
-  "ux",
-  "view",
-  "views",
-  "vue",
-  "web",
-]);
-
-const NON_UI_SCOPE_TERMS = new Set([
-  "api",
-  "auth",
-  "backend",
-  "database",
-  "db",
-  "ipc",
-  "job",
-  "migration",
-  "queue",
-  "server",
-  "service",
-  "services",
-  "token",
-  "worker",
-]);
-
 const UI_EVIDENCE_EXTENSIONS = [
   ".astro",
   ".css",
@@ -1459,25 +1463,9 @@ const UI_EVIDENCE_EXTENSIONS = [
   ".vue",
 ] as const;
 
-const getScopeTerms = (scope: RalphScopeRegistryScope): Set<string> => {
-  return new Set(
-    [
-      scope.id,
-      scope.title,
-      scope.kind,
-      ...scope.paths,
-      ...scope.globs,
-      ...scope.tags,
-      ...scope.evidence,
-    ]
-      .join(" ")
-      .toLowerCase()
-      .split(/[^a-z0-9]+/u)
-      .filter(Boolean),
-  );
-};
-
-const getUiEvidenceExtensionCount = (scope: RalphScopeRegistryScope): number => {
+const getUiEvidenceExtensionCount = (
+  scope: RalphScopeRegistryScope,
+): number => {
   return scope.evidence.filter((entry) =>
     UI_EVIDENCE_EXTENSIONS.some((extension) =>
       entry.toLowerCase().endsWith(extension),
@@ -1486,7 +1474,6 @@ const getUiEvidenceExtensionCount = (scope: RalphScopeRegistryScope): number => 
 };
 
 const getUiFirstScopeScore = (scope: RalphScopeRegistryScope): number => {
-  const terms = getScopeTerms(scope);
   const kindScore: Record<RalphScopeRegistryKind, number> = {
     app: 30,
     "source-root": 24,
@@ -1497,20 +1484,10 @@ const getUiFirstScopeScore = (scope: RalphScopeRegistryScope): number => {
     config: -8,
     test: -12,
   };
-  const positiveTermScore = [...UI_SCOPE_TERMS].reduce(
-    (score, term) => score + (terms.has(term) ? 12 : 0),
-    0,
-  );
-  const negativeTermScore = [...NON_UI_SCOPE_TERMS].reduce(
-    (score, term) => score + (terms.has(term) ? 14 : 0),
-    0,
-  );
 
   return (
     kindScore[scope.kind] +
-    positiveTermScore +
-    getUiEvidenceExtensionCount(scope) * 10 -
-    negativeTermScore +
+    getUiEvidenceExtensionCount(scope) * 10 +
     scope.priority / 100
   );
 };
@@ -1556,7 +1533,10 @@ const pickScope = (
   switch (strategy) {
     case "least-recent": {
       const sorted = [...scopes].sort((a, b) => {
-        const selectedDelta = compareNullableIsoDates(a.lastSelectedAt, b.lastSelectedAt);
+        const selectedDelta = compareNullableIsoDates(
+          a.lastSelectedAt,
+          b.lastSelectedAt,
+        );
 
         return selectedDelta === 0 ? a.id.localeCompare(b.id) : selectedDelta;
       });
@@ -1611,11 +1591,14 @@ const pickScope = (
     }
     case "round-robin": {
       const activeScopes = getActiveScopes(registry);
-      const cursor = registry.selection.cursor % Math.max(1, activeScopes.length);
+      const cursor =
+        registry.selection.cursor % Math.max(1, activeScopes.length);
       const ordered = [
         ...activeScopes.slice(cursor),
         ...activeScopes.slice(0, cursor),
-      ].filter((scope) => scopes.some((candidate) => candidate.id === scope.id));
+      ].filter((scope) =>
+        scopes.some((candidate) => candidate.id === scope.id),
+      );
       const scope = ordered[0] ?? scopes[0]!;
       const nextCursor =
         activeScopes.findIndex((candidate) => candidate.id === scope.id) + 1;
@@ -1735,7 +1718,9 @@ export const selectRalphScopeFromRegistry = (
         cursor: picked.cursor,
         cycle,
         currentScopeId: picked.scope.id,
-        completedScopeIds: cycleStarted ? [] : registry.selection.completedScopeIds,
+        completedScopeIds: cycleStarted
+          ? []
+          : registry.selection.completedScopeIds,
       },
     },
     {
@@ -1749,11 +1734,11 @@ export const selectRalphScopeFromRegistry = (
 
   return selectedScope
     ? {
-    registry: nextRegistry,
-    scope: selectedScope,
-    scopeCluster: createScopeCluster(nextRegistry, selectedScope),
-    reusedCurrentScope: false,
-    cycleStarted,
+        registry: nextRegistry,
+        scope: selectedScope,
+        scopeCluster: createScopeCluster(nextRegistry, selectedScope),
+        reusedCurrentScope: false,
+        cycleStarted,
       }
     : {
         registry: nextRegistry,
@@ -1766,12 +1751,16 @@ export const markRalphScopeRegistryResult = (
   registry: RalphScopeRegistry,
   options: {
     scopeId?: string;
-    outcome?: string;
+    outcome: RalphScopeOutcome;
     summary?: string;
     now?: string;
-  } = {},
+  },
 ): RalphScopeRegistryMarkResult => {
   const now = options.now ?? new Date().toISOString();
+  const outcome = options.outcome;
+  if (!isRalphScopeOutcome(outcome)) {
+    throw new Error("Expected a valid Ralph scope outcome.");
+  }
   const scopeId = normalizeScopeId(
     options.scopeId ?? registry.selection.currentScopeId ?? "",
   );
@@ -1782,7 +1771,6 @@ export const markRalphScopeRegistryResult = (
     return { registry, cycleCompleted: false };
   }
 
-  const outcome = options.outcome?.trim() || "completed";
   const completed = isCompletedRalphScopeOutcome(outcome);
   const completedScopeIds = completed
     ? [...new Set([...registry.selection.completedScopeIds, scopeId])]
@@ -1805,7 +1793,9 @@ export const markRalphScopeRegistryResult = (
     candidate.id === scopeId
       ? {
           ...candidate,
-          lastValidatedAt: completed ? now : (candidate.lastValidatedAt ?? null),
+          lastValidatedAt: completed
+            ? now
+            : (candidate.lastValidatedAt ?? null),
           validatedCount: candidate.validatedCount + (completed ? 1 : 0),
           lastOutcome: outcome,
           lastOutcomeAt: now,
@@ -1853,7 +1843,10 @@ export const readRalphScopeRegistryFile = async (
   },
 ): Promise<RalphScopeRegistry> => {
   try {
-    return parseRalphScopeRegistry(JSON.parse(await readFile(path, "utf8")), options);
+    return parseRalphScopeRegistry(
+      JSON.parse(await readFile(path, "utf8")),
+      options,
+    );
   } catch (error) {
     if (isRecord(error) && error.code === "ENOENT") {
       return createDefaultRegistry(
@@ -1899,7 +1892,9 @@ export const formatRalphScopeRegistryMarkdown = (
         `  - paths: ${scope.paths.join(", ")}`,
         `  - selected: ${scope.selectedCount}, validated: ${scope.validatedCount}`,
         ...(scope.lastOutcome
-          ? [`  - last outcome: ${scope.lastOutcome}${scope.lastOutcomeAt ? ` at ${scope.lastOutcomeAt}` : ""}`]
+          ? [
+              `  - last outcome: ${scope.lastOutcome}${scope.lastOutcomeAt ? ` at ${scope.lastOutcomeAt}` : ""}`,
+            ]
           : []),
         ...(scope.eligibleAfter
           ? [`  - eligible after: ${scope.eligibleAfter}`]
@@ -1909,7 +1904,9 @@ export const formatRalphScopeRegistryMarkdown = (
     lines.push("");
   }
 
-  const removedScopes = registry.scopes.filter((scope) => scope.status === "removed");
+  const removedScopes = registry.scopes.filter(
+    (scope) => scope.status === "removed",
+  );
   if (removedScopes.length > 0) {
     lines.push("## Removed Scopes", "");
     for (const scope of removedScopes) {

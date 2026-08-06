@@ -1,5 +1,4 @@
 import type {
-  TaskExecutionFileReference,
   TaskExecutionMemoryUpdate,
   TaskExecutionProgress,
   TaskExecutionProgressHandler,
@@ -73,48 +72,6 @@ export const coerceString = (
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : undefined;
-};
-
-export const coerceStringArray = (
-  record: Record<string, unknown>,
-  field: string,
-): string[] | undefined => {
-  const value = record[field];
-
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value.flatMap((entry) =>
-    typeof entry === "string" && entry.trim().length > 0 ? [entry.trim()] : [],
-  );
-};
-
-export const coerceFileReferenceArray = (
-  record: Record<string, unknown>,
-  field: string,
-): TaskExecutionFileReference[] | undefined => {
-  const value = record[field];
-
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null) {
-      return [];
-    }
-
-    const reference = entry as Record<string, unknown>;
-    const path = coerceString(reference, "path");
-    const description = coerceString(reference, "description");
-
-    if (!path || !description) {
-      return [];
-    }
-
-    return [{ path, description }];
-  });
 };
 
 export const upsertMemoryUpdate = (

@@ -5,10 +5,12 @@ import type {
   TaskConversationContext,
   AgentModelImageInput,
   TaskExecutionMemoryUpdate,
+  TaskExecutionControl,
   TaskExecutionNarrative,
   TaskActionOutputHandler,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
+  TaskResultProtocol,
   TaskExecutionSection,
 } from "../types.js";
 import type {
@@ -97,6 +99,7 @@ export interface AgentLoopState {
   memoryUpdates: TaskExecutionMemoryUpdate[];
   lastAssistantText?: string;
   finalResponse?: TaskExecutionNarrative;
+  control?: TaskExecutionControl;
 }
 
 export interface TaskFinalResponsePayload {
@@ -108,6 +111,7 @@ export interface TaskFinalResponsePayload {
   relatedFiles: TaskExecutionNarrative["relatedFiles"];
   verification: string[];
   followUps: string[];
+  control?: TaskExecutionControl;
 }
 
 export interface ModelDrivenExecutionParams {
@@ -122,6 +126,7 @@ export interface ModelDrivenExecutionParams {
   additionalToolDefinitions?: AgentToolDefinition[];
   systemPromptSections?: string[];
   structuredOutput?: AgentModelStructuredOutput;
+  resultProtocol?: TaskResultProtocol;
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
   onStateChange?: TaskExecutionProgressHandler;

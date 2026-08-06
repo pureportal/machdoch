@@ -11,7 +11,10 @@ import type {
   RalphUtilityConditionStyle,
   RalphUtilityWaitMode,
 } from "../ralph.js";
-import { normalizeRalphScopeSelectionStrategy } from "./ralph-scope-registry.helper.js";
+import {
+  isRalphScopeOutcome,
+  normalizeRalphScopeSelectionStrategy,
+} from "./ralph-scope-registry.helper.js";
 
 export const RALPH_UTILITY_TYPES = [
   "WAIT",
@@ -386,6 +389,16 @@ export const coerceRalphUtilityConfig = (
 
   return {
     type,
+    ...(record.replayPolicy === "safe" || record.replayPolicy === "at-most-once"
+      ? { replayPolicy: record.replayPolicy }
+      : {}),
+    ...(record.workOutcome === "DONE" ||
+    record.workOutcome === "DEFER" ||
+    record.workOutcome === "STOP" ||
+    record.workOutcome === "BLOCKED" ||
+    record.workOutcome === "INVALID"
+      ? { workOutcome: record.workOutcome }
+      : {}),
     ...(mode ? { mode } : {}),
     ...(typeof record.delaySeconds === "number"
       ? { delaySeconds: record.delaySeconds }
@@ -438,6 +451,9 @@ export const coerceRalphUtilityConfig = (
       : {}),
     ...(strategy ? { strategy } : {}),
     ...(typeof record.scopeId === "string" ? { scopeId: record.scopeId } : {}),
+    ...(isRalphScopeOutcome(record.scopeOutcome)
+      ? { scopeOutcome: record.scopeOutcome }
+      : {}),
     ...(typeof record.taskId === "string" ? { taskId: record.taskId } : {}),
     ...(typeof record.status === "string" ? { status: record.status } : {}),
     ...(typeof record.result === "string" ? { result: record.result } : {}),

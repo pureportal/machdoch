@@ -5,6 +5,7 @@ import {
   executeInspectionTarget,
   getInspectionLabel,
 } from "./_helpers/deterministic-task-execution.js";
+import { resolveDeterministicAction } from "./_helpers/deterministic-action.js";
 import { createContextSections } from "./_helpers/execution-sections.js";
 import {
   createExecutionResult,
@@ -39,11 +40,6 @@ import {
   type InstructionDeliveryReceipt,
 } from "./instruction-system/index.js";
 import { createInstructionDeliveryPlanForRuntime } from "./provider-enrollment/instruction-delivery-preflight.js";
-import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";
-import {
-  extractExplicitInspectionPathReference,
-  resolveDeterministicCreateFileTarget,
-} from "./task-paths.js";
 import type {
   CustomizationDiscoveryResult,
   TaskExecutionOptions,
@@ -62,10 +58,11 @@ const shouldPrepareModelInstructionDelivery = (
   config: RuntimeConfig,
   options: TaskExecutionOptions,
 ): boolean =>
-  options.modelAdapter !== undefined ||
-  (!config.offline &&
-    config.provider !== "unconfigured" &&
-    providerIsConfigured(config));
+  options.deterministicAction === undefined &&
+  (options.modelAdapter !== undefined ||
+    (!config.offline &&
+      config.provider !== "unconfigured" &&
+      providerIsConfigured(config)));
 
 const createLiveExecutionUnavailableMessage = (
   config: RuntimeConfig,
@@ -163,9 +160,7 @@ const runTaskExecutionStateMachine = async (
   const runtime: TaskExecutionRuntime = {
     taskContext: undefined,
     contextSections: [],
-    explicitPathReference: undefined,
-    createFileTarget: undefined,
-    inspectionTarget: undefined,
+    deterministicAction: undefined,
     pendingResult: undefined,
     executedTools: [],
   };
@@ -319,17 +314,37 @@ const runTaskExecutionStateMachine = async (
           );
         }
 
-        runtime.explicitPathReference = extractExplicitInspectionPathReference(
-          taskContext.effectiveTask,
+        const actionResolution = resolveDeterministicAction(
+          options.deterministicAction,
           config.workspaceRoot,
         );
-        runtime.createFileTarget = resolveDeterministicCreateFileTarget(
-          taskContext.effectiveTask,
-          config.workspaceRoot,
-        );
-        runtime.inspectionTarget = resolveReadOnlyInspectionTarget(
-          taskContext.effectiveTask,
-        );
+
+        if (actionResolution.state === "invalid") {
+          return emitTerminalResultWithInstructions(
+            task,
+            config,
+            "blocked",
+            "The requested deterministic action is invalid.",
+            runtime,
+            options,
+            createExecutionResult(
+              {
+                task,
+                mode: config.mode,
+                status: "blocked",
+                summary: "The structured deterministic action was rejected.",
+                executedTools: [],
+                outputSections: runtime.contextSections,
+              },
+              actionResolution.reason,
+            ),
+          );
+        }
+
+        runtime.deterministicAction =
+          actionResolution.state === "resolved"
+            ? actionResolution.action
+            : undefined;
 
         state = "checking-tools";
         message =
@@ -338,7 +353,7 @@ const runTaskExecutionStateMachine = async (
       }
 
       case "checking-tools": {
-        if (runtime.taskContext) {
+        if (runtime.taskContext && !runtime.deterministicAction) {
           const instructionResolution =
             runtime.taskContext.instructionResolution;
           if (!instructionResolution) {
@@ -399,6 +414,9 @@ const runTaskExecutionStateMachine = async (
             ...(options.structuredOutput
               ? { structuredOutput: options.structuredOutput }
               : {}),
+            ...(options.resultProtocol
+              ? { resultProtocol: options.resultProtocol }
+              : {}),
             ...(instructionDeliveryPlan === undefined
               ? {}
               : { instructionDeliveryPlan }),
@@ -443,9 +461,7 @@ const runTaskExecutionStateMachine = async (
         }
 
         if (
-          !runtime.explicitPathReference &&
-          !runtime.createFileTarget &&
-          !runtime.inspectionTarget
+          !runtime.deterministicAction
         ) {
           const unavailable = createLiveExecutionUnavailableMessage(config);
 
@@ -476,7 +492,10 @@ const runTaskExecutionStateMachine = async (
           );
         }
 
-        if (config.mode === "ask" && runtime.createFileTarget) {
+        if (
+          config.mode === "ask" &&
+          runtime.deterministicAction.kind === "create-file"
+        ) {
           return emitTerminalResultWithInstructions(
             task,
             config,
@@ -499,36 +518,63 @@ const runTaskExecutionStateMachine = async (
         }
 
         state = "executing";
-        message = runtime.createFileTarget
-          ? "Execute the deterministic workspace file creation."
-          : runtime.explicitPathReference
-            ? "Execute the explicit filesystem inspection target."
-            : `Execute the read-only ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}.`;
+        message =
+          runtime.deterministicAction.kind === "create-file"
+            ? "Execute the deterministic workspace file creation."
+            : runtime.deterministicAction.kind === "inspect-path"
+              ? "Execute the explicit filesystem inspection target."
+              : `Execute the read-only ${getInspectionLabel(runtime.deterministicAction.target)}.`;
         break;
       }
 
       case "executing": {
-        runtime.pendingResult = runtime.createFileTarget
-          ? await executeCreateFileTarget(
+        const action = runtime.deterministicAction;
+        if (!action) {
+          return emitTerminalResultWithInstructions(
+            task,
+            config,
+            "blocked",
+            "The deterministic action was lost before execution.",
+            runtime,
+            options,
+            createInvariantViolationResult(
+              task,
+              config,
+              runtime,
+              "The execution loop reached deterministic execution without an action.",
+              "Internal invariant failed: deterministic action was undefined.",
+            ),
+          );
+        }
+
+        switch (action.kind) {
+          case "create-file":
+            runtime.pendingResult = await executeCreateFileTarget(
               task,
               config,
               runtime.contextSections,
-              runtime.createFileTarget,
-            )
-          : runtime.explicitPathReference
-            ? await executeExplicitInspectionPath(
-                task,
-                config,
-                runtime.contextSections,
-                runtime.explicitPathReference,
-              )
-            : await executeInspectionTarget(
-                task,
-                config,
-                customizations,
-                runtime.contextSections,
-                runtime.inspectionTarget,
-              );
+              action.target,
+              action.content,
+            );
+            break;
+          case "inspect-path":
+            runtime.pendingResult = await executeExplicitInspectionPath(
+              task,
+              config,
+              runtime.contextSections,
+              action.target,
+            );
+            break;
+          case "inspect":
+            runtime.pendingResult = await executeInspectionTarget(
+              task,
+              config,
+              customizations,
+              runtime.contextSections,
+              action.target,
+            );
+            break;
+        }
         runtime.executedTools = runtime.pendingResult.executedTools;
 
         const cancelledAfterExecution = await maybeReturnCancelledResult(

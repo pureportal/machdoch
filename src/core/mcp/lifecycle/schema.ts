@@ -74,7 +74,9 @@ export interface McpLifecycleRecord {
   remoteExecutionCount?: number;
   cacheHitCount?: number;
   failureCount?: number;
-  operations?: Partial<Record<McpLifecycleOperation, McpLifecycleOperationUsage>>;
+  operations?: Partial<
+    Record<McpLifecycleOperation, McpLifecycleOperationUsage>
+  >;
   cleanup?: McpLifecycleCleanupState;
   fingerprint?: string;
 }
@@ -110,8 +112,8 @@ export interface McpLifecycleStoreOptions {
 }
 
 export interface McpLifecycleHookOptions {
-  agent?: string;
-  phase?: string;
+  agent?: McpLifecycleAgent;
+  phase: McpLifecyclePhase;
   workspaceRoot?: string;
   timestamp?: string;
 }

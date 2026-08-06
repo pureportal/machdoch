@@ -214,15 +214,14 @@ pub async fn save_user_mcp_config_document(
     state: tauri::State<'_, McpConfigWriteLock>,
     raw: String,
     expected_raw: Option<String>,
-) -> Result<McpConfigDocument, String> {
-    let _guard = state
-        .0
-        .lock()
-        .map_err(|_| "The MCP configuration write lock is unavailable.".to_string())?;
+) -> Result<McpConfigDocument, mcp_config::McpConfigSaveError> {
+    let _guard = state.0.lock().map_err(|_| {
+        mcp_config::McpConfigSaveError::runtime("The MCP configuration write lock is unavailable.")
+    })?;
 
     mcp_config::save_mcp_config_document_if_unchanged(
         "user",
-        get_user_mcp_config_path()?,
+        get_user_mcp_config_path().map_err(mcp_config::McpConfigSaveError::runtime)?,
         &raw,
         expected_raw.as_deref(),
     )
@@ -241,15 +240,15 @@ pub async fn save_workspace_mcp_config_document(
     workspace_root: String,
     raw: String,
     expected_raw: Option<String>,
-) -> Result<McpConfigDocument, String> {
-    let _guard = state
-        .0
-        .lock()
-        .map_err(|_| "The MCP configuration write lock is unavailable.".to_string())?;
+) -> Result<McpConfigDocument, mcp_config::McpConfigSaveError> {
+    let _guard = state.0.lock().map_err(|_| {
+        mcp_config::McpConfigSaveError::runtime("The MCP configuration write lock is unavailable.")
+    })?;
 
     mcp_config::save_mcp_config_document_if_unchanged(
         "workspace",
-        get_workspace_mcp_config_path(&workspace_root)?,
+        get_workspace_mcp_config_path(&workspace_root)
+            .map_err(mcp_config::McpConfigSaveError::runtime)?,
         &raw,
         expected_raw.as_deref(),
     )

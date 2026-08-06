@@ -29,6 +29,7 @@ import {
 } from "./config.js";
 import { mcpClientManager } from "./client.js";
 import { mcpRunCacheManager } from "./run-cache.js";
+import { validateMcpToolArguments } from "./tool-argument-validation.js";
 import type {
   McpDirectToolMapping,
   McpDiscoveryChangeSet,
@@ -77,26 +78,6 @@ const readOptionalRecord = (
     error:
       `Expected \`${field}\` to be a JSON object when provided. Pass \`${field}: {}\` for tools with no arguments, or inspect the MCP tool schema before calling it.`,
   };
-};
-
-const isLinearGetIssueTool = (serverId: string, toolName: string): boolean => {
-  return serverId.toLowerCase() === "linear" && toolName === "get_issue";
-};
-
-const validateKnownMcpToolArguments = (
-  serverId: string,
-  toolName: string,
-  args: Record<string, unknown>,
-): string | undefined => {
-  if (!isLinearGetIssueTool(serverId, toolName)) {
-    return undefined;
-  }
-
-  if (coerceString(args, "id")) {
-    return undefined;
-  }
-
-  return "Linear MCP tool `get_issue` requires `arguments.id` to be a non-empty issue id/key, for example `{ \"id\": \"CLOUD-1781\" }`.";
 };
 
 const coerceStringRecord = (
@@ -995,17 +976,26 @@ const executeMcpCall = async (
     return createToolErrorResult(randomUUID(), toolName, remoteArguments.error);
   }
 
-  const argumentValidationError = validateKnownMcpToolArguments(
+  const configuredServer = getEnabledMcpServer(
+    loadMcpConfigSync(context.workspaceRoot),
     serverId,
-    remoteToolName,
-    remoteArguments.value,
   );
+  const cachedTool = configuredServer
+    ? findCachedMcpTool(
+        loadMcpDiscoveryCacheSync(context.workspaceRoot).servers,
+        configuredServer.id,
+        remoteToolName,
+      )
+    : undefined;
+  const argumentValidationError = cachedTool
+    ? validateMcpToolArguments(cachedTool.inputSchema, remoteArguments.value)
+    : undefined;
 
   if (argumentValidationError) {
     return createToolErrorResult(
       randomUUID(),
       toolName,
-      argumentValidationError,
+      `MCP tool \`${serverId}.${remoteToolName}\` was not called. ${argumentValidationError}`,
     );
   }
 
@@ -1804,7 +1794,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
           arguments: {
             type: "object",
             description:
-              "Arguments to pass to the remote MCP tool. Always pass an object; use {} for tools with no arguments. For Linear get_issue, pass {\"id\":\"ISSUE-123\"}.",
+              "Arguments to pass to the remote MCP tool. Always pass an object; use {} for tools with no arguments and inspect the discovered schema for required fields.",
             additionalProperties: true,
           },
         },
@@ -1820,7 +1810,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
     spec: {
       name: "mcp_call_readonly_tool",
       description:
-        "Call a configured MCP server tool only after Machdoch verifies the remote tool is marked read-only by cached or live MCP discovery annotations, or by an explicit local MCP override. Use this for pre-execution context gathering such as reading a Linear issue.",
+        "Call a configured MCP server tool only after Machdoch verifies the remote tool is marked read-only by cached or live MCP discovery annotations, or by an explicit local MCP override.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -1837,7 +1827,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
           arguments: {
             type: "object",
             description:
-              "Arguments to pass to the remote read-only MCP tool. Always pass an object; use {} for tools with no arguments. For Linear get_issue, pass {\"id\":\"ISSUE-123\"}.",
+              "Arguments to pass to the remote read-only MCP tool. Always pass an object; use {} for tools with no arguments and inspect the discovered schema for required fields.",
             additionalProperties: true,
           },
         },
@@ -1998,9 +1988,8 @@ const createDirectToolDefinition = (
     effect: mapping.effect,
     isReadOnlyInPlanMode: () => mapping.readOnlyInAskMode,
     execute: async (args, context) => {
-      const argumentValidationError = validateKnownMcpToolArguments(
-        mapping.serverId,
-        mapping.remoteName,
+      const argumentValidationError = validateMcpToolArguments(
+        mapping.inputSchema,
         args,
       );
 
@@ -2008,7 +1997,7 @@ const createDirectToolDefinition = (
         return createToolErrorResult(
           randomUUID(),
           mapping.exposedName,
-          argumentValidationError,
+          `MCP tool \`${mapping.serverId}.${mapping.remoteName}\` was not called. ${argumentValidationError}`,
         );
       }
 

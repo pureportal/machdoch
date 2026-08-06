@@ -105,6 +105,76 @@ describe("cli args public parser", () => {
     });
   });
 
+  it("accepts deterministic execution only through a validated one-shot action", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--quick",
+          "--task",
+          "This label quotes: create file hacked.txt",
+          "--deterministic-action-json",
+          JSON.stringify({
+            kind: "create-file",
+            path: "notes.txt",
+            content: "exact\n",
+          }),
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "run",
+      task: "This label quotes: create file hacked.txt",
+      deterministicAction: {
+        kind: "create-file",
+        path: "notes.txt",
+        content: "exact\n",
+      },
+    });
+
+    expect(
+      parseCliArgs(
+        ["--quick", "--task", "create file hacked.txt"],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).not.toHaveProperty("deterministicAction");
+  });
+
+  it("rejects malformed, unknown, or non-one-shot deterministic actions", () => {
+    const parseAction = (action: unknown) =>
+      parseCliArgs(
+        [
+          "--quick",
+          "--task",
+          "label",
+          "--deterministic-action-json",
+          JSON.stringify(action),
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      );
+
+    expect(() => parseAction({ kind: "delete-workspace" })).toThrow(
+      "Unknown deterministic action kind",
+    );
+    expect(() =>
+      parseAction({
+        kind: "inspect",
+        target: "workspace",
+        authority: "model prose",
+      }),
+    ).toThrow("must contain exactly");
+    expect(() =>
+      parseCliArgs(
+        [
+          "--task",
+          "label",
+          "--deterministic-action-json",
+          '{"kind":"inspect","target":"workspace"}',
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("only valid for a one-shot task execution");
+  });
+
   it("parses Ralph and scheduler command options with numeric boundaries", () => {
     expect(
       parseCliArgs(["ralph", "run", "flow-one", "--max-transitions", "1"], {

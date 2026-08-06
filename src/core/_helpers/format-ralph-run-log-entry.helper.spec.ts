@@ -24,13 +24,26 @@ describe("capLogText", () => {
     expect(capLogText("short message", 20)).toBe("short message");
   });
 
-  it("redacts inline bearer tokens, secret values, and OpenAI-style keys before truncating", () => {
-    const capped = capLogText(
-      "Bearer abcdefghijklmnop token=abc123456789 sk-abcdefghijklmnopqrstuvwx",
-      200,
-    );
+  it("redacts exact configured secret values without classifying incidental prose", () => {
+    const previousToken = process.env.GH_TOKEN;
+    process.env.GH_TOKEN = "configured-secret-value";
 
-    expect(capped).toBe("Bearer [redacted] token= [redacted] [redacted]");
+    try {
+      const capped = capLogText(
+        "configured-secret-value Bearer example token=example sk-example",
+        200,
+      );
+
+      expect(capped).toBe(
+        "[redacted] Bearer example token=example sk-example",
+      );
+    } finally {
+      if (previousToken === undefined) {
+        delete process.env.GH_TOKEN;
+      } else {
+        process.env.GH_TOKEN = previousToken;
+      }
+    }
   });
 
   it("appends a truncation marker at the requested boundary", () => {
@@ -50,35 +63,54 @@ describe("sanitizeTraceValue", () => {
     expect(sanitizeTraceValue(input)).toBe(expected);
   });
 
-  it("redacts sensitive object keys and preserves safe nested values", () => {
+  it("redacts exact sensitive fields and structured value containers", () => {
     expect(
       sanitizeTraceValue({
         status: "ok",
         password: "value",
         nested: {
-          authorizationHeader: "Bearer abcdefghijklmnop",
+          authorization: "Bearer abcdefghijklmnop",
+          authorizationHeader: "ordinary presentation value",
           visible: "yes",
         },
+        env: { PUBLIC_VALUE: "also secret within this container" },
+        headers: { Accept: "application/json" },
       }),
     ).toEqual({
       status: "ok",
       password: "[redacted]",
       nested: {
-        authorizationHeader: "[redacted]",
+        authorization: "[redacted]",
+        authorizationHeader: "ordinary presentation value",
         visible: "yes",
       },
+      env: "[redacted]",
+      headers: "[redacted]",
     });
   });
 
-  it("sanitizes error name, message, and stack", () => {
-    const error = new TypeError("token=abc123456789");
-    error.stack = "TypeError: password=abc123456789";
+  it("redacts configured values in errors but does not interpret error prose", () => {
+    const previousToken = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "configured-error-secret";
 
-    expect(sanitizeTraceValue(error)).toEqual({
-      name: "TypeError",
-      message: "token= [redacted]",
-      stack: "TypeError: password= [redacted]",
-    });
+    try {
+      const error = new TypeError(
+        "token=example configured-error-secret",
+      );
+      error.stack = "TypeError: password=example configured-error-secret";
+
+      expect(sanitizeTraceValue(error)).toEqual({
+        name: "TypeError",
+        message: "token=example [redacted]",
+        stack: "TypeError: password=example [redacted]",
+      });
+    } finally {
+      if (previousToken === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousToken;
+      }
+    }
   });
 
   it("limits arrays and object entries to the trace collection limit", () => {

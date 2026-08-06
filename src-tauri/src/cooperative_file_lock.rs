@@ -449,11 +449,14 @@ fn acquire_cooperative_file_lock_with_runtime(
     Ok(CooperativeFileLock { path, token })
 }
 
-pub(crate) fn with_cooperative_file_lock<T>(
+pub(crate) fn with_cooperative_file_lock<T, E>(
     destination: &Path,
-    operation: impl FnOnce() -> Result<T, String>,
-) -> Result<T, String> {
-    let _lock = acquire_cooperative_file_lock(destination)?;
+    operation: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E>
+where
+    E: From<String>,
+{
+    let _lock = acquire_cooperative_file_lock(destination).map_err(E::from)?;
     operation()
 }
 
@@ -725,7 +728,7 @@ mod tests {
                         max_active.fetch_max(current, Ordering::SeqCst);
                         thread::sleep(Duration::from_millis(30));
                         active.fetch_sub(1, Ordering::SeqCst);
-                        Ok(())
+                        Ok::<(), String>(())
                     })
                 })
             })
@@ -761,7 +764,7 @@ mod tests {
             .expect("stale owner timestamp should update");
         drop(owner_file);
 
-        with_cooperative_file_lock(&destination, || Ok(()))
+        with_cooperative_file_lock(&destination, || Ok::<(), String>(()))
             .expect("truncated stale lock should be recovered");
 
         assert!(!path.exists());

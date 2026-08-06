@@ -9,7 +9,7 @@ use super::{
         state_changing_headers_allowed,
     },
     now_millis,
-    state::RecordCommandOutcome,
+    state::{RecordCommandError, RecordCommandOutcome},
     status::{create_snapshot_locked, create_status_locked, create_token_hint},
     test_support::{temp_test_directory, use_user_config_dir},
     RemoteControlCommandEvent, RemoteControlInner, RemoteControlPairedDevice, RemoteControlState,
@@ -417,10 +417,12 @@ fn command_ids_are_idempotent_and_payload_conflicts_are_rejected() {
     );
 
     let conflict = cancel_command("stable-command", "task-2", 300);
-    assert!(state
-        .record_command(&conflict)
-        .expect_err("reusing an id for another payload should fail")
-        .starts_with("MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:"));
+    assert_eq!(
+        state
+            .record_command(&conflict)
+            .expect_err("reusing an id for another payload should fail"),
+        RecordCommandError::CommandIdConflict
+    );
 
     assert!(state
         .acknowledge_command("stable-command")

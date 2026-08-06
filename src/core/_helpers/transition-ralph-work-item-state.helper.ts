@@ -26,17 +26,11 @@ export interface RalphWorkItemStateTransition {
   changed: boolean;
 }
 
-export const normalizeRalphWorkItemState = (
+export const parseRalphWorkItemState = (
   value: unknown,
 ): RalphWorkItemState | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-
-  return RALPH_WORK_ITEM_STATES.includes(normalized as RalphWorkItemState)
-    ? (normalized as RalphWorkItemState)
+  return RALPH_WORK_ITEM_STATES.includes(value as RalphWorkItemState)
+    ? (value as RalphWorkItemState)
     : undefined;
 };
 
@@ -44,11 +38,10 @@ export const transitionRalphWorkItemState = (
   current: unknown,
   requested: unknown,
 ): RalphWorkItemStateTransition => {
-  const missingCurrent = current === undefined || current === null || current === "";
-  const from = normalizeRalphWorkItemState(current);
-  const to = normalizeRalphWorkItemState(requested);
+  const from = parseRalphWorkItemState(current);
+  const to = parseRalphWorkItemState(requested);
 
-  if (!from && !missingCurrent) {
+  if (!from) {
     throw new Error(
       `Unsupported current work-item state \`${String(current)}\`; expected ${RALPH_WORK_ITEM_STATES.join(", ")}.`,
     );
@@ -60,14 +53,13 @@ export const transitionRalphWorkItemState = (
     );
   }
 
-  const normalizedFrom = from ?? "planned";
-  if (normalizedFrom === to) {
-    return { from: normalizedFrom, to, changed: false };
+  if (from === to) {
+    return { from, to, changed: false };
   }
 
-  if (!ALLOWED_RALPH_WORK_ITEM_TRANSITIONS[normalizedFrom].includes(to)) {
-    throw new Error(`Invalid work-item state transition ${normalizedFrom} -> ${to}.`);
+  if (!ALLOWED_RALPH_WORK_ITEM_TRANSITIONS[from].includes(to)) {
+    throw new Error(`Invalid work-item state transition ${from} -> ${to}.`);
   }
 
-  return { from: normalizedFrom, to, changed: true };
+  return { from, to, changed: true };
 };

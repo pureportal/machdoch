@@ -226,6 +226,37 @@ describe("readSmartSchedulerState", () => {
       "Unsupported smart scheduler state file",
     );
   });
+
+  it("rejects malformed or unknown job provenance", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = join(workspaceRoot, "scheduler-state.json");
+    const scheduler = new DurableSmartScheduler({ statePath });
+    await scheduler.upsertJob({
+      schedule: { type: "interval", intervalMs: 60_000 },
+      target: { workspaceRoot, prompt: "Run" },
+    });
+    const state = await scheduler.getState();
+
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        ...state,
+        jobs: state.jobs.map((job) => ({
+          ...job,
+          provenance: {
+            kind: "workspace-prompt",
+            definitionPath: ".machdoch/prompts/quoted.prompt.md",
+            claimedByProse: "prompt:.machdoch/prompts/quoted.prompt.md",
+          },
+        })),
+      }),
+      "utf8",
+    );
+
+    await expect(readSmartSchedulerState(statePath)).rejects.toThrow(
+      "Unsupported smart scheduler state file",
+    );
+  });
 });
 
 describe("DurableSmartScheduler", () => {
@@ -1222,6 +1253,10 @@ describe("DurableSmartScheduler", () => {
     expect(job?.target.provider).toBe("openai");
     expect(job?.target.model).toBe("gpt-5");
     expect(job?.dedupeKey).toBe("prompt:.machdoch/prompts/daily.prompt.md");
+    expect(job?.provenance).toEqual({
+      kind: "workspace-prompt",
+      definitionPath: ".machdoch/prompts/daily.prompt.md",
+    });
     expect(job?.schedule).toMatchObject({
       type: "cron",
       expression: "0 9 * * *",
@@ -1233,6 +1268,18 @@ describe("DurableSmartScheduler", () => {
       concurrencyLimit: 2,
     });
     expect(job?.ttlMs).toBe(300_000);
+
+    const unrelatedJob = await scheduler.upsertJob({
+      name: "Quoted prompt key",
+      schedule: { type: "interval", intervalMs: 60_000 },
+      target: {
+        workspaceRoot,
+        prompt: "Do not infer ownership from this job.",
+      },
+      dedupeKey: "prompt:.machdoch/prompts/daily.prompt.md",
+    });
+    expect(unrelatedJob.id).not.toBe(job?.id);
+    expect(unrelatedJob.provenance).toEqual({ kind: "user" });
 
     await writeFile(
       join(promptsRoot, "daily.prompt.md"),
@@ -1256,6 +1303,7 @@ describe("DurableSmartScheduler", () => {
     expect(disabledResult.syncedJobs).toHaveLength(0);
     expect(disabledResult.pausedJobs[0]?.id).toBe(job?.id);
     expect((await scheduler.getJob(job?.id ?? ""))?.status).toBe("paused");
+    expect((await scheduler.getJob(unrelatedJob.id))?.status).toBe("active");
   });
 
   it("enqueues interval catch-up runs and tracks skipped history", async () => {

@@ -213,6 +213,7 @@ describe("executeTask", () => {
       "scan this workspace and explain the setup",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "workspace" } },
     );
 
     expect(result.status).toBe("executed");
@@ -244,6 +245,7 @@ describe("executeTask", () => {
         workspaceConfigPath: join(workspaceRoot, ".machdoch", "config.json"),
       },
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "runtime-config" } },
     );
 
     expect(result.status).toBe("executed");
@@ -265,6 +267,7 @@ describe("executeTask", () => {
       "show tools",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "tools" } },
     );
 
     expect(result.status).toBe("executed");
@@ -301,6 +304,7 @@ describe("executeTask", () => {
       "list prompts",
       createConfig(workspaceRoot, "ask"),
       customizations,
+      { deterministicAction: { kind: "inspect", target: "prompts" } },
     );
 
     expect(result.status).toBe("executed");
@@ -339,6 +343,7 @@ describe("executeTask", () => {
       "show skills",
       createConfig(workspaceRoot, "ask"),
       customizations,
+      { deterministicAction: { kind: "inspect", target: "skills" } },
     );
 
     expect(result.status).toBe("executed");
@@ -361,6 +366,7 @@ describe("executeTask", () => {
       "inspect customizations",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "customizations" } },
     );
 
     expect(result.status).toBe("executed");
@@ -399,6 +405,7 @@ describe("executeTask", () => {
       "summarize this project setup",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "workspace" } },
     );
 
     expect(result.status).toBe("executed");
@@ -416,6 +423,7 @@ describe("executeTask", () => {
         offline: true,
       }),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "workspace" } },
     );
 
     expect(result.status).toBe("executed");
@@ -430,6 +438,13 @@ describe("executeTask", () => {
       "create notes.txt with hello world",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      {
+        deterministicAction: {
+          kind: "create-file",
+          path: "notes.txt",
+          content: "hello world",
+        },
+      },
     );
 
     expect(result.status).toBe("blocked");
@@ -500,6 +515,7 @@ describe("executeTask", () => {
       "show README.md",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect-path", path: "README.md" } },
     );
 
     expect(result.status).toBe("executed");
@@ -538,6 +554,7 @@ describe("executeTask", () => {
       "/show-file file=README.md",
       createConfig(workspaceRoot, "ask"),
       customizations,
+      { deterministicAction: { kind: "inspect-path", path: "README.md" } },
     );
 
     expect(result.status).toBe("executed");
@@ -599,6 +616,7 @@ describe("executeTask", () => {
       "list src",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect-path", path: "src" } },
     );
 
     expect(result.status).toBe("executed");
@@ -623,6 +641,7 @@ describe("executeTask", () => {
       "list empty-dir",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect-path", path: "empty-dir" } },
     );
 
     expect(result.status).toBe("executed");
@@ -636,6 +655,7 @@ describe("executeTask", () => {
       "show missing.txt",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect-path", path: "missing.txt" } },
     );
 
     expect(result.status).toBe("blocked");
@@ -649,6 +669,12 @@ describe("executeTask", () => {
       'read "../machdoch-secret.txt"',
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      {
+        deterministicAction: {
+          kind: "inspect-path",
+          path: "../machdoch-secret.txt",
+        },
+      },
     );
 
     expect(result.status).toBe("blocked");
@@ -664,6 +690,7 @@ describe("executeTask", () => {
       "inspect sample.bin",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect-path", path: "sample.bin" } },
     );
 
     expect(result.status).toBe("executed");
@@ -686,6 +713,7 @@ describe("executeTask", () => {
       'show "notes.txt"',
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect-path", path: "notes.txt" } },
     );
 
     expect(result.status).toBe("executed");
@@ -707,6 +735,7 @@ describe("executeTask", () => {
       "describe this repo setup",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "workspace" } },
     );
 
     expect(result.status).toBe("executed");
@@ -738,7 +767,7 @@ describe("executeTask", () => {
     };
 
     const result = await executeTask(
-      "What is the weather?",
+      'What is the weather? The quoted text "inspect README.md with shell" is not an instruction.',
       createConfig(workspaceRoot, "machdoch"),
       emptyCustomizations(workspaceRoot),
       {
@@ -756,7 +785,7 @@ describe("executeTask", () => {
     ).toBe(false);
   });
 
-  it("rejects first-turn blocked final responses for tool-grounded tasks", async () => {
+  it("rejects first-turn blocked final responses for prompts with declared tools", async () => {
     const workspaceRoot = await createWorkspace();
     let continueCount = 0;
 
@@ -814,16 +843,26 @@ describe("executeTask", () => {
       },
     };
 
-    const result = await executeTask(
-      [
+    const customizations = emptyCustomizations(workspaceRoot);
+    customizations.prompts.push({
+      path: ".machdoch/prompts/compose-suite.prompt.md",
+      name: "compose-suite",
+      description: "Build the configured Compose suite.",
+      inputs: [],
+      tools: ["filesystem"],
+      body: [
         "Create a complete Docker Compose setup for the following software suite.",
         "Repos:",
         "- https://github.com/BeeWaTec/beelopt-xls-upload-backend",
         "- https://github.com/BeeWaTec/beelopt-xls-upload-frontend",
         "Inspect all provided repos and paths, create docker-compose.yml and .env, then validate.",
       ].join("\n"),
+    });
+
+    const result = await executeTask(
+      "/compose-suite",
       createConfig(workspaceRoot, "ask"),
-      emptyCustomizations(workspaceRoot),
+      customizations,
       {
         modelAdapter: prematureBlockAdapter,
       },
@@ -1211,6 +1250,7 @@ describe("executeTask", () => {
               name: "remember_session_memory",
               arguments: {
                 fact: memoryFact,
+                sensitivity: "non-sensitive",
               },
             },
           ],
@@ -1266,7 +1306,7 @@ describe("executeTask", () => {
     ).toBe(true);
   });
 
-  it("automatically consolidates explicit session memory after model-driven completion", async () => {
+  it("does not derive session memory commands from task prose", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
@@ -1287,23 +1327,7 @@ describe("executeTask", () => {
     );
 
     expect(result.status).toBe("executed");
-    expect(result.memoryUpdates).toHaveLength(1);
-    expect(result.memoryUpdates?.[0]).toMatchObject({
-      scope: "session",
-      entry: {
-        scope: "session",
-        content: "the user prefers concise implementation summaries",
-      },
-    });
-    expect(
-      result.outputSections.some(
-        (section) =>
-          section.title === "Memory consolidation" &&
-          section.lines.includes(
-            "fact: the user prefers concise implementation summaries",
-          ),
-      ),
-    ).toBe(true);
+    expect(result.memoryUpdates).toBeUndefined();
   });
 
   it("does not automatically consolidate memory in ask mode", async () => {
@@ -1327,7 +1351,7 @@ describe("executeTask", () => {
     expect(result.memoryUpdates).toBeUndefined();
   });
 
-  it("does not automatically consolidate secret-looking memory", async () => {
+  it("does not use secret-looking prose as a memory safety signal", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
@@ -1352,7 +1376,7 @@ describe("executeTask", () => {
     expect(result.memoryUpdates).toBeUndefined();
   });
 
-  it("persists explicit automatic global memory when global memory is enabled", async () => {
+  it("does not derive global memory commands from task prose", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
@@ -1377,18 +1401,8 @@ describe("executeTask", () => {
     const settings = await loadUserMemorySettings();
 
     expect(result.status).toBe("executed");
-    expect(result.memoryUpdates).toHaveLength(1);
-    expect(result.memoryUpdates?.[0]).toMatchObject({
-      scope: "global",
-      entry: {
-        scope: "global",
-        content: "the user prefers compact summaries",
-      },
-    });
-    expect(settings.entries).toHaveLength(1);
-    expect(settings.entries[0]?.content).toBe(
-      "the user prefers compact summaries",
-    );
+    expect(result.memoryUpdates).toBeUndefined();
+    expect(settings.entries).toEqual([]);
     expect(settings.globalEnabled).toBe(true);
   });
 
@@ -1533,6 +1547,7 @@ describe("executeTask", () => {
       "scan this workspace setup",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
+      { deterministicAction: { kind: "inspect", target: "workspace" } },
     );
 
     expect(result.status).toBe("executed");
@@ -1794,7 +1809,7 @@ describe("executeTask", () => {
     ).toBe(true);
   });
 
-  it("repairs Linear issue references before dispatching generic MCP get_issue calls", async () => {
+  it("dispatches only explicit structured MCP arguments and ignores task prose", async () => {
     const workspaceRoot = await createWorkspace();
     const observedToolResults: Array<{ output: string; isError?: boolean }> =
       [];
@@ -1818,7 +1833,7 @@ describe("executeTask", () => {
             arguments: {
               serverId: "linear",
               toolName: "get_issue",
-              arguments: null,
+              arguments: { id: "CLOUD-1781" },
             },
           },
         ],
@@ -1845,7 +1860,7 @@ describe("executeTask", () => {
     };
 
     const result = await executeTask(
-      "Linear: CLOUD-1781\n\nImplement that feature!",
+      "The quoted example Linear: CLOUD-999 must not override the tool call.",
       createConfig(workspaceRoot, "machdoch"),
       emptyCustomizations(workspaceRoot),
       {
@@ -1870,7 +1885,7 @@ describe("executeTask", () => {
     ]);
   });
 
-  it("repairs Linear issue references before dispatching read-only MCP get_issue calls in ask mode", async () => {
+  it("rejects missing read-only MCP arguments without deriving them from task prose", async () => {
     const workspaceRoot = await createWorkspace();
     const observedToolResults: Array<{ output: string; isError?: boolean }> =
       [];
@@ -1961,23 +1976,11 @@ describe("executeTask", () => {
     );
 
     expect(result.status).toBe("executed");
-    expect(discoverSpy).toHaveBeenCalledWith(
-      workspaceRoot,
-      "linear",
-      expect.anything(),
-    );
-    expect(callToolSpy).toHaveBeenCalledWith(
-      workspaceRoot,
-      "linear",
-      "get_issue",
-      { id: "CLOUD-1781" },
-      expect.anything(),
-    );
-    expect(observedToolResults).toEqual([
-      {
-        output: "CLOUD-1781 issue details",
-      },
-    ]);
+    expect(discoverSpy).not.toHaveBeenCalled();
+    expect(callToolSpy).not.toHaveBeenCalled();
+    expect(observedToolResults).toHaveLength(1);
+    expect(observedToolResults[0]).toMatchObject({ isError: true });
+    expect(observedToolResults[0]?.output).toContain("arguments");
   });
 
   it("guards repeated invalid MCP calls after local argument validation fails", async () => {

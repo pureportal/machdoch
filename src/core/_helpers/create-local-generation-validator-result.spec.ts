@@ -21,9 +21,11 @@ describe("createLocalGenerationValidatorResult", () => {
       "durationMs: 42",
       "No local structural issues found.",
     ]);
-    expect(result.response?.markdown).toBe(
-      "No local structural issues found.\nRALPH_DECISION: DONE",
-    );
+    expect(result.response?.markdown).toBe("No local structural issues found.");
+    expect(result.control).toEqual({
+      kind: "ralph-validator",
+      decision: "DONE",
+    });
   });
 
   it("includes issue and warning lines in both sections and markdown", () => {
@@ -46,7 +48,11 @@ describe("createLocalGenerationValidatorResult", () => {
       "- Avoid example ids.",
     ]);
     expect(result.response?.markdown).toBe(
-      "- Cycle requires maxTransitions.\nWarnings:\n- Avoid example ids.\nRALPH_DECISION: RETRY",
+      "- Cycle requires maxTransitions.\nWarnings:\n- Avoid example ids.",
     );
+    expect(result.control).toEqual({
+      kind: "ralph-validator",
+      decision: "RETRY",
+    });
   });
 });

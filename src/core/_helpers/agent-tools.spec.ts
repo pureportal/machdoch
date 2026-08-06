@@ -124,9 +124,11 @@ describe("createToolDefinitions", () => {
     expect(askToolNames).not.toContain("create_scheduled_job");
     expect(askToolNames).not.toContain("update_scheduled_job");
     expect(askToolNames).not.toContain("emit_scheduler_event");
+    expect(askToolNames).not.toContain("run_shell_command");
     expect(machdochToolNames).toContain("create_scheduled_job");
     expect(machdochToolNames).toContain("update_scheduled_job");
     expect(machdochToolNames).toContain("emit_scheduler_event");
+    expect(machdochToolNames).toContain("run_shell_command");
   });
 
   it("exposes guarded read-only MCP calls in ask mode without exposing generic MCP mutations", async () => {

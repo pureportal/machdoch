@@ -10,7 +10,6 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-mod codex_storage;
 mod shortcut;
 mod startup;
 mod tray;
@@ -110,18 +109,6 @@ pub fn clear_webview_cache(app: AppHandle) -> Result<(), String> {
     window
         .clear_all_browsing_data()
         .map_err(|error| format!("Failed to clear WebView browsing data: {error}"))
-}
-
-#[tauri::command]
-pub fn get_machdoch_codex_session_usage() -> Result<codex_storage::MachdochCodexSessionUsage, String>
-{
-    codex_storage::get_usage()
-}
-
-#[tauri::command]
-pub fn clear_machdoch_codex_sessions(
-) -> Result<codex_storage::MachdochCodexSessionCleanupResult, String> {
-    codex_storage::clear()
 }
 
 #[tauri::command]

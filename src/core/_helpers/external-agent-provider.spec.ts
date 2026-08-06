@@ -116,6 +116,10 @@ const ENV_KEYS = [
   "COPILOT_GITHUB_TOKEN",
   "GH_TOKEN",
   "GITHUB_TOKEN",
+  "MY_GH_TOKEN",
+  "GH_TOKEN_BACKUP",
+  "LC_UNTRUSTED_SECRET",
+  "UNTRUSTED_PROXY",
 ] as const;
 const workspacesToClean: string[] = [];
 
@@ -360,6 +364,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   restoreEnvironment();
 
   await Promise.all(
@@ -417,7 +422,540 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.status).toBe("executed");
     expect(result?.executedTools).toEqual(["shell"]);
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
+    expect(spawnCalls).toHaveLength(1);
+    expect(call?.child.stdout.destroyed).toBe(true);
+    expect(call?.child.stderr.destroyed).toBe(true);
+    expect(call?.child.listenerCount("exit")).toBe(0);
+    expect(call?.child.listenerCount("close")).toBe(0);
+    expect(call?.child.listenerCount("error")).toBe(0);
   });
+
+  it("cancels pending Codex recovery after a normal close", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write("Codex delegated answer.");
+      call.child.emit("exit", 0, null);
+      call.child.emit("close", 0, null);
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Codex delegated answer." },
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(spawnCalls).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).not.toHaveBeenCalled();
+      }
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it.each([
+    { scenario: "the main process stays alive", exitBeforeRecovery: false },
+    {
+      scenario: "the main process exits but inherited stdio stays open",
+      exitBeforeRecovery: true,
+    },
+  ])(
+    "preserves a final Codex answer when $scenario",
+    async ({ exitBeforeRecovery }) => {
+      const workspaceRoot = await createWorkspace();
+      const processKillSpy =
+        process.platform === "win32"
+          ? undefined
+          : vi.spyOn(process, "kill").mockReturnValue(true);
+
+      try {
+        process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+        const resultPromise = maybeExecuteExternalAgentProviderTask(
+          createParams(workspaceRoot),
+        );
+
+        await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+        const call = spawnCalls[0]!;
+
+        vi.useFakeTimers();
+        call.child.stdout.write("Codex completed answer.");
+        if (exitBeforeRecovery) {
+          call.child.emit("exit", 0, null);
+        }
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        if (process.platform === "win32") {
+          expect(spawnCalls[1]).toMatchObject({
+            executable: "taskkill",
+            args: ["/PID", String(call.child.pid), "/T", "/F"],
+          });
+          spawnCalls[1]?.child.emit("close", 0, null);
+        } else {
+          expect(processKillSpy).toHaveBeenCalledWith(
+            -Number(call.child.pid),
+            "SIGTERM",
+          );
+          call.child.emit("close", null, "SIGTERM");
+        }
+
+        const result = await resultPromise;
+
+        expect(result).toMatchObject({
+          status: "executed",
+          response: { markdown: "Codex completed answer." },
+          metadata: {
+            providerShutdownRecovered: true,
+            providerShutdownRecoveryKind: exitBeforeRecovery
+              ? "child-exit-close-timeout"
+              : "final-output-exit-timeout",
+            providerShutdownRecoveryGraceMs: 10_000,
+            providerChildExitObservedBeforeRecovery: exitBeforeRecovery,
+            providerChildExitCode: exitBeforeRecovery ? 0 : "unknown",
+            providerChildExitSignal: "none",
+          },
+        });
+        expect(
+          result?.outputSections
+            .find((section) => section.title === "Codex CLI")
+            ?.lines.join("\n"),
+        ).toContain(
+          exitBeforeRecovery
+            ? "provider shutdown: child exited but inherited stdio did not close within 10 seconds; descendant-tree termination requested and inherited streams closed"
+            : "provider shutdown: final answer received; process-tree termination requested after the child did not exit within 10 seconds",
+        );
+        expect(
+          result?.outputSections
+            .find((section) => section.title === "Codex CLI")
+            ?.lines.join("\n"),
+        ).toContain(
+          `provider child exit before recovery: ${exitBeforeRecovery ? "yes (code 0, signal none)" : "no"}`,
+        );
+        expect(
+          result?.outputSections.find(
+            (section) => section.title === "Codex CLI",
+          )?.lines,
+        ).toContain(`exit code: ${exitBeforeRecovery ? "0" : "unknown"}`);
+        expect(
+          spawnCalls.filter((spawnCall) => spawnCall.executable !== "taskkill"),
+        ).toHaveLength(1);
+        expect(call.child.stdout.destroyed).toBe(true);
+        expect(call.child.stderr.destroyed).toBe(true);
+        expect(call.child.listenerCount("exit")).toBe(0);
+        expect(call.child.listenerCount("close")).toBe(0);
+        expect(call.child.listenerCount("error")).toBe(0);
+        const spawnCountAfterSettlement = spawnCalls.length;
+        const killCountAfterSettlement = processKillSpy?.mock.calls.length;
+        call.child.emit("close", 0, null);
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(spawnCalls).toHaveLength(spawnCountAfterSettlement);
+        if (processKillSpy) {
+          expect(processKillSpy).toHaveBeenCalledTimes(
+            killCountAfterSettlement ?? 0,
+          );
+        }
+      } finally {
+        processKillSpy?.mockRestore();
+      }
+    },
+  );
+
+  it("uses a fixed completion drain window while preserving chunked Codex output", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+
+      call.child.stdout.write(" \r\n\t");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(spawnCalls).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).not.toHaveBeenCalled();
+      }
+
+      call.child.stdout.write("Codex completed");
+      await vi.advanceTimersByTimeAsync(9_000);
+      call.child.stdout.write(" in chunks.");
+      call.child.stdout.write("  \r\n\t");
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]).toMatchObject({
+          executable: "taskkill",
+          args: ["/PID", String(call.child.pid), "/T", "/F"],
+        });
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", null, "SIGTERM");
+      }
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Codex completed in chunks." },
+        metadata: {
+          providerShutdownRecoveryKind: "final-output-exit-timeout",
+        },
+      });
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("preserves a completed answer when cancellation races with active teardown recovery", async () => {
+    const workspaceRoot = await createWorkspace();
+    const controller = new AbortController();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask({
+        ...createParams(workspaceRoot),
+        signal: controller.signal,
+      });
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write("Codex completed answer.");
+      await vi.advanceTimersByTimeAsync(10_000);
+      controller.abort("late cancellation");
+
+      if (process.platform === "win32") {
+        expect(
+          spawnCalls.filter((spawnCall) => spawnCall.executable === "taskkill"),
+        ).toHaveLength(1);
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledTimes(1);
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", null, "SIGTERM");
+      }
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Codex completed answer." },
+        metadata: { providerShutdownRecovered: true },
+      });
+      expect(
+        spawnCalls.filter((spawnCall) => spawnCall.executable !== "taskkill"),
+      ).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).toHaveBeenCalledTimes(2);
+      }
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("does not latch partial cleanup noise as a Codex final answer", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+
+      call.child.stdout.write(
+        "SUCCESS: The process with PID 1234 (child process",
+      );
+      call.child.stdout.write(" of PID 5678) has been terminated.\r\n");
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(spawnCalls).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).not.toHaveBeenCalled();
+      }
+
+      call.child.stdout.write("Actual Codex answer.");
+      call.child.emit("close", 0, null);
+      const result = await resultPromise;
+      expect(result).toMatchObject({
+        status: "executed",
+        response: { markdown: "Actual Codex answer." },
+      });
+      expect(result?.metadata).not.toHaveProperty("providerShutdownRecovered");
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("recovers a successful Codex exit when only whitespace and inherited stdio remain", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write(" \r\n\t");
+      call.child.emit("exit", 0, null);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]?.executable).toBe("taskkill");
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", 0, null);
+      }
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: {
+          markdown:
+            "Codex CLI completed successfully but did not print a final message.",
+        },
+        metadata: {
+          providerShutdownRecoveryKind: "child-exit-close-timeout",
+          providerChildExitObservedBeforeRecovery: true,
+          providerChildExitCode: 0,
+        },
+      });
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("preserves a known nonzero Codex exit instead of converting teardown recovery into success", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write(
+        "ERROR: Quota exceeded. Check your plan and billing details.",
+      );
+      call.child.emit("exit", 1, null);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]?.executable).toBe("taskkill");
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", 1, null);
+      }
+
+      const result = await resultPromise;
+      expect(result).toMatchObject({
+        status: "blocked",
+        metadata: {
+          providerShutdownRecovered: true,
+          providerShutdownRecoveryKind: "child-exit-close-timeout",
+          providerChildExitObservedBeforeRecovery: true,
+          providerChildExitCode: 1,
+        },
+      });
+      expect(result?.reason).toContain("quota exceeded");
+      expect(result?.response).toBeUndefined();
+      expect(
+        spawnCalls.filter((spawnCall) => spawnCall.executable !== "taskkill"),
+      ).toHaveLength(1);
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("settles recovery when process-tree termination itself never closes", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write("Codex completed answer.");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(
+        process.platform === "win32" ? 5_000 : 6_000,
+      );
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Codex completed answer." },
+      });
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]?.child.kill).toHaveBeenCalledTimes(1);
+        expect(call.child.kill).toHaveBeenCalledWith("SIGTERM");
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGKILL",
+        );
+      }
+      expect(call.child.stdout.destroyed).toBe(true);
+      expect(call.child.stderr.destroyed).toBe(true);
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("preserves the completed result when process-tree signaling fails", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockImplementation(() => {
+            throw new Error("simulated process-group kill failure");
+          });
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      call.child.kill.mockImplementation(() => {
+        throw new Error("simulated direct-child kill failure");
+      });
+      vi.useFakeTimers();
+      call.child.stdout.write("Codex completed answer.");
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      if (process.platform === "win32") {
+        spawnCalls[1]?.child.emit(
+          "error",
+          new Error("simulated taskkill failure"),
+        );
+      } else {
+        await vi.advanceTimersByTimeAsync(6_000);
+      }
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Codex completed answer." },
+        metadata: { providerShutdownRecovered: true },
+      });
+      expect(call.child.stdout.destroyed).toBe(true);
+      expect(call.child.stderr.destroyed).toBe(true);
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      provider: "claude-cli" as const,
+      binaryKey: "MACHDOCH_CLAUDE_CLI_PATH" as const,
+      model: "claude-sonnet-4-6",
+    },
+    {
+      provider: "copilot-cli" as const,
+      binaryKey: "MACHDOCH_COPILOT_CLI_PATH" as const,
+      model: "auto",
+    },
+  ])(
+    "does not apply Codex teardown inference to $provider",
+    async ({ provider, binaryKey, model }) => {
+      const workspaceRoot = await createWorkspace();
+      const processKillSpy =
+        process.platform === "win32"
+          ? undefined
+          : vi.spyOn(process, "kill").mockReturnValue(true);
+
+      try {
+        process.env[binaryKey] = process.execPath;
+        const resultPromise = maybeExecuteExternalAgentProviderTask(
+          createParams(workspaceRoot, { provider, model }),
+        );
+
+        await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+        const call = spawnCalls[0]!;
+        vi.useFakeTimers();
+        call.child.stdout.write("Delegated answer.");
+        call.child.emit("exit", 0, null);
+        await vi.advanceTimersByTimeAsync(20_000);
+
+        expect(spawnCalls).toHaveLength(1);
+        if (processKillSpy) {
+          expect(processKillSpy).not.toHaveBeenCalled();
+        }
+
+        call.child.emit("close", 0, null);
+        await expect(resultPromise).resolves.toMatchObject({
+          status: "executed",
+          response: { markdown: "Delegated answer." },
+        });
+      } finally {
+        processKillSpy?.mockRestore();
+      }
+    },
+  );
 
   it("bounds captured and streamed delegated output", async () => {
     const workspaceRoot = await createWorkspace();
@@ -846,6 +1384,91 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.reason).toContain("authentication failed");
   });
 
+  it("does not infer completion from human-readable Codex diagnostics", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+
+      vi.useFakeTimers();
+      call.child.stderr.write(
+        'ERROR: unexpected status 503 Service Unavailable: {"error":"Too many concurrent requests"}\ntokens used\n174,659\n',
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(spawnCalls).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).not.toHaveBeenCalled();
+      }
+
+      call.child.emit("close", 1, null);
+      const result = await resultPromise;
+
+      expect(result?.status).toBe("blocked");
+      expect(result?.metadata).not.toHaveProperty("providerShutdownRecovered");
+      expect(result?.reason).toContain("Too many concurrent requests");
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
+  it("terminates and cleans up once when a spawned child errors before close", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      call.child.emit("error", new Error("simulated child process error"));
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]?.executable).toBe("taskkill");
+        call.child.emit("close", 1, null);
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGKILL",
+        );
+        call.child.emit("close", 1, null);
+      }
+
+      await expect(resultPromise).rejects.toThrow(
+        "simulated child process error",
+      );
+      expect(call.child.stdout.destroyed).toBe(true);
+      expect(call.child.stderr.destroyed).toBe(true);
+      expect(call.child.listenerCount("exit")).toBe(0);
+      expect(call.child.listenerCount("close")).toBe(0);
+      expect(call.child.listenerCount("error")).toBe(0);
+      expect(() => call.child.emit("close", 1, null)).not.toThrow();
+      expect(
+        spawnCalls.filter((spawnCall) => spawnCall.executable !== "taskkill"),
+      ).toHaveLength(1);
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
   it("rejects promptly and starts process cleanup when codex exec is aborted", async () => {
     const workspaceRoot = await createWorkspace();
     const controller = new AbortController();
@@ -871,6 +1494,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0];
 
+      call?.child.stdout.write("Codex completed-looking answer.");
       controller.abort(
         "Execution stopped after exceeding the safety timeout of 25ms.",
       );
@@ -902,6 +1526,14 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           "SIGKILL",
         );
       }
+      expect(
+        spawnCalls.filter((spawnCall) => spawnCall.executable !== "taskkill"),
+      ).toHaveLength(1);
+      expect(call?.child.stdout.destroyed).toBe(true);
+      expect(call?.child.stderr.destroyed).toBe(true);
+      expect(call?.child.listenerCount("exit")).toBe(0);
+      expect(call?.child.listenerCount("close")).toBe(0);
+      expect(call?.child.listenerCount("error")).toBe(0);
     } finally {
       processKillSpy?.mockRestore();
     }
@@ -1391,7 +2023,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--autopilot");
     expect(call?.args).toContain("--no-ask-user");
     expect(call?.args).toContain("--allow-all");
-    expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+    expect(call?.args).toContain(
+      "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN",
+    );
     expect(call?.args.some((argument) => argument.startsWith("--agent="))).toBe(
       true,
     );
@@ -1436,7 +2070,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--no-ask-user");
     expect(call?.args).toContain("--autopilot");
     expect(call?.args).toContain("--allow-all");
-    expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+    expect(call?.args).toContain(
+      "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN",
+    );
     expect(call?.args.some((arg) => arg.startsWith("--add-dir="))).toBe(false);
     expect(call?.args).not.toContain("--allow-tool=read,url");
     expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
@@ -1491,6 +2127,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     process.env.GH_TOKEN = "gh-process-token";
     process.env.COPILOT_MODEL = "claude-haiku-4.5";
     process.env.OPENAI_API_KEY = "openai-process-key";
+    process.env.MY_GH_TOKEN = "prefixed-token";
+    process.env.GH_TOKEN_BACKUP = "suffixed-token";
+    process.env.LC_UNTRUSTED_SECRET = "locale-prefix-secret";
+    process.env.UNTRUSTED_PROXY = "proxy-suffix-secret";
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(
       createParams(workspaceRoot, {
@@ -1511,7 +2151,13 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     );
     expect(childEnv?.COPILOT_MODEL).toBeUndefined();
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
-    expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+    expect(childEnv?.MY_GH_TOKEN).toBeUndefined();
+    expect(childEnv?.GH_TOKEN_BACKUP).toBeUndefined();
+    expect(childEnv?.LC_UNTRUSTED_SECRET).toBeUndefined();
+    expect(childEnv?.UNTRUSTED_PROXY).toBeUndefined();
+    expect(call?.args).toContain(
+      "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN",
+    );
 
     call?.child.stdout.write("Copilot delegated answer.");
     call?.child.emit("close", 0, null);

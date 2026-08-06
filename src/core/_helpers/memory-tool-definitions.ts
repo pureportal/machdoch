@@ -13,6 +13,15 @@ import {
 } from "./agent-tools-shared.js";
 import { compactTraceText } from "./runtime-text.js";
 
+const hasExactMemoryToolArguments = (
+  args: Record<string, unknown>,
+): boolean => {
+  const keys = Object.keys(args).sort();
+  return (
+    keys.length === 2 && keys[0] === "fact" && keys[1] === "sensitivity"
+  );
+};
+
 export const createMemoryToolDefinitions = (
   memory: ConversationMemoryRuntime,
 ): AgentToolDefinition[] => {
@@ -32,8 +41,12 @@ export const createMemoryToolDefinitions = (
               type: "string",
               description: "The session-scoped fact or preference to remember.",
             },
+            sensitivity: {
+              type: "string",
+              enum: ["non-sensitive", "sensitive", "unknown"],
+            },
           },
-          required: ["fact"],
+          required: ["fact", "sensitivity"],
         },
       },
       backingTool: "filesystem",
@@ -42,11 +55,15 @@ export const createMemoryToolDefinitions = (
       execute: async (args, context) => {
         const fact = coerceString(args, "fact");
 
-        if (!fact) {
+        if (
+          !hasExactMemoryToolArguments(args) ||
+          !fact ||
+          args.sensitivity !== "non-sensitive"
+        ) {
           return createToolErrorResult(
             crypto.randomUUID(),
             "remember_session_memory",
-            "Expected a non-empty `fact`.",
+            "Expected a non-empty `fact` explicitly classified as non-sensitive.",
           );
         }
 
@@ -101,8 +118,12 @@ export const createMemoryToolDefinitions = (
               type: "string",
               description: "The cross-session fact or preference to remember.",
             },
+            sensitivity: {
+              type: "string",
+              enum: ["non-sensitive", "sensitive", "unknown"],
+            },
           },
-          required: ["fact"],
+          required: ["fact", "sensitivity"],
         },
       },
       backingTool: "filesystem",
@@ -111,11 +132,15 @@ export const createMemoryToolDefinitions = (
       execute: async (args, context) => {
         const fact = coerceString(args, "fact");
 
-        if (!fact) {
+        if (
+          !hasExactMemoryToolArguments(args) ||
+          !fact ||
+          args.sensitivity !== "non-sensitive"
+        ) {
           return createToolErrorResult(
             crypto.randomUUID(),
             "remember_global_memory",
-            "Expected a non-empty `fact`.",
+            "Expected a non-empty `fact` explicitly classified as non-sensitive.",
           );
         }
 

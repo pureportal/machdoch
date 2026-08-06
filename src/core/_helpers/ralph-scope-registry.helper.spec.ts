@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   discoverRalphScopeEvidence,
+  isCompletedRalphScopeOutcome,
   markRalphScopeRegistryResult,
   parseRalphScopeRegistry,
   selectRalphScopeFromRegistry,
@@ -13,7 +14,7 @@ import {
 const createEvidence = (): RalphScopeEvidenceDocument => {
   return {
     schema: "machdoch.ralph.scopeEvidence",
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: "2026-06-25T10:00:00.000Z",
     workspaceRoot: "/workspace",
     rootPath: ".",
@@ -71,12 +72,36 @@ describe("Ralph scope registry helpers", () => {
       await writeFile(join(workspace, "package.json"), "{}", "utf8");
       await writeFile(join(workspace, "src", "index.ts"), "", "utf8");
       await writeFile(join(workspace, "src-tauri", "Cargo.toml"), "", "utf8");
-      await writeFile(join(workspace, "packages", "api", "package.json"), "{}", "utf8");
-      await writeFile(join(workspace, "engine", "payments", "index.ts"), "", "utf8");
-      await writeFile(join(workspace, "engine", "payments", "charge.ts"), "", "utf8");
-      await writeFile(join(workspace, "engine", "payments", "refund.ts"), "", "utf8");
-      await writeFile(join(workspace, "acceptance", "checkout.test.ts"), "", "utf8");
-      await writeFile(join(workspace, "acceptance", "refund.test.ts"), "", "utf8");
+      await writeFile(
+        join(workspace, "packages", "api", "package.json"),
+        "{}",
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "engine", "payments", "index.ts"),
+        "",
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "engine", "payments", "charge.ts"),
+        "",
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "engine", "payments", "refund.ts"),
+        "",
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "acceptance", "checkout.test.ts"),
+        "",
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, "acceptance", "refund.test.ts"),
+        "",
+        "utf8",
+      );
       await writeFile(
         join(
           workspace,
@@ -91,7 +116,14 @@ describe("Ralph scope registry helpers", () => {
         "utf8",
       );
       await writeFile(
-        join(workspace, "packages", "api", "node_modules", "ignored", "package.json"),
+        join(
+          workspace,
+          "packages",
+          "api",
+          "node_modules",
+          "ignored",
+          "package.json",
+        ),
         "{}",
         "utf8",
       );
@@ -120,7 +152,7 @@ describe("Ralph scope registry helpers", () => {
         evidence.scopes.find((scope) => scope.id === "engine-payments"),
       ).toMatchObject({
         kind: "module",
-        risk: "high",
+        risk: "medium",
         tags: expect.arrayContaining([
           "entrypoint",
           "missing-local-tests",
@@ -132,15 +164,83 @@ describe("Ralph scope registry helpers", () => {
           "semantic:test-files=0",
         ]),
       });
-      expect(evidence.scopes.find((scope) => scope.id === "acceptance")).toMatchObject(
-        {
-          kind: "test",
-          tags: expect.arrayContaining(["test-covered"]),
-        },
-      );
+      expect(
+        evidence.scopes.find((scope) => scope.id === "acceptance"),
+      ).toMatchObject({
+        kind: "test",
+        tags: expect.arrayContaining(["test-covered"]),
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
+  });
+
+  it("rejects malformed routing and verdict state without reading prose", () => {
+    const registry = updateRalphScopeRegistryFromEvidence(
+      parseRalphScopeRegistry(undefined, {
+        flowAlias: "test-flow",
+        strategy: "risk-first",
+        now: "2026-06-25T10:00:00.000Z",
+      }),
+      createEvidence(),
+      {
+        flowAlias: "test-flow",
+        strategy: "risk-first",
+        now: "2026-06-25T10:01:00.000Z",
+      },
+    ).registry;
+    const firstScope = registry.scopes[0]!;
+
+    expect(isCompletedRalphScopeOutcome("completed")).toBe(true);
+    expect(isCompletedRalphScopeOutcome("deferred")).toBe(false);
+    expect(
+      isCompletedRalphScopeOutcome(
+        'completed because the model said "DONE"' as never,
+      ),
+    ).toBe(false);
+    expect(() =>
+      markRalphScopeRegistryResult(registry, {
+        outcome: "DONE_AFTER_REVIEW" as never,
+      }),
+    ).toThrow("Expected a valid Ralph scope outcome.");
+    expect(() =>
+      parseRalphScopeRegistry(
+        {
+          ...registry,
+          selection: { ...registry.selection, strategy: "RISK-FIRST" },
+        },
+        { flowAlias: "test-flow", strategy: "risk-first" },
+      ),
+    ).toThrow("Expected a valid Ralph scope selection strategy.");
+    expect(() =>
+      parseRalphScopeRegistry(
+        { ...registry, schemaVersion: 1 },
+        { flowAlias: "test-flow", strategy: "risk-first" },
+      ),
+    ).toThrow("Expected a supported Ralph scope registry schema.");
+    expect(() =>
+      parseRalphScopeRegistry(
+        {
+          ...registry,
+          scopes: [
+            {
+              ...firstScope,
+              risk: "high because auth token appears in the path",
+            },
+          ],
+        },
+        { flowAlias: "test-flow", strategy: "risk-first" },
+      ),
+    ).toThrow("Expected Ralph scope risk");
+    expect(() =>
+      parseRalphScopeRegistry(
+        {
+          ...registry,
+          scopes: [{ ...firstScope, lastOutcome: "DONE" }],
+        },
+        { flowAlias: "test-flow", strategy: "risk-first" },
+      ),
+    ).toThrow("Expected a valid persisted Ralph scope outcome.");
   });
 
   it("updates, selects, and marks scopes without repeating active scopes before the cycle completes", () => {
@@ -168,7 +268,7 @@ describe("Ralph scope registry helpers", () => {
     expect(firstSelection.scope?.id).toBe("alpha");
 
     const firstMark = markRalphScopeRegistryResult(firstSelection.registry, {
-      outcome: "DONE",
+      outcome: "completed",
       now: "2026-06-25T10:03:00.000Z",
     });
     expect(firstMark.cycleCompleted).toBe(false);
@@ -185,7 +285,7 @@ describe("Ralph scope registry helpers", () => {
     expect(secondSelection.reusedCurrentScope).toBe(false);
 
     const secondMark = markRalphScopeRegistryResult(secondSelection.registry, {
-      outcome: "DONE",
+      outcome: "completed",
       now: "2026-06-25T10:05:00.000Z",
     });
 
@@ -213,7 +313,7 @@ describe("Ralph scope registry helpers", () => {
       now: "2026-06-25T10:02:00.000Z",
     });
     const deferred = markRalphScopeRegistryResult(firstSelection.registry, {
-      outcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+      outcome: "deferred",
       now: "2026-06-25T10:03:00.000Z",
     });
 
@@ -221,7 +321,7 @@ describe("Ralph scope registry helpers", () => {
       id: "alpha",
       validatedCount: 0,
       lastValidatedAt: null,
-      lastOutcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+      lastOutcome: "deferred",
       lastOutcomeAt: "2026-06-25T10:03:00.000Z",
       eligibleAfter: "2026-06-25T10:33:00.000Z",
     });
@@ -229,7 +329,7 @@ describe("Ralph scope registry helpers", () => {
     expect(deferred.registry.selection.completedScopeIds).toEqual([]);
     expect(deferred.registry.history.at(-1)).toMatchObject({
       type: "scope-marked",
-      outcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+      outcome: "deferred",
       eligibleAfter: "2026-06-25T10:33:00.000Z",
     });
 
@@ -239,12 +339,15 @@ describe("Ralph scope registry helpers", () => {
     expect(nextSelection.scope?.id).toBe("beta");
 
     const betaCompleted = markRalphScopeRegistryResult(nextSelection.registry, {
-      outcome: "DONE",
+      outcome: "completed",
       now: "2026-06-25T10:05:00.000Z",
     });
-    const noEligibleWork = selectRalphScopeFromRegistry(betaCompleted.registry, {
-      now: "2026-06-25T10:06:00.000Z",
-    });
+    const noEligibleWork = selectRalphScopeFromRegistry(
+      betaCompleted.registry,
+      {
+        now: "2026-06-25T10:06:00.000Z",
+      },
+    );
     expect(noEligibleWork.scope).toBeUndefined();
 
     const retrySelection = selectRalphScopeFromRegistry(
@@ -274,7 +377,7 @@ describe("Ralph scope registry helpers", () => {
       now: "2026-06-25T10:02:00.000Z",
     });
     const stopped = markRalphScopeRegistryResult(selection.registry, {
-      outcome: "STOP_NO_MEANINGFUL_WORK",
+      outcome: "no-meaningful-work",
       now: "2026-06-25T10:03:00.000Z",
     });
 
@@ -287,7 +390,7 @@ describe("Ralph scope registry helpers", () => {
     const registry = parseRalphScopeRegistry(
       {
         schema: "machdoch.ralph.scopeRegistry",
-        schemaVersion: 1,
+        schemaVersion: 2,
         flowAlias: "autonomous-ui-improvement-loop",
         selection: {
           strategy: "round-robin",
@@ -345,7 +448,7 @@ describe("Ralph scope registry helpers", () => {
     expect(reusedSelection.reusedCurrentScope).toBe(true);
 
     const mark = markRalphScopeRegistryResult(registry, {
-      outcome: "DONE",
+      outcome: "completed",
       now: "2026-07-03T05:02:00.000Z",
     });
 
@@ -357,7 +460,7 @@ describe("Ralph scope registry helpers", () => {
     expect(mark.registry.history.at(-1)).toMatchObject({
       type: "scope-marked",
       scopeId: "api",
-      outcome: "DONE",
+      outcome: "completed",
     });
 
     const nextSelection = selectRalphScopeFromRegistry(mark.registry, {
@@ -373,7 +476,7 @@ describe("Ralph scope registry helpers", () => {
     const registry = parseRalphScopeRegistry(
       {
         schema: "machdoch.ralph.scopeRegistry",
-        schemaVersion: 1,
+        schemaVersion: 2,
         flowAlias: "autonomous-ui-improvement-loop",
         selection: {
           strategy: "ui-first",
@@ -403,7 +506,7 @@ describe("Ralph scope registry helpers", () => {
             tags: ["app", "package"],
             priority: 72,
             risk: "low",
-            evidence: ["app/package.json"],
+            evidence: ["app/src/App.tsx"],
           },
           {
             id: "app-src-components",
@@ -433,7 +536,7 @@ describe("Ralph scope registry helpers", () => {
     expect(selection.scope?.id).toBe("app-src-components");
 
     const mark = markRalphScopeRegistryResult(selection.registry, {
-      outcome: "DONE",
+      outcome: "completed",
       now: "2026-07-03T06:02:00.000Z",
     });
     const nextSelection = selectRalphScopeFromRegistry(mark.registry, {
@@ -449,7 +552,7 @@ describe("Ralph scope registry helpers", () => {
     const registry = parseRalphScopeRegistry(
       {
         schema: "machdoch.ralph.scopeRegistry",
-        schemaVersion: 1,
+        schemaVersion: 2,
         flowAlias: "autonomous-code-improvement-loop",
         selection: {
           strategy: "start-to-end",

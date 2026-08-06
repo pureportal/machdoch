@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Child,
     process::Stdio,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
     sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
@@ -33,7 +33,8 @@ use super::{
     },
     progress::{create_bridge_progress, emit_progress_event},
     DesktopMediaAssetReference, DesktopTaskRunRequest, DesktopTaskRunResponse,
-    DESKTOP_TASK_IDLE_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
+    DESKTOP_TASK_IDLE_TIMEOUT_MS, DESKTOP_TASK_TERMINATION_CANCELLED,
+    DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT, DESKTOP_TASK_WAIT_POLL_MS,
 };
 
 #[cfg(target_os = "windows")]
@@ -196,6 +197,7 @@ pub(super) fn execute_desktop_task(
     window_label: String,
     request: DesktopTaskRunRequest,
     cancel_flag: Arc<AtomicBool>,
+    termination_state: Arc<AtomicU8>,
 ) -> Result<DesktopTaskRunResponse, String> {
     let DesktopTaskRunRequest {
         workspace_root,
@@ -209,6 +211,7 @@ pub(super) fn execute_desktop_task(
         media_asset_references,
         task_id,
         session_id: _,
+        deterministic_action,
     } = request;
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
@@ -233,6 +236,11 @@ pub(super) fn execute_desktop_task(
         .as_ref()
         .map(write_conversation_context_file)
         .transpose()?;
+    let deterministic_action_json = deterministic_action
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| format!("Failed to serialize the deterministic action: {error}"))?;
 
     let cli_args = build_cli_args(CliCommandOptions {
         workspace_root: &normalized_workspace_root,
@@ -242,6 +250,7 @@ pub(super) fn execute_desktop_task(
         reasoning: normalized_reasoning.as_deref(),
         conversation_context_file: conversation_context_path.as_deref(),
         image_paths: &resolved_image_paths,
+        deterministic_action_json: deterministic_action_json.as_deref(),
     });
     let mut cli_command =
         crate::shared_cli::create_shared_cli_command(&cli_args).map_err(|error| {
@@ -354,6 +363,7 @@ pub(super) fn execute_desktop_task(
             }
             Ok(None) => {
                 if cancel_flag.load(Ordering::SeqCst) {
+                    termination_state.store(DESKTOP_TASK_TERMINATION_CANCELLED, Ordering::SeqCst);
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
@@ -384,6 +394,8 @@ pub(super) fn execute_desktop_task(
                 if desktop_task_activity_elapsed(&activity)
                     >= Duration::from_millis(DESKTOP_TASK_IDLE_TIMEOUT_MS)
                 {
+                    termination_state
+                        .store(DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT, Ordering::SeqCst);
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,

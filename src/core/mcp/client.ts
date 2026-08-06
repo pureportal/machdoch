@@ -77,6 +77,7 @@ import {
   isMcpOAuthLoopbackRedirectUrl,
 } from "./oauth-loopback.js";
 import { mcpRunCacheManager } from "./run-cache.js";
+import { validateMcpToolArguments } from "./tool-argument-validation.js";
 import type {
   McpAuthConfig,
   McpDiscoveredPrompt,
@@ -1245,14 +1246,6 @@ const createTaskRequestOptions = (
   };
 };
 
-const isTaskRequiredToolError = (error: unknown): boolean => {
-  return (
-    error instanceof Error &&
-    error.message.includes("requires task-based execution") &&
-    error.message.includes("callToolStream")
-  );
-};
-
 const emitTaskStreamProgress = (
   options: McpOperationOptions,
   message: ResponseMessage<CallToolResult>,
@@ -1451,7 +1444,9 @@ const normalizeTool = (tool: ListToolsResult["tools"][number]): McpDiscoveredToo
           },
         }
       : {}),
-    ...(tool.execution?.taskSupport
+    ...(tool.execution?.taskSupport === "optional" ||
+    tool.execution?.taskSupport === "required" ||
+    tool.execution?.taskSupport === "forbidden"
       ? { taskSupport: tool.execution.taskSupport }
       : {}),
   };
@@ -2001,6 +1996,37 @@ export class McpClientManager {
       throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
     }
 
+    const cachedDiscovery = (await loadMcpDiscoveryCache(workspaceRoot)).servers[
+      server.id
+    ];
+    let discoveredTool = cachedDiscovery?.tools.find(
+      (tool) => tool.name === toolName,
+    );
+    if (!discoveredTool) {
+      const liveDiscovery = await this.discoverServer(
+        workspaceRoot,
+        server,
+        options,
+      );
+      discoveredTool = liveDiscovery.tools.find(
+        (tool) => tool.name === toolName,
+      );
+    }
+    if (!discoveredTool) {
+      throw new Error(
+        `MCP tool \`${server.id}.${toolName}\` was not present in authoritative discovery metadata.`,
+      );
+    }
+    const argumentValidationError = validateMcpToolArguments(
+      discoveredTool.inputSchema,
+      args,
+    );
+    if (argumentValidationError) {
+      throw new Error(
+        `MCP tool \`${server.id}.${toolName}\` was not called. ${argumentValidationError}`,
+      );
+    }
+
     await recordNativeMcpUsage(workspaceRoot, server, "tool", "invoked", toolName);
 
     const cachePolicy = resolveOperationCachePolicy(options, server, "tool", true);
@@ -2024,13 +2050,7 @@ export class McpClientManager {
       return cacheLookup.entry.value;
     }
 
-    const cachedDiscovery = (await loadMcpDiscoveryCache(workspaceRoot)).servers[
-      server.id
-    ];
-    const requiresTaskStream =
-      cachedDiscovery?.tools.some(
-        (tool) => tool.name === toolName && tool.taskSupport === "required",
-      ) ?? false;
+    const requiresTaskStream = discoveredTool.taskSupport === "required";
 
     if (requiresTaskStream && server.tasks === "disabled") {
       throw new Error(
@@ -2049,27 +2069,19 @@ export class McpClientManager {
             return collectTaskToolResult(client, server, toolName, args, options);
           }
 
-          try {
-            const toolResult = await client.callTool(
-              {
-                name: toolName,
-                arguments: args,
-                _meta: {
-                  progressToken: randomUUID(),
-                },
+          const toolResult = await client.callTool(
+            {
+              name: toolName,
+              arguments: args,
+              _meta: {
+                progressToken: randomUUID(),
               },
-              undefined,
-              createRequestOptions(server, options),
-            );
+            },
+            undefined,
+            createRequestOptions(server, options),
+          );
 
-            return toolResult as CallToolResult;
-          } catch (error) {
-            if (server.tasks !== "disabled" && isTaskRequiredToolError(error)) {
-              return collectTaskToolResult(client, server, toolName, args, options);
-            }
-
-            throw error;
-          }
+          return toolResult as CallToolResult;
         }),
     );
 

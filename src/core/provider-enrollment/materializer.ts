@@ -81,7 +81,7 @@ interface RenderedEnrollmentFiles {
   args: string[];
   env: NodeJS.ProcessEnv;
   route: MaterializedInstructionDelivery["transportRoute"];
-  files: Array<{ path: string; digest: string; purpose: string }>;
+  files: EnrollmentManifest["renderedFiles"];
 }
 
 const isContainedTemporarySession = async (path: string): Promise<boolean> => {
@@ -125,7 +125,7 @@ const decodeStrictUtf8 = (content: Uint8Array, label: string): string => {
 };
 
 interface InstructionSessionMarker {
-  ownerProcessId?: number;
+  ownerProcessId: number;
 }
 
 const readValidSessionMarker = async (
@@ -146,9 +146,7 @@ const readValidSessionMarker = async (
       decodeStrictUtf8(content, "Machdoch session marker"),
     ) as Record<string, unknown>;
     if (
-      ![1, SESSION_MARKER_SCHEMA_VERSION].includes(
-        Number(parsed.schemaVersion),
-      ) ||
+      parsed.schemaVersion !== SESSION_MARKER_SCHEMA_VERSION ||
       parsed.kind !== "machdoch-instruction-run" ||
       typeof parsed.runId !== "string" ||
       parsed.runId.length === 0 ||
@@ -158,7 +156,6 @@ const readValidSessionMarker = async (
     ) {
       return undefined;
     }
-    if (parsed.schemaVersion === 1) return {};
     if (
       !Number.isSafeInteger(parsed.ownerProcessId) ||
       Number(parsed.ownerProcessId) <= 0
@@ -202,18 +199,6 @@ const removeSessionRoot = async (path: string): Promise<void> => {
   await rm(path, { recursive: true, force: true });
 };
 
-const removeFreshSessionRoot = async (path: string): Promise<void> => {
-  if (!(await isContainedTemporarySession(path))) return;
-  const metadata = await lstat(path).catch(() => undefined);
-  if (
-    metadata?.isDirectory() &&
-    !metadata.isSymbolicLink() &&
-    (await isContainedTemporarySession(path))
-  ) {
-    await rm(path, { recursive: true, force: true });
-  }
-};
-
 export const cleanupStaleEnrollmentArtifacts = async (
   now = Date.now(),
 ): Promise<void> => {
@@ -234,10 +219,7 @@ export const cleanupStaleEnrollmentArtifacts = async (
     ) {
       const marker = await readValidSessionMarker(path);
       if (!marker) continue;
-      if (
-        marker.ownerProcessId !== undefined &&
-        processMayStillBeRunning(marker.ownerProcessId)
-      ) {
+      if (processMayStillBeRunning(marker.ownerProcessId)) {
         continue;
       }
       await removeSessionRoot(path).catch(() => undefined);
@@ -549,6 +531,7 @@ const renderCodexEnrollment = async (
       {
         path: configPath,
         digest: await writePrivateFile(configPath, content),
+        role: "instruction-and-mcp-configuration",
         purpose:
           "Run-scoped Codex developer instructions and MCP configuration",
       },
@@ -594,11 +577,13 @@ const renderClaudeEnrollment = async (
       {
         path: instructionPath,
         digest: instructionDigest,
+        role: "instruction-transport",
         purpose: "Run-scoped Claude appended system prompt",
       },
       {
         path: mcpPath,
         digest: sha256(`${JSON.stringify(projection.config, null, 2)}\n`),
+        role: "mcp-configuration",
         purpose: "Run-scoped Claude MCP configuration",
       },
     ],
@@ -659,11 +644,13 @@ const renderCopilotEnrollment = async (
       {
         path: agentPath,
         digest: agentDigest,
+        role: "instruction-transport",
         purpose: "Run-scoped Copilot custom-agent instructions",
       },
       {
         path: mcpPath,
         digest: sha256(`${JSON.stringify(projection.config, null, 2)}\n`),
+        role: "mcp-configuration",
         purpose: "Run-scoped Copilot MCP configuration",
       },
     ],
@@ -804,19 +791,14 @@ export const materializeCliEnrollment = async (
   await cleanupStaleEnrollmentArtifacts();
   const rootPath = await mkdtemp(join(tmpdir(), SESSION_ROOT_PREFIX));
   await chmod(rootPath, 0o700).catch(() => undefined);
-  try {
-    await writeJsonAtomically(join(rootPath, SESSION_MARKER_NAME), {
-      schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
-      kind: "machdoch-instruction-run",
-      runId: params.runId,
-      rootPath,
-      ownerProcessId: process.pid,
-      createdAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    await removeFreshSessionRoot(rootPath).catch(() => undefined);
-    throw error;
-  }
+  await writeJsonAtomically(join(rootPath, SESSION_MARKER_NAME), {
+    schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
+    kind: "machdoch-instruction-run",
+    runId: params.runId,
+    rootPath,
+    ownerProcessId: process.pid,
+    createdAt: new Date().toISOString(),
+  });
   await chmod(join(rootPath, SESSION_MARKER_NAME), 0o600).catch(
     () => undefined,
   );

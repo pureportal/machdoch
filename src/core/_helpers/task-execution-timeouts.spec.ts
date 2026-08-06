@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   TASK_EXECUTION_IDLE_TIMEOUT_MS,
+  TaskExecutionTimeoutError,
   createManagedTaskExecutionTimeout,
+  isTaskExecutionTimeoutReason,
   resolveTaskExecutionTimeouts,
 } from "./task-execution-timeouts.js";
 
@@ -81,7 +83,11 @@ describe("task execution timeouts", () => {
 
     vi.advanceTimersByTime(1);
     expect(timeout.signal.aborted).toBe(true);
-    expect(timeout.signal.reason).toContain("without meaningful progress");
+    expect(timeout.signal.reason).toBeInstanceOf(TaskExecutionTimeoutError);
+    expect(timeout.signal.reason).toMatchObject({ timeoutKind: "idle" });
+    expect(timeout.signal.reason.message).toContain(
+      "without meaningful progress",
+    );
   });
 
   it("does not extend the absolute deadline when activity arrives", () => {
@@ -99,7 +105,10 @@ describe("task execution timeouts", () => {
     vi.advanceTimersByTime(70);
 
     expect(timeout.signal.aborted).toBe(true);
-    expect(timeout.signal.reason).not.toContain("without meaningful progress");
+    expect(timeout.signal.reason).toMatchObject({ timeoutKind: "absolute" });
+    expect(timeout.signal.reason.message).not.toContain(
+      "without meaningful progress",
+    );
   });
 
   it("continues beyond sixty minutes while meaningful activity continues", () => {
@@ -122,7 +131,10 @@ describe("task execution timeouts", () => {
     vi.advanceTimersByTime(TASK_EXECUTION_IDLE_TIMEOUT_MS);
 
     expect(timeout.signal.aborted).toBe(true);
-    expect(timeout.signal.reason).toContain("without meaningful progress");
+    expect(timeout.signal.reason).toMatchObject({ timeoutKind: "idle" });
+    expect(timeout.signal.reason.message).toContain(
+      "without meaningful progress",
+    );
   });
 
   it("forwards cancellation from the caller", () => {
@@ -136,5 +148,21 @@ describe("task execution timeouts", () => {
 
     expect(timeout.signal.aborted).toBe(true);
     expect(timeout.signal.reason).toBe("Stopped by the user.");
+  });
+
+  it("does not grant timeout status to incidental or adversarial prose", () => {
+    expect(
+      isTaskExecutionTimeoutReason(
+        "Execution stopped after exceeding the safety timeout of 1 second.",
+      ),
+    ).toBe(false);
+    expect(
+      isTaskExecutionTimeoutReason(
+        new Error('Quoted timeout verdict: "timed out".'),
+      ),
+    ).toBe(false);
+    expect(
+      isTaskExecutionTimeoutReason(new TaskExecutionTimeoutError("idle", 1)),
+    ).toBe(true);
   });
 });

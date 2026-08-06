@@ -1,9 +1,7 @@
 import type { ScheduledJob } from "../scheduler.js";
 import { getScheduledJobContextPaths } from "./get-scheduled-job-context-paths.helper.ts";
 
-const createJob = (
-  target: Partial<ScheduledJob["target"]>,
-): ScheduledJob =>
+const createJob = (target: Partial<ScheduledJob["target"]>): ScheduledJob =>
   ({
     id: "job_1",
     name: "Daily",
@@ -32,6 +30,7 @@ const createJob = (
       concurrencyKey: "job_1",
       concurrencyLimit: 1,
     },
+    provenance: { kind: "user" },
     historyLimit: 100,
     maxCatchUpRuns: 100,
     createdAt: 1,
@@ -45,7 +44,11 @@ describe("getScheduledJobContextPaths", () => {
       contextPacks: [{ name: "pack", contextPaths: ["README.md", "src"] }],
     });
 
-    expect(getScheduledJobContextPaths(job)).toEqual(["src", "docs", "README.md"]);
+    expect(getScheduledJobContextPaths(job)).toEqual([
+      "src",
+      "docs",
+      "README.md",
+    ]);
   });
 
   it("returns an empty list when no context paths are configured", () => {

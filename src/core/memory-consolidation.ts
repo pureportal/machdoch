@@ -21,33 +21,14 @@ import type {
 } from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
-const MAX_MEMORY_SOURCE_TEXT_LENGTH = 1_200;
 const MAX_MEMORY_REVIEW_TEXT_LENGTH = 6_000;
 const MAX_MEMORY_REVIEW_SECTION_LINES = 5;
 const MAX_MEMORY_REVIEW_FACT_LENGTH = 220;
-const MIN_INFERRED_PREFERENCE_LENGTH = 8;
 const MEMORY_DECISION_TOOL_NAME = "submit_memory_decisions";
-
-const SECRET_PATTERN =
-  /\b(api[_\s-]?key|access[_\s-]?token|auth[_\s-]?token|bearer|client[_\s-]?secret|credential|password|passphrase|private[_\s-]?key|secret|ssh[_\s-]?key)\b/i;
-const EXPLICIT_GLOBAL_PATTERN =
-  /\b(global(?:ly)?|across sessions?|cross-session|future sessions?|new sessions?|always remember|remember forever|remember permanently)\b/i;
-const EXPLICIT_SESSION_PATTERN =
-  /\b(this session|current session|for now|temporarily|only in this chat|only for this chat)\b/i;
-const REMEMBER_PATTERN =
-  /\b(?:please\s+)?(?:remember|memorize|keep in memory|save (?:this|that) in memory|store (?:this|that) in memory)\b[:\s-]*(?:(?:global(?:ly)?|across sessions?|future sessions?|new sessions?|permanently|forever|this session|current session|for now|temporarily|only in this chat|only for this chat)\s+)?(?:that\s+)?(?<fact>[^.!?\n]+(?:[.!?]|$))/i;
-const PREFERENCE_PATTERNS: RegExp[] = [
-  /\bI prefer (?<preference>[^.!?\n]+(?:[.!?]|$))/i,
-  /\bmy preference is (?<preference>[^.!?\n]+(?:[.!?]|$))/i,
-  /\bfrom now on,?\s+(?<preference>[^.!?\n]+(?:[.!?]|$))/i,
-  /\balways (?<preference>[^.!?\n]+(?:[.!?]|$))/i,
-  /\bcall me (?<preference>[^.!?\n]+(?:[.!?]|$))/i,
-];
 
 interface MemoryCandidate {
   scope: ConversationMemoryScope;
   content: string;
-  confidence: "explicit" | "inferred" | "model";
 }
 
 interface MemoryConsolidationOptions {
@@ -103,81 +84,6 @@ const normalizeMemoryFact = (value: string | undefined): string | undefined => {
   );
 };
 
-const isSensitiveMemoryContent = (content: string): boolean => {
-  return SECRET_PATTERN.test(content);
-};
-
-const chooseExplicitMemoryScope = (
-  text: string,
-  options: {
-    sessionEnabled: boolean;
-    globalEnabled: boolean;
-  },
-): ConversationMemoryScope | undefined => {
-  if (EXPLICIT_GLOBAL_PATTERN.test(text)) {
-    return options.globalEnabled ? "global" : undefined;
-  }
-
-  if (EXPLICIT_SESSION_PATTERN.test(text)) {
-    return options.sessionEnabled ? "session" : undefined;
-  }
-
-  if (options.sessionEnabled) {
-    return "session";
-  }
-
-  return options.globalEnabled ? "global" : undefined;
-};
-
-const choosePreferenceMemoryScope = (
-  text: string,
-  options: {
-    sessionEnabled: boolean;
-    globalEnabled: boolean;
-  },
-): ConversationMemoryScope | undefined => {
-  if (EXPLICIT_SESSION_PATTERN.test(text)) {
-    return options.sessionEnabled ? "session" : undefined;
-  }
-
-  if (
-    options.globalEnabled &&
-    (EXPLICIT_GLOBAL_PATTERN.test(text) || /\b(always|from now on|call me)\b/i.test(text))
-  ) {
-    return "global";
-  }
-
-  if (options.sessionEnabled) {
-    return "session";
-  }
-
-  return undefined;
-};
-
-const createPreferenceMemoryContent = (
-  matchedText: string,
-  preference: string,
-): string | undefined => {
-  const normalizedPreference = normalizeMemoryFact(preference);
-
-  if (
-    !normalizedPreference ||
-    normalizedPreference.length < MIN_INFERRED_PREFERENCE_LENGTH
-  ) {
-    return undefined;
-  }
-
-  if (/^\s*call me\b/i.test(matchedText)) {
-    return normalizeMemoryFact(`The user wants to be called ${normalizedPreference}`);
-  }
-
-  if (/^\s*(?:from now on|always)\b/i.test(matchedText)) {
-    return normalizeMemoryFact(`The user prefers: ${normalizedPreference}`);
-  }
-
-  return normalizeMemoryFact(`The user prefers ${normalizedPreference}`);
-};
-
 const createMemoryDecisionTool = (): AgentModelToolSpec => {
   return {
     name: MEMORY_DECISION_TOOL_NAME,
@@ -208,8 +114,7 @@ const createMemoryDecisionTool = (): AgentModelToolSpec => {
               },
               reason: {
                 type: "string",
-                description:
-                  "Why this memory will help later task execution.",
+                description: "Why this memory will help later task execution.",
               },
               confidence: {
                 type: "string",
@@ -217,8 +122,20 @@ const createMemoryDecisionTool = (): AgentModelToolSpec => {
                 description:
                   "Confidence that the memory is durable and useful enough to save.",
               },
+              sensitivity: {
+                type: "string",
+                enum: ["non-sensitive", "sensitive", "unknown"],
+                description:
+                  "Classify the proposed memory. Only non-sensitive memories are accepted.",
+              },
             },
-            required: ["scope", "content", "reason", "confidence"],
+            required: [
+              "scope",
+              "content",
+              "reason",
+              "confidence",
+              "sensitivity",
+            ],
           },
         },
       },
@@ -350,6 +267,13 @@ const parseMemoryDecisionCandidates = (
     globalEnabled: boolean;
   },
 ): MemoryCandidate[] => {
+  if (
+    !toolCall ||
+    Object.keys(toolCall.arguments).length !== 1 ||
+    !Object.hasOwn(toolCall.arguments, "memories")
+  ) {
+    return [];
+  }
   const memories = toolCall?.arguments.memories;
 
   if (!Array.isArray(memories)) {
@@ -362,6 +286,19 @@ const parseMemoryDecisionCandidates = (
     }
 
     const record = memory as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    if (
+      keys.length !== 5 ||
+      keys[0] !== "confidence" ||
+      keys[1] !== "content" ||
+      keys[2] !== "reason" ||
+      keys[3] !== "scope" ||
+      keys[4] !== "sensitivity" ||
+      typeof record.reason !== "string" ||
+      record.reason.trim().length === 0
+    ) {
+      return [];
+    }
     const scope = record.scope;
     const content = normalizeMemoryFact(
       typeof record.content === "string"
@@ -373,7 +310,7 @@ const parseMemoryDecisionCandidates = (
       !isConversationMemoryScope(scope) ||
       !content ||
       !isAcceptedModelConfidence(record.confidence) ||
-      isSensitiveMemoryContent(content)
+      record.sensitivity !== "non-sensitive"
     ) {
       return [];
     }
@@ -390,7 +327,6 @@ const parseMemoryDecisionCandidates = (
       {
         scope,
         content,
-        confidence: "model",
       },
     ];
   });
@@ -454,75 +390,16 @@ const extractModelMemoryCandidates = async (
         ? { signal: consolidationOptions.signal }
         : {}),
     });
-    const decisionCall = turn.toolCalls.find(
-      (call) => call.name === MEMORY_DECISION_TOOL_NAME,
-    );
+    const decisionCall =
+      turn.toolCalls.length === 1 &&
+      turn.toolCalls[0]?.name === MEMORY_DECISION_TOOL_NAME
+        ? turn.toolCalls[0]
+        : undefined;
 
     return parseMemoryDecisionCandidates(decisionCall, memoryOptions);
   } catch {
     return [];
   }
-};
-
-export const extractTaskMemoryCandidates = (
-  task: string,
-  options: {
-    sessionEnabled: boolean;
-    globalEnabled: boolean;
-  },
-): MemoryCandidate[] => {
-  const sourceText = task.slice(0, MAX_MEMORY_SOURCE_TEXT_LENGTH);
-
-  if (
-    (!options.sessionEnabled && !options.globalEnabled) ||
-    isSensitiveMemoryContent(sourceText)
-  ) {
-    return [];
-  }
-
-  const candidates: MemoryCandidate[] = [];
-  const rememberedFact = normalizeMemoryFact(
-    REMEMBER_PATTERN.exec(sourceText)?.groups?.fact,
-  );
-  const explicitScope = chooseExplicitMemoryScope(sourceText, options);
-
-  if (rememberedFact && explicitScope && !isSensitiveMemoryContent(rememberedFact)) {
-    candidates.push({
-      scope: explicitScope,
-      content: rememberedFact,
-      confidence: "explicit",
-    });
-  }
-
-  for (const pattern of PREFERENCE_PATTERNS) {
-    const match = pattern.exec(sourceText);
-    const preference = match?.groups?.preference;
-    const content = createPreferenceMemoryContent(match?.[0] ?? "", preference ?? "");
-    const scope = choosePreferenceMemoryScope(sourceText, options);
-
-    if (!content || !scope || isSensitiveMemoryContent(content)) {
-      continue;
-    }
-
-    candidates.push({
-      scope,
-      content,
-      confidence: "inferred",
-    });
-  }
-
-  const seen = new Set<string>();
-
-  return candidates.filter((candidate) => {
-    const key = `${candidate.scope}:${createMemoryKey(candidate.content)}`;
-
-    if (seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
-    return true;
-  });
 };
 
 const createAutomaticMemorySection = (
@@ -560,17 +437,14 @@ export const consolidateTaskExecutionMemory = async (
     sessionEnabled,
     globalEnabled,
   };
-  const candidates = [
-    ...extractTaskMemoryCandidates(task, memoryOptions),
-    ...(await extractModelMemoryCandidates(
-      task,
-      config,
-      result,
-      conversationContext,
-      memoryOptions,
-      consolidationOptions,
-    )),
-  ];
+  const candidates = await extractModelMemoryCandidates(
+    task,
+    config,
+    result,
+    conversationContext,
+    memoryOptions,
+    consolidationOptions,
+  );
 
   if (candidates.length === 0) {
     return result;

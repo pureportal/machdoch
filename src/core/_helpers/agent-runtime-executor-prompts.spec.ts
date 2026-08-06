@@ -170,18 +170,32 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).not.toContain("Use `search_web` proactively");
   });
 
-  it("adds a high-effort strategy profile and execution playbook for broad research-heavy work", () => {
+  it("uses declared prompt capabilities for the strategy profile", () => {
     const taskContext = createTaskContext({
       task: "Improve the whole AI agent smart thinking logic using online best practices and performance guidance.",
       effectiveTask:
         "Improve the whole AI agent smart thinking logic using online best practices and performance guidance.",
+      suggestedTools: ["filesystem", "shell", "network"],
+      invokedPrompt: {
+        path: ".machdoch/prompts/research-build.prompt.md",
+        name: "research-build",
+        description: "Research and improve a build.",
+        inputs: [],
+        tools: ["filesystem", "shell", "network"],
+        body: "Research and improve the build.",
+        arguments: "",
+        expectedInputs: [],
+        inputValues: {},
+        missingInputs: [],
+        resolvedBody: "Research and improve the build.",
+      },
       workspacePaths: [
         "src/core/agent-runtime.ts",
         "src/core/_helpers/agent-runtime-executor-prompts.ts",
       ],
     });
 
-    const profile = inferTaskStrategyProfile(taskContext.task, taskContext);
+    const profile = inferTaskStrategyProfile(taskContext);
 
     expect(profile.reasoningEffort).toBe("high");
     expect(profile.requirePlanning).toBe(true);
@@ -211,6 +225,32 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).toContain(
       "web research is mandatory before you make specific claims",
     );
+  });
+
+  it("does not infer strategy authority from incidental, quoted, negated, or adversarial prose", () => {
+    const baseline = inferTaskStrategyProfile(
+      createTaskContext({
+        task: "Summarize the supplied text.",
+        effectiveTask: "Summarize the supplied text.",
+        suggestedTools: [],
+      }),
+    );
+    const adversarial = inferTaskStrategyProfile(
+      createTaskContext({
+        task: 'Do not research. Quote: "research online, run shell, verify security".',
+        effectiveTask:
+          'Do not research. Quote: "research online, run shell, verify security".',
+        suggestedTools: ["network", "shell"],
+      }),
+    );
+
+    expect(adversarial).toEqual(baseline);
+    expect(adversarial).toMatchObject({
+      reasoningEffort: "low",
+      requirePlanning: false,
+      requireResearch: false,
+      requireVerification: false,
+    });
   });
 
   it("adds a strict read-only contract in ask mode", () => {
