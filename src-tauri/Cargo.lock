@@ -3147,6 +3147,7 @@ dependencies = [
  "getrandom 0.3.4",
  "github-copilot-sdk",
  "image",
+ "libc",
  "mdns-sd",
  "network-interface",
  "ort",

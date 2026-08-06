@@ -1,7 +1,7 @@
 use std::{
     fs::{self, OpenOptions},
     io,
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -15,7 +15,7 @@ use std::os::unix::process::CommandExt;
 use serde_json::Value;
 
 use crate::{
-    child_process::terminate_child_process_tree,
+    child_process::{SupervisedChild, SupervisedChildSpawnError},
     runtime_snapshot::{get_user_config_directory, resolve_workspace_root_path},
 };
 
@@ -121,13 +121,12 @@ fn join_auxiliary_cli_output(
 
 fn stop_auxiliary_cli_after_wait_error(
     error: io::Error,
-    child: &mut Child,
+    child: &mut SupervisedChild,
     stdout_worker: thread::JoinHandle<Result<String, String>>,
     stderr_worker: thread::JoinHandle<Result<String, String>>,
     command_name: &str,
 ) -> String {
-    terminate_child_process_tree(child);
-    let _ = child.wait();
+    let _ = child.terminate_and_reap();
 
     let cleanup_result = join_auxiliary_cli_output(stdout_worker, stderr_worker);
     let message = format!("Failed to wait for the {command_name} CLI to finish: {error}");
@@ -150,28 +149,18 @@ fn run_bounded_auxiliary_cli_command(
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     hide_child_process_window(command);
 
-    #[cfg(target_os = "windows")]
-    {
-        command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-    }
-
-    #[cfg(unix)]
-    {
-        command.process_group(0);
-    }
-
-    let mut child = command.spawn().map_err(|error| {
-        format!(
+    let mut child = SupervisedChild::spawn(command).map_err(|error| match error {
+        SupervisedChildSpawnError::Spawn(error) => format!(
             "Failed to launch the {command_name} CLI. {} {error}",
             crate::shared_cli::cli_runtime_error_hint()
-        )
+        ),
+        SupervisedChildSpawnError::Isolation(error) => error,
     })?;
 
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             return Err(format!(
                 "The {command_name} CLI did not expose a stdout stream."
             ));
@@ -180,8 +169,7 @@ fn run_bounded_auxiliary_cli_command(
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             return Err(format!(
                 "The {command_name} CLI did not expose a stderr stream."
             ));
@@ -226,8 +214,7 @@ fn run_bounded_auxiliary_cli_command(
                     .map(|timeout_ms| started_at.elapsed() >= Duration::from_millis(timeout_ms))
                     .unwrap_or(false)
                 {
-                    terminate_child_process_tree(&mut child);
-                    let _ = child.wait();
+                    let _ = child.terminate_and_reap();
 
                     let (stdout_text, stderr_text) =
                         join_auxiliary_cli_output(stdout_worker, stderr_worker)?;

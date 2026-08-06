@@ -10,6 +10,8 @@ use std::{
 use serde_json::Value;
 use zeroize::Zeroizing;
 
+use crate::child_process::SupervisedChild;
+
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -57,21 +59,26 @@ pub(crate) fn run_side_effect_free_json_command(
     input: Zeroizing<Vec<u8>>,
     command_timeout: Duration,
 ) -> Result<Value, String> {
-    let mut shared = create_shared_cli_command(args)?;
-    shared
-        .command
+    let shared = create_shared_cli_command(args)?;
+    run_side_effect_free_json_command_with_command(
+        shared.command,
+        input,
+        command_timeout,
+        SupervisedChild::try_wait,
+    )
+}
+
+fn run_side_effect_free_json_command_with_command(
+    mut command: Command,
+    input: Zeroizing<Vec<u8>>,
+    command_timeout: Duration,
+    mut monitor: impl FnMut(&mut SupervisedChild) -> std::io::Result<Option<std::process::ExitStatus>>,
+) -> Result<Value, String> {
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        shared.command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let mut child = shared
-        .command
-        .spawn()
+    let mut child = SupervisedChild::spawn(&mut command)
         .map_err(|_| "The side-effect-free shared CLI validator could not start.".to_string())?;
     let mut stdin = child
         .stdin
@@ -94,17 +101,15 @@ pub(crate) fn run_side_effect_free_json_command(
     let stderr_worker = thread::spawn(move || read_bounded_cli_stream(stderr, "stderr"));
     let started_at = Instant::now();
     let status = loop {
-        match child.try_wait() {
+        match monitor(&mut child) {
             Ok(Some(status)) => break Ok(status),
             Ok(None) if started_at.elapsed() >= command_timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
+                let _ = child.terminate_and_reap();
                 break Err("The shared CLI validator exceeded its safety timeout.".to_string());
             }
             Ok(None) => thread::sleep(Duration::from_millis(25)),
             Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                let _ = child.terminate_and_reap();
                 break Err("The shared CLI validator could not be monitored.".to_string());
             }
         }
@@ -431,7 +436,64 @@ pub(crate) fn cli_runtime_error_hint() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{cached_runtime_file_family, sanitize_node_options};
+    use std::{env, io, process::Command, thread, time::Duration};
+
+    use zeroize::Zeroizing;
+
+    use super::{
+        cached_runtime_file_family, run_side_effect_free_json_command_with_command,
+        sanitize_node_options,
+    };
+
+    const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_SHARED_CLI_TEST_CHILD_MODE";
+
+    fn test_child_command(mode: &str) -> Command {
+        let mut command = Command::new(env::current_exe().expect("test executable should resolve"));
+        command
+            .arg("--exact")
+            .arg("shared_cli::tests::shared_cli_supervision_test_entrypoint")
+            .arg("--nocapture")
+            .env(TEST_CHILD_MODE_ENV, mode);
+        command
+    }
+
+    #[test]
+    fn shared_cli_supervision_test_entrypoint() {
+        match env::var(TEST_CHILD_MODE_ENV).as_deref() {
+            Ok("json") => println!("{{\"ok\":true}}"),
+            Ok("hold") => thread::sleep(Duration::from_secs(60)),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn side_effect_free_validator_timeout_stops_and_joins_child_workers() {
+        let error = run_side_effect_free_json_command_with_command(
+            test_child_command("hold"),
+            Zeroizing::new(b"{}".to_vec()),
+            Duration::from_millis(100),
+            crate::child_process::SupervisedChild::try_wait,
+        )
+        .expect_err("hanging validator should time out");
+
+        assert_eq!(
+            error,
+            "The shared CLI validator exceeded its safety timeout."
+        );
+    }
+
+    #[test]
+    fn side_effect_free_validator_monitor_failure_stops_and_joins_child_workers() {
+        let error = run_side_effect_free_json_command_with_command(
+            test_child_command("hold"),
+            Zeroizing::new(b"{}".to_vec()),
+            Duration::from_secs(5),
+            |_| Err(io::Error::other("simulated monitor failure")),
+        )
+        .expect_err("monitor failure should stop the validator");
+
+        assert_eq!(error, "The shared CLI validator could not be monitored.");
+    }
 
     #[test]
     fn shared_cli_node_options_strip_debug_inspect_flags() {

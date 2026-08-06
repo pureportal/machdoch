@@ -59,6 +59,9 @@ xcap = "0.9.4"
 zeroize = { version = "=1.9.0", features = ["derive"] }
 portable-pty = "0.9.0"
 
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2.4"
@@ -72,6 +75,7 @@ windows = { version = "0.61", features = [
   "Win32_Storage_FileSystem",
   "Win32_Security",
   "Win32_System_Console",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_JobObjects",
   "Win32_System_Power",
   "Win32_System_SystemInformation",

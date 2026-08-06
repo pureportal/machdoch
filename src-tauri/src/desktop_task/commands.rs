@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     io,
     path::{Path, PathBuf},
-    process::Child,
     process::Stdio,
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
     sync::Arc,
@@ -10,14 +9,8 @@ use std::{
     time::Duration,
 };
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-
 use crate::{
-    child_process::{assign_child_process_to_kill_on_close_job, terminate_child_process_tree},
+    child_process::{SupervisedChild, SupervisedChildSpawnError},
     runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path},
 };
 
@@ -36,9 +29,6 @@ use super::{
     DESKTOP_TASK_IDLE_TIMEOUT_MS, DESKTOP_TASK_TERMINATION_CANCELLED,
     DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT, DESKTOP_TASK_WAIT_POLL_MS,
 };
-
-#[cfg(target_os = "windows")]
-use super::process::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
 fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, String> {
     let trimmed_stdout = stdout.trim();
@@ -119,14 +109,13 @@ fn resolve_media_asset_reference_paths(
 
 fn stop_shared_cli_after_wait_error(
     error: io::Error,
-    child: &mut Child,
+    child: &mut SupervisedChild,
     input_worker: JoinHandle<Result<(), String>>,
     stdout_worker: JoinHandle<Result<String, String>>,
     stderr_worker: JoinHandle<Result<Vec<String>, String>>,
     conversation_context_path: Option<&PathBuf>,
 ) -> String {
-    terminate_child_process_tree(child);
-    let _ = child.wait();
+    let _ = child.terminate_and_reap();
 
     let cleanup_result = join_cli_io_and_cleanup(
         input_worker,
@@ -272,38 +261,23 @@ pub(super) fn execute_desktop_task(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    #[cfg(target_os = "windows")]
-    {
-        cli_command
-            .command
-            .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-    }
+    let mut child = SupervisedChild::spawn_with_required_isolation(&mut cli_command.command)
+        .map_err(|error| {
+            cleanup_temporary_file(conversation_context_path.as_ref());
 
-    #[cfg(unix)]
-    {
-        cli_command.command.process_group(0);
-    }
-
-    let mut child = cli_command.command.spawn().map_err(|error| {
-        cleanup_temporary_file(conversation_context_path.as_ref());
-
-        format!(
-            "Failed to launch the shared CLI. {} {error}",
-            crate::shared_cli::cli_runtime_error_hint()
-        )
-    })?;
-    let _child_job = assign_child_process_to_kill_on_close_job(&child).map_err(|error| {
-        terminate_child_process_tree(&mut child);
-        let _ = child.wait();
-        cleanup_temporary_file(conversation_context_path.as_ref());
-        error
-    })?;
+            match error {
+                SupervisedChildSpawnError::Spawn(error) => format!(
+                    "Failed to launch the shared CLI. {} {error}",
+                    crate::shared_cli::cli_runtime_error_hint()
+                ),
+                SupervisedChildSpawnError::Isolation(error) => error,
+            }
+        })?;
 
     let stdin = match child.stdin.take() {
         Some(stdin) => stdin,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             cleanup_temporary_file(conversation_context_path.as_ref());
             return Err(
                 "The shared CLI did not expose a stdin stream for the desktop bridge.".to_string(),
@@ -314,8 +288,7 @@ pub(super) fn execute_desktop_task(
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             cleanup_temporary_file(conversation_context_path.as_ref());
             return Err(
                 "The shared CLI did not expose a stdout stream for the desktop bridge.".to_string(),
@@ -325,8 +298,7 @@ pub(super) fn execute_desktop_task(
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
-            terminate_child_process_tree(&mut child);
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             cleanup_temporary_file(conversation_context_path.as_ref());
             return Err(
                 "The shared CLI did not expose a stderr stream for the desktop bridge.".to_string(),
@@ -377,8 +349,7 @@ pub(super) fn execute_desktop_task(
                         ),
                     );
 
-                    terminate_child_process_tree(&mut child);
-                    let _ = child.wait();
+                    let _ = child.terminate_and_reap();
 
                     let io = join_cli_io_and_cleanup(
                         input_worker,
@@ -409,8 +380,7 @@ pub(super) fn execute_desktop_task(
                         ),
                     );
 
-                    terminate_child_process_tree(&mut child);
-                    let _ = child.wait();
+                    let _ = child.terminate_and_reap();
 
                     let io = join_cli_io_and_cleanup(
                         input_worker,
@@ -504,6 +474,7 @@ mod tests {
         is_expected_cancelled_desktop_task_response, normalize_desktop_task_input,
         parse_desktop_task_response, stop_shared_cli_after_wait_error, write_cli_task,
     };
+    use crate::child_process::SupervisedChild;
     use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
     use crate::desktop_task::payload::write_conversation_context_file;
 
@@ -560,7 +531,7 @@ mod tests {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = command.spawn().expect("test child should start");
+        let mut child = SupervisedChild::spawn(&mut command).expect("test child should start");
         let mut stdout = child.stdout.take().expect("stdout should be piped");
         let mut stderr = child.stderr.take().expect("stderr should be piped");
         let stdout_worker = thread::spawn(move || {
