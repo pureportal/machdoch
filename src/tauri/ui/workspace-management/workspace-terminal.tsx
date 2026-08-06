@@ -1,9 +1,11 @@
 import "@xterm/xterm/css/xterm.css";
 import {
+  CircleDot,
   ChevronDown,
   ChevronUp,
   Eraser,
   ExternalLink,
+  ListFilter,
   LoaderCircle,
   Play,
   Plus,
@@ -27,8 +29,15 @@ import {
 } from "../commands/command-types";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { EmptyState } from "../components/ui/empty-state";
@@ -200,7 +209,7 @@ export const WorkspaceTerminal = ({
         group: "Workspace terminal",
         scope,
         availability: () =>
-          (state().snapshot.discovery?.shells.length ?? 0) > 0
+          (state().snapshot.profiles?.visibleShells.length ?? 0) > 0
             ? { state: "enabled" }
             : { state: "disabled", reason: "No shells are available." },
         children: () => ({
@@ -210,7 +219,7 @@ export const WorkspaceTerminal = ({
           groups: [
             {
               id: "shells",
-              items: (state().snapshot.discovery?.shells ?? []).map(
+              items: (state().snapshot.profiles?.visibleShells ?? []).map(
                 (shell) => ({
                   id: shell.id,
                   title: shell.label,
@@ -365,7 +374,7 @@ export const WorkspaceTerminal = ({
           })}
         </div>
 
-        {snapshot.discovery?.shells.length ? (
+        {snapshot.profiles?.availableShells.length ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -379,7 +388,7 @@ export const WorkspaceTerminal = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-44">
-              {snapshot.discovery.shells.map((shell) => (
+              {snapshot.profiles.visibleShells.map((shell) => (
                 <DropdownMenuItem
                   key={shell.id}
                   onSelect={() => void store.createTerminal(shell.id)}
@@ -388,6 +397,58 @@ export const WorkspaceTerminal = ({
                   {shell.label}
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <ListFilter className="size-3.5" />
+                  Profiles
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-48">
+                  {snapshot.profiles.availableShells.map((shell) => {
+                    const visible = snapshot.profiles?.visibleShells.some(
+                      (candidate) => candidate.id === shell.id,
+                    );
+                    return (
+                      <DropdownMenuCheckboxItem
+                        key={shell.id}
+                        checked={visible}
+                        disabled={
+                          visible &&
+                          snapshot.profiles?.visibleShells.length === 1
+                        }
+                        onSelect={(event) => event.preventDefault()}
+                        onCheckedChange={(checked) => {
+                          if (typeof checked === "boolean") {
+                            void store.setShellVisibility(shell.id, checked);
+                          }
+                        }}
+                      >
+                        {shell.label}
+                      </DropdownMenuCheckboxItem>
+                    );
+                  })}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <CircleDot className="size-3.5" />
+                  Default
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-48">
+                  <DropdownMenuRadioGroup
+                    value={snapshot.profiles.defaultShellId ?? undefined}
+                    onValueChange={(shellId) => {
+                      void store.setDefaultShell(shellId);
+                    }}
+                  >
+                    {snapshot.profiles.visibleShells.map((shell) => (
+                      <DropdownMenuRadioItem key={shell.id} value={shell.id}>
+                        {shell.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : snapshot.discovery === null && !snapshot.discoveryError ? (

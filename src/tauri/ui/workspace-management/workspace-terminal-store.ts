@@ -13,7 +13,18 @@ import {
   type WorkspaceShellDiscovery,
   type WorkspaceTerminalEvent,
 } from "../runtime";
+import {
+  DEFAULT_TERMINAL_PROFILE_SETTINGS,
+  loadTerminalProfileSettings,
+  saveTerminalProfileSettings,
+  type TerminalProfileSettings,
+} from "../lib/shell-store";
 import { createWorkspaceRootKey } from "./workspace-management-model";
+import {
+  resolveTerminalProfiles,
+  terminalProfileSettingsEqual,
+  type ResolvedTerminalProfiles,
+} from "./workspace-terminal-profiles";
 
 export type WorkspaceTerminalStatus =
   | "loading"
@@ -36,6 +47,7 @@ export interface WorkspaceTerminalSessionView {
 
 export interface WorkspaceTerminalStoreSnapshot {
   discovery: WorkspaceShellDiscovery | null;
+  profiles: ResolvedTerminalProfiles | null;
   discoveryError: string | null;
   terminals: readonly WorkspaceTerminalSessionView[];
   activeTerminalId: string | null;
@@ -706,6 +718,11 @@ export class WorkspaceTerminalStore {
   private readonly terminals: WorkspaceTerminalSession[] = [];
   private readonly listeners = new Set<() => void>();
   private discovery: WorkspaceShellDiscovery | null = null;
+  private profileSettings: TerminalProfileSettings = {
+    ...DEFAULT_TERMINAL_PROFILE_SETTINGS,
+  };
+  private profiles: ResolvedTerminalProfiles | null = null;
+  private profileSettingsMutation: Promise<void> = Promise.resolve();
   private discoveryError: string | null = null;
   private activeTerminalId: string | null = null;
   private initializePromise: Promise<void> | null = null;
@@ -728,6 +745,7 @@ export class WorkspaceTerminalStore {
   private createSnapshot(): WorkspaceTerminalStoreSnapshot {
     return {
       discovery: this.discovery,
+      profiles: this.profiles,
       discoveryError: this.discoveryError,
       terminals: this.terminals.map((terminal) => terminal.view),
       activeTerminalId: this.activeTerminalId,
@@ -741,22 +759,59 @@ export class WorkspaceTerminalStore {
 
   initialize(): Promise<void> {
     if (this.initializePromise) return this.initializePromise;
-    this.initializePromise = discoverWorkspaceShells()
-      .then(async (discovery) => {
+    this.initializePromise = (async () => {
+      try {
+        const [discovery, settingsResult] = await Promise.all([
+          discoverWorkspaceShells(),
+          loadTerminalProfileSettings()
+            .then((settings) => ({ settings, error: null }))
+            .catch((error: unknown) => ({
+              settings: { ...DEFAULT_TERMINAL_PROFILE_SETTINGS },
+              error,
+            })),
+        ]);
         if (this.disposed) return;
         this.discovery = discovery;
+        const profiles = resolveTerminalProfiles(
+          settingsResult.settings,
+          discovery,
+        );
+        this.profileSettings = profiles.settings;
+        this.profiles = profiles;
+        if (settingsResult.error) {
+          this.discoveryError = errorMessage(settingsResult.error);
+        }
         this.publish();
-        const preferredShell = discovery.shells.find(
-          (shell) => shell.id === discovery.defaultShellId,
+        if (
+          !settingsResult.error &&
+          !terminalProfileSettingsEqual(
+            settingsResult.settings,
+            profiles.settings,
+          )
+        ) {
+          try {
+            await saveTerminalProfileSettings(profiles.settings);
+          } catch (failure) {
+            if (!this.disposed) {
+              this.discoveryError = errorMessage(failure);
+              this.publish();
+            }
+          }
+        }
+        await this.profileSettingsMutation;
+        if (this.disposed) return;
+        const startupProfiles = this.profiles ?? profiles;
+        const preferredShell = startupProfiles.visibleShells.find(
+          (shell) => shell.id === startupProfiles.defaultShellId,
         );
         const startupOrder = preferredShell
           ? [
               preferredShell,
-              ...discovery.shells.filter(
+              ...startupProfiles.visibleShells.filter(
                 (shell) => shell.id !== preferredShell.id,
               ),
             ]
-          : discovery.shells;
+          : startupProfiles.visibleShells;
         if (this.terminals.length === 0) {
           for (const [index, shell] of startupOrder.entries()) {
             const attempt = await this.createTerminalSession(shell.id);
@@ -775,12 +830,12 @@ export class WorkspaceTerminalStore {
             await attempt.terminal.dispose(true).catch(() => {});
           }
         }
-      })
-      .catch((failure: unknown) => {
+      } catch (failure) {
         if (this.disposed) return;
         this.discoveryError = errorMessage(failure);
         this.publish();
-      });
+      }
+    })();
     return this.initializePromise;
   }
 
@@ -788,7 +843,7 @@ export class WorkspaceTerminalStore {
     terminal: WorkspaceTerminalSession;
     started: boolean;
   } | null> {
-    const shell = this.discovery?.shells.find(
+    const shell = this.profiles?.visibleShells.find(
       (candidate) => candidate.id === shellId,
     );
     if (!shell || this.disposed) return null;
@@ -811,6 +866,71 @@ export class WorkspaceTerminalStore {
     if (this.disposed) return;
     if (!this.discovery) await this.initialize();
     await this.createTerminalSession(shellId);
+  }
+
+  private updateProfileSettings(
+    update: (
+      profiles: ResolvedTerminalProfiles,
+    ) => TerminalProfileSettings | null,
+  ): Promise<void> {
+    const operation = this.profileSettingsMutation.then(async () => {
+      if (!this.discovery || this.disposed) return;
+      const current = resolveTerminalProfiles(
+        this.profileSettings,
+        this.discovery,
+      );
+      const requestedSettings = update(current);
+      if (!requestedSettings) return;
+      const next = resolveTerminalProfiles(requestedSettings, this.discovery);
+      if (terminalProfileSettingsEqual(current.settings, next.settings)) {
+        return;
+      }
+
+      await saveTerminalProfileSettings(next.settings);
+      if (this.disposed) return;
+      this.profileSettings = next.settings;
+      this.profiles = next;
+      this.publish();
+    });
+
+    this.profileSettingsMutation = operation.catch((failure: unknown) => {
+      if (this.disposed) return;
+      this.discoveryError = errorMessage(failure);
+      this.publish();
+    });
+    return this.profileSettingsMutation;
+  }
+
+  setShellVisibility(shellId: string, visible: boolean): Promise<void> {
+    return this.updateProfileSettings((profiles) => {
+      if (!profiles.availableShells.some((shell) => shell.id === shellId)) {
+        return null;
+      }
+      const visibleShellIds = profiles.visibleShells.map((shell) => shell.id);
+      const currentlyVisible = visibleShellIds.includes(shellId);
+      if (
+        visible === currentlyVisible ||
+        (!visible && visibleShellIds.length <= 1)
+      ) {
+        return null;
+      }
+
+      return {
+        ...profiles.settings,
+        visibleShellIds: visible
+          ? [...visibleShellIds, shellId]
+          : visibleShellIds.filter((candidate) => candidate !== shellId),
+      };
+    });
+  }
+
+  setDefaultShell(shellId: string): Promise<void> {
+    return this.updateProfileSettings((profiles) => {
+      if (!profiles.visibleShells.some((shell) => shell.id === shellId)) {
+        return null;
+      }
+      return { ...profiles.settings, defaultShellId: shellId };
+    });
   }
 
   selectTerminal(terminalId: string): void {

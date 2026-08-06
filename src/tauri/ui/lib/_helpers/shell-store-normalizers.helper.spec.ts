@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
+  DEFAULT_TERMINAL_PROFILE_SETTINGS,
   normalizeMcpMarketplaceState,
   normalizeRalphSettings,
+  normalizeTerminalProfileSettings,
 } from "./shell-store-normalizers.helper";
 
-describe("Ralph and marketplace store normalizers", () => {
+describe("Shell store normalizers", () => {
   it("returns shared defaults for invalid persisted records", () => {
     expect(normalizeMcpMarketplaceState(undefined)).toBe(
       DEFAULT_MCP_MARKETPLACE_STATE,
@@ -76,12 +78,7 @@ describe("Ralph and marketplace store normalizers", () => {
 
     const normalized = normalizeRalphSettings({
       version: 1,
-      generationPromptHistory: [
-        7,
-        "",
-        "   ",
-        ...promptHistory,
-      ],
+      generationPromptHistory: [7, "", "   ", ...promptHistory],
     });
 
     expect(normalized.generationPromptHistory).toHaveLength(40);
@@ -139,4 +136,30 @@ describe("Ralph and marketplace store normalizers", () => {
     });
   });
 
+  it("normalizes terminal profile identifiers", () => {
+    expect(
+      normalizeTerminalProfileSettings({
+        version: 1,
+        visibleShellIds: [" pwsh ", "windows-powershell", "pwsh", " ", 7],
+        defaultShellId: " windows-powershell ",
+      }),
+    ).toEqual({
+      version: 1,
+      visibleShellIds: ["pwsh", "windows-powershell"],
+      defaultShellId: "windows-powershell",
+    });
+  });
+
+  it("falls back invalid terminal profile settings", () => {
+    expect(normalizeTerminalProfileSettings(undefined)).toBe(
+      DEFAULT_TERMINAL_PROFILE_SETTINGS,
+    );
+    expect(
+      normalizeTerminalProfileSettings({
+        version: 1,
+        visibleShellIds: "pwsh",
+        defaultShellId: " ",
+      }),
+    ).toEqual(DEFAULT_TERMINAL_PROFILE_SETTINGS);
+  });
 });

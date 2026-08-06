@@ -6,6 +6,7 @@ import type {
   OnboardingState,
   RalphSettings,
   RunningTaskMessageAction,
+  TerminalProfileSettings,
 } from "./_helpers/shell-store-normalizers.helper";
 import {
   DEFAULT_APP_SHELL_STATE,
@@ -13,11 +14,13 @@ import {
   DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
+  DEFAULT_TERMINAL_PROFILE_SETTINGS,
   normalizeAppearanceSettings,
   normalizeAppShellState,
   normalizeMcpMarketplaceState,
   normalizeRalphSettings,
   normalizeRunningTaskMessageAction,
+  normalizeTerminalProfileSettings,
 } from "./_helpers/shell-store-normalizers.helper";
 import {
   broadcastAppearanceSettingsChanged,
@@ -37,6 +40,7 @@ export {
   DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
+  DEFAULT_TERMINAL_PROFILE_SETTINGS,
 } from "./_helpers/shell-store-normalizers.helper";
 export type {
   AppearanceAccent,
@@ -52,6 +56,7 @@ export type {
   RalphFlowLibraryMode,
   RalphSettings,
   RunningTaskMessageAction,
+  TerminalProfileSettings,
 } from "./_helpers/shell-store-normalizers.helper";
 export {
   broadcastAppearanceSettingsChanged,
@@ -79,6 +84,8 @@ const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
 const MCP_MARKETPLACE_STORAGE_KEY = "machdoch.desktop.mcp-marketplace-state";
+const TERMINAL_PROFILE_SETTINGS_STORAGE_KEY =
+  "machdoch.desktop.terminal-profile-settings";
 
 export interface ShellStateSnapshot<T> {
   state: T;
@@ -614,6 +621,32 @@ export const saveAppearanceSettings = async (
 
   await broadcastAppearanceSettingsChanged();
   return committedSettings;
+};
+
+export const loadTerminalProfileSettings =
+  async (): Promise<TerminalProfileSettings> => {
+    return loadStoredValue<TerminalProfileSettings>({
+      storageKey: TERMINAL_PROFILE_SETTINGS_STORAGE_KEY,
+      fallback: DEFAULT_TERMINAL_PROFILE_SETTINGS,
+      normalize: normalizeTerminalProfileSettings,
+      tauriErrorMessage:
+        "Failed to load terminal profile settings from Tauri store",
+      localStorageErrorMessage:
+        "Failed to load terminal profile settings from localStorage",
+    });
+  };
+
+export const saveTerminalProfileSettings = async (
+  settings: TerminalProfileSettings,
+): Promise<void> => {
+  await saveRequiredStoredValue({
+    storageKey: TERMINAL_PROFILE_SETTINGS_STORAGE_KEY,
+    value: normalizeTerminalProfileSettings(settings),
+    tauriErrorMessage:
+      "Failed to persist terminal profile settings to Tauri store",
+    localStorageErrorMessage:
+      "Failed to persist terminal profile settings to localStorage",
+  });
 };
 
 export const updateMcpMarketplaceStateAtomically = async (

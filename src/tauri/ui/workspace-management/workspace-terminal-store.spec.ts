@@ -38,6 +38,13 @@ const runtimeMocks = vi.hoisted(() => ({
   >(async () => {}),
 }));
 
+const profileSettingsMocks = vi.hoisted(() => ({
+  loadTerminalProfileSettings: vi.fn<() => Promise<unknown>>(),
+  saveTerminalProfileSettings: vi.fn<(settings: unknown) => Promise<void>>(
+    async () => {},
+  ),
+}));
+
 const xtermState = vi.hoisted(() => ({
   writes: [] as Array<string | Uint8Array>,
   autoProcessWrites: true,
@@ -55,6 +62,16 @@ const xtermState = vi.hoisted(() => ({
 }));
 
 vi.mock("../runtime", () => runtimeMocks);
+
+vi.mock("../lib/shell-store", () => ({
+  DEFAULT_TERMINAL_PROFILE_SETTINGS: {
+    version: 1,
+    visibleShellIds: null,
+    defaultShellId: null,
+  },
+  loadTerminalProfileSettings: profileSettingsMocks.loadTerminalProfileSettings,
+  saveTerminalProfileSettings: profileSettingsMocks.saveTerminalProfileSettings,
+}));
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
@@ -171,6 +188,16 @@ describe("WorkspaceTerminalStore shell startup", () => {
       .mockReset()
       .mockResolvedValue(undefined);
     runtimeMocks.discoverWorkspaceShells.mockResolvedValue(discovery);
+    profileSettingsMocks.loadTerminalProfileSettings
+      .mockReset()
+      .mockResolvedValue({
+        version: 1,
+        visibleShellIds: null,
+        defaultShellId: null,
+      });
+    profileSettingsMocks.saveTerminalProfileSettings
+      .mockReset()
+      .mockResolvedValue(undefined);
     xtermState.writes.length = 0;
     xtermState.instances.length = 0;
     xtermState.autoProcessWrites = true;
@@ -203,6 +230,118 @@ describe("WorkspaceTerminalStore shell startup", () => {
         error: null,
       }),
     ]);
+  });
+
+  it("starts the persisted visible default and hides other launch profiles", async () => {
+    profileSettingsMocks.loadTerminalProfileSettings.mockResolvedValue({
+      version: 1,
+      visibleShellIds: ["cmd"],
+      defaultShellId: "cmd",
+    });
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "cmd-session",
+      shellId: "cmd",
+      processId: 42,
+    });
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+
+    await store.initialize();
+
+    expect(runtimeMocks.startWorkspaceTerminal).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.startWorkspaceTerminal.mock.calls[0]?.[1]).toBe("cmd");
+    expect(
+      store.getSnapshot().profiles?.availableShells.map((shell) => shell.id),
+    ).toEqual(["windows-powershell", "cmd"]);
+    expect(
+      store.getSnapshot().profiles?.visibleShells.map((shell) => shell.id),
+    ).toEqual(["cmd"]);
+    expect(store.getSnapshot().profiles?.defaultShellId).toBe("cmd");
+    expect(
+      profileSettingsMocks.saveTerminalProfileSettings,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("repairs unavailable persisted profiles before starting a terminal", async () => {
+    profileSettingsMocks.loadTerminalProfileSettings.mockResolvedValue({
+      version: 1,
+      visibleShellIds: ["removed", "cmd"],
+      defaultShellId: "removed",
+    });
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "cmd-session",
+      shellId: "cmd",
+      processId: 42,
+    });
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+
+    await store.initialize();
+
+    expect(
+      profileSettingsMocks.saveTerminalProfileSettings,
+    ).toHaveBeenCalledWith({
+      version: 1,
+      visibleShellIds: ["cmd"],
+      defaultShellId: null,
+    });
+    expect(runtimeMocks.startWorkspaceTerminal.mock.calls[0]?.[1]).toBe("cmd");
+  });
+
+  it("falls back when the selected default is hidden and keeps one profile visible", async () => {
+    profileSettingsMocks.loadTerminalProfileSettings.mockResolvedValue({
+      version: 1,
+      visibleShellIds: null,
+      defaultShellId: "cmd",
+    });
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "cmd-session",
+      shellId: "cmd",
+      processId: 42,
+    });
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+    await store.initialize();
+
+    await store.setShellVisibility("cmd", false);
+
+    expect(
+      profileSettingsMocks.saveTerminalProfileSettings,
+    ).toHaveBeenLastCalledWith({
+      version: 1,
+      visibleShellIds: ["windows-powershell"],
+      defaultShellId: null,
+    });
+    expect(store.getSnapshot().profiles?.defaultShellId).toBe(
+      "windows-powershell",
+    );
+
+    await store.setShellVisibility("windows-powershell", false);
+
+    expect(
+      profileSettingsMocks.saveTerminalProfileSettings,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      store.getSnapshot().profiles?.visibleShells.map((shell) => shell.id),
+    ).toEqual(["windows-powershell"]);
+  });
+
+  it("persists a visible default selection", async () => {
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "powershell-session",
+      shellId: "windows-powershell",
+      processId: 41,
+    });
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+    await store.initialize();
+
+    await store.setDefaultShell("cmd");
+
+    expect(
+      profileSettingsMocks.saveTerminalProfileSettings,
+    ).toHaveBeenCalledWith({
+      version: 1,
+      visibleShellIds: null,
+      defaultShellId: "cmd",
+    });
+    expect(store.getSnapshot().profiles?.defaultShellId).toBe("cmd");
   });
 
   it("keeps the final actionable failure when no shell starts", async () => {

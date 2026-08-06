@@ -69,6 +69,12 @@ export interface AppearanceSettings {
   quickChatBubbleStyle: QuickChatBubbleStyle;
 }
 
+export interface TerminalProfileSettings {
+  version: 1;
+  visibleShellIds: string[] | null;
+  defaultShellId: string | null;
+}
+
 export const DEFAULT_APPEARANCE_SETTINGS = {
   version: 1,
   theme: "dark",
@@ -76,6 +82,12 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
   accent: "sky",
   quickChatBubbleStyle: "classic",
 } as const satisfies AppearanceSettings;
+
+export const DEFAULT_TERMINAL_PROFILE_SETTINGS = {
+  version: 1,
+  visibleShellIds: null,
+  defaultShellId: null,
+} as const satisfies TerminalProfileSettings;
 
 const DEFAULT_RALPH_PROVIDER = SUPPORTED_PROVIDER_ORDER[0] ?? "openai";
 
@@ -352,5 +364,30 @@ export const normalizeAppearanceSettings = (
       ["classic", "glass", "pulse", "orbit"],
       DEFAULT_APPEARANCE_SETTINGS.quickChatBubbleStyle,
     ),
+  };
+};
+
+export const normalizeTerminalProfileSettings = (
+  value: unknown,
+): TerminalProfileSettings => {
+  if (!isRecord(value) || value.version !== 1) {
+    return DEFAULT_TERMINAL_PROFILE_SETTINGS;
+  }
+
+  const visibleShellIds = Array.isArray(value.visibleShellIds)
+    ? [
+        ...new Set(
+          value.visibleShellIds.flatMap((entry) => {
+            const shellId = normalizeOptionalString(entry);
+            return shellId ? [shellId] : [];
+          }),
+        ),
+      ]
+    : null;
+
+  return {
+    version: 1,
+    visibleShellIds,
+    defaultShellId: normalizeOptionalString(value.defaultShellId) ?? null,
   };
 };
