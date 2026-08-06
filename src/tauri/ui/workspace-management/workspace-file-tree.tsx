@@ -28,6 +28,11 @@ import {
 } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "../commands/command-types";
 import {
   Tooltip,
   TooltipContent,
@@ -487,6 +492,177 @@ export const WorkspaceFileTree = ({
     if (operation) await operation;
   };
 
+  const refreshFiles = (): void => {
+    refreshTree();
+    onRefresh();
+  };
+
+  const openSelectedExternally = (): void => {
+    if (!selectedEntry) return;
+    setOperationError(null);
+    void openWorkspacePath(workspaceRoot, selectedEntry.path).catch(
+      (error: unknown) =>
+        setOperationError(
+          error instanceof Error ? error.message : String(error),
+        ),
+    );
+  };
+
+  const fileTreeCommandStateRef = useRef({
+    visibleEntries,
+    selectedEntry,
+    operationPending,
+    formMode,
+    entryName,
+    openForm,
+    submitForm,
+    deleteSelected,
+    refreshFiles,
+    openSelectedExternally,
+    activateEntry,
+    setFormMode,
+  });
+  fileTreeCommandStateRef.current = {
+    visibleEntries,
+    selectedEntry,
+    operationPending,
+    formMode,
+    entryName,
+    openForm,
+    submitForm,
+    deleteSelected,
+    refreshFiles,
+    openSelectedExternally,
+    activateEntry,
+    setFormMode,
+  };
+  const fileTreeCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = {
+      kind: "view" as const,
+      ownerId: "workspaces",
+      viewId: "workspaces",
+    };
+    const state = () => fileTreeCommandStateRef.current;
+    const selectedAvailability = () =>
+      !state().selectedEntry
+        ? { state: "hidden" as const }
+        : state().operationPending
+          ? {
+              state: "disabled" as const,
+              reason: "A file operation is in progress.",
+            }
+          : { state: "enabled" as const };
+    return asPaletteCommands([
+      {
+        id: "workspaces.files.select",
+        title: "Open workspace file",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().visibleEntries.length
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No loaded workspace files." },
+        children: () => ({
+          id: "workspaces.files.select.page",
+          title: "Open workspace file",
+          searchPlaceholder: "Search workspace files",
+          groups: [
+            {
+              id: "entries",
+              items: state().visibleEntries.map(({ entry }) => ({
+                id: entry.path,
+                title: entry.name,
+                keywords: [entry.path, entry.kind],
+                current: state().selectedEntry?.path === entry.path,
+                execute: () => state().activateEntry(entry),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.files.new-file",
+        title: "New workspace file",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().operationPending
+            ? { state: "disabled", reason: "A file operation is in progress." }
+            : { state: "enabled" },
+        execute: () => state().openForm("file"),
+      },
+      {
+        id: "workspaces.files.new-folder",
+        title: "New workspace folder",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().operationPending
+            ? { state: "disabled", reason: "A file operation is in progress." }
+            : { state: "enabled" },
+        execute: () => state().openForm("directory"),
+      },
+      {
+        id: "workspaces.files.rename",
+        title: "Rename workspace entry",
+        group: "Workspace files",
+        scope,
+        availability: selectedAvailability,
+        execute: () => state().openForm("rename"),
+      },
+      {
+        id: "workspaces.files.delete",
+        title: "Delete workspace entry",
+        group: "Workspace files",
+        scope,
+        availability: selectedAvailability,
+        execute: () => void state().deleteSelected(),
+      },
+      {
+        id: "workspaces.files.open-system",
+        title: "Open workspace entry in system",
+        group: "Workspace files",
+        scope,
+        availability: selectedAvailability,
+        execute: () => state().openSelectedExternally(),
+      },
+      {
+        id: "workspaces.files.refresh",
+        title: "Refresh workspace files",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().operationPending
+            ? { state: "disabled", reason: "A file operation is in progress." }
+            : { state: "enabled" },
+        execute: () => state().refreshFiles(),
+      },
+      {
+        id: "workspaces.files.form.submit",
+        title: "Submit workspace file operation",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          !state().formMode
+            ? { state: "hidden" }
+            : !state().entryName.trim() || state().operationPending
+              ? { state: "disabled", reason: "Enter a name first." }
+              : { state: "enabled" },
+        execute: () => void state().submitForm(),
+      },
+      {
+        id: "workspaces.files.form.cancel",
+        title: "Cancel workspace file operation",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().formMode ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().setFormMode(null),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(fileTreeCommands);
+
   const renderDirectory = (path: string, level: number): JSX.Element => {
     const state = directories[path];
     if (state?.loading && !state.page) {
@@ -632,10 +808,7 @@ export const WorkspaceFileTree = ({
           label="Refresh files"
           icon={RefreshCw}
           disabled={operationPending}
-          onClick={() => {
-            refreshTree();
-            onRefresh();
-          }}
+          onClick={refreshFiles}
         />
       </header>
 
@@ -728,16 +901,7 @@ export const WorkspaceFileTree = ({
           label="Open in system"
           icon={ExternalLink}
           disabled={!selectedEntry || operationPending}
-          onClick={() => {
-            if (!selectedEntry) return;
-            setOperationError(null);
-            void openWorkspacePath(workspaceRoot, selectedEntry.path).catch(
-              (error: unknown) =>
-                setOperationError(
-                  error instanceof Error ? error.message : String(error),
-                ),
-            );
-          }}
+          onClick={openSelectedExternally}
         />
         {selectedEntry && isWorkspaceFile(selectedEntry) ? (
           <span className="ml-auto truncate pl-2 text-[10px] text-slate-600">

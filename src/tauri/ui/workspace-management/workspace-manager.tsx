@@ -39,6 +39,13 @@ import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { SearchField } from "../components/ui/search-field";
+import { getDefaultCommandShortcut } from "../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../commands/command-types";
 import { cn } from "../lib/utils";
 import {
   loadWorkspaceGitOverview,
@@ -675,6 +682,732 @@ export const WorkspaceManager = ({
     void refreshGitOverview();
   }, [refreshGitOverview]);
 
+  const saveWorkspaceSettings = (): void => {
+    if (
+      !registry ||
+      !selectedWorkspace ||
+      !instructionLibraryAvailable ||
+      setup.saving ||
+      !workspaceSettingsDirty ||
+      tagDraftPending ||
+      displayNameError
+    )
+      return;
+    void mutate({
+      operation: "workspace-configure",
+      root: selectedWorkspace.root,
+      displayName,
+      tags,
+      expectedRevision: registry.revision,
+    });
+  };
+
+  const relinkWorkspace = async (): Promise<void> => {
+    if (
+      !selectedWorkspace ||
+      setup.saving ||
+      workspaceSetup.loading ||
+      !instructionLibraryAvailable ||
+      !confirmDiscardWorkspaceDraft("relink this workspace")
+    )
+      return;
+    const root = await chooseDirectory();
+    if (!root) return;
+    if (selectedInstructionWorkspace && registry) {
+      const saved = await mutate({
+        operation: "workspace-relink",
+        workspaceId: selectedInstructionWorkspace.id,
+        root,
+        expectedRevision: registry.revision,
+      });
+      if (!saved) return;
+    } else {
+      await workspaceSetup.onRelink(selectedWorkspace.root, root);
+    }
+    setWorkspaceToolsDirty(false);
+    setTagDraftPending(false);
+  };
+
+  const removeWorkspace = async (): Promise<void> => {
+    if (
+      !selectedWorkspace ||
+      setup.saving ||
+      workspaceSetup.loading ||
+      !instructionLibraryAvailable
+    )
+      return;
+    const hasAssignments =
+      selectedInstructionWorkspace?.scopes.some(
+        (scope) => scope.profiles.length > 0,
+      ) ?? false;
+    if (
+      !window.confirm(
+        hasAssignments && workspaceDraftDirty
+          ? "Remove this workspace from Machdoch? Unsaved changes and manual instruction assignments will be discarded. Files on disk will not be deleted."
+          : hasAssignments
+            ? "Remove this workspace and its manual instruction assignments from Machdoch? Files on disk will not be deleted."
+            : workspaceDraftDirty
+              ? "Remove this workspace from Machdoch? Unsaved changes will be discarded. Files on disk will not be deleted."
+              : "Remove this workspace from Machdoch? Files on disk will not be deleted.",
+      )
+    )
+      return;
+    if (selectedInstructionWorkspace && registry) {
+      const saved = await mutate({
+        operation: "workspace-remove",
+        workspaceId: selectedInstructionWorkspace.id,
+        confirmAssignedRemoval: hasAssignments,
+        expectedRevision: registry.revision,
+      });
+      if (!saved) return;
+    }
+    setWorkspaceToolsDirty(false);
+    setTagDraftPending(false);
+    await workspaceSetup.onRemove(selectedWorkspace.root);
+  };
+
+  const refreshGit = async (): Promise<void> => {
+    const repositoryRoot = await refreshGitRepositories();
+    if (gitSection === "pull-requests" && repositoryRoot) {
+      await refreshPullRequests(repositoryRoot);
+    }
+  };
+
+  const removeRemote = (name: string): void => {
+    if (!window.confirm(`Remove Git remote ${name}?`)) return;
+    void runGitAction("remove-remote", { remoteName: name });
+  };
+
+  const setRootProfileAssignment = (
+    profileId: string,
+    assigned: boolean,
+  ): void => {
+    if (
+      !registry ||
+      !selectedWorkspace ||
+      setup.saving ||
+      workspaceSettingsDirty ||
+      !instructionLibraryAvailable
+    )
+      return;
+    const current =
+      selectedInstructionWorkspace?.scopes.find((scope) => scope.path === ".")
+        ?.profiles ?? [];
+    void mutate({
+      operation: "workspace-configure",
+      root: selectedWorkspace.root,
+      displayName,
+      tags,
+      profileIds: assigned
+        ? [...new Set([...current, profileId])]
+        : current.filter((id) => id !== profileId),
+      expectedRevision: registry.revision,
+    });
+  };
+
+  const removeScopedProfileAssignment = (
+    profileId: string,
+    path: string,
+    profileIds: readonly string[],
+  ): void => {
+    if (
+      !registry ||
+      !selectedInstructionWorkspace ||
+      setup.saving ||
+      workspaceSettingsDirty ||
+      !instructionLibraryAvailable
+    )
+      return;
+    void mutate({
+      operation: "workspace-scope-set",
+      workspaceId: selectedInstructionWorkspace.id,
+      path,
+      profileIds: profileIds.filter((id) => id !== profileId),
+      expectedRevision: registry.revision,
+    });
+  };
+
+  const workspaceCommandStateRef = useRef({
+    setup,
+    workspaceSetup,
+    activeWorkspaceRoot,
+    activeWorkspaceConfigured,
+    workspaces,
+    profiles,
+    selectedWorkspaceKey,
+    selectedWorkspace,
+    selectedInstructionWorkspace,
+    selectedGitRepositoryRoot,
+    selectedGitOverview,
+    gitRepositories,
+    gitSection,
+    gitBusy,
+    gitAction,
+    pullRequests,
+    branchName,
+    remoteName,
+    remoteUrl,
+    workspaceSettingsDirty,
+    workspaceDraftDirty,
+    instructionLibraryAvailable,
+    tagDraftPending,
+    displayNameError,
+    addWorkspace,
+    selectWorkspace,
+    refreshWorkspaces,
+    saveWorkspaceSettings,
+    relinkWorkspace,
+    removeWorkspace,
+    selectGitRepository,
+    refreshGit,
+    setGitSection,
+    runGitAction,
+    refreshPullRequests,
+    removeRemote,
+    setRootProfileAssignment,
+    removeScopedProfileAssignment,
+  });
+  workspaceCommandStateRef.current = {
+    setup,
+    workspaceSetup,
+    activeWorkspaceRoot,
+    activeWorkspaceConfigured,
+    workspaces,
+    profiles,
+    selectedWorkspaceKey,
+    selectedWorkspace,
+    selectedInstructionWorkspace,
+    selectedGitRepositoryRoot,
+    selectedGitOverview,
+    gitRepositories,
+    gitSection,
+    gitBusy,
+    gitAction,
+    pullRequests,
+    branchName,
+    remoteName,
+    remoteUrl,
+    workspaceSettingsDirty,
+    workspaceDraftDirty,
+    instructionLibraryAvailable,
+    tagDraftPending,
+    displayNameError,
+    addWorkspace,
+    selectWorkspace,
+    refreshWorkspaces,
+    saveWorkspaceSettings,
+    relinkWorkspace,
+    removeWorkspace,
+    selectGitRepository,
+    refreshGit,
+    setGitSection,
+    runGitAction,
+    refreshPullRequests,
+    removeRemote,
+    setRootProfileAssignment,
+    removeScopedProfileAssignment,
+  };
+
+  const workspaceCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = {
+      kind: "view" as const,
+      ownerId: "workspaces",
+      viewId: "workspaces",
+    };
+    const state = () => workspaceCommandStateRef.current;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    const selectedAvailability = () =>
+      state().selectedWorkspace
+        ? { state: "enabled" as const }
+        : { state: "hidden" as const };
+    const gitAvailability = () => {
+      const current = state();
+      if (!current.selectedWorkspace) return { state: "hidden" as const };
+      return current.gitBusy ||
+        current.gitAction ||
+        !current.selectedGitOverview
+        ? { state: "disabled" as const, reason: "Git is unavailable or busy." }
+        : { state: "enabled" as const };
+    };
+    return asPaletteCommands([
+      {
+        id: "workspaces.add",
+        title: "Add workspace",
+        group: "Workspaces",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("workspaces.add"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        availability: () =>
+          state().setup.saving || state().workspaceSetup.loading
+            ? { state: "disabled", reason: "Workspaces are busy." }
+            : { state: "enabled" },
+        execute: () => void state().addWorkspace(),
+      },
+      {
+        id: "workspaces.add-current",
+        title: "Add current workspace",
+        group: "Workspaces",
+        scope,
+        availability: () =>
+          !state().activeWorkspaceRoot || state().activeWorkspaceConfigured
+            ? { state: "hidden" }
+            : state().setup.saving || state().workspaceSetup.loading
+              ? { state: "disabled", reason: "Workspaces are busy." }
+              : { state: "enabled" },
+        execute: () => {
+          const root = state().activeWorkspaceRoot;
+          if (root) void state().addWorkspace(root);
+        },
+      },
+      {
+        id: "workspaces.select",
+        title: "Select workspace",
+        group: "Workspaces",
+        scope,
+        availability: () =>
+          state().workspaces.length
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No configured workspaces." },
+        children: () => ({
+          id: "workspaces.select.page",
+          title: "Select workspace",
+          searchPlaceholder: "Search workspaces",
+          numericSelection: true,
+          groups: [
+            {
+              id: "workspaces",
+              items: state().workspaces.map((workspace, index) => ({
+                id: workspace.key,
+                title: getManagedWorkspaceName(workspace),
+                keywords: [
+                  workspace.root,
+                  ...getManagedWorkspaceTags(workspace),
+                ],
+                current: state().selectedWorkspaceKey === workspace.key,
+                numericKey: numericKey(index),
+                execute: () => state().selectWorkspace(workspace.key),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.refresh",
+        title: "Refresh workspaces",
+        group: "Workspaces",
+        scope,
+        availability: () =>
+          state().setup.loading || state().setup.saving
+            ? { state: "disabled", reason: "Workspaces are busy." }
+            : { state: "enabled" },
+        execute: () => state().refreshWorkspaces(),
+      },
+      {
+        id: "workspaces.settings.save",
+        title: "Save workspace settings",
+        group: "Workspaces",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("workspaces.settings.save"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        availability: () => {
+          const current = state();
+          if (!current.selectedWorkspace) return { state: "hidden" };
+          if (!current.instructionLibraryAvailable)
+            return {
+              state: "disabled",
+              reason: "Instruction library is unavailable.",
+            };
+          if (current.tagDraftPending)
+            return {
+              state: "disabled",
+              reason: "Finish editing the pending tag.",
+            };
+          if (current.displayNameError)
+            return { state: "disabled", reason: current.displayNameError };
+          return current.workspaceSettingsDirty
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No workspace settings to save." };
+        },
+        execute: () => state().saveWorkspaceSettings(),
+      },
+      {
+        id: "workspaces.relink",
+        title: "Relink workspace",
+        group: "Workspaces",
+        scope,
+        availability: () => {
+          const available = selectedAvailability();
+          if (available.state !== "enabled") return available;
+          return state().setup.saving ||
+            state().workspaceSetup.loading ||
+            !state().instructionLibraryAvailable
+            ? { state: "disabled", reason: "Workspace cannot be relinked now." }
+            : available;
+        },
+        execute: () => void state().relinkWorkspace(),
+      },
+      {
+        id: "workspaces.remove",
+        title: "Remove workspace",
+        group: "Workspaces",
+        scope,
+        availability: () => {
+          const available = selectedAvailability();
+          if (available.state !== "enabled") return available;
+          return state().setup.saving ||
+            state().workspaceSetup.loading ||
+            !state().instructionLibraryAvailable
+            ? { state: "disabled", reason: "Workspace cannot be removed now." }
+            : available;
+        },
+        execute: () => void state().removeWorkspace(),
+      },
+      {
+        id: "workspaces.git.repository.select",
+        title: "Choose Git repository",
+        group: "Workspace Git",
+        scope,
+        availability: () =>
+          (state().gitRepositories?.repositories.length ?? 0) > 0
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "workspaces.git.repository.select.page",
+          title: "Choose Git repository",
+          searchPlaceholder: "Search repositories",
+          groups: [
+            {
+              id: "repositories",
+              items: (state().gitRepositories?.repositories ?? []).map(
+                (repository) => ({
+                  id: repository.repositoryRoot,
+                  title: workspaceGitRepositoryLabel(repository),
+                  keywords: [repository.repositoryRoot],
+                  current:
+                    state().selectedGitRepositoryRoot ===
+                    repository.repositoryRoot,
+                  availability:
+                    state().gitBusy || state().gitAction
+                      ? { state: "disabled", reason: "Git is busy." }
+                      : { state: "enabled" },
+                  execute: () =>
+                    state().selectGitRepository(repository.repositoryRoot),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.git.section.select",
+        title: "Choose Git view",
+        group: "Workspace Git",
+        scope,
+        availability: selectedAvailability,
+        children: () => ({
+          id: "workspaces.git.section.select.page",
+          title: "Choose Git view",
+          searchPlaceholder: "Search Git views",
+          numericSelection: true,
+          groups: [
+            {
+              id: "views",
+              items: (
+                [
+                  ["status", "Status"],
+                  ["branches", "Branches"],
+                  ["remotes", "Remotes"],
+                  ["pull-requests", "Pull requests"],
+                ] as const
+              ).map(([value, title], index) => ({
+                id: value,
+                title,
+                current: state().gitSection === value,
+                numericKey: numericKey(index),
+                execute: () => state().setGitSection(value),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.git.refresh",
+        title: "Refresh Git",
+        group: "Workspace Git",
+        scope,
+        availability: () =>
+          !state().selectedWorkspace
+            ? { state: "hidden" }
+            : state().gitBusy || state().gitAction
+              ? { state: "disabled", reason: "Git is busy." }
+              : { state: "enabled" },
+        execute: () => void state().refreshGit(),
+      },
+      {
+        id: "workspaces.git.fetch",
+        title: "Fetch Git repository",
+        group: "Workspace Git",
+        scope,
+        availability: gitAvailability,
+        execute: () => void state().runGitAction("fetch"),
+      },
+      {
+        id: "workspaces.git.pull",
+        title: "Pull Git repository",
+        group: "Workspace Git",
+        scope,
+        availability: () => {
+          const available = gitAvailability();
+          if (available.state !== "enabled") return available;
+          return state().selectedGitOverview?.upstream
+            ? available
+            : { state: "disabled", reason: "No upstream branch." };
+        },
+        execute: () => void state().runGitAction("pull"),
+      },
+      {
+        id: "workspaces.git.branch.create",
+        title: "Create Git branch",
+        group: "Workspace Git",
+        scope,
+        availability: () => {
+          const available = gitAvailability();
+          if (available.state !== "enabled") return available;
+          return state().branchName.trim()
+            ? available
+            : { state: "disabled", reason: "Enter a branch name first." };
+        },
+        execute: () =>
+          void state().runGitAction("create-branch", {
+            branchName: state().branchName,
+          }),
+      },
+      {
+        id: "workspaces.git.branch.switch",
+        title: "Switch Git branch",
+        group: "Workspace Git",
+        scope,
+        availability: gitAvailability,
+        children: () => ({
+          id: "workspaces.git.branch.switch.page",
+          title: "Switch Git branch",
+          searchPlaceholder: "Search branches",
+          groups: [
+            {
+              id: "local",
+              label: "Local",
+              items: (state().selectedGitOverview?.localBranches ?? []).map(
+                (branch) => ({
+                  id: branch.name,
+                  title: branch.name,
+                  current: branch.current,
+                  availability: branch.current
+                    ? { state: "disabled", reason: "Current branch." }
+                    : { state: "enabled" },
+                  execute: () =>
+                    void state().runGitAction("checkout", {
+                      branchName: branch.name,
+                    }),
+                }),
+              ),
+            },
+            {
+              id: "remote",
+              label: "Remote",
+              items: (state().selectedGitOverview?.remoteBranches ?? []).map(
+                (branch) => ({
+                  id: branch.name,
+                  title: branch.name,
+                  execute: () =>
+                    void state().runGitAction("checkout-remote", {
+                      branchName: branch.name,
+                    }),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.git.remote.add",
+        title: "Add Git remote",
+        group: "Workspace Git",
+        scope,
+        availability: () => {
+          const available = gitAvailability();
+          if (available.state !== "enabled") return available;
+          return state().remoteName.trim() && state().remoteUrl.trim()
+            ? available
+            : {
+                state: "disabled",
+                reason: "Enter a remote name and URL first.",
+              };
+        },
+        execute: () =>
+          void state().runGitAction("add-remote", {
+            remoteName: state().remoteName,
+            remoteUrl: state().remoteUrl,
+          }),
+      },
+      {
+        id: "workspaces.git.remote.remove",
+        title: "Remove Git remote",
+        group: "Workspace Git",
+        scope,
+        availability: gitAvailability,
+        children: () => ({
+          id: "workspaces.git.remote.remove.page",
+          title: "Remove Git remote",
+          searchPlaceholder: "Search remotes",
+          groups: [
+            {
+              id: "remotes",
+              items: (state().selectedGitOverview?.remotes ?? []).map(
+                (remote) => ({
+                  id: remote.name,
+                  title: remote.name,
+                  keywords: [remote.fetchUrl ?? "", remote.pushUrl ?? ""],
+                  execute: () => state().removeRemote(remote.name),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.git.pull-request.open",
+        title: "Open pull request",
+        group: "Workspace Git",
+        scope,
+        availability: () =>
+          (state().pullRequests?.items.length ?? 0) > 0
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "workspaces.git.pull-request.open.page",
+          title: "Open pull request",
+          searchPlaceholder: "Search pull requests",
+          groups: [
+            {
+              id: "pull-requests",
+              items: (state().pullRequests?.items ?? []).map((pullRequest) => ({
+                id: `${pullRequest.number}`,
+                title: `#${pullRequest.number} ${pullRequest.title}`,
+                keywords: [pullRequest.headBranch, pullRequest.baseBranch],
+                execute: () => void openExternalUrl(pullRequest.url),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.instructions.assign",
+        title: "Configure instruction assignments",
+        group: "Workspaces",
+        scope,
+        availability: () =>
+          !state().selectedWorkspace || !state().instructionLibraryAvailable
+            ? { state: "hidden" }
+            : state().workspaceSettingsDirty || state().setup.saving
+              ? { state: "disabled", reason: "Save workspace settings first." }
+              : { state: "enabled" },
+        children: () => ({
+          id: "workspaces.instructions.assign.page",
+          title: "Configure instruction assignments",
+          searchPlaceholder: "Search instruction files",
+          groups: [
+            {
+              id: "root",
+              label: "Workspace root",
+              items: state().profiles.map((profile) => {
+                const rootAssigned =
+                  state()
+                    .selectedInstructionWorkspace?.scopes.find(
+                      (candidate) => candidate.path === ".",
+                    )
+                    ?.profiles.includes(profile.id) ?? false;
+                const readOnly = profile.global || profile.match !== undefined;
+                return {
+                  id: profile.id,
+                  title: profile.name,
+                  keywords: [profile.description ?? ""],
+                  current:
+                    profile.global ||
+                    profileIsAutomaticForWorkspace(
+                      profile,
+                      state().selectedInstructionWorkspace,
+                    ) ||
+                    rootAssigned,
+                  availability: readOnly
+                    ? {
+                        state: "disabled",
+                        reason: "This assignment is automatic.",
+                      }
+                    : !profileIsEnabled(profile) && !rootAssigned
+                      ? {
+                          state: "disabled",
+                          reason: "Instruction file is disabled.",
+                        }
+                      : { state: "enabled" },
+                  execute: () =>
+                    state().setRootProfileAssignment(profile.id, !rootAssigned),
+                };
+              }),
+            },
+            {
+              id: "scoped",
+              label: "Nested scopes",
+              items: (state().selectedInstructionWorkspace?.scopes ?? [])
+                .filter((candidate) => candidate.path !== ".")
+                .flatMap((candidate) =>
+                  candidate.profiles.map((profileId) => {
+                    const profile = state().profiles.find(
+                      (item) => item.id === profileId,
+                    );
+                    return {
+                      id: `${candidate.path}:${profileId}`,
+                      title: profile
+                        ? `${profile.name} — ${candidate.path}`
+                        : candidate.path,
+                      keywords: [candidate.path, profile?.name ?? ""],
+                      execute: () =>
+                        state().removeScopedProfileAssignment(
+                          profileId,
+                          candidate.path,
+                          candidate.profiles,
+                        ),
+                    };
+                  }),
+                ),
+            },
+          ],
+        }),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(workspaceCommands);
+
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
@@ -858,31 +1591,7 @@ export const WorkspaceManager = ({
                         ? undefined
                         : "Instruction library unavailable."
                     }
-                    onClick={async () => {
-                      if (
-                        !confirmDiscardWorkspaceDraft("relink this workspace")
-                      ) {
-                        return;
-                      }
-                      const root = await chooseDirectory();
-                      if (!root) return;
-                      if (selectedInstructionWorkspace && registry) {
-                        const saved = await mutate({
-                          operation: "workspace-relink",
-                          workspaceId: selectedInstructionWorkspace.id,
-                          root,
-                          expectedRevision: registry.revision,
-                        });
-                        if (!saved) return;
-                      } else {
-                        await workspaceSetup.onRelink(
-                          selectedWorkspace.root,
-                          root,
-                        );
-                      }
-                      setWorkspaceToolsDirty(false);
-                      setTagDraftPending(false);
-                    }}
+                    onClick={() => void relinkWorkspace()}
                   >
                     Relink
                   </Button>
@@ -901,37 +1610,7 @@ export const WorkspaceManager = ({
                         : "Instruction library unavailable."
                     }
                     aria-label="Remove workspace"
-                    onClick={async () => {
-                      const hasAssignments =
-                        selectedInstructionWorkspace?.scopes.some(
-                          (scope) => scope.profiles.length > 0,
-                        ) ?? false;
-                      if (
-                        !window.confirm(
-                          hasAssignments && workspaceDraftDirty
-                            ? "Remove this workspace from Machdoch? Unsaved changes and manual instruction assignments will be discarded. Files on disk will not be deleted."
-                            : hasAssignments
-                              ? "Remove this workspace and its manual instruction assignments from Machdoch? Files on disk will not be deleted."
-                              : workspaceDraftDirty
-                                ? "Remove this workspace from Machdoch? Unsaved changes will be discarded. Files on disk will not be deleted."
-                                : "Remove this workspace from Machdoch? Files on disk will not be deleted.",
-                        )
-                      ) {
-                        return;
-                      }
-                      if (selectedInstructionWorkspace && registry) {
-                        const saved = await mutate({
-                          operation: "workspace-remove",
-                          workspaceId: selectedInstructionWorkspace.id,
-                          confirmAssignedRemoval: hasAssignments,
-                          expectedRevision: registry.revision,
-                        });
-                        if (!saved) return;
-                      }
-                      setWorkspaceToolsDirty(false);
-                      setTagDraftPending(false);
-                      await workspaceSetup.onRemove(selectedWorkspace.root);
-                    }}
+                    onClick={() => void removeWorkspace()}
                   >
                     <Trash2 className="size-4 text-red-300" />
                   </Button>
@@ -987,16 +1666,7 @@ export const WorkspaceManager = ({
                   aria-describedby={
                     tagDraftPending ? pendingTagMessageId : undefined
                   }
-                  onClick={() => {
-                    if (!registry || !instructionLibraryAvailable) return;
-                    void mutate({
-                      operation: "workspace-configure",
-                      root: selectedWorkspace.root,
-                      displayName,
-                      tags,
-                      expectedRevision: registry.revision,
-                    });
-                  }}
+                  onClick={saveWorkspaceSettings}
                 >
                   <Save className="size-4" />
                   Save
@@ -1121,14 +1791,7 @@ export const WorkspaceManager = ({
                     variant="ghost"
                     disabled={gitBusy || gitAction !== null}
                     aria-label="Refresh Git"
-                    onClick={() => {
-                      void (async () => {
-                        const repositoryRoot = await refreshGitRepositories();
-                        if (gitSection === "pull-requests" && repositoryRoot) {
-                          await refreshPullRequests(repositoryRoot);
-                        }
-                      })();
-                    }}
+                    onClick={() => void refreshGit()}
                   >
                     <RefreshCw
                       className={cn("size-4", gitBusy && "animate-spin")}
@@ -1432,17 +2095,7 @@ export const WorkspaceManager = ({
                                   variant="ghost"
                                   disabled={gitAction !== null}
                                   aria-label={`Remove ${remote.name}`}
-                                  onClick={() => {
-                                    if (
-                                      !window.confirm(
-                                        `Remove Git remote ${remote.name}?`,
-                                      )
-                                    )
-                                      return;
-                                    void runGitAction("remove-remote", {
-                                      remoteName: remote.name,
-                                    });
-                                  }}
+                                  onClick={() => removeRemote(remote.name)}
                                 >
                                   <Trash2 className="size-4 text-red-300" />
                                 </Button>
@@ -1629,21 +2282,12 @@ export const WorkspaceManager = ({
                                     (!profileIsEnabled(profile) &&
                                       !rootAssigned)
                                   }
-                                  onChange={(event) => {
-                                    const current = rootScope?.profiles ?? [];
-                                    void mutate({
-                                      operation: "workspace-configure",
-                                      root: selectedWorkspace.root,
-                                      displayName,
-                                      tags,
-                                      profileIds: event.target.checked
-                                        ? [...current, profile.id]
-                                        : current.filter(
-                                            (id) => id !== profile.id,
-                                          ),
-                                      expectedRevision: registry.revision,
-                                    });
-                                  }}
+                                  onChange={(event) =>
+                                    setRootProfileAssignment(
+                                      profile.id,
+                                      event.target.checked,
+                                    )
+                                  }
                                   className="mt-0.5 accent-sky-500"
                                 />
                               )}
@@ -1686,21 +2330,13 @@ export const WorkspaceManager = ({
                                         workspaceSettingsDirty ||
                                         !instructionLibraryAvailable
                                       }
-                                      onClick={() => {
-                                        if (!selectedInstructionWorkspace) {
-                                          return;
-                                        }
-                                        void mutate({
-                                          operation: "workspace-scope-set",
-                                          workspaceId:
-                                            selectedInstructionWorkspace.id,
-                                          path: scope.path,
-                                          profileIds: scope.profiles.filter(
-                                            (id) => id !== profile.id,
-                                          ),
-                                          expectedRevision: registry.revision,
-                                        });
-                                      }}
+                                      onClick={() =>
+                                        removeScopedProfileAssignment(
+                                          profile.id,
+                                          scope.path,
+                                          scope.profiles,
+                                        )
+                                      }
                                       className="text-slate-600 hover:text-red-300"
                                     >
                                       <X />

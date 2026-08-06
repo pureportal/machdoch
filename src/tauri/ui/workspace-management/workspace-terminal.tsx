@@ -20,6 +20,11 @@ import {
   type JSX,
 } from "react";
 import { Button } from "../components/ui/button";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "../commands/command-types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,6 +134,174 @@ export const WorkspaceTerminal = ({
     void store.closeTerminal(terminal.id);
   };
 
+  const openExternalTerminal = (): void => {
+    const external = snapshot.discovery?.externalTerminal;
+    if (!external) return;
+    void openWorkspaceTerminalHost(workspaceRoot, external.id).catch(
+      (failure: unknown) => store.reportError(failure),
+    );
+  };
+
+  const terminalCommandStateRef = useRef({
+    snapshot,
+    activeTerminal,
+    store,
+    closeTerminal,
+    openExternalTerminal,
+  });
+  terminalCommandStateRef.current = {
+    snapshot,
+    activeTerminal,
+    store,
+    closeTerminal,
+    openExternalTerminal,
+  };
+  const terminalCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = {
+      kind: "view" as const,
+      ownerId: "workspaces",
+      viewId: "workspaces",
+    };
+    const state = () => terminalCommandStateRef.current;
+    return asPaletteCommands([
+      {
+        id: "workspaces.terminal.select",
+        title: "Select workspace terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () =>
+          state().snapshot.terminals.length
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "workspaces.terminal.select.page",
+          title: "Select workspace terminal",
+          searchPlaceholder: "Search terminals",
+          groups: [
+            {
+              id: "terminals",
+              items: state().snapshot.terminals.map((terminal) => ({
+                id: terminal.id,
+                title: terminal.label,
+                keywords: [
+                  terminal.title ?? "",
+                  terminalStatusLabel(terminal.status),
+                ],
+                current: terminal.id === state().snapshot.activeTerminalId,
+                execute: () => state().store.selectTerminal(terminal.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.terminal.new",
+        title: "New workspace terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () =>
+          (state().snapshot.discovery?.shells.length ?? 0) > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No shells are available." },
+        children: () => ({
+          id: "workspaces.terminal.new.page",
+          title: "New workspace terminal",
+          searchPlaceholder: "Search shells",
+          groups: [
+            {
+              id: "shells",
+              items: (state().snapshot.discovery?.shells ?? []).map(
+                (shell) => ({
+                  id: shell.id,
+                  title: shell.label,
+                  execute: () => void state().store.createTerminal(shell.id),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.terminal.start",
+        title: "Start or restart workspace terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () =>
+          !state().activeTerminal
+            ? { state: "hidden" }
+            : state().activeTerminal?.transitioning
+              ? { state: "disabled", reason: "Terminal is starting." }
+              : { state: "enabled" },
+        execute: () => void state().store.startActiveTerminal(),
+      },
+      {
+        id: "workspaces.terminal.stop",
+        title: "Stop workspace terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () => {
+          const terminal = state().activeTerminal;
+          if (!terminal) return { state: "hidden" };
+          return terminal.sessionActive || terminal.status === "starting"
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Terminal is not running." };
+        },
+        execute: () => void state().store.stopActiveTerminal(),
+      },
+      {
+        id: "workspaces.terminal.clear",
+        title: "Clear workspace terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () =>
+          state().activeTerminal ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().store.clearActiveTerminal(),
+      },
+      {
+        id: "workspaces.terminal.close",
+        title: "Close workspace terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () =>
+          state().snapshot.terminals.length
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "workspaces.terminal.close.page",
+          title: "Close workspace terminal",
+          searchPlaceholder: "Search terminals",
+          groups: [
+            {
+              id: "terminals",
+              items: state().snapshot.terminals.map((terminal) => ({
+                id: terminal.id,
+                title: terminal.label,
+                keywords: [
+                  terminal.title ?? "",
+                  terminalStatusLabel(terminal.status),
+                ],
+                current: terminal.id === state().snapshot.activeTerminalId,
+                execute: () => state().closeTerminal(terminal),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.terminal.open-external",
+        title: "Open workspace in external terminal",
+        group: "Workspace terminal",
+        scope,
+        availability: () =>
+          state().snapshot.discovery?.externalTerminal
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().openExternalTerminal(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(terminalCommands);
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-[#050910]">
       <header className="flex h-10 shrink-0 items-center gap-1.5 border-b border-slate-800/80 px-2.5">
@@ -228,13 +401,7 @@ export const WorkspaceTerminal = ({
             variant="ghost"
             className="size-7 shrink-0"
             aria-label={`Open in ${snapshot.discovery.externalTerminal.label}`}
-            onClick={() => {
-              const external = snapshot.discovery?.externalTerminal;
-              if (!external) return;
-              void openWorkspaceTerminalHost(workspaceRoot, external.id).catch(
-                (failure: unknown) => store.reportError(failure),
-              );
-            }}
+            onClick={openExternalTerminal}
           >
             <ExternalLink className="size-3.5" />
           </Button>

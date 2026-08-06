@@ -65,10 +65,64 @@ const terminalTheme = {
   brightWhite: "#f8fafc",
 } as const;
 
+const TERMINAL_INPUT_CHUNK_BYTES = 48 * 1024;
+const TERMINAL_OUTPUT_ACK_CHUNK_BYTES = 256 * 1024;
+const TERMINAL_SCROLLBACK_LINES = 10_000;
+
 const decodeTerminalOutput = (value: string): Uint8Array => {
   const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const output = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index);
+  }
+  return output;
 };
+
+const decodedBase64ByteLength = (value: string): number => {
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
+};
+
+const utf8CodePointByteLength = (codePoint: number): number =>
+  codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+
+const splitUtf8Input = (value: string): string[] => {
+  if (!value) return [];
+  const chunks: string[] = [];
+  let chunkStart = 0;
+  let chunkBytes = 0;
+  let index = 0;
+  while (index < value.length) {
+    const codePoint = value.codePointAt(index) ?? 0;
+    const codeUnits = codePoint > 0xffff ? 2 : 1;
+    const codePointBytes = utf8CodePointByteLength(codePoint);
+    if (
+      chunkBytes + codePointBytes > TERMINAL_INPUT_CHUNK_BYTES &&
+      index > chunkStart
+    ) {
+      chunks.push(value.slice(chunkStart, index));
+      chunkStart = index;
+      chunkBytes = 0;
+    }
+    chunkBytes += codePointBytes;
+    index += codeUnits;
+  }
+  chunks.push(value.slice(chunkStart));
+  return chunks;
+};
+
+interface PendingTerminalInput {
+  sessionId: string;
+  generation: number;
+  data: string;
+  binary: boolean;
+}
+
+interface PendingStartingInput {
+  generation: number;
+  data: string;
+  binary: boolean;
+}
 
 let fallbackTerminalId = 0;
 
@@ -95,8 +149,14 @@ class WorkspaceTerminalSession {
   private backendSessionId: string | null = null;
   private generation = 0;
   private resizeTimer: number | null = null;
-  private writeQueue: Promise<void> = Promise.resolve();
-  private startPromise: Promise<void> | null = null;
+  private readonly pendingInput: PendingTerminalInput[] = [];
+  private readonly pendingStartingInput: PendingStartingInput[] = [];
+  private inputDrainRunning = false;
+  private readonly pendingOutputAcknowledgements = new Map<string, number>();
+  private acknowledgementDrainRunning = false;
+  private pendingTerminalWrites = 0;
+  private readonly terminalWriteWaiters = new Set<() => void>();
+  private startPromise: Promise<boolean> | null = null;
   private disposed = false;
   private transitionPending = false;
   private terminalTitle = "";
@@ -106,6 +166,7 @@ class WorkspaceTerminalSession {
   constructor(
     workspaceRoot: string,
     shell: WorkspaceShell,
+    platform: string,
     ordinal: number,
     onChange: () => void,
   ) {
@@ -126,20 +187,29 @@ class WorkspaceTerminalSession {
       minimumContrastRatio: 4.5,
       rightClickSelectsWord: true,
       screenReaderMode: true,
-      scrollback: 5000,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
       theme: terminalTheme,
+      windowsPty: platform === "windows" ? { backend: "conpty" } : undefined,
     });
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
     this.terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) {
+      if (event.type !== "keydown") {
         return true;
       }
-      if (event.key.toLowerCase() === "c" && this.terminal.hasSelection()) {
-        void navigator.clipboard?.writeText(this.terminal.getSelection());
-        return false;
+      const key = event.key.toLowerCase();
+      const terminalClipboardShortcut =
+        (event.ctrlKey && event.shiftKey) ||
+        (event.metaKey && !event.ctrlKey && !event.altKey);
+      if (!terminalClipboardShortcut) return true;
+      if (key === "c") {
+        if (this.terminal.hasSelection()) {
+          void navigator.clipboard?.writeText(this.terminal.getSelection());
+          return false;
+        }
+        return !event.metaKey;
       }
-      if (event.key.toLowerCase() === "v") {
+      if (key === "v") {
         void navigator.clipboard
           ?.readText()
           .then((text) => this.terminal.paste(text))
@@ -209,33 +279,192 @@ class WorkspaceTerminalSession {
     this.onChange();
   }
 
+  private completeTerminalWrite(): void {
+    this.pendingTerminalWrites = Math.max(0, this.pendingTerminalWrites - 1);
+    if (this.pendingTerminalWrites !== 0) return;
+    for (const resolve of this.terminalWriteWaiters) resolve();
+    this.terminalWriteWaiters.clear();
+  }
+
+  private writeTerminal(
+    data: string | Uint8Array,
+    onProcessed?: () => void,
+  ): void {
+    this.pendingTerminalWrites += 1;
+    try {
+      this.terminal.write(data, () => {
+        this.completeTerminalWrite();
+        onProcessed?.();
+      });
+    } catch (failure) {
+      this.completeTerminalWrite();
+      throw failure;
+    }
+  }
+
+  private waitForTerminalWrites(): Promise<void> {
+    if (this.pendingTerminalWrites === 0) return Promise.resolve();
+    return new Promise((resolve) => this.terminalWriteWaiters.add(resolve));
+  }
+
   private queueInput(data: string, binary: boolean): void {
     const sessionId = this.backendSessionId;
     const generation = this.generation;
-    if (!sessionId || this.disposed) return;
-    this.writeQueue = this.writeQueue
-      .then(async () => {
+    if (this.disposed || !data) return;
+    if (!sessionId) {
+      if (this.transitionPending) {
+        this.pendingStartingInput.push({ generation, data, binary });
+      }
+      return;
+    }
+    this.pendingInput.push({ sessionId, generation, data, binary });
+    this.scheduleInputDrain();
+  }
+
+  private attachBackendSession(sessionId: string, generation: number): void {
+    if (
+      !sessionId ||
+      this.backendSessionId !== null ||
+      this.generation !== generation ||
+      this.disposed
+    ) {
+      return;
+    }
+    this.backendSessionId = sessionId;
+    const bufferedInput = this.pendingStartingInput.splice(0);
+    for (const input of bufferedInput) {
+      if (input.generation === generation) {
+        this.pendingInput.push({ sessionId, ...input });
+      }
+    }
+    this.scheduleInputDrain();
+    this.onChange();
+  }
+
+  private scheduleInputDrain(): void {
+    if (this.inputDrainRunning || this.pendingInput.length === 0) return;
+    this.inputDrainRunning = true;
+    queueMicrotask(() => void this.drainInput());
+  }
+
+  private async drainInput(): Promise<void> {
+    try {
+      while (this.pendingInput.length > 0) {
+        const first = this.pendingInput.shift();
+        if (!first) break;
+        const values = [first.data];
+        while (
+          this.pendingInput[0]?.sessionId === first.sessionId &&
+          this.pendingInput[0]?.generation === first.generation &&
+          this.pendingInput[0]?.binary === first.binary
+        ) {
+          const next = this.pendingInput.shift();
+          if (next) values.push(next.data);
+        }
         if (
-          this.backendSessionId !== sessionId ||
-          this.generation !== generation ||
+          this.backendSessionId !== first.sessionId ||
+          this.generation !== first.generation ||
           this.disposed
         ) {
-          return;
+          continue;
         }
-        if (binary) {
-          await writeWorkspaceTerminalBinary(sessionId, data);
+        const value = values.join("");
+        const chunks = first.binary
+          ? Array.from(
+              { length: Math.ceil(value.length / TERMINAL_INPUT_CHUNK_BYTES) },
+              (_, index) =>
+                value.slice(
+                  index * TERMINAL_INPUT_CHUNK_BYTES,
+                  (index + 1) * TERMINAL_INPUT_CHUNK_BYTES,
+                ),
+            )
+          : splitUtf8Input(value);
+        for (const chunk of chunks) {
+          if (
+            this.backendSessionId !== first.sessionId ||
+            this.generation !== first.generation ||
+            this.disposed
+          ) {
+            break;
+          }
+          try {
+            if (first.binary) {
+              await writeWorkspaceTerminalBinary(first.sessionId, chunk);
+            } else {
+              await writeWorkspaceTerminal(first.sessionId, chunk);
+            }
+          } catch (failure) {
+            this.pendingInput.splice(
+              0,
+              this.pendingInput.length,
+              ...this.pendingInput.filter(
+                (input) => input.sessionId !== first.sessionId,
+              ),
+            );
+            if (
+              this.backendSessionId === first.sessionId &&
+              this.generation === first.generation
+            ) {
+              this.setError(failure);
+            }
+            break;
+          }
+        }
+      }
+    } finally {
+      this.inputDrainRunning = false;
+      this.scheduleInputDrain();
+    }
+  }
+
+  private queueOutputAcknowledgement(sessionId: string, bytes: number): void {
+    if (bytes <= 0) return;
+    this.pendingOutputAcknowledgements.set(
+      sessionId,
+      (this.pendingOutputAcknowledgements.get(sessionId) ?? 0) + bytes,
+    );
+    this.scheduleAcknowledgementDrain();
+  }
+
+  private scheduleAcknowledgementDrain(): void {
+    if (
+      this.acknowledgementDrainRunning ||
+      this.pendingOutputAcknowledgements.size === 0
+    ) {
+      return;
+    }
+    this.acknowledgementDrainRunning = true;
+    queueMicrotask(() => void this.drainOutputAcknowledgements());
+  }
+
+  private async drainOutputAcknowledgements(): Promise<void> {
+    try {
+      while (this.pendingOutputAcknowledgements.size > 0) {
+        const next = this.pendingOutputAcknowledgements.entries().next().value;
+        if (!next) break;
+        const [sessionId, pendingBytes] = next;
+        const bytes = Math.min(pendingBytes, TERMINAL_OUTPUT_ACK_CHUNK_BYTES);
+        if (pendingBytes === bytes) {
+          this.pendingOutputAcknowledgements.delete(sessionId);
         } else {
-          await writeWorkspaceTerminal(sessionId, data);
+          this.pendingOutputAcknowledgements.set(
+            sessionId,
+            pendingBytes - bytes,
+          );
         }
-      })
-      .catch((failure: unknown) => {
-        if (
-          this.backendSessionId === sessionId &&
-          this.generation === generation
-        ) {
-          this.setError(failure);
+        try {
+          await acknowledgeWorkspaceTerminalOutput(sessionId, bytes);
+        } catch (failure) {
+          this.pendingOutputAcknowledgements.delete(sessionId);
+          if (this.backendSessionId === sessionId && !this.disposed) {
+            this.setError(failure);
+          }
         }
-      });
+      }
+    } finally {
+      this.acknowledgementDrainRunning = false;
+      this.scheduleAcknowledgementDrain();
+    }
   }
 
   private queueResize(columns: number, rows: number): void {
@@ -265,8 +494,19 @@ class WorkspaceTerminalSession {
     }, 80);
   }
 
-  start(): Promise<void> {
-    if (this.disposed || this.transitionPending) return Promise.resolve();
+  start(): Promise<boolean> {
+    if (this.disposed) return Promise.resolve(false);
+    if (this.startPromise) {
+      if (this.transitionPending) return this.startPromise;
+      const previousStart = this.startPromise;
+      const restartGeneration = this.generation;
+      return previousStart.then(() => {
+        if (this.disposed || this.generation !== restartGeneration)
+          return false;
+        return this.start();
+      });
+    }
+    if (this.transitionPending) return Promise.resolve(false);
     const operation = this.startInternal();
     this.startPromise = operation;
     void operation.then(
@@ -280,9 +520,11 @@ class WorkspaceTerminalSession {
     return operation;
   }
 
-  private async startInternal(): Promise<void> {
+  private async startInternal(): Promise<boolean> {
     this.transitionPending = true;
     const generation = ++this.generation;
+    this.pendingInput.length = 0;
+    this.pendingStartingInput.length = 0;
     const previousSessionId = this.backendSessionId;
     this.backendSessionId = null;
     if (this.resizeTimer !== null) {
@@ -291,7 +533,6 @@ class WorkspaceTerminalSession {
     }
     this.error = null;
     this.status = "starting";
-    this.terminal.reset();
     this.onChange();
 
     if (previousSessionId) {
@@ -302,10 +543,13 @@ class WorkspaceTerminalSession {
           this.transitionPending = false;
           this.setError(failure);
         }
-        return;
+        return false;
       }
     }
-    if (this.disposed || this.generation !== generation) return;
+    if (this.disposed || this.generation !== generation) return false;
+    await this.waitForTerminalWrites();
+    if (this.disposed || this.generation !== generation) return false;
+    this.terminal.reset();
 
     let exitedBeforeStartResolved = false;
     let failedBeforeStartResolved = false;
@@ -313,26 +557,18 @@ class WorkspaceTerminalSession {
       if (this.disposed || this.generation !== generation) return;
       switch (event.type) {
         case "output":
-          const output = decodeTerminalOutput(event.data);
+          this.attachBackendSession(event.sessionId, generation);
+          const outputByteLength = decodedBase64ByteLength(event.data);
           try {
-            this.terminal.write(output, () => {
-              void acknowledgeWorkspaceTerminalOutput(
+            const output = decodeTerminalOutput(event.data);
+            this.writeTerminal(output, () =>
+              this.queueOutputAcknowledgement(
                 event.sessionId,
                 output.byteLength,
-              ).catch((failure: unknown) => {
-                if (
-                  this.backendSessionId === event.sessionId &&
-                  this.generation === generation
-                ) {
-                  this.setError(failure);
-                }
-              });
-            });
-          } catch (failure) {
-            void acknowledgeWorkspaceTerminalOutput(
-              event.sessionId,
-              output.byteLength,
+              ),
             );
+          } catch (failure) {
+            this.queueOutputAcknowledgement(event.sessionId, outputByteLength);
             failedBeforeStartResolved = true;
             this.setError(failure);
           }
@@ -347,9 +583,11 @@ class WorkspaceTerminalSession {
           exitedBeforeStartResolved = true;
           this.backendSessionId = null;
           this.status = "exited";
-          this.terminal.write(
+          const exitCode =
+            typeof event.exitCode === "number" ? event.exitCode : null;
+          this.writeTerminal(
             `\r\n\x1b[90m[Process exited${
-              event.exitCode === null ? "" : ` with code ${event.exitCode}`
+              exitCode === null ? "" : ` with code ${exitCode}`
             }]\x1b[0m\r\n`,
           );
           this.onChange();
@@ -367,22 +605,41 @@ class WorkspaceTerminalSession {
       );
       if (this.disposed || this.generation !== generation) {
         await stopWorkspaceTerminal(started.sessionId).catch(() => {});
-        return;
+        return false;
       }
       if (!exitedBeforeStartResolved) {
-        this.backendSessionId = started.sessionId;
+        this.attachBackendSession(started.sessionId, generation);
         this.status = failedBeforeStartResolved ? "error" : "running";
         this.onChange();
-        await resizeWorkspaceTerminal(
-          started.sessionId,
-          Math.max(2, this.terminal.cols),
-          Math.max(1, this.terminal.rows),
-        ).catch(() => {});
+        try {
+          await resizeWorkspaceTerminal(
+            started.sessionId,
+            Math.max(2, this.terminal.cols),
+            Math.max(1, this.terminal.rows),
+          );
+        } catch (failure) {
+          failedBeforeStartResolved = true;
+          if (this.backendSessionId === started.sessionId) {
+            this.setError(failure);
+          }
+        }
+        return (
+          !failedBeforeStartResolved &&
+          !exitedBeforeStartResolved &&
+          this.backendSessionId === started.sessionId
+        );
       }
+      return false;
     } catch (failure) {
       if (!this.disposed && this.generation === generation) {
+        const provisionalSessionId = this.backendSessionId;
+        this.backendSessionId = null;
+        if (provisionalSessionId) {
+          await stopWorkspaceTerminal(provisionalSessionId).catch(() => {});
+        }
         this.setError(failure);
       }
+      return false;
     } finally {
       if (!this.disposed && this.generation === generation) {
         this.transitionPending = false;
@@ -394,6 +651,8 @@ class WorkspaceTerminalSession {
   async stop(): Promise<void> {
     if (this.disposed) return;
     this.generation += 1;
+    this.pendingInput.length = 0;
+    this.pendingStartingInput.length = 0;
     this.transitionPending = false;
     if (this.resizeTimer !== null) {
       window.clearTimeout(this.resizeTimer);
@@ -415,18 +674,23 @@ class WorkspaceTerminalSession {
     if (this.disposed) return;
     this.disposed = true;
     this.generation += 1;
+    this.pendingInput.length = 0;
+    this.pendingStartingInput.length = 0;
     if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
     const sessionId = this.backendSessionId;
     const startPromise = this.startPromise;
     this.backendSessionId = null;
     for (const disposable of this.disposables) disposable.dispose();
+    this.pendingTerminalWrites = 0;
+    for (const resolve of this.terminalWriteWaiters) resolve();
+    this.terminalWriteWaiters.clear();
     this.terminal.dispose();
-    const cleanup = [startPromise];
+    const cleanup: Array<Promise<unknown> | null> = [startPromise];
     if (stopBackend && sessionId) {
       cleanup.push(stopWorkspaceTerminal(sessionId));
     }
     const results = await Promise.allSettled(
-      cleanup.filter((operation): operation is Promise<void> => !!operation),
+      cleanup.filter((operation): operation is Promise<unknown> => !!operation),
     );
     const failure = results.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -482,9 +746,34 @@ export class WorkspaceTerminalStore {
         if (this.disposed) return;
         this.discovery = discovery;
         this.publish();
-        const shellId = discovery.defaultShellId ?? discovery.shells[0]?.id;
-        if (shellId && this.terminals.length === 0) {
-          await this.createTerminal(shellId);
+        const preferredShell = discovery.shells.find(
+          (shell) => shell.id === discovery.defaultShellId,
+        );
+        const startupOrder = preferredShell
+          ? [
+              preferredShell,
+              ...discovery.shells.filter(
+                (shell) => shell.id !== preferredShell.id,
+              ),
+            ]
+          : discovery.shells;
+        if (this.terminals.length === 0) {
+          for (const [index, shell] of startupOrder.entries()) {
+            const attempt = await this.createTerminalSession(shell.id);
+            if (!attempt || attempt.started || this.disposed) return;
+            if (index === startupOrder.length - 1) return;
+
+            const terminalIndex = this.terminals.indexOf(attempt.terminal);
+            if (terminalIndex >= 0) this.terminals.splice(terminalIndex, 1);
+            if (this.nextOrdinal === attempt.terminal.ordinal + 1) {
+              this.nextOrdinal -= 1;
+            }
+            if (this.activeTerminalId === attempt.terminal.id) {
+              this.activeTerminalId = null;
+            }
+            this.publish();
+            await attempt.terminal.dispose(true).catch(() => {});
+          }
         }
       })
       .catch((failure: unknown) => {
@@ -495,16 +784,18 @@ export class WorkspaceTerminalStore {
     return this.initializePromise;
   }
 
-  async createTerminal(shellId: string): Promise<void> {
-    if (this.disposed) return;
-    if (!this.discovery) await this.initialize();
+  private async createTerminalSession(shellId: string): Promise<{
+    terminal: WorkspaceTerminalSession;
+    started: boolean;
+  } | null> {
     const shell = this.discovery?.shells.find(
       (candidate) => candidate.id === shellId,
     );
-    if (!shell || this.disposed) return;
+    if (!shell || this.disposed) return null;
     const terminal = new WorkspaceTerminalSession(
       this.workspaceRoot,
       shell,
+      this.discovery?.platform ?? "unknown",
       this.nextOrdinal,
       this.publish,
     );
@@ -512,7 +803,14 @@ export class WorkspaceTerminalStore {
     this.terminals.push(terminal);
     this.activeTerminalId = terminal.id;
     this.publish();
-    await terminal.start();
+    const started = await terminal.start();
+    return { terminal, started };
+  }
+
+  async createTerminal(shellId: string): Promise<void> {
+    if (this.disposed) return;
+    if (!this.discovery) await this.initialize();
+    await this.createTerminalSession(shellId);
   }
 
   selectTerminal(terminalId: string): void {

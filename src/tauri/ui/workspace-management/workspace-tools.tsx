@@ -1,4 +1,17 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
+import { getDefaultCommandShortcut } from "../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "../commands/command-types";
 import type { WorkspaceDirectoryEntry } from "../runtime";
 import { WorkspaceFileTree } from "./workspace-file-tree";
 import { WorkspaceFileViewer } from "./workspace-file-viewer";
@@ -103,6 +116,41 @@ export const WorkspaceTools = ({
     observer.observe(container);
     return () => observer.disconnect();
   }, [clampTerminalHeight]);
+
+  const workspaceToolsCommandStateRef = useRef({ terminalOpen });
+  workspaceToolsCommandStateRef.current = { terminalOpen };
+  const workspaceToolsCommands = useMemo<readonly CommandDefinition[]>(
+    () =>
+      asPaletteCommands([
+        {
+          id: "workspaces.terminal.toggle",
+          title: "Toggle workspace terminal",
+          group: "Workspace tools",
+          scope: {
+            kind: "view",
+            ownerId: "workspaces",
+            viewId: "workspaces",
+          },
+          shortcuts: [
+            {
+              chord: getDefaultCommandShortcut("workspaces.terminal.toggle"),
+              runtimes: ["tauri"],
+              allowIn: [
+                "document",
+                "text-entry",
+                "interactive-control",
+                "command-surface",
+              ],
+            },
+          ],
+          current: () => workspaceToolsCommandStateRef.current.terminalOpen,
+          overlayPolicy: "replace-non-modal",
+          execute: () => setTerminalOpen((current) => !current),
+        },
+      ]),
+    [],
+  );
+  useOptionalRegisterCommands(workspaceToolsCommands);
 
   return (
     <section

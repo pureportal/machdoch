@@ -23,10 +23,15 @@ import {
   useState,
   type JSX,
 } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownContent } from "../components/markdown-content";
+import { getWorkspaceMarkdownLinkTarget } from "../components/workspace-markdown-links";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "../commands/command-types";
 import { cn } from "../lib/utils";
 import {
   openWorkspacePath,
@@ -115,6 +120,9 @@ const WorkspaceMarkdownImage = ({
       src={resolvedSource}
       alt={alt ?? ""}
       title={title}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
       className="my-4 max-h-[32rem] max-w-full rounded-md object-contain"
       onError={() => setFailed(true)}
     />
@@ -459,6 +467,144 @@ export const WorkspaceFileViewer = ({
     );
   };
 
+  const fileViewerCommandStateRef = useRef({
+    selectedEntry,
+    selectedFile,
+    document,
+    dirty,
+    mode,
+    loading,
+    saving,
+    externalChanged,
+    loadFile,
+    save,
+    reloadFromDisk,
+    openExternally,
+    setMode,
+  });
+  fileViewerCommandStateRef.current = {
+    selectedEntry,
+    selectedFile,
+    document,
+    dirty,
+    mode,
+    loading,
+    saving,
+    externalChanged,
+    loadFile,
+    save,
+    reloadFromDisk,
+    openExternally,
+    setMode,
+  };
+  const fileViewerCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = {
+      kind: "view" as const,
+      ownerId: "workspaces",
+      viewId: "workspaces",
+    };
+    const state = () => fileViewerCommandStateRef.current;
+    const selectedAvailability = () =>
+      state().selectedEntry
+        ? { state: "enabled" as const }
+        : { state: "hidden" as const };
+    return asPaletteCommands([
+      {
+        id: "workspaces.file.save",
+        title: "Save workspace file",
+        group: "Workspace files",
+        scope,
+        availability: () => {
+          const current = state();
+          if (!current.document?.editable) return { state: "hidden" };
+          if (current.saving)
+            return { state: "disabled", reason: "File is already saving." };
+          return current.dirty
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No file changes to save." };
+        },
+        execute: () => void state().save(),
+      },
+      {
+        id: "workspaces.file.reload",
+        title: "Reload workspace file from disk",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          !state().document
+            ? { state: "hidden" }
+            : state().saving || state().loading
+              ? { state: "disabled", reason: "File is busy." }
+              : { state: "enabled" },
+        execute: () => void state().reloadFromDisk(),
+      },
+      {
+        id: "workspaces.file.open-system",
+        title: "Open selected file in system",
+        group: "Workspace files",
+        scope,
+        availability: selectedAvailability,
+        execute: () => state().openExternally(),
+      },
+      {
+        id: "workspaces.file.mode",
+        title: "Choose workspace file view",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().document?.editable && state().document?.previewKind
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "workspaces.file.mode.page",
+          title: "Choose workspace file view",
+          searchPlaceholder: "Search views",
+          numericSelection: true,
+          groups: [
+            {
+              id: "views",
+              items: (["edit", "preview"] as const).map((mode, index) => ({
+                id: mode,
+                title: mode === "edit" ? "Edit" : "Preview",
+                current: state().mode === mode,
+                numericKey: index === 0 ? "1" : "2",
+                execute: () => state().setMode(mode),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "workspaces.file.overwrite",
+        title: "Overwrite externally changed file",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().externalChanged && state().dirty
+            ? state().saving
+              ? { state: "disabled", reason: "File is already saving." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().save(true),
+      },
+      {
+        id: "workspaces.file.retry",
+        title: "Retry opening workspace file",
+        group: "Workspace files",
+        scope,
+        availability: () =>
+          state().selectedFile && !state().document && !state().loading
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => {
+          const file = state().selectedFile;
+          if (file) void state().loadFile(file.path);
+        },
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(fileViewerCommands);
+
   if (!selectedEntry) {
     return (
       <div className="grid min-h-0 min-w-0 flex-1 place-items-center bg-slate-950/30 p-6">
@@ -663,21 +809,28 @@ export const WorkspaceFileViewer = ({
             />
           </div>
         ) : document.previewKind === "markdown" ? (
-          <article className="h-full overflow-auto px-6 py-5 text-sm leading-6 text-slate-300 [&_a]:text-sky-300 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-700 [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-slate-900 [&_code]:px-1 [&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:text-slate-100 [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-slate-100 [&_h3]:mb-2 [&_h3]:mt-5 [&_h3]:text-base [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_p]:my-3 [&_pre]:my-4 [&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-slate-800 [&_pre]:bg-slate-950 [&_pre]:p-4">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+          <article className="h-full overflow-auto px-6 py-5">
+            <MarkdownContent
+              content={draft}
+              workspaceRoot={workspaceRoot}
+              className="text-sm text-slate-300"
               components={{
                 a: ({ href, children, title }) => (
                   <a
                     href={href}
                     title={title}
+                    className="app-markdown-link"
                     onClick={(event) => {
                       if (!href || href.startsWith("#")) return;
                       event.preventDefault();
+                      const workspaceTarget = getWorkspaceMarkdownLinkTarget(
+                        href,
+                        workspaceRoot,
+                      );
                       const external =
                         href.startsWith("//") ||
                         /^[a-z][a-z\d+.-]*:/iu.test(href);
-                      if (external) {
+                      if (external && !workspaceTarget) {
                         const target = href.startsWith("//")
                           ? `https:${href}`
                           : href;
@@ -687,10 +840,16 @@ export const WorkspaceFileViewer = ({
                         );
                         return;
                       }
-                      const path = resolveWorkspaceMarkdownPath(
-                        document.path,
-                        href,
-                      );
+                      const absoluteWorkspaceTarget =
+                        workspaceTarget &&
+                        (/^(?:file:|[a-z]:[\\/]|[\\/])/iu.test(href) ||
+                          href.startsWith("//"));
+                      const path = absoluteWorkspaceTarget
+                        ? workspaceTarget.relativePath
+                        : resolveWorkspaceMarkdownPath(
+                            document.path,
+                            workspaceTarget?.relativePath ?? href,
+                          );
                       if (!path) {
                         setSaveError("This link points outside the workspace.");
                         return;
@@ -714,9 +873,7 @@ export const WorkspaceFileViewer = ({
                   />
                 ),
               }}
-            >
-              {draft}
-            </ReactMarkdown>
+            />
           </article>
         ) : previewError ? (
           <div className="grid h-full place-items-center p-6">
