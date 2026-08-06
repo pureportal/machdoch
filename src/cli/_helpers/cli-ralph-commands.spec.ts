@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { createRalphFlowFingerprint } from "../../core/_helpers/create-ralph-flow-fingerprint.helper.js";
 import type { RalphFlow, RalphRunResult } from "../../core/ralph.js";
 import { createFlow } from "../../core/__test__/ralph-test-helpers.js";
 import {
   createInterruptedRalphRunResult,
   getRalphRunExitCode,
   isRecoverableRalphRunStatus,
+  summarizeFlow,
   summarizeRun,
   validateRalphJsonBatch,
 } from "./cli-ralph-commands.js";
@@ -57,6 +59,22 @@ describe("summarizeRun", () => {
         id: "request-1",
       }),
     });
+  });
+});
+
+describe("summarizeFlow", () => {
+  it("preserves the complete flow used by desktop compare-and-swap mutations", () => {
+    const flow = createFlow({
+      guidance: "Keep the durable autonomy contract.",
+    });
+    const transportedFlow = JSON.parse(
+      JSON.stringify(summarizeFlow(flow)),
+    ) as RalphFlow;
+
+    expect(transportedFlow).toEqual(flow);
+    expect(createRalphFlowFingerprint(transportedFlow)).toBe(
+      createRalphFlowFingerprint(flow),
+    );
   });
 });
 

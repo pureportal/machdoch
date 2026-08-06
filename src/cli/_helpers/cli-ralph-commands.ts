@@ -586,21 +586,9 @@ const runRalphWatchService = async (args: ParsedCliArgs): Promise<void> => {
   });
 };
 
-const summarizeFlow = (flow: RalphFlow): Record<string, unknown> => {
-  return {
-    schemaVersion: flow.schemaVersion,
-    id: flow.id,
-    alias: flow.alias ?? null,
-    name: flow.name,
-    description: flow.description ?? null,
-    settings: flow.settings ?? null,
-    variables: flow.variables ?? [],
-    blocks: flow.blocks,
-    edges: flow.edges,
-    createdAt: flow.createdAt ?? null,
-    updatedAt: flow.updatedAt ?? null,
-  };
-};
+export const summarizeFlow = (flow: RalphFlow): Record<string, unknown> => ({
+  ...flow,
+});
 
 const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);

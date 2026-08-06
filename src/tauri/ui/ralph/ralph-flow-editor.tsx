@@ -170,6 +170,7 @@ import {
   REASONING_LABELS,
 } from "../reasoning-options";
 import { createFlowAlias } from "./_helpers/create-flow-alias.helper";
+import { formatRalphFlowDeleteFailure } from "./_helpers/format-ralph-flow-delete-failure.helper";
 import {
   getBlockOutputs,
   isExecutableRalphCanvasBlock,
@@ -5030,7 +5031,7 @@ export const RalphFlowEditor = ({
 
       setMessage(`Deleted Ralph flow \`${flow.name}\`.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      window.alert(formatRalphFlowDeleteFailure(flow.name, error));
     } finally {
       finishBlockingOperation(operationId);
     }

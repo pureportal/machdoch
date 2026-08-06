@@ -135,6 +135,45 @@ describe("Ralph flow storage", () => {
     }
   });
 
+  it("deletes a user-scoped flow with its concurrency fingerprint", async () => {
+    const workspaceRoot = await createWorkspace();
+    const userConfigRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-ralph-user-delete-"),
+    );
+    const previousUserConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;
+    rootsToClean.push(userConfigRoot);
+    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
+
+    try {
+      const flow = createFlow({
+        id: "global-delete",
+        alias: "global-delete",
+        name: "Global delete",
+        guidance: "Preserve this field through the desktop transport.",
+      });
+      await writeRalphFlow(workspaceRoot, flow, { scope: "user" });
+      const storedFlow = await readRalphFlow(workspaceRoot, flow.id, {
+        scope: "user",
+      });
+
+      await expect(
+        deleteRalphFlow(workspaceRoot, flow.id, {
+          scope: "user",
+          expectedFingerprint: createRalphFlowFingerprint(storedFlow),
+        }),
+      ).resolves.toMatchObject({ id: flow.id });
+      await expect(
+        readRalphFlow(workspaceRoot, flow.id, { scope: "user" }),
+      ).rejects.toBeInstanceOf(RalphFlowNotFoundError);
+    } finally {
+      if (previousUserConfigRoot === undefined) {
+        delete process.env.MACHDOCH_USER_CONFIG_DIR;
+      } else {
+        process.env.MACHDOCH_USER_CONFIG_DIR = previousUserConfigRoot;
+      }
+    }
+  });
+
   it("serializes user flow writes with the settings transfer boundary", async () => {
     const workspaceRoot = await createWorkspace();
     const userConfigRoot = await mkdtemp(
