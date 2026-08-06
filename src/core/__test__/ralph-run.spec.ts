@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   symlink,
@@ -3268,7 +3269,7 @@ describe("runRalphFlow", () => {
       expect(result.status).toBe("completed");
       expect(executeTask).toHaveBeenCalledTimes(1);
       expect(vi.mocked(executeTask).mock.calls[0]?.[1].workspaceRoot).toBe(
-        project,
+        await realpath(project),
       );
       await expect(
         readFile(

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ describe("RALPH repository context", () => {
     });
 
     expect(context.source).toBe("nested");
-    expect(context.worktreeRoot).toBe(nested);
+    expect(context.worktreeRoot).toBe(await realpath(nested));
     expect(context.workspacePath).toBe("vendor/project");
     expect(context.digest).toHaveLength(64);
   });
