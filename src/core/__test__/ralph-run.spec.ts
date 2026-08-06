@@ -5464,7 +5464,7 @@ describe("runRalphFlow", () => {
     GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
   );
 
-  it("scans, updates, selects, and marks JSON scope registries", async () => {
+  it("migrates, updates, selects, and marks version 1 scope registries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
     const registryPath =
       ".machdoch/ralph/scope-registry/test-flow.scope-registry.json";
@@ -5477,6 +5477,53 @@ describe("runRalphFlow", () => {
       await writeFile(
         join(workspace, "packages", "api", "package.json"),
         "{}",
+        "utf8",
+      );
+      const persistedRegistryPath = join(workspace, registryPath);
+      await mkdir(join(workspace, ".machdoch", "ralph", "scope-registry"), {
+        recursive: true,
+      });
+      await writeFile(
+        persistedRegistryPath,
+        JSON.stringify({
+          schema: "machdoch.ralph.scopeRegistry",
+          schemaVersion: 1,
+          flowAlias: "test-flow",
+          updatedAt: "2026-06-25T10:00:00.000Z",
+          selection: {
+            strategy: "start-to-end",
+            cursor: 1,
+            cycle: 2,
+            seed: "test-flow",
+            currentScopeId: "src",
+            completedScopeIds: [],
+          },
+          scopes: [
+            {
+              id: "src",
+              title: "Src",
+              kind: "source-root",
+              status: "active",
+              paths: ["src"],
+              globs: ["src/**/*"],
+              tags: ["source-root"],
+              priority: 70,
+              risk: "low",
+              fingerprint: "legacy-src",
+              evidence: ["src/index.ts"],
+              discoveredAt: "2026-06-25T10:00:00.000Z",
+              updatedAt: "2026-06-25T10:00:00.000Z",
+              lastSelectedAt: "2026-06-25T10:00:00.000Z",
+              lastValidatedAt: null,
+              selectedCount: 1,
+              validatedCount: 0,
+              lastOutcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+              lastOutcomeAt: "2026-06-25T10:00:00.000Z",
+              eligibleAfter: null,
+            },
+          ],
+          history: [],
+        }),
         "utf8",
       );
 
@@ -5567,18 +5614,15 @@ describe("runRalphFlow", () => {
         { maxTransitions: 10 },
       );
       const registry = JSON.parse(
-        await readFile(
-          join(
-            workspace,
-            ".machdoch",
-            "ralph",
-            "scope-registry",
-            "test-flow.scope-registry.json",
-          ),
-          "utf8",
-        ),
+        await readFile(persistedRegistryPath, "utf8"),
       ) as {
-        scopes: Array<{ id: string; status: string; validatedCount: number }>;
+        schemaVersion: number;
+        scopes: Array<{
+          id: string;
+          status: string;
+          validatedCount: number;
+          lastOutcome?: string | null;
+        }>;
         selection: {
           currentScopeId: string | null;
           completedScopeIds: string[];
@@ -5586,6 +5630,7 @@ describe("runRalphFlow", () => {
       };
 
       expect(result.status).toBe("completed");
+      expect(registry.schemaVersion).toBe(2);
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -5610,6 +5655,12 @@ describe("runRalphFlow", () => {
       expect(registry.selection.completedScopeIds).toHaveLength(1);
       expect(registry.scopes.some((scope) => scope.validatedCount === 1)).toBe(
         true,
+      );
+      expect(registry.scopes.find((scope) => scope.id === "src")).toMatchObject(
+        {
+          lastOutcome: "completed",
+          validatedCount: 1,
+        },
       );
       expect(executeTask).not.toHaveBeenCalled();
     } finally {

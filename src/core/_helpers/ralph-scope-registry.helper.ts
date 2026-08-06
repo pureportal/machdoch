@@ -9,6 +9,11 @@ export const RALPH_SCOPE_EVIDENCE_SCHEMA =
 export const RALPH_SCOPE_REGISTRY_SCHEMA =
   "machdoch.ralph.scopeRegistry" as const;
 export const RALPH_SCOPE_REGISTRY_SCHEMA_VERSION = 2 as const;
+const RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION = 1 as const;
+
+type RalphPersistedScopeRegistrySchemaVersion =
+  | typeof RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION
+  | typeof RALPH_SCOPE_REGISTRY_SCHEMA_VERSION;
 
 export const RALPH_SCOPE_SELECTION_STRATEGIES = [
   "start-to-end",
@@ -836,10 +841,73 @@ const parseScopeStatus = (
   throw new Error("Expected Ralph scope status to be active or removed.");
 };
 
+const migrateLegacyScopeOutcome = (
+  value: unknown,
+): RalphScopeOutcome | null => {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/gu, "_");
+  if (
+    normalized === "COMPLETED" ||
+    normalized === "DONE" ||
+    normalized === "SUCCESS" ||
+    normalized === "VALIDATED" ||
+    normalized.startsWith("DONE_") ||
+    normalized.startsWith("COMPLETED_")
+  ) {
+    return "completed";
+  }
+  if (
+    normalized.includes("NO_MEANINGFUL_WORK") ||
+    normalized.startsWith("STOP")
+  ) {
+    return "no-meaningful-work";
+  }
+  if (normalized.includes("EXTERNAL_STATE")) {
+    return "external-state";
+  }
+  if (normalized.startsWith("DEFER")) {
+    return "deferred";
+  }
+  if (normalized.startsWith("INVALID")) {
+    return "invalid";
+  }
+
+  // Version 1 accepted arbitrary failure labels and applied the generic
+  // failure cooldown to them. Preserve that behavior without carrying
+  // unstructured verdict strings into the version 2 protocol.
+  return "failed";
+};
+
+const parsePersistedScopeOutcome = (
+  value: unknown,
+  schemaVersion: RalphPersistedScopeRegistrySchemaVersion,
+): RalphScopeOutcome | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (schemaVersion === RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION) {
+    return migrateLegacyScopeOutcome(value);
+  }
+  if (isRalphScopeOutcome(value)) {
+    return value;
+  }
+
+  throw new Error("Expected a valid persisted Ralph scope outcome.");
+};
+
 const normalizeRegistryScope = (
   value: unknown,
   now: string,
-  options: { requireStatus: boolean },
+  options: {
+    requireStatus: boolean;
+    schemaVersion: RalphPersistedScopeRegistrySchemaVersion;
+  },
 ): RalphScopeRegistryScope => {
   if (!isRecord(value)) {
     throw new Error("Expected a Ralph scope record.");
@@ -859,14 +927,10 @@ const normalizeRegistryScope = (
   const globs = normalizePathList(coerceStringArray(value.globs));
   const kind = parseScopeKind(value.kind);
   const risk = parseScopeRisk(value.risk);
-  const lastOutcome =
-    value.lastOutcome === undefined || value.lastOutcome === null
-      ? null
-      : isRalphScopeOutcome(value.lastOutcome)
-        ? value.lastOutcome
-        : (() => {
-            throw new Error("Expected a valid persisted Ralph scope outcome.");
-          })();
+  const lastOutcome = parsePersistedScopeOutcome(
+    value.lastOutcome,
+    options.schemaVersion,
+  );
 
   return {
     id,
@@ -932,10 +996,12 @@ export const parseRalphScopeRegistry = (
   }
   if (
     value.schema !== RALPH_SCOPE_REGISTRY_SCHEMA ||
-    value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION
+    (value.schemaVersion !== RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION &&
+      value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION)
   ) {
     throw new Error("Expected a supported Ralph scope registry schema.");
   }
+  const schemaVersion = value.schemaVersion;
   if (!isRecord(value.selection)) {
     throw new Error("Expected Ralph scope registry selection state.");
   }
@@ -951,7 +1017,10 @@ export const parseRalphScopeRegistry = (
     throw new Error("Expected a valid Ralph scope selection strategy.");
   }
   const scopes = value.scopes.map((scope) =>
-    normalizeRegistryScope(scope, now, { requireStatus: true }),
+    normalizeRegistryScope(scope, now, {
+      requireStatus: true,
+      schemaVersion,
+    }),
   );
   const activeIds = new Set(
     scopes
@@ -1009,12 +1078,10 @@ export const parseRalphScopeRegistry = (
             ) {
               throw new Error("Expected a valid Ralph scope history type.");
             }
-            if (
-              entry.outcome !== undefined &&
-              !isRalphScopeOutcome(entry.outcome)
-            ) {
-              throw new Error("Expected a valid Ralph scope history outcome.");
-            }
+            const outcome = parsePersistedScopeOutcome(
+              entry.outcome,
+              schemaVersion,
+            );
 
             return {
               at: typeof entry.at === "string" ? entry.at : now,
@@ -1025,9 +1092,7 @@ export const parseRalphScopeRegistry = (
               ...(typeof entry.cycle === "number"
                 ? { cycle: entry.cycle }
                 : {}),
-              ...(isRalphScopeOutcome(entry.outcome)
-                ? { outcome: entry.outcome }
-                : {}),
+              ...(outcome ? { outcome } : {}),
               ...(typeof entry.eligibleAfter === "string"
                 ? { eligibleAfter: entry.eligibleAfter }
                 : {}),
@@ -1069,6 +1134,7 @@ export const parseRalphScopeEvidence = (
   const scopes = value.scopes.flatMap((scope): RalphScopeEvidenceScope[] => {
     const normalized = normalizeRegistryScope(scope, now, {
       requireStatus: false,
+      schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     });
 
     return [
