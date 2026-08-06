@@ -2095,10 +2095,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "retained-active-report",
     },
     {
-      id: "invalid-ledger-to-archive",
+      id: "invalid-ledger-to-retained-report",
       from: "record-invalid-outcome",
       fromOutput: "SUCCESS",
-      to: "archive-active-ui-improvement",
+      to: "retained-active-report",
     },
     {
       id: "invalid-ledger-invalid-to-retained-report",
@@ -2177,7 +2177,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 13,
+  version: 14,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

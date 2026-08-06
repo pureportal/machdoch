@@ -2047,10 +2047,10 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       to: "retained-active-report",
     },
     {
-      id: "invalid-ledger-to-archive",
+      id: "invalid-ledger-to-retained-report",
       from: "record-invalid-outcome",
       fromOutput: "SUCCESS",
-      to: "archive-active-improvement",
+      to: "retained-active-report",
     },
     {
       id: "invalid-ledger-invalid-to-retained-report",
@@ -2111,7 +2111,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 15,
+  version: 16,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

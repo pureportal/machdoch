@@ -54,7 +54,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const getRecordedWorkOutcome = (
   flow: RalphFlow,
   results: readonly RalphBlockExecutionResult[],
-): { outcome: "DONE" | "DEFER" | "STOP" | "BLOCKED" | "INVALID"; blockId: string } | undefined => {
+):
+  | {
+      outcome: "DONE" | "DEFER" | "STOP" | "BLOCKED" | "INVALID";
+      blockId: string;
+      resultIndex: number;
+    }
+  | undefined => {
   const outcomeByBlockId = new Map(
     flow.blocks.flatMap((block) =>
       block.type === "UTILITY" &&
@@ -73,9 +79,43 @@ const getRecordedWorkOutcome = (
     const outcome = isRecord(result.data) ? result.data.workOutcome : undefined;
     const configuredOutcome = outcomeByBlockId.get(result.blockId);
     if (configuredOutcome !== undefined && configuredOutcome === outcome) {
-      return { outcome: configuredOutcome, blockId: result.blockId };
+      return {
+        outcome: configuredOutcome,
+        blockId: result.blockId,
+        resultIndex: index,
+      };
     }
   }
+  return undefined;
+};
+
+const BLOCKING_EXECUTION_OUTPUTS = new Set([
+  "ERROR",
+  "FAILED",
+  "INCONCLUSIVE",
+  "INVALID",
+  "NOT_FOUND",
+  "OUT_OF_SCOPE",
+  "TIMEOUT",
+]);
+
+const getBlockingCauseBefore = (
+  results: readonly RalphBlockExecutionResult[],
+  resultIndex: number,
+): { blockId: string; summary: string } | undefined => {
+  for (let index = resultIndex - 1; index >= 0; index -= 1) {
+    const result = results[index]!;
+    if (
+      result.status === "error" ||
+      BLOCKING_EXECUTION_OUTPUTS.has(result.output)
+    ) {
+      return {
+        blockId: result.blockId,
+        summary: result.error ?? result.summary,
+      };
+    }
+  }
+
   return undefined;
 };
 
@@ -158,7 +198,10 @@ const getChangedFiles = (
   );
   for (let index = results.length - 1; index >= 0; index -= 1) {
     const result = results[index]!;
-    if (!repositoryEvidenceBlockIds.has(result.blockId) || !isRecord(result.data)) {
+    if (
+      !repositoryEvidenceBlockIds.has(result.blockId) ||
+      !isRecord(result.data)
+    ) {
       continue;
     }
     if (Array.isArray(result.data.guardedFiles)) {
@@ -283,6 +326,10 @@ export const deriveRalphRunOutcome = (input: {
       block.id === terminalBlockId && block.type === "END",
   );
   const recorded = getRecordedWorkOutcome(flow, blockResults);
+  const invalidCause =
+    recorded?.outcome === "INVALID"
+      ? getBlockingCauseBefore(blockResults, recorded.resultIndex)
+      : undefined;
   const verification = getVerification(flow, blockResults);
   const graphChanges = getChangedFiles(flow, blockResults);
   const changes = repositoryEvidence
@@ -302,6 +349,13 @@ export const deriveRalphRunOutcome = (input: {
       kind: "work",
       blockId: recorded.blockId,
       summary: `The durable work journal recorded ${recorded.outcome}.`,
+    });
+  }
+  if (invalidCause) {
+    evidence.push({
+      kind: "runtime",
+      blockId: invalidCause.blockId,
+      summary: invalidCause.summary,
     });
   }
   if (changes.known) {
@@ -387,6 +441,20 @@ export const deriveRalphRunOutcome = (input: {
       },
     );
   }
+  if (recorded?.outcome === "INVALID") {
+    return createOutcome(
+      "blocked",
+      invalidCause
+        ? `The durable work journal recorded INVALID after ${invalidCause.blockId} reported: ${invalidCause.summary}`
+        : "The durable work journal recorded invalid execution state.",
+      {
+        evidence,
+        retryable: true,
+        nextAction:
+          "Resolve the reported execution error, then resume from the retained checkpoint.",
+      },
+    );
+  }
   if (
     recorded?.outcome === "DEFER" ||
     terminal?.outcome === "deferred" ||
@@ -464,11 +532,7 @@ export const deriveRalphRunOutcome = (input: {
       },
     );
   }
-  if (
-    lifecycleStatus === "blocked" ||
-    terminal?.outcome === "blocked" ||
-    recorded?.outcome === "INVALID"
-  ) {
+  if (lifecycleStatus === "blocked" || terminal?.outcome === "blocked") {
     return createOutcome(
       "blocked",
       "The run reached a concrete blocker and did not claim completion.",

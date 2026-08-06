@@ -53,6 +53,15 @@ const flow: RalphFlow = {
       },
     },
     {
+      id: "journal-invalid",
+      type: "UTILITY",
+      title: "Journal invalid state",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "INVALID",
+      },
+    },
+    {
       id: "report",
       type: "UTILITY",
       title: "Report",
@@ -310,6 +319,52 @@ describe("RALPH evidence-based outcome", () => {
       verified: false,
       retryable: true,
       reason: "The durable work journal recorded a concrete blocker.",
+    });
+  });
+
+  it("reports the execution error that caused an invalid journal outcome", () => {
+    const outcome = deriveRalphRunOutcome({
+      flow,
+      lifecycleStatus: "blocked",
+      terminalBlockId: "defer",
+      blockResults: [
+        {
+          ...result("update-scope-registry", "ERROR"),
+          status: "error",
+          summary: "Expected a supported Ralph scope registry schema.",
+          error: "Expected a supported Ralph scope registry schema.",
+        },
+        result("journal-invalid", "SUCCESS", {
+          workOutcome: "INVALID",
+        }),
+        result("report", "SUCCESS"),
+      ],
+      autonomy,
+      repositoryEvidence: {
+        known: true,
+        root: "/repo",
+        changedFiles: [],
+        headChanged: false,
+        baselineFingerprint: "same",
+        finalFingerprint: "same",
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      status: "blocked",
+      verified: false,
+      retryable: true,
+      reason:
+        "The durable work journal recorded INVALID after update-scope-registry reported: Expected a supported Ralph scope registry schema.",
+      evidence: expect.arrayContaining([
+        {
+          kind: "runtime",
+          blockId: "update-scope-registry",
+          summary: "Expected a supported Ralph scope registry schema.",
+        },
+      ]),
+      nextAction:
+        "Resolve the reported execution error, then resume from the retained checkpoint.",
     });
   });
 

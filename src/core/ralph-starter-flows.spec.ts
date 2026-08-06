@@ -420,7 +420,7 @@ describe("Ralph starter flows", () => {
     );
   });
 
-  it("persists every autonomous outcome before retiring active state", () => {
+  it("persists every autonomous outcome without retiring invalid active state", () => {
     const archivePolicies = [
       {
         flowId: "autonomous-feature-generation-loop",
@@ -437,21 +437,13 @@ describe("Ralph starter flows", () => {
       {
         flowId: "autonomous-code-improvement-loop",
         archiveId: "archive-active-improvement",
-        sources: [
-          "record-done-outcome",
-          "record-stop-outcome",
-          "record-invalid-outcome",
-        ],
+        sources: ["record-done-outcome", "record-stop-outcome"],
         output: "SUCCESS",
       },
       {
         flowId: "autonomous-ui-improvement-loop",
         archiveId: "archive-active-ui-improvement",
-        sources: [
-          "record-done-outcome",
-          "record-stop-outcome",
-          "record-invalid-outcome",
-        ],
+        sources: ["record-done-outcome", "record-stop-outcome"],
         output: "SUCCESS",
       },
     ] as const;
@@ -527,6 +519,39 @@ describe("Ralph starter flows", () => {
       expect(incoming.every((edge) => edge.fromOutput === policy.output)).toBe(
         true,
       );
+    }
+
+    for (const flowId of [
+      "autonomous-code-improvement-loop",
+      "autonomous-ui-improvement-loop",
+    ]) {
+      const flow = getRalphStarterFlow(flowId)!.flow;
+      expect(flow.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: "record-invalid-outcome",
+            fromOutput: "SUCCESS",
+            to: "retained-active-report",
+          }),
+          expect.objectContaining({
+            from: "retained-active-report",
+            fromOutput: "SUCCESS",
+            to: "deferred",
+          }),
+        ]),
+      );
+      expect(
+        flow.edges.some(
+          (edge) =>
+            edge.from === "record-invalid-outcome" &&
+            flow.blocks.some(
+              (block) =>
+                block.id === edge.to &&
+                block.type === "UTILITY" &&
+                block.utility.type === "ARCHIVE_FILE",
+            ),
+        ),
+      ).toBe(false);
     }
 
     const deferredLedgers = [
