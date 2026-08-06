@@ -13,7 +13,12 @@ import axe from "axe-core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { Popover, PopoverContent } from "../components/ui/popover";
-import { CommandProvider, useCommandPageLauncher } from "./command-context";
+import {
+  CommandProvider,
+  useCommandPageLauncher,
+  useOptionalCommandShortcut,
+  useOptionalRegisterCommands,
+} from "./command-context";
 import type {
   CommandContextSnapshot,
   CommandDefinition,
@@ -86,7 +91,150 @@ const CompactLauncher = ({
   );
 };
 
+const UnstableShortcutRegistrant = ({
+  onExecute,
+}: {
+  onExecute: (version: number) => void;
+}): React.JSX.Element => {
+  const [alternate, setAlternate] = React.useState(false);
+  const [callbackVersion, setCallbackVersion] = React.useState(0);
+  useOptionalRegisterCommands([
+    {
+      id: "test.unstable-shortcut",
+      title: "Unstable shortcut",
+      group: "Test",
+      scope: { kind: "view", ownerId: "chat" },
+      shortcuts: [{ chord: alternate ? "Mod+Shift+S" : "Mod+S" }],
+      palette: "visible",
+      execute: () => onExecute(callbackVersion),
+    },
+  ]);
+  const shortcut = useOptionalCommandShortcut("test.unstable-shortcut");
+
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
+      "span",
+      { "data-testid": "unstable-shortcut-hint" },
+      shortcut?.label ?? "Missing",
+    ),
+    React.createElement(
+      "button",
+      { onClick: () => setCallbackVersion((version) => version + 1) },
+      "Change callback",
+    ),
+    React.createElement(
+      "button",
+      { onClick: () => setAlternate(true) },
+      "Change shortcut",
+    ),
+  );
+};
+
+const ShortcutNavigationHarness = ({
+  onExecute,
+}: {
+  onExecute: (version: number) => void;
+}): React.JSX.Element => {
+  const [visible, setVisible] = React.useState(true);
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
+      "button",
+      { onClick: () => setVisible(false) },
+      "Leave command view",
+    ),
+    React.createElement(
+      "button",
+      { onClick: () => setVisible(true) },
+      "Return to command view",
+    ),
+    visible
+      ? React.createElement(UnstableShortcutRegistrant, { onExecute })
+      : React.createElement("span", null, "Other view"),
+  );
+};
+
 describe("CommandProvider and command palette", () => {
+  it("keeps unstable command callbacks and shortcut hints live without looping", async () => {
+    const execute = vi.fn();
+    renderProvider(
+      [],
+      React.createElement(UnstableShortcutRegistrant, {
+        onExecute: execute,
+      }),
+    );
+
+    expect(
+      (await screen.findByTestId("unstable-shortcut-hint")).textContent,
+    ).toBe("Ctrl+S");
+
+    fireEvent.click(screen.getByText("Change callback"));
+    openPalette();
+    await userEvent.setup().click(await screen.findByText("Unstable shortcut"));
+    await waitFor(() => expect(execute).toHaveBeenLastCalledWith(1));
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText("Search commands…")).toBeNull(),
+    );
+
+    fireEvent.click(screen.getByText("Change shortcut"));
+    await waitFor(() =>
+      expect(screen.getByTestId("unstable-shortcut-hint").textContent).toBe(
+        "Ctrl+Shift+S",
+      ),
+    );
+
+    fireEvent.keyDown(document, {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, {
+      key: "S",
+      code: "KeyS",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    await waitFor(() => expect(execute).toHaveBeenLastCalledWith(1));
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("cleans up and restores unstable registrations across view navigation", async () => {
+    const execute = vi.fn();
+    renderProvider(
+      [],
+      React.createElement(ShortcutNavigationHarness, { onExecute: execute }),
+    );
+
+    for (let visit = 0; visit < 2; visit += 1) {
+      expect(
+        (await screen.findByTestId("unstable-shortcut-hint")).textContent,
+      ).toBe("Ctrl+S");
+      fireEvent.click(screen.getByText("Leave command view"));
+      expect(screen.queryByTestId("unstable-shortcut-hint")).toBeNull();
+      fireEvent.keyDown(document, {
+        key: "s",
+        code: "KeyS",
+        ctrlKey: true,
+      });
+      expect(execute).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText("Return to command view"));
+    }
+
+    expect(
+      (await screen.findByTestId("unstable-shortcut-hint")).textContent,
+    ).toBe("Ctrl+S");
+    fireEvent.keyDown(document, {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+    });
+    await waitFor(() => expect(execute).toHaveBeenCalledWith(0));
+  });
+
   it("opens with Mod+K from ordinary text entry and toggles closed", async () => {
     renderProvider(
       [],
@@ -297,6 +445,59 @@ describe("CommandProvider and command palette", () => {
     openPalette();
     expect(screen.queryByPlaceholderText("Search commands…")).toBeNull();
     expect(screen.getByText("Blocking dialog")).toBeTruthy();
+  });
+
+  it("shows only commands owned by a command-aware modal", async () => {
+    const executeOverlay = vi.fn();
+    const commands: readonly CommandDefinition[] = [
+      {
+        id: "chat.behind-modal",
+        title: "Behind modal",
+        group: "Test",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        execute: vi.fn(),
+      },
+      {
+        id: "global.behind-modal",
+        title: "Global behind modal",
+        group: "Test",
+        scope: { kind: "global", ownerId: "app" },
+        palette: "visible",
+        execute: vi.fn(),
+      },
+      {
+        id: "modal.owned",
+        title: "Modal action",
+        group: "Test",
+        scope: { kind: "overlay", ownerId: "command-aware-modal" },
+        palette: "visible",
+        execute: executeOverlay,
+      },
+    ];
+    renderProvider(
+      commands,
+      React.createElement(
+        Dialog,
+        {
+          open: true,
+          commandOverlayId: "command-aware-modal",
+          commandOverlayAllowGlobalCommands: ["app.palette.toggle"],
+        },
+        React.createElement(
+          DialogContent,
+          null,
+          React.createElement(DialogTitle, null, "Command-aware dialog"),
+        ),
+      ),
+    );
+
+    openPalette();
+    expect(await screen.findByText("Modal action")).toBeTruthy();
+    expect(screen.queryByText("Behind modal")).toBeNull();
+    expect(screen.queryByText("Global behind modal")).toBeNull();
+    await userEvent.setup().click(screen.getByText("Modal action"));
+    await waitFor(() => expect(executeOverlay).toHaveBeenCalledTimes(1));
   });
 
   it("dismisses a replaceable non-modal surface before opening", async () => {

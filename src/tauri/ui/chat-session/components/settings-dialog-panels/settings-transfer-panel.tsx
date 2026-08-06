@@ -25,6 +25,12 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
+import { useOptionalRegisterCommands } from "../../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../../commands/command-types";
 import { cn } from "../../../lib/utils";
 import {
   approveSettingsTransfer,
@@ -647,6 +653,205 @@ const EncryptedSettingsFilePanel = ({
     }
   };
 
+  const fileCommandStateRef = useRef({
+    mode,
+    catalog,
+    selectedCategories,
+    filePath,
+    passphrase,
+    passphraseConfirmation,
+    review,
+    result,
+    busy,
+    toggleCategory,
+    chooseFile,
+    exportFile,
+    inspectFile,
+    commitImport,
+    finish,
+    back,
+    chooseAnotherFile,
+  });
+  fileCommandStateRef.current = {
+    mode,
+    catalog,
+    selectedCategories,
+    filePath,
+    passphrase,
+    passphraseConfirmation,
+    review,
+    result,
+    busy,
+    toggleCategory,
+    chooseFile,
+    exportFile,
+    inspectFile,
+    commitImport,
+    finish,
+    back,
+    chooseAnotherFile,
+  };
+  const fileCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => fileCommandStateRef.current;
+    const scope = { kind: "overlay", ownerId: "settings-dialog" } as const;
+    return asPaletteCommands([
+      {
+        id: "settings.transfer.file.category.toggle",
+        title: "Choose encrypted file categories",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          !state().result && !state().review
+            ? state().busy
+              ? {
+                  state: "disabled",
+                  reason: "A file operation is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.transfer.file.category.toggle.page",
+          title: "Choose encrypted file categories",
+          searchPlaceholder: "Search categories",
+          groups: [
+            {
+              id: "categories",
+              items: state().catalog.categories.map((category) => ({
+                id: category.id,
+                title: category.label,
+                current: state().selectedCategories.has(category.id),
+                availability: isSelectableCategory(category)
+                  ? { state: "enabled" }
+                  : {
+                      state: "disabled",
+                      reason: category.reason ?? "Category is unavailable.",
+                    },
+                execute: () => state().toggleCategory(category.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.transfer.file.choose",
+        title:
+          state().mode === "fileExport"
+            ? "Choose export destination"
+            : "Choose encrypted settings file",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          !state().result && !state().review
+            ? state().busy
+              ? {
+                  state: "disabled",
+                  reason: "A file operation is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().chooseFile(),
+      },
+      {
+        id: "settings.transfer.file.submit",
+        title:
+          state().mode === "fileExport"
+            ? "Export encrypted settings file"
+            : "Review encrypted settings file",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          if (current.result || current.review) return { state: "hidden" };
+          const passphraseFits =
+            utf8ByteLength(current.passphrase) <= FILE_PASSPHRASE_MAX_BYTES;
+          const canSubmit =
+            !current.busy &&
+            current.selectedCategories.size > 0 &&
+            current.filePath.length > 0 &&
+            current.passphrase.length > 0 &&
+            passphraseFits &&
+            (current.mode !== "fileExport" ||
+              ([...current.passphrase].length >= 12 &&
+                current.passphrase === current.passphraseConfirmation));
+          return canSubmit
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "Complete the encrypted file settings first.",
+              };
+        },
+        execute: () =>
+          void (state().mode === "fileExport"
+            ? state().exportFile()
+            : state().inspectFile()),
+      },
+      {
+        id: "settings.transfer.file.import.commit",
+        title: "Replace selected settings",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().review?.token
+            ? state().busy
+              ? {
+                  state: "disabled",
+                  reason: "The encrypted file is being imported.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().commitImport(),
+      },
+      {
+        id: "settings.transfer.file.choose-another",
+        title: "Choose another encrypted settings file",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().review && !state().review?.token
+            ? state().busy
+              ? {
+                  state: "disabled",
+                  reason: "A file operation is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().chooseAnotherFile(),
+      },
+      {
+        id: "settings.transfer.file.done",
+        title: "Finish encrypted settings transfer",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().result
+            ? state().busy
+              ? { state: "disabled", reason: "Settings are refreshing." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().finish(),
+      },
+      {
+        id: "settings.transfer.file.back",
+        title: state().review
+          ? "Cancel encrypted settings import"
+          : "Back to transfer methods",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          !state().result
+            ? state().busy
+              ? {
+                  state: "disabled",
+                  reason: "A file operation is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().back(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(fileCommands);
+
   if (result) {
     const imported = result.mode === "fileImport";
     return (
@@ -1162,6 +1367,352 @@ export const SettingsTransferPanel = (): JSX.Element => {
       setCopied(false);
     });
   };
+
+  const transferCommandStateRef = useRef({
+    status,
+    configurationMode,
+    selectedCategories,
+    selectedInterfaces,
+    displayName,
+    manualCode,
+    busy,
+    fileOperationBusy,
+    pendingPhaseAction,
+    active,
+    commitCritical,
+    activeMode,
+    setConfigurationMode,
+    toggleCategory,
+    toggleInterface,
+    start,
+    cancel,
+    reset,
+    copyManualCode,
+    run,
+    submitPhaseAction,
+  });
+  transferCommandStateRef.current = {
+    status,
+    configurationMode,
+    selectedCategories,
+    selectedInterfaces,
+    displayName,
+    manualCode,
+    busy,
+    fileOperationBusy,
+    pendingPhaseAction,
+    active,
+    commitCritical,
+    activeMode,
+    setConfigurationMode,
+    toggleCategory,
+    toggleInterface,
+    start,
+    cancel,
+    reset,
+    copyManualCode,
+    run,
+    submitPhaseAction,
+  };
+  const transferCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "overlay" as const, ownerId: "settings-dialog" };
+    const state = () => transferCommandStateRef.current;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    return asPaletteCommands([
+      {
+        id: "settings.transfer.mode.select",
+        title: "Choose settings transfer method",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          !state().status ||
+          state().active ||
+          state().busy ||
+          state().fileOperationBusy
+            ? { state: "disabled", reason: "A settings transfer is active." }
+            : { state: "enabled" },
+        children: () => ({
+          id: "settings.transfer.mode.select.page",
+          title: "Choose settings transfer method",
+          searchPlaceholder: "Search transfer methods",
+          numericSelection: true,
+          groups: [
+            {
+              id: "methods",
+              items: (
+                [
+                  ["send", "Transfer settings"],
+                  ["receive", "Receive settings"],
+                  ["fileExport", "Export encrypted file"],
+                  ["fileImport", "Import encrypted file"],
+                ] as const
+              ).map(([mode, title], index) => ({
+                id: mode,
+                title,
+                current: state().configurationMode === mode,
+                numericKey: numericKey(index),
+                execute: () => state().setConfigurationMode(mode),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.transfer.category.toggle",
+        title: "Choose settings transfer categories",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().status &&
+          (state().configurationMode === "send" ||
+            state().configurationMode === "receive") &&
+          !state().active
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.transfer.category.toggle.page",
+          title: "Choose settings transfer categories",
+          searchPlaceholder: "Search categories",
+          groups: [
+            {
+              id: "categories",
+              items: (state().status?.categories ?? []).map((category) => ({
+                id: category.id,
+                title: category.label,
+                keywords: [category.description],
+                current: state().selectedCategories.has(category.id),
+                availability: isSelectableCategory(category)
+                  ? { state: "enabled" }
+                  : {
+                      state: "disabled",
+                      reason: category.reason ?? "Category is unavailable.",
+                    },
+                execute: () => state().toggleCategory(category.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.transfer.interface.toggle",
+        title: "Choose settings transfer network interfaces",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().status &&
+          (state().configurationMode === "send" ||
+            state().configurationMode === "receive") &&
+          !state().active
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.transfer.interface.toggle.page",
+          title: "Choose network interfaces",
+          searchPlaceholder: "Search network interfaces",
+          groups: [
+            {
+              id: "interfaces",
+              items: (state().status?.networkInterfaces ?? []).map((item) => ({
+                id: item.id,
+                title: item.name,
+                keywords: item.addresses,
+                current: state().selectedInterfaces.has(item.id),
+                execute: () => state().toggleInterface(item.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.transfer.start",
+        title: "Start settings transfer",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          if (
+            current.configurationMode !== "send" &&
+            current.configurationMode !== "receive"
+          )
+            return { state: "hidden" };
+          return current.busy ||
+            current.selectedCategories.size === 0 ||
+            current.selectedInterfaces.size === 0 ||
+            !current.displayName.trim()
+            ? {
+                state: "disabled",
+                reason: "Complete the transfer setup first.",
+              }
+            : { state: "enabled" };
+        },
+        execute: () => {
+          const mode = state().configurationMode;
+          if (mode === "send" || mode === "receive") state().start(mode);
+        },
+      },
+      {
+        id: "settings.transfer.back",
+        title: "Back to transfer methods",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          !state().active &&
+          (state().configurationMode === "send" ||
+            state().configurationMode === "receive")
+            ? state().busy || state().fileOperationBusy
+              ? {
+                  state: "disabled",
+                  reason: "A transfer operation is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().setConfigurationMode("landing"),
+      },
+      {
+        id: "settings.transfer.code.copy",
+        title: "Copy settings transfer code",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().status?.manualCode
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().copyManualCode(),
+      },
+      {
+        id: "settings.transfer.sender.connect",
+        title: "Connect to settings sender",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          return current.status?.phase === "discovering" &&
+            current.status.discoveredSessions.length
+            ? current.busy
+              ? {
+                  state: "disabled",
+                  reason: "A transfer connection is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" };
+        },
+        children: () => ({
+          id: "settings.transfer.sender.connect.page",
+          title: "Connect to settings sender",
+          searchPlaceholder: "Search senders",
+          groups: [
+            {
+              id: "senders",
+              items: (state().status?.discoveredSessions ?? []).map(
+                (session) => ({
+                  id: session.id,
+                  title: session.label,
+                  execute: () =>
+                    void state().run(() =>
+                      connectDiscoveredSettingsTransfer(session.id),
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.transfer.manual-code.connect",
+        title: "Connect with settings transfer code",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          return current.status?.phase !== "discovering"
+            ? { state: "hidden" }
+            : current.busy || !current.manualCode.trim()
+              ? { state: "disabled", reason: "Paste a transfer code first." }
+              : { state: "enabled" };
+        },
+        execute: () =>
+          void state().run(() =>
+            connectManualSettingsTransfer(state().manualCode.trim()),
+          ),
+      },
+      {
+        id: "settings.transfer.pairing.confirm",
+        title: "Confirm settings transfer pairing code",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          return current.status?.phase !== "pairing" ||
+            !current.status.pairingCode
+            ? { state: "hidden" }
+            : current.busy || current.pendingPhaseAction === "pairing"
+              ? {
+                  state: "disabled",
+                  reason: "Pairing confirmation is pending.",
+                }
+              : { state: "enabled" };
+        },
+        execute: () =>
+          state().submitPhaseAction("pairing", confirmSettingsTransferPairing),
+      },
+      {
+        id: "settings.transfer.review.approve",
+        title: "Approve settings transfer",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          return current.status?.phase !== "review"
+            ? { state: "hidden" }
+            : !current.status.categories.some(
+                  (category) =>
+                    category.effect === "replace" ||
+                    category.effect === "clear",
+                )
+              ? { state: "disabled", reason: "No settings changes to approve." }
+              : current.busy || current.pendingPhaseAction === "review"
+                ? { state: "disabled", reason: "Transfer approval is pending." }
+                : { state: "enabled" };
+        },
+        execute: () =>
+          state().submitPhaseAction("review", approveSettingsTransfer),
+      },
+      {
+        id: "settings.transfer.cancel",
+        title: "Cancel settings transfer",
+        group: "Settings: Transfer",
+        scope,
+        availability: () =>
+          state().active && !state().commitCritical
+            ? state().busy
+              ? {
+                  state: "disabled",
+                  reason: "A transfer action is in progress.",
+                }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().cancel(),
+      },
+      {
+        id: "settings.transfer.reset",
+        title: "Start a new settings transfer",
+        group: "Settings: Transfer",
+        scope,
+        availability: () => {
+          const current = state();
+          return current.status &&
+            ["completed", "cancelled", "failed"].includes(current.status.phase)
+            ? current.busy
+              ? { state: "disabled", reason: "Transfer is resetting." }
+              : { state: "enabled" }
+            : { state: "hidden" };
+        },
+        execute: () => state().reset(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(transferCommands);
 
   if (!status) {
     return (

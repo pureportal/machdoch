@@ -11,8 +11,15 @@ import {
   Tally5,
   type LucideIcon,
 } from "lucide-react";
-import type { JSX } from "react";
+import { useMemo, type JSX } from "react";
 import type { ReasoningMode } from "../../runtime";
+import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPage,
+  CommandPageItem,
+} from "../../commands/command-types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -40,7 +47,8 @@ const REASONING_META: Record<
 > = {
   default: {
     label: "Provider default",
-    description: "Use the provider or selected model's default reasoning effort.",
+    description:
+      "Use the provider or selected model's default reasoning effort.",
     icon: CircleDashed,
     triggerClassName:
       "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-cyan-500/30 hover:bg-slate-900 hover:text-cyan-100",
@@ -49,7 +57,8 @@ const REASONING_META: Record<
   },
   none: {
     label: "None",
-    description: "Use the lowest available reasoning setting for latency-sensitive work.",
+    description:
+      "Use the lowest available reasoning setting for latency-sensitive work.",
     icon: CircleOff,
     triggerClassName:
       "border-slate-700 bg-slate-900/80 text-slate-200 hover:border-slate-600 hover:bg-slate-900 hover:text-slate-100",
@@ -58,7 +67,8 @@ const REASONING_META: Record<
   },
   minimal: {
     label: "Minimal",
-    description: "Prefer minimal internal thinking where the provider supports it.",
+    description:
+      "Prefer minimal internal thinking where the provider supports it.",
     icon: SignalZero,
     triggerClassName:
       "border-teal-500/25 bg-teal-500/10 text-teal-100 hover:border-teal-400/40 hover:bg-teal-500/15 hover:text-white",
@@ -85,7 +95,8 @@ const REASONING_META: Record<
   },
   high: {
     label: "High",
-    description: "Spend more effort on planning, coding, and multi-step reasoning.",
+    description:
+      "Spend more effort on planning, coding, and multi-step reasoning.",
     icon: SignalHigh,
     triggerClassName:
       "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:border-amber-400/40 hover:bg-amber-500/15 hover:text-white",
@@ -98,12 +109,14 @@ const REASONING_META: Record<
     icon: ChevronsUp,
     triggerClassName:
       "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100 hover:border-fuchsia-400/40 hover:bg-fuchsia-500/15 hover:text-white",
-    selectedClassName: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
+    selectedClassName:
+      "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
     iconClassName: "text-fuchsia-200",
   },
   max: {
     label: "Max",
-    description: "Use the highest mapped effort where the provider supports it.",
+    description:
+      "Use the highest mapped effort where the provider supports it.",
     icon: Tally5,
     triggerClassName:
       "border-rose-500/30 bg-rose-500/10 text-rose-100 hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-white",
@@ -117,8 +130,7 @@ const REASONING_META: Record<
     icon: Sparkles,
     triggerClassName:
       "border-violet-400/35 bg-violet-400/10 text-violet-100 hover:border-violet-300/50 hover:bg-violet-400/15 hover:text-white",
-    selectedClassName:
-      "border-violet-400/35 bg-violet-400/10 text-violet-100",
+    selectedClassName: "border-violet-400/35 bg-violet-400/10 text-violet-100",
     iconClassName: "text-violet-200",
   },
 };
@@ -140,7 +152,10 @@ export const SessionReasoningPicker = ({
   isUsingWorkspaceDefaultReasoning,
   onSessionReasoningSelection,
 }: SessionReasoningPickerProps): JSX.Element => {
-  const reasoningModes = getReasoningModesForProvider(provider, model);
+  const reasoningModes = useMemo(
+    () => getReasoningModesForProvider(provider, model),
+    [model, provider],
+  );
   const displayActiveReasoning = normalizeReasoningModeForProvider(
     activeReasoning,
     provider,
@@ -155,9 +170,72 @@ export const SessionReasoningPicker = ({
   const defaultMeta = REASONING_META[displayDefaultReasoning];
   const ActiveReasoningIcon = activeMeta.icon;
   const WorkspaceDefaultReasoningIcon = defaultMeta.icon;
-  const sessionReasoningOptions = reasoningModes.filter(
-    (reasoning) => reasoning !== "default",
+  const sessionReasoningOptions = useMemo(
+    () => reasoningModes.filter((reasoning) => reasoning !== "default"),
+    [reasoningModes],
   );
+  const reasoningCommandPage = useMemo<CommandPage>(() => {
+    const options: CommandPageItem[] = [
+      {
+        id: "workspace-default",
+        title: `Workspace default (${defaultMeta.label})`,
+        current: isUsingWorkspaceDefaultReasoning,
+        numericKey: "1",
+        execute: () => onSessionReasoningSelection(null),
+      },
+      ...sessionReasoningOptions.map(
+        (reasoning, index): CommandPageItem => ({
+          id: reasoning,
+          title: REASONING_META[reasoning].label,
+          current:
+            !isUsingWorkspaceDefaultReasoning &&
+            displayActiveReasoning === reasoning,
+          numericKey: String(index + 2) as CommandPageItem["numericKey"],
+          execute: () => onSessionReasoningSelection(reasoning),
+        }),
+      ),
+    ];
+    return {
+      id: "chat-session-reasoning",
+      title: "Reasoning mode",
+      searchPlaceholder: "Choose reasoning mode",
+      numericSelection: true,
+      groups: [{ id: "reasoning", items: options }],
+    };
+  }, [
+    defaultMeta.label,
+    displayActiveReasoning,
+    isUsingWorkspaceDefaultReasoning,
+    onSessionReasoningSelection,
+    sessionReasoningOptions,
+  ]);
+  const reasoningCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "chat.session.reasoning.select",
+        title: "Choose reasoning mode",
+        group: "Chat",
+        keywords: ["thinking", "effort"],
+        scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("chat.session.reasoning.select"),
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        children: () => reasoningCommandPage,
+      },
+    ],
+    [reasoningCommandPage],
+  );
+  useOptionalRegisterCommands(reasoningCommands);
 
   return (
     <Popover>

@@ -15,6 +15,7 @@ import {
   getLatestRunningTaskId,
   getSessionTitle,
   isMediaAssetContextAttachment,
+  isPromptEnhancementPlaceholderMessage,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
   normalizeShellState,
@@ -37,10 +38,7 @@ import {
   type ShellStateCompareAndSwapResult,
   type ShellStatePatch,
 } from "../../lib/shell-store";
-import {
-  loadActiveDesktopTaskIds,
-  loadDesktopLaunchId,
-} from "../../runtime";
+import { loadActiveDesktopTaskIds, loadDesktopLaunchId } from "../../runtime";
 import {
   type SessionScopeFilter,
   type SessionStatusFilterSelection,
@@ -103,9 +101,7 @@ export const createShellStatePatch = (
   };
 };
 
-const getSessionPersistenceTimestamp = (
-  session: ChatSessionRecord,
-): number => {
+const getSessionPersistenceTimestamp = (session: ChatSessionRecord): number => {
   let timestamp = Math.max(
     session.updatedAt,
     session.draftUpdatedAt,
@@ -209,7 +205,7 @@ const isMessageVersionRegression = (
 
     return Boolean(
       currentSource.thinking.assistantText?.trim() &&
-        !incomingSource.thinking.assistantText?.trim(),
+      !incomingSource.thinking.assistantText?.trim(),
     );
   }
 
@@ -241,20 +237,9 @@ const isMessageSafelyReplaced = (
       candidate.role === "agent" &&
       candidate.id !== message.id &&
       (candidate.source?.kind === "execution" ||
-        (candidate.source === undefined && candidate.content.trim().length > 0)),
+        (candidate.source === undefined &&
+          candidate.content.trim().length > 0)),
   );
-};
-
-const isPromptEnhancementPlaceholderMessage = (
-  message: ChatSessionMessage,
-): boolean => {
-  const taskId = message.taskId;
-
-  if (!taskId?.startsWith("prompt-enhancement-")) {
-    return false;
-  }
-
-  return message.id === `${taskId}-user` || message.id === `${taskId}-thinking`;
 };
 
 const hasMessageRegression = (
@@ -453,21 +438,14 @@ const createComposerAttachmentBranchMetadata = (
   const storedClockAdvanced = storedUpdatedAt > baseUpdatedAt;
   const mutationTimestamp = storedClockAdvanced ? storedUpdatedAt : 0;
   const addedAt = mergeTimestampRecords(session.draftAttachmentAddedAt);
-  const tombstones = mergeTimestampRecords(
-    session.draftAttachmentTombstones,
-  );
+  const tombstones = mergeTimestampRecords(session.draftAttachmentTombstones);
 
   for (const attachment of session.draftContextAttachments) {
     const baseAttachment = baseAttachmentsById.get(attachment.id);
-    const baseAddedAt = getAttachmentAddTimestamp(
-      baseSession,
-      attachment.id,
-    );
-    const storedAddedAt =
-      session.draftAttachmentAddedAt?.[attachment.id];
+    const baseAddedAt = getAttachmentAddTimestamp(baseSession, attachment.id);
+    const storedAddedAt = session.draftAttachmentAddedAt?.[attachment.id];
     const attachmentChanged =
-      !baseAttachment ||
-      !areShellFragmentsEqual(baseAttachment, attachment);
+      !baseAttachment || !areShellFragmentsEqual(baseAttachment, attachment);
     const shouldSynthesizeAddTimestamp =
       attachmentChanged &&
       storedClockAdvanced &&
@@ -616,9 +594,7 @@ const mergeSessionComposerForPersistence = (
     attachmentByIdentity.set(identity, [winnerId, winnerEntry]);
   }
 
-  draftAttachmentTombstones = pruneTimestampRecord(
-    draftAttachmentTombstones,
-  );
+  draftAttachmentTombstones = pruneTimestampRecord(draftAttachmentTombstones);
 
   const baseOrderById = new Map(
     baseSession.draftContextAttachments.map((attachment, index) => [
@@ -670,7 +646,7 @@ const mergeSessionComposerForPersistence = (
   };
 };
 
-const mergeSessionFieldForPersistence = <T,>(
+const mergeSessionFieldForPersistence = <T>(
   primaryValue: T,
   localValue: T,
   baseValue: T,
@@ -706,7 +682,8 @@ const didRemoveBaseMessages = (
   return baseMessages.some(
     (message) =>
       !isPromptEnhancementPlaceholderMessage(message) &&
-      !messageIds.has(message.id) && !isMessageSafelyReplaced(message, messages),
+      !messageIds.has(message.id) &&
+      !isMessageSafelyReplaced(message, messages),
   );
 };
 
@@ -747,7 +724,9 @@ const getShellStateRetryDelay = (attempt: number): number => {
   );
 };
 
-const waitForShellStateConflictRetry = async (attempt: number): Promise<void> => {
+const waitForShellStateConflictRetry = async (
+  attempt: number,
+): Promise<void> => {
   if (typeof window === "undefined") {
     return;
   }
@@ -979,8 +958,10 @@ const mergeSessionMessagesForPersistence = (
   }
 
   if (!localChanged && latestChanged) {
-    return didRemoveBaseMessages(latestSession.messages, baseSession.messages) ||
-      latestMessageRegression
+    return didRemoveBaseMessages(
+      latestSession.messages,
+      baseSession.messages,
+    ) || latestMessageRegression
       ? mergeAppendOnlyMessages(
           primarySession.messages,
           localSession.messages,
@@ -1019,8 +1000,7 @@ const mergePromptHistoryAfterClear = (
   for (const session of [localSession, latestSession]) {
     const userMessages = session.messages.filter(
       (message) =>
-        message.role === "user" &&
-        (message.createdAt ?? clearAt) >= clearAt,
+        message.role === "user" && (message.createdAt ?? clearAt) >= clearAt,
     );
     const prompts = session.promptHistory.slice(-userMessages.length);
     const contexts = session.promptContextHistory.slice(-userMessages.length);
@@ -1122,10 +1102,9 @@ const mergeSessionConcurrentFields = (
         localSession.historyClearedAt ?? 0,
         latestSession.historyClearedAt ?? 0,
       ) || undefined,
-    lastReadAt: Math.max(
-      localSession.lastReadAt ?? 0,
-      latestSession.lastReadAt ?? 0,
-    ) || undefined,
+    lastReadAt:
+      Math.max(localSession.lastReadAt ?? 0, latestSession.lastReadAt ?? 0) ||
+      undefined,
     archivedAt: mergeSessionFieldForPersistence(
       primarySession.archivedAt,
       localSession.archivedAt,
@@ -1376,7 +1355,9 @@ const applyLocalMutationMetadata = (
       draftAttachmentTombstones,
     };
   });
-  const nextSessionIds = new Set(nextState.sessions.map((session) => session.id));
+  const nextSessionIds = new Set(
+    nextState.sessions.map((session) => session.id),
+  );
   const sessionTombstones = mergeTimestampRecords(
     previousState.sessionTombstones,
     nextState.sessionTombstones,
@@ -1469,8 +1450,7 @@ const rebasePreHydrationComposerInput = (
         createdAt: 0,
         updatedAt: 0,
         draft: baseActiveSession.draft,
-        draftContextAttachments:
-          baseActiveSession.draftContextAttachments,
+        draftContextAttachments: baseActiveSession.draftContextAttachments,
         draftUpdatedAt: 0,
         draftAttachmentsUpdatedAt: 0,
         draftAttachmentAddedAt: {},
@@ -1480,15 +1460,11 @@ const rebasePreHydrationComposerInput = (
         ...composerBase,
         updatedAt: localActiveSession.updatedAt,
         draft: localActiveSession.draft,
-        draftContextAttachments:
-          localActiveSession.draftContextAttachments,
+        draftContextAttachments: localActiveSession.draftContextAttachments,
         draftUpdatedAt: localActiveSession.draftUpdatedAt,
-        draftAttachmentsUpdatedAt:
-          localActiveSession.draftAttachmentsUpdatedAt,
-        draftAttachmentAddedAt:
-          localActiveSession.draftAttachmentAddedAt,
-        draftAttachmentTombstones:
-          localActiveSession.draftAttachmentTombstones,
+        draftAttachmentsUpdatedAt: localActiveSession.draftAttachmentsUpdatedAt,
+        draftAttachmentAddedAt: localActiveSession.draftAttachmentAddedAt,
+        draftAttachmentTombstones: localActiveSession.draftAttachmentTombstones,
       };
       const mergedComposer = mergeSessionComposerForPersistence(
         localComposerSession,
@@ -1531,7 +1507,10 @@ const mergeExternalSessionWithCurrentState = (
   externalSession: ChatSessionRecord,
 ): ChatSessionRecord | null => {
   if (getLatestRunningTaskId(currentSession)) {
-    return mergeRunningSessionWithExternalSnapshot(currentSession, externalSession);
+    return mergeRunningSessionWithExternalSnapshot(
+      currentSession,
+      externalSession,
+    );
   }
 
   const externalMessageRegression = hasMessageRegression(
@@ -1694,9 +1673,7 @@ const preserveCurrentSessionState = (
   };
 };
 
-const getContextPackPersistenceTimestamp = (
-  pack: SmartContextPack,
-): number => {
+const getContextPackPersistenceTimestamp = (pack: SmartContextPack): number => {
   return Math.max(pack.updatedAt, pack.lastUsedAt ?? 0, pack.createdAt);
 };
 
@@ -1799,22 +1776,23 @@ const mergeQueuedMessageVersionForPersistence = (
       ...latestMessage.attachmentTombstones,
       ...localMessage.attachmentTombstones,
     })
-      .map(([attachmentId, deletedAt]) => [
-        attachmentId,
-        Math.max(
-          deletedAt,
-          localMessage.attachmentTombstones[attachmentId] ?? 0,
-          latestMessage.attachmentTombstones[attachmentId] ?? 0,
-        ),
-      ] as const)
+      .map(
+        ([attachmentId, deletedAt]) =>
+          [
+            attachmentId,
+            Math.max(
+              deletedAt,
+              localMessage.attachmentTombstones[attachmentId] ?? 0,
+              latestMessage.attachmentTombstones[attachmentId] ?? 0,
+            ),
+          ] as const,
+      )
       .sort((left, right) => right[1] - left[1])
       .slice(0, 512),
   );
   const attachmentsById = new Map(
     [...latestMessage.contextAttachments, ...localMessage.contextAttachments]
-      .filter(
-        (attachment) => !(attachment.id in attachmentTombstones),
-      )
+      .filter((attachment) => !(attachment.id in attachmentTombstones))
       .map((attachment) => [attachment.id, attachment]),
   );
   const mergedMessage: ChatSessionQueuedMessage = {
@@ -1927,10 +1905,7 @@ const mergeQueuedSessionMessagesForPersistence = (
     if (!latestMessage) {
       const baseMessage = baseMessagesById.get(messageId);
 
-      if (
-        baseMessage &&
-        areShellFragmentsEqual(localMessage, baseMessage)
-      ) {
+      if (baseMessage && areShellFragmentsEqual(localMessage, baseMessage)) {
         continue;
       }
 
@@ -2130,14 +2105,17 @@ export const mergeShellStateForPersistence = (
       ...latestState.queuedMessageTombstones,
       ...localState.queuedMessageTombstones,
     })
-      .map(([messageId, deletedAt]) => [
-        messageId,
-        Math.max(
-          deletedAt,
-          latestState.queuedMessageTombstones[messageId] ?? 0,
-          localState.queuedMessageTombstones[messageId] ?? 0,
-        ),
-      ] as const)
+      .map(
+        ([messageId, deletedAt]) =>
+          [
+            messageId,
+            Math.max(
+              deletedAt,
+              latestState.queuedMessageTombstones[messageId] ?? 0,
+              localState.queuedMessageTombstones[messageId] ?? 0,
+            ),
+          ] as const,
+      )
       .sort((left, right) => right[1] - left[1])
       .slice(0, 2_048),
   );
@@ -2254,7 +2232,11 @@ export const mergeShellStateFromExternalUpdate = (
   hasUnpersistedLocalChanges: boolean,
 ): ShellPersistedState => {
   if (hasUnpersistedLocalChanges) {
-    return mergeShellStateForPersistence(currentState, baseState, externalState);
+    return mergeShellStateForPersistence(
+      currentState,
+      baseState,
+      externalState,
+    );
   }
 
   return preserveCurrentSessionState(currentState, baseState, externalState);
@@ -2354,7 +2336,9 @@ export const useChatSessionShellState = (
     useState<SettingsSection>("providers");
   const [isRenamingSession, setIsRenamingSession] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const renameSessionIdRef = useRef(initialShellStateRef.current.activeSessionId);
+  const renameSessionIdRef = useRef(
+    initialShellStateRef.current.activeSessionId,
+  );
   const [promptHistoryIndex, setPromptHistoryIndex] = useState<number | null>(
     null,
   );
@@ -2419,8 +2403,9 @@ export const useChatSessionShellState = (
   ]);
 
   const rawActiveSession =
-    shellState.sessions.find((session) => session.id === resolvedActiveSessionId) ??
-    shellState.sessions[0];
+    shellState.sessions.find(
+      (session) => session.id === resolvedActiveSessionId,
+    ) ?? shellState.sessions[0];
   const activeSession = rawActiveSession;
 
   const visibleMessages = useMemo(() => {
@@ -2594,9 +2579,8 @@ export const useChatSessionShellState = (
         let latestStoreRevision = lastPersistedStoreRevisionRef.current;
 
         if (!canUseTauriStore()) {
-          const latestSnapshot = await loadShellStateSnapshot(
-            latestPersistedState,
-          );
+          const latestSnapshot =
+            await loadShellStateSnapshot(latestPersistedState);
           latestPersistedState = normalizeShellState(latestSnapshot.state);
           latestStoreRevision = latestSnapshot.revision;
         }
@@ -2753,7 +2737,9 @@ export const useChatSessionShellState = (
     return () => {
       mountedRef.current = false;
       settlePersistenceWaiters(
-        new Error("Shell state persistence stopped before the write completed."),
+        new Error(
+          "Shell state persistence stopped before the write completed.",
+        ),
       );
     };
   }, [settlePersistenceWaiters]);
@@ -2873,7 +2859,9 @@ export const useChatSessionShellState = (
           return;
         }
 
-        if (!areShellFragmentsEqual(recoveredShellState, normalizedShellState)) {
+        if (
+          !areShellFragmentsEqual(recoveredShellState, normalizedShellState)
+        ) {
           localMutationRevisionRef.current += 1;
         }
 
@@ -2912,8 +2900,7 @@ export const useChatSessionShellState = (
     }
 
     if (
-      localMutationRevisionRef.current <=
-      persistedMutationRevisionRef.current
+      localMutationRevisionRef.current <= persistedMutationRevisionRef.current
     ) {
       return;
     }
@@ -2978,8 +2965,7 @@ export const useChatSessionShellState = (
       externalLoadSequenceRef.current = loadSequence;
 
       try {
-        const latestRevision =
-          revisionHint ?? (await loadShellStateRevision());
+        const latestRevision = revisionHint ?? (await loadShellStateRevision());
         if (
           disposed ||
           loadSequence !== externalLoadSequenceRef.current ||
@@ -2999,8 +2985,7 @@ export const useChatSessionShellState = (
         }
 
         const normalizedShellState = normalizeShellState(snapshot.state);
-        const previousPersistedShellState =
-          lastPersistedShellStateRef.current;
+        const previousPersistedShellState = lastPersistedShellStateRef.current;
         const hasUnpersistedLocalChanges =
           localMutationRevisionRef.current >
           persistedMutationRevisionRef.current;

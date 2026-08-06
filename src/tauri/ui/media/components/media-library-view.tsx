@@ -67,6 +67,9 @@ import {
   resolveMediaAssetVideoLoopMode,
 } from "../../../../core/media/video-quality.js";
 import { Button } from "../../components/ui/button";
+import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type { CommandDefinition } from "../../commands/command-types";
 import {
   Dialog,
   DialogClose,
@@ -2682,6 +2685,7 @@ export const MediaLibraryView = ({
   useEffect(() => {
     if (!previewAssetId) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
       if (
         event.target instanceof HTMLElement &&
         (event.target.isContentEditable ||
@@ -2799,6 +2803,330 @@ export const MediaLibraryView = ({
         }
       });
   };
+  const libraryCommandStateRef = useRef({
+    assets,
+    chatWorkspaceAvailable,
+    contactSheetCandidates,
+    exportLoading,
+    exportSupported,
+    filteredVisualAssets,
+    importLoading,
+    importSupported,
+    onImport,
+    onAnalyzeQuality,
+    onAutoTag,
+    onOpenAlphaMatteAsFlow,
+    onOpenAsFlow,
+    onOpenBackgroundRemovalAsFlow,
+    onOpenVideoAsFlow,
+    onSendToChat,
+    onUseAsReference,
+    qualityLoadingAssetId,
+    requestDeletion,
+    selectAssetForInspection,
+    setCompositeForeground,
+    setContactSheetAssetIds,
+    setContactSheetOpen,
+    setContactSheetPage,
+    setContactSheetQuery,
+    setExportAsset,
+    setPreviewAssetId,
+    setSlideshowPlaying,
+    tagLoadingAssetId,
+  });
+  libraryCommandStateRef.current = {
+    assets,
+    chatWorkspaceAvailable,
+    contactSheetCandidates,
+    exportLoading,
+    exportSupported,
+    filteredVisualAssets,
+    importLoading,
+    importSupported,
+    onImport,
+    onAnalyzeQuality,
+    onAutoTag,
+    onOpenAlphaMatteAsFlow,
+    onOpenAsFlow,
+    onOpenBackgroundRemovalAsFlow,
+    onOpenVideoAsFlow,
+    onSendToChat,
+    onUseAsReference,
+    qualityLoadingAssetId,
+    requestDeletion,
+    selectAssetForInspection,
+    setCompositeForeground,
+    setContactSheetAssetIds,
+    setContactSheetOpen,
+    setContactSheetPage,
+    setContactSheetQuery,
+    setExportAsset,
+    setPreviewAssetId,
+    setSlideshowPlaying,
+    tagLoadingAssetId,
+  };
+  const libraryCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "media.library.import",
+        title: "Import images or SVG",
+        group: "Media Library",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("media.library.import"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        availability: () => {
+          const state = libraryCommandStateRef.current;
+          return state.importSupported && !state.importLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.importLoading
+                  ? "An import is already being validated"
+                  : "Import requires the desktop app",
+              };
+        },
+        execute: () => libraryCommandStateRef.current.onImport(),
+      },
+      {
+        id: "media.library.asset.inspect",
+        title: "Inspect asset",
+        group: "Media Library",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          libraryCommandStateRef.current.assets.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No assets" },
+        children: () => ({
+          id: "media-library-asset-inspect",
+          title: "Inspect asset",
+          searchPlaceholder: "Choose asset",
+          groups: [
+            {
+              id: "assets",
+              items: libraryCommandStateRef.current.assets.map((asset) => ({
+                id: asset.id,
+                title: assetDisplayName(asset),
+                keywords: [asset.kind, asset.mimeType, asset.digest],
+                execute: () =>
+                  libraryCommandStateRef.current.selectAssetForInspection(
+                    asset.id,
+                  ),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.library.slideshow.start",
+        title: "Start asset slideshow",
+        group: "Media Library",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          libraryCommandStateRef.current.filteredVisualAssets.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No visible visual assets" },
+        execute: () => {
+          const state = libraryCommandStateRef.current;
+          const firstAsset = state.filteredVisualAssets[0];
+          if (!firstAsset) return;
+          state.setPreviewAssetId(firstAsset.id);
+          state.setSlideshowPlaying(state.filteredVisualAssets.length > 1);
+        },
+      },
+      {
+        id: "media.library.contact-sheet.open",
+        title: "Build contact sheet",
+        group: "Media Library",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          libraryCommandStateRef.current.contactSheetCandidates.length >= 2
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Add at least two images" },
+        execute: () => {
+          const state = libraryCommandStateRef.current;
+          state.setContactSheetAssetIds([]);
+          state.setContactSheetQuery("");
+          state.setContactSheetPage(1);
+          state.setContactSheetOpen(true);
+        },
+      },
+      ...(
+        [
+          {
+            id: "media.library.asset.preview",
+            title: "Preview asset",
+            eligible: (asset: MediaAssetRecord) =>
+              isMediaGalleryAssetKind(asset.kind),
+            action: (asset: MediaAssetRecord) => {
+              const state = libraryCommandStateRef.current;
+              state.setSlideshowPlaying(false);
+              state.setPreviewAssetId(asset.id);
+            },
+          },
+          {
+            id: "media.library.asset.export",
+            title: "Review asset export",
+            eligible: (asset: MediaAssetRecord) =>
+              asset.kind === "image" || asset.kind === "video",
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.setExportAsset(asset),
+          },
+          {
+            id: "media.library.asset.quality.analyze",
+            title: "Analyze asset quality",
+            eligible: (asset: MediaAssetRecord) => asset.kind === "image",
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onAnalyzeQuality(asset),
+          },
+          {
+            id: "media.library.asset.tags.auto",
+            title: "Auto-tag asset",
+            eligible: (asset: MediaAssetRecord) => asset.kind === "image",
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onAutoTag(asset.id),
+          },
+          {
+            id: "media.library.asset.chat.send",
+            title: "Send asset to Chat",
+            eligible: (asset: MediaAssetRecord) => asset.kind === "image",
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onSendToChat(asset),
+          },
+          {
+            id: "media.library.asset.reference.use",
+            title: "Edit asset in Create",
+            eligible: (asset: MediaAssetRecord) => asset.kind === "image",
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onUseAsReference(asset),
+          },
+          {
+            id: "media.library.asset.video-flow.open",
+            title: "Animate asset as video workflow",
+            eligible: (asset: MediaAssetRecord) => asset.kind === "image",
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onOpenVideoAsFlow(asset),
+          },
+          {
+            id: "media.library.asset.edit-flow.open",
+            title: "Open asset edit workflow",
+            eligible: (asset: MediaAssetRecord) =>
+              asset.kind === "image" && !isAlphaMatteAsset(asset),
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onOpenAsFlow(asset),
+          },
+          {
+            id: "media.library.asset.cutout-flow.open",
+            title: "Open subject cutout workflow",
+            eligible: (asset: MediaAssetRecord) =>
+              asset.kind === "image" && !isAlphaMatteAsset(asset),
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onOpenBackgroundRemovalAsFlow(
+                asset,
+              ),
+          },
+          {
+            id: "media.library.asset.alpha-flow.open",
+            title: "Open alpha matte workflow",
+            eligible: (asset: MediaAssetRecord) =>
+              asset.kind === "image" && !isAlphaMatteAsset(asset),
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.onOpenAlphaMatteAsFlow(asset),
+          },
+          {
+            id: "media.library.asset.composite-flow.open",
+            title: "Composite asset over background",
+            eligible: (asset: MediaAssetRecord) =>
+              asset.kind === "image" && !isAlphaMatteAsset(asset),
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.setCompositeForeground(asset),
+          },
+          {
+            id: "media.library.asset.delete.review",
+            title: "Review asset deletion impact",
+            eligible: (_asset: MediaAssetRecord) => true,
+            action: (asset: MediaAssetRecord) =>
+              libraryCommandStateRef.current.requestDeletion(asset),
+          },
+        ] as const
+      ).map(
+        ({ id, title, eligible, action }): CommandDefinition => ({
+          id,
+          title,
+          group: "Media Library",
+          scope: { kind: "view", ownerId: "media" },
+          palette: "visible",
+          availability: () => {
+            const state = libraryCommandStateRef.current;
+            if (id === "media.library.asset.export") {
+              if (!state.exportSupported)
+                return {
+                  state: "disabled",
+                  reason: "Export requires the desktop app",
+                };
+              if (state.exportLoading)
+                return { state: "disabled", reason: "An export is running" };
+            }
+            if (
+              id === "media.library.asset.chat.send" &&
+              !state.chatWorkspaceAvailable
+            ) {
+              return {
+                state: "disabled",
+                reason: "Choose a Chat workspace first",
+              };
+            }
+            return state.assets.some(eligible)
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "No eligible assets" };
+          },
+          children: () => ({
+            id: `${id}-page`,
+            title,
+            searchPlaceholder: "Choose asset",
+            groups: [
+              {
+                id: "assets",
+                items: libraryCommandStateRef.current.assets
+                  .filter(eligible)
+                  .map((asset) => ({
+                    id: asset.id,
+                    title: assetDisplayName(asset),
+                    keywords: [asset.kind, asset.mimeType, asset.digest],
+                    availability:
+                      id === "media.library.asset.quality.analyze" &&
+                      libraryCommandStateRef.current.qualityLoadingAssetId ===
+                        asset.id
+                        ? { state: "disabled", reason: "Analysis is running" }
+                        : id === "media.library.asset.tags.auto" &&
+                            libraryCommandStateRef.current.tagLoadingAssetId ===
+                              asset.id
+                          ? { state: "disabled", reason: "Tagging is running" }
+                          : { state: "enabled" },
+                    execute: () => action(asset),
+                  })),
+              },
+            ],
+          }),
+        }),
+      ),
+    ],
+    [libraryCommandStateRef],
+  );
+  useOptionalRegisterCommands(libraryCommands);
 
   return (
     <div className="h-full overflow-y-auto bg-slate-950 px-5 py-6 sm:px-7 sm:py-7">

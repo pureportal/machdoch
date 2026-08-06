@@ -7,8 +7,13 @@ import {
   Trash2,
   Wifi,
 } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "../../commands/command-types";
 import {
   DialogContent,
   DialogDescription,
@@ -170,8 +175,123 @@ export const MissionControlPanel = ({
     setPortTouched(false);
   };
 
+  const missionCommandStateRef = useRef({
+    enabled,
+    loading,
+    displayUrl,
+    displayToken,
+    portChanged,
+    portIsValid,
+    pairedDeviceCount,
+    onEnable,
+    onDisable,
+    onOpenUrl,
+    onForgetPairings,
+    copyLink,
+    copyToken,
+    savePort,
+  });
+  missionCommandStateRef.current = {
+    enabled,
+    loading,
+    displayUrl,
+    displayToken,
+    portChanged,
+    portIsValid,
+    pairedDeviceCount,
+    onEnable,
+    onDisable,
+    onOpenUrl,
+    onForgetPairings,
+    copyLink,
+    copyToken,
+    savePort,
+  };
+  const missionCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "overlay" as const, ownerId: "mission-control" };
+    const state = () => missionCommandStateRef.current;
+    return asPaletteCommands([
+      {
+        id: "mission-control.toggle",
+        title: "Toggle Mission Control sharing",
+        group: "Mission Control",
+        scope,
+        availability: () =>
+          state().loading
+            ? { state: "disabled", reason: "Mission Control is updating." }
+            : { state: "enabled" },
+        current: () => state().enabled,
+        execute: () =>
+          void (state().enabled ? state().onDisable() : state().onEnable()),
+      },
+      {
+        id: "mission-control.link.copy",
+        title: "Copy Mission Control link",
+        group: "Mission Control",
+        scope,
+        availability: () =>
+          state().displayUrl
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Mission Control is not sharing." },
+        execute: () => void state().copyLink(),
+      },
+      {
+        id: "mission-control.token.copy",
+        title: "Copy Mission Control token",
+        group: "Mission Control",
+        scope,
+        availability: () =>
+          state().displayToken
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No pairing token is available." },
+        execute: () => void state().copyToken(),
+      },
+      {
+        id: "mission-control.open",
+        title: "Open Mission Control",
+        group: "Mission Control",
+        scope,
+        availability: () =>
+          state().displayUrl
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Mission Control is not sharing." },
+        execute: () => void state().onOpenUrl(),
+      },
+      {
+        id: "mission-control.port.save",
+        title: "Save Mission Control port",
+        group: "Mission Control",
+        scope,
+        availability: () =>
+          state().loading
+            ? { state: "disabled", reason: "Mission Control is updating." }
+            : !state().portIsValid
+              ? { state: "disabled", reason: "Enter a valid port." }
+              : state().portChanged
+                ? { state: "enabled" }
+                : { state: "disabled", reason: "Port is unchanged." },
+        execute: () => void state().savePort(),
+      },
+      {
+        id: "mission-control.pairings.forget",
+        title: "Forget Mission Control pairings",
+        group: "Mission Control",
+        scope,
+        availability: () =>
+          state().loading || state().pairedDeviceCount === 0
+            ? { state: "disabled", reason: "No pairings can be forgotten." }
+            : { state: "enabled" },
+        execute: () => void state().onForgetPairings(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(missionCommands);
+
   return (
-    <DialogContent className="app-mission-control-dialog max-h-[min(740px,calc(100vh-28px))] w-[min(900px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+    <DialogContent
+      data-command-owner="mission-control"
+      className="app-mission-control-dialog max-h-[min(740px,calc(100vh-28px))] w-[min(900px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
+    >
       <div className="flex max-h-[min(740px,calc(100vh-28px))] min-h-[440px] flex-col overflow-hidden">
         <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold text-white">

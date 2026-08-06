@@ -3,7 +3,6 @@ import type {
   TaskExecutionResult,
 } from "../../../../core/types.js";
 import {
-  INTERRUPTED_TASK_CRASH_PREFIX,
   type ChatSessionMessage,
   type ChatSessionRecord,
 } from "../../chat-session.model";
@@ -79,12 +78,12 @@ export const isRecoveredTaskCrashMessage = (
 ): boolean => {
   return (
     message.role === "agent" &&
-    !message.source &&
-    message.content.startsWith(INTERRUPTED_TASK_CRASH_PREFIX)
+    message.source?.kind === "interrupted-task" &&
+    message.source.status === "crashed"
   );
 };
 
-export const getRecoveredTaskUserPrompt = (
+export const getRecoveredTaskObjective = (
   session: ChatSessionRecord,
   message: ChatSessionMessage,
 ): string | null => {
@@ -106,7 +105,11 @@ export const getRecoveredTaskUserPrompt = (
 
   const prompt = latestMatchingUserMessage?.content.trim();
 
-  return prompt ? prompt : null;
+  if (!prompt) {
+    return null;
+  }
+
+  return latestMatchingUserMessage?.taskAction?.objective ?? prompt;
 };
 
 export const createRecoveredRetryTaskPrompt = (
@@ -147,8 +150,9 @@ export const createRecoveredContinueTaskPrompt = (
 
 export const createRetryTaskPrompt = (
   execution: TaskExecutionResult,
+  taskObjective = execution.task,
 ): string => {
-  const objective = getConciseTaskObjective(execution.task);
+  const objective = getConciseTaskObjective(taskObjective);
   const summary = compactPromptText(execution.summary, 700);
   const reason = execution.reason
     ? compactPromptText(execution.reason, 500)
@@ -172,8 +176,9 @@ export const createRetryTaskPrompt = (
 
 export const createContinuationTaskPrompt = (
   execution: TaskExecutionResult,
+  taskObjective = execution.task,
 ): string => {
-  const objective = getConciseTaskObjective(execution.task);
+  const objective = getConciseTaskObjective(taskObjective);
   const summary = compactPromptText(execution.summary, 700);
   const followUps = (execution.response?.followUps ?? [])
     .map((item) => compactPromptText(item, 220))

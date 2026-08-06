@@ -1,6 +1,11 @@
 import { Check, CircleDashed } from "lucide-react";
-import type { JSX } from "react";
+import { useMemo, type JSX } from "react";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../../commands/command-types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -27,6 +32,59 @@ export const SessionModePicker = ({
   onSessionModeSelection,
 }: SessionModePickerProps): JSX.Element => {
   const ActiveRunModeIcon = activeRunModeMeta.icon;
+  const modeCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "chat.session.mode.select",
+        title: "Choose execution mode",
+        group: "Chat",
+        keywords: ["ask", "machdoch", "permissions"],
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        children: () => ({
+          id: "chat-session-mode",
+          title: "Execution mode",
+          searchPlaceholder: "Choose execution mode",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: [
+                {
+                  id: "workspace-default",
+                  title: `Workspace default (${RUN_MODE_META[defaultRunMode].label})`,
+                  current: isUsingWorkspaceDefaultMode,
+                  numericKey: "1",
+                  execute: () => onSessionModeSelection(null),
+                },
+                ...RUN_MODE_ORDER.map(
+                  (mode, index): CommandPageItem => ({
+                    id: mode,
+                    title: RUN_MODE_META[mode].label,
+                    keywords: [RUN_MODE_META[mode].description],
+                    current:
+                      !isUsingWorkspaceDefaultMode && activeRunMode === mode,
+                    numericKey: String(
+                      index + 2,
+                    ) as CommandPageItem["numericKey"],
+                    execute: () => onSessionModeSelection(mode),
+                  }),
+                ),
+              ],
+            },
+          ],
+        }),
+      },
+    ],
+    [
+      activeRunMode,
+      defaultRunMode,
+      isUsingWorkspaceDefaultMode,
+      onSessionModeSelection,
+    ],
+  );
+  useOptionalRegisterCommands(modeCommands);
 
   return (
     <Popover>

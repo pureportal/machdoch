@@ -51,8 +51,10 @@ import type {
   MediaAssetTag,
   MediaAssetTagUpdate,
   MediaErrorAction,
+  MediaErrorCategory,
   MediaErrorCode,
   MediaErrorDetail,
+  MediaErrorRetryability,
   MediaFlow,
   MediaFlowHead,
   MediaFlowHistory,
@@ -99,78 +101,143 @@ import type {
 } from "../../../core/media/contracts.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const MEDIA_ERROR_CODES: ReadonlySet<MediaErrorCode> = new Set([
+  "INVALID_REQUEST",
+  "FLOW_REVISION_CONFLICT",
+  "RESOURCE_NOT_FOUND",
+  "STORAGE_UNAVAILABLE",
+  "DISK_FULL",
+  "PATH_NOT_ALLOWED",
+  "INTERNAL_ERROR",
+  "MODEL_NOT_INSTALLED",
+  "MODEL_LICENSE_REQUIRED",
+  "MODEL_ACCESS_DENIED",
+  "PROVIDER_NOT_CONFIGURED",
+  "PROVIDER_MODEL_DEPRECATED",
+  "PROVIDER_MODEL_REMOVED",
+  "PROVIDER_LIFECYCLE_UNKNOWN",
+  "PROVIDER_QUOTA_EXCEEDED",
+  "PROVIDER_RATE_LIMITED",
+  "PROVIDER_REGION_UNSUPPORTED",
+  "PROVIDER_FEATURE_UI_ONLY",
+  "PROVIDER_REQUEST_FAILED",
+  "REMOTE_UPLOAD_NOT_ALLOWED",
+  "REMOTE_OUTPUT_EXPIRED",
+  "REMOTE_RETRY_COST_RISK",
+  "UNSUPPORTED_CAPABILITY",
+  "UNSUPPORTED_HARDWARE",
+  "UNSUPPORTED_RUNTIME_VARIANT",
+  "UNSUPPORTED_DIMENSIONS",
+  "UNSUPPORTED_FORMAT",
+  "UNSUPPORTED_ADAPTER",
+  "ADAPTER_BASE_MODEL_MISMATCH",
+  "UNSUPPORTED_OPTIMIZATION",
+  "OPTIMIZATION_QUALITY_DRIFT",
+  "TRAINING_DATASET_INVALID",
+  "TRAINING_INTERRUPTED",
+  "INVALID_MASK_ALIGNMENT",
+  "INVALID_FRAME_RANGE",
+  "INVALID_KEYFRAME_SET",
+  "INVALID_CONDITION_SET",
+  "INVALID_EDIT_INTENT",
+  "CONTINUITY_CONSTRAINT_FAILED",
+  "OOM",
+  "DRIVER_RUNTIME_MISMATCH",
+  "OPTIMIZED_ENGINE_INVALID",
+  "WORKER_CRASHED",
+  "WORKER_TIMEOUT",
+  "SAFETY_REJECTED_INPUT",
+  "SAFETY_REJECTED_OUTPUT",
+  "PROVENANCE_ATTACH_FAILED",
+  "PROVENANCE_VERIFY_FAILED",
+  "WATERMARK_DETECTION_FAILED",
+  "OUTPUT_VALIDATION_FAILED",
+  "EXPORT_FAILED",
+  "CANCELLED_BY_USER",
+]);
+const MEDIA_ERROR_CATEGORIES: ReadonlySet<MediaErrorCategory> = new Set([
+  "validation",
+  "configuration",
+  "capability",
+  "resource",
+  "provider",
+  "safety",
+  "integrity",
+  "storage",
+  "lifecycle",
+  "cancellation",
+  "internal",
+]);
+const MEDIA_ERROR_RETRYABILITIES: ReadonlySet<MediaErrorRetryability> = new Set(
+  [
+    "never",
+    "retry-safe",
+    "after-user-action",
+    "reconcile-first",
+    "user-approval-required",
+  ],
+);
+const MEDIA_ERROR_ACTION_IDS: ReadonlySet<MediaErrorAction["id"]> = new Set([
+  "refresh",
+  "retry",
+  "review-input",
+  "open-models",
+  "open-provider-settings",
+  "review-run",
+  "free-space",
+  "choose-location",
+]);
+
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === "string";
 
 const isMediaErrorAction = (value: unknown): value is MediaErrorAction =>
   isRecord(value) &&
-  typeof value.id === "string" &&
+  Object.keys(value).length === 3 &&
+  MEDIA_ERROR_ACTION_IDS.has(value.id as MediaErrorAction["id"]) &&
   typeof value.label === "string" &&
   typeof value.description === "string";
 
-export const isMediaErrorDetail = (
+const isMediaErrorContext = (
   value: unknown,
-): value is MediaErrorDetail =>
+): value is MediaErrorDetail["context"] =>
   isRecord(value) &&
+  Object.keys(value).length === 7 &&
+  isNullableString(value.nodeId) &&
+  isNullableString(value.providerId) &&
+  isNullableString(value.modelId) &&
+  isNullableString(value.runtimeId) &&
+  isNullableString(value.runId) &&
+  isNullableString(value.assetId) &&
+  isNullableString(value.operation);
+
+export const isMediaErrorDetail = (value: unknown): value is MediaErrorDetail =>
+  isRecord(value) &&
+  Object.keys(value).length === 9 &&
   value.schemaVersion === 1 &&
-  typeof value.code === "string" &&
-  typeof value.category === "string" &&
+  MEDIA_ERROR_CODES.has(value.code as MediaErrorCode) &&
+  MEDIA_ERROR_CATEGORIES.has(value.category as MediaErrorCategory) &&
   typeof value.message === "string" &&
   typeof value.technicalDiagnostic === "string" &&
-  isRecord(value.context) &&
-  typeof value.retryability === "string" &&
+  isMediaErrorContext(value.context) &&
+  MEDIA_ERROR_RETRYABILITIES.has(
+    value.retryability as MediaErrorRetryability,
+  ) &&
   typeof value.partialOutputsExist === "boolean" &&
   Array.isArray(value.suggestedActions) &&
   value.suggestedActions.every(isMediaErrorAction);
 
 const sanitizeBrowserDiagnostic = (diagnostic: string): string => {
   const normalized = diagnostic
-    .replaceAll(/https?:\/\/[^\s]+/gu, (url) => url.split(/[?#]/u, 1)[0] ?? "[redacted-url]")
+    .replaceAll(
+      /https?:\/\/[^\s]+/gu,
+      (url) => url.split(/[?#]/u, 1)[0] ?? "[redacted-url]",
+    )
     .replaceAll(/\s+/gu, " ")
     .trim();
   return [...normalized].slice(0, 2_000).join("");
-};
-
-const fallbackCode = (diagnostic: string): MediaErrorCode => {
-  const lower = diagnostic.toLowerCase();
-  if (lower.includes("flow revision conflict")) {
-    return "FLOW_REVISION_CONFLICT";
-  }
-  if (lower.includes("license") && lower.includes("accept")) {
-    return "MODEL_LICENSE_REQUIRED";
-  }
-  if (lower.includes("not found")) {
-    return "RESOURCE_NOT_FOUND";
-  }
-  if (lower.includes("expired") && lower.includes("result")) {
-    return "REMOTE_OUTPUT_EXPIRED";
-  }
-  if (
-    lower.includes("provider") &&
-    (lower.includes("rejected") || lower.includes("failed"))
-  ) {
-    return "PROVIDER_REQUEST_FAILED";
-  }
-  if (lower.includes("native desktop app only")) {
-    return "UNSUPPORTED_CAPABILITY";
-  }
-  if (lower.includes("outside") && lower.includes("path")) {
-    return "PATH_NOT_ALLOWED";
-  }
-  if (lower.includes("format")) {
-    return "UNSUPPORTED_FORMAT";
-  }
-  if (lower.includes("dimension") || lower.includes("pixel")) {
-    return "UNSUPPORTED_DIMENSIONS";
-  }
-  if (
-    lower.includes("invalid") ||
-    lower.includes("must be") ||
-    lower.includes("limited to") ||
-    lower.includes("requires")
-  ) {
-    return "INVALID_REQUEST";
-  }
-  return "INTERNAL_ERROR";
 };
 
 const fallbackPresentation = (
@@ -196,7 +263,8 @@ const fallbackPresentation = (
     case "MODEL_LICENSE_REQUIRED":
       return {
         category: "configuration",
-        message: "Model access requires review before this operation can continue.",
+        message:
+          "Model access requires review before this operation can continue.",
         retryability: "after-user-action",
         suggestedActions: [
           {
@@ -215,7 +283,8 @@ const fallbackPresentation = (
           {
             id: "refresh",
             label: "Refresh",
-            description: "Reload the durable Media Studio state before trying again.",
+            description:
+              "Reload the durable Media Studio state before trying again.",
           },
         ],
       };
@@ -241,7 +310,8 @@ const fallbackPresentation = (
           {
             id: "review-run",
             label: "Review rerun",
-            description: "Review cost and inputs before creating a replacement provider request.",
+            description:
+              "Review cost and inputs before creating a replacement provider request.",
           },
         ],
       };
@@ -254,7 +324,8 @@ const fallbackPresentation = (
           {
             id: "review-run",
             label: "Review provider job",
-            description: "Inspect the terminal provider state and cost record before creating a new attempt.",
+            description:
+              "Inspect the terminal provider state and cost record before creating a new attempt.",
           },
         ],
       };
@@ -263,13 +334,15 @@ const fallbackPresentation = (
     case "UNSUPPORTED_FORMAT":
       return {
         category: "capability",
-        message: "This media operation is not supported in the current runtime.",
+        message:
+          "This media operation is not supported in the current runtime.",
         retryability: "after-user-action",
         suggestedActions: [
           {
             id: "review-input",
             label: "Review compatibility",
-            description: "Choose a compatible runtime, dimensions, format, or preset.",
+            description:
+              "Choose a compatible runtime, dimensions, format, or preset.",
           },
         ],
       };
@@ -295,12 +368,34 @@ const fallbackPresentation = (
           {
             id: "refresh",
             label: "Refresh",
-            description: "Reload the durable Media Studio state before trying again.",
+            description:
+              "Reload the durable Media Studio state before trying again.",
           },
         ],
       };
   }
 };
+
+const createFallbackMediaErrorDetail = (
+  code: MediaErrorCode,
+  diagnostic: string,
+  operation: string,
+): MediaErrorDetail => ({
+  schemaVersion: 1,
+  code,
+  ...fallbackPresentation(code),
+  technicalDiagnostic: sanitizeBrowserDiagnostic(diagnostic),
+  context: {
+    nodeId: null,
+    providerId: null,
+    modelId: null,
+    runtimeId: null,
+    runId: null,
+    assetId: null,
+    operation,
+  },
+  partialOutputsExist: false,
+});
 
 export const normalizeMediaError = (
   error: unknown,
@@ -318,23 +413,11 @@ export const normalizeMediaError = (
       : typeof error === "string"
         ? error
         : "Unknown Media Studio failure";
-  const code = fallbackCode(diagnostic);
-  return {
-    schemaVersion: 1,
-    code,
-    ...fallbackPresentation(code),
-    technicalDiagnostic: sanitizeBrowserDiagnostic(diagnostic),
-    context: {
-      nodeId: null,
-      providerId: null,
-      modelId: null,
-      runtimeId: null,
-      runId: null,
-      assetId: null,
-      operation,
-    },
-    partialOutputsExist: false,
-  };
+  return createFallbackMediaErrorDetail(
+    "INTERNAL_ERROR",
+    diagnostic,
+    operation,
+  );
 };
 
 export class MediaRuntimeError extends Error {
@@ -376,7 +459,8 @@ let browserLocalBiRefNetInstalled = false;
 let nextBrowserModelInstallId = 1;
 let nextBrowserEventId = 1;
 let nativeAssetSnapshot: MediaAssetLibrarySnapshot | null = null;
-let nativeAssetSnapshotRequest: Promise<MediaAssetLibrarySnapshot> | null = null;
+let nativeAssetSnapshotRequest: Promise<MediaAssetLibrarySnapshot> | null =
+  null;
 let nativeRunSnapshot: MediaRunLibrarySnapshot | null = null;
 let nativeRunSnapshotRequest: Promise<MediaRunLibrarySnapshot> | null = null;
 
@@ -406,7 +490,11 @@ const browserFlowHistory = (flowId: string): MediaFlowHistory => {
 
 const browserFlowConflict = (diagnostic: string): MediaRuntimeError =>
   new MediaRuntimeError(
-    normalizeMediaError(`flow revision conflict: ${diagnostic}`, "media_save_flow_revision"),
+    createFallbackMediaErrorDetail(
+      "FLOW_REVISION_CONFLICT",
+      diagnostic,
+      "media_save_flow_revision",
+    ),
   );
 
 const validateBrowserRunFlowRevision = (
@@ -554,8 +642,16 @@ const seedBrowserNodeExecutions = (
   if (!snapshot) return [];
   const timestamp = now();
   return snapshot.nodes.map((node, ordinal) => {
-    const steps = snapshot.steps.filter((step) => step.sourceNodeId === node.id);
-    const terminal = ["completed", "cached", "skipped", "failed", "canceled"].includes(status);
+    const steps = snapshot.steps.filter(
+      (step) => step.sourceNodeId === node.id,
+    );
+    const terminal = [
+      "completed",
+      "cached",
+      "skipped",
+      "failed",
+      "canceled",
+    ].includes(status);
     return {
       runId,
       nodeId: node.id,
@@ -563,7 +659,7 @@ const seedBrowserNodeExecutions = (
       nodeLabel: node.label,
       ordinal,
       status,
-      activeStepId: terminal ? steps.at(-1)?.id ?? null : null,
+      activeStepId: terminal ? (steps.at(-1)?.id ?? null) : null,
       runtimePhase: null,
       attempt: status === "running" ? 1 : 0,
       progress: status === "completed" ? 1 : null,
@@ -584,16 +680,27 @@ const transitionBrowserNode = (
   message: string,
   progress: number | null,
 ): void => {
-  const execution = detail.nodeExecutions.find((candidate) => candidate.nodeId === nodeId);
+  const execution = detail.nodeExecutions.find(
+    (candidate) => candidate.nodeId === nodeId,
+  );
   if (!execution) return;
   const timestamp = now();
-  const terminal = ["completed", "cached", "skipped", "failed", "canceled"].includes(status);
-  const steps = detail.planSnapshot?.steps.filter((step) => step.sourceNodeId === nodeId) ?? [];
-  if (status === "running" && execution.status !== "running") execution.attempt += 1;
+  const terminal = [
+    "completed",
+    "cached",
+    "skipped",
+    "failed",
+    "canceled",
+  ].includes(status);
+  const steps =
+    detail.planSnapshot?.steps.filter((step) => step.sourceNodeId === nodeId) ??
+    [];
+  if (status === "running" && execution.status !== "running")
+    execution.attempt += 1;
   execution.status = status;
   execution.activeStepId = terminal
-    ? steps.at(-1)?.id ?? null
-    : steps.at(0)?.id ?? null;
+    ? (steps.at(-1)?.id ?? null)
+    : (steps.at(0)?.id ?? null);
   execution.runtimePhase = runtimePhase;
   execution.progress = progress;
   execution.message = message;
@@ -638,19 +745,33 @@ const transitionBrowserNodesByType = (
 
 const finalizeBrowserNodes = (
   detail: MediaRunDetail,
-  status: Extract<MediaNodeExecutionStatus, "completed" | "failed" | "canceled">,
+  status: Extract<
+    MediaNodeExecutionStatus,
+    "completed" | "failed" | "canceled"
+  >,
 ): void => {
   detail.nodeExecutions.forEach((execution) => {
-    const shouldTransition = status === "completed"
-      ? !["completed", "cached", "skipped", "failed", "canceled"].includes(execution.status)
-      : ["queued", "running", "retrying", "waiting-for-review", "blocked"].includes(execution.status);
+    const shouldTransition =
+      status === "completed"
+        ? !["completed", "cached", "skipped", "failed", "canceled"].includes(
+            execution.status,
+          )
+        : [
+            "queued",
+            "running",
+            "retrying",
+            "waiting-for-review",
+            "blocked",
+          ].includes(execution.status);
     if (shouldTransition) {
       transitionBrowserNode(
         detail,
         execution.nodeId,
         status,
         "run.finalize",
-        status === "completed" ? `Completed ${execution.nodeLabel}` : `${status} ${execution.nodeLabel}`,
+        status === "completed"
+          ? `Completed ${execution.nodeLabel}`
+          : `${status} ${execution.nodeLabel}`,
         status === "completed" ? 1 : null,
       );
     }
@@ -658,7 +779,9 @@ const finalizeBrowserNodes = (
 };
 
 const wait = async (milliseconds: number): Promise<void> => {
-  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds));
+  await new Promise<void>((resolve) =>
+    globalThis.setTimeout(resolve, milliseconds),
+  );
 };
 
 const hasRunStatus = (
@@ -668,11 +791,12 @@ const hasRunStatus = (
 
 const browserRunFailure = (
   detail: MediaRunDetail,
+  code: MediaErrorCode,
   diagnostic: string,
   operation: string,
   providerId: string | null = null,
 ): MediaErrorDetail => {
-  const failure = normalizeMediaError(diagnostic, operation);
+  const failure = createFallbackMediaErrorDetail(code, diagnostic, operation);
   return {
     ...failure,
     context: {
@@ -803,7 +927,11 @@ const executeBrowserFixture = async (
   );
 
   const [width, height] = dimensions(request.aspectRatio);
-  for (let outputIndex = 0; outputIndex < request.outputCount; outputIndex += 1) {
+  for (
+    let outputIndex = 0;
+    outputIndex < request.outputCount;
+    outputIndex += 1
+  ) {
     await wait(280);
     if (hasRunStatus(detail, "canceling")) {
       finalizeBrowserCancellation(detail);
@@ -831,8 +959,7 @@ const executeBrowserFixture = async (
       tags: [],
     };
     detail.assets.push(asset);
-    detail.progress =
-      0.05 + ((outputIndex + 1) / request.outputCount) * 0.9;
+    detail.progress = 0.05 + ((outputIndex + 1) / request.outputCount) * 0.9;
     detail.currentStep = `Published preview output ${outputIndex + 1} of ${request.outputCount}`;
     detail.updatedAt = now();
     appendBrowserEvent(detail, {
@@ -862,7 +989,8 @@ const executeBrowserFixture = async (
   detail.updatedAt = now();
   appendBrowserEvent(detail, {
     kind: "run_completed",
-    message: "Browser fixture preview completed. Native mode additionally writes PNG bytes to CAS.",
+    message:
+      "Browser fixture preview completed. Native mode additionally writes PNG bytes to CAS.",
     progress: 1,
     stepId: "finalize",
   });
@@ -913,7 +1041,8 @@ const enqueueBrowserFixture = (
   };
   appendBrowserEvent(detail, {
     kind: "run_queued",
-    message: "Deterministic fixture preview was added to the in-memory browser queue.",
+    message:
+      "Deterministic fixture preview was added to the in-memory browser queue.",
     progress: 0,
     stepId: "queue",
   });
@@ -965,7 +1094,8 @@ const continueBrowserRemoteAfterAcceptance = async (
   detail.updatedAt = now();
   appendBrowserEvent(detail, {
     kind: "provider_reconciled",
-    message: "Provider state reconciled as queued; the next poll time is durable in native mode.",
+    message:
+      "Provider state reconciled as queued; the next poll time is durable in native mode.",
     progress: 0.28,
     stepId: "provider.poll",
   });
@@ -1002,6 +1132,7 @@ const continueBrowserRemoteAfterAcceptance = async (
     providerJob.error = "Mock provider rejected the prepared request.";
     providerJob.failure = browserRunFailure(
       detail,
+      "PROVIDER_REQUEST_FAILED",
       providerJob.error,
       "provider_job",
       "mock-remote",
@@ -1016,7 +1147,8 @@ const continueBrowserRemoteAfterAcceptance = async (
     finalizeBrowserNodes(detail, "failed");
     appendBrowserEvent(detail, {
       kind: "provider_failed",
-      message: "The normalized refusal was preserved without exposing a provider response body.",
+      message:
+        "The normalized refusal was preserved without exposing a provider response body.",
       progress: detail.progress,
       stepId: "provider.finalize",
     });
@@ -1028,6 +1160,7 @@ const continueBrowserRemoteAfterAcceptance = async (
     providerJob.error = "Provider result retention window expired.";
     providerJob.failure = browserRunFailure(
       detail,
+      "REMOTE_OUTPUT_EXPIRED",
       providerJob.error,
       "provider_job",
       "mock-remote",
@@ -1042,7 +1175,8 @@ const continueBrowserRemoteAfterAcceptance = async (
     finalizeBrowserNodes(detail, "failed");
     appendBrowserEvent(detail, {
       kind: "provider_failed",
-      message: "The result expired; automatic resubmission remains blocked because the original request may have been charged.",
+      message:
+        "The result expired; automatic resubmission remains blocked because the original request may have been charged.",
       progress: detail.progress,
       stepId: "provider.finalize",
     });
@@ -1085,13 +1219,18 @@ const continueBrowserRemoteAfterAcceptance = async (
   detail.updatedAt = now();
   appendBrowserEvent(detail, {
     kind: "provider_download_started",
-    message: "A bounded download began; provider URLs remain outside renderer state.",
+    message:
+      "A bounded download began; provider URLs remain outside renderer state.",
     progress: 0.8,
     stepId: "provider.download",
   });
 
   const [width, height] = dimensions(request.aspectRatio);
-  for (let outputIndex = 0; outputIndex < request.outputCount; outputIndex += 1) {
+  for (
+    let outputIndex = 0;
+    outputIndex < request.outputCount;
+    outputIndex += 1
+  ) {
     const asset: MediaAssetRecord = {
       id: `asset:${request.runId}:${outputIndex}`,
       runId: request.runId,
@@ -1128,11 +1267,14 @@ const continueBrowserRemoteAfterAcceptance = async (
   finalizeBrowserNodes(detail, "completed");
   detail.status = "completed";
   detail.progress = 1;
-  detail.currentStep = lateSuccess ? "Completed after cancellation race" : "Completed";
+  detail.currentStep = lateSuccess
+    ? "Completed after cancellation race"
+    : "Completed";
   detail.updatedAt = now();
   appendBrowserEvent(detail, {
     kind: "run_completed",
-    message: "Provider outputs were ingested before expiry; playback no longer depends on provider URLs.",
+    message:
+      "Provider outputs were ingested before expiry; playback no longer depends on provider URLs.",
     progress: 1,
     stepId: "provider.finalize",
   });
@@ -1167,7 +1309,8 @@ const executeBrowserRemote = async (
   detail.updatedAt = now();
   appendBrowserEvent(detail, {
     kind: "provider_submission_started",
-    message: "The prepared request was sent exactly once with its persisted idempotency key.",
+    message:
+      "The prepared request was sent exactly once with its persisted idempotency key.",
     progress: 0.08,
     stepId: "provider.submit",
   });
@@ -1210,7 +1353,8 @@ const executeBrowserRemote = async (
     );
     appendBrowserEvent(detail, {
       kind: "provider_acceptance_unknown",
-      message: "Possible paid acceptance is unresolved. Automatic resubmission is blocked.",
+      message:
+        "Possible paid acceptance is unresolved. Automatic resubmission is blocked.",
       progress: 0.12,
       stepId: "provider.acceptance",
     });
@@ -1223,7 +1367,9 @@ const executeBrowserRemote = async (
   providerJob.providerJobId = `mock-job-${detail.id}`;
   providerJob.providerRequestId = `mock-request-${detail.id}`;
   providerJob.acceptedAt = acceptedAt;
-  providerJob.retentionExpiresAt = new Date(Date.now() + 3_600_000).toISOString();
+  providerJob.retentionExpiresAt = new Date(
+    Date.now() + 3_600_000,
+  ).toISOString();
   providerJob.nextPollAt = acceptedAt;
   providerJob.updatedAt = acceptedAt;
   detail.status = browserProviderCancellations.has(detail.id)
@@ -1234,7 +1380,8 @@ const executeBrowserRemote = async (
   detail.updatedAt = acceptedAt;
   appendBrowserEvent(detail, {
     kind: "provider_accepted",
-    message: "Acceptance, identifiers, cost exposure, and result retention were persisted immediately.",
+    message:
+      "Acceptance, identifiers, cost exposure, and result retention were persisted immediately.",
     progress: 0.18,
     stepId: "provider.acceptance",
   });
@@ -1246,7 +1393,11 @@ const enqueueBrowserRemote = (
 ): MediaRunDetail => {
   const existing = browserRuns.get(request.runId);
   if (existing) {
-    validateExistingBrowserRunIdentity(existing, request, "mock-remote-provider");
+    validateExistingBrowserRunIdentity(
+      existing,
+      request,
+      "mock-remote-provider",
+    );
     return clone(existing);
   }
   const createdAt = now();
@@ -1311,7 +1462,8 @@ const enqueueBrowserRemote = (
   };
   appendBrowserEvent(detail, {
     kind: "provider_prepared",
-    message: "A redacted request, cost range, policy snapshot, and idempotency decision were recorded before submission.",
+    message:
+      "A redacted request, cost range, policy snapshot, and idempotency decision were recorded before submission.",
     progress: 0.01,
     stepId: "provider.prepare",
   });
@@ -1349,7 +1501,8 @@ export const initializeMediaRuntime = async (): Promise<MediaRuntimeStatus> => {
       physicalMemoryBytes: null,
       architectures: [],
       capabilities: [],
-      diagnostic: "Local Diffusers execution is available in the native desktop app only.",
+      diagnostic:
+        "Local Diffusers execution is available in the native desktop app only.",
     },
   };
 };
@@ -1412,7 +1565,9 @@ export const discoverMediaWorkspaceModels = async (
     scannedAt: new Date().toISOString(),
     entries: [],
     truncated: false,
-    warnings: ["Workspace model discovery requires the native desktop runtime."],
+    warnings: [
+      "Workspace model discovery requires the native desktop runtime.",
+    ],
   };
 };
 
@@ -1435,15 +1590,13 @@ const advanceBrowserModelInstall = (
       job.filesTotal - 1,
       Math.floor(downloadProgress * job.filesTotal),
     );
-    const files = job.modelId === LOCAL_BIREFNET_MODEL_ID
-      ? LOCAL_BIREFNET_INSTALL_FILES
-      : LOCAL_FLUX_INSTALL_FILES;
+    const files =
+      job.modelId === LOCAL_BIREFNET_MODEL_ID
+        ? LOCAL_BIREFNET_INSTALL_FILES
+        : LOCAL_FLUX_INSTALL_FILES;
     job.currentFile =
       files[
-        Math.min(
-          files.length - 1,
-          Math.floor(downloadProgress * files.length),
-        )
+        Math.min(files.length - 1, Math.floor(downloadProgress * files.length))
       ]?.path ?? null;
   } else if (elapsed < 3_600) {
     job.status = "verifying";
@@ -1596,10 +1749,9 @@ export const planMediaModelAddonRemoval = async (
       "Model add-on removal is available in the native desktop app only.",
     );
   }
-  return invoke<MediaModelAddonRemovalPlan>(
-    "media_plan_model_addon_removal",
-    { addonId },
-  );
+  return invoke<MediaModelAddonRemovalPlan>("media_plan_model_addon_removal", {
+    addonId,
+  });
 };
 
 export const removeMediaModelAddon = async (
@@ -1744,13 +1896,16 @@ export const planMediaModelRemoval = async (
       modelId,
     });
   }
-  const plan = modelId === LOCAL_FLUX_MODEL_ID
-    ? createLocalFluxInstallPlan({ alreadyInstalled: browserLocalFluxInstalled })
-    : modelId === LOCAL_BIREFNET_MODEL_ID
-      ? createLocalBiRefNetInstallPlan({
-          alreadyInstalled: browserLocalBiRefNetInstalled,
+  const plan =
+    modelId === LOCAL_FLUX_MODEL_ID
+      ? createLocalFluxInstallPlan({
+          alreadyInstalled: browserLocalFluxInstalled,
         })
-      : null;
+      : modelId === LOCAL_BIREFNET_MODEL_ID
+        ? createLocalBiRefNetInstallPlan({
+            alreadyInstalled: browserLocalBiRefNetInstalled,
+          })
+        : null;
   if (!plan?.alreadyInstalled) {
     throw new Error("The model is not currently installed.");
   }
@@ -1797,7 +1952,9 @@ export const removeMediaModel = async (
     request.confirmationToken !== plan.confirmationToken ||
     !request.confirmRemoval
   ) {
-    throw new Error("Explicit confirmation of the reviewed removal is required.");
+    throw new Error(
+      "Explicit confirmation of the reviewed removal is required.",
+    );
   }
   if (!plan.canRemove) {
     throw new Error("The model has an active installation job.");
@@ -1874,12 +2031,14 @@ export const saveMediaFlowRevision = async (
     };
   }
 
-  if (request.schemaVersion !== 1 || request.layout.flowId !== request.flow.id) {
+  if (
+    request.schemaVersion !== 1 ||
+    request.layout.flowId !== request.flow.id
+  ) {
     throw new Error("Flow revision identity is invalid.");
   }
   if (
-    request.expectedHeadRevisionId !==
-    (history.head?.headRevisionId ?? null)
+    request.expectedHeadRevisionId !== (history.head?.headRevisionId ?? null)
   ) {
     throw browserFlowConflict("the expected head is stale");
   }
@@ -2037,7 +2196,9 @@ export const generateMediaSvg = async (
   if (canInvokeNativeRuntime()) {
     return invoke<MediaRunDetail>("media_generate_svg", { request });
   }
-  throw new Error("Native SVG generation is available in the desktop runtime only.");
+  throw new Error(
+    "Native SVG generation is available in the desktop runtime only.",
+  );
 };
 
 export const generateMediaVideo = async (
@@ -2143,14 +2304,20 @@ export const cancelMediaRun = async (
       stepId: "cancel",
     });
     const providerJob = detail.providerJobs.at(-1);
-    if (providerJob && !["completed", "failed", "expired", "cancelled"].includes(providerJob.status)) {
+    if (
+      providerJob &&
+      !["completed", "failed", "expired", "cancelled"].includes(
+        providerJob.status,
+      )
+    ) {
       browserProviderCancellations.add(runId);
       providerJob.status = "cancel-requested";
       providerJob.nextPollAt = now();
       providerJob.updatedAt = now();
       appendBrowserEvent(detail, {
         kind: "provider_cancel_requested",
-        message: "Best-effort provider cancellation was requested; reconciliation continues because success can race cancellation.",
+        message:
+          "Best-effort provider cancellation was requested; reconciliation continues because success can race cancellation.",
         progress: detail.progress,
         stepId: "provider.cancel",
       });
@@ -2171,12 +2338,15 @@ export const resolveMediaProviderReview = async (
   const detail = [...browserRuns.values()].find((candidate) =>
     candidate.providerJobs.some((job) => job.id === providerJobId),
   );
-  const providerJob = detail?.providerJobs.find((job) => job.id === providerJobId);
+  const providerJob = detail?.providerJobs.find(
+    (job) => job.id === providerJobId,
+  );
   if (!detail || !providerJob || providerJob.status !== "acceptance-unknown") {
     throw new Error("The provider job is not awaiting acceptance review.");
   }
   const original = browserProviderRequests.get(detail.id);
-  if (!original) throw new Error("The prepared provider request is unavailable.");
+  if (!original)
+    throw new Error("The prepared provider request is unavailable.");
   const timestamp = now();
   if (action === "reconcile-only") {
     providerJob.status = "accepted";
@@ -2184,7 +2354,9 @@ export const resolveMediaProviderReview = async (
     providerJob.providerJobId = `mock-reconciled-${detail.id}`;
     providerJob.providerRequestId = `lookup-${detail.id}`;
     providerJob.acceptedAt = timestamp;
-    providerJob.retentionExpiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    providerJob.retentionExpiresAt = new Date(
+      Date.now() + 3_600_000,
+    ).toISOString();
     providerJob.reviewRequired = false;
     providerJob.reviewReason = null;
     providerJob.nextPollAt = timestamp;
@@ -2195,7 +2367,8 @@ export const resolveMediaProviderReview = async (
     detail.updatedAt = timestamp;
     appendBrowserEvent(detail, {
       kind: "provider_reconciled",
-      message: "Idempotency lookup found the original paid request. No second submission was made.",
+      message:
+        "Idempotency lookup found the original paid request. No second submission was made.",
       progress: 0.18,
       stepId: "provider.review",
     });
@@ -2205,9 +2378,11 @@ export const resolveMediaProviderReview = async (
     providerJob.rawState = "operator-confirmed-not-accepted";
     providerJob.reviewRequired = false;
     providerJob.reviewReason = null;
-    providerJob.error = "Provider request failed because the operator confirmed it was not accepted.";
+    providerJob.error =
+      "Provider request failed because the operator confirmed it was not accepted.";
     providerJob.failure = browserRunFailure(
       detail,
+      "PROVIDER_REQUEST_FAILED",
       providerJob.error,
       "provider_review",
       "mock-remote",
@@ -2245,7 +2420,8 @@ export const resolveMediaProviderReview = async (
     detail.updatedAt = timestamp;
     appendBrowserEvent(detail, {
       kind: "retry_queued",
-      message: "A new attempt was created only after explicit confirmation that the previous request was not accepted.",
+      message:
+        "A new attempt was created only after explicit confirmation that the previous request was not accepted.",
       progress: 0.01,
       stepId: "provider.review",
     });
@@ -2376,7 +2552,8 @@ export const resolveMediaHumanReview = async (
       detail.currentStep = `Completed · ${selectedIds.length} approved`;
       appendBrowserEvent(detail, {
         kind: "run_completed",
-        message: "Human-approved outputs completed the durable review contract.",
+        message:
+          "Human-approved outputs completed the durable review contract.",
         progress: 1,
         stepId: "finalize",
       });
@@ -2423,7 +2600,9 @@ export const wakeMediaProviderReconciliation = async (
   const detail = [...browserRuns.values()].find((candidate) =>
     candidate.providerJobs.some((job) => job.id === providerJobId),
   );
-  const providerJob = detail?.providerJobs.find((job) => job.id === providerJobId);
+  const providerJob = detail?.providerJobs.find(
+    (job) => job.id === providerJobId,
+  );
   if (!detail || !providerJob) {
     throw new Error(`Provider job ${providerJobId} was not found.`);
   }
@@ -2454,7 +2633,9 @@ export const retryMediaFixtureRun = async (
     throw new Error(`Media run ${runId} was not found.`);
   }
   if (!["failed", "canceled"].includes(detail.status)) {
-    throw new Error(`Media run ${runId} cannot be retried from ${detail.status}.`);
+    throw new Error(
+      `Media run ${runId} cannot be retried from ${detail.status}.`,
+    );
   }
   if (detail.humanReviews.length > 0) {
     throw new Error(
@@ -2475,7 +2656,10 @@ export const retryMediaFixtureRun = async (
   detail.error = null;
   detail.failure = null;
   detail.nodeExecutions
-    .filter((execution) => execution.status === "failed" || execution.status === "canceled")
+    .filter(
+      (execution) =>
+        execution.status === "failed" || execution.status === "canceled",
+    )
     .forEach((execution) => {
       execution.status = "retrying";
       execution.runtimePhase = "fixture.retry";
@@ -2486,7 +2670,8 @@ export const retryMediaFixtureRun = async (
     });
   appendBrowserEvent(detail, {
     kind: "retry_queued",
-    message: "Fixture retry was queued; previously published outputs will be reused.",
+    message:
+      "Fixture retry was queued; previously published outputs will be reused.",
     progress: detail.progress,
     stepId: "retry",
   });
@@ -2532,67 +2717,70 @@ export const listMediaAssets = async (): Promise<MediaAssetRecord[]> => {
         : null;
       return detail.assets
         .filter((asset) => !visibleAssetIds || visibleAssetIds.has(asset.id))
-        .sort(
-        (left, right) => left.outputIndex - right.outputIndex,
-        );
+        .sort((left, right) => left.outputIndex - right.outputIndex);
     })
     .map(clone);
 };
 
-export const inspectMediaHardware = async (): Promise<MediaHardwareInspection> => {
-  if (canInvokeNativeRuntime()) {
-    return invoke<MediaHardwareInspection>("media_inspect_hardware");
-  }
+export const inspectMediaHardware =
+  async (): Promise<MediaHardwareInspection> => {
+    if (canInvokeNativeRuntime()) {
+      return invoke<MediaHardwareInspection>("media_inspect_hardware");
+    }
 
-  const browserNavigator =
-    typeof navigator === "undefined" ? null : navigator;
-  const deviceMemoryGb = browserNavigator
-    ? (browserNavigator as Navigator & { deviceMemory?: number }).deviceMemory
-    : undefined;
-  return {
-    inspectedAt: now(),
-    operatingSystem: "browser-preview",
-    architecture: "unavailable",
-    cpuLabel: "Browser-reported logical processors",
-    logicalCpuCount: browserNavigator?.hardwareConcurrency ?? 1,
-    totalMemoryBytes:
-      deviceMemoryGb === undefined ? null : deviceMemoryGb * 1_024 ** 3,
-    availableMemoryBytes: null,
-    storageFreeBytes: null,
-    ffmpeg: {
-      status: "unavailable",
-      version: null,
-      diagnostic: "Native executable probes are unavailable in browser preview.",
-    },
-    ffprobe: {
-      status: "unavailable",
-      version: null,
-      diagnostic: "Native executable probes are unavailable in browser preview.",
-    },
-    nvidiaSmi: {
-      status: "unavailable",
-      version: null,
-      diagnostic: "Native GPU probes are unavailable in browser preview.",
-    },
-    nvidiaGpus: [],
-    runtimeSupport: {
-      cpuUtilities: "preview-only",
-      cuda: "not-validated",
-      amd: "not-validated",
-      appleSilicon: "not-applicable",
-      directMl: "not-applicable",
-    },
-    warnings: [
-      "Browser preview cannot validate native CPU, GPU, disk, FFmpeg, or model-runner compatibility.",
-    ],
+    const browserNavigator =
+      typeof navigator === "undefined" ? null : navigator;
+    const deviceMemoryGb = browserNavigator
+      ? (browserNavigator as Navigator & { deviceMemory?: number }).deviceMemory
+      : undefined;
+    return {
+      inspectedAt: now(),
+      operatingSystem: "browser-preview",
+      architecture: "unavailable",
+      cpuLabel: "Browser-reported logical processors",
+      logicalCpuCount: browserNavigator?.hardwareConcurrency ?? 1,
+      totalMemoryBytes:
+        deviceMemoryGb === undefined ? null : deviceMemoryGb * 1_024 ** 3,
+      availableMemoryBytes: null,
+      storageFreeBytes: null,
+      ffmpeg: {
+        status: "unavailable",
+        version: null,
+        diagnostic:
+          "Native executable probes are unavailable in browser preview.",
+      },
+      ffprobe: {
+        status: "unavailable",
+        version: null,
+        diagnostic:
+          "Native executable probes are unavailable in browser preview.",
+      },
+      nvidiaSmi: {
+        status: "unavailable",
+        version: null,
+        diagnostic: "Native GPU probes are unavailable in browser preview.",
+      },
+      nvidiaGpus: [],
+      runtimeSupport: {
+        cpuUtilities: "preview-only",
+        cuda: "not-validated",
+        amd: "not-validated",
+        appleSilicon: "not-applicable",
+        directMl: "not-applicable",
+      },
+      warnings: [
+        "Browser preview cannot validate native CPU, GPU, disk, FFmpeg, or model-runner compatibility.",
+      ],
+    };
   };
-};
 
 export const importMediaImage = async (
   path: string,
 ): Promise<MediaImageImportResult> => {
   if (!canInvokeNativeRuntime()) {
-    throw new Error("Image import is available in the native desktop app only.");
+    throw new Error(
+      "Image import is available in the native desktop app only.",
+    );
   }
   return invoke<MediaImageImportResult>("media_import_image", { path });
 };
@@ -2618,7 +2806,9 @@ export const readMediaAssetPreview = async (
     });
   }
   if (asset.kind === "video") {
-    throw new Error("Video playback is available in the native desktop app only.");
+    throw new Error(
+      "Video playback is available in the native desktop app only.",
+    );
   }
 
   const primary = `#${asset.digest.slice(0, 6)}`;
@@ -2644,7 +2834,10 @@ export const readMediaAssetReferencePreview = async (
     });
     return new Blob([bytes], { type: mimeType });
   }
-  return readMediaAssetPreview(findBrowserAsset(normalizedAssetId).asset, maxEdge);
+  return readMediaAssetPreview(
+    findBrowserAsset(normalizedAssetId).asset,
+    maxEdge,
+  );
 };
 
 const requirePositiveInteger = (value: number, label: string): number => {
@@ -2704,11 +2897,15 @@ const transformBrowserImage = (
     request.outputFormat !== "jpeg" &&
     (request.quality !== undefined || request.jpegBackground !== undefined)
   ) {
-    throw new Error("JPEG quality and background are only valid for JPEG output.");
+    throw new Error(
+      "JPEG quality and background are only valid for JPEG output.",
+    );
   }
   if (
     request.quality !== undefined &&
-    (!Number.isInteger(request.quality) || request.quality < 1 || request.quality > 100)
+    (!Number.isInteger(request.quality) ||
+      request.quality < 1 ||
+      request.quality > 100)
   ) {
     throw new Error("JPEG quality must be between 1 and 100.");
   }
@@ -2798,7 +2995,9 @@ const executeBrowserLocalImageFlow = (
     request.planSnapshot.planId !== request.planId ||
     request.planSnapshot.flowFingerprint !== createMediaFlowFingerprint(flow)
   ) {
-    throw new Error("Local flow request does not match the pinned execution plan.");
+    throw new Error(
+      "Local flow request does not match the pinned execution plan.",
+    );
   }
   const supported = new Set([
     "source.image",
@@ -2821,12 +3020,17 @@ const executeBrowserLocalImageFlow = (
   }
   const outputs = flow.nodes.filter((node) => node.type === "output.asset");
   if (outputs.length !== 1) {
-    throw new Error("Local image utility flows require exactly one Save asset output.");
+    throw new Error(
+      "Local image utility flows require exactly one Save asset output.",
+    );
   }
   const incomingCount = new Map(flow.nodes.map((node) => [node.id, 0]));
   const outgoing = new Map<string, string[]>();
   for (const edge of flow.edges) {
-    incomingCount.set(edge.toNodeId, (incomingCount.get(edge.toNodeId) ?? 0) + 1);
+    incomingCount.set(
+      edge.toNodeId,
+      (incomingCount.get(edge.toNodeId) ?? 0) + 1,
+    );
     outgoing.set(edge.fromNodeId, [
       ...(outgoing.get(edge.fromNodeId) ?? []),
       edge.toNodeId,
@@ -2859,9 +3063,14 @@ const executeBrowserLocalImageFlow = (
     .map((node) => `${node.id}\u001f${node.type}`)
     .sort();
   if (snapshotNodeIdentity.join("\u001e") !== flowNodeIdentity.join("\u001e")) {
-    throw new Error("Compiled plan nodes do not match the pinned flow revision.");
+    throw new Error(
+      "Compiled plan nodes do not match the pinned flow revision.",
+    );
   }
-  const localStepKindByNodeType = new Map<MediaFlow["nodes"][number]["type"], string>([
+  const localStepKindByNodeType = new Map<
+    MediaFlow["nodes"][number]["type"],
+    string
+  >([
     ["source.image", "resolve-asset"],
     ["operation.crop", "crop-image"],
     ["operation.resize", "resize-image"],
@@ -2875,13 +3084,18 @@ const executeBrowserLocalImageFlow = (
     ["output.asset", "ingest-asset"],
   ]);
   const expectedStepIdentity = ordered.map(
-    (node) => `${node.id}\u001f${localStepKindByNodeType.get(node.type) ?? "unsupported"}`,
+    (node) =>
+      `${node.id}\u001f${localStepKindByNodeType.get(node.type) ?? "unsupported"}`,
   );
   const snapshotStepIdentity = request.planSnapshot.steps.map(
     (step) => `${step.sourceNodeId}\u001f${step.kind}`,
   );
-  if (expectedStepIdentity.join("\u001e") !== snapshotStepIdentity.join("\u001e")) {
-    throw new Error("Compiled plan steps do not match the pinned local utility flow.");
+  if (
+    expectedStepIdentity.join("\u001e") !== snapshotStepIdentity.join("\u001e")
+  ) {
+    throw new Error(
+      "Compiled plan steps do not match the pinned local utility flow.",
+    );
   }
   const createdAt = now();
   const detail: MediaRunDetail = {
@@ -2948,14 +3162,20 @@ const executeBrowserLocalImageFlow = (
   };
   const values = new Map<string, BrowserValue>();
   let finalValue: BrowserValue | null = null;
-  const numberConfig = (node: (typeof flow.nodes)[number], key: string): number => {
+  const numberConfig = (
+    node: (typeof flow.nodes)[number],
+    key: string,
+  ): number => {
     const value = node.config[key];
     if (typeof value !== "number" || !Number.isInteger(value)) {
       throw new Error(`${node.label} requires integer ${key}.`);
     }
     return value;
   };
-  const stringConfig = (node: (typeof flow.nodes)[number], key: string): string => {
+  const stringConfig = (
+    node: (typeof flow.nodes)[number],
+    key: string,
+  ): string => {
     const value = node.config[key];
     if (typeof value !== "string") {
       throw new Error(`${node.label} requires string ${key}.`);
@@ -2978,189 +3198,210 @@ const executeBrowserLocalImageFlow = (
     const edges = flow.edges.filter(
       (edge) => edge.toNodeId === node.id && edge.toPortId === portId,
     );
-    const value = edges.length === 1 ? values.get(edges[0]?.fromNodeId ?? "") : null;
+    const value =
+      edges.length === 1 ? values.get(edges[0]?.fromNodeId ?? "") : null;
     if (!value) {
       throw new Error(`${node.label} requires exactly one ${portId} input.`);
     }
     return { ...value, sourceAssetIds: [...value.sourceAssetIds] };
   };
   try {
-  for (const [nodeIndex, node] of ordered.entries()) {
-    transitionBrowserNode(
-      detail,
-      node.id,
-      "running",
-      "browser.local.execute",
-      `Running ${node.label}`,
-      nodeIndex / Math.max(ordered.length, 1),
-    );
-    const inputs = flow.edges
-      .filter((edge) => edge.toNodeId === node.id && edge.toPortId === "image")
-      .map((edge) => values.get(edge.fromNodeId))
-      .filter((value): value is BrowserValue => Boolean(value));
-    let value: BrowserValue;
-    if (node.type === "source.image") {
-      const assetId = stringConfig(node, "assetId");
-      const asset = [...browserRuns.values()]
-        .flatMap((detail) => detail.assets)
-        .find((candidate) => candidate.id === assetId && candidate.kind === "image");
-      if (!asset) throw new Error(`Image asset ${assetId} was not found.`);
-      value = {
-        width: asset.width,
-        height: asset.height,
-        sourceAssetIds: [asset.id],
-        metadataStripped: false,
-        ...(asset.operation?.kind === "local-image-flow" &&
-        asset.operation.assetRole === "alpha-matte"
-          ? {
-              alphaExtraction: {
-                inverted: asset.operation.alphaExtraction?.inverted ?? false,
-              },
-            }
-          : {}),
-      };
-    } else if (node.type === "operation.crop") {
-      value = singleInput(node, inputs);
-      const x = numberConfig(node, "x");
-      const y = numberConfig(node, "y");
-      const width = numberConfig(node, "width");
-      const height = numberConfig(node, "height");
-      if (x + width > value.width || y + height > value.height) {
-        throw new Error(`${node.label} exceeds the source image bounds.`);
-      }
-      value.width = width;
-      value.height = height;
-    } else if (node.type === "operation.resize") {
-      value = singleInput(node, inputs);
-      const width = numberConfig(node, "width");
-      const height = numberConfig(node, "height");
-      if (stringConfig(node, "fit") === "contain") {
-        const scale = Math.min(width / value.width, height / value.height);
-        value.width = Math.max(1, Math.round(value.width * scale));
-        value.height = Math.max(1, Math.round(value.height * scale));
-      } else {
+    for (const [nodeIndex, node] of ordered.entries()) {
+      transitionBrowserNode(
+        detail,
+        node.id,
+        "running",
+        "browser.local.execute",
+        `Running ${node.label}`,
+        nodeIndex / Math.max(ordered.length, 1),
+      );
+      const inputs = flow.edges
+        .filter(
+          (edge) => edge.toNodeId === node.id && edge.toPortId === "image",
+        )
+        .map((edge) => values.get(edge.fromNodeId))
+        .filter((value): value is BrowserValue => Boolean(value));
+      let value: BrowserValue;
+      if (node.type === "source.image") {
+        const assetId = stringConfig(node, "assetId");
+        const asset = [...browserRuns.values()]
+          .flatMap((detail) => detail.assets)
+          .find(
+            (candidate) =>
+              candidate.id === assetId && candidate.kind === "image",
+          );
+        if (!asset) throw new Error(`Image asset ${assetId} was not found.`);
+        value = {
+          width: asset.width,
+          height: asset.height,
+          sourceAssetIds: [asset.id],
+          metadataStripped: false,
+          ...(asset.operation?.kind === "local-image-flow" &&
+          asset.operation.assetRole === "alpha-matte"
+            ? {
+                alphaExtraction: {
+                  inverted: asset.operation.alphaExtraction?.inverted ?? false,
+                },
+              }
+            : {}),
+        };
+      } else if (node.type === "operation.crop") {
+        value = singleInput(node, inputs);
+        const x = numberConfig(node, "x");
+        const y = numberConfig(node, "y");
+        const width = numberConfig(node, "width");
+        const height = numberConfig(node, "height");
+        if (x + width > value.width || y + height > value.height) {
+          throw new Error(`${node.label} exceeds the source image bounds.`);
+        }
         value.width = width;
         value.height = height;
-      }
-    } else if (node.type === "operation.format-convert") {
-      value = singleInput(node, inputs);
-      value.outputFormat = stringConfig(node, "outputFormat");
-      value.quality = numberConfig(node, "quality");
-      const background = node.config.jpegBackground;
-      value.jpegBackground = typeof background === "string" ? background : undefined;
-    } else if (node.type === "operation.metadata-strip") {
-      value = singleInput(node, inputs);
-      if (node.config.applyOrientation !== true) {
-        throw new Error("Metadata Strip requires Apply orientation.");
-      }
-      value.metadataStripped = true;
-    } else if (node.type === "operation.auto-tag") {
-      value = singleInput(node, inputs);
-      if (stringConfig(node, "profile") !== "technical-metadata-v1") {
-        throw new Error("Auto Tag requires the technical-metadata-v1 profile.");
-      }
-      value.autoTagProfile = "technical-metadata-v1";
-    } else if (node.type === "operation.subject-cutout") {
-      throw new Error(
-        "Subject cutout requires the native local model runtime; browser preview cannot execute its configured priority/fallback policy.",
-      );
-    } else if (node.type === "operation.alpha-matte") {
-      value = singleInput(node, inputs);
-      value.alphaExtraction = { inverted: node.config.invert === true };
-      value.metadataStripped = true;
-    } else if (node.type === "operation.composite") {
-      const foreground = namedInput(node, "foreground");
-      const background = namedInput(node, "background");
-      const fit = stringConfig(node, "fit");
-      if (!(["contain", "cover", "stretch"] as const).includes(
-        fit as "contain" | "cover" | "stretch",
-      )) {
-        throw new Error(`${node.label} has an unsupported foreground fit.`);
-      }
-      const opacityPercent = numberConfig(node, "opacityPercent");
-      if (opacityPercent < 0 || opacityPercent > 100) {
-        throw new Error(`${node.label} opacity must be between 0 and 100.`);
-      }
-      value = {
-        width: background.width,
-        height: background.height,
-        sourceAssetIds: [
-          ...new Set([
-            ...foreground.sourceAssetIds,
-            ...background.sourceAssetIds,
-          ]),
-        ],
-        metadataStripped:
-          foreground.metadataStripped && background.metadataStripped,
-        composite: {
-          fit: fit as "contain" | "cover" | "stretch",
-          opacityPercent,
-          foregroundSourceAssetIds: foreground.sourceAssetIds,
-          backgroundSourceAssetIds: background.sourceAssetIds,
-        },
-      };
-    } else if (node.type === "operation.contact-sheet") {
-      if (inputs.length < 1 || inputs.length > 8) {
-        throw new Error(`${node.label} requires between one and eight images.`);
-      }
-      const columns = Math.min(numberConfig(node, "columns"), inputs.length);
-      const rows = Math.ceil(inputs.length / columns);
-      const gap = numberConfig(node, "gap");
-      const cellWidth = numberConfig(node, "cellWidth");
-      const cellHeight = numberConfig(node, "cellHeight");
-      const background = stringConfig(node, "background");
-      const labelMode = stringConfig(node, "labelMode");
-      if (labelMode !== "index" && labelMode !== "none") {
-        throw new Error(`${node.label} requires index or none labels.`);
-      }
-      const sourceAssetIds = [
-        ...new Set(inputs.flatMap((input) => input.sourceAssetIds)),
-      ];
-      value = {
-        width: columns * cellWidth + gap * (columns - 1),
-        height: rows * cellHeight + gap * (rows - 1),
-        sourceAssetIds,
-        metadataStripped: inputs.every((input) => input.metadataStripped),
-        contactSheet: {
-          columns,
-          cellWidth,
-          cellHeight,
-          gap,
-          background,
-          labelMode,
-          sourceAssetIds,
-        },
-        ...(inputs.some((input) => input.autoTagProfile === "technical-metadata-v1")
-          ? { autoTagProfile: "technical-metadata-v1" as const }
-          : {}),
-      };
-    } else {
-      value = singleInput(node, inputs);
-      const outputFormat = stringConfig(node, "format");
-      if (value.outputFormat && value.outputFormat !== outputFormat) {
+      } else if (node.type === "operation.resize") {
+        value = singleInput(node, inputs);
+        const width = numberConfig(node, "width");
+        const height = numberConfig(node, "height");
+        if (stringConfig(node, "fit") === "contain") {
+          const scale = Math.min(width / value.width, height / value.height);
+          value.width = Math.max(1, Math.round(value.width * scale));
+          value.height = Math.max(1, Math.round(value.height * scale));
+        } else {
+          value.width = width;
+          value.height = height;
+        }
+      } else if (node.type === "operation.format-convert") {
+        value = singleInput(node, inputs);
+        value.outputFormat = stringConfig(node, "outputFormat");
+        value.quality = numberConfig(node, "quality");
+        const background = node.config.jpegBackground;
+        value.jpegBackground =
+          typeof background === "string" ? background : undefined;
+      } else if (node.type === "operation.metadata-strip") {
+        value = singleInput(node, inputs);
+        if (node.config.applyOrientation !== true) {
+          throw new Error("Metadata Strip requires Apply orientation.");
+        }
+        value.metadataStripped = true;
+      } else if (node.type === "operation.auto-tag") {
+        value = singleInput(node, inputs);
+        if (stringConfig(node, "profile") !== "technical-metadata-v1") {
+          throw new Error(
+            "Auto Tag requires the technical-metadata-v1 profile.",
+          );
+        }
+        value.autoTagProfile = "technical-metadata-v1";
+      } else if (node.type === "operation.subject-cutout") {
         throw new Error(
-          `Save asset format ${outputFormat} conflicts with the upstream explicit ${value.outputFormat} conversion.`,
+          "Subject cutout requires the native local model runtime; browser preview cannot execute its configured priority/fallback policy.",
         );
+      } else if (node.type === "operation.alpha-matte") {
+        value = singleInput(node, inputs);
+        value.alphaExtraction = { inverted: node.config.invert === true };
+        value.metadataStripped = true;
+      } else if (node.type === "operation.composite") {
+        const foreground = namedInput(node, "foreground");
+        const background = namedInput(node, "background");
+        const fit = stringConfig(node, "fit");
+        if (
+          !(["contain", "cover", "stretch"] as const).includes(
+            fit as "contain" | "cover" | "stretch",
+          )
+        ) {
+          throw new Error(`${node.label} has an unsupported foreground fit.`);
+        }
+        const opacityPercent = numberConfig(node, "opacityPercent");
+        if (opacityPercent < 0 || opacityPercent > 100) {
+          throw new Error(`${node.label} opacity must be between 0 and 100.`);
+        }
+        value = {
+          width: background.width,
+          height: background.height,
+          sourceAssetIds: [
+            ...new Set([
+              ...foreground.sourceAssetIds,
+              ...background.sourceAssetIds,
+            ]),
+          ],
+          metadataStripped:
+            foreground.metadataStripped && background.metadataStripped,
+          composite: {
+            fit: fit as "contain" | "cover" | "stretch",
+            opacityPercent,
+            foregroundSourceAssetIds: foreground.sourceAssetIds,
+            backgroundSourceAssetIds: background.sourceAssetIds,
+          },
+        };
+      } else if (node.type === "operation.contact-sheet") {
+        if (inputs.length < 1 || inputs.length > 8) {
+          throw new Error(
+            `${node.label} requires between one and eight images.`,
+          );
+        }
+        const columns = Math.min(numberConfig(node, "columns"), inputs.length);
+        const rows = Math.ceil(inputs.length / columns);
+        const gap = numberConfig(node, "gap");
+        const cellWidth = numberConfig(node, "cellWidth");
+        const cellHeight = numberConfig(node, "cellHeight");
+        const background = stringConfig(node, "background");
+        const labelMode = stringConfig(node, "labelMode");
+        if (labelMode !== "index" && labelMode !== "none") {
+          throw new Error(`${node.label} requires index or none labels.`);
+        }
+        const sourceAssetIds = [
+          ...new Set(inputs.flatMap((input) => input.sourceAssetIds)),
+        ];
+        value = {
+          width: columns * cellWidth + gap * (columns - 1),
+          height: rows * cellHeight + gap * (rows - 1),
+          sourceAssetIds,
+          metadataStripped: inputs.every((input) => input.metadataStripped),
+          contactSheet: {
+            columns,
+            cellWidth,
+            cellHeight,
+            gap,
+            background,
+            labelMode,
+            sourceAssetIds,
+          },
+          ...(inputs.some(
+            (input) => input.autoTagProfile === "technical-metadata-v1",
+          )
+            ? { autoTagProfile: "technical-metadata-v1" as const }
+            : {}),
+        };
+      } else {
+        value = singleInput(node, inputs);
+        const outputFormat = stringConfig(node, "format");
+        if (value.outputFormat && value.outputFormat !== outputFormat) {
+          throw new Error(
+            `Save asset format ${outputFormat} conflicts with the upstream explicit ${value.outputFormat} conversion.`,
+          );
+        }
+        value.outputFormat = outputFormat;
+        finalValue = value;
       }
-      value.outputFormat = outputFormat;
-      finalValue = value;
+      values.set(node.id, value);
+      transitionBrowserNode(
+        detail,
+        node.id,
+        "completed",
+        "browser.local.execute",
+        `Completed ${node.label}`,
+        (nodeIndex + 1) / Math.max(ordered.length, 1),
+      );
     }
-    values.set(node.id, value);
-    transitionBrowserNode(
-      detail,
-      node.id,
-      "completed",
-      "browser.local.execute",
-      `Completed ${node.label}`,
-      (nodeIndex + 1) / Math.max(ordered.length, 1),
-    );
-  }
   } catch (error: unknown) {
-    const diagnostic = error instanceof Error ? error.message : "Browser local flow failed.";
+    const diagnostic =
+      error instanceof Error ? error.message : "Browser local flow failed.";
     finalizeBrowserNodes(detail, "failed");
     detail.status = "failed";
     detail.error = diagnostic;
-    detail.failure = browserRunFailure(detail, diagnostic, "local_image_flow");
+    detail.failure = browserRunFailure(
+      detail,
+      "INTERNAL_ERROR",
+      diagnostic,
+      "local_image_flow",
+    );
     detail.currentStep = "Failed";
     detail.updatedAt = now();
     appendBrowserEvent(detail, {
@@ -3172,7 +3413,9 @@ const executeBrowserLocalImageFlow = (
     throw error;
   }
   if (!finalValue?.outputFormat) {
-    throw new Error("Local image utility flow did not reach its Save asset output.");
+    throw new Error(
+      "Local image utility flow did not reach its Save asset output.",
+    );
   }
   const outputFormat = finalValue.outputFormat;
   if (!isMediaImageOutputFormat(outputFormat)) {
@@ -3224,7 +3467,10 @@ const executeBrowserLocalImageFlow = (
     digest,
     kind: "image",
     mimeType: mimeTypeForFormat(outputFormat),
-    byteSize: Math.max(256, Math.round(finalValue.width * finalValue.height * 1.4)),
+    byteSize: Math.max(
+      256,
+      Math.round(finalValue.width * finalValue.height * 1.4),
+    ),
     width: finalValue.width,
     height: finalValue.height,
     createdAt,
@@ -3234,9 +3480,7 @@ const executeBrowserLocalImageFlow = (
       kind: "local-image-flow",
       flowRevisionId: request.flowRevisionId,
       metadataStripped: finalValue.metadataStripped,
-      assetRole: finalValue.alphaExtraction
-        ? "alpha-matte"
-        : "primary",
+      assetRole: finalValue.alphaExtraction ? "alpha-matte" : "primary",
       ...(finalValue.alphaExtraction ? { alphaExtraction: null } : {}),
       ...(finalValue.autoTagProfile
         ? { autoTagProfile: finalValue.autoTagProfile }
@@ -3264,13 +3508,13 @@ const executeBrowserLocalImageFlow = (
       ...technicalTags,
       ...(finalValue.alphaExtraction
         ? [
-          {
-            value: "alpha-matte",
-            label: "Alpha matte",
-            source: "technical" as const,
-            confidence: 1,
-            createdAt,
-          },
+            {
+              value: "alpha-matte",
+              label: "Alpha matte",
+              source: "technical" as const,
+              confidence: 1,
+              createdAt,
+            },
           ]
         : []),
     ],
@@ -3289,7 +3533,8 @@ const executeBrowserLocalImageFlow = (
   });
   appendBrowserEvent(detail, {
     kind: "asset_published",
-    message: "The final image was published as an immutable derived preview asset.",
+    message:
+      "The final image was published as an immutable derived preview asset.",
     progress: 1,
     stepId: "local-flow.publish",
   });
@@ -3309,7 +3554,9 @@ export const executeMediaLocalImageFlow = async (
   flow: MediaFlow,
 ): Promise<MediaRunDetail> => {
   if (canInvokeNativeRuntime()) {
-    return invoke<MediaRunDetail>("media_execute_local_image_flow", { request });
+    return invoke<MediaRunDetail>("media_execute_local_image_flow", {
+      request,
+    });
   }
   return executeBrowserLocalImageFlow(request, flow);
 };
@@ -3380,7 +3627,9 @@ export const exportMediaAsset = async (
   request: MediaAssetExportRequest,
 ): Promise<MediaAssetExportRecord> => {
   if (!canInvokeNativeRuntime()) {
-    throw new Error("Asset export is available in the native desktop app only.");
+    throw new Error(
+      "Asset export is available in the native desktop app only.",
+    );
   }
   return invoke<MediaAssetExportRecord>("media_export_asset", { request });
 };
@@ -3531,11 +3780,11 @@ export const autoTagMediaAsset = async (
   return replaceBrowserAssetTags(assetId, "technical", tags, 1);
 };
 
-const browserDeletionImpact = (
-  assetId: string,
-): MediaAssetDeletionImpact => {
+const browserDeletionImpact = (assetId: string): MediaAssetDeletionImpact => {
   const { asset } = findBrowserAsset(assetId);
-  const allAssets = [...browserRuns.values()].flatMap((detail) => detail.assets);
+  const allAssets = [...browserRuns.values()].flatMap(
+    (detail) => detail.assets,
+  );
   const dependentAssetIds = allAssets
     .filter((candidate) => candidate.sourceAssetIds.includes(assetId))
     .map((candidate) => candidate.id)
@@ -3621,7 +3870,9 @@ export const deleteMediaAsset = async (
     );
   }
   if (impact.dependentAssetIds.length > 0 && !request.confirmDependencies) {
-    throw new Error("Dependent assets require explicit deletion acknowledgement.");
+    throw new Error(
+      "Dependent assets require explicit deletion acknowledgement.",
+    );
   }
   const { detail, asset } = findBrowserAsset(request.assetId);
   const deletedAt = now();
@@ -3633,7 +3884,9 @@ export const deleteMediaAsset = async (
     stepId: "asset.delete",
   });
   detail.updatedAt = deletedAt;
-  detail.assets = detail.assets.filter((candidate) => candidate.id !== asset.id);
+  detail.assets = detail.assets.filter(
+    (candidate) => candidate.id !== asset.id,
+  );
   const deleteBytes = request.mode === "metadata-and-unreferenced-bytes";
   const reclaimedBytes = deleteBytes ? impact.reclaimableByteSize : 0;
   const retainedBytes = deleteBytes
@@ -3720,13 +3973,9 @@ const analyzeBrowserImageQuality = (
     verdict,
     gateReasons,
     observations: [
-      browserObservation(
-        sourceAssetId,
-        "decode.valid",
-        "unknown",
-        undefined,
-        ["Native CAS bytes are unavailable to browser preview mode."],
-      ),
+      browserObservation(sourceAssetId, "decode.valid", "unknown", undefined, [
+        "Native CAS bytes are unavailable to browser preview mode.",
+      ]),
       browserObservation(
         sourceAssetId,
         "dimensions.exact",

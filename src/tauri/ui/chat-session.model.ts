@@ -55,6 +55,11 @@ export type ChatSessionMessageSource =
       /** The durable live trace captured before the terminal result replaced it. */
       thinking?: TaskThinkingTrace;
     }
+  | {
+      kind: "interrupted-task";
+      status: "crashed";
+      reason: "restart" | "inactive";
+    }
   | TaskThinkingSource;
 
 export type ChatSessionSpecialKind = "quick-voice";
@@ -102,6 +107,20 @@ export type ChatSessionMessagePromptEnhancementMode =
   | "simple"
   | "web-search";
 
+export interface ChatSessionMessageLifecycle {
+  kind: "transient";
+  owner: "prompt-enhancement";
+  operationId: string;
+  slot: "user" | "thinking";
+}
+
+export type ChatSessionTaskActionKind = "retry-task" | "continue-task";
+
+export interface ChatSessionTaskAction {
+  kind: ChatSessionTaskActionKind;
+  objective: string;
+}
+
 export interface ChatSessionQueuedPromptEnhancementRequest {
   mode: Exclude<ChatSessionMessagePromptEnhancementMode, "off">;
 }
@@ -125,12 +144,32 @@ export interface ChatSessionMessage {
   role: "user" | "agent";
   content: string;
   createdAt?: number;
-  intent?: "retry-task" | "continue-task";
+  taskAction?: ChatSessionTaskAction;
   contextAttachments?: ChatSessionContextAttachment[];
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   settings?: ChatSessionMessageSettings;
   source?: ChatSessionMessageSource;
+  lifecycle?: ChatSessionMessageLifecycle;
 }
+
+export const isPromptEnhancementPlaceholderMessage = (
+  message: ChatSessionMessage,
+): boolean => {
+  const lifecycle = message.lifecycle;
+  if (
+    lifecycle?.kind !== "transient" ||
+    lifecycle.owner !== "prompt-enhancement" ||
+    lifecycle.operationId !== message.taskId
+  ) {
+    return false;
+  }
+
+  return lifecycle.slot === "user"
+    ? message.role === "user"
+    : lifecycle.slot === "thinking" &&
+        message.role === "agent" &&
+        message.source?.kind === "thinking";
+};
 
 export interface ChatSessionRecord {
   id: string;
@@ -178,7 +217,6 @@ export interface SmartContextPackVariable {
 export interface SmartContextPackTrigger {
   phrases: string[];
   pathPatterns: string[];
-  autoApply: boolean;
 }
 
 export type SmartContextPackSettingOverrides = Partial<
@@ -373,7 +411,9 @@ const normalizeStoredRunMode = (
   fallback: RunMode = "machdoch",
 ): RunMode => (isRunMode(value) ? value : fallback);
 
-const normalizeOptionalStoredRunMode = (value: unknown): RunMode | undefined => {
+const normalizeOptionalStoredRunMode = (
+  value: unknown,
+): RunMode | undefined => {
   return isRunMode(value) ? value : undefined;
 };
 
@@ -417,9 +457,7 @@ const isTaskExecutionStatus = (
   );
 };
 
-const normalizeTaskExecutionStatus = (
-  value: unknown,
-): TaskExecutionStatus => {
+const normalizeTaskExecutionStatus = (value: unknown): TaskExecutionStatus => {
   if (isTaskExecutionStatus(value)) {
     return value;
   }
@@ -465,9 +503,7 @@ const normalizeString = (value: unknown, fallback = ""): string => {
 };
 
 const normalizeFiniteNumber = (value: unknown, fallback = 0): number => {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : fallback;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 };
 
 const normalizeOptionalFiniteNumber = (value: unknown): number | undefined => {
@@ -557,7 +593,10 @@ export const rememberRecentWorkspace = (
     (entry) => createWorkspaceHistoryKey(entry) !== workspaceKey,
   );
 
-  return normalizeRecentWorkspaces([normalizedWorkspace, ...previousWorkspaces]);
+  return normalizeRecentWorkspaces([
+    normalizedWorkspace,
+    ...previousWorkspaces,
+  ]);
 };
 
 export const removeRecentWorkspace = (
@@ -743,7 +782,8 @@ const normalizeContextAttachments = (
       }
       seenAttachmentKeys.add(dedupeKey);
       const displayName =
-        typeof candidate.displayName === "string" && candidate.displayName.trim()
+        typeof candidate.displayName === "string" &&
+        candidate.displayName.trim()
           ? candidate.displayName.trim()
           : undefined;
       attachments.push({
@@ -758,7 +798,7 @@ const normalizeContextAttachments = (
         name:
           typeof candidate.name === "string" && candidate.name.trim()
             ? candidate.name.trim()
-            : displayName ?? `Media asset ${assetId.slice(0, 12)}`,
+            : (displayName ?? `Media asset ${assetId.slice(0, 12)}`),
         ...(displayName ? { displayName } : {}),
         ...(isMediaAssetRendition(candidate.rendition)
           ? { rendition: candidate.rendition }
@@ -769,7 +809,8 @@ const normalizeContextAttachments = (
     if (candidate.source !== "path") {
       continue;
     }
-    const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
+    const path =
+      typeof candidate.path === "string" ? candidate.path.trim() : "";
 
     if (!path) {
       continue;
@@ -789,9 +830,7 @@ const normalizeContextAttachments = (
           : `${idPrefix}-${index}`,
       source: "path",
       path,
-      kind: isContextAttachmentKind(candidate.kind)
-        ? candidate.kind
-        : "other",
+      kind: isContextAttachmentKind(candidate.kind) ? candidate.kind : "other",
       name:
         typeof candidate.name === "string" && candidate.name.trim()
           ? candidate.name.trim()
@@ -928,7 +967,6 @@ const normalizeContextPackTrigger = (
       limit: MAX_CONTEXT_PACK_TRIGGERS,
       maxLength: MAX_CONTEXT_PACK_TRIGGER_LENGTH,
     }),
-    autoApply: candidate.autoApply === true,
   };
 };
 
@@ -1239,39 +1277,33 @@ const normalizeTaskSuggestions = (
     return [];
   }
 
-  return value
-    .filter(isRecord)
-    .map((entry, index) => {
-      const scope =
-        entry.scope === "user" ||
-        entry.scope === "workspace" ||
-        entry.scope === "github"
-          ? entry.scope
-          : undefined;
+  return value.filter(isRecord).map((entry, index) => {
+    const scope =
+      entry.scope === "user" ||
+      entry.scope === "workspace" ||
+      entry.scope === "github"
+        ? entry.scope
+        : undefined;
 
-      return {
-        name: normalizeString(entry.name, `Suggestion ${index + 1}`),
-        path: normalizeString(entry.path),
-        ...(scope ? { scope } : {}),
-        score: normalizeFiniteNumber(entry.score),
-        reason: normalizeString(entry.reason),
-      };
-    });
+    return {
+      name: normalizeString(entry.name, `Suggestion ${index + 1}`),
+      path: normalizeString(entry.path),
+      ...(scope ? { scope } : {}),
+      score: normalizeFiniteNumber(entry.score),
+      reason: normalizeString(entry.reason),
+    };
+  });
 };
 
-const normalizeTaskPlanSteps = (
-  value: unknown,
-): TaskRunPreview["steps"] => {
+const normalizeTaskPlanSteps = (value: unknown): TaskRunPreview["steps"] => {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value
-    .filter(isRecord)
-    .map((entry, index) => ({
-      title: normalizeString(entry.title, `Step ${index + 1}`),
-      description: normalizeString(entry.description),
-    }));
+  return value.filter(isRecord).map((entry, index) => ({
+    title: normalizeString(entry.title, `Step ${index + 1}`),
+    description: normalizeString(entry.description),
+  }));
 };
 
 const normalizeResolvedPromptInvocation = (
@@ -1297,7 +1329,10 @@ const normalizeResolvedPromptInvocation = (
     expectedInputs: normalizeStringArray(value.expectedInputs),
     missingInputs: normalizeStringArray(value.missingInputs),
     inputValues: normalizeStringRecord(value.inputValues),
-    resolvedBody: normalizeString(value.resolvedBody, normalizeString(value.body)),
+    resolvedBody: normalizeString(
+      value.resolvedBody,
+      normalizeString(value.body),
+    ),
     ...(normalizeChatSessionOptionalString(value.description)
       ? { description: normalizeChatSessionOptionalString(value.description) }
       : {}),
@@ -1315,10 +1350,7 @@ const normalizeResolvedPromptInvocation = (
 
 const normalizeCustomizationCounts = (
   value: unknown,
-  preview: Pick<
-    TaskRunPreview,
-    "suggestedPrompts" | "suggestedSkills"
-  >,
+  preview: Pick<TaskRunPreview, "suggestedPrompts" | "suggestedSkills">,
 ): TaskRunPreview["customizationCounts"] => {
   if (!isRecord(value)) {
     return {
@@ -1328,7 +1360,10 @@ const normalizeCustomizationCounts = (
   }
 
   return {
-    prompts: normalizeFiniteNumber(value.prompts, preview.suggestedPrompts.length),
+    prompts: normalizeFiniteNumber(
+      value.prompts,
+      preview.suggestedPrompts.length,
+    ),
     skills: normalizeFiniteNumber(value.skills, preview.suggestedSkills.length),
   };
 };
@@ -1357,7 +1392,9 @@ const normalizeTaskRunPreview = (
     ),
     suggestedTools: normalizeToolNames(value.suggestedTools),
     ...(normalizeResolvedPromptInvocation(value.invokedPrompt)
-      ? { invokedPrompt: normalizeResolvedPromptInvocation(value.invokedPrompt) }
+      ? {
+          invokedPrompt: normalizeResolvedPromptInvocation(value.invokedPrompt),
+        }
       : {}),
     suggestedPrompts,
     suggestedSkills,
@@ -1445,9 +1482,7 @@ const normalizeTaskExecutionResponse = (
   };
 };
 
-const normalizeNonNegativeInteger = (
-  value: unknown,
-): number | undefined => {
+const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
   const normalized = normalizeOptionalFiniteNumber(value);
 
   return normalized === undefined
@@ -1529,10 +1564,7 @@ const normalizeTaskExecutionFileLineAnalysis = (
     return { state: "not-applicable", reason: value.reason };
   }
 
-  if (
-    value.state === "failed" &&
-    value.code === "git-failed"
-  ) {
+  if (value.state === "failed" && value.code === "git-failed") {
     return {
       state: "failed",
       code: value.code,
@@ -1557,10 +1589,10 @@ const normalizeFileChangeStage = (
     return {
       state: "failed",
       code: normalizeString(value.code, "unknown").slice(0, 100),
-      message: normalizeString(value.message, "File-change stage failed.").slice(
-        0,
-        4_000,
-      ),
+      message: normalizeString(
+        value.message,
+        "File-change stage failed.",
+      ).slice(0, 4_000),
     };
   }
 
@@ -1806,9 +1838,7 @@ const normalizeTaskExecutionResult = (
     ...(normalizeChatSessionOptionalString(value.reason)
       ? { reason: normalizeChatSessionOptionalString(value.reason) }
       : {}),
-    ...(isRecord(value.metadata)
-      ? { metadata: { ...value.metadata } }
-      : {}),
+    ...(isRecord(value.metadata) ? { metadata: { ...value.metadata } } : {}),
     outputSections: normalizeTaskExecutionSections(value.outputSections),
     ...(response ? { response } : {}),
     ...(fileChanges ? { fileChanges } : {}),
@@ -1830,7 +1860,9 @@ const normalizeThinkingModelStream = (
     kind: value.kind as TaskThinkingModelStream["kind"],
     label: normalizeString(value.label),
     content: normalizeString(value.content).slice(0, 4_000),
-    ...(typeof value.complete === "boolean" ? { complete: value.complete } : {}),
+    ...(typeof value.complete === "boolean"
+      ? { complete: value.complete }
+      : {}),
   };
 };
 
@@ -1841,15 +1873,13 @@ const normalizeThinkingActionOutputLines = (
     return [];
   }
 
-  return value
-    .filter(isRecord)
-    .map((entry, index) => ({
-      id: normalizeString(entry.id, `thinking-output-${index}`),
-      toolName: normalizeString(entry.toolName),
-      stream: entry.stream === "stderr" ? "stderr" : "stdout",
-      text: normalizeString(entry.text),
-      timestamp: normalizeFiniteNumber(entry.timestamp, index),
-    }));
+  return value.filter(isRecord).map((entry, index) => ({
+    id: normalizeString(entry.id, `thinking-output-${index}`),
+    toolName: normalizeString(entry.toolName),
+    stream: entry.stream === "stderr" ? "stderr" : "stdout",
+    text: normalizeString(entry.text),
+    timestamp: normalizeFiniteNumber(entry.timestamp, index),
+  }));
 };
 
 const normalizeTokenCount = (value: unknown): number | undefined => {
@@ -1900,18 +1930,17 @@ const normalizeThinkingTimelineMetadata = (
   }
 
   const metadata = Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [
-      string,
-      string | number | boolean,
-    ] => {
-      const entryValue = entry[1];
+    Object.entries(value).filter(
+      (entry): entry is [string, string | number | boolean] => {
+        const entryValue = entry[1];
 
-      return (
-        typeof entryValue === "string" ||
-        typeof entryValue === "boolean" ||
-        (typeof entryValue === "number" && Number.isFinite(entryValue))
-      );
-    }),
+        return (
+          typeof entryValue === "string" ||
+          typeof entryValue === "boolean" ||
+          (typeof entryValue === "number" && Number.isFinite(entryValue))
+        );
+      },
+    ),
   );
 
   return Object.keys(metadata).length > 0 ? metadata : undefined;
@@ -2019,7 +2048,11 @@ const normalizeThinkingTrace = (
       : {}),
     ...(completedAt > 0 ? { completedAt } : {}),
     ...(normalizeChatSessionOptionalString(value.assistantText)
-      ? { assistantText: normalizeChatSessionOptionalString(value.assistantText) }
+      ? {
+          assistantText: normalizeChatSessionOptionalString(
+            value.assistantText,
+          ),
+        }
       : {}),
     ...(modelStream ? { modelStream } : {}),
     ...(actionOutputLines.length > 0
@@ -2051,7 +2084,10 @@ const normalizeMessageSource = (
   }
 
   if (value.kind === "execution") {
-    const execution = normalizeTaskExecutionResult(value.execution, fallbackTask);
+    const execution = normalizeTaskExecutionResult(
+      value.execution,
+      fallbackTask,
+    );
     const thinking = normalizeThinkingTrace(value.thinking);
 
     return execution
@@ -2069,17 +2105,73 @@ const normalizeMessageSource = (
     return thinking ? { kind: "thinking", thinking } : undefined;
   }
 
-  return undefined;
-};
-
-const normalizeMessageIntent = (
-  value: unknown,
-): ChatSessionMessage["intent"] | undefined => {
-  if (value === "retry-task" || value === "continue-task") {
-    return value;
+  if (
+    value.kind === "interrupted-task" &&
+    value.status === "crashed" &&
+    (value.reason === "restart" || value.reason === "inactive")
+  ) {
+    return {
+      kind: "interrupted-task",
+      status: "crashed",
+      reason: value.reason,
+    };
   }
 
   return undefined;
+};
+
+const normalizeMessageTaskAction = (
+  value: unknown,
+  role: ChatSessionMessage["role"],
+): ChatSessionTaskAction | undefined => {
+  if (
+    role !== "user" ||
+    !isRecord(value) ||
+    Object.keys(value).length !== 2 ||
+    (value.kind !== "retry-task" && value.kind !== "continue-task") ||
+    typeof value.objective !== "string"
+  ) {
+    return undefined;
+  }
+
+  const objective = truncatePersistedText(value.objective).trim();
+
+  return objective ? { kind: value.kind, objective } : undefined;
+};
+
+const normalizeMessageLifecycle = (
+  value: unknown,
+  role: ChatSessionMessage["role"],
+  taskId: string | undefined,
+  source: ChatSessionMessageSource | undefined,
+): ChatSessionMessageLifecycle | undefined => {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 4 ||
+    value.kind !== "transient" ||
+    value.owner !== "prompt-enhancement" ||
+    typeof value.operationId !== "string" ||
+    value.operationId.length === 0 ||
+    value.operationId !== taskId ||
+    (value.slot !== "user" && value.slot !== "thinking")
+  ) {
+    return undefined;
+  }
+
+  if (
+    (value.slot === "user" && role !== "user") ||
+    (value.slot === "thinking" &&
+      (role !== "agent" || source?.kind !== "thinking"))
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: "transient",
+    owner: "prompt-enhancement",
+    operationId: value.operationId,
+    slot: value.slot,
+  };
 };
 
 const normalizeMessagePromptEnhancement = (
@@ -2265,7 +2357,7 @@ const normalizeSessionMessages = (
       };
     }
     const createdAt = normalizeOptionalFiniteNumber(entry.createdAt);
-    const intent = normalizeMessageIntent(entry.intent);
+    const taskAction = normalizeMessageTaskAction(entry.taskAction, entry.role);
     const taskId = normalizeChatSessionOptionalString(entry.taskId);
     const contextAttachments = normalizeContextAttachments(
       entry.contextAttachments,
@@ -2279,6 +2371,12 @@ const normalizeSessionMessages = (
       entry.role === "user"
         ? normalizeMessageSettings(entry.settings)
         : undefined;
+    const lifecycle = normalizeMessageLifecycle(
+      entry.lifecycle,
+      entry.role,
+      taskId,
+      source,
+    );
     const preferredMessageId = normalizeString(
       entry.id,
       `${sessionId}-message-${index}`,
@@ -2298,11 +2396,12 @@ const normalizeSessionMessages = (
       content,
       ...(taskId ? { taskId } : {}),
       ...(createdAt !== undefined ? { createdAt } : {}),
-      ...(intent ? { intent } : {}),
+      ...(taskAction ? { taskAction } : {}),
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(settings ? { settings } : {}),
       ...(source ? { source } : {}),
+      ...(lifecycle ? { lifecycle } : {}),
     };
 
     messages.push(message);
@@ -2332,7 +2431,9 @@ const normalizeSessionMessages = (
   );
 };
 
-const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord => {
+const normalizeSessionRecord = (
+  session: ChatSessionRecord,
+): ChatSessionRecord => {
   const provider = isRuntimeProvider(session.provider)
     ? session.provider
     : DEFAULT_PROVIDER;
@@ -2480,10 +2581,9 @@ const normalizeQueuedSessionMessages = (
       entry.promptEnhancement,
       visibleMessageContent || task,
     );
-    const promptEnhancementRequest =
-      normalizeQueuedPromptEnhancementRequest(
-        entry.promptEnhancementRequest,
-      );
+    const promptEnhancementRequest = normalizeQueuedPromptEnhancementRequest(
+      entry.promptEnhancementRequest,
+    );
     const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
@@ -2543,9 +2643,7 @@ const normalizeQueuedSessionMessages = (
       contextAttachments: normalizeContextAttachments(
         entry.contextAttachments,
         `queued-context-${id}`,
-      ).filter(
-        (attachment) => !(attachment.id in attachmentTombstones),
-      ),
+      ).filter((attachment) => !(attachment.id in attachmentTombstones)),
       createdAt,
       updatedAt,
     });
@@ -2674,20 +2772,24 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const handledRemoteCommandIds = Array.isArray(
     candidate.handledRemoteCommandIds,
   )
-    ? [...new Set(
-        candidate.handledRemoteCommandIds
-          .filter((commandId): commandId is string =>
-            typeof commandId === "string" && commandId.trim().length > 0,
-          )
-          .map((commandId) => commandId.trim()),
-      )].slice(-512)
+    ? [
+        ...new Set(
+          candidate.handledRemoteCommandIds
+            .filter(
+              (commandId): commandId is string =>
+                typeof commandId === "string" && commandId.trim().length > 0,
+            )
+            .map((commandId) => commandId.trim()),
+        ),
+      ].slice(-512)
     : [];
   const queuedMessageTombstones = isRecord(candidate.queuedMessageTombstones)
     ? Object.fromEntries(
         Object.entries(candidate.queuedMessageTombstones)
           .flatMap(([messageId, deletedAt]) => {
             const normalizedId = messageId.trim();
-            const normalizedDeletedAt = normalizeOptionalFiniteNumber(deletedAt);
+            const normalizedDeletedAt =
+              normalizeOptionalFiniteNumber(deletedAt);
 
             return normalizedId && normalizedDeletedAt !== undefined
               ? [[normalizedId, normalizedDeletedAt] as const]
@@ -2795,9 +2897,7 @@ export const isSessionArchived = (session: ChatSessionRecord): boolean => {
   return typeof session.archivedAt === "number";
 };
 
-export const isQuickVoiceSession = (
-  session: ChatSessionRecord,
-): boolean => {
+export const isQuickVoiceSession = (session: ChatSessionRecord): boolean => {
   return session.specialSession === QUICK_VOICE_SESSION_KIND;
 };
 
@@ -2807,14 +2907,15 @@ export const isSessionWorkspaceLocked = (
   return (
     !isQuickVoiceSession(session) &&
     session.messages.some(
-      (message) =>
-        message.role === "user" && message.content.trim().length > 0,
+      (message) => message.role === "user" && message.content.trim().length > 0,
     )
   );
 };
 
 export const canDeleteSession = (session: ChatSessionRecord): boolean => {
-  return !isQuickVoiceSession(session) && getLatestRunningTaskId(session) === null;
+  return (
+    !isQuickVoiceSession(session) && getLatestRunningTaskId(session) === null
+  );
 };
 
 export const canRenameSession = (session: ChatSessionRecord): boolean => {
@@ -2844,6 +2945,10 @@ export const getSessionOverviewStatus = (
   }
 
   if (!latestTerminalAgentMessage.source) {
+    return "done";
+  }
+
+  if (latestTerminalAgentMessage.source.kind === "interrupted-task") {
     return "crashed";
   }
 
@@ -2909,7 +3014,8 @@ export const getLatestCompletedSessionResponseAt = (
 export const hasUnreadCompletedSessionResponse = (
   session: ChatSessionRecord,
 ): boolean => {
-  const latestCompletedResponseAt = getLatestCompletedSessionResponseAt(session);
+  const latestCompletedResponseAt =
+    getLatestCompletedSessionResponseAt(session);
 
   return (
     latestCompletedResponseAt !== null &&
@@ -2921,7 +3027,8 @@ export const markSessionRead = (
   session: ChatSessionRecord,
   readAt = Date.now(),
 ): ChatSessionRecord => {
-  const latestCompletedResponseAt = getLatestCompletedSessionResponseAt(session);
+  const latestCompletedResponseAt =
+    getLatestCompletedSessionResponseAt(session);
   const nextLastReadAt = Math.max(
     session.lastReadAt ?? 0,
     readAt,
@@ -3134,6 +3241,11 @@ const createInterruptedTaskCrashMessage = (
     role: "agent",
     content: `${INTERRUPTED_TASK_CRASH_PREFIX} ${INTERRUPTED_TASK_CRASH_CONTENT_BY_REASON[reason]}`,
     createdAt: timestamp,
+    source: {
+      kind: "interrupted-task",
+      status: "crashed",
+      reason,
+    },
   };
 };
 
@@ -3160,7 +3272,7 @@ const recoverInterruptedSessionTasks = (
   for (const [index, message] of session.messages.entries()) {
     const taskId: string =
       message.role === "agent"
-        ? message.taskId ?? latestUserTaskId ?? message.id
+        ? (message.taskId ?? latestUserTaskId ?? message.id)
         : getMessageTaskId(message);
 
     if (message.role === "user") {
@@ -3170,7 +3282,10 @@ const recoverInterruptedSessionTasks = (
     messageTaskIds[index] = taskId;
     lastMessageIndexByTaskId.set(taskId, index);
 
-    if (message.role === "agent" && !message.source) {
+    if (
+      message.role === "agent" &&
+      message.source?.kind === "interrupted-task"
+    ) {
       hasCrashMessageByTaskId.set(taskId, true);
     }
   }
@@ -3384,7 +3499,12 @@ export const getSessionRetentionProgress = (
 
   return deadlineAt === null
     ? null
-    : createSessionRetentionProgress("archive", session.updatedAt, deadlineAt, now);
+    : createSessionRetentionProgress(
+        "archive",
+        session.updatedAt,
+        deadlineAt,
+        now,
+      );
 };
 
 const createRetentionReplacementSession = (
@@ -3501,7 +3621,9 @@ export const deleteExpiredArchivedSessions = (
   }
 
   const nextSessions =
-    sessions.length > 0 ? sessions : [createRetentionReplacementSession(state, now)];
+    sessions.length > 0
+      ? sessions
+      : [createRetentionReplacementSession(state, now)];
   const activeSessionExists = nextSessions.some(
     (session) => session.id === state.activeSessionId,
   );
@@ -3601,9 +3723,8 @@ export function trimSessionTaskGroupsToVisibleMessageLimit(
 
   for (let index = taskGroups.length - 1; index >= 0; index -= 1) {
     const taskGroup = taskGroups[index];
-    const taskGroupVisibleMessages = createVisibleConversationMessages(
-      taskGroup,
-    ).length;
+    const taskGroupVisibleMessages =
+      createVisibleConversationMessages(taskGroup).length;
 
     if (
       keptGroups.length > 0 &&

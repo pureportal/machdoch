@@ -1,32 +1,10 @@
-export type TaskActionPromptKind = "retry-task" | "continue-task";
+import type {
+  ChatSessionTaskAction,
+  ChatSessionTaskActionKind,
+} from "../../chat-session.model";
 
 export const RETRY_TASK_DISPLAY_CONTENT = "Retry previous task.";
 export const CONTINUE_TASK_DISPLAY_CONTENT = "Continue previous task.";
-
-const GENERATED_PROMPT_PREFIXES: Record<TaskActionPromptKind, string[]> = {
-  "retry-task": [
-    "Retry the previous task from the failed or interrupted step.",
-    "Retry the task that was interrupted before it finished.",
-    RETRY_TASK_DISPLAY_CONTENT,
-  ],
-  "continue-task": [
-    "Continue the previous task.",
-    "Continue the task that was interrupted before it finished.",
-    CONTINUE_TASK_DISPLAY_CONTENT,
-  ],
-};
-
-const SECTION_LABELS = new Set([
-  "Context:",
-  "Instructions:",
-  "Objective:",
-  "Reason:",
-  "Status:",
-  "Suggested follow-ups:",
-  "Summary:",
-]);
-
-const TASK_OBJECTIVE_LABELS = ["Objective:"];
 
 export const compactPromptText = (value: string, maxLength: number): string => {
   const compacted = value.replace(/\s+/gu, " ").trim();
@@ -38,34 +16,10 @@ export const compactPromptText = (value: string, maxLength: number): string => {
   return `${compacted.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
 };
 
-export const getTaskActionPromptKind = (
-  content: string,
-): TaskActionPromptKind | null => {
-  const normalizedContent = content.trim();
-
-  if (!normalizedContent) {
-    return null;
-  }
-
-  for (const [kind, prefixes] of Object.entries(GENERATED_PROMPT_PREFIXES)) {
-    if (
-      prefixes.some(
-        (prefix) =>
-          normalizedContent === prefix ||
-          normalizedContent.startsWith(`${prefix}\n`),
-      )
-    ) {
-      return kind as TaskActionPromptKind;
-    }
-  }
-
-  return null;
-};
-
 export const getTaskActionDisplayContent = (
-  content: string,
+  taskAction: ChatSessionTaskAction | undefined,
 ): string | null => {
-  switch (getTaskActionPromptKind(content)) {
+  switch (taskAction?.kind) {
     case "retry-task":
       return RETRY_TASK_DISPLAY_CONTENT;
     case "continue-task":
@@ -75,80 +29,18 @@ export const getTaskActionDisplayContent = (
   }
 };
 
-export const shouldOmitTaskActionPromptFromAiContext = (
-  content: string,
-): boolean => {
-  return getTaskActionPromptKind(content) !== null;
-};
-
-const extractLastSectionValue = (
-  content: string,
-  labels: string[],
-): string | null => {
-  const lines = content.replace(/\r\n/gu, "\n").split("\n");
-  let latestValue: string | null = null;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.trim() ?? "";
-
-    const inlineLabel = labels.find((label) => line.startsWith(`${label} `));
-
-    if (inlineLabel) {
-      const inlineValue = line.slice(inlineLabel.length).trim();
-
-      if (inlineValue) {
-        latestValue = inlineValue;
-      }
-
-      continue;
-    }
-
-    if (!labels.includes(line)) {
-      continue;
-    }
-
-    const valueLines: string[] = [];
-
-    for (let valueIndex = index + 1; valueIndex < lines.length; valueIndex += 1) {
-      const valueLine = lines[valueIndex] ?? "";
-
-      if (SECTION_LABELS.has(valueLine.trim())) {
-        break;
-      }
-
-      valueLines.push(valueLine);
-    }
-
-    const value = valueLines.join("\n").trim();
-
-    if (value) {
-      latestValue = value;
-    }
-  }
-
-  return latestValue;
-};
-
 export const getConciseTaskObjective = (
   task: string,
   maxLength = 1_000,
 ): string => {
-  const normalizedTask = task.trim();
+  return compactPromptText(task, maxLength);
+};
 
-  if (!normalizedTask) {
-    return "";
-  }
+export const createTaskAction = (
+  kind: ChatSessionTaskActionKind,
+  objective: string,
+): ChatSessionTaskAction | null => {
+  const normalizedObjective = getConciseTaskObjective(objective);
 
-  if (getTaskActionPromptKind(normalizedTask)) {
-    const extracted = extractLastSectionValue(
-      normalizedTask,
-      TASK_OBJECTIVE_LABELS,
-    );
-
-    if (extracted && extracted !== normalizedTask) {
-      return getConciseTaskObjective(extracted, maxLength);
-    }
-  }
-
-  return compactPromptText(normalizedTask, maxLength);
+  return normalizedObjective ? { kind, objective: normalizedObjective } : null;
 };

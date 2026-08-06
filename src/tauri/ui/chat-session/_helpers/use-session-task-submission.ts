@@ -14,6 +14,7 @@ import {
   type ChatSessionMessageSettings,
   type ChatSessionQueuedPromptEnhancementRequest,
   type ChatSessionRecord,
+  type ChatSessionTaskAction,
 } from "../../chat-session.model";
 import type {
   TaskExecutionProgress,
@@ -24,6 +25,7 @@ import {
   runDesktopTask,
   type RuntimeSnapshot,
 } from "../../runtime";
+import { getDesktopTaskRunFailure } from "../../desktop-task-error";
 import {
   appendThinkingProgress,
   appendTerminalExecutionToThinkingTrace,
@@ -46,7 +48,7 @@ import {
   createRecoveredRetryTaskPrompt,
   createRetryTaskPrompt,
   formatTaskExecutionError,
-  getRecoveredTaskUserPrompt,
+  getRecoveredTaskObjective,
   isRecoveredTaskCrashMessage,
 } from "./session-task-continuation";
 import {
@@ -62,8 +64,8 @@ import {
 } from "./session-message-settings";
 import {
   CONTINUE_TASK_DISPLAY_CONTENT,
+  createTaskAction,
   RETRY_TASK_DISPLAY_CONTENT,
-  type TaskActionPromptKind,
 } from "./task-action-prompts";
 import type { ChatSessionRuntimeController } from "./use-chat-session-runtime";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
@@ -84,9 +86,6 @@ const TERMINAL_PROGRESS_STATE_BY_STATUS = {
   TaskExecutionProgress["state"]
 >;
 const TERMINAL_PROGRESS_FALLBACK_DELAY_MS = 1_500;
-const TASK_ALREADY_ACTIVE_ERROR_PREFIX = "MACHDOCH_TASK_ALREADY_ACTIVE:";
-const SESSION_OPERATION_ALREADY_ACTIVE_ERROR_PREFIX =
-  "MACHDOCH_OPERATION_ALREADY_ACTIVE:";
 
 export interface ComposerClearGuard {
   draft: string;
@@ -132,27 +131,14 @@ const isComposerClearGuardCurrent = (
 };
 
 const isTaskAlreadyActiveError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-
-  return message.includes(TASK_ALREADY_ACTIVE_ERROR_PREFIX);
+  return getDesktopTaskRunFailure(error)?.kind === "task-already-active";
 };
 
 const getSessionOperationActiveTaskId = (error: unknown): string | null => {
-  const message = error instanceof Error ? error.message : String(error);
-  const prefixIndex = message.indexOf(
-    SESSION_OPERATION_ALREADY_ACTIVE_ERROR_PREFIX,
-  );
-
-  if (prefixIndex < 0) {
-    return null;
-  }
-
-  const taskId = message
-    .slice(prefixIndex + SESSION_OPERATION_ALREADY_ACTIVE_ERROR_PREFIX.length)
-    .split(/\s/u, 1)[0]
-    ?.trim();
-
-  return taskId || null;
+  const failure = getDesktopTaskRunFailure(error);
+  return failure?.kind === "operation-already-active"
+    ? failure.activeTaskId
+    : null;
 };
 
 const normalizeSubmitMessagePromptEnhancement = (
@@ -207,7 +193,7 @@ export interface SubmitTaskToSessionOptions {
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   promptEnhancementRequestOnConflict?: ChatSessionQueuedPromptEnhancementRequest;
   messageSettings?: ChatSessionMessageSettings;
-  messageIntent?: TaskActionPromptKind;
+  messageTaskAction?: ChatSessionTaskAction;
   conversationCutoffMessageId?: string;
 }
 
@@ -517,8 +503,8 @@ export const useSessionTaskSubmission = (options: {
         role: "user",
         content: visibleMessageContent,
         createdAt: taskStartedAt,
-        ...(submitOptions.messageIntent
-          ? { intent: submitOptions.messageIntent }
+        ...(submitOptions.messageTaskAction
+          ? { taskAction: { ...submitOptions.messageTaskAction } }
           : {}),
         ...(userMessageContextAttachments.length > 0
           ? { contextAttachments: userMessageContextAttachments }
@@ -655,23 +641,11 @@ export const useSessionTaskSubmission = (options: {
       const createTerminalExecutionFromError = (
         error: unknown,
       ): TaskExecutionResult | null => {
-        const detail = error instanceof Error ? error.message : String(error);
-        const normalizedDetail = detail.trim();
-
-        if (!normalizedDetail) {
+        const failure = getDesktopTaskRunFailure(error);
+        if (failure?.kind !== "cancelled" && failure?.kind !== "timed-out") {
           return null;
         }
-
-        const isTimeout = /\b(?:timeout|timed out|exceeded)\b/iu.test(
-          normalizedDetail,
-        );
-        const isCancellation =
-          isTimeout ||
-          /\b(?:cancelled|canceled|cancellation)\b/iu.test(normalizedDetail);
-
-        if (!isCancellation) {
-          return null;
-        }
+        const isTimeout = failure.kind === "timed-out";
 
         return {
           task: executionTask,
@@ -684,10 +658,10 @@ export const useSessionTaskSubmission = (options: {
           outputSections: [
             {
               title: isTimeout ? "Execution limit" : "Cancellation",
-              lines: [`reason: ${normalizedDetail}`],
+              lines: [`reason: ${failure.message}`],
             },
           ],
-          reason: normalizedDetail,
+          reason: failure.message,
           ...(latestAssistantText
             ? {
                 response: {
@@ -1303,7 +1277,7 @@ export const useSessionTaskSubmission = (options: {
     (message: ChatSessionMessage, content: string): boolean => {
       const normalizedContent = content.trim();
 
-      if (message.role !== "user" || message.intent || !normalizedContent) {
+      if (message.role !== "user" || message.taskAction || !normalizedContent) {
         return false;
       }
 
@@ -1345,7 +1319,7 @@ export const useSessionTaskSubmission = (options: {
       const visibleMessageContent =
         getRenderedMessageContent(sourceUserMessage).trim();
       const task =
-        sourceUserMessage.intent && message.source?.kind === "execution"
+        sourceUserMessage.taskAction && message.source?.kind === "execution"
           ? message.source.execution.task.trim()
           : visibleMessageContent;
 
@@ -1370,8 +1344,8 @@ export const useSessionTaskSubmission = (options: {
         ...(sourceUserMessage.promptEnhancement
           ? { promptEnhancement: sourceUserMessage.promptEnhancement }
           : {}),
-        ...(sourceUserMessage.intent
-          ? { messageIntent: sourceUserMessage.intent }
+        ...(sourceUserMessage.taskAction
+          ? { messageTaskAction: { ...sourceUserMessage.taskAction } }
           : {}),
         conversationCutoffMessageId: sourceUserMessage.id,
       });
@@ -1383,24 +1357,28 @@ export const useSessionTaskSubmission = (options: {
     (message: ChatSessionMessage): void => {
       if (isRecoveredTaskCrashMessage(message)) {
         const sourceSession = getMessageSourceSession(message);
-        const recoveredTask = getRecoveredTaskUserPrompt(
+        const recoveredObjective = getRecoveredTaskObjective(
           sourceSession,
           message,
         );
 
-        if (!recoveredTask) {
+        const taskAction = recoveredObjective
+          ? createTaskAction("retry-task", recoveredObjective)
+          : null;
+
+        if (!taskAction) {
           return;
         }
 
         submitTaskToSession({
           sessionSnapshot: sourceSession,
-          task: createRecoveredRetryTaskPrompt(recoveredTask),
+          task: createRecoveredRetryTaskPrompt(taskAction.objective),
           contextAttachments: [],
           clearDraft: false,
           activateSession: true,
           visibleMessageContent: RETRY_TASK_DISPLAY_CONTENT,
           promptHistoryContent: RETRY_TASK_DISPLAY_CONTENT,
-          messageIntent: "retry-task",
+          messageTaskAction: taskAction,
         });
         return;
       }
@@ -1419,15 +1397,26 @@ export const useSessionTaskSubmission = (options: {
         return;
       }
 
+      const sourceSession = getMessageSourceSession(message);
+      const sourceUserMessage = findSourceUserMessage(sourceSession, message);
+      const taskAction = createTaskAction(
+        "retry-task",
+        sourceUserMessage?.taskAction?.objective ?? execution.task,
+      );
+
+      if (!taskAction) {
+        return;
+      }
+
       submitTaskToSession({
-        sessionSnapshot: getMessageSourceSession(message),
-        task: createRetryTaskPrompt(execution),
+        sessionSnapshot: sourceSession,
+        task: createRetryTaskPrompt(execution, taskAction.objective),
         contextAttachments: [],
         clearDraft: false,
         activateSession: true,
         visibleMessageContent: RETRY_TASK_DISPLAY_CONTENT,
         promptHistoryContent: RETRY_TASK_DISPLAY_CONTENT,
-        messageIntent: "retry-task",
+        messageTaskAction: taskAction,
       });
     },
     [getMessageSourceSession, submitTaskToSession],
@@ -1437,24 +1426,28 @@ export const useSessionTaskSubmission = (options: {
     (message: ChatSessionMessage): void => {
       if (isRecoveredTaskCrashMessage(message)) {
         const sourceSession = getMessageSourceSession(message);
-        const recoveredTask = getRecoveredTaskUserPrompt(
+        const recoveredObjective = getRecoveredTaskObjective(
           sourceSession,
           message,
         );
 
-        if (!recoveredTask) {
+        const taskAction = recoveredObjective
+          ? createTaskAction("continue-task", recoveredObjective)
+          : null;
+
+        if (!taskAction) {
           return;
         }
 
         submitTaskToSession({
           sessionSnapshot: sourceSession,
-          task: createRecoveredContinueTaskPrompt(recoveredTask),
+          task: createRecoveredContinueTaskPrompt(taskAction.objective),
           contextAttachments: [],
           clearDraft: false,
           activateSession: true,
           visibleMessageContent: CONTINUE_TASK_DISPLAY_CONTENT,
           promptHistoryContent: CONTINUE_TASK_DISPLAY_CONTENT,
-          messageIntent: "continue-task",
+          messageTaskAction: taskAction,
         });
         return;
       }
@@ -1473,15 +1466,26 @@ export const useSessionTaskSubmission = (options: {
         return;
       }
 
+      const sourceSession = getMessageSourceSession(message);
+      const sourceUserMessage = findSourceUserMessage(sourceSession, message);
+      const taskAction = createTaskAction(
+        "continue-task",
+        sourceUserMessage?.taskAction?.objective ?? execution.task,
+      );
+
+      if (!taskAction) {
+        return;
+      }
+
       submitTaskToSession({
-        sessionSnapshot: getMessageSourceSession(message),
-        task: createContinuationTaskPrompt(execution),
+        sessionSnapshot: sourceSession,
+        task: createContinuationTaskPrompt(execution, taskAction.objective),
         contextAttachments: [],
         clearDraft: false,
         activateSession: true,
         visibleMessageContent: CONTINUE_TASK_DISPLAY_CONTENT,
         promptHistoryContent: CONTINUE_TASK_DISPLAY_CONTENT,
-        messageIntent: "continue-task",
+        messageTaskAction: taskAction,
       });
     },
     [getMessageSourceSession, submitTaskToSession],

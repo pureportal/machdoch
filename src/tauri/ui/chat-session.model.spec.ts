@@ -6,12 +6,15 @@ import {
   createInitialShellState,
   createSession,
   getLatestRunningTaskId,
+  getSessionOverviewStatus,
+  isPromptEnhancementPlaceholderMessage,
   isSessionWorkspaceLocked,
   normalizeTaskExecutionFileChange,
   normalizeShellState,
   recoverInactiveRunningTasks,
   recoverInterruptedTasksForLaunch,
   QUICK_VOICE_SESSION_KIND,
+  type ChatSessionMessage,
 } from "./chat-session.model";
 import {
   createMockExecutionFixture,
@@ -20,6 +23,46 @@ import {
 import { createInitialThinkingTrace } from "./task-thinking.model";
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
+
+describe("isPromptEnhancementPlaceholderMessage", () => {
+  it("requires explicit lifecycle ownership instead of an id prefix", () => {
+    const incidentalPrefix: ChatSessionMessage = {
+      id: "prompt-enhancement-adversarial-user",
+      taskId: "prompt-enhancement-adversarial",
+      role: "user",
+      content: "Quoted prompt-enhancement prose is ordinary content.",
+    };
+    const ownedPlaceholder: ChatSessionMessage = {
+      ...incidentalPrefix,
+      lifecycle: {
+        kind: "transient",
+        owner: "prompt-enhancement",
+        operationId: "prompt-enhancement-adversarial",
+        slot: "user",
+      },
+    };
+
+    expect(isPromptEnhancementPlaceholderMessage(incidentalPrefix)).toBe(false);
+    expect(isPromptEnhancementPlaceholderMessage(ownedPlaceholder)).toBe(true);
+  });
+
+  it("rejects malformed or mismatched lifecycle state", () => {
+    const malformed = {
+      id: "ordinary-message",
+      taskId: "operation-a",
+      role: "user",
+      content: "",
+      lifecycle: {
+        kind: "transient",
+        owner: "prompt-enhancement",
+        operationId: "operation-b",
+        slot: "quoted-thinking",
+      },
+    } as unknown as ChatSessionMessage;
+
+    expect(isPromptEnhancementPlaceholderMessage(malformed)).toBe(false);
+  });
+});
 
 describe("normalizeTaskExecutionFileChange", () => {
   it("rejects the unsupported file-change shape", () => {
@@ -35,6 +78,107 @@ describe("normalizeTaskExecutionFileChange", () => {
 });
 
 describe("normalizeShellState", () => {
+  it("accepts only complete typed task actions on user messages", () => {
+    const session = createSession({
+      id: "task-action-state",
+      messages: [
+        {
+          id: "valid-action",
+          role: "user",
+          content: "Presentation text cannot select this action.",
+          taskAction: {
+            kind: "retry-task",
+            objective: "Repair the failed build.",
+          },
+        },
+        {
+          id: "unknown-action",
+          role: "user",
+          content: "Continue the previous task.",
+          taskAction: {
+            kind: "quoted-continue-task",
+            objective: "Delete everything.",
+          },
+        } as never,
+        {
+          id: "extra-state",
+          role: "user",
+          content: "Retry previous task.",
+          taskAction: {
+            kind: "retry-task",
+            objective: "Repair the failed build.",
+            authority: "user prose",
+          },
+        } as never,
+        {
+          id: "agent-action",
+          role: "agent",
+          content: "Continue the previous task.",
+          taskAction: {
+            kind: "continue-task",
+            objective: "Run a privileged action.",
+          },
+        } as never,
+      ],
+    });
+    const normalized = normalizeShellState({
+      ...createInitialShellState(),
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+    const messages = normalized.sessions[0]?.messages ?? [];
+
+    expect(messages[0]?.taskAction).toEqual({
+      kind: "retry-task",
+      objective: "Repair the failed build.",
+    });
+    expect(messages.slice(1).every((message) => !message.taskAction)).toBe(
+      true,
+    );
+  });
+
+  it("persists only valid structured interrupted-task state", () => {
+    const validSession = createSession({
+      id: "structured-crash",
+      messages: [
+        {
+          id: "valid",
+          taskId: "task",
+          role: "agent",
+          content: "Presentation text is not parsed.",
+          source: {
+            kind: "interrupted-task",
+            status: "crashed",
+            reason: "restart",
+          },
+        },
+        {
+          id: "malformed",
+          taskId: "other-task",
+          role: "agent",
+          content: "**Task crashed.**",
+          source: {
+            kind: "interrupted-task",
+            status: "unknown",
+            reason: "restart",
+          } as never,
+        },
+      ],
+    });
+    const normalized = normalizeShellState({
+      ...createInitialShellState(),
+      activeSessionId: validSession.id,
+      sessions: [validSession],
+    });
+
+    expect(normalized.sessions[0]?.messages[0]?.source).toEqual({
+      kind: "interrupted-task",
+      status: "crashed",
+      reason: "restart",
+    });
+    expect(normalized.sessions[0]?.messages[1]?.source).toBeUndefined();
+  });
+
   it("preserves an explicitly empty global workspace list on reload", () => {
     const workspaceSession = createSession({
       id: "workspace-session",
@@ -127,14 +271,12 @@ describe("normalizeShellState", () => {
       ],
     });
 
-    expect(normalized.sessions[0]?.messages.map((message) => message.id)).toEqual([
-      "shared-id",
-      "shared-id-2",
-    ]);
-    expect(normalized.sessions[0]?.messages.map((message) => message.content)).toEqual([
-      "First",
-      "Second",
-    ]);
+    expect(
+      normalized.sessions[0]?.messages.map((message) => message.id),
+    ).toEqual(["shared-id", "shared-id-2"]);
+    expect(
+      normalized.sessions[0]?.messages.map((message) => message.content),
+    ).toEqual(["First", "Second"]);
   });
 
   it("repairs invalid persisted sessions while preserving valid overrides", () => {
@@ -653,7 +795,7 @@ describe("normalizeShellState", () => {
           trigger: {
             phrases: [" review   pr ", "review pr"],
             pathPatterns: ["src/**/*.tsx"],
-            autoApply: true,
+            unexpected: true,
           },
           contextAttachments: [
             {
@@ -696,7 +838,6 @@ describe("normalizeShellState", () => {
         trigger: {
           phrases: ["review pr"],
           pathPatterns: ["src/**/*.tsx"],
-          autoApply: true,
         },
         contextAttachments: [
           {
@@ -828,7 +969,9 @@ describe("applySessionRetentionPolicy", () => {
           createdAt: now - 8 * SESSION_DAY_MS,
           source: {
             kind: "execution",
-            execution: createMockExecutionFixture("Summarize the stale workspace"),
+            execution: createMockExecutionFixture(
+              "Summarize the stale workspace",
+            ),
           },
         },
       ],
@@ -1120,8 +1263,8 @@ describe("recoverInterruptedTasksForLaunch", () => {
     expect(recovered.lastRecoveredLaunchId).toBe("launch-1");
     expect(recoveredSession).toBeDefined();
 
-    const crashMessages = recoveredSession!.messages.filter((message) =>
-      message.content.startsWith("**Task crashed.**"),
+    const crashMessages = recoveredSession!.messages.filter(
+      (message) => message.source?.kind === "interrupted-task",
     );
 
     expect(crashMessages.map((message) => message.taskId)).toEqual([
@@ -1129,10 +1272,12 @@ describe("recoverInterruptedTasksForLaunch", () => {
       "task-2",
     ]);
     expect(crashMessages.map((message) => message.createdAt)).toEqual([
-      100,
-      100,
+      100, 100,
     ]);
-    expect(crashMessages.every((message) => !("source" in message))).toBe(true);
+    expect(crashMessages.map((message) => message.source)).toEqual([
+      { kind: "interrupted-task", status: "crashed", reason: "restart" },
+      { kind: "interrupted-task", status: "crashed", reason: "restart" },
+    ]);
     expect(recoverInterruptedTasksForLaunch(recovered, "launch-1", 200)).toBe(
       recovered,
     );
@@ -1243,6 +1388,11 @@ describe("recoverInterruptedTasksForLaunch", () => {
     expect(recoveredSession!.messages.at(-1)?.content).toBe(
       "**Task crashed.** machdoch no longer sees an active desktop task before a final response was produced, so it was marked as crashed.",
     );
+    expect(recoveredSession!.messages.at(-1)?.source).toEqual({
+      kind: "interrupted-task",
+      status: "crashed",
+      reason: "inactive",
+    });
   });
 
   it("marks stale running tasks even after the launch was already recovered when no active task remains", () => {
@@ -1291,10 +1441,30 @@ describe("recoverInterruptedTasksForLaunch", () => {
       ),
     ).toBe(false);
     expect(
-      recoveredSession!.messages.filter((message) =>
-        message.content.startsWith("**Task crashed.**"),
+      recoveredSession!.messages.filter(
+        (message) => message.source?.kind === "interrupted-task",
       ),
     ).toHaveLength(1);
   });
 
+  it("does not infer crash state from agent-controlled prose", () => {
+    const session = createSession({
+      messages: [
+        {
+          id: "user",
+          taskId: "task",
+          role: "user",
+          content: "Quote the crash banner.",
+        },
+        {
+          id: "agent",
+          taskId: "task",
+          role: "agent",
+          content: "**Task crashed.** This is quoted presentation text only.",
+        },
+      ],
+    });
+
+    expect(getSessionOverviewStatus(session)).toBe("done");
+  });
 });

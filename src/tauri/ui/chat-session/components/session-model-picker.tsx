@@ -8,6 +8,12 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Button } from "../../components/ui/button";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPage,
+  CommandPageGroup,
+} from "../../commands/command-types";
 import {
   Popover,
   PopoverContent,
@@ -253,6 +259,85 @@ export const SessionModelPicker = ({
     event.preventDefault();
     handleSessionModelSelection(selectedProvider, bestMatch.id);
   };
+  const modelCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "chat.session.model.select",
+        title: "Choose session model",
+        group: "Chat",
+        keywords: ["provider"],
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        availability: () =>
+          chooserProviders.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No providers are available" },
+        children: async (_context, signal): Promise<CommandPage> => {
+          try {
+            const catalog = await loadProviderModelCatalog();
+            if (signal.aborted) {
+              return {
+                id: "chat-session-model",
+                title: "Session model",
+                searchPlaceholder: "Choose model",
+                groups: [],
+              };
+            }
+            const groups: CommandPageGroup[] = chooserProviders.map(
+              (provider) => ({
+                id: provider,
+                label: getProviderLabel(provider),
+                items: getCatalogModelsForProvider(provider, catalog).map(
+                  (model) => ({
+                    id: `${provider}:${model.id}`,
+                    title: model.label,
+                    keywords: [model.id, getProviderLabel(provider)],
+                    current:
+                      activeProvider === provider && activeModel === model.id,
+                    execute: () => onSessionModelSelection(provider, model.id),
+                  }),
+                ),
+              }),
+            );
+            return {
+              id: "chat-session-model",
+              title: "Session model",
+              searchPlaceholder: "Choose model or provider",
+              groups,
+            };
+          } catch (error) {
+            return {
+              id: "chat-session-model",
+              title: "Session model",
+              searchPlaceholder: "Choose model",
+              groups: [
+                {
+                  id: "error",
+                  items: [
+                    {
+                      id: "catalog-error",
+                      title: "Model catalog unavailable",
+                      availability: {
+                        state: "disabled",
+                        reason:
+                          error instanceof Error
+                            ? error.message
+                            : "Could not load the model catalog",
+                      },
+                      execute: () => undefined,
+                    },
+                  ],
+                },
+              ],
+            };
+          }
+        },
+      },
+    ],
+    [activeModel, activeProvider, chooserProviders, onSessionModelSelection],
+  );
+  useOptionalRegisterCommands(modelCommands);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -342,10 +427,7 @@ export const SessionModelPicker = ({
                 <p className="text-sm font-semibold text-slate-100">
                   {getProviderLabel(selectedProvider)} models
                 </p>
-                <span
-                  aria-live="polite"
-                  className="text-xs text-slate-500"
-                >
+                <span aria-live="polite" className="text-xs text-slate-500">
                   {availabilityLabel}
                 </span>
               </div>

@@ -11,6 +11,7 @@ import {
 } from "./focus";
 import {
   getCommandAvailability,
+  isCommandAllowedByOverlay,
   isCommandScopeActive,
   resolveShortcut,
 } from "./shortcut-resolver";
@@ -66,13 +67,8 @@ interface CommandContextValue {
 }
 
 const CommandContext = React.createContext<CommandContextValue | null>(null);
-const EMPTY_REGISTRY_SNAPSHOT = {
-  commands: [],
-  duplicateIds: new Set<string>(),
-  invalidIds: new Map<string, string>(),
-  revision: 0,
-} as const;
 const EMPTY_COMMANDS: readonly CommandDefinition[] = [];
+const subscribeToNothing = (): (() => void) => () => undefined;
 
 export interface CommandProviderProps {
   activeView: string | null;
@@ -151,10 +147,6 @@ export const CommandProvider = ({
     registry.subscribe,
     registry.getSnapshot,
   );
-  const overlaySnapshot = React.useSyncExternalStore(
-    commandOverlayStore.subscribe,
-    commandOverlayStore.getSnapshot,
-  );
   const platform = platformProp ?? detectCommandPlatform();
   const runtime = runtimeProp ?? (isTauri() ? "tauri" : "browser");
   const [surface, setSurface] =
@@ -174,6 +166,9 @@ export const CommandProvider = ({
     kind: "document",
     ownerPath: [],
   });
+  const invocationOverlaysRef = React.useRef<
+    CommandContextSnapshot["overlays"]
+  >([]);
   const surfaceRevisionRef = React.useRef(0);
   const activeControllersRef = React.useRef(
     new Map<string, { controller: AbortController; fromPalette: boolean }>(),
@@ -255,6 +250,7 @@ export const CommandProvider = ({
         options.anchor instanceof Element
           ? getElementFocusSnapshot(options.anchor)
           : getActiveFocusSnapshot();
+      invocationOverlaysRef.current = commandOverlayStore.getSnapshot();
       setPaletteError(null);
       setSurface({
         open: true,
@@ -277,6 +273,7 @@ export const CommandProvider = ({
       invokerRef.current =
         activeElement instanceof HTMLElement ? activeElement : null;
       invocationFocusRef.current = invocationFocus;
+      invocationOverlaysRef.current = commandOverlayStore.getSnapshot();
       setPaletteError(null);
       setSurface({
         open: true,
@@ -329,6 +326,7 @@ export const CommandProvider = ({
           invokerRef.current =
             activeElement instanceof HTMLElement ? activeElement : null;
           invocationFocusRef.current = context.focus;
+          invocationOverlaysRef.current = commandOverlayStore.getSnapshot();
         }
       }
       const startingRevision = surfaceRevisionRef.current;
@@ -394,6 +392,7 @@ export const CommandProvider = ({
       const availability = getCommandAvailability(command, context);
       if (
         !isCommandScopeActive(command, context) ||
+        !isCommandAllowedByOverlay(command, context) ||
         (command.when && !command.when(context)) ||
         availability.state !== "enabled"
       ) {
@@ -479,13 +478,14 @@ export const CommandProvider = ({
 
   const paletteContext = {
     ...getContextSnapshot(),
-    overlays: overlaySnapshot,
+    overlays: invocationOverlaysRef.current,
     focus: invocationFocusRef.current,
   };
   const executePaletteCommand = React.useCallback(
     (command: CommandDefinition, fromPalette: boolean) =>
       executeCommand(command, fromPalette, {
         ...getContextSnapshot(),
+        overlays: invocationOverlaysRef.current,
         focus: invocationFocusRef.current,
       }),
     [executeCommand, getContextSnapshot],
@@ -618,14 +618,49 @@ export interface CommandShortcutHint {
   spec: ShortcutSpec;
 }
 
-export const useCommandShortcut = (id: string): CommandShortcutHint | null => {
-  const { registry, platform, runtime } = useCommandContext();
-  React.useSyncExternalStore(registry.subscribe, registry.getSnapshot);
-  const command = registry.find(id);
-  const spec = command?.shortcuts?.find((candidate) =>
-    shortcutApplies(candidate, platform, runtime),
+const findCommandShortcut = (
+  registry: CommandRegistry,
+  id: string,
+  platform: CommandPlatform,
+  runtime: CommandRuntime,
+): ShortcutSpec | undefined => {
+  return registry
+    .find(id)
+    ?.shortcuts?.find((candidate) =>
+      shortcutApplies(candidate, platform, runtime),
+    );
+};
+
+const areShortcutValuesEqual = <Value,>(
+  left: readonly Value[] | undefined,
+  right: readonly Value[] | undefined,
+): boolean => {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+};
+
+const areShortcutSpecsEqual = (
+  left: ShortcutSpec | undefined,
+  right: ShortcutSpec | undefined,
+): boolean => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.chord === right.chord &&
+    areShortcutValuesEqual(left.platforms, right.platforms) &&
+    areShortcutValuesEqual(left.runtimes, right.runtimes) &&
+    left.match === right.match &&
+    left.allowRepeat === right.allowRepeat &&
+    areShortcutValuesEqual(left.allowIn, right.allowIn)
   );
-  return spec
+};
+
+const createCommandShortcutHint = (
+  spec: ShortcutSpec | undefined,
+  platform: CommandPlatform | null,
+): CommandShortcutHint | null => {
+  return spec && platform
     ? {
         label: formatShortcut(spec, platform),
         ariaKeyShortcuts: shortcutToAriaKeyShortcuts(spec, platform),
@@ -634,26 +669,61 @@ export const useCommandShortcut = (id: string): CommandShortcutHint | null => {
     : null;
 };
 
+interface CommandShortcutCache {
+  hint: CommandShortcutHint | null;
+  platform: CommandPlatform | null;
+  spec: ShortcutSpec | undefined;
+}
+
+const useCommandShortcutHint = (
+  registry: CommandRegistry | null,
+  id: string,
+  platform: CommandPlatform | null,
+  runtime: CommandRuntime | null,
+): CommandShortcutHint | null => {
+  const getSnapshot = React.useMemo(() => {
+    let cached: CommandShortcutCache | null = null;
+    return (): CommandShortcutHint | null => {
+      const spec =
+        registry && platform && runtime
+          ? findCommandShortcut(registry, id, platform, runtime)
+          : undefined;
+      if (
+        !cached ||
+        cached.platform !== platform ||
+        !areShortcutSpecsEqual(cached.spec, spec)
+      ) {
+        cached = {
+          hint: createCommandShortcutHint(spec, platform),
+          platform,
+          spec,
+        };
+      }
+      return cached.hint;
+    };
+  }, [id, platform, registry, runtime]);
+
+  // Command callbacks may change every render; keep the external-store snapshot
+  // stable unless the selected shortcut itself changes.
+  return React.useSyncExternalStore(
+    registry?.subscribe ?? subscribeToNothing,
+    getSnapshot,
+  );
+};
+
+export const useCommandShortcut = (id: string): CommandShortcutHint | null => {
+  const { registry, platform, runtime } = useCommandContext();
+  return useCommandShortcutHint(registry, id, platform, runtime);
+};
+
 export const useOptionalCommandShortcut = (
   id: string,
 ): CommandShortcutHint | null => {
   const context = React.useContext(CommandContext);
-  const emptySubscribe = React.useCallback(() => () => undefined, []);
-  const emptySnapshot = React.useCallback(() => EMPTY_REGISTRY_SNAPSHOT, []);
-  React.useSyncExternalStore(
-    context?.registry.subscribe ?? emptySubscribe,
-    context?.registry.getSnapshot ?? emptySnapshot,
+  return useCommandShortcutHint(
+    context?.registry ?? null,
+    id,
+    context?.platform ?? null,
+    context?.runtime ?? null,
   );
-  if (!context) return null;
-  const command = context.registry.find(id);
-  const spec = command?.shortcuts?.find((candidate) =>
-    shortcutApplies(candidate, context.platform, context.runtime),
-  );
-  return spec
-    ? {
-        label: formatShortcut(spec, context.platform),
-        ariaKeyShortcuts: shortcutToAriaKeyShortcuts(spec, context.platform),
-        spec,
-      }
-    : null;
 };

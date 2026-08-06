@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  useCallback,
   useMemo,
   useEffect,
   useRef,
@@ -39,6 +40,11 @@ import {
 } from "../../chat-session.model";
 import type { RalphFlow } from "../../../../core/ralph.js";
 import { Button } from "../../components/ui/button";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../../commands/command-types";
 import {
   Dialog,
   DialogContent,
@@ -129,7 +135,6 @@ interface SmartContextPackEditorInitialValue {
   variables: SmartContextPackVariable[];
   triggerPhrases: string[];
   triggerPathPatterns: string[];
-  autoApply: boolean;
   provider?: RuntimeProvider;
   model?: string;
   runMode?: RunMode;
@@ -292,9 +297,11 @@ const formatVariableInputValue = (
 const formatAttachmentPathInputValue = (
   attachments: ChatSessionContextAttachment[],
 ): string =>
-  attachments.flatMap((attachment) =>
-    isPathContextAttachment(attachment) ? [attachment.path] : [],
-  ).join("\n");
+  attachments
+    .flatMap((attachment) =>
+      isPathContextAttachment(attachment) ? [attachment.path] : [],
+    )
+    .join("\n");
 
 const getAttachmentPathKey = (path: string): string => {
   return path.replace(/\\/gu, "/").trim().toLowerCase();
@@ -412,9 +419,7 @@ const ContextPackPromptHighlight = ({
             </span>,
           );
         } else {
-          parts.push(
-            <span key={`raw-${lineIndex}-${index}`}>{raw}</span>,
-          );
+          parts.push(<span key={`raw-${lineIndex}-${index}`}>{raw}</span>);
         }
 
         cursor = index + raw.length;
@@ -422,9 +427,7 @@ const ContextPackPromptHighlight = ({
 
       if (cursor < line.length) {
         parts.push(
-          <span key={`text-${lineIndex}-${cursor}`}>
-            {line.slice(cursor)}
-          </span>,
+          <span key={`text-${lineIndex}-${cursor}`}>{line.slice(cursor)}</span>,
         );
       }
     }
@@ -673,9 +676,7 @@ const SmartContextPackEditorDialog = ({
   onSubmit: (input: SaveSmartContextPackInput) => void;
 }): JSX.Element => {
   const [name, setName] = useState(initialValue.name);
-  const [scope, setScope] = useState<SmartContextPackScope>(
-    initialValue.scope,
-  );
+  const [scope, setScope] = useState<SmartContextPackScope>(initialValue.scope);
   const [instructions, setInstructions] = useState(initialValue.instructions);
   const [prompt, setPrompt] = useState(initialValue.prompt);
   const [attachmentPathsInput, setAttachmentPathsInput] = useState(
@@ -690,7 +691,6 @@ const SmartContextPackEditorDialog = ({
   const [triggerPathPatternsInput, setTriggerPathPatternsInput] = useState(
     formatListInputValue(initialValue.triggerPathPatterns),
   );
-  const [autoApply, setAutoApply] = useState(initialValue.autoApply);
   const [includeModel, setIncludeModel] = useState(
     initialValue.mode === "create" ||
       Boolean(initialValue.provider && initialValue.model),
@@ -794,10 +794,7 @@ const SmartContextPackEditorDialog = ({
       triggerPathPatterns: parseSmartContextPackListInput(
         triggerPathPatternsInput,
       ),
-      autoApply,
-      ...(includeModel && modelValue
-        ? { provider, model: modelValue }
-        : {}),
+      ...(includeModel && modelValue ? { provider, model: modelValue } : {}),
       ...(includeRunMode ? { mode: runMode } : {}),
       ...(includeReasoning ? { reasoning } : {}),
       ...(promptEnhancementOverride !== NO_SAVE_VALUE
@@ -856,32 +853,34 @@ const SmartContextPackEditorDialog = ({
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-1.5">
-                <span className="px-1 text-xs font-medium text-slate-400">
-                  Instructions
-                </span>
-                <Textarea
-                  value={instructions}
-                  onChange={(event) => setInstructions(event.target.value)}
-                  placeholder="Focus on regressions, missing tests, and user-facing risk."
-                  className="min-h-24 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-                />
-              </label>
+                <label className="grid gap-1.5">
+                  <span className="px-1 text-xs font-medium text-slate-400">
+                    Instructions
+                  </span>
+                  <Textarea
+                    value={instructions}
+                    onChange={(event) => setInstructions(event.target.value)}
+                    placeholder="Focus on regressions, missing tests, and user-facing risk."
+                    className="min-h-24 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                  />
+                </label>
 
-              <label className="grid gap-1.5">
-                <span className="px-1 text-xs font-medium text-slate-400">
-                  Paths
-                </span>
-                <Textarea
-                  value={attachmentPathsInput}
-                  onChange={(event) =>
-                    setAttachmentPathsInput(event.target.value)
-                  }
-                  placeholder={"C:\\Project\\src\\App.tsx\nhttps://example.com/spec"}
-                  className="min-h-24 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-                />
-              </label>
-            </div>
+                <label className="grid gap-1.5">
+                  <span className="px-1 text-xs font-medium text-slate-400">
+                    Paths
+                  </span>
+                  <Textarea
+                    value={attachmentPathsInput}
+                    onChange={(event) =>
+                      setAttachmentPathsInput(event.target.value)
+                    }
+                    placeholder={
+                      "C:\\Project\\src\\App.tsx\nhttps://example.com/spec"
+                    }
+                    className="min-h-24 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                  />
+                </label>
+              </div>
             </section>
 
             <section className="grid gap-4 rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4">
@@ -961,15 +960,6 @@ const SmartContextPackEditorDialog = ({
                   className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
                 />
               </label>
-
-              <PackOption
-                label="Auto-apply matching pack"
-                description="Apply once when a phrase or path pattern matches."
-                checked={autoApply}
-                checkedLabel="Auto"
-                uncheckedLabel="Manual"
-                onChange={setAutoApply}
-              />
             </section>
 
             <section className="grid gap-3 rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4">
@@ -1051,12 +1041,12 @@ const SmartContextPackEditorDialog = ({
                     <option value={NO_SAVE_VALUE}>
                       No Save — keep current
                     </option>
-                  {RUN_MODES.map((modeOption) => (
-                    <option key={modeOption} value={modeOption}>
-                      {getContextPackModeLabel(modeOption)}
-                    </option>
-                  ))}
-                </select>
+                    {RUN_MODES.map((modeOption) => (
+                      <option key={modeOption} value={modeOption}>
+                        {getContextPackModeLabel(modeOption)}
+                      </option>
+                    ))}
+                  </select>
                 </PackSettingField>
 
                 <PackSettingField
@@ -1083,14 +1073,14 @@ const SmartContextPackEditorDialog = ({
                     <option value={NO_SAVE_VALUE}>
                       No Save — keep current
                     </option>
-                  {REASONING_MODES.map((reasoningOption) => (
-                    <option key={reasoningOption} value={reasoningOption}>
-                      {getContextPackReasoningLabel(reasoningOption)}
-                    </option>
-                  ))}
-                </select>
+                    {REASONING_MODES.map((reasoningOption) => (
+                      <option key={reasoningOption} value={reasoningOption}>
+                        {getContextPackReasoningLabel(reasoningOption)}
+                      </option>
+                    ))}
+                  </select>
                 </PackSettingField>
-          </div>
+              </div>
 
               <PackSettingField
                 id="context-pack-prompt-enhancer"
@@ -1335,8 +1325,8 @@ const SmartContextPackCard = ({
       </div>
       {isPendingUsedPackDelete ? (
         <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-xs leading-5 text-amber-100">
-          This pack is used by {ralphFlowNames.join(", ")}. Click delete again to
-          remove it anyway.
+          This pack is used by {ralphFlowNames.join(", ")}. Click delete again
+          to remove it anyway.
         </div>
       ) : null}
     </div>
@@ -1372,11 +1362,17 @@ export const SmartContextPackPicker = ({
   const [scopeFilter, setScopeFilter] =
     useState<SmartContextPackScopeFilter>("all");
   const [packSearchText, setPackSearchText] = useState("");
-  const [configuringPackId, setConfiguringPackId] = useState<string | null>(null);
-  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
+  const [configuringPackId, setConfiguringPackId] = useState<string | null>(
+    null,
+  );
+  const [variableValues, setVariableValues] = useState<Record<string, string>>(
+    {},
+  );
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyingPackId, setApplyingPackId] = useState<string | null>(null);
-  const [pendingDeletePackId, setPendingDeletePackId] = useState<string | null>(null);
+  const [pendingDeletePackId, setPendingDeletePackId] = useState<string | null>(
+    null,
+  );
   const [ralphPackUsageById, setRalphPackUsageById] = useState<
     Record<string, string[]>
   >({});
@@ -1460,7 +1456,7 @@ export const SmartContextPackPicker = ({
     setPackSearchText("");
   };
 
-  const openCreateDialog = (): void => {
+  const openCreateDialog = useCallback((): void => {
     const nextScope =
       !workspaceRoot || scopeFilter === "global" ? "global" : "workspace";
 
@@ -1473,12 +1469,13 @@ export const SmartContextPackPicker = ({
         instructions: "",
         prompt: activeDraft,
         contextAttachments,
-        variables: extractSmartContextPackVariables(activeDraft).map((name) => ({
-          name,
-        })),
+        variables: extractSmartContextPackVariables(activeDraft).map(
+          (name) => ({
+            name,
+          }),
+        ),
         triggerPhrases: [],
         triggerPathPatterns: [],
-        autoApply: false,
         provider: activeProvider,
         model: activeModel,
         runMode: activeRunMode,
@@ -1493,9 +1490,23 @@ export const SmartContextPackPicker = ({
     setOpen(false);
     setView("apply");
     setPackSearchText("");
-  };
+  }, [
+    activeDraft,
+    activeInterviewEnabled,
+    activeModel,
+    activePromptEnhancementMode,
+    activeProvider,
+    activeReasoning,
+    activeRunMode,
+    activeSessionMemoryEnabled,
+    activeUiControlEnabled,
+    activeUseGlobalMemory,
+    contextAttachments,
+    scopeFilter,
+    workspaceRoot,
+  ]);
 
-  const openEditDialog = (pack: SmartContextPack): void => {
+  const openEditDialog = useCallback((pack: SmartContextPack): void => {
     setPackDialog({
       key: `edit-${pack.id}-${Date.now()}`,
       initialValue: {
@@ -1509,7 +1520,6 @@ export const SmartContextPackPicker = ({
         variables: pack.variables,
         triggerPhrases: pack.trigger.phrases,
         triggerPathPatterns: pack.trigger.pathPatterns,
-        autoApply: pack.trigger.autoApply,
         ...(pack.provider ? { provider: pack.provider } : {}),
         ...(pack.model ? { model: pack.model } : {}),
         ...(pack.mode ? { runMode: pack.mode } : {}),
@@ -1534,7 +1544,7 @@ export const SmartContextPackPicker = ({
     setOpen(false);
     setView("apply");
     setPackSearchText("");
-  };
+  }, []);
 
   const handlePackDialogSubmit = (input: SaveSmartContextPackInput): void => {
     onSaveContextPack(input);
@@ -1555,30 +1565,33 @@ export const SmartContextPackPicker = ({
     setView("configure");
   };
 
-  const applyPack = (pack: SmartContextPack): void => {
-    if (applyingPackId) {
-      return;
-    }
+  const applyPack = useCallback(
+    (pack: SmartContextPack): void => {
+      if (applyingPackId) {
+        return;
+      }
 
-    if (pack.variables.length > 0) {
-      openConfigureView(pack);
-      return;
-    }
+      if (pack.variables.length > 0) {
+        openConfigureView(pack);
+        return;
+      }
 
-    setApplyingPackId(pack.id);
-    void Promise.resolve()
-      .then(() => onApplyContextPack(pack.id))
-      .then(() => {
-        setOpen(false);
-        setPackSearchText("");
-      })
-      .catch((error) => {
-        console.error("Failed to apply context pack", error);
-      })
-      .finally(() => {
-        setApplyingPackId(null);
-      });
-  };
+      setApplyingPackId(pack.id);
+      void Promise.resolve()
+        .then(() => onApplyContextPack(pack.id))
+        .then(() => {
+          setOpen(false);
+          setPackSearchText("");
+        })
+        .catch((error) => {
+          console.error("Failed to apply context pack", error);
+        })
+        .finally(() => {
+          setApplyingPackId(null);
+        });
+    },
+    [applyingPackId, onApplyContextPack],
+  );
 
   const handlePackSearchKeyDown = (
     event: KeyboardEvent<HTMLInputElement>,
@@ -1597,7 +1610,9 @@ export const SmartContextPackPicker = ({
     applyPack(bestMatch.pack);
   };
 
-  const loadRalphPackUsage = async (): Promise<Record<string, string[]>> => {
+  const loadRalphPackUsage = useCallback(async (): Promise<
+    Record<string, string[]>
+  > => {
     if (!workspaceRoot) {
       return {};
     }
@@ -1618,7 +1633,7 @@ export const SmartContextPackPicker = ({
     }
 
     return nextUsage;
-  };
+  }, [workspaceRoot]);
 
   useEffect(() => {
     if (!open || !workspaceRoot) {
@@ -1644,28 +1659,36 @@ export const SmartContextPackPicker = ({
     return () => {
       cancelled = true;
     };
-  }, [open, workspaceRoot]);
+  }, [loadRalphPackUsage, open, workspaceRoot]);
 
-  const requestDeletePack = async (pack: SmartContextPack): Promise<void> => {
-    let latestUsage = ralphPackUsageById;
+  const requestDeletePack = useCallback(
+    async (pack: SmartContextPack): Promise<void> => {
+      let latestUsage = ralphPackUsageById;
 
-    try {
-      latestUsage = await loadRalphPackUsage();
-      setRalphPackUsageById(latestUsage);
-    } catch {
-      // Keep the last known usage map if the refresh fails.
-    }
+      try {
+        latestUsage = await loadRalphPackUsage();
+        setRalphPackUsageById(latestUsage);
+      } catch {
+        // Keep the last known usage map if the refresh fails.
+      }
 
-    const ralphFlowNames = latestUsage[pack.id] ?? [];
+      const ralphFlowNames = latestUsage[pack.id] ?? [];
 
-    if (ralphFlowNames.length > 0 && pendingDeletePackId !== pack.id) {
-      setPendingDeletePackId(pack.id);
-      return;
-    }
+      if (ralphFlowNames.length > 0 && pendingDeletePackId !== pack.id) {
+        setPendingDeletePackId(pack.id);
+        return;
+      }
 
-    setPendingDeletePackId(null);
-    onDeleteContextPack(pack.id);
-  };
+      setPendingDeletePackId(null);
+      onDeleteContextPack(pack.id);
+    },
+    [
+      loadRalphPackUsage,
+      onDeleteContextPack,
+      pendingDeletePackId,
+      ralphPackUsageById,
+    ],
+  );
 
   const handleConfiguredApply = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -1713,240 +1736,399 @@ export const SmartContextPackPicker = ({
 
     event.target.value = "";
   };
+  const contextPackCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "chat.context-pack.apply",
+        title: "Apply context pack",
+        group: "Chat",
+        keywords: ["preset", "setup"],
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        availability: () =>
+          sortedPacks.length === 0
+            ? { state: "disabled", reason: "No context packs" }
+            : applyingPackId
+              ? { state: "disabled", reason: "A context pack is being applied" }
+              : { state: "enabled" },
+        children: () => ({
+          id: "chat-context-pack-apply",
+          title: "Apply context pack",
+          searchPlaceholder: "Choose context pack",
+          groups: [
+            {
+              id: "packs",
+              items: packItems.map(({ pack, scope, isMatched }) => ({
+                id: pack.id,
+                title: pack.name,
+                keywords: [
+                  formatScopeFilterLabel(scope),
+                  pack.prompt,
+                  ...(isMatched ? ["matched"] : []),
+                ],
+                execute: () => applyPack(pack),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.context-pack.create",
+        title: "Save current setup as context pack",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        execute: () => openCreateDialog(),
+      },
+      {
+        id: "chat.context-pack.edit",
+        title: "Edit context pack",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          sortedPacks.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No context packs" },
+        children: () => ({
+          id: "chat-context-pack-edit",
+          title: "Edit context pack",
+          searchPlaceholder: "Choose context pack",
+          groups: [
+            {
+              id: "packs",
+              items: sortedPacks.map((pack) => ({
+                id: pack.id,
+                title: pack.name,
+                execute: () => openEditDialog(pack),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.context-pack.delete",
+        title: "Delete context pack",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          sortedPacks.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No context packs" },
+        children: () => ({
+          id: "chat-context-pack-delete",
+          title: "Delete context pack",
+          searchPlaceholder: "Choose context pack",
+          groups: [
+            {
+              id: "packs",
+              items: sortedPacks.map((pack) => ({
+                id: pack.id,
+                title: pack.name,
+                execute: async () => requestDeletePack(pack),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.context-pack.import",
+        title: "Import context packs",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        execute: () => importInputRef.current?.click(),
+      },
+      {
+        id: "chat.context-pack.export",
+        title: "Export context packs",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          sortedPacks.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No context packs" },
+        children: () => ({
+          id: "chat-context-pack-export",
+          title: "Export context packs",
+          searchPlaceholder: "Choose scope",
+          numericSelection: true,
+          groups: [
+            {
+              id: "scope",
+              items: (["all", "workspace", "global"] as const).map(
+                (scope, index): CommandPageItem => ({
+                  id: scope,
+                  title: formatScopeFilterLabel(scope),
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  availability:
+                    scope === "workspace" && !workspaceRoot
+                      ? { state: "disabled", reason: "No workspace selected" }
+                      : packItems.some(
+                            (item) => scope === "all" || item.scope === scope,
+                          )
+                        ? { state: "enabled" }
+                        : { state: "disabled", reason: "No matching packs" },
+                  execute: () => onExportContextPacks(scope),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+    ],
+    [
+      applyingPackId,
+      applyPack,
+      onExportContextPacks,
+      openCreateDialog,
+      openEditDialog,
+      packItems,
+      requestDeletePack,
+      sortedPacks,
+      workspaceRoot,
+    ],
+  );
+  useOptionalRegisterCommands(contextPackCommands);
 
   return (
     <>
-      <Popover
-        open={open}
-        onOpenChange={handlePopoverOpenChange}
-      >
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Context packs"
-          title="Context packs"
-          className="app-context-pack-trigger h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100"
-        >
-          <Layers className="h-3.5 w-3.5 text-sky-300" />
-          <span className="hidden sm:inline">
-            {contextPacks.length > 0 ? `Packs (${contextPacks.length})` : "Packs"}
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={8}
-        className="w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-xl shadow-slate-950/40 backdrop-blur-xl"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          packSearchInputRef.current?.focus();
-        }}
-      >
-        <div className="border-b border-slate-800/80 px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
-                Context packs
-              </p>
-              <p className="mt-1 truncate text-sm font-semibold text-slate-100">
-                {workspaceLabel}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                {globalPackCount} global / {workspacePackCount} workspace
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <input
-                ref={importInputRef}
-                type="file"
-                aria-label="Context pack import file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={handleImportFileChange}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label="Import context packs"
-                title={`Import ${formatScopeFilterLabel(
-                  workspaceRoot && scopeFilter !== "global"
-                    ? "workspace"
-                    : "global",
-                ).toLowerCase()} context packs`}
-                onClick={() => importInputRef.current?.click()}
-                className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
-              >
-                <Upload className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label="Export context packs"
-                title={`Export ${formatScopeFilterLabel(
-                  scopeFilter,
-                ).toLowerCase()} context packs`}
-                disabled={scopedPackItems.length === 0}
-                onClick={() => onExportContextPacks(scopeFilter)}
-                className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-600"
-              >
-                <Download className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={openCreateDialog}
-                className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Save
-              </Button>
-            </div>
-          </div>
-          <div className="mt-3 flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
-            {(["all", "workspace", "global"] as const).map((scope) => (
-              <button
-                key={scope}
-                type="button"
-                onClick={() => setScopeFilter(scope)}
-                className={cn(
-                  "h-7 flex-1 rounded-full px-2 text-xs font-medium transition-colors",
-                  scopeFilter === scope
-                    ? "bg-slate-100 text-slate-950"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                )}
-              >
-                {formatScopeFilterLabel(scope)}
-              </button>
-            ))}
-          </div>
-          {view === "apply" ? (
-            <SearchField
-              ref={packSearchInputRef}
-              value={packSearchText}
-              onChange={(event) => setPackSearchText(event.target.value)}
-              onKeyDown={handlePackSearchKeyDown}
-              aria-label="Search context packs"
-              placeholder="Search packs"
-              autoComplete="off"
-              spellCheck={false}
-              containerClassName="mt-3"
-              className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
-            />
-          ) : null}
-        </div>
-
-        {view === "apply" ? (
-          <div className="grid max-h-[26rem] gap-1.5 overflow-y-auto p-3">
-            {scopedPackItems.length === 0 ? (
-              <button
-                type="button"
-                onClick={openCreateDialog}
-                className="grid gap-2 rounded-2xl border border-dashed border-slate-800 bg-slate-900/45 px-4 py-5 text-left text-slate-300 hover:border-sky-500/30 hover:bg-sky-500/10 hover:text-sky-100"
-              >
-                <span className="text-sm font-semibold">Save current setup</span>
-                <span className="text-xs leading-5 text-slate-500">
-                  Create a reusable pack from the current setup.
-                </span>
-              </button>
-            ) : null}
-
-            {scopedPackItems.length > 0 && visiblePackItems.length === 0 ? (
-              <EmptyState
-                icon={Search}
-                title="No matching context packs"
-                size="compact"
-                role="status"
-                className="rounded-2xl bg-slate-900/60"
-              />
-            ) : null}
-
-            {visiblePackItems.map((item) => (
-              <SmartContextPackCard
-                key={item.pack.id}
-                item={item}
-                applyingPackId={applyingPackId}
-                pendingDeletePackId={pendingDeletePackId}
-                onEditPack={openEditDialog}
-                onApplyPack={applyPack}
-                onDeleteContextPack={requestDeletePack}
-              />
-            ))}
-          </div>
-        ) : configuringPack ? (
-          <form
-            className={PACK_FORM_CLASS}
-            onSubmit={handleConfiguredApply}
+      <Popover open={open} onOpenChange={handlePopoverOpenChange}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label="Context packs"
+            title="Context packs"
+            className="app-context-pack-trigger h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100"
           >
-            <div className="grid gap-1">
-              <p className="text-sm font-semibold text-slate-100">
-                {configuringPack.name}
-              </p>
-              <p className="text-xs leading-5 text-slate-500">
-                Fill variables before applying this pack.
-              </p>
-              {applyError ? (
-                <p className="text-xs leading-5 text-amber-100">
-                  {applyError}
+            <Layers className="h-3.5 w-3.5 text-sky-300" />
+            <span className="hidden sm:inline">
+              {contextPacks.length > 0
+                ? `Packs (${contextPacks.length})`
+                : "Packs"}
+            </span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          sideOffset={8}
+          className="w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-xl shadow-slate-950/40 backdrop-blur-xl"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            packSearchInputRef.current?.focus();
+          }}
+        >
+          <div className="border-b border-slate-800/80 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                  Context packs
                 </p>
-              ) : null}
+                <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+                  {workspaceLabel}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {globalPackCount} global / {workspacePackCount} workspace
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  aria-label="Context pack import file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleImportFileChange}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Import context packs"
+                  title={`Import ${formatScopeFilterLabel(
+                    workspaceRoot && scopeFilter !== "global"
+                      ? "workspace"
+                      : "global",
+                  ).toLowerCase()} context packs`}
+                  onClick={() => importInputRef.current?.click()}
+                  className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Export context packs"
+                  title={`Export ${formatScopeFilterLabel(
+                    scopeFilter,
+                  ).toLowerCase()} context packs`}
+                  disabled={scopedPackItems.length === 0}
+                  onClick={() => onExportContextPacks(scopeFilter)}
+                  className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-600"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openCreateDialog}
+                  className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Save
+                </Button>
+              </div>
             </div>
-
-            <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
-              {configuringPack.variables.map((variable) => (
-                <label key={variable.name} className="grid gap-1.5">
-                  <span className="px-1 text-xs font-medium text-slate-400">
-                    {variable.name}
-                  </span>
-                  <Input
-                    value={variableValues[variable.name] ?? ""}
-                    onChange={(event) =>
-                      setVariableValues((prev) => ({
-                        ...prev,
-                        [variable.name]: event.target.value,
-                      }))
-                    }
-                    onFocus={() => setApplyError(null)}
-                    placeholder={variable.defaultValue ?? variable.name}
-                    className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-                  />
-                </label>
+            <div className="mt-3 flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
+              {(["all", "workspace", "global"] as const).map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  onClick={() => setScopeFilter(scope)}
+                  className={cn(
+                    "h-7 flex-1 rounded-full px-2 text-xs font-medium transition-colors",
+                    scopeFilter === scope
+                      ? "bg-slate-100 text-slate-950"
+                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                  )}
+                >
+                  {formatScopeFilterLabel(scope)}
+                </button>
               ))}
             </div>
+            {view === "apply" ? (
+              <SearchField
+                ref={packSearchInputRef}
+                value={packSearchText}
+                onChange={(event) => setPackSearchText(event.target.value)}
+                onKeyDown={handlePackSearchKeyDown}
+                aria-label="Search context packs"
+                placeholder="Search packs"
+                autoComplete="off"
+                spellCheck={false}
+                containerClassName="mt-3"
+                className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
+              />
+            ) : null}
+          </div>
 
-            <div className="flex items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setView("apply");
-                  setConfiguringPackId(null);
-                  setVariableValues({});
-                  setApplyError(null);
-                }}
-                className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-              >
-                Back
-              </Button>
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={
-                  missingVariableNames.length > 0 ||
-                  applyingPackId === configuringPack.id
-                }
-                className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
-              >
-                <Play className="h-3.5 w-3.5 fill-current" />
-                Apply pack
-              </Button>
+          {view === "apply" ? (
+            <div className="grid max-h-[26rem] gap-1.5 overflow-y-auto p-3">
+              {scopedPackItems.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={openCreateDialog}
+                  className="grid gap-2 rounded-2xl border border-dashed border-slate-800 bg-slate-900/45 px-4 py-5 text-left text-slate-300 hover:border-sky-500/30 hover:bg-sky-500/10 hover:text-sky-100"
+                >
+                  <span className="text-sm font-semibold">
+                    Save current setup
+                  </span>
+                  <span className="text-xs leading-5 text-slate-500">
+                    Create a reusable pack from the current setup.
+                  </span>
+                </button>
+              ) : null}
+
+              {scopedPackItems.length > 0 && visiblePackItems.length === 0 ? (
+                <EmptyState
+                  icon={Search}
+                  title="No matching context packs"
+                  size="compact"
+                  role="status"
+                  className="rounded-2xl bg-slate-900/60"
+                />
+              ) : null}
+
+              {visiblePackItems.map((item) => (
+                <SmartContextPackCard
+                  key={item.pack.id}
+                  item={item}
+                  applyingPackId={applyingPackId}
+                  pendingDeletePackId={pendingDeletePackId}
+                  onEditPack={openEditDialog}
+                  onApplyPack={applyPack}
+                  onDeleteContextPack={requestDeletePack}
+                />
+              ))}
             </div>
-          </form>
-        ) : null}
-      </PopoverContent>
+          ) : configuringPack ? (
+            <form className={PACK_FORM_CLASS} onSubmit={handleConfiguredApply}>
+              <div className="grid gap-1">
+                <p className="text-sm font-semibold text-slate-100">
+                  {configuringPack.name}
+                </p>
+                <p className="text-xs leading-5 text-slate-500">
+                  Fill variables before applying this pack.
+                </p>
+                {applyError ? (
+                  <p className="text-xs leading-5 text-amber-100">
+                    {applyError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
+                {configuringPack.variables.map((variable) => (
+                  <label key={variable.name} className="grid gap-1.5">
+                    <span className="px-1 text-xs font-medium text-slate-400">
+                      {variable.name}
+                    </span>
+                    <Input
+                      value={variableValues[variable.name] ?? ""}
+                      onChange={(event) =>
+                        setVariableValues((prev) => ({
+                          ...prev,
+                          [variable.name]: event.target.value,
+                        }))
+                      }
+                      onFocus={() => setApplyError(null)}
+                      placeholder={variable.defaultValue ?? variable.name}
+                      className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setView("apply");
+                    setConfiguringPackId(null);
+                    setVariableValues({});
+                    setApplyError(null);
+                  }}
+                  className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={
+                    missingVariableNames.length > 0 ||
+                    applyingPackId === configuringPack.id
+                  }
+                  className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+                >
+                  <Play className="h-3.5 w-3.5 fill-current" />
+                  Apply pack
+                </Button>
+              </div>
+            </form>
+          ) : null}
+        </PopoverContent>
       </Popover>
       {packDialog ? (
         <SmartContextPackEditorDialog

@@ -300,7 +300,7 @@ export const getUtilityNodePreview = (
     case "MARK_SCOPE_RESULT":
       return {
         primary: `Mark ${compactPreviewText(utility.scopeId, "current scope")}`,
-        secondary: compactPreviewText(utility.result, "Uses previous output"),
+        secondary: utility.scopeOutcome ?? "Outcome not set",
         chips: ["SUCCESS", "NOT_FOUND", "ERROR"],
       };
     case "CHANGE_SCOPE_GUARD":

@@ -42,7 +42,6 @@ const createPack = (
     trigger: {
       phrases: [],
       pathPatterns: [],
-      autoApply: false,
     },
     provider: "openai",
     model: "gpt-5.5",
@@ -381,7 +380,6 @@ describe("smart context packs", () => {
       trigger: {
         phrases: ["frontend qa"],
         pathPatterns: ["*.tsx", "src/ui/**"],
-        autoApply: true,
       },
     });
 

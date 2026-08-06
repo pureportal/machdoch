@@ -110,6 +110,7 @@ export const createDefaultUtilityConfig = (
     case "HTTP_FETCH":
       return {
         type,
+        replayPolicy: "safe",
         method: "GET",
         url: "{{url:url}}",
         timeoutSeconds: 30,
@@ -118,6 +119,7 @@ export const createDefaultUtilityConfig = (
     case "POLL":
       return {
         type,
+        replayPolicy: "safe",
         method: "GET",
         url: "{{url:url}}",
         intervalSeconds: 30,
@@ -294,6 +296,7 @@ export const createDefaultUtilityConfig = (
       return {
         type,
         flowAlias: "{{flowAlias:string=scope-registry}}",
+        scopeOutcome: "completed",
       };
     case "SEARCH_FILES":
       return { type, rootPath: ".", pattern: "{{query:string}}" };

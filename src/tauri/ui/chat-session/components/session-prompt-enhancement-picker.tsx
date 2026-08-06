@@ -1,10 +1,10 @@
-import {
-  Check,
-  CircleDashed,
-  Search,
-  Sparkles,
-} from "lucide-react";
-import type { JSX } from "react";
+import { Check, CircleDashed, Search, Sparkles } from "lucide-react";
+import { useMemo, type JSX } from "react";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../../commands/command-types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -56,6 +56,51 @@ export const SessionPromptEnhancementPicker = ({
 }: SessionPromptEnhancementPickerProps): JSX.Element => {
   const activeLabel = PROMPT_ENHANCEMENT_LABELS[mode];
   const active = mode !== "off";
+  const enhancementCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "chat.session.prompt-enhancement.select",
+        title: "Choose prompt enhancement",
+        group: "Chat",
+        keywords: ["rewrite", "web search"],
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        children: () => ({
+          id: "chat-prompt-enhancement",
+          title: "Prompt enhancement",
+          searchPlaceholder: "Choose prompt enhancement",
+          numericSelection: true,
+          groups: [
+            {
+              id: "enhancement",
+              items: PROMPT_ENHANCEMENT_OPTIONS.map(
+                (option, index): CommandPageItem => ({
+                  id: option.mode,
+                  title: PROMPT_ENHANCEMENT_LABELS[option.mode],
+                  keywords: [option.description],
+                  current: mode === option.mode,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  availability:
+                    option.mode === "web-search" && !webSearchAvailable
+                      ? {
+                          state: "disabled",
+                          reason: webSearchUnavailableReason,
+                        }
+                      : { state: "enabled" },
+                  execute: () => onModeChange(option.mode),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+    ],
+    [mode, onModeChange, webSearchAvailable, webSearchUnavailableReason],
+  );
+  useOptionalRegisterCommands(enhancementCommands);
 
   return (
     <Popover>
@@ -66,7 +111,8 @@ export const SessionPromptEnhancementPicker = ({
           aria-label={`Prompt enhancement: ${activeLabel}`}
           className={cn(
             "h-8 w-8 rounded-full border border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:border-fuchsia-500/30 hover:bg-slate-900 hover:text-fuchsia-100",
-            active && "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
+            active &&
+              "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
           )}
         >
           <Sparkles className="h-3.5 w-3.5" />
@@ -132,7 +178,9 @@ export const SessionPromptEnhancementPicker = ({
                       ) : null}
                     </div>
                     <p className="mt-1 text-xs leading-5 text-slate-400">
-                      {disabled ? webSearchUnavailableReason : option.description}
+                      {disabled
+                        ? webSearchUnavailableReason
+                        : option.description}
                     </p>
                   </div>
                 </button>

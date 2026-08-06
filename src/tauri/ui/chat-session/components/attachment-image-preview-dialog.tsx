@@ -1,5 +1,5 @@
 import { ImagePlus, Images, Loader2, TriangleAlert } from "lucide-react";
-import type { JSX } from "react";
+import { useMemo, useRef, type JSX } from "react";
 import {
   isMediaAssetContextAttachment,
   isPathContextAttachment,
@@ -15,6 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "../../commands/command-types";
 
 export interface AttachmentImagePreview {
   attachment: ChatSessionContextAttachment;
@@ -27,9 +32,7 @@ export interface AttachmentImagePreviewDialogProps {
   preview: AttachmentImagePreview | null;
   onOpenChange: (open: boolean) => void;
   onEditMediaAsset?: (attachment: ChatSessionMediaAssetAttachment) => void;
-  onSaveToMediaLibrary?: (
-    attachment: ChatSessionPathContextAttachment,
-  ) => void;
+  onSaveToMediaLibrary?: (attachment: ChatSessionPathContextAttachment) => void;
 }
 
 export const AttachmentImagePreviewDialog = ({
@@ -48,10 +51,86 @@ export const AttachmentImagePreviewDialog = ({
     preview.attachment.kind === "image"
       ? preview.attachment
       : null;
+  const commandStateRef = useRef({
+    mediaAttachment,
+    onEditMediaAsset,
+    onOpenChange,
+    onSaveToMediaLibrary,
+    pathImageAttachment,
+    preview,
+  });
+  commandStateRef.current = {
+    mediaAttachment,
+    onEditMediaAsset,
+    onOpenChange,
+    onSaveToMediaLibrary,
+    pathImageAttachment,
+    preview,
+  };
+  const previewCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => commandStateRef.current;
+    const scope = {
+      kind: "overlay",
+      ownerId: "attachment-image-preview",
+    } as const;
+    return asPaletteCommands([
+      {
+        id: "attachment-image-preview.media.edit",
+        title: "Edit image in Media Studio",
+        group: "Image preview",
+        scope,
+        availability: () =>
+          state().mediaAttachment && state().onEditMediaAsset
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => {
+          const current = state();
+          if (current.mediaAttachment) {
+            current.onEditMediaAsset?.(current.mediaAttachment);
+          }
+        },
+      },
+      {
+        id: "attachment-image-preview.library.save",
+        title: "Save image to Media Library",
+        group: "Image preview",
+        scope,
+        availability: () =>
+          state().pathImageAttachment && state().onSaveToMediaLibrary
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => {
+          const current = state();
+          if (current.pathImageAttachment) {
+            current.onSaveToMediaLibrary?.(current.pathImageAttachment);
+          }
+        },
+      },
+      {
+        id: "attachment-image-preview.close",
+        title: "Close image preview",
+        group: "Image preview",
+        scope,
+        availability: () =>
+          state().preview ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().onOpenChange(false),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(previewCommands);
+
   return (
-    <Dialog open={Boolean(preview)} onOpenChange={onOpenChange}>
+    <Dialog
+      open={Boolean(preview)}
+      onOpenChange={onOpenChange}
+      commandOverlayId="attachment-image-preview"
+      commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+    >
       {preview ? (
-        <DialogContent className="app-attachment-image-preview w-[min(960px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+        <DialogContent
+          data-command-owner="attachment-image-preview"
+          className="app-attachment-image-preview w-[min(960px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
+        >
           <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
             <DialogTitle className="truncate text-base font-semibold text-white">
               {preview.attachment.name}
@@ -91,7 +170,8 @@ export const AttachmentImagePreviewDialog = ({
           {mediaAttachment && onEditMediaAsset ? (
             <div className="flex items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-950 px-5 py-3">
               <p className="text-xs text-slate-500">
-                Crop, resize, convert, retag, or inspect lineage without changing the source.
+                Crop, resize, convert, retag, or inspect lineage without
+                changing the source.
               </p>
               <Button
                 type="button"
@@ -105,7 +185,8 @@ export const AttachmentImagePreviewDialog = ({
           ) : pathImageAttachment && onSaveToMediaLibrary ? (
             <div className="flex items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-950 px-5 py-3">
               <p className="text-xs text-slate-500">
-                Validate and ingest immutable bytes before using Media Studio transforms or lineage.
+                Validate and ingest immutable bytes before using Media Studio
+                transforms or lineage.
               </p>
               <Button
                 type="button"

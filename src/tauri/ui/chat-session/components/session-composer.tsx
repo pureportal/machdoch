@@ -8,7 +8,7 @@ import {
   Monitor,
   Square,
 } from "lucide-react";
-import type { JSX, KeyboardEvent } from "react";
+import { useMemo, type JSX, type KeyboardEvent } from "react";
 import type {
   ReasoningMode,
   RunMode,
@@ -255,13 +255,6 @@ export const SessionComposer = ({
         : speechInput.enabled
           ? "Speak to text"
           : "Configure speak to text";
-  const speechInputIcon = speechInput.transcribing ? (
-    <LoaderCircle className="h-4 w-4 animate-spin" />
-  ) : speechInput.recording ? (
-    <Square className="h-4 w-4 fill-current" />
-  ) : (
-    <Mic className="h-4 w-4" />
-  );
   const toolbarControls = (
     <>
       <SessionReasoningPicker
@@ -324,83 +317,117 @@ export const SessionComposer = ({
       />
     </>
   );
-  const toggles: AgentComposerToggle[] = [];
+  const toggles = useMemo<AgentComposerToggle[]>(() => {
+    const next: AgentComposerToggle[] = [];
+    if (showSessionMemoryButton) {
+      next.push({
+        id: "session-memory",
+        label: "Session memory",
+        description: sessionMemoryDescription,
+        icon: <Brain className="h-4 w-4" />,
+        pressed: activeSession.sessionMemoryEnabled,
+        onPressedChange: onSessionMemoryEnabledChange,
+        activeClassName:
+          "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
+      });
+    }
+    next.push(
+      {
+        id: "global-memory",
+        label: "Global memory",
+        description: globalMemoryDescription,
+        icon: <BrainCircuit className="h-4 w-4" />,
+        pressed: isGlobalMemoryActive,
+        disabled: !isGlobalMemoryAvailable,
+        onPressedChange: onUseGlobalMemoryChange,
+        activeClassName:
+          "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+        unavailableClassName:
+          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+      },
+      {
+        id: "interview",
+        label: "Interview",
+        description: interviewDescription,
+        icon: <MessageSquare className="h-4 w-4" />,
+        pressed: interviewEnabled,
+        disabled: interviewDisabled,
+        onPressedChange: onInterviewEnabledChange,
+        activeClassName:
+          "border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 hover:text-white",
+        unavailableClassName:
+          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+      },
+      {
+        id: "ui-control",
+        label: "UI control",
+        description: uiControlDescription,
+        icon: <Monitor className="h-4 w-4" />,
+        pressed: activeSession.uiControlEnabled,
+        disabled: !isUiControlAvailable,
+        onPressedChange: onUiControlEnabledChange,
+        activeClassName:
+          "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+        unavailableClassName:
+          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+      },
+    );
+    return next;
+  }, [
+    activeSession.sessionMemoryEnabled,
+    activeSession.uiControlEnabled,
+    globalMemoryDescription,
+    interviewDescription,
+    interviewDisabled,
+    interviewEnabled,
+    isGlobalMemoryActive,
+    isGlobalMemoryAvailable,
+    isUiControlAvailable,
+    onInterviewEnabledChange,
+    onSessionMemoryEnabledChange,
+    onUiControlEnabledChange,
+    onUseGlobalMemoryChange,
+    sessionMemoryDescription,
+    showSessionMemoryButton,
+    uiControlDescription,
+  ]);
 
-  if (showSessionMemoryButton) {
-    toggles.push({
-      id: "session-memory",
-      label: "Session memory",
-      description: sessionMemoryDescription,
-      icon: <Brain className="h-4 w-4" />,
-      pressed: activeSession.sessionMemoryEnabled,
-      onPressedChange: onSessionMemoryEnabledChange,
-      activeClassName:
-        "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
-    });
-  }
-
-  toggles.push(
-    {
-      id: "global-memory",
-      label: "Global memory",
-      description: globalMemoryDescription,
-      icon: <BrainCircuit className="h-4 w-4" />,
-      pressed: isGlobalMemoryActive,
-      disabled: !isGlobalMemoryAvailable,
-      onPressedChange: onUseGlobalMemoryChange,
-      activeClassName:
-        "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-      unavailableClassName:
-        "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
-    },
-    {
-      id: "interview",
-      label: "Interview",
-      description: interviewDescription,
-      icon: <MessageSquare className="h-4 w-4" />,
-      pressed: interviewEnabled,
-      disabled: interviewDisabled,
-      onPressedChange: onInterviewEnabledChange,
-      activeClassName:
-        "border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 hover:text-white",
-      unavailableClassName:
-        "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
-    },
-    {
-      id: "ui-control",
-      label: "UI control",
-      description: uiControlDescription,
-      icon: <Monitor className="h-4 w-4" />,
-      pressed: activeSession.uiControlEnabled,
-      disabled: !isUiControlAvailable,
-      onPressedChange: onUiControlEnabledChange,
-      activeClassName:
-        "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-      unavailableClassName:
-        "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
-    },
-  );
-
-  const actions: AgentComposerAction[] = [
-    {
-      id: "speech-input",
-      label: speechInputActionLabel,
-      title: speechInputActionLabel,
-      icon: speechInputIcon,
-      disabled: !speechInput.browserSupported || speechInput.transcribing,
-      onClick: speechInput.onAction,
-      className: cn(
-        speechInput.recording &&
-          "border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white",
-        speechInput.transcribing &&
-          "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/10 hover:text-amber-100",
-        !speechInput.recording &&
-          !speechInput.transcribing &&
-          speechInput.enabled &&
-          "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-      ),
-    },
-  ];
+  const actions = useMemo<AgentComposerAction[]>(() => {
+    const icon = speechInput.transcribing ? (
+      <LoaderCircle className="h-4 w-4 animate-spin" />
+    ) : speechInput.recording ? (
+      <Square className="h-4 w-4 fill-current" />
+    ) : (
+      <Mic className="h-4 w-4" />
+    );
+    return [
+      {
+        id: "speech-input",
+        label: speechInputActionLabel,
+        title: speechInputActionLabel,
+        icon,
+        disabled: !speechInput.browserSupported || speechInput.transcribing,
+        onClick: speechInput.onAction,
+        className: cn(
+          speechInput.recording &&
+            "border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white",
+          speechInput.transcribing &&
+            "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/10 hover:text-amber-100",
+          !speechInput.recording &&
+            !speechInput.transcribing &&
+            speechInput.enabled &&
+            "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+        ),
+      },
+    ];
+  }, [
+    speechInput.browserSupported,
+    speechInput.enabled,
+    speechInput.onAction,
+    speechInput.recording,
+    speechInput.transcribing,
+    speechInputActionLabel,
+  ]);
 
   return (
     <div className="relative grid gap-3">

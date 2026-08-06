@@ -32,8 +32,30 @@ import {
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "../../components/ui/search-field";
-import { cn } from "../../lib/utils";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
 import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../commands/command-types";
+import { cn } from "../../lib/utils";
+import { getProviderLabel } from "../../model-catalog";
+import {
+  getUserApiKeyProviderLabel,
+  MCP_CONFIG_SCOPE_OPTIONS,
+  USER_API_KEY_PROVIDER_ORDER,
+  USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
+  USER_VOICE_AI_PROVIDER_ORDER,
+  USER_WEB_SEARCH_PROVIDER_ORDER,
+} from "../../runtime";
+import {
+  getReasoningModesForProvider,
+  normalizeReasoningModeForProvider,
+  REASONING_LABELS,
+} from "../../reasoning-options";
+import {
+  getWebSearchProviderLabel,
+  RUN_MODE_META,
   SETTINGS_SECTIONS,
   type SettingsSection,
   type SettingsSectionGroup,
@@ -227,25 +249,24 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   const pendingGuard = pendingNavigation
     ? (navigationGuard ?? pendingNavigation.guard)
     : null;
-  const dialogSections = useMemo<readonly SettingsDialogSectionDefinition[]>(
-    () => {
-      const introSections: readonly SettingsDialogSectionDefinition[] =
-        introSection
-          ? [
-              {
-                id: INTRO_SECTION_ID,
-                label: introSection.label,
-                group: "Setup",
-                description: introSection.description,
-                keywords: introSection.keywords,
-              },
-            ]
-          : [];
+  const dialogSections = useMemo<
+    readonly SettingsDialogSectionDefinition[]
+  >(() => {
+    const introSections: readonly SettingsDialogSectionDefinition[] =
+      introSection
+        ? [
+            {
+              id: INTRO_SECTION_ID,
+              label: introSection.label,
+              group: "Setup",
+              description: introSection.description,
+              keywords: introSection.keywords,
+            },
+          ]
+        : [];
 
-      return [...introSections, ...SETTINGS_SECTIONS];
-    },
-    [introSection],
-  );
+    return [...introSections, ...SETTINGS_SECTIONS];
+  }, [introSection]);
   const activeSectionId =
     introSection && introActive ? INTRO_SECTION_ID : settingsSection;
   const activeSection =
@@ -453,7 +474,11 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   };
 
   const confirmNavigation = async (): Promise<void> => {
-    if (!pendingNavigation || !pendingGuard || pendingGuard.canDiscard === false) {
+    if (
+      !pendingNavigation ||
+      !pendingGuard ||
+      pendingGuard.canDiscard === false
+    ) {
       return;
     }
 
@@ -512,8 +537,1010 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     navigationButtonRefs.current.get(visibleSections[nextIndex].id)?.focus();
   };
 
+  const settingsCommandStateRef = useRef({
+    props,
+    dialogSections,
+    activeSectionId,
+    searchQuery,
+    pendingNavigation,
+    pendingGuard,
+    discarding,
+    primaryAction,
+    primaryActionRunning,
+    closeActionRunning,
+    requestSectionChange,
+    requestPrimaryAction,
+    requestClose,
+    cancelPendingNavigation,
+    confirmNavigation,
+    setSearchQuery,
+  });
+  settingsCommandStateRef.current = {
+    props,
+    dialogSections,
+    activeSectionId,
+    searchQuery,
+    pendingNavigation,
+    pendingGuard,
+    discarding,
+    primaryAction,
+    primaryActionRunning,
+    closeActionRunning,
+    requestSectionChange,
+    requestPrimaryAction,
+    requestClose,
+    cancelPendingNavigation,
+    confirmNavigation,
+    setSearchQuery,
+  };
+  const settingsCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "overlay" as const, ownerId: "settings-dialog" };
+    const state = () => settingsCommandStateRef.current;
+    const active = (section: SettingsSection): boolean =>
+      state().activeSectionId === section;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9
+        ? (`${index + 1}` as CommandPageItem["numericKey"])
+        : index === 9
+          ? "0"
+          : undefined;
+    return asPaletteCommands([
+      {
+        id: "settings.section.select",
+        title: "Choose settings section",
+        group: "Settings",
+        scope,
+        availability: () =>
+          state().pendingNavigation
+            ? {
+                state: "disabled",
+                reason: "Resolve the pending settings change first.",
+              }
+            : { state: "enabled" },
+        children: () => ({
+          id: "settings.section.select.page",
+          title: "Choose settings section",
+          searchPlaceholder: "Search settings sections",
+          numericSelection: true,
+          groups: SETTINGS_SECTION_GROUP_ORDER.map((group) => ({
+            id: group.toLowerCase(),
+            label: group,
+            items: state()
+              .dialogSections.filter((section) => section.group === group)
+              .map((section, index, groupSections) => {
+                const absoluteIndex = state().dialogSections.findIndex(
+                  (candidate) => candidate.id === section.id,
+                );
+                return {
+                  id: section.id,
+                  title: section.label,
+                  keywords: [section.description, ...section.keywords],
+                  current: state().activeSectionId === section.id,
+                  numericKey: numericKey(
+                    absoluteIndex >= 0
+                      ? absoluteIndex
+                      : index + groupSections.length,
+                  ),
+                  execute: () => state().requestSectionChange(section.id),
+                };
+              }),
+          })),
+        }),
+      },
+      {
+        id: "settings.search.clear",
+        title: "Clear settings search",
+        group: "Settings",
+        scope,
+        availability: () =>
+          state().searchQuery ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().setSearchQuery(""),
+      },
+      {
+        id: "settings.primary.run",
+        title: "Complete settings action",
+        group: "Settings",
+        scope,
+        availability: () => {
+          const current = state();
+          if (!current.primaryAction) return { state: "hidden" };
+          return current.primaryAction.disabled ||
+            current.primaryActionRunning ||
+            current.closeActionRunning
+            ? {
+                state: "disabled",
+                reason: "The settings action is unavailable.",
+              }
+            : { state: "enabled" };
+        },
+        execute: () => state().requestPrimaryAction(),
+      },
+      {
+        id: "settings.close",
+        title: "Close settings",
+        group: "Settings",
+        scope,
+        availability: () =>
+          state().primaryActionRunning || state().closeActionRunning
+            ? { state: "disabled", reason: "A settings action is in progress." }
+            : { state: "enabled" },
+        execute: () => state().requestClose(),
+      },
+      {
+        id: "settings.navigation.stay",
+        title: "Keep editing current settings",
+        group: "Settings",
+        scope,
+        availability: () =>
+          state().pendingNavigation && !state().discarding
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().cancelPendingNavigation(),
+      },
+      {
+        id: "settings.navigation.discard",
+        title: "Discard settings changes and continue",
+        group: "Settings",
+        scope,
+        availability: () =>
+          state().pendingNavigation &&
+          state().pendingGuard?.canDiscard !== false
+            ? state().discarding
+              ? { state: "disabled", reason: "Discard is in progress." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().confirmNavigation(),
+      },
+      {
+        id: "settings.providers.select",
+        title: "Choose model provider key",
+        group: "Settings: Providers",
+        scope,
+        availability: () =>
+          active("providers")
+            ? state().props.providerSetup.loading ||
+              state().props.providerSetup.saving
+              ? { state: "disabled", reason: "Provider settings are busy." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.providers.select.page",
+          title: "Choose model provider key",
+          searchPlaceholder: "Search providers",
+          numericSelection: true,
+          groups: [
+            {
+              id: "providers",
+              items: USER_API_KEY_PROVIDER_ORDER.map((provider, index) => ({
+                id: provider,
+                title: getUserApiKeyProviderLabel(provider),
+                current: state().props.providerSetup.provider === provider,
+                numericKey: numericKey(index),
+                execute: () =>
+                  state().props.providerSetup.onProviderChange(provider),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.providers.save",
+        title: "Save model provider key",
+        group: "Settings: Providers",
+        scope,
+        availability: () =>
+          !active("providers")
+            ? { state: "hidden" }
+            : state().props.providerSetup.loading ||
+                state().props.providerSetup.saving
+              ? { state: "disabled", reason: "Provider settings are busy." }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.providerSetup.onSave(
+            state().props.providerSetup.keyValue,
+          ),
+      },
+      {
+        id: "settings.providers.portal.open",
+        title: "Open model provider API key settings",
+        group: "Settings: Providers",
+        scope,
+        availability: () =>
+          active("providers") ? { state: "enabled" } : { state: "hidden" },
+        execute: () => {
+          const setup = state().props.providerSetup;
+          void setup.onOpenProviderPortal(setup.provider);
+        },
+      },
+      {
+        id: "settings.workspace.mode.select",
+        title: "Choose default workspace mode",
+        group: "Settings: Workspace",
+        scope,
+        availability: () => {
+          const setup = state().props.workspaceSetup;
+          if (!active("workspace")) return { state: "hidden" };
+          return !setup.workspaceRoot || setup.saving
+            ? {
+                state: "disabled",
+                reason: "Select an available workspace first.",
+              }
+            : { state: "enabled" };
+        },
+        children: () => ({
+          id: "settings.workspace.mode.select.page",
+          title: "Choose default workspace mode",
+          searchPlaceholder: "Search modes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: (["ask", "machdoch"] as const).map((mode, index) => ({
+                id: mode,
+                title: RUN_MODE_META[mode].label,
+                current: state().props.workspaceSetup.defaultMode === mode,
+                numericKey: numericKey(index),
+                execute: () =>
+                  void state().props.workspaceSetup.onDefaultModeChange(mode),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.workspace.reasoning.select",
+        title: "Choose default workspace reasoning",
+        group: "Settings: Workspace",
+        scope,
+        availability: () => {
+          const setup = state().props.workspaceSetup;
+          if (!active("workspace")) return { state: "hidden" };
+          return !setup.workspaceRoot || setup.saving
+            ? {
+                state: "disabled",
+                reason: "Select an available workspace first.",
+              }
+            : { state: "enabled" };
+        },
+        children: () => {
+          const setup = state().props.workspaceSetup;
+          const options = getReasoningModesForProvider(
+            setup.reasoningProvider ?? null,
+            setup.reasoningModel,
+          );
+          const current = normalizeReasoningModeForProvider(
+            setup.defaultReasoning,
+            setup.reasoningProvider ?? null,
+            setup.reasoningModel,
+          );
+          return {
+            id: "settings.workspace.reasoning.select.page",
+            title: "Choose default workspace reasoning",
+            searchPlaceholder: "Search reasoning modes",
+            numericSelection: true,
+            groups: [
+              {
+                id: "reasoning",
+                items: options.map((reasoning, index) => ({
+                  id: reasoning,
+                  title: REASONING_LABELS[reasoning],
+                  current: current === reasoning,
+                  numericKey: numericKey(index),
+                  execute: () =>
+                    void state().props.workspaceSetup.onReasoningModeChange(
+                      reasoning,
+                    ),
+                })),
+              },
+            ],
+          };
+        },
+      },
+      {
+        id: "settings.web-search.active-provider.select",
+        title: "Choose active web-search provider",
+        group: "Settings: Web search",
+        scope,
+        availability: () =>
+          active("web-search")
+            ? state().props.webSearchSetup.loading ||
+              state().props.webSearchSetup.saving
+              ? { state: "disabled", reason: "Web-search settings are busy." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.web-search.active-provider.select.page",
+          title: "Choose active web-search provider",
+          searchPlaceholder: "Search providers",
+          numericSelection: true,
+          groups: [
+            {
+              id: "providers",
+              items: (["none", ...USER_WEB_SEARCH_PROVIDER_ORDER] as const).map(
+                (provider, index) => {
+                  const configured =
+                    provider === "none" ||
+                    state().props.webSearchSetup.providerAvailability.some(
+                      (item) => item.provider === provider && item.configured,
+                    );
+                  return {
+                    id: provider,
+                    title: getWebSearchProviderLabel(provider),
+                    current:
+                      state().props.webSearchSetup.activeProvider === provider,
+                    numericKey: numericKey(index),
+                    availability: configured
+                      ? { state: "enabled" }
+                      : {
+                          state: "disabled",
+                          reason: "Add this provider's API key first.",
+                        },
+                    execute: () =>
+                      void state().props.webSearchSetup.onActiveProviderChange(
+                        provider,
+                      ),
+                  };
+                },
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.web-search.key-provider.select",
+        title: "Choose web-search API key",
+        group: "Settings: Web search",
+        scope,
+        availability: () =>
+          active("web-search")
+            ? state().props.webSearchSetup.loading ||
+              state().props.webSearchSetup.saving
+              ? { state: "disabled", reason: "Web-search settings are busy." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.web-search.key-provider.select.page",
+          title: "Choose web-search API key",
+          searchPlaceholder: "Search providers",
+          groups: [
+            {
+              id: "providers",
+              items: USER_WEB_SEARCH_PROVIDER_ORDER.map((provider) => ({
+                id: provider,
+                title: getWebSearchProviderLabel(provider),
+                current: state().props.webSearchSetup.provider === provider,
+                execute: () =>
+                  state().props.webSearchSetup.onProviderChange(provider),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.web-search.save",
+        title: "Save web-search API key",
+        group: "Settings: Web search",
+        scope,
+        availability: () =>
+          !active("web-search")
+            ? { state: "hidden" }
+            : state().props.webSearchSetup.loading ||
+                state().props.webSearchSetup.saving
+              ? { state: "disabled", reason: "Web-search settings are busy." }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.webSearchSetup.onSave(
+            state().props.webSearchSetup.keyValue,
+          ),
+      },
+      {
+        id: "settings.mcp.scope.select",
+        title: "Choose MCP configuration scope",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          active("mcp")
+            ? state().props.mcpSetup.loading || state().props.mcpSetup.saving
+              ? { state: "disabled", reason: "MCP settings are busy." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.mcp.scope.select.page",
+          title: "Choose MCP configuration scope",
+          searchPlaceholder: "Search scopes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "scopes",
+              items: MCP_CONFIG_SCOPE_OPTIONS.map((option, index) => ({
+                id: option.value,
+                title: option.label,
+                current: state().props.mcpSetup.scope === option.value,
+                numericKey: numericKey(index),
+                availability:
+                  option.value === "workspace" &&
+                  !state().props.mcpSetup.workspaceAvailable
+                    ? {
+                        state: "disabled",
+                        reason: "No workspace is available.",
+                      }
+                    : { state: "enabled" },
+                execute: () =>
+                  state().props.mcpSetup.onScopeChange(option.value),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.mcp.preset.insert",
+        title: "Insert MCP preset",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          active("mcp")
+            ? state().props.mcpSetup.presets.length
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "No MCP presets are available." }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.mcp.preset.insert.page",
+          title: "Insert MCP preset",
+          searchPlaceholder: "Search MCP presets",
+          groups: [
+            {
+              id: "presets",
+              items: state().props.mcpSetup.presets.map((preset) => ({
+                id: preset.id,
+                title: preset.title,
+                keywords: [preset.description ?? ""],
+                execute: () => state().props.mcpSetup.onPresetInsert(preset.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.mcp.save",
+        title: "Save MCP configuration",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          !active("mcp")
+            ? { state: "hidden" }
+            : state().props.mcpSetup.loading || state().props.mcpSetup.saving
+              ? { state: "disabled", reason: "MCP settings are busy." }
+              : { state: "enabled" },
+        execute: () => void state().props.mcpSetup.onSave(),
+      },
+      {
+        id: "settings.mcp.discovery.run",
+        title: "Discover MCP capabilities",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          !active("mcp")
+            ? { state: "hidden" }
+            : state().props.mcpSetup.discoveryBusy ||
+                !state().props.mcpSetup.discoveryServerId.trim()
+              ? {
+                  state: "disabled",
+                  reason: "Choose an available MCP server first.",
+                }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.mcpSetup.onDiscoverServer(
+            state().props.mcpSetup.discoveryServerId,
+          ),
+      },
+      {
+        id: "settings.mcp.discovery-cache.refresh",
+        title: "Refresh MCP discovery cache",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          !active("mcp")
+            ? { state: "hidden" }
+            : state().props.mcpSetup.discoveryBusy
+              ? { state: "disabled", reason: "MCP discovery is busy." }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.mcpSetup.onRefreshDiscoveryCache(
+            state().props.mcpSetup.discoveryServerId || undefined,
+          ),
+      },
+      {
+        id: "settings.mcp.discovery-cache.list",
+        title: "List MCP discovery cache",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          !active("mcp")
+            ? { state: "hidden" }
+            : state().props.mcpSetup.discoveryBusy
+              ? { state: "disabled", reason: "MCP discovery is busy." }
+              : { state: "enabled" },
+        execute: () => void state().props.mcpSetup.onListDiscoveryCache(),
+      },
+      {
+        id: "settings.mcp.oauth.start",
+        title: "Start MCP OAuth",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          !active("mcp")
+            ? { state: "hidden" }
+            : state().props.mcpSetup.oauthBusy ||
+                !state().props.mcpSetup.oauthServerId.trim()
+              ? {
+                  state: "disabled",
+                  reason: "Choose an OAuth MCP server first.",
+                }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.mcpSetup.onStartOAuth(
+            state().props.mcpSetup.oauthServerId,
+          ),
+      },
+      {
+        id: "settings.mcp.oauth.finish",
+        title: "Finish MCP OAuth",
+        group: "Settings: MCP",
+        scope,
+        availability: () =>
+          !active("mcp")
+            ? { state: "hidden" }
+            : state().props.mcpSetup.oauthBusy ||
+                !state().props.mcpSetup.oauthServerId.trim() ||
+                !state().props.mcpSetup.oauthCallback.trim()
+              ? { state: "disabled", reason: "Enter the OAuth callback first." }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.mcpSetup.onFinishOAuth(
+            state().props.mcpSetup.oauthServerId,
+            state().props.mcpSetup.oauthCallback,
+          ),
+      },
+      {
+        id: "settings.memory.toggle",
+        title: "Toggle global memory",
+        group: "Settings: Memory",
+        scope,
+        availability: () =>
+          !active("memory")
+            ? { state: "hidden" }
+            : state().props.memorySetup.saving
+              ? { state: "disabled", reason: "Memory settings are saving." }
+              : { state: "enabled" },
+        current: () => state().props.memorySetup.settings.globalEnabled,
+        execute: () =>
+          void state().props.memorySetup.onGlobalEnabledChange(
+            !state().props.memorySetup.settings.globalEnabled,
+          ),
+      },
+      {
+        id: "settings.appearance.theme.select",
+        title: "Choose interface theme",
+        group: "Settings: Appearance",
+        scope,
+        availability: () =>
+          !active("appearance")
+            ? { state: "hidden" }
+            : state().props.appearanceSetup.saving
+              ? { state: "disabled", reason: "Appearance is saving." }
+              : { state: "enabled" },
+        children: () => ({
+          id: "settings.appearance.theme.select.page",
+          title: "Choose interface theme",
+          searchPlaceholder: "Search themes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "themes",
+              items: (["dark", "light"] as const).map((theme, index) => ({
+                id: theme,
+                title: theme === "dark" ? "Dark" : "Light",
+                current: state().props.appearanceSetup.settings.theme === theme,
+                numericKey: numericKey(index),
+                execute: () =>
+                  void state().props.appearanceSetup.onSave({
+                    ...state().props.appearanceSetup.settings,
+                    theme,
+                    version: 1,
+                  }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.appearance.density.select",
+        title: "Choose interface density",
+        group: "Settings: Appearance",
+        scope,
+        availability: () =>
+          !active("appearance")
+            ? { state: "hidden" }
+            : state().props.appearanceSetup.saving
+              ? { state: "disabled", reason: "Appearance is saving." }
+              : { state: "enabled" },
+        children: () => ({
+          id: "settings.appearance.density.select.page",
+          title: "Choose interface density",
+          searchPlaceholder: "Search densities",
+          numericSelection: true,
+          groups: [
+            {
+              id: "densities",
+              items: (["comfortable", "compact"] as const).map(
+                (density, index) => ({
+                  id: density,
+                  title: density === "comfortable" ? "Comfortable" : "Compact",
+                  current:
+                    state().props.appearanceSetup.settings.density === density,
+                  numericKey: numericKey(index),
+                  execute: () =>
+                    void state().props.appearanceSetup.onSave({
+                      ...state().props.appearanceSetup.settings,
+                      density,
+                      version: 1,
+                    }),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.appearance.accent.select",
+        title: "Choose interface accent",
+        group: "Settings: Appearance",
+        scope,
+        availability: () =>
+          !active("appearance")
+            ? { state: "hidden" }
+            : state().props.appearanceSetup.saving
+              ? { state: "disabled", reason: "Appearance is saving." }
+              : { state: "enabled" },
+        children: () => ({
+          id: "settings.appearance.accent.select.page",
+          title: "Choose interface accent",
+          searchPlaceholder: "Search accents",
+          numericSelection: true,
+          groups: [
+            {
+              id: "accents",
+              items: (
+                [
+                  ["sky", "Sky"],
+                  ["emerald", "Sage"],
+                  ["violet", "Violet"],
+                  ["amber", "Amber"],
+                ] as const
+              ).map(([accent, title], index) => ({
+                id: accent,
+                title,
+                current:
+                  state().props.appearanceSetup.settings.accent === accent,
+                numericKey: numericKey(index),
+                execute: () =>
+                  void state().props.appearanceSetup.onSave({
+                    ...state().props.appearanceSetup.settings,
+                    accent,
+                    version: 1,
+                  }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.appearance.quick-chat-style.select",
+        title: "Choose Quick Chat bubble style",
+        group: "Settings: Appearance",
+        scope,
+        availability: () =>
+          !active("appearance")
+            ? { state: "hidden" }
+            : state().props.appearanceSetup.saving
+              ? { state: "disabled", reason: "Appearance is saving." }
+              : { state: "enabled" },
+        children: () => ({
+          id: "settings.appearance.quick-chat-style.select.page",
+          title: "Choose Quick Chat bubble style",
+          searchPlaceholder: "Search styles",
+          numericSelection: true,
+          groups: [
+            {
+              id: "styles",
+              items: (["classic", "glass", "pulse", "orbit"] as const).map(
+                (quickChatBubbleStyle, index) => ({
+                  id: quickChatBubbleStyle,
+                  title: `${quickChatBubbleStyle[0]?.toUpperCase()}${quickChatBubbleStyle.slice(1)}`,
+                  current:
+                    state().props.appearanceSetup.settings
+                      .quickChatBubbleStyle === quickChatBubbleStyle,
+                  numericKey: numericKey(index),
+                  execute: () =>
+                    void state().props.appearanceSetup.onSave({
+                      ...state().props.appearanceSetup.settings,
+                      quickChatBubbleStyle,
+                      version: 1,
+                    }),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.voice.speech-input.select",
+        title: "Choose speech-input provider",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          active("voice")
+            ? state().props.voiceSetup.speechToTextProviderSaving
+              ? { state: "disabled", reason: "Speech settings are saving." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.voice.speech-input.select.page",
+          title: "Choose speech-input provider",
+          searchPlaceholder: "Search providers",
+          numericSelection: true,
+          groups: [
+            {
+              id: "providers",
+              items: (
+                ["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const
+              ).map((provider, index) => {
+                const configured =
+                  provider === "none" ||
+                  state().props.voiceSetup.speechToTextProviderAvailability.some(
+                    (item) => item.provider === provider && item.configured,
+                  );
+                return {
+                  id: provider,
+                  title:
+                    provider === "none"
+                      ? "Disabled"
+                      : getProviderLabel(provider),
+                  current:
+                    state().props.voiceSetup.speechToTextProvider === provider,
+                  numericKey: numericKey(index),
+                  availability: configured
+                    ? { state: "enabled" }
+                    : {
+                        state: "disabled",
+                        reason: "Add this provider's API key first.",
+                      },
+                  execute: () =>
+                    void state().props.voiceSetup.onSpeechToTextProviderChange(
+                      provider,
+                    ),
+                };
+              }),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.voice.input-device.select",
+        title: "Choose speech input device",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          !active("voice")
+            ? { state: "hidden" }
+            : !state().props.voiceSetup.speechInputDevicesSupported ||
+                state().props.voiceSetup.speechInputDeviceSaving
+              ? {
+                  state: "disabled",
+                  reason: "Microphone selection is unavailable.",
+                }
+              : { state: "enabled" },
+        children: () => ({
+          id: "settings.voice.input-device.select.page",
+          title: "Choose speech input device",
+          searchPlaceholder: "Search microphones",
+          groups: [
+            {
+              id: "devices",
+              items: [
+                {
+                  id: "default",
+                  title: "System default",
+                  current:
+                    state().props.voiceSetup.speechInputDeviceId === null,
+                  execute: () =>
+                    void state().props.voiceSetup.onSpeechInputDeviceChange(
+                      null,
+                    ),
+                },
+                ...state().props.voiceSetup.speechInputDevices.map(
+                  (device) => ({
+                    id: device.deviceId,
+                    title: device.label,
+                    current:
+                      state().props.voiceSetup.speechInputDeviceId ===
+                      device.deviceId,
+                    execute: () =>
+                      void state().props.voiceSetup.onSpeechInputDeviceChange(
+                        device.deviceId,
+                      ),
+                  }),
+                ),
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.voice.input-devices.refresh",
+        title: "Refresh speech input devices",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          !active("voice")
+            ? { state: "hidden" }
+            : !state().props.voiceSetup.speechInputDevicesSupported ||
+                state().props.voiceSetup.speechInputDevicesRefreshing
+              ? {
+                  state: "disabled",
+                  reason: "Microphone discovery is unavailable.",
+                }
+              : { state: "enabled" },
+        execute: () =>
+          void state().props.voiceSetup.onRefreshSpeechInputDevices(),
+      },
+      {
+        id: "settings.voice.provider.select",
+        title: "Choose voice provider",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          active("voice")
+            ? state().props.voiceSetup.aiProviderSaving
+              ? { state: "disabled", reason: "Voice settings are saving." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "settings.voice.provider.select.page",
+          title: "Choose voice provider",
+          searchPlaceholder: "Search providers",
+          numericSelection: true,
+          groups: [
+            {
+              id: "providers",
+              items: (["none", ...USER_VOICE_AI_PROVIDER_ORDER] as const).map(
+                (provider, index) => {
+                  const configured =
+                    provider === "none" ||
+                    state().props.voiceSetup.aiProviderAvailability.some(
+                      (item) => item.provider === provider && item.configured,
+                    );
+                  return {
+                    id: provider,
+                    title:
+                      provider === "none"
+                        ? "System voices only"
+                        : getProviderLabel(provider),
+                    current: state().props.voiceSetup.aiProvider === provider,
+                    numericKey: numericKey(index),
+                    availability: configured
+                      ? { state: "enabled" }
+                      : {
+                          state: "disabled",
+                          reason: "Add this provider's API key first.",
+                        },
+                    execute: () =>
+                      void state().props.voiceSetup.onAiProviderChange(
+                        provider,
+                      ),
+                  };
+                },
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.voice.auto-speak.toggle",
+        title: "Toggle automatic spoken replies",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          !active("voice")
+            ? { state: "hidden" }
+            : state().props.voiceSetup.supported
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "Speech output is unavailable." },
+        current: () => state().props.voiceSetup.autoSpeakResponses,
+        execute: () =>
+          state().props.voiceSetup.onAutoSpeakResponsesChange(
+            !state().props.voiceSetup.autoSpeakResponses,
+          ),
+      },
+      {
+        id: "settings.voice.system-voice.select",
+        title: "Choose system voice",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          !active("voice")
+            ? { state: "hidden" }
+            : state().props.voiceSetup.systemVoicesSupported
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "System voices are unavailable." },
+        children: () => ({
+          id: "settings.voice.system-voice.select.page",
+          title: "Choose system voice",
+          searchPlaceholder: "Search voices",
+          groups: [
+            {
+              id: "voices",
+              items: [
+                {
+                  id: "default",
+                  title: "System default",
+                  current: state().props.voiceSetup.preferredVoiceURI === null,
+                  execute: () =>
+                    state().props.voiceSetup.onPreferredVoiceChange(null),
+                },
+                ...state().props.voiceSetup.voiceOptions.map((voice) => ({
+                  id: voice.voiceURI,
+                  title: voice.label,
+                  current:
+                    state().props.voiceSetup.preferredVoiceURI ===
+                    voice.voiceURI,
+                  execute: () =>
+                    state().props.voiceSetup.onPreferredVoiceChange(
+                      voice.voiceURI,
+                    ),
+                })),
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.voice.rate.select",
+        title: "Choose speech rate",
+        group: "Settings: Voice",
+        scope,
+        availability: () =>
+          !active("voice")
+            ? { state: "hidden" }
+            : state().props.voiceSetup.systemVoicesSupported
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "System voices are unavailable." },
+        children: () => ({
+          id: "settings.voice.rate.select.page",
+          title: "Choose speech rate",
+          searchPlaceholder: "Search rates",
+          numericSelection: true,
+          groups: [
+            {
+              id: "rates",
+              items: [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4].map((rate, index) => ({
+                id: `${rate}`,
+                title: `${rate.toFixed(2)}x`,
+                current: state().props.voiceSetup.rate === rate,
+                numericKey: numericKey(index),
+                execute: () => state().props.voiceSetup.onRateChange(rate),
+              })),
+            },
+          ],
+        }),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(settingsCommands);
+
   return (
     <DialogContent
+      data-command-owner="settings-dialog"
       showCloseButton={false}
       onEscapeKeyDown={(event) => {
         event.preventDefault();
@@ -595,13 +1622,13 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           >
             {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
               <optgroup key={group} label={group}>
-                {dialogSections.filter(
-                  (section) => section.group === group,
-                ).map((section) => (
-                  <option key={section.id} value={section.id}>
-                    {section.label}
-                  </option>
-                ))}
+                {dialogSections
+                  .filter((section) => section.group === group)
+                  .map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.label}
+                    </option>
+                  ))}
               </optgroup>
             ))}
           </select>
@@ -832,7 +1859,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                       : pendingNavigation.target === "close" &&
                           closeDiscardLabel
                         ? closeDiscardLabel
-                      : (pendingGuard.confirmLabel ?? "Discard changes")}
+                        : (pendingGuard.confirmLabel ?? "Discard changes")}
                 </Button>
               ) : null}
             </div>

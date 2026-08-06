@@ -1,10 +1,45 @@
 import {
+  PromptEnhancementCancellationError,
+  isPromptEnhancementCancellation,
   resolveImmediatePromptEnhancementPlacement,
   resolveStagedPromptEnhancementSubmission,
   shouldRenderPromptEnhancementSessionMessages,
 } from "./prompt-enhancement";
 
 describe("prompt enhancement presentation", () => {
+  it("recognizes cancellation only from authoritative task state", () => {
+    const taskId = "prompt-enhancement-1";
+
+    expect(
+      isPromptEnhancementCancellation(
+        new PromptEnhancementCancellationError(taskId),
+        taskId,
+        new Set(),
+      ),
+    ).toBe(true);
+    expect(
+      isPromptEnhancementCancellation(
+        new Error("Prompt enhancement was cancelled."),
+        taskId,
+        new Set(),
+      ),
+    ).toBe(false);
+    expect(
+      isPromptEnhancementCancellation(
+        new Error('The prompt quoted "cancelled" as an example.'),
+        taskId,
+        new Set([taskId]),
+      ),
+    ).toBe(true);
+    expect(
+      isPromptEnhancementCancellation(
+        new PromptEnhancementCancellationError("another-task"),
+        taskId,
+        new Set(),
+      ),
+    ).toBe(false);
+  });
+
   it("keeps edited-message enhancement out of conversation state", () => {
     const placement = resolveImmediatePromptEnhancementPlacement({
       conversationCutoffMessageId: "message-1",

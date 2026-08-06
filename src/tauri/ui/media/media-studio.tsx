@@ -118,6 +118,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../components/ui/tooltip";
+import { getDefaultCommandShortcut } from "../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import type { CommandDefinition } from "../commands/command-types";
 import { addPromptHistoryEntry } from "../_helpers/prompt-history-navigation.helper";
 import {
   subscribeToUserSettingsChanged,
@@ -1816,6 +1819,59 @@ export const MediaStudio = ({
   const selectSection = useCallback((activeSection: MediaStudioSection) => {
     setState((current) => ({ ...current, activeSection }));
   }, []);
+  const mediaSectionCommandStateRef = useRef({
+    activeSection: state.activeSection,
+    selectSection,
+  });
+  mediaSectionCommandStateRef.current = {
+    activeSection: state.activeSection,
+    selectSection,
+  };
+  const sectionCommands = useMemo<readonly CommandDefinition[]>(
+    () =>
+      NAVIGATION_ITEMS.map((item): CommandDefinition => {
+        const commandId = `media.section.${
+          item.id === "generate"
+            ? "create"
+            : item.id === "flow"
+              ? "workflows"
+              : item.id === "runs"
+                ? "activity"
+                : item.id
+        }` as
+          | "media.section.create"
+          | "media.section.workflows"
+          | "media.section.library"
+          | "media.section.activity"
+          | "media.section.models";
+        return {
+          id: commandId,
+          title: `Open Media ${item.label}`,
+          group: "Media",
+          scope: { kind: "view", ownerId: "media" },
+          shortcuts: [
+            {
+              chord: getDefaultCommandShortcut(commandId),
+              runtimes: ["tauri"],
+              allowIn: [
+                "document",
+                "text-entry",
+                "interactive-control",
+                "command-surface",
+              ],
+            },
+          ],
+          palette: "visible",
+          current: () =>
+            mediaSectionCommandStateRef.current.activeSection === item.id,
+          overlayPolicy: "replace-non-modal",
+          execute: () =>
+            mediaSectionCommandStateRef.current.selectSection(item.id),
+        };
+      }),
+    [],
+  );
+  useOptionalRegisterCommands(sectionCommands);
   const changeFlowLayout = useCallback((flowLayout: MediaFlowLayout) => {
     setFlowRevisionNotice(null);
     setState((current) => ({ ...current, flowLayout }));

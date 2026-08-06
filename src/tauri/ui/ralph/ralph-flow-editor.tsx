@@ -65,7 +65,10 @@ import {
 } from "../commands/command-context";
 import { getDefaultCommandShortcut } from "../commands/command-defaults";
 import { useCommandOverlay } from "../commands/use-command-overlay";
-import type { CommandDefinition } from "../commands/command-types";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../commands/command-types";
 import {
   createImageInputUnsupportedModelMessage,
   getSupportedImageInputExtensions,
@@ -356,12 +359,14 @@ import {
   ACTIVE_TASK_REGISTRATION_GRACE_MS,
   ANNOTATION_TONES,
   ASK_USER_MODE_OPTIONS,
+  BLOCK_ACTIONS,
   DEFAULT_RUNTIME_PROVIDER_OPTIONS,
   EDITOR_MODES,
   END_STATUS_OPTIONS,
   INPUT_FIELD_TYPE_OPTIONS,
   LIVE_EXPANDED_NODE_PREVIEW_LIMIT,
   LIVE_VARIABLE_PREVIEW_LIMIT,
+  MCP_BLOCK_ACTIONS,
   RALPH_INSPECTOR_SECTIONS,
   RALPH_EDITOR_SHORTCUTS,
   RALPH_LAYOUT_FIT_DURATION_MS,
@@ -6794,6 +6799,128 @@ export const RalphFlowEditor = ({
     dismiss: () => setShortcutHelpOpen(false),
   });
 
+  const ralphCommandStateRef = useRef({
+    activeInspectorSection,
+    aiGenerationMode,
+    aiTarget,
+    aiTargetOptions,
+    availableInspectorSections,
+    canGenerateWithAgent,
+    canRedo,
+    canRunAction,
+    canSaveFlow,
+    canUndo,
+    cleanFlowLayout,
+    copyOrMoveFlowToScope,
+    createFlowWithAgent,
+    createLocalFlow,
+    defaultFlowActionScope,
+    deleteFlow,
+    deleteSelectedCanvasBlocks,
+    detailsLoading,
+    displayFlows,
+    draftFlow,
+    duplicateBlock,
+    editorMode,
+    flowHasStart,
+    flowLibraryMode,
+    flowListOpen,
+    generationInterviewRunning,
+    generationRunning,
+    inspectorOpen,
+    loading,
+    onFlowLibraryModeChange,
+    openFlowInExplorer,
+    openStarterFlowDialog,
+    redoFlowEdit,
+    refreshFlows,
+    refreshRunHistory,
+    removeEdge,
+    runFlow,
+    runHistoryLoading,
+    runPanelTab,
+    saveFlow,
+    selectFlow,
+    selectedBlock,
+    selectedBlockId,
+    selectedCanvasBlockIds,
+    selectedEdgeId,
+    selectedFlowPrimaryActiveRun,
+    selectedId,
+    selectedScope,
+    setActiveInspectorSection,
+    setAiGenerationMode,
+    setAiTarget,
+    setEditorMode,
+    setFlowListOpen,
+    setInspectorOpen,
+    setRunPanelTab,
+    stopRalphRun,
+    undoFlowEdit,
+    workspaceRoot,
+    addBlock,
+  });
+  ralphCommandStateRef.current = {
+    activeInspectorSection,
+    aiGenerationMode,
+    aiTarget,
+    aiTargetOptions,
+    availableInspectorSections,
+    canGenerateWithAgent,
+    canRedo,
+    canRunAction,
+    canSaveFlow,
+    canUndo,
+    cleanFlowLayout,
+    copyOrMoveFlowToScope,
+    createFlowWithAgent,
+    createLocalFlow,
+    defaultFlowActionScope,
+    deleteFlow,
+    deleteSelectedCanvasBlocks,
+    detailsLoading,
+    displayFlows,
+    draftFlow,
+    duplicateBlock,
+    editorMode,
+    flowHasStart,
+    flowLibraryMode,
+    flowListOpen,
+    generationInterviewRunning,
+    generationRunning,
+    inspectorOpen,
+    loading,
+    onFlowLibraryModeChange,
+    openFlowInExplorer,
+    openStarterFlowDialog,
+    redoFlowEdit,
+    refreshFlows,
+    refreshRunHistory,
+    removeEdge,
+    runFlow,
+    runHistoryLoading,
+    runPanelTab,
+    saveFlow,
+    selectFlow,
+    selectedBlock,
+    selectedBlockId,
+    selectedCanvasBlockIds,
+    selectedEdgeId,
+    selectedFlowPrimaryActiveRun,
+    selectedId,
+    selectedScope,
+    setActiveInspectorSection,
+    setAiGenerationMode,
+    setAiTarget,
+    setEditorMode,
+    setFlowListOpen,
+    setInspectorOpen,
+    setRunPanelTab,
+    stopRalphRun,
+    undoFlowEdit,
+    workspaceRoot,
+    addBlock,
+  };
   const ralphCommands = useMemo<readonly CommandDefinition[]>(
     () => [
       {
@@ -6804,6 +6931,7 @@ export const RalphFlowEditor = ({
         shortcuts: [
           {
             chord: getDefaultCommandShortcut("ralph.flow.save"),
+            runtimes: ["tauri"],
             allowIn: [
               "document",
               "text-entry",
@@ -6814,10 +6942,10 @@ export const RalphFlowEditor = ({
         ],
         palette: "visible",
         availability: () =>
-          canSaveFlow
+          ralphCommandStateRef.current.canSaveFlow
             ? { state: "enabled" }
             : { state: "disabled", reason: "No unsaved flow changes" },
-        execute: () => saveFlow(),
+        execute: () => ralphCommandStateRef.current.saveFlow(),
       },
       {
         id: "ralph.flow.undo",
@@ -6827,10 +6955,10 @@ export const RalphFlowEditor = ({
         shortcuts: [{ chord: getDefaultCommandShortcut("ralph.flow.undo") }],
         palette: "visible",
         availability: () =>
-          canUndo
+          ralphCommandStateRef.current.canUndo
             ? { state: "enabled" }
             : { state: "disabled", reason: "Nothing to undo" },
-        execute: () => undoFlowEdit(),
+        execute: () => ralphCommandStateRef.current.undoFlowEdit(),
       },
       {
         id: "ralph.flow.redo",
@@ -6839,14 +6967,17 @@ export const RalphFlowEditor = ({
         scope: { kind: "view", ownerId: "ralph" },
         shortcuts: [
           { chord: getDefaultCommandShortcut("ralph.flow.redo") },
-          { chord: getDefaultCommandShortcut("ralph.flow.redo-alternate") },
+          {
+            chord: getDefaultCommandShortcut("ralph.flow.redo-alternate"),
+            platforms: ["windows", "linux"],
+          },
         ],
         palette: "visible",
         availability: () =>
-          canRedo
+          ralphCommandStateRef.current.canRedo
             ? { state: "enabled" }
             : { state: "disabled", reason: "Nothing to redo" },
-        execute: () => redoFlowEdit(),
+        execute: () => ralphCommandStateRef.current.redoFlowEdit(),
       },
       {
         id: "ralph.selection.duplicate",
@@ -6854,14 +6985,19 @@ export const RalphFlowEditor = ({
         group: "Ralph",
         scope: { kind: "view", ownerId: "ralph" },
         shortcuts: [
-          { chord: getDefaultCommandShortcut("ralph.selection.duplicate") },
+          {
+            chord: getDefaultCommandShortcut("ralph.selection.duplicate"),
+            runtimes: ["tauri"],
+          },
         ],
         palette: "visible",
         availability: () =>
-          selectedBlockId
+          ralphCommandStateRef.current.selectedBlockId
             ? { state: "enabled" }
             : { state: "disabled", reason: "Select a block to duplicate" },
         execute: () => {
+          const { duplicateBlock, selectedBlockId } =
+            ralphCommandStateRef.current;
           if (selectedBlockId) duplicateBlock(selectedBlockId);
         },
       },
@@ -6878,27 +7014,27 @@ export const RalphFlowEditor = ({
         ],
         palette: "visible",
         availability: () =>
-          draftFlow
+          ralphCommandStateRef.current.draftFlow
             ? { state: "enabled" }
             : { state: "disabled", reason: "Open a flow first" },
-        execute: () => cleanFlowLayout(),
+        execute: () => ralphCommandStateRef.current.cleanFlowLayout(),
       },
       {
         id: "ralph.flow.run",
-        title: selectedFlowPrimaryActiveRun ? "Open active run" : "Run flow",
+        title: "Run flow",
         group: "Ralph",
         scope: { kind: "view", ownerId: "ralph" },
         shortcuts: [{ chord: getDefaultCommandShortcut("ralph.flow.run") }],
         palette: "visible",
         availability: () =>
-          canRunAction
+          ralphCommandStateRef.current.canRunAction
             ? { state: "enabled" }
             : { state: "disabled", reason: "The flow is not ready to run" },
-        execute: () => runFlow(),
+        execute: () => ralphCommandStateRef.current.runFlow(),
       },
       {
         id: "ralph.selection.delete",
-        title: selectedEdgeId ? "Delete selected connection" : "Delete selection",
+        title: "Delete selection",
         group: "Ralph",
         scope: { kind: "view", ownerId: "ralph" },
         shortcuts: [
@@ -6910,36 +7046,578 @@ export const RalphFlowEditor = ({
           },
         ],
         palette: "visible",
-        availability: () =>
-          selectedEdgeId || selectedBlock || selectedCanvasBlockIds.length > 0
+        availability: () => {
+          const state = ralphCommandStateRef.current;
+          return state.selectedEdgeId ||
+            state.selectedBlock ||
+            state.selectedCanvasBlockIds.length > 0
             ? { state: "enabled" }
-            : { state: "disabled", reason: "Select a block or connection" },
+            : { state: "disabled", reason: "Select a block or connection" };
+        },
         execute: () => {
-          if (selectedEdgeId) removeEdge(selectedEdgeId);
-          else deleteSelectedCanvasBlocks();
+          const state = ralphCommandStateRef.current;
+          if (state.selectedEdgeId) state.removeEdge(state.selectedEdgeId);
+          else state.deleteSelectedCanvasBlocks();
         },
       },
+      {
+        id: "ralph.flow.new",
+        title: "New blank flow",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("ralph.flow.new"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        availability: () => {
+          const state = ralphCommandStateRef.current;
+          return state.workspaceRoot && !state.loading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.workspaceRoot
+                  ? "Wait for the current flow operation"
+                  : "Choose a workspace first",
+              };
+        },
+        children: () => ({
+          id: "ralph-flow-new",
+          title: "New blank flow",
+          searchPlaceholder: "Choose scope",
+          numericSelection: true,
+          groups: [
+            {
+              id: "scope",
+              items: RALPH_FLOW_SCOPES.map(
+                (scope, index): CommandPageItem => ({
+                  id: scope,
+                  title: RALPH_FLOW_SCOPE_LABELS[scope],
+                  current:
+                    ralphCommandStateRef.current.defaultFlowActionScope ===
+                    scope,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () =>
+                    ralphCommandStateRef.current.createLocalFlow(scope),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.flow.starter.import",
+        title: "Import starter flow",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.workspaceRoot
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Choose a workspace first" },
+        execute: () => ralphCommandStateRef.current.openStarterFlowDialog(),
+      },
+      {
+        id: "ralph.flow.open",
+        title: "Open flow",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.displayFlows.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No flows in this workspace" },
+        children: () => ({
+          id: "ralph-flow-open",
+          title: "Open flow",
+          searchPlaceholder: "Choose flow",
+          groups: RALPH_FLOW_SCOPES.map((scope) => ({
+            id: scope,
+            label: RALPH_FLOW_SCOPE_LABELS[scope],
+            items: ralphCommandStateRef.current.displayFlows
+              .filter((flow) => getFlowSummaryScope(flow) === scope)
+              .map((flow) => ({
+                id: getFlowSummarySelectionKey(flow),
+                title: flow.name,
+                keywords: [flow.id, flow.path],
+                current: hasFlowSelection(
+                  flow,
+                  ralphCommandStateRef.current.selectedId,
+                  ralphCommandStateRef.current.selectedScope,
+                ),
+                execute: () => ralphCommandStateRef.current.selectFlow(flow),
+              })),
+          })),
+        }),
+      },
+      {
+        id: "ralph.flows.refresh",
+        title: "Refresh flows",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.workspaceRoot &&
+          !ralphCommandStateRef.current.loading
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Flow library is unavailable" },
+        execute: () => ralphCommandStateRef.current.refreshFlows(),
+      },
+      {
+        id: "ralph.editor.mode.select",
+        title: "Switch editor mode",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        children: () => ({
+          id: "ralph-editor-mode",
+          title: "Editor mode",
+          searchPlaceholder: "Choose mode",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: EDITOR_MODES.map(
+                (mode, index): CommandPageItem => ({
+                  id: mode.id,
+                  title: mode.label,
+                  current: ralphCommandStateRef.current.editorMode === mode.id,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () =>
+                    ralphCommandStateRef.current.setEditorMode(mode.id),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.flow-library.scope.select",
+        title: "Filter flow library",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.onFlowLibraryModeChange
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Flow filtering is unavailable" },
+        children: () => ({
+          id: "ralph-flow-library-scope",
+          title: "Flow library",
+          searchPlaceholder: "Choose scope",
+          numericSelection: true,
+          groups: [
+            {
+              id: "scope",
+              items: (["all", "workspace", "user"] as const).map(
+                (mode, index): CommandPageItem => ({
+                  id: mode,
+                  title:
+                    mode === "all"
+                      ? "All flows"
+                      : RALPH_FLOW_SCOPE_LABELS[mode],
+                  current:
+                    ralphCommandStateRef.current.flowLibraryMode === mode,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () =>
+                    ralphCommandStateRef.current.onFlowLibraryModeChange?.(
+                      mode,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.flow-library.toggle",
+        title: "Toggle flow library",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        execute: () => {
+          const state = ralphCommandStateRef.current;
+          state.setFlowListOpen(!state.flowListOpen);
+        },
+      },
+      {
+        id: "ralph.inspector.toggle",
+        title: "Toggle inspector",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.editorMode === "design"
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Open Design mode first" },
+        execute: () => {
+          const state = ralphCommandStateRef.current;
+          state.setInspectorOpen(!state.inspectorOpen);
+        },
+      },
+      {
+        id: "ralph.inspector.section.select",
+        title: "Choose inspector section",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.availableInspectorSections.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select a block first" },
+        children: () => ({
+          id: "ralph-inspector-section",
+          title: "Inspector section",
+          searchPlaceholder: "Choose section",
+          groups: [
+            {
+              id: "sections",
+              items:
+                ralphCommandStateRef.current.availableInspectorSections.map(
+                  (section) => ({
+                    id: section.id,
+                    title: section.label,
+                    current:
+                      ralphCommandStateRef.current.activeInspectorSection ===
+                      section.id,
+                    execute: () => {
+                      const state = ralphCommandStateRef.current;
+                      state.setEditorMode("design");
+                      state.setInspectorOpen(true);
+                      state.setActiveInspectorSection(section.id);
+                    },
+                  }),
+                ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.block.add",
+        title: "Add block",
+        group: "Ralph",
+        keywords: ["node"],
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () => {
+          const state = ralphCommandStateRef.current;
+          return state.editorMode === "design" &&
+            state.draftFlow &&
+            !state.loading
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Open a flow in Design mode" };
+        },
+        children: () => ({
+          id: "ralph-block-add",
+          title: "Add block",
+          searchPlaceholder: "Choose block type",
+          groups: [
+            {
+              id: "blocks",
+              label: "Blocks",
+              items: [
+                ...BLOCK_ACTIONS,
+                { type: "MEDIA_FLOW" as const, label: "Media Flow" },
+              ].map((action) => ({
+                id: action.type,
+                title: action.label,
+                availability:
+                  action.type === "START" &&
+                  ralphCommandStateRef.current.flowHasStart
+                    ? {
+                        state: "disabled",
+                        reason: "The flow already has a start block",
+                      }
+                    : { state: "enabled" },
+                execute: () =>
+                  ralphCommandStateRef.current.addBlock(action.type),
+              })),
+            },
+            {
+              id: "mcp",
+              label: "MCP",
+              items: MCP_BLOCK_ACTIONS.map((action) => ({
+                id: action.type,
+                title: action.label,
+                execute: () =>
+                  ralphCommandStateRef.current.addBlock(action.type),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.generate.target.select",
+        title: "Choose AI generation target",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        children: () => ({
+          id: "ralph-generate-target",
+          title: "AI generation target",
+          searchPlaceholder: "Choose target",
+          numericSelection: true,
+          groups: [
+            {
+              id: "targets",
+              items: ralphCommandStateRef.current.aiTargetOptions.map(
+                (option, index): CommandPageItem => ({
+                  id: option.target,
+                  title: option.label,
+                  current:
+                    ralphCommandStateRef.current.aiTarget === option.target,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  availability: option.disabled
+                    ? { state: "disabled", reason: option.title }
+                    : { state: "enabled" },
+                  execute: () => {
+                    const state = ralphCommandStateRef.current;
+                    state.setEditorMode("generate");
+                    state.setAiTarget(option.target);
+                  },
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.generate.mode.select",
+        title: "Choose AI generation mode",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        children: () => ({
+          id: "ralph-generate-mode",
+          title: "AI generation mode",
+          searchPlaceholder: "Choose mode",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: (
+                [
+                  ["do-it", "No questions"],
+                  ["interview", "Interview"],
+                ] as const
+              ).map(
+                ([mode, title], index): CommandPageItem => ({
+                  id: mode,
+                  title,
+                  current:
+                    ralphCommandStateRef.current.aiGenerationMode === mode,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () => {
+                    const state = ralphCommandStateRef.current;
+                    state.setEditorMode("generate");
+                    state.setAiGenerationMode(mode);
+                  },
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.generate.run",
+        title: "Generate with AI",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () =>
+          ralphCommandStateRef.current.canGenerateWithAgent
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason:
+                  ralphCommandStateRef.current.generationRunning ||
+                  ralphCommandStateRef.current.generationInterviewRunning
+                    ? "AI generation is already running"
+                    : "Enter a generation prompt and choose a valid target",
+              },
+        execute: () => ralphCommandStateRef.current.createFlowWithAgent(),
+      },
+      {
+        id: "ralph.run.panel.select",
+        title: "Open run panel",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        children: () => ({
+          id: "ralph-run-panel",
+          title: "Run panel",
+          searchPlaceholder: "Choose panel",
+          numericSelection: true,
+          groups: [
+            {
+              id: "panels",
+              items: (
+                [
+                  ["setup", "Setup"],
+                  ["live", "Live"],
+                  ["history", "History"],
+                  ["details", "Details"],
+                ] as const
+              ).map(
+                ([tab, title], index): CommandPageItem => ({
+                  id: tab,
+                  title,
+                  current:
+                    ralphCommandStateRef.current.editorMode === "run" &&
+                    ralphCommandStateRef.current.runPanelTab === tab,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () => {
+                    const state = ralphCommandStateRef.current;
+                    state.setEditorMode("run");
+                    state.setRunPanelTab(tab);
+                  },
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "ralph.run-history.refresh",
+        title: "Refresh run history",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () => {
+          const state = ralphCommandStateRef.current;
+          return state.selectedId && !state.runHistoryLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.selectedId
+                  ? "Run history is already refreshing"
+                  : "Open a flow first",
+              };
+        },
+        execute: () => {
+          const state = ralphCommandStateRef.current;
+          return state.refreshRunHistory(state.selectedId, state.selectedScope);
+        },
+      },
+      {
+        id: "ralph.run.stop",
+        title: "Stop active run",
+        group: "Ralph",
+        scope: { kind: "view", ownerId: "ralph" },
+        palette: "visible",
+        availability: () => {
+          const run = ralphCommandStateRef.current.selectedFlowPrimaryActiveRun;
+          return run?.status === "running"
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: run ? "The run is already stopping" : "No active run",
+              };
+        },
+        execute: () => {
+          const run = ralphCommandStateRef.current.selectedFlowPrimaryActiveRun;
+          if (run) return ralphCommandStateRef.current.stopRalphRun(run.id);
+        },
+      },
+      ...(
+        [
+          {
+            id: "ralph.flow.reveal",
+            title: "Show flow in file explorer",
+            action: (flow: RalphFlowSummary) =>
+              ralphCommandStateRef.current.openFlowInExplorer(flow),
+            eligible: (flow: RalphFlowSummary) => Boolean(flow.path),
+          },
+          {
+            id: "ralph.flow.copy-to-other-scope",
+            title: "Copy flow to other scope",
+            action: (flow: RalphFlowSummary) =>
+              ralphCommandStateRef.current.copyOrMoveFlowToScope(
+                flow,
+                getFlowSummaryScope(flow) === "workspace"
+                  ? "user"
+                  : "workspace",
+                "copy",
+              ),
+            eligible: (flow: RalphFlowSummary) => Boolean(flow.path),
+          },
+          {
+            id: "ralph.flow.move-to-other-scope",
+            title: "Move flow to other scope",
+            action: (flow: RalphFlowSummary) =>
+              ralphCommandStateRef.current.copyOrMoveFlowToScope(
+                flow,
+                getFlowSummaryScope(flow) === "workspace"
+                  ? "user"
+                  : "workspace",
+                "move",
+              ),
+            eligible: (flow: RalphFlowSummary) => Boolean(flow.path),
+          },
+          {
+            id: "ralph.flow.delete",
+            title: "Delete flow",
+            action: (flow: RalphFlowSummary) =>
+              ralphCommandStateRef.current.deleteFlow(flow),
+            eligible: (_flow: RalphFlowSummary) => true,
+          },
+        ] as const
+      ).map(
+        ({ id, title, action, eligible }): CommandDefinition => ({
+          id,
+          title,
+          group: "Ralph",
+          scope: { kind: "view", ownerId: "ralph" },
+          palette: "visible",
+          availability: () =>
+            ralphCommandStateRef.current.displayFlows.some(eligible)
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "No eligible flows" },
+          children: () => ({
+            id: `${id}-page`,
+            title,
+            searchPlaceholder: "Choose flow",
+            groups: [
+              {
+                id: "flows",
+                items: ralphCommandStateRef.current.displayFlows
+                  .filter(eligible)
+                  .map((flow) => ({
+                    id: getFlowSummarySelectionKey(flow),
+                    title: flow.name,
+                    keywords: [
+                      RALPH_FLOW_SCOPE_LABELS[getFlowSummaryScope(flow)],
+                      flow.id,
+                    ],
+                    execute: () => action(flow),
+                  })),
+              },
+            ],
+          }),
+        }),
+      ),
     ],
-    [
-      canRedo,
-      canRunAction,
-      canSaveFlow,
-      canUndo,
-      cleanFlowLayout,
-      deleteSelectedCanvasBlocks,
-      draftFlow,
-      duplicateBlock,
-      redoFlowEdit,
-      removeEdge,
-      runFlow,
-      saveFlow,
-      selectedBlock,
-      selectedBlockId,
-      selectedCanvasBlockIds,
-      selectedEdgeId,
-      selectedFlowPrimaryActiveRun,
-      undoFlowEdit,
-    ],
+    [ralphCommandStateRef],
   );
   useOptionalRegisterCommands(ralphCommands);
   const saveShortcut = useOptionalCommandShortcut("ralph.flow.save");
@@ -6951,6 +7629,7 @@ export const RalphFlowEditor = ({
     }
 
     const handleEditorShortcut = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
       const key = event.key.toLowerCase();
       if (
         key === "escape" &&
@@ -7196,6 +7875,21 @@ export const RalphFlowEditor = ({
         {selectedUtility.type === "HTTP_FETCH" ||
         selectedUtility.type === "POLL" ? (
           <div className="grid gap-2">
+            <RalphInspectorField label="Crash replay">
+              <select
+                value={selectedUtility.replayPolicy ?? "at-most-once"}
+                aria-label="HTTP crash replay policy"
+                onChange={(event) =>
+                  updateSelectedUtility({
+                    replayPolicy: event.target.value as "safe" | "at-most-once",
+                  })
+                }
+                className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+              >
+                <option value="at-most-once">Do not replay</option>
+                <option value="safe">Replay after crash</option>
+              </select>
+            </RalphInspectorField>
             <div className={cn("grid gap-2", inspectorHttpGridClass)}>
               <RalphInspectorField label="Method">
                 <Input
@@ -8269,19 +8963,28 @@ export const RalphFlowEditor = ({
                     className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
                   />
                 </RalphInspectorField>
-                <RalphInspectorField
-                  label="Outcome"
-                  help="Blank uses the previous block output."
-                >
-                  <Input
-                    value={selectedUtility.result ?? ""}
+                <RalphInspectorField label="Outcome">
+                  <select
+                    value={selectedUtility.scopeOutcome ?? "completed"}
                     aria-label="Scope registry mark outcome"
-                    placeholder="DONE"
                     onChange={(event) =>
-                      updateSelectedUtility({ result: event.target.value })
+                      updateSelectedUtility({
+                        scopeOutcome: event.target.value as NonNullable<
+                          RalphUtilityConfig["scopeOutcome"]
+                        >,
+                      })
                     }
                     className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-                  />
+                  >
+                    <option value="completed">Completed</option>
+                    <option value="deferred">Deferred</option>
+                    <option value="external-state">External state</option>
+                    <option value="failed">Failed</option>
+                    <option value="invalid">Invalid</option>
+                    <option value="no-meaningful-work">
+                      No meaningful work
+                    </option>
+                  </select>
                 </RalphInspectorField>
               </div>
             ) : null}
@@ -8851,7 +9554,11 @@ export const RalphFlowEditor = ({
             onAddBlock={addBlock}
           />
 
-          <div ref={canvasViewportRef} className="relative min-h-0">
+          <div
+            ref={canvasViewportRef}
+            data-command-focus="document"
+            className="relative min-h-0"
+          >
             <ReactFlowProvider key={canvasIdentityKey}>
               <ReactFlow<RalphCanvasNode, RalphCanvasEdge>
                 nodes={canvasNodes}

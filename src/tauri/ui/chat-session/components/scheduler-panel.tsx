@@ -30,6 +30,12 @@ import {
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../commands/command-types";
 import { cn } from "../../lib/utils";
 import {
   cancelSchedulerRun,
@@ -569,15 +575,20 @@ export const SchedulerPanel = ({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ralphFlowOptions, setRalphFlowOptions] = useState<SchedulerRalphFlowOption[]>([]);
+  const [ralphFlowOptions, setRalphFlowOptions] = useState<
+    SchedulerRalphFlowOption[]
+  >([]);
   const [ralphImportVersion, setRalphImportVersion] = useState(0);
-  const [ralphVariables, setRalphVariables] = useState<SchedulerRalphVariable[]>([]);
-  const [ralphReadiness, setRalphReadiness] = useState<SchedulerRalphReadinessView>({
-    ready: false,
-    loading: false,
-    errors: [],
-    warnings: [],
-  });
+  const [ralphVariables, setRalphVariables] = useState<
+    SchedulerRalphVariable[]
+  >([]);
+  const [ralphReadiness, setRalphReadiness] =
+    useState<SchedulerRalphReadinessView>({
+      ready: false,
+      loading: false,
+      errors: [],
+      warnings: [],
+    });
   const refreshInFlightRef = useRef(false);
 
   const activeWorkspace = workspaceRoot?.trim() || null;
@@ -629,7 +640,9 @@ export const SchedulerPanel = ({
       }
     } catch (caughtError) {
       setError(
-        caughtError instanceof Error ? caughtError.message : String(caughtError),
+        caughtError instanceof Error
+          ? caughtError.message
+          : String(caughtError),
       );
     } finally {
       refreshInFlightRef.current = false;
@@ -658,10 +671,12 @@ export const SchedulerPanel = ({
       if (!disposed && event.categories.includes("ralph.flows-global")) {
         setRalphImportVersion((current) => current + 1);
       }
-    }).then((cleanup) => {
-      if (disposed) cleanup();
-      else unsubscribe = cleanup;
-    }).catch(() => undefined);
+    })
+      .then((cleanup) => {
+        if (disposed) cleanup();
+        else unsubscribe = cleanup;
+      })
+      .catch(() => undefined);
 
     return () => {
       disposed = true;
@@ -692,7 +707,12 @@ export const SchedulerPanel = ({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspace, form.ralphFlowScope, form.targetType, ralphImportVersion]);
+  }, [
+    activeWorkspace,
+    form.ralphFlowScope,
+    form.targetType,
+    ralphImportVersion,
+  ]);
 
   useEffect(() => {
     const flowId = form.ralphFlowId.trim();
@@ -721,7 +741,9 @@ export const SchedulerPanel = ({
           ready: false,
           loading: false,
           errors: [
-            caughtError instanceof Error ? caughtError.message : String(caughtError),
+            caughtError instanceof Error
+              ? caughtError.message
+              : String(caughtError),
           ],
           warnings: [],
         });
@@ -740,9 +762,10 @@ export const SchedulerPanel = ({
             }
           : {}),
         permissions: {
-          allowedRoots: splitLines(form.ralphAllowedRoots).length > 0
-            ? splitLines(form.ralphAllowedRoots)
-            : [activeWorkspace],
+          allowedRoots:
+            splitLines(form.ralphAllowedRoots).length > 0
+              ? splitLines(form.ralphAllowedRoots)
+              : [activeWorkspace],
           allowCommands: form.ralphAllowCommands,
           allowWrites: form.ralphAllowWrites,
           allowNetwork: form.ralphAllowNetwork,
@@ -816,16 +839,16 @@ export const SchedulerPanel = ({
       await refresh();
     } catch (caughtError) {
       setError(
-        caughtError instanceof Error ? caughtError.message : String(caughtError),
+        caughtError instanceof Error
+          ? caughtError.message
+          : String(caughtError),
       );
     } finally {
       setBusyAction(null);
     }
   };
 
-  const updateForm = (
-    patch: Partial<SchedulerFormState>,
-  ): void => {
+  const updateForm = (patch: Partial<SchedulerFormState>): void => {
     setForm((current) => ({ ...current, ...patch }));
   };
 
@@ -857,7 +880,11 @@ export const SchedulerPanel = ({
       ? new Date(form.runAtLocal).getTime()
       : undefined;
 
-    if (form.scheduleType === "delay" && hasRunAtLocal && !Number.isFinite(runAt)) {
+    if (
+      form.scheduleType === "delay" &&
+      hasRunAtLocal &&
+      !Number.isFinite(runAt)
+    ) {
       throw new Error("Run at must be a valid local date and time.");
     }
 
@@ -876,7 +903,9 @@ export const SchedulerPanel = ({
           ? {
               type: "cron" as const,
               expression: form.cron.trim(),
-              ...(form.timezone.trim() ? { timezone: form.timezone.trim() } : {}),
+              ...(form.timezone.trim()
+                ? { timezone: form.timezone.trim() }
+                : {}),
             }
           : form.scheduleType === "interval"
             ? {
@@ -910,10 +939,10 @@ export const SchedulerPanel = ({
       "Trigger window",
     );
 
-    if (
-      (triggerMaxEvents === undefined) !== (triggerWindowMs === undefined)
-    ) {
-      throw new Error("Trigger max events and trigger window must be set together.");
+    if ((triggerMaxEvents === undefined) !== (triggerWindowMs === undefined)) {
+      throw new Error(
+        "Trigger max events and trigger window must be set together.",
+      );
     }
 
     const triggers: SchedulerCreateTriggerInput[] = [];
@@ -1023,11 +1052,12 @@ export const SchedulerPanel = ({
             "Ralph max transitions",
           ),
           permissions: {
-            allowedRoots: splitLines(form.ralphAllowedRoots).length > 0
-              ? splitLines(form.ralphAllowedRoots)
-              : activeWorkspace
-                ? [activeWorkspace]
-                : [],
+            allowedRoots:
+              splitLines(form.ralphAllowedRoots).length > 0
+                ? splitLines(form.ralphAllowedRoots)
+                : activeWorkspace
+                  ? [activeWorkspace]
+                  : [],
             allowCommands: form.ralphAllowCommands,
             allowWrites: form.ralphAllowWrites,
             allowNetwork: form.ralphAllowNetwork,
@@ -1054,7 +1084,10 @@ export const SchedulerPanel = ({
 
   const createJob = async (): Promise<void> => {
     await runAction("create", async () => {
-      const result = await createSchedulerJob(activeWorkspace, buildCreateInput());
+      const result = await createSchedulerJob(
+        activeWorkspace,
+        buildCreateInput(),
+      );
 
       setSelectedJobId(result.job.id);
       setMessage(`Created ${result.job.name}.`);
@@ -1070,14 +1103,595 @@ export const SchedulerPanel = ({
     });
   };
 
+  const toggleJobPaused = (job: SchedulerJobSummary): void => {
+    void runAction(
+      `${job.status === "paused" ? "resume" : "pause"}-${job.id}`,
+      async () => {
+        if (job.status === "paused") {
+          await resumeSchedulerJob(activeWorkspace, job.id);
+          setMessage(`Resumed ${job.name}.`);
+          return;
+        }
+        await pauseSchedulerJob(activeWorkspace, job.id);
+        setMessage(`Paused ${job.name}.`);
+      },
+    );
+  };
+
+  const triggerJob = (job: SchedulerJobSummary): void => {
+    void runAction(`trigger-${job.id}`, async () => {
+      const result = await triggerSchedulerJob(activeWorkspace, job.id);
+      setMessage(`Triggered ${job.name}: ${result.runs.length} run.`);
+    });
+  };
+
+  const removeJob = (job: SchedulerJobSummary): void => {
+    void runAction(`delete-${job.id}`, async () => {
+      await deleteSchedulerJob(activeWorkspace, job.id);
+      setMessage(`Deleted ${job.name}.`);
+    });
+  };
+
+  const retryRun = (run: SchedulerRunSummary): void => {
+    void runAction(`retry-${run.id}`, async () => {
+      const result = await retrySchedulerRun(activeWorkspace, run.id);
+      setMessage(`Retry queued as ${result.handle.runId}.`);
+    });
+  };
+
+  const cancelRun = (run: SchedulerRunSummary): void => {
+    void runAction(`cancel-${run.id}`, async () => {
+      await cancelSchedulerRun(activeWorkspace, run.id);
+      setMessage(`Cancelled ${run.id}.`);
+    });
+  };
+
   const actionButtonBusy = (actionId: string): boolean => {
     return busyAction === actionId;
   };
 
   const visibleRuns = runs;
 
+  const schedulerCommandStateRef = useRef({
+    activeWorkspace,
+    jobs,
+    runs,
+    selectedJobId,
+    tab,
+    form,
+    busyAction,
+    ralphFlowOptions,
+    ralphReadiness,
+    reasoningOptions,
+    reasoningValue,
+    refresh,
+    runDue,
+    createJob,
+    toggleJobPaused,
+    triggerJob,
+    removeJob,
+    retryRun,
+    cancelRun,
+    setSelectedJobId,
+    setTab,
+    updateForm,
+  });
+  schedulerCommandStateRef.current = {
+    activeWorkspace,
+    jobs,
+    runs,
+    selectedJobId,
+    tab,
+    form,
+    busyAction,
+    ralphFlowOptions,
+    ralphReadiness,
+    reasoningOptions,
+    reasoningValue,
+    refresh,
+    runDue,
+    createJob,
+    toggleJobPaused,
+    triggerJob,
+    removeJob,
+    retryRun,
+    cancelRun,
+    setSelectedJobId,
+    setTab,
+    updateForm,
+  };
+  const schedulerCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "overlay" as const, ownerId: "scheduler" };
+    const state = () => schedulerCommandStateRef.current;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    const workspaceAvailability = () =>
+      !state().activeWorkspace
+        ? { state: "disabled" as const, reason: "Select a workspace first." }
+        : state().busyAction
+          ? {
+              state: "disabled" as const,
+              reason: "A scheduler action is in progress.",
+            }
+          : { state: "enabled" as const };
+    return asPaletteCommands([
+      {
+        id: "scheduler.tab.select",
+        title: "Choose scheduler view",
+        group: "Scheduler",
+        scope,
+        children: () => ({
+          id: "scheduler.tab.select.page",
+          title: "Choose scheduler view",
+          searchPlaceholder: "Search views",
+          numericSelection: true,
+          groups: [
+            {
+              id: "views",
+              items: (["jobs", "runs"] as const).map((tab, index) => ({
+                id: tab,
+                title: tab === "jobs" ? "Jobs" : "Runs",
+                current: state().tab === tab,
+                numericKey: numericKey(index),
+                execute: () => state().setTab(tab),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.refresh",
+        title: "Refresh scheduler",
+        group: "Scheduler",
+        scope,
+        availability: workspaceAvailability,
+        execute: () => void state().refresh(),
+      },
+      {
+        id: "scheduler.run-due",
+        title: "Run due scheduler jobs",
+        group: "Scheduler",
+        scope,
+        availability: workspaceAvailability,
+        execute: () => void state().runDue(),
+      },
+      {
+        id: "scheduler.job.select",
+        title: "Show scheduler job runs",
+        group: "Scheduler",
+        scope,
+        availability: () =>
+          state().jobs.length
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No scheduler jobs." },
+        children: () => ({
+          id: "scheduler.job.select.page",
+          title: "Show scheduler job runs",
+          searchPlaceholder: "Search jobs",
+          groups: [
+            {
+              id: "jobs",
+              items: state().jobs.map((job) => ({
+                id: job.id,
+                title: job.name,
+                keywords: [job.id, job.status, job.targetType],
+                current: state().selectedJobId === job.id,
+                execute: () => {
+                  state().setSelectedJobId(job.id);
+                  state().setTab("runs");
+                },
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.run-filter.clear",
+        title: "Show all scheduler runs",
+        group: "Scheduler",
+        scope,
+        availability: () =>
+          state().selectedJobId ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().setSelectedJobId(null),
+      },
+      {
+        id: "scheduler.job.pause-toggle",
+        title: "Pause or resume scheduler job",
+        group: "Scheduler",
+        scope,
+        availability: () => {
+          const available = workspaceAvailability();
+          if (available.state !== "enabled") return available;
+          return state().jobs.length
+            ? available
+            : { state: "disabled", reason: "No scheduler jobs." };
+        },
+        children: () => ({
+          id: "scheduler.job.pause-toggle.page",
+          title: "Pause or resume scheduler job",
+          searchPlaceholder: "Search jobs",
+          groups: [
+            {
+              id: "jobs",
+              items: state().jobs.map((job) => ({
+                id: job.id,
+                title: `${job.status === "paused" ? "Resume" : "Pause"} ${job.name}`,
+                keywords: [job.id, job.status],
+                current: job.status === "paused",
+                execute: () => state().toggleJobPaused(job),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.job.trigger",
+        title: "Run scheduler job now",
+        group: "Scheduler",
+        scope,
+        availability: workspaceAvailability,
+        children: () => ({
+          id: "scheduler.job.trigger.page",
+          title: "Run scheduler job now",
+          searchPlaceholder: "Search jobs",
+          groups: [
+            {
+              id: "jobs",
+              items: state().jobs.map((job) => ({
+                id: job.id,
+                title: job.name,
+                keywords: [job.id, job.status],
+                execute: () => state().triggerJob(job),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.job.delete",
+        title: "Delete scheduler job",
+        group: "Scheduler",
+        scope,
+        availability: workspaceAvailability,
+        children: () => ({
+          id: "scheduler.job.delete.page",
+          title: "Delete scheduler job",
+          searchPlaceholder: "Search jobs",
+          groups: [
+            {
+              id: "jobs",
+              items: state().jobs.map((job) => ({
+                id: job.id,
+                title: job.name,
+                keywords: [job.id, job.status],
+                execute: () => state().removeJob(job),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.run.retry",
+        title: "Retry scheduler run",
+        group: "Scheduler",
+        scope,
+        availability: workspaceAvailability,
+        children: () => ({
+          id: "scheduler.run.retry.page",
+          title: "Retry scheduler run",
+          searchPlaceholder: "Search runs",
+          groups: [
+            {
+              id: "runs",
+              items: state().runs.map((run) => ({
+                id: run.id,
+                title: run.id,
+                keywords: [run.jobId, run.status],
+                availability:
+                  run.status !== "succeeded" &&
+                  terminalRunStatuses.has(run.status)
+                    ? { state: "enabled" }
+                    : {
+                        state: "disabled",
+                        reason: "This run cannot be retried.",
+                      },
+                execute: () => state().retryRun(run),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.run.cancel",
+        title: "Cancel scheduler run",
+        group: "Scheduler",
+        scope,
+        availability: workspaceAvailability,
+        children: () => ({
+          id: "scheduler.run.cancel.page",
+          title: "Cancel scheduler run",
+          searchPlaceholder: "Search runs",
+          groups: [
+            {
+              id: "runs",
+              items: state().runs.map((run) => ({
+                id: run.id,
+                title: run.id,
+                keywords: [run.jobId, run.status],
+                availability: terminalRunStatuses.has(run.status)
+                  ? { state: "disabled", reason: "This run has finished." }
+                  : { state: "enabled" },
+                execute: () => state().cancelRun(run),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.job.create",
+        title: "Create scheduler job",
+        group: "Scheduler",
+        scope,
+        availability: () => {
+          const available = workspaceAvailability();
+          if (available.state !== "enabled") return available;
+          return state().form.targetType === "ralph-flow" &&
+            (!state().ralphReadiness.ready || state().ralphReadiness.loading)
+            ? {
+                state: "disabled",
+                reason: "The selected RALPH flow is not ready.",
+              }
+            : available;
+        },
+        execute: () => void state().createJob(),
+      },
+      {
+        id: "scheduler.target.select",
+        title: "Choose scheduler target",
+        group: "Scheduler",
+        scope,
+        children: () => ({
+          id: "scheduler.target.select.page",
+          title: "Choose scheduler target",
+          searchPlaceholder: "Search targets",
+          numericSelection: true,
+          groups: [
+            {
+              id: "targets",
+              items: (["prompt", "ralph-flow"] as const).map(
+                (targetType, index) => ({
+                  id: targetType,
+                  title: targetType === "prompt" ? "Prompt" : "RALPH Flow",
+                  current: state().form.targetType === targetType,
+                  numericKey: numericKey(index),
+                  execute: () =>
+                    state().updateForm({
+                      targetType,
+                      ...(targetType === "ralph-flow" &&
+                      state().form.ralphUnattended
+                        ? {
+                            ralphAllowCommands: true,
+                            ralphAllowWrites: true,
+                            ralphAllowNetwork: true,
+                            ralphAllowMcpTools: true,
+                          }
+                        : {}),
+                    }),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.ralph-flow.select",
+        title: "Choose scheduled RALPH flow",
+        group: "Scheduler",
+        scope,
+        availability: () =>
+          state().form.targetType === "ralph-flow"
+            ? state().ralphFlowOptions.length
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "No RALPH flows are available." }
+            : { state: "hidden" },
+        children: () => ({
+          id: "scheduler.ralph-flow.select.page",
+          title: "Choose scheduled RALPH flow",
+          searchPlaceholder: "Search RALPH flows",
+          groups: [
+            {
+              id: "flows",
+              items: state().ralphFlowOptions.map((flow) => ({
+                id: flow.id,
+                title: flow.name,
+                keywords: [flow.id, flow.alias ?? ""],
+                current: state().form.ralphFlowId === (flow.alias ?? flow.id),
+                execute: () =>
+                  state().updateForm({ ralphFlowId: flow.alias ?? flow.id }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.schedule.select",
+        title: "Choose scheduler schedule",
+        group: "Scheduler",
+        scope,
+        children: () => ({
+          id: "scheduler.schedule.select.page",
+          title: "Choose scheduler schedule",
+          searchPlaceholder: "Search schedules",
+          numericSelection: true,
+          groups: [
+            {
+              id: "schedules",
+              items: (["cron", "interval", "delay", "event"] as const).map(
+                (scheduleType, index) => ({
+                  id: scheduleType,
+                  title:
+                    scheduleType === "cron"
+                      ? "Cron"
+                      : scheduleType === "interval"
+                        ? "Interval"
+                        : scheduleType === "delay"
+                          ? "Delay"
+                          : "Event",
+                  current: state().form.scheduleType === scheduleType,
+                  numericKey: numericKey(index),
+                  execute: () =>
+                    state().updateForm({
+                      scheduleType,
+                      ...(scheduleType === "event"
+                        ? { triggerEnabled: true }
+                        : {}),
+                    }),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.missed-run-policy.select",
+        title: "Choose missed-run policy",
+        group: "Scheduler",
+        scope,
+        children: () => ({
+          id: "scheduler.missed-run-policy.select.page",
+          title: "Choose missed-run policy",
+          searchPlaceholder: "Search policies",
+          numericSelection: true,
+          groups: [
+            {
+              id: "policies",
+              items: (
+                [
+                  ["enqueue-latest", "Enqueue latest"],
+                  ["enqueue-all", "Enqueue all"],
+                  ["skip", "Skip missed runs"],
+                ] as const
+              ).map(([missedRunPolicy, title], index) => ({
+                id: missedRunPolicy,
+                title,
+                current: state().form.missedRunPolicy === missedRunPolicy,
+                numericKey: numericKey(index),
+                execute: () => state().updateForm({ missedRunPolicy }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.mode.select",
+        title: "Choose scheduler mode",
+        group: "Scheduler",
+        scope,
+        availability: () =>
+          state().form.targetType === "prompt"
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "scheduler.mode.select.page",
+          title: "Choose scheduler mode",
+          searchPlaceholder: "Search modes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: (
+                [
+                  ["", "Workspace default"],
+                  ["ask", "Ask"],
+                  ["machdoch", "Machdoch"],
+                ] as const
+              ).map(([mode, title], index) => ({
+                id: mode || "default",
+                title,
+                current: state().form.mode === mode,
+                numericKey: numericKey(index),
+                execute: () => state().updateForm({ mode }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.provider.select",
+        title: "Choose scheduler provider",
+        group: "Scheduler",
+        scope,
+        availability: () =>
+          state().form.targetType === "prompt"
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "scheduler.provider.select.page",
+          title: "Choose scheduler provider",
+          searchPlaceholder: "Search providers",
+          numericSelection: true,
+          groups: [
+            {
+              id: "providers",
+              items: (
+                [
+                  ["", "Workspace default"],
+                  ["openai", "OpenAI"],
+                  ["anthropic", "Anthropic"],
+                  ["google", "Google"],
+                ] as const
+              ).map(([provider, title], index) => ({
+                id: provider || "default",
+                title,
+                current: state().form.provider === provider,
+                numericKey: numericKey(index),
+                execute: () => state().updateForm({ provider }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "scheduler.reasoning.select",
+        title: "Choose scheduler reasoning",
+        group: "Scheduler",
+        scope,
+        availability: () =>
+          state().form.targetType === "prompt"
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "scheduler.reasoning.select.page",
+          title: "Choose scheduler reasoning",
+          searchPlaceholder: "Search reasoning modes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "reasoning",
+              items: (["", ...state().reasoningOptions] as const).map(
+                (reasoning, index) => ({
+                  id: reasoning || "default",
+                  title: reasoning
+                    ? REASONING_LABELS[reasoning]
+                    : "Workspace default",
+                  current: state().reasoningValue === reasoning,
+                  numericKey: numericKey(index),
+                  execute: () => state().updateForm({ reasoning }),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(schedulerCommands);
+
   return (
-    <DialogContent className="app-scheduler-dialog max-h-[min(820px,calc(100vh-28px))] w-[min(1180px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+    <DialogContent
+      data-command-owner="scheduler"
+      className="app-scheduler-dialog max-h-[min(820px,calc(100vh-28px))] w-[min(1180px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
+    >
       <div className="flex max-h-[min(820px,calc(100vh-28px))] min-h-[560px] flex-col overflow-hidden">
         <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold text-white">
@@ -1189,7 +1803,9 @@ export const SchedulerPanel = ({
                                 variant="outline"
                                 className="border-slate-700 bg-slate-950 text-slate-300"
                               >
-                                {job.targetType === "ralph-flow" ? "RALPH" : "Prompt"}
+                                {job.targetType === "ralph-flow"
+                                  ? "RALPH"
+                                  : "Prompt"}
                               </Badge>
                             </div>
                             <div className="mt-1 truncate font-mono text-xs text-slate-500">
@@ -1219,12 +1835,18 @@ export const SchedulerPanel = ({
                                   `${job.status === "paused" ? "resume" : "pause"}-${job.id}`,
                                   async () => {
                                     if (job.status === "paused") {
-                                      await resumeSchedulerJob(activeWorkspace, job.id);
+                                      await resumeSchedulerJob(
+                                        activeWorkspace,
+                                        job.id,
+                                      );
                                       setMessage(`Resumed ${job.name}.`);
                                       return;
                                     }
 
-                                    await pauseSchedulerJob(activeWorkspace, job.id);
+                                    await pauseSchedulerJob(
+                                      activeWorkspace,
+                                      job.id,
+                                    );
                                     setMessage(`Paused ${job.name}.`);
                                   },
                                 );
@@ -1246,16 +1868,19 @@ export const SchedulerPanel = ({
                               disabled={Boolean(busyAction)}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                void runAction(`trigger-${job.id}`, async () => {
-                                  const result = await triggerSchedulerJob(
-                                    activeWorkspace,
-                                    job.id,
-                                  );
+                                void runAction(
+                                  `trigger-${job.id}`,
+                                  async () => {
+                                    const result = await triggerSchedulerJob(
+                                      activeWorkspace,
+                                      job.id,
+                                    );
 
-                                  setMessage(
-                                    `Triggered ${job.name}: ${result.runs.length} run.`,
-                                  );
-                                });
+                                    setMessage(
+                                      `Triggered ${job.name}: ${result.runs.length} run.`,
+                                    );
+                                  },
+                                );
                               }}
                               className="h-8 w-8 rounded-md text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                             >
@@ -1271,7 +1896,10 @@ export const SchedulerPanel = ({
                               onClick={(event) => {
                                 event.stopPropagation();
                                 void runAction(`delete-${job.id}`, async () => {
-                                  await deleteSchedulerJob(activeWorkspace, job.id);
+                                  await deleteSchedulerJob(
+                                    activeWorkspace,
+                                    job.id,
+                                  );
                                   setMessage(`Deleted ${job.name}.`);
                                 });
                               }}
@@ -1356,7 +1984,9 @@ export const SchedulerPanel = ({
                                 </code>
                                 <Badge
                                   variant="outline"
-                                  className={getStatusBadgeClassName(run.status)}
+                                  className={getStatusBadgeClassName(
+                                    run.status,
+                                  )}
                                 >
                                   {run.status}
                                 </Badge>
@@ -1407,7 +2037,10 @@ export const SchedulerPanel = ({
                               }
                               onClick={() => {
                                 void runAction(`cancel-${run.id}`, async () => {
-                                  await cancelSchedulerRun(activeWorkspace, run.id);
+                                  await cancelSchedulerRun(
+                                    activeWorkspace,
+                                    run.id,
+                                  );
                                   setMessage(`Cancelled ${run.id}.`);
                                 });
                               }}
@@ -1491,7 +2124,10 @@ export const SchedulerPanel = ({
               </div>
 
               <div className="grid gap-2">
-                <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-name">
+                <label
+                  className="text-xs font-medium text-slate-400"
+                  htmlFor="scheduler-name"
+                >
                   Name
                 </label>
                 <Input
@@ -1510,19 +2146,22 @@ export const SchedulerPanel = ({
                     <Button
                       key={targetType}
                       type="button"
-                      variant={form.targetType === targetType ? "secondary" : "ghost"}
+                      variant={
+                        form.targetType === targetType ? "secondary" : "ghost"
+                      }
                       size="sm"
                       onClick={() =>
                         updateForm({
                           targetType,
-                            ...(targetType === "ralph-flow" && form.ralphUnattended
-                              ? {
-                                  ralphAllowCommands: true,
-                                  ralphAllowWrites: true,
-                                  ralphAllowNetwork: true,
-                                  ralphAllowMcpTools: true,
-                                }
-                              : {}),
+                          ...(targetType === "ralph-flow" &&
+                          form.ralphUnattended
+                            ? {
+                                ralphAllowCommands: true,
+                                ralphAllowWrites: true,
+                                ralphAllowNetwork: true,
+                                ralphAllowMcpTools: true,
+                              }
+                            : {}),
                         })
                       }
                       className={cn(
@@ -1540,14 +2179,19 @@ export const SchedulerPanel = ({
 
               {form.targetType === "prompt" ? (
                 <div className="grid gap-2">
-                  <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-prompt">
+                  <label
+                    className="text-xs font-medium text-slate-400"
+                    htmlFor="scheduler-prompt"
+                  >
                     Prompt
                   </label>
                   <Textarea
                     id="scheduler-prompt"
                     value={form.prompt}
                     rows={4}
-                    onChange={(event) => updateForm({ prompt: event.target.value })}
+                    onChange={(event) =>
+                      updateForm({ prompt: event.target.value })
+                    }
                     className="max-h-40 min-h-24 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600"
                     placeholder="/daily-review"
                   />
@@ -1555,14 +2199,19 @@ export const SchedulerPanel = ({
               ) : (
                 <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
                   <div className="grid gap-2">
-                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-flow">
+                    <label
+                      className="text-xs font-medium text-slate-400"
+                      htmlFor="scheduler-ralph-flow"
+                    >
                       RALPH Flow ID
                     </label>
                     <Input
                       id="scheduler-ralph-flow"
                       list="scheduler-ralph-flow-options"
                       value={form.ralphFlowId}
-                      onChange={(event) => updateForm({ ralphFlowId: event.target.value })}
+                      onChange={(event) =>
+                        updateForm({ ralphFlowId: event.target.value })
+                      }
                       className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600"
                       placeholder="security-analysis"
                     />
@@ -1579,7 +2228,10 @@ export const SchedulerPanel = ({
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="grid gap-2">
-                      <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-scope">
+                      <label
+                        className="text-xs font-medium text-slate-400"
+                        htmlFor="scheduler-ralph-scope"
+                      >
                         Flow Scope
                       </label>
                       <select
@@ -1587,7 +2239,9 @@ export const SchedulerPanel = ({
                         value={form.ralphFlowScope}
                         onChange={(event) =>
                           updateForm({
-                            ralphFlowScope: event.target.value as "workspace" | "user",
+                            ralphFlowScope: event.target.value as
+                              | "workspace"
+                              | "user",
                           })
                         }
                         className="h-9 rounded-lg border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100"
@@ -1597,7 +2251,10 @@ export const SchedulerPanel = ({
                       </select>
                     </div>
                     <div className="grid gap-2">
-                      <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-log-scope">
+                      <label
+                        className="text-xs font-medium text-slate-400"
+                        htmlFor="scheduler-ralph-log-scope"
+                      >
                         Log Scope
                       </label>
                       <select
@@ -1605,7 +2262,9 @@ export const SchedulerPanel = ({
                         value={form.ralphRunLogScope}
                         onChange={(event) =>
                           updateForm({
-                            ralphRunLogScope: event.target.value as "workspace" | "user",
+                            ralphRunLogScope: event.target.value as
+                              | "workspace"
+                              | "user",
                           })
                         }
                         className="h-9 rounded-lg border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100"
@@ -1674,7 +2333,10 @@ export const SchedulerPanel = ({
                               <select
                                 value={value}
                                 onChange={(event) =>
-                                  updateRalphParam(variable.name, event.target.value)
+                                  updateRalphParam(
+                                    variable.name,
+                                    event.target.value,
+                                  )
                                 }
                                 className="h-8 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs text-slate-100"
                               >
@@ -1684,10 +2346,15 @@ export const SchedulerPanel = ({
                               </select>
                             ) : (
                               <Input
-                                type={variable.type === "number" ? "number" : "text"}
+                                type={
+                                  variable.type === "number" ? "number" : "text"
+                                }
                                 value={value}
                                 onChange={(event) =>
-                                  updateRalphParam(variable.name, event.target.value)
+                                  updateRalphParam(
+                                    variable.name,
+                                    event.target.value,
+                                  )
                                 }
                                 className="h-8 rounded-md border-slate-800 bg-slate-900 text-xs text-slate-100"
                                 placeholder={variable.default ?? variable.name}
@@ -1704,20 +2371,28 @@ export const SchedulerPanel = ({
                     </div>
                   ) : null}
                   <div className="grid gap-2">
-                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-params">
+                    <label
+                      className="text-xs font-medium text-slate-400"
+                      htmlFor="scheduler-ralph-params"
+                    >
                       Params (advanced name=value)
                     </label>
                     <Textarea
                       id="scheduler-ralph-params"
                       value={form.ralphParams}
                       rows={3}
-                      onChange={(event) => updateForm({ ralphParams: event.target.value })}
+                      onChange={(event) =>
+                        updateForm({ ralphParams: event.target.value })
+                      }
                       className="max-h-32 min-h-20 rounded-lg border-slate-800 bg-slate-900/70 font-mono text-xs text-slate-100 placeholder:text-slate-600"
                       placeholder={"path=src\nseverity=high"}
                     />
                   </div>
                   <div className="grid gap-2">
-                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-max-transitions">
+                    <label
+                      className="text-xs font-medium text-slate-400"
+                      htmlFor="scheduler-ralph-max-transitions"
+                    >
                       Max Transitions
                     </label>
                     <Input
@@ -1730,7 +2405,10 @@ export const SchedulerPanel = ({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-roots">
+                    <label
+                      className="text-xs font-medium text-slate-400"
+                      htmlFor="scheduler-ralph-roots"
+                    >
                       Allowed Roots
                     </label>
                     <Textarea
@@ -1751,7 +2429,8 @@ export const SchedulerPanel = ({
                           Unattended execution
                         </div>
                         <div className="mt-0.5 text-[11px] leading-4 text-slate-500">
-                          Run agent blocks with every runtime capability and no approval pause.
+                          Run agent blocks with every runtime capability and no
+                          approval pause.
                         </div>
                       </div>
                       <label className="flex shrink-0 items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 text-xs font-medium text-emerald-100">
@@ -1774,7 +2453,9 @@ export const SchedulerPanel = ({
                         Autonomous
                       </label>
                     </div>
-                    <div className="text-xs font-medium text-slate-400">Capabilities</div>
+                    <div className="text-xs font-medium text-slate-400">
+                      Capabilities
+                    </div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
                       {[
                         ["ralphAllowCommands", "Commands"],
@@ -1788,7 +2469,9 @@ export const SchedulerPanel = ({
                         >
                           <input
                             type="checkbox"
-                            checked={Boolean(form[key as keyof SchedulerFormState])}
+                            checked={Boolean(
+                              form[key as keyof SchedulerFormState],
+                            )}
                             onChange={(event) =>
                               updateForm({
                                 [key]: event.target.checked,
@@ -1808,30 +2491,38 @@ export const SchedulerPanel = ({
               )}
 
               <div className="grid gap-2">
-                <div className="text-xs font-medium text-slate-400">Schedule</div>
+                <div className="text-xs font-medium text-slate-400">
+                  Schedule
+                </div>
                 <div className="grid grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
-                  {(["cron", "interval", "delay", "event"] as const).map((type) => (
-                    <Button
-                      key={type}
-                      type="button"
-                      variant={form.scheduleType === type ? "secondary" : "ghost"}
-                      size="sm"
-                      onClick={() =>
-                        updateForm({
-                          scheduleType: type,
-                          ...(type === "event" ? { triggerEnabled: true } : {}),
-                        })
-                      }
-                      className={cn(
-                        "h-8 rounded-md px-2 text-xs capitalize",
-                        form.scheduleType === type
-                          ? "bg-slate-700 text-white hover:bg-slate-700"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                      )}
-                    >
-                      {type}
-                    </Button>
-                  ))}
+                  {(["cron", "interval", "delay", "event"] as const).map(
+                    (type) => (
+                      <Button
+                        key={type}
+                        type="button"
+                        variant={
+                          form.scheduleType === type ? "secondary" : "ghost"
+                        }
+                        size="sm"
+                        onClick={() =>
+                          updateForm({
+                            scheduleType: type,
+                            ...(type === "event"
+                              ? { triggerEnabled: true }
+                              : {}),
+                          })
+                        }
+                        className={cn(
+                          "h-8 rounded-md px-2 text-xs capitalize",
+                          form.scheduleType === type
+                            ? "bg-slate-700 text-white hover:bg-slate-700"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                        )}
+                      >
+                        {type}
+                      </Button>
+                    ),
+                  )}
                 </div>
 
                 {form.scheduleType === "cron" ? (
@@ -1840,7 +2531,9 @@ export const SchedulerPanel = ({
                       <span>Cron Expression</span>
                       <Input
                         value={form.cron}
-                        onChange={(event) => updateForm({ cron: event.target.value })}
+                        onChange={(event) =>
+                          updateForm({ cron: event.target.value })
+                        }
                         className="h-9 rounded-lg border-slate-800 bg-slate-900/70 font-mono text-sm text-slate-100"
                       />
                     </label>
@@ -1909,7 +2602,9 @@ export const SchedulerPanel = ({
                   <label className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
                     <input
                       type="checkbox"
-                      checked={form.triggerEnabled || form.scheduleType === "event"}
+                      checked={
+                        form.triggerEnabled || form.scheduleType === "event"
+                      }
                       disabled={form.scheduleType === "event"}
                       onChange={(event) =>
                         updateForm({ triggerEnabled: event.target.checked })
@@ -1926,7 +2621,8 @@ export const SchedulerPanel = ({
                     <select
                       value={form.triggerKind}
                       onChange={(event) => {
-                        const nextKind = event.target.value as SchedulerTriggerKind;
+                        const nextKind = event.target
+                          .value as SchedulerTriggerKind;
                         const currentDefault =
                           defaultEventTypeByKind[form.triggerKind];
 
@@ -1966,7 +2662,9 @@ export const SchedulerPanel = ({
                       value={form.triggerFiringMode}
                       onChange={(event) =>
                         updateForm({
-                          triggerFiringMode: event.target.value as "event" | "state",
+                          triggerFiringMode: event.target.value as
+                            | "event"
+                            | "state",
                         })
                       }
                       className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
@@ -2101,7 +2799,9 @@ export const SchedulerPanel = ({
                   <Textarea
                     value={form.macros}
                     rows={2}
-                    onChange={(event) => updateForm({ macros: event.target.value })}
+                    onChange={(event) =>
+                      updateForm({ macros: event.target.value })
+                    }
                     className="max-h-28 rounded-lg border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
                     placeholder="/triage --scope backend"
                   />
@@ -2213,88 +2913,89 @@ export const SchedulerPanel = ({
                     Runtime
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
-                    <span>Run Mode</span>
-                    <select
-                      value={form.mode}
-                      onChange={(event) =>
-                        updateForm({
-                          mode: event.target.value as SchedulerFormState["mode"],
-                        })
-                      }
-                      className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
-                    >
-                      <option value="">Default Mode</option>
-                      <option value="ask">Ask</option>
-                      <option value="machdoch">Machdoch</option>
-                    </select>
-                  </label>
-                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
-                    <span>Provider</span>
-                    <select
-                      value={form.provider}
-                      onChange={(event) => {
-                        const provider = event.target
-                          .value as SchedulerFormState["provider"];
-                        updateForm({
-                          provider,
-                          reasoning: form.reasoning
-                            ? normalizeReasoningModeForProvider(
-                                form.reasoning,
-                                provider || null,
-                                form.model.trim() || null,
-                              )
-                            : "",
-                        });
-                      }}
-                      className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
-                    >
-                      <option value="">Default Provider</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="anthropic">Anthropic</option>
-                      <option value="google">Google</option>
-                    </select>
-                  </label>
-                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
-                    <span>Reasoning</span>
-                    <select
-                      value={reasoningValue}
-                      onChange={(event) =>
-                        updateForm({
-                          reasoning: event.target
-                            .value as SchedulerFormState["reasoning"],
-                        })
-                      }
-                      className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
-                    >
-                      <option value="">Default Reasoning</option>
-                      {reasoningOptions.map((reasoning) => (
-                        <option key={reasoning} value={reasoning}>
-                          {REASONING_LABELS[reasoning]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
-                    <span>Model</span>
-                    <Input
-                      value={form.model}
-                      onChange={(event) =>
-                        updateForm({
-                          model: event.target.value,
-                          reasoning: form.reasoning
-                            ? normalizeReasoningModeForProvider(
-                                form.reasoning,
-                                form.provider || null,
-                                event.target.value.trim() || null,
-                              )
-                            : "",
-                        })
-                      }
-                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
-                      placeholder="Workspace default"
-                    />
-                  </label>
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Run Mode</span>
+                      <select
+                        value={form.mode}
+                        onChange={(event) =>
+                          updateForm({
+                            mode: event.target
+                              .value as SchedulerFormState["mode"],
+                          })
+                        }
+                        className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
+                      >
+                        <option value="">Default Mode</option>
+                        <option value="ask">Ask</option>
+                        <option value="machdoch">Machdoch</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Provider</span>
+                      <select
+                        value={form.provider}
+                        onChange={(event) => {
+                          const provider = event.target
+                            .value as SchedulerFormState["provider"];
+                          updateForm({
+                            provider,
+                            reasoning: form.reasoning
+                              ? normalizeReasoningModeForProvider(
+                                  form.reasoning,
+                                  provider || null,
+                                  form.model.trim() || null,
+                                )
+                              : "",
+                          });
+                        }}
+                        className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
+                      >
+                        <option value="">Default Provider</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="google">Google</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Reasoning</span>
+                      <select
+                        value={reasoningValue}
+                        onChange={(event) =>
+                          updateForm({
+                            reasoning: event.target
+                              .value as SchedulerFormState["reasoning"],
+                          })
+                        }
+                        className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
+                      >
+                        <option value="">Default Reasoning</option>
+                        {reasoningOptions.map((reasoning) => (
+                          <option key={reasoning} value={reasoning}>
+                            {REASONING_LABELS[reasoning]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Model</span>
+                      <Input
+                        value={form.model}
+                        onChange={(event) =>
+                          updateForm({
+                            model: event.target.value,
+                            reasoning: form.reasoning
+                              ? normalizeReasoningModeForProvider(
+                                  form.reasoning,
+                                  form.provider || null,
+                                  event.target.value.trim() || null,
+                                )
+                              : "",
+                          })
+                        }
+                        className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                        placeholder="Workspace default"
+                      />
+                    </label>
                   </div>
                 </div>
               ) : null}

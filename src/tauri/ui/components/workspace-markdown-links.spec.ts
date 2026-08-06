@@ -83,12 +83,52 @@ describe("getWorkspaceMarkdownLinkTarget", () => {
     });
   });
 
+  it("ignores ordinary query strings and fragments on workspace files", () => {
+    expect(
+      getWorkspaceMarkdownLinkTarget(
+        "docs/My%20Report.md?view=preview#summary",
+        WINDOWS_WORKSPACE,
+      ),
+    ).toEqual({
+      relativePath: "docs/My Report.md",
+    });
+  });
+
+  it("uses platform-appropriate path casing and supports a POSIX root workspace", () => {
+    expect(
+      getWorkspaceMarkdownLinkTarget(
+        WINDOWS_SOURCE_PATH.toUpperCase(),
+        WINDOWS_WORKSPACE,
+      ),
+    ).toEqual({
+      relativePath: "SRC/COMMON/HELPERS/GET-BRANCH-LABEL.TS",
+    });
+    expect(
+      getWorkspaceMarkdownLinkTarget(
+        "/home/Owner/project/src/main.ts",
+        "/home/Owner/project",
+      ),
+    ).toEqual({ relativePath: "src/main.ts" });
+    expect(
+      getWorkspaceMarkdownLinkTarget(
+        "/home/owner/project/src/main.ts",
+        "/home/Owner/project",
+      ),
+    ).toBeNull();
+    expect(getWorkspaceMarkdownLinkTarget("/etc/hosts", "/")).toEqual({
+      relativePath: "etc/hosts",
+    });
+  });
+
   it("keeps outside-workspace, unsafe, and non-path targets unsupported", () => {
     expect(
       getWorkspaceMarkdownLinkTarget("C:/Other/secret.ts:1", WINDOWS_WORKSPACE),
     ).toBeNull();
     expect(
       getWorkspaceMarkdownLinkTarget("src/../secret.ts:1", WINDOWS_WORKSPACE),
+    ).toBeNull();
+    expect(
+      getWorkspaceMarkdownLinkTarget("src/%2e%2e/secret.ts", WINDOWS_WORKSPACE),
     ).toBeNull();
     expect(
       getWorkspaceMarkdownLinkTarget(
@@ -103,9 +143,11 @@ describe("isLocalMarkdownLinkHref", () => {
   it("recognizes supported Windows source-location forms without treating web URLs as paths", () => {
     expect(isLocalMarkdownLinkHref(`${WINDOWS_SOURCE_PATH}:13`)).toBe(true);
     expect(isLocalMarkdownLinkHref(`/${WINDOWS_SOURCE_PATH}:13`)).toBe(true);
+    expect(isLocalMarkdownLinkHref("docs/guide.md#usage")).toBe(true);
     expect(isLocalMarkdownLinkHref("https://example.com/file.ts:13")).toBe(
       false,
     );
+    expect(isLocalMarkdownLinkHref("javascript:alert(1)")).toBe(false);
   });
 });
 

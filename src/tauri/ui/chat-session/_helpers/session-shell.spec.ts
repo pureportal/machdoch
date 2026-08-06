@@ -210,7 +210,10 @@ describe("session shell helpers", () => {
         {
           id: "continue-1",
           role: "user",
-          intent: "continue-task",
+          taskAction: {
+            kind: "continue-task",
+            objective: "Check the current time in Europe/Berlin.",
+          },
           content: "Continue previous task.",
           createdAt: 3,
         },

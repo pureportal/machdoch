@@ -27,6 +27,28 @@ export interface StagedPromptEnhancement {
   originalContent: string;
 }
 
+export class PromptEnhancementCancellationError extends Error {
+  readonly taskId: string;
+
+  constructor(taskId: string) {
+    super("Prompt enhancement was cancelled.");
+    this.name = "PromptEnhancementCancellationError";
+    this.taskId = taskId;
+  }
+}
+
+export const isPromptEnhancementCancellation = (
+  error: unknown,
+  taskId: string,
+  cancelledTaskIds: ReadonlySet<string>,
+): boolean => {
+  return (
+    cancelledTaskIds.has(taskId) ||
+    (error instanceof PromptEnhancementCancellationError &&
+      error.taskId === taskId)
+  );
+};
+
 export const PROMPT_ENHANCEMENT_LABELS = {
   off: "Off",
   simple: "Simple enhance",

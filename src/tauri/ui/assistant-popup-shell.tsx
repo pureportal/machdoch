@@ -33,8 +33,14 @@ import { AttachmentImagePreviewDialog } from "./chat-session/components/attachme
 import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
-import { MessageMarkdown } from "./chat-session/components/message-markdown";
+import { MarkdownContent } from "./components/markdown-content";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
+import { CommandProvider } from "./commands/command-context";
+import { getDefaultCommandShortcut } from "./commands/command-defaults";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "./commands/command-types";
 import { Button } from "./components/ui/button";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { cn } from "./lib/utils";
@@ -97,7 +103,7 @@ const QuickTaskMessage = ({
       {isUser ? (
         <p className="whitespace-pre-wrap">{renderedContent}</p>
       ) : (
-        <MessageMarkdown
+        <MarkdownContent
           content={renderedContent}
           workspaceRoot={workspaceRoot}
           onOpenWorkspaceFile={onOpenWorkspaceFile}
@@ -180,14 +186,17 @@ const QuickTaskComposer = ({
   const quickTaskComposer = controller.quickTaskComposer;
   const quickVoiceEnabled =
     controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled;
-  const sendQuickTask = useCallback((draft: string): void => {
-    if (!quickTaskComposer.canSend) {
-      return;
-    }
+  const sendQuickTask = useCallback(
+    (draft: string): void => {
+      if (!quickTaskComposer.canSend) {
+        return;
+      }
 
-    quickTaskComposer.onSend(draft);
-    inputRef.current?.focus();
-  }, [quickTaskComposer]);
+      quickTaskComposer.onSend(draft);
+      inputRef.current?.focus();
+    },
+    [quickTaskComposer],
+  );
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -338,7 +347,8 @@ export const AssistantPopupShell = (): JSX.Element => {
             return;
           }
 
-          void controller.flushPersistence()
+          void controller
+            .flushPersistence()
             .catch((error) => {
               console.error("Failed to flush Quick Chat state", error);
             })
@@ -366,8 +376,99 @@ export const AssistantPopupShell = (): JSX.Element => {
     };
   }, [controller.flushPersistence]);
 
+  const openFullApp = useCallback((): void => {
+    void revealMainWindow().catch((error) => {
+      console.error("Failed to reveal main window", error);
+    });
+  }, []);
+  const openQuickVoice = useCallback((): void => {
+    void showQuickVoiceWindow().catch((error) => {
+      console.error("Failed to show Quick Voice window", error);
+    });
+  }, []);
+  const hideQuickChat = useCallback((): void => {
+    void controller
+      .flushPersistence()
+      .catch((error) => {
+        console.error("Failed to flush Quick Chat state", error);
+      })
+      .finally(() => {
+        void getCurrentWindow()
+          .close()
+          .catch(() => undefined);
+      });
+  }, [controller.flushPersistence]);
+  const popupCommandStateRef = useRef({
+    quickChatPinned,
+    quickVoiceEnabled:
+      controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled,
+    setQuickChatPinned,
+    openFullApp,
+    openQuickVoice,
+    hideQuickChat,
+  });
+  popupCommandStateRef.current = {
+    quickChatPinned,
+    quickVoiceEnabled:
+      controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled,
+    setQuickChatPinned,
+    openFullApp,
+    openQuickVoice,
+    hideQuickChat,
+  };
+  const popupCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => popupCommandStateRef.current;
+    const scope = { kind: "view", ownerId: "chat" } as const;
+    return asPaletteCommands([
+      {
+        id: "quick-chat.app.open",
+        title: "Open full app",
+        group: "Quick Chat",
+        scope,
+        execute: () => state().openFullApp(),
+      },
+      {
+        id: "quick-chat.pin.toggle",
+        title: "Pin or unpin Quick Chat",
+        group: "Quick Chat",
+        scope,
+        current: () => state().quickChatPinned,
+        execute: () =>
+          state().setQuickChatPinned((currentValue) => !currentValue),
+      },
+      {
+        id: "quick-chat.voice.open",
+        title: "Start quick voice command",
+        group: "Quick Chat",
+        scope,
+        availability: () =>
+          state().quickVoiceEnabled
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Quick Voice is disabled." },
+        execute: () => state().openQuickVoice(),
+      },
+      {
+        id: "quick-chat.hide",
+        title: "Hide Quick Chat",
+        group: "Quick Chat",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("quick-chat.hide"),
+            allowIn: ["document", "interactive-control"],
+          },
+        ],
+        execute: () => state().hideQuickChat(),
+      },
+    ]);
+  }, []);
+
   return (
-    <>
+    <CommandProvider
+      activeView="chat"
+      commands={popupCommands}
+      windowKind="assistant"
+    >
       <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/98 text-slate-100 shadow-none">
         <FileDropOverlay
           active={controller.fileDrop.isActive}
@@ -393,11 +494,7 @@ export const AssistantPopupShell = (): JSX.Element => {
               variant="ghost"
               size="icon"
               aria-label="Open full app"
-              onClick={() => {
-                void revealMainWindow().catch((error) => {
-                  console.error("Failed to reveal main window", error);
-                });
-              }}
+              onClick={openFullApp}
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
               <ArrowUpRight className="h-4 w-4" />
@@ -406,7 +503,9 @@ export const AssistantPopupShell = (): JSX.Element => {
               type="button"
               variant="ghost"
               size="icon"
-              aria-label={quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"}
+              aria-label={
+                quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"
+              }
               aria-pressed={quickChatPinned}
               title={quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"}
               onClick={() => {
@@ -418,22 +517,16 @@ export const AssistantPopupShell = (): JSX.Element => {
                   "border border-sky-400/25 bg-sky-400/10 text-sky-100 hover:bg-sky-400/15 hover:text-white",
               )}
             >
-              <Pin className={cn("h-4 w-4", quickChatPinned && "fill-current")} />
+              <Pin
+                className={cn("h-4 w-4", quickChatPinned && "fill-current")}
+              />
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="icon"
               aria-label="Hide quick chat"
-              onClick={() => {
-                void controller.flushPersistence()
-                  .catch((error) => {
-                    console.error("Failed to flush Quick Chat state", error);
-                  })
-                  .finally(() => {
-                    void getCurrentWindow().close().catch(() => undefined);
-                  });
-              }}
+              onClick={hideQuickChat}
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
               <X className="h-4 w-4" />
@@ -451,11 +544,7 @@ export const AssistantPopupShell = (): JSX.Element => {
             </p>
             <Button
               type="button"
-              onClick={() => {
-                void revealMainWindow().catch((error) => {
-                  console.error("Failed to reveal main window", error);
-                });
-              }}
+              onClick={openFullApp}
               className="rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500"
             >
               Open full app
@@ -463,9 +552,7 @@ export const AssistantPopupShell = (): JSX.Element => {
           </div>
         ) : (
           <>
-            <QuickTaskActivity
-              quickTask={controller.quickTask}
-            />
+            <QuickTaskActivity quickTask={controller.quickTask} />
 
             <footer className="border-t border-slate-800/80 bg-slate-950/90 px-5 py-4 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-3">
               <QuickTaskComposer controller={controller} />
@@ -495,6 +582,6 @@ export const AssistantPopupShell = (): JSX.Element => {
         </Suspense>
       ) : null}
       <ChatInputNeededDialog {...controller.inputNeeded} />
-    </>
+    </CommandProvider>
   );
 };

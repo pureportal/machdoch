@@ -58,7 +58,7 @@ export const isCommandScopeActive = (
   return context.focus.ownerPath.includes(scope.ownerId);
 };
 
-const isAllowedByOverlay = (
+export const isCommandAllowedByOverlay = (
   command: CommandDefinition,
   context: CommandContextSnapshot,
 ): boolean => {
@@ -157,7 +157,7 @@ export const resolveShortcut = (
     if (!command.shortcuts || command.shortcuts.length === 0) continue;
     if (
       !isCommandScopeActive(command, context) ||
-      !isAllowedByOverlay(command, context)
+      !isCommandAllowedByOverlay(command, context)
     )
       continue;
     if (command.when && !command.when(context)) continue;

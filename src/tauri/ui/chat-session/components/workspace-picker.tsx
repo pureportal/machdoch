@@ -6,14 +6,13 @@ import {
   Search,
   X,
 } from "lucide-react";
-import {
-  useMemo,
-  useRef,
-  useState,
-  type JSX,
-  type KeyboardEvent,
-} from "react";
+import { useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { Button } from "../../components/ui/button";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../../commands/command-types";
 import { EmptyState } from "../../components/ui/empty-state";
 import {
   Popover,
@@ -38,6 +37,8 @@ export interface WorkspacePickerProps {
   allowNotSet?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
+  commandId?: string;
+  commandViewId?: string;
   onSelectWorkspace: (workspace: string | null) => void;
   onRemoveWorkspace: (workspace: string) => void;
   onChooseNewWorkspace: () => Promise<void>;
@@ -234,6 +235,8 @@ export const WorkspacePicker = ({
   allowNotSet = true,
   buttonAriaLabel,
   buttonClassName,
+  commandId = "chat.session.workspace.select",
+  commandViewId = "chat",
   onSelectWorkspace,
   onRemoveWorkspace,
   onChooseNewWorkspace,
@@ -314,6 +317,102 @@ export const WorkspacePicker = ({
     event.preventDefault();
     selectWorkspaceEntry(bestMatch);
   };
+  const workspaceCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: commandId,
+        title: "Choose workspace",
+        group: commandViewId === "ralph" ? "Ralph" : "Chat",
+        keywords: ["folder", "project"],
+        scope: { kind: "view", ownerId: commandViewId },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        availability: () =>
+          workspaceLocked
+            ? {
+                state: "disabled",
+                reason: "Workspace is locked after the first message",
+              }
+            : { state: "enabled" },
+        children: () => ({
+          id: `${commandId}-page`,
+          title: "Workspace",
+          searchPlaceholder: "Choose workspace",
+          groups: [
+            {
+              id: "workspaces",
+              items: [
+                ...workspaceSearchEntries.map(
+                  (entry): CommandPageItem => ({
+                    id: entry.key,
+                    title: entry.label,
+                    keywords: entry.path ? [entry.path] : undefined,
+                    current:
+                      entry.type === "not-set"
+                        ? currentWorkspaceKey === null
+                        : currentWorkspaceKey === entry.key,
+                    execute: () => onSelectWorkspace(entry.workspace),
+                  }),
+                ),
+                {
+                  id: "choose-new",
+                  title: "Choose another workspace",
+                  keywords: ["browse", "folder"],
+                  execute: async () => {
+                    await onChooseNewWorkspace();
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        id: `${commandId}.recent.remove`,
+        title: "Remove recent workspace",
+        group: commandViewId === "ralph" ? "Ralph" : "Chat",
+        scope: { kind: "view", ownerId: commandViewId },
+        palette: "visible",
+        availability: () =>
+          workspaceLocked
+            ? {
+                state: "disabled",
+                reason: "Workspace is locked after the first message",
+              }
+            : recentWorkspaces.length === 0
+              ? { state: "disabled", reason: "No recent workspaces" }
+              : { state: "enabled" },
+        children: () => ({
+          id: `${commandId}-remove-page`,
+          title: "Remove recent workspace",
+          searchPlaceholder: "Choose workspace",
+          groups: [
+            {
+              id: "workspaces",
+              items: recentWorkspaces.map((workspace) => ({
+                id: createWorkspaceKey(workspace),
+                title: getWorkspaceLabel(workspace),
+                keywords: [workspace],
+                execute: () => onRemoveWorkspace(workspace),
+              })),
+            },
+          ],
+        }),
+      },
+    ],
+    [
+      commandId,
+      commandViewId,
+      currentWorkspaceKey,
+      onChooseNewWorkspace,
+      onRemoveWorkspace,
+      onSelectWorkspace,
+      recentWorkspaces,
+      workspaceLocked,
+      workspaceSearchEntries,
+    ],
+  );
+  useOptionalRegisterCommands(workspaceCommands);
 
   if (workspaceLocked) {
     return (
@@ -493,7 +592,9 @@ export const WorkspacePicker = ({
                         <X className="h-4 w-4" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="left">Remove from list</TooltipContent>
+                    <TooltipContent side="left">
+                      Remove from list
+                    </TooltipContent>
                   </Tooltip>
                 </div>
               );

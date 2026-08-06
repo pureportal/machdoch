@@ -208,28 +208,55 @@ describe("mergeMarketplaceResults", () => {
 });
 
 describe("redactMcpConfigRaw", () => {
-  it("redacts obvious inline secrets and keeps env references visible", () => {
-    expect(
-      redactMcpConfigRaw(
-        JSON.stringify({
-          servers: [
-            {
-              transport: {
-                headers: {
-                  Authorization: "Bearer secret",
-                  "X-API-Key": "${env:API_KEY}",
-                },
-                env: {
-                  API_TOKEN: "secret",
-                },
+  it("redacts only schema-declared secret locations", () => {
+    const redacted = redactMcpConfigRaw(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaults: { enabled: true, token: "must-not-survive" },
+        servers: [
+          {
+            id: "remote",
+            notes: "A token budget is ordinary presentation text.",
+            transport: {
+              type: "streamable-http",
+              url: "https://example.com/mcp",
+              headers: {
+                Authorization: "Bearer secret",
+                "X-API-Key": "${env:API_KEY}",
+                Mixed: "secret ${env:API_KEY}",
               },
             },
-          ],
-        }),
-      ),
-    ).toContain("[redacted]");
-    expect(redactMcpConfigRaw('{"token":"${env:TOKEN}"}')).toContain(
-      "${env:TOKEN}",
+            auth: {
+              type: "oauth",
+              clientId: "public-client",
+              clientSecret: "client-secret",
+              accessToken: "access-secret",
+              accessTokenEnv: "MCP_ACCESS_TOKEN",
+            },
+            token: "unknown-secret-field",
+          },
+        ],
+      }),
+    );
+
+    expect(redacted).toContain("A token budget is ordinary presentation text.");
+    expect(redacted).toContain("${env:API_KEY}");
+    expect(redacted).toContain("MCP_ACCESS_TOKEN");
+    expect(redacted).toContain("[redacted]");
+    expect(redacted).not.toContain("Bearer secret");
+    expect(redacted).not.toContain("secret ${env:API_KEY}");
+    expect(redacted).not.toContain("client-secret");
+    expect(redacted).not.toContain("access-secret");
+    expect(redacted).not.toContain("unknown-secret-field");
+    expect(redacted).not.toContain("must-not-survive");
+  });
+
+  it("omits malformed and unknown config states instead of exposing raw text", () => {
+    expect(redactMcpConfigRaw('{"token":"literal-secret"}')).toBe(
+      "[unrecognized MCP configuration omitted]",
+    );
+    expect(redactMcpConfigRaw('{"token":"literal-secret"')).toBe(
+      "[invalid MCP configuration omitted]",
     );
   });
 });

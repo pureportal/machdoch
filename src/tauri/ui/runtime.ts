@@ -6,6 +6,7 @@ import type {
   AgentModelImageMediaType,
   ConversationMemoryEntry,
   TaskConversationContext,
+  TaskDeterministicAction,
   TaskActionOutput,
   TaskExecutionProgress,
   TaskExecutionChangedLineRange,
@@ -13,6 +14,12 @@ import type {
   TaskExecutionResult,
   TaskRunPreview,
 } from "../../core/types.js";
+import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action.js";
+import {
+  normalizeDesktopTaskRunError,
+  type DesktopTaskRunFailure,
+} from "./desktop-task-error.js";
+import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { InstructionTagRule } from "../../core/instruction-system/types.js";
 import type { MediaAssetReference } from "../../core/media/contracts.js";
@@ -813,7 +820,10 @@ export interface RemoteShellMessageSnapshot {
   content: string;
   createdAt?: number;
   taskId?: string;
-  intent?: string;
+  taskAction?: {
+    kind: "retry-task" | "continue-task";
+    objective: string;
+  };
   attachments: RemoteShellAttachmentSnapshot[];
   source?: RemoteShellMessageSourceSnapshot;
   actions: RemoteShellMessageActionsSnapshot;
@@ -1530,7 +1540,7 @@ export type RecentDesktopTaskOutcome =
     }
   | {
       status: "failed";
-      error: string;
+      failure: DesktopTaskRunFailure;
     };
 
 export interface RecentDesktopTaskResult {
@@ -3565,7 +3575,7 @@ export const saveMcpConfigDocument = async (
       await emitUserSettingsChanged("mcp");
       return result;
     } catch (error) {
-      throw error instanceof Error ? error : new Error(String(error));
+      throw normalizeMcpConfigSaveError(error);
     }
   }
 
@@ -3588,7 +3598,7 @@ export const saveMcpConfigDocument = async (
     await emitUserSettingsChanged("mcp");
     return result;
   } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
+    throw normalizeMcpConfigSaveError(error);
   }
 };
 
@@ -4611,6 +4621,11 @@ const requireWorkspaceRoot = (workspaceRoot: string): string => {
   return normalized;
 };
 
+const requireTerminalWorkspaceRoot = (workspaceRoot: string): string => {
+  if (!workspaceRoot.trim()) throw new Error("Select a workspace first.");
+  return workspaceRoot;
+};
+
 const requireWorkspaceRelativePath = (relativePath: string): string => {
   if (!relativePath) throw new Error("Expected a workspace-relative path.");
   return relativePath;
@@ -4777,7 +4792,7 @@ export const startWorkspaceTerminal = async (
   rows: number,
   onEvent: (event: WorkspaceTerminalEvent) => void,
 ): Promise<WorkspaceTerminalStarted> => {
-  const root = requireWorkspaceRoot(workspaceRoot);
+  const root = requireTerminalWorkspaceRoot(workspaceRoot);
   if (!shellId) throw new Error("Choose a shell.");
   if (!canInvokeTauriCommands()) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
@@ -4824,11 +4839,7 @@ export const writeWorkspaceTerminalBinary = async (
   data: string,
 ): Promise<void> => {
   if (!sessionId) throw new Error("This terminal is no longer running.");
-  let binary = "";
-  for (let index = 0; index < data.length; index += 1) {
-    binary += String.fromCharCode(data.charCodeAt(index) & 0xff);
-  }
-  const encoded = btoa(binary);
+  const encoded = encodeBinaryStringAsBase64(data);
   if (!canInvokeTauriCommands()) {
     writePreviewWorkspaceTerminal(sessionId, data);
     return;
@@ -4893,7 +4904,7 @@ export const stopWorkspaceTerminal = async (
 export const stopWorkspaceTerminals = async (
   workspaceRoot: string,
 ): Promise<number> => {
-  const root = requireWorkspaceRoot(workspaceRoot);
+  const root = requireTerminalWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands()) {
     return stopPreviewWorkspaceTerminals(root);
   }
@@ -4910,7 +4921,7 @@ export const openWorkspaceTerminalHost = async (
   workspaceRoot: string,
   terminalId: string,
 ): Promise<void> => {
-  const root = requireWorkspaceRoot(workspaceRoot);
+  const root = requireTerminalWorkspaceRoot(workspaceRoot);
   if (!terminalId) return;
   if (!canInvokeTauriCommands()) return;
   try {
@@ -6533,6 +6544,7 @@ export const runDesktopTask = async (
     reasoning?: RuntimeSnapshot["reasoning"];
     sessionId?: string;
     taskId?: string;
+    deterministicAction?: TaskDeterministicAction;
   } = {},
 ): Promise<DesktopTaskRunResponse> => {
   const taskBytes = new TextEncoder().encode(task).byteLength;
@@ -6558,6 +6570,16 @@ export const runDesktopTask = async (
   const normalizedReasoning = context.reasoning;
   const normalizedTaskId = context.taskId?.trim();
   const normalizedSessionId = context.sessionId?.trim();
+  const deterministicActionValidation = context.deterministicAction
+    ? validateTaskDeterministicAction(context.deterministicAction)
+    : undefined;
+  if (deterministicActionValidation?.state === "invalid") {
+    throw new Error(deterministicActionValidation.reason);
+  }
+  const deterministicAction =
+    deterministicActionValidation?.state === "valid"
+      ? deterministicActionValidation.action
+      : undefined;
 
   if (!canInvokeTauriCommands()) {
     return {
@@ -6578,6 +6600,7 @@ export const runDesktopTask = async (
         ...(normalizedMode ? { mode: normalizedMode } : {}),
         ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
         ...(normalizedSessionId ? { sessionId: normalizedSessionId } : {}),
+        ...(deterministicAction ? { deterministicAction } : {}),
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
         ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),
@@ -6591,7 +6614,7 @@ export const runDesktopTask = async (
       },
     });
   } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
+    throw normalizeDesktopTaskRunError(error);
   }
 };
 

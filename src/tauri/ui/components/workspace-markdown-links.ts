@@ -128,8 +128,13 @@ const normalizeLocalPath = (path: string): string => {
   return pathWithoutDuplicateSlashes;
 };
 
-const trimWorkspaceRoot = (workspaceRoot: string): string =>
-  normalizeLocalPath(workspaceRoot).replace(/\/+$/u, "");
+const trimWorkspaceRoot = (workspaceRoot: string): string => {
+  const normalizedRoot = normalizeLocalPath(workspaceRoot);
+
+  return normalizedRoot === "/"
+    ? normalizedRoot
+    : normalizedRoot.replace(/\/+$/u, "");
+};
 
 const parseSourceLocationMatch = (
   match: RegExpExecArray | null,
@@ -168,7 +173,9 @@ const parseSourceLocation = (href: string): SourceLocation => {
 const normalizeHrefTarget = (href: string): SourceLocation => {
   const sourceLocation = parseSourceLocation(href);
   const normalizedPath = normalizeLocalPath(
-    decodeMarkdownHref(stripFileUrlPrefix(sourceLocation.path)),
+    decodeMarkdownHref(
+      stripFileUrlSearchAndHash(stripFileUrlPrefix(sourceLocation.path)),
+    ),
   );
 
   return sourceLocation.line
@@ -230,11 +237,22 @@ const toWorkspaceRelativePath = (
     return null;
   }
 
-  const pathKey = normalizedPath.toLowerCase();
-  const rootKey = normalizedRoot.toLowerCase();
+  const caseInsensitive =
+    WINDOWS_DRIVE_PATH_PATTERN.test(normalizedRoot) ||
+    UNC_PATH_PATTERN.test(normalizedRoot);
+  const pathKey = caseInsensitive
+    ? normalizedPath.toLowerCase()
+    : normalizedPath;
+  const rootKey = caseInsensitive
+    ? normalizedRoot.toLowerCase()
+    : normalizedRoot;
 
   if (pathKey === rootKey) {
     return ".";
+  }
+
+  if (rootKey === "/") {
+    return pathKey.startsWith("/") ? normalizedPath.slice(1) : null;
   }
 
   if (!pathKey.startsWith(`${rootKey}/`)) {

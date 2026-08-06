@@ -773,6 +773,8 @@ export const RalphApp = ({
               workspaceLocked={false}
               allowNotSet={false}
               buttonAriaLabel="Ralph workspace"
+              commandId="ralph.workspace.select"
+              commandViewId="ralph"
               onSelectWorkspace={(workspace) => {
                 if (workspace) {
                   applyWorkspaceSelection(workspace);

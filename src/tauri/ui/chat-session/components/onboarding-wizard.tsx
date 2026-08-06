@@ -1,8 +1,14 @@
 import { FolderOpen, Sparkles } from "lucide-react";
-import { useMemo, type JSX } from "react";
+import { useMemo, useRef, type JSX } from "react";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../commands/command-types";
 import { Dialog } from "../../components/ui/dialog";
 import type { RuntimeProvider } from "../../model-catalog";
 import {
@@ -15,10 +21,7 @@ import {
   RUN_MODE_ORDER,
   type SettingsSection,
 } from "../_helpers/session-shell";
-import {
-  SettingsDialog,
-  type SettingsControlsProps,
-} from "./settings-dialog";
+import { SettingsDialog, type SettingsControlsProps } from "./settings-dialog";
 import { SessionModelPicker } from "./session-model-picker";
 import {
   ChoiceButtons,
@@ -114,6 +117,111 @@ export const OnboardingWizard = ({
     onSessionModelSelection(provider, model);
   };
 
+  const onboardingCommandStateRef = useRef({
+    activeSession,
+    settingsSavePending,
+    isUiControlAvailable,
+    onSelectFolder,
+    onSessionModeSelection,
+    onUiControlEnabledChange,
+  });
+  onboardingCommandStateRef.current = {
+    activeSession,
+    settingsSavePending,
+    isUiControlAvailable,
+    onSelectFolder,
+    onSessionModeSelection,
+    onUiControlEnabledChange,
+  };
+  const onboardingCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => onboardingCommandStateRef.current;
+    const scope = { kind: "overlay", ownerId: "settings-dialog" } as const;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    return asPaletteCommands([
+      {
+        id: "onboarding.workspace.select",
+        title: "Choose first session workspace",
+        group: "First session",
+        scope,
+        availability: () =>
+          state().settingsSavePending
+            ? { state: "disabled", reason: "Settings are being saved." }
+            : { state: "enabled" },
+        execute: () => void state().onSelectFolder(),
+      },
+      {
+        id: "onboarding.session.mode.select",
+        title: "Choose first session mode",
+        group: "First session",
+        scope,
+        children: () => ({
+          id: "onboarding.session.mode.select.page",
+          title: "Choose first session mode",
+          searchPlaceholder: "Search modes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: ([null, ...RUN_MODE_ORDER] as const).map(
+                (mode, index) => ({
+                  id: mode ?? "default",
+                  title: mode ? RUN_MODE_META[mode].label : "Workspace default",
+                  current:
+                    mode === null
+                      ? state().activeSession.mode == null
+                      : state().activeSession.mode === mode,
+                  numericKey: numericKey(index),
+                  execute: () => state().onSessionModeSelection(mode),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "onboarding.desktop-control.select",
+        title: "Choose first session desktop control",
+        group: "First session",
+        scope,
+        children: () => ({
+          id: "onboarding.desktop-control.select.page",
+          title: "Choose first session desktop control",
+          searchPlaceholder: "Search options",
+          numericSelection: true,
+          groups: [
+            {
+              id: "options",
+              items: [
+                {
+                  id: "disabled",
+                  title: "Ask first",
+                  current: !state().activeSession.uiControlEnabled,
+                  numericKey: "1",
+                  execute: () => state().onUiControlEnabledChange(false),
+                },
+                {
+                  id: "enabled",
+                  title: "Allow",
+                  current: state().activeSession.uiControlEnabled,
+                  numericKey: "2",
+                  availability: state().isUiControlAvailable
+                    ? { state: "enabled" }
+                    : {
+                        state: "disabled",
+                        reason: "Desktop control is unavailable.",
+                      },
+                  execute: () => state().onUiControlEnabledChange(true),
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(onboardingCommands);
+
   const preparePanel = (
     <SettingsCard
       title="First session"
@@ -182,10 +290,7 @@ export const OnboardingWizard = ({
         />
       </SettingPanel>
 
-      <SettingPanel
-        label="Desktop control"
-        detail={uiControlDescription}
-      >
+      <SettingPanel label="Desktop control" detail={uiControlDescription}>
         <ChoiceButtons
           label="Desktop control"
           value={activeSession.uiControlEnabled ? "enabled" : "disabled"}
@@ -207,7 +312,11 @@ export const OnboardingWizard = ({
   );
 
   return (
-    <Dialog open>
+    <Dialog
+      open
+      commandOverlayId="settings-dialog"
+      commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+    >
       <SettingsDialog
         {...settingsControls}
         settingsSection={settingsSection}
@@ -220,7 +329,8 @@ export const OnboardingWizard = ({
         closeDiscardLabel="Discard changes and skip setup"
         introSection={{
           label: "Start",
-          description: "Choose the workspace and behavior for your first session.",
+          description:
+            "Choose the workspace and behavior for your first session.",
           keywords: ["first", "startup", "folder", "model", "mode", "control"],
           icon: Sparkles,
           content: preparePanel,

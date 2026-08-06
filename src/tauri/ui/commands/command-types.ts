@@ -118,6 +118,11 @@ export interface CommandDefinition {
   ) => CommandPage | Promise<CommandPage>;
 }
 
+export const asPaletteCommands = (
+  commands: readonly CommandDefinition[],
+): readonly CommandDefinition[] =>
+  commands.map((command) => ({ ...command, palette: "visible" }));
+
 export type CommandPresentation = "dialog" | "popover";
 
 export const COMMAND_ENABLED = { state: "enabled" } as const;

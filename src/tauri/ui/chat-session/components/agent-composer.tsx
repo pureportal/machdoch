@@ -5,21 +5,22 @@ import {
   Square,
   X,
 } from "lucide-react";
-import type {
-  ClipboardEvent,
-  JSX,
-  KeyboardEvent,
-  ReactNode,
-  Ref,
-} from "react";
+import type { ClipboardEvent, JSX, KeyboardEvent, ReactNode, Ref } from "react";
 import {
   startTransition,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../../commands/command-types";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
@@ -104,9 +105,7 @@ export interface AgentComposerProps {
     event: KeyboardEvent<HTMLTextAreaElement>,
     currentDraft: string,
   ) => void;
-  onRunningTaskMessageActionChange?: (
-    action: RunningTaskMessageAction,
-  ) => void;
+  onRunningTaskMessageActionChange?: (action: RunningTaskMessageAction) => void;
   onQueuedMessageChange?: (messageId: string, content: string) => void;
   onQueuedMessageMove?: (messageId: string, direction: -1 | 1) => void;
   onQueuedMessageReorder?: (messageId: string, targetIndex: number) => void;
@@ -132,6 +131,7 @@ const useBufferedDraft = (
   value: string;
   setValue: (value: string) => void;
   flush: () => void;
+  getValue: () => string;
 } => {
   const [value, setValueState] = useState(draft);
   const valueRef = useRef(draft);
@@ -150,6 +150,7 @@ const useBufferedDraft = (
 
     onDraftChangeRef.current(currentValue);
   }, []);
+  const getValue = useCallback((): string => valueRef.current, []);
 
   const setValue = useCallback(
     (nextValue: string): void => {
@@ -201,7 +202,7 @@ const useBufferedDraft = (
     setValueState(draft);
   }, [draft, draftIdentity]);
 
-  return { value, setValue, flush };
+  return { value, setValue, flush, getValue };
 };
 
 const RUNNING_TASK_MESSAGE_ACTIONS = [
@@ -293,7 +294,7 @@ const renderToggle = (
       title={toggle.title}
       description={
         variant === "session"
-          ? toggle.description ?? toggle.title ?? toggle.label
+          ? (toggle.description ?? toggle.title ?? toggle.label)
           : undefined
       }
       icon={toggle.icon}
@@ -304,7 +305,9 @@ const renderToggle = (
       baseClassName={variant === "quick" ? iconButtonClassName : undefined}
       activeClassName={toggle.activeClassName}
       disabledClassName={toggle.unavailableClassName}
-      className={variant === "session" ? "app-composer-toggle-button" : undefined}
+      className={
+        variant === "session" ? "app-composer-toggle-button" : undefined
+      }
     />
   );
 };
@@ -398,19 +401,15 @@ export const AgentComposer = ({
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
-  const bufferedDraft = useBufferedDraft(
-    draftIdentity,
-    draft,
-    onDraftChange,
-  );
+  const bufferedDraft = useBufferedDraft(draftIdentity, draft, onDraftChange);
   const styles = getVariantStyles(variant);
   const canSubmit = canSend && Boolean(bufferedDraft.value.trim());
-  const showCancelButton =
-    isExecuting && (variant === "quick" || !canSubmit);
+  const showCancelButton = isExecuting && (variant === "quick" || !canSubmit);
   const selectedRunningAction =
     runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[2].id;
-  const selectedRunningActionMeta =
-    getRunningTaskMessageActionMeta(selectedRunningAction);
+  const selectedRunningActionMeta = getRunningTaskMessageActionMeta(
+    selectedRunningAction,
+  );
   const sendLabel =
     submissionLabel ??
     (variant === "session" && isExecuting
@@ -420,12 +419,19 @@ export const AgentComposer = ({
         : "Send message");
   const queuePanelVisible = variant === "session" && queuedMessages.length > 0;
 
-  const submit = (): void => {
-    if (!inputBlocked && canSubmit) {
+  const submit = useCallback((): void => {
+    const currentDraft = bufferedDraft.getValue();
+    if (!inputBlocked && canSend && currentDraft.trim()) {
       bufferedDraft.flush();
-      onSend(bufferedDraft.value);
+      onSend(currentDraft);
     }
-  };
+  }, [
+    bufferedDraft.flush,
+    bufferedDraft.getValue,
+    canSend,
+    inputBlocked,
+    onSend,
+  ]);
 
   const handleTextareaKeyDown = (
     event: KeyboardEvent<HTMLTextAreaElement>,
@@ -565,6 +571,485 @@ export const AgentComposer = ({
         </div>
       </div>
     ) : null;
+  const composerCommands = useMemo<readonly CommandDefinition[]>(() => {
+    if (variant !== "session") return [];
+    const ordinaryFocus = [
+      "document",
+      "text-entry",
+      "interactive-control",
+      "command-surface",
+    ] as const;
+    return [
+      {
+        id: "chat.composer.send",
+        title: sendLabel,
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          inputBlocked
+            ? { state: "disabled", reason: "The composer is busy" }
+            : canSubmit
+              ? { state: "enabled" }
+              : {
+                  state: "disabled",
+                  reason: sendDisabledReason ?? "Enter a message first",
+                },
+        execute: () => submit(),
+      },
+      {
+        id: "chat.task.cancel",
+        title: showCancelAlongsideSend ? "Cancel message edit" : "Cancel task",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("chat.task.cancel"),
+            allowIn: ordinaryFocus,
+          },
+        ],
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        availability: () =>
+          isExecuting || showCancelAlongsideSend
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No active task or edit" },
+        execute: () => onCancel(),
+      },
+      {
+        id: "chat.composer.context.add",
+        title: "Add context",
+        group: "Chat",
+        keywords: ["attach", "file", "folder", "image", "media"],
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        availability: () =>
+          inputBlocked
+            ? { state: "disabled", reason: "The composer is busy" }
+            : { state: "enabled" },
+        children: () => ({
+          id: "chat-composer-context-add",
+          title: "Add context",
+          searchPlaceholder: "Choose source",
+          groups: [
+            {
+              id: "context",
+              items: [
+                {
+                  id: "images",
+                  title: "Images",
+                  availability: imageInputSupported
+                    ? { state: "enabled" }
+                    : {
+                        state: "disabled",
+                        reason:
+                          imageInputDisabledReason ??
+                          "Image input is unavailable",
+                      },
+                  execute: async () => onSelectContextImages(),
+                },
+                ...(onBrowseMediaAssets
+                  ? [
+                      {
+                        id: "media-library",
+                        title: "Media Library",
+                        availability: imageInputSupported
+                          ? ({ state: "enabled" } as const)
+                          : ({
+                              state: "disabled",
+                              reason:
+                                imageInputDisabledReason ??
+                                "Image input is unavailable",
+                            } as const),
+                        execute: () => onBrowseMediaAssets(),
+                      },
+                    ]
+                  : []),
+                ...(onCreateMediaAsset
+                  ? [
+                      {
+                        id: "media-create",
+                        title: "Create in Media Studio",
+                        execute: () =>
+                          onCreateMediaAsset(bufferedDraft.getValue().trim()),
+                      },
+                    ]
+                  : []),
+                {
+                  id: "files",
+                  title: "Files",
+                  execute: async () => onSelectContextFiles(),
+                },
+                {
+                  id: "folders",
+                  title: "Folders",
+                  execute: async () => onSelectContextFolders(),
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.composer.context.open",
+        title: "Open context attachment",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          contextAttachments.length > 0 && onOpenContextAttachment
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No context attachments" },
+        children: () => ({
+          id: "chat-composer-context-open",
+          title: "Open context attachment",
+          searchPlaceholder: "Choose attachment",
+          groups: [
+            {
+              id: "attachments",
+              items: contextAttachments.map((attachment) => ({
+                id: attachment.id,
+                title: attachment.name,
+                keywords: [
+                  "path" in attachment ? attachment.path : attachment.assetId,
+                ],
+                execute: () => onOpenContextAttachment?.(attachment),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.composer.context.remove",
+        title: "Remove context attachment",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          contextAttachments.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No context attachments" },
+        children: () => ({
+          id: "chat-composer-context-remove",
+          title: "Remove context attachment",
+          searchPlaceholder: "Choose attachment",
+          groups: [
+            {
+              id: "attachments",
+              items: contextAttachments.map((attachment) => ({
+                id: attachment.id,
+                title: attachment.name,
+                execute: () => onRemoveContextAttachment(attachment.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.composer.context.clear",
+        title: "Clear context attachments",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          contextAttachments.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No context attachments" },
+        execute: () => onClearContextAttachments(),
+      },
+      ...toggles.map(
+        (toggle): CommandDefinition => ({
+          id: `chat.composer.${toggle.id}.toggle`,
+          title: `${toggle.pressed ? "Disable" : "Enable"} ${toggle.label.toLowerCase()}`,
+          group: "Chat",
+          keywords: toggle.description ? [toggle.description] : undefined,
+          scope: { kind: "view", ownerId: "chat" },
+          palette: "visible",
+          availability: () =>
+            inputBlocked
+              ? { state: "disabled", reason: "The composer is busy" }
+              : toggle.disabled
+                ? {
+                    state: "disabled",
+                    reason:
+                      toggle.description ?? `${toggle.label} is unavailable`,
+                  }
+                : { state: "enabled" },
+          execute: () => toggle.onPressedChange(!toggle.pressed),
+        }),
+      ),
+      ...actions.map(
+        (action): CommandDefinition => ({
+          id: `chat.composer.${action.id}`,
+          title: action.label,
+          group: "Chat",
+          scope: { kind: "view", ownerId: "chat" },
+          palette: "visible",
+          availability: () =>
+            inputBlocked
+              ? { state: "disabled", reason: "The composer is busy" }
+              : action.disabled
+                ? {
+                    state: "disabled",
+                    reason: `${action.label} is unavailable`,
+                  }
+                : { state: "enabled" },
+          execute: () => action.onClick(),
+        }),
+      ),
+      {
+        id: "chat.task.message-action.select",
+        title: "Choose running-task message action",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          isExecuting
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No task is running" },
+        children: () => ({
+          id: "chat-running-task-message-action",
+          title: "Running-task message action",
+          searchPlaceholder: "Choose action",
+          numericSelection: true,
+          groups: [
+            {
+              id: "actions",
+              items: RUNNING_TASK_MESSAGE_ACTIONS.map(
+                (action, index): CommandPageItem => ({
+                  id: action.id,
+                  title: action.label,
+                  current: action.id === selectedRunningAction,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () => onRunningTaskMessageActionChange?.(action.id),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.queue.remove",
+        title: "Remove queued message",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          queuedMessages.length > 0 && onQueuedMessageRemove
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No queued messages" },
+        children: () => ({
+          id: "chat-queue-remove",
+          title: "Remove queued message",
+          searchPlaceholder: "Choose message",
+          groups: [
+            {
+              id: "messages",
+              items: queuedMessages.map((message, index) => ({
+                id: message.id,
+                title:
+                  message.content.trim().replace(/\s+/gu, " ") ||
+                  `Queued message ${index + 1}`,
+                execute: () => onQueuedMessageRemove?.(message.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.queue.move",
+        title: "Move queued message",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          queuedMessages.length > 1 && onQueuedMessageMove
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "chat-queue-move",
+          title: "Move queued message",
+          searchPlaceholder: "Choose message and direction",
+          groups: [
+            {
+              id: "messages",
+              items: queuedMessages.flatMap((message, index) => {
+                const title =
+                  message.content.trim().replace(/\s+/gu, " ") ||
+                  `Queued message ${index + 1}`;
+                return [
+                  {
+                    id: `${message.id}:up`,
+                    title: `Move up: ${title}`,
+                    availability:
+                      index > 0
+                        ? ({ state: "enabled" } as const)
+                        : ({ state: "hidden" } as const),
+                    execute: () => onQueuedMessageMove?.(message.id, -1),
+                  },
+                  {
+                    id: `${message.id}:down`,
+                    title: `Move down: ${title}`,
+                    availability:
+                      index < queuedMessages.length - 1
+                        ? ({ state: "enabled" } as const)
+                        : ({ state: "hidden" } as const),
+                    execute: () => onQueuedMessageMove?.(message.id, 1),
+                  },
+                ];
+              }),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.queue.context.add",
+        title: "Add context to queued message",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          queuedMessages.length > 0 && onQueuedMessageSelectContextAttachments
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "chat-queue-context-add",
+          title: "Add context to queued message",
+          searchPlaceholder: "Choose message and source",
+          groups: [
+            {
+              id: "messages",
+              items: queuedMessages.flatMap((message, index) => {
+                const title =
+                  message.content.trim().replace(/\s+/gu, " ") ||
+                  `Queued message ${index + 1}`;
+                return (["files", "folders", "images"] as const).map(
+                  (kind) => ({
+                    id: `${message.id}:${kind}`,
+                    title: `${kind[0]?.toUpperCase()}${kind.slice(1)}: ${title}`,
+                    availability:
+                      kind === "images" && !imageInputSupported
+                        ? ({
+                            state: "disabled",
+                            reason:
+                              imageInputDisabledReason ??
+                              "Image input is unavailable",
+                          } as const)
+                        : ({ state: "enabled" } as const),
+                    execute: () =>
+                      onQueuedMessageSelectContextAttachments?.(
+                        message.id,
+                        kind,
+                      ),
+                  }),
+                );
+              }),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.queue.context.open",
+        title: "Open queued-message attachment",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          onOpenContextAttachment &&
+          queuedMessages.some((message) => message.attachments.length)
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "chat-queue-context-open",
+          title: "Open queued-message attachment",
+          searchPlaceholder: "Search attachments",
+          groups: [
+            {
+              id: "attachments",
+              items: queuedMessages.flatMap((message) =>
+                message.attachments.map((attachment) => ({
+                  id: `${message.id}:${attachment.id}`,
+                  title: attachment.name,
+                  execute: () => onOpenContextAttachment?.(attachment),
+                })),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.queue.context.clear",
+        title: "Clear queued-message context",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          onQueuedMessageClearContextAttachments &&
+          queuedMessages.some((message) => message.attachments.length)
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "chat-queue-context-clear",
+          title: "Clear queued-message context",
+          searchPlaceholder: "Choose message",
+          groups: [
+            {
+              id: "messages",
+              items: queuedMessages.flatMap((message, index) =>
+                message.attachments.length
+                  ? [
+                      {
+                        id: message.id,
+                        title:
+                          message.content.trim().replace(/\s+/gu, " ") ||
+                          `Queued message ${index + 1}`,
+                        execute: () =>
+                          onQueuedMessageClearContextAttachments?.(message.id),
+                      },
+                    ]
+                  : [],
+              ),
+            },
+          ],
+        }),
+      },
+    ];
+  }, [
+    actions,
+    bufferedDraft.getValue,
+    canSubmit,
+    contextAttachments,
+    imageInputDisabledReason,
+    imageInputSupported,
+    inputBlocked,
+    isExecuting,
+    onBrowseMediaAssets,
+    onCancel,
+    onClearContextAttachments,
+    onCreateMediaAsset,
+    onOpenContextAttachment,
+    onQueuedMessageRemove,
+    onQueuedMessageMove,
+    onQueuedMessageSelectContextAttachments,
+    onQueuedMessageClearContextAttachments,
+    onRemoveContextAttachment,
+    onSelectContextFiles,
+    onSelectContextFolders,
+    onSelectContextImages,
+    onRunningTaskMessageActionChange,
+    queuedMessages,
+    selectedRunningAction,
+    sendDisabledReason,
+    sendLabel,
+    showCancelAlongsideSend,
+    submit,
+    toggles,
+    variant,
+  ]);
+  useOptionalRegisterCommands(composerCommands);
   const queuedMessagesPanel = queuePanelVisible ? (
     <QueuedMessagesPanel
       messages={queuedMessages}
@@ -708,7 +1193,6 @@ export const AgentComposer = ({
         </form>
 
         {queuedMessagesPanel}
-
       </div>
     </div>
   );

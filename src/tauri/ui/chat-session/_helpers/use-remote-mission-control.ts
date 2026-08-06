@@ -100,20 +100,17 @@ const SNAPSHOT_PUBLISH_DELAY_MS = 250;
 const PENDING_COMMAND_POLL_MS = 15_000;
 
 class NonRetryableRemoteCommandError extends Error {}
-
-const isTerminalSchedulerCommandError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-
-  return [
-    "Scheduled job not found",
-    "Scheduled run not found",
-    "No scheduled job id was provided",
-    "No scheduled run id was provided",
-    "Expected a workspace root",
-    "Scheduler idempotency key was already used",
-    "Scheduler mutation idempotency conflict",
-  ].some((fragment) => message.includes(fragment));
-};
+const IDEMPOTENT_REMOTE_COMMAND_KINDS = new Set<
+  RemoteControlCommandEvent["kind"]
+>([
+  "scheduler-trigger",
+  "scheduler-pause",
+  "scheduler-resume",
+  "scheduler-delete",
+  "scheduler-retry-run",
+  "scheduler-cancel-run",
+]);
+const MAX_IDEMPOTENT_REMOTE_COMMAND_ATTEMPTS = 3;
 const MAIN_WINDOW_LABEL = "main";
 const REMOTE_MESSAGE_LIMIT = 80;
 const REMOTE_SESSION_LIMIT = 80;
@@ -238,6 +235,16 @@ const createMessageSourceSnapshot = (
     };
   }
 
+  if (source.kind === "interrupted-task") {
+    return {
+      kind: "interrupted-task",
+      status: source.status,
+      summary: message.content,
+      entries: [],
+      timeline: [],
+    };
+  }
+
   return undefined;
 };
 
@@ -245,7 +252,8 @@ const canRetryOrContinueMessage = (message: ChatSessionMessage): boolean => {
   return (
     message.role === "agent" &&
     (message.source?.kind === "execution" ||
-      message.content.startsWith("**Task crashed.**"))
+      (message.source?.kind === "interrupted-task" &&
+        message.source.status === "crashed"))
   );
 };
 
@@ -260,10 +268,14 @@ const createMessageSnapshot = (
     id: message.id,
     role: message.role,
     content: getRenderedMessageContent(message) || message.content,
-    ...(typeof message.createdAt === "number" ? { createdAt: message.createdAt } : {}),
+    ...(typeof message.createdAt === "number"
+      ? { createdAt: message.createdAt }
+      : {}),
     ...(message.taskId ? { taskId: message.taskId } : {}),
-    ...(message.intent ? { intent: message.intent } : {}),
-    attachments: (message.contextAttachments ?? []).map(createAttachmentSnapshot),
+    ...(message.taskAction ? { taskAction: { ...message.taskAction } } : {}),
+    attachments: (message.contextAttachments ?? []).map(
+      createAttachmentSnapshot,
+    ),
     ...(source ? { source } : {}),
     actions: {
       canRetry: canRetryOrContinueMessage(message),
@@ -279,7 +291,10 @@ const findRunningTaskIdForSession = (
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>,
   sessionId: string,
 ): string | undefined => {
-  for (const [taskId, activeSessionId] of activeDesktopTasksRef.current.entries()) {
+  for (const [
+    taskId,
+    activeSessionId,
+  ] of activeDesktopTasksRef.current.entries()) {
     if (activeSessionId === sessionId) {
       return taskId;
     }
@@ -309,8 +324,12 @@ const createSessionSnapshot = (
     effectiveReasoning: session.reasoning ?? defaultReasoning,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    ...(typeof session.archivedAt === "number" ? { archivedAt: session.archivedAt } : {}),
-    ...(typeof session.pinnedAt === "number" ? { pinnedAt: session.pinnedAt } : {}),
+    ...(typeof session.archivedAt === "number"
+      ? { archivedAt: session.archivedAt }
+      : {}),
+    ...(typeof session.pinnedAt === "number"
+      ? { pinnedAt: session.pinnedAt }
+      : {}),
     tags: session.tags,
     messageCount: session.messages.length,
     promptHistoryCount: session.promptHistory.length,
@@ -362,9 +381,7 @@ const formatDuration = (milliseconds: number | null | undefined): string => {
   return `${Math.round(milliseconds / 3_600_000)}h`;
 };
 
-const formatSchedulerSchedule = (
-  job: SchedulerJobSummary,
-): string => {
+const formatSchedulerSchedule = (job: SchedulerJobSummary): string => {
   const schedule = job.schedule;
 
   if (!schedule) {
@@ -601,9 +618,7 @@ export const useRemoteMissionControl = (options: {
   });
   const handleCommandRef = useRef<
     (command: RemoteControlCommandEvent) => Promise<void>
-  >(
-    async () => undefined,
-  );
+  >(async () => undefined);
   const lastPublishedSnapshotRef = useRef<string>("");
   const schedulerRefreshSequenceRef = useRef(0);
   const schedulerWorkspaceRef = useRef(options.activeSession.workspace);
@@ -647,7 +662,11 @@ export const useRemoteMissionControl = (options: {
 
       return options.activeSession;
     },
-    [options.activeDesktopTasksRef, options.activeSession, options.shellState.sessions],
+    [
+      options.activeDesktopTasksRef,
+      options.activeSession,
+      options.shellState.sessions,
+    ],
   );
 
   const refreshStatus = useCallback(async (): Promise<void> => {
@@ -734,24 +753,25 @@ export const useRemoteMissionControl = (options: {
       ) {
         return;
       }
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       setSchedulerState((current) => ({
         snapshot:
           current.snapshot?.workspaceRoot === workspaceRoot
-          ? {
-              ...current.snapshot,
-              loading: false,
-              error: errorMessage,
-              updatedAt: Date.now(),
-            }
-          : {
-              workspaceRoot,
-              loading: false,
-              error: errorMessage,
-              jobs: [],
-              runs: [],
-              updatedAt: Date.now(),
-            },
+            ? {
+                ...current.snapshot,
+                loading: false,
+                error: errorMessage,
+                updatedAt: Date.now(),
+              }
+            : {
+                workspaceRoot,
+                loading: false,
+                error: errorMessage,
+                jobs: [],
+                runs: [],
+                updatedAt: Date.now(),
+              },
         loading: false,
         error: errorMessage,
       }));
@@ -813,7 +833,8 @@ export const useRemoteMissionControl = (options: {
         ...(options.sendDisabledReason
           ? { sendDisabledReason: options.sendDisabledReason }
           : {}),
-        isExecuting: getSessionOverviewStatus(options.activeSession) === "running",
+        isExecuting:
+          getSessionOverviewStatus(options.activeSession) === "running",
         sessionMemoryEnabled: options.activeSession.sessionMemoryEnabled,
         globalMemoryAvailable: options.isGlobalMemoryAvailable,
         globalMemoryEnabled: options.isGlobalMemoryActive,
@@ -830,8 +851,12 @@ export const useRemoteMissionControl = (options: {
         loading: options.runtimeLoading,
         ...(options.runtimeError ? { error: options.runtimeError } : {}),
         hasAnyProvider: options.hasAnyProvider,
-        providerStatuses: createProviderStatusSnapshots(options.runtimeSnapshot),
-        ...(options.runtimeSnapshot?.mode ? { mode: options.runtimeSnapshot.mode } : {}),
+        providerStatuses: createProviderStatusSnapshots(
+          options.runtimeSnapshot,
+        ),
+        ...(options.runtimeSnapshot?.mode
+          ? { mode: options.runtimeSnapshot.mode }
+          : {}),
         ...(options.runtimeSnapshot?.reasoning
           ? { reasoning: options.runtimeSnapshot.reasoning }
           : {}),
@@ -845,7 +870,9 @@ export const useRemoteMissionControl = (options: {
           : {}),
         webSearch: createRuntimeCapabilitySnapshot(
           webSearchConfigured,
-          webSearchConfigured ? undefined : "No web search provider is configured.",
+          webSearchConfigured
+            ? undefined
+            : "No web search provider is configured.",
         ),
       },
       ...(schedulerSnapshot ? { scheduler: schedulerSnapshot } : {}),
@@ -926,11 +953,6 @@ export const useRemoteMissionControl = (options: {
         await action();
       } catch (error) {
         setMessage(error instanceof Error ? error.message : String(error));
-        if (isTerminalSchedulerCommandError(error)) {
-          throw new NonRetryableRemoteCommandError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
         throw error;
       }
 
@@ -995,7 +1017,8 @@ export const useRemoteMissionControl = (options: {
             (entry) =>
               entry.role === "agent" &&
               (entry.source?.kind === "execution" ||
-                entry.content.startsWith("**Task crashed.**")),
+                (entry.source?.kind === "interrupted-task" &&
+                  entry.source.status === "crashed")),
           );
 
           if (message) {
@@ -1011,7 +1034,8 @@ export const useRemoteMissionControl = (options: {
             (entry) =>
               entry.role === "agent" &&
               (entry.source?.kind === "execution" ||
-                entry.content.startsWith("**Task crashed.**")),
+                (entry.source?.kind === "interrupted-task" &&
+                  entry.source.status === "crashed")),
           );
 
           if (message) {
@@ -1122,7 +1146,10 @@ export const useRemoteMissionControl = (options: {
 
         case "update-draft": {
           if (command.sessionId) {
-            options.onUpdateSessionDraft(command.sessionId, command.prompt ?? "");
+            options.onUpdateSessionDraft(
+              command.sessionId,
+              command.prompt ?? "",
+            );
           }
           break;
         }
@@ -1544,7 +1571,8 @@ export const useRemoteMissionControl = (options: {
           if (snapshotPublishRetryTimerRef.current === null) {
             const retryDelay = Math.min(
               10_000,
-              500 * 2 ** Math.min(snapshotPublishRetryAttemptRef.current - 1, 5),
+              500 *
+                2 ** Math.min(snapshotPublishRetryAttemptRef.current - 1, 5),
             );
             snapshotPublishRetryTimerRef.current = window.setTimeout(() => {
               snapshotPublishRetryTimerRef.current = null;
@@ -1591,6 +1619,7 @@ export const useRemoteMissionControl = (options: {
     const bufferedCommands: RemoteControlCommandEvent[] = [];
     const commandQueue: RemoteControlCommandEvent[] = [];
     const queuedCommandIds = new Set<string>();
+    const failedAttemptCounts = new Map<string, number>();
     let loadPendingCommandsRef: (() => Promise<void>) | null = null;
 
     const executeCommand = async (
@@ -1614,24 +1643,30 @@ export const useRemoteMissionControl = (options: {
         await handleCommandRef.current(command);
         await options.flushPersistence();
         if (canUseTauriStore()) {
-          await invoke<boolean>(
-            "acknowledge_remote_control_command",
-            { commandId: command.commandId },
-          );
+          await invoke<boolean>("acknowledge_remote_control_command", {
+            commandId: command.commandId,
+          });
         }
         await completeCrossWindowOperation(lease);
+        failedAttemptCounts.delete(command.commandId);
       } catch (error) {
         handledRemoteCommandIds.delete(command.commandId);
+        const attempts = (failedAttemptCounts.get(command.commandId) ?? 0) + 1;
+        failedAttemptCounts.set(command.commandId, attempts);
+        const shouldAcknowledge =
+          error instanceof NonRetryableRemoteCommandError ||
+          !IDEMPOTENT_REMOTE_COMMAND_KINDS.has(command.kind) ||
+          attempts >= MAX_IDEMPOTENT_REMOTE_COMMAND_ATTEMPTS;
 
-        if (error instanceof NonRetryableRemoteCommandError) {
+        if (shouldAcknowledge) {
           try {
             if (canUseTauriStore()) {
-              await invoke<boolean>(
-                "acknowledge_remote_control_command",
-                { commandId: command.commandId },
-              );
+              await invoke<boolean>("acknowledge_remote_control_command", {
+                commandId: command.commandId,
+              });
             }
-            setMessage(error.message);
+            setMessage(error instanceof Error ? error.message : String(error));
+            failedAttemptCounts.delete(command.commandId);
             await completeCrossWindowOperation(lease);
             return;
           } catch (acknowledgementError) {
@@ -1703,7 +1738,10 @@ export const useRemoteMissionControl = (options: {
     const receiveCommand = (command: RemoteControlCommandEvent): void => {
       if (canUseTauriStore()) {
         void loadPendingCommandsRef?.().catch((error) => {
-          console.error("Failed to load pending remote-control commands", error);
+          console.error(
+            "Failed to load pending remote-control commands",
+            error,
+          );
         });
         return;
       }
@@ -1730,7 +1768,9 @@ export const useRemoteMissionControl = (options: {
       }
 
       if (!initialized) {
-        const pendingIds = new Set(commands.map((command) => command.commandId));
+        const pendingIds = new Set(
+          commands.map((command) => command.commandId),
+        );
         const combinedCommands = [
           ...commands,
           ...bufferedCommands.filter(
@@ -1760,7 +1800,10 @@ export const useRemoteMissionControl = (options: {
     const pendingPoll = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void loadPendingCommands().catch((error) => {
-          console.error("Failed to refresh pending remote-control commands", error);
+          console.error(
+            "Failed to refresh pending remote-control commands",
+            error,
+          );
         });
       }
     }, PENDING_COMMAND_POLL_MS);

@@ -11,6 +11,7 @@ import {
   type McpRegistryServerEntry,
 } from "../../../core/mcp/marketplace.js";
 import { normalizeOptionalString } from "../../../helpers/normalize-optional-string.helper.js";
+import { MCP_CONFIG_SCHEMA_VERSION } from "../../../core/mcp/types.js";
 
 export type MarketplaceView =
   | "discover"
@@ -626,37 +627,178 @@ export const getMarketplaceResultCountLabel = ({
   return hasMoreResults ? `${label}, more available` : label;
 };
 
-const redactSecretValue = (key: string, value: unknown): unknown => {
-  if (typeof value !== "string") {
+const REDACTED_VALUE = "[redacted]";
+const ENV_TEMPLATE_PATTERN = /\$\{env:[A-Za-z_][A-Za-z0-9_]*\}/gu;
+const PUBLIC_SERVER_FIELDS = new Set([
+  "id",
+  "title",
+  "description",
+  "enabled",
+  "preset",
+  "exposure",
+  "securityProfile",
+  "timeoutMs",
+  "maxTotalTimeoutMs",
+  "idleShutdownMs",
+  "maxResponseChars",
+  "cache",
+  "toolOverrides",
+  "roots",
+  "sampling",
+  "tasks",
+  "notes",
+]);
+const PUBLIC_DEFAULT_FIELDS = [
+  "enabled",
+  "securityProfile",
+  "exposure",
+  "directTools",
+  "timeoutMs",
+  "maxTotalTimeoutMs",
+  "idleShutdownMs",
+  "maxResponseChars",
+  "cache",
+  "roots",
+  "sampling",
+  "tasks",
+  "elicitation",
+] as const;
+
+const redactConfiguredValue = (value: unknown): unknown => {
+  if (typeof value !== "string" || value.length === 0) {
     return value;
   }
-
-  if (value.includes("${env:")) {
-    return value;
-  }
-
-  if (/authorization|api[_-]?key|token|secret|password/iu.test(key)) {
-    return value ? "[redacted]" : value;
-  }
-
-  return value;
+  const references = value.match(ENV_TEMPLATE_PATTERN) ?? [];
+  const literal = value.replace(ENV_TEMPLATE_PATTERN, "");
+  return references.length > 0 && (literal === "" || literal === "Bearer ")
+    ? value
+    : REDACTED_VALUE;
 };
 
-const redactConfigValue = (value: unknown, key = ""): unknown => {
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactConfigValue(entry, key));
-  }
+const redactConfiguredRecord = (value: unknown): unknown =>
+  isRecord(value)
+    ? Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          redactConfiguredValue(entry),
+        ]),
+      )
+    : REDACTED_VALUE;
 
-  if (!isRecord(value)) {
-    return redactSecretValue(key, value);
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([entryKey, entryValue]) => [
-      entryKey,
-      redactConfigValue(entryValue, entryKey),
-    ]),
+const copyFields = (
+  source: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> =>
+  Object.fromEntries(
+    fields.flatMap((field) =>
+      Object.hasOwn(source, field) ? [[field, source[field]] as const] : [],
+    ),
   );
+
+const redactTransport = (value: unknown): unknown => {
+  if (!isRecord(value)) return REDACTED_VALUE;
+
+  switch (value.type) {
+    case "stdio":
+      return {
+        ...copyFields(value, [
+          "type",
+          "command",
+          "args",
+          "cwd",
+          "inheritEnvironment",
+          "stderr",
+        ]),
+        ...(Object.hasOwn(value, "env")
+          ? { env: redactConfiguredRecord(value.env) }
+          : {}),
+      };
+    case "streamable-http":
+      return {
+        ...copyFields(value, [
+          "type",
+          "url",
+          "sessionId",
+          "legacySseFallback",
+        ]),
+        ...(Object.hasOwn(value, "headers")
+          ? { headers: redactConfiguredRecord(value.headers) }
+          : {}),
+      };
+    case "sse":
+      return {
+        ...copyFields(value, ["type", "url"]),
+        ...(Object.hasOwn(value, "headers")
+          ? { headers: redactConfiguredRecord(value.headers) }
+          : {}),
+      };
+    default:
+      return REDACTED_VALUE;
+  }
+};
+
+const redactAuth = (value: unknown): unknown => {
+  if (!isRecord(value)) return REDACTED_VALUE;
+
+  switch (value.type) {
+    case "none":
+      return { type: "none" };
+    case "bearer":
+      return {
+        ...copyFields(value, ["type", "tokenEnv", "headerName"]),
+        ...(Object.hasOwn(value, "token")
+          ? { token: redactConfiguredValue(value.token) }
+          : {}),
+      };
+    case "headers":
+      return {
+        ...copyFields(value, ["type", "envHeaders"]),
+        ...(Object.hasOwn(value, "headers")
+          ? { headers: redactConfiguredRecord(value.headers) }
+          : {}),
+      };
+    case "oauth": {
+      const auth = copyFields(value, [
+        "type",
+        "clientId",
+        "clientSecretEnv",
+        "redirectUrl",
+        "clientMetadataUrl",
+        "scopes",
+        "accessTokenEnv",
+        "refreshTokenEnv",
+        "tokenType",
+        "tokenScope",
+        "expiresIn",
+        "authorizationUrl",
+      ]);
+      for (const field of [
+        "clientSecret",
+        "accessToken",
+        "refreshToken",
+        "idToken",
+        "authorizationState",
+        "codeVerifier",
+        "clientInformation",
+        "discoveryState",
+      ]) {
+        if (Object.hasOwn(value, field)) auth[field] = REDACTED_VALUE;
+      }
+      return auth;
+    }
+    default:
+      return REDACTED_VALUE;
+  }
+};
+
+const redactServer = (value: unknown): unknown => {
+  if (!isRecord(value) || typeof value.id !== "string") {
+    return REDACTED_VALUE;
+  }
+  const server = copyFields(value, [...PUBLIC_SERVER_FIELDS]);
+  server.transport = redactTransport(value.transport);
+  if (Object.hasOwn(value, "auth")) server.auth = redactAuth(value.auth);
+  return server;
 };
 
 export const redactMcpConfigRaw = (raw: string): string => {
@@ -665,10 +807,28 @@ export const redactMcpConfigRaw = (raw: string): string => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return raw;
+    return "[invalid MCP configuration omitted]";
   }
 
-  return JSON.stringify(redactConfigValue(parsed), null, 2);
+  if (
+    !isRecord(parsed) ||
+    parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION ||
+    !Array.isArray(parsed.servers)
+  ) {
+    return "[unrecognized MCP configuration omitted]";
+  }
+
+  return JSON.stringify(
+    {
+      schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
+      ...(isRecord(parsed.defaults)
+        ? { defaults: copyFields(parsed.defaults, PUBLIC_DEFAULT_FIELDS) }
+        : {}),
+      servers: parsed.servers.map(redactServer),
+    },
+    null,
+    2,
+  );
 };
 
 export const parseInstalledServersRaw = (

@@ -19,6 +19,7 @@ import type { CommandRegistry } from "./command-registry";
 import { rankCommandItems } from "./command-search";
 import {
   getCommandAvailability,
+  isCommandAllowedByOverlay,
   isCommandScopeActive,
 } from "./shortcut-resolver";
 import {
@@ -92,6 +93,7 @@ const rootItems = (
   commands.flatMap((command) => {
     if (command.palette !== "visible") return [];
     if (!isCommandScopeActive(command, context)) return [];
+    if (!isCommandAllowedByOverlay(command, context)) return [];
     if (command.when && !command.when(context)) return [];
     const availability = getCommandAvailability(command, context);
     if (availability.state === "hidden") return [];

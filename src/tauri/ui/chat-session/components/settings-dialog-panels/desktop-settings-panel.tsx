@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { detectCommandPlatform } from "../../../commands/command-context";
 import { findDefaultShortcutConflict } from "../../../commands/command-defaults";
 import {
@@ -8,6 +8,12 @@ import {
 } from "../../../../../core/runtime-contract.generated.js";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
+import { useOptionalRegisterCommands } from "../../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../../commands/command-types";
 import type { UserDesktopSettings } from "../../../runtime";
 import {
   ChoiceButtons,
@@ -19,46 +25,13 @@ import {
   useDebouncedAutoSave,
 } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
-import type {
-  DesktopSettingsControls,
-  SettingsStatusMessage,
-} from "./types";
+import type { DesktopSettingsControls, SettingsStatusMessage } from "./types";
 import {
   clampDecimalSetting,
   clampIntegerSetting,
   parseDecimalSettingInput,
   parseIntegerSettingInput,
 } from "./number-settings";
-
-interface MachdochCodexSessionUsage {
-  files: number;
-  bytes: number;
-}
-
-interface MachdochCodexSessionCleanupResult {
-  deletedFiles: number;
-  deletedBytes: number;
-  failedFiles: number;
-  remainingFiles: number;
-  remainingBytes: number;
-}
-
-const formatStorageBytes = (bytes: number): string => {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  const units = ["KB", "MB", "GB"] as const;
-  let value = bytes / 1024;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
-};
 
 const getDesktopAutostartMode = (
   settings: UserDesktopSettings,
@@ -150,8 +123,7 @@ export const hasDesktopSettingsDraftChanges = (
       right.assistantBubbleTemporarilyHideSeconds ||
     left.aiContextMaxMessages !== right.aiContextMaxMessages ||
     left.inactiveSessionArchiveDays !== right.inactiveSessionArchiveDays ||
-    left.archivedSessionRetentionDays !==
-      right.archivedSessionRetentionDays ||
+    left.archivedSessionRetentionDays !== right.archivedSessionRetentionDays ||
     left.quickVoiceEnabled !== right.quickVoiceEnabled ||
     left.quickVoiceShortcut !== right.quickVoiceShortcut ||
     left.quickVoiceSilenceSeconds !== right.quickVoiceSilenceSeconds ||
@@ -170,13 +142,6 @@ export const DesktopSettingsPanel = ({
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheMessage, setCacheMessage] =
     useState<SettingsStatusMessage | null>(null);
-  const [codexUsage, setCodexUsage] =
-    useState<MachdochCodexSessionUsage | null>(null);
-  const [checkingCodexUsage, setCheckingCodexUsage] = useState(false);
-  const [clearingCodexSessions, setClearingCodexSessions] = useState(false);
-  const [confirmingCodexClear, setConfirmingCodexClear] = useState(false);
-  const [codexSessionMessage, setCodexSessionMessage] =
-    useState<SettingsStatusMessage | null>(null);
   const lastExternalSettingsRef = useRef(setup.settings);
   const suppressUnmountFlushRef = useRef(false);
   const normalizedDraft = normalizeDesktopSettingsDraft(draft);
@@ -194,7 +159,7 @@ export const DesktopSettingsPanel = ({
     draft.quickVoiceShortcut !== normalizedDraft.quickVoiceShortcut;
   const desktopAutostartMode = getDesktopAutostartMode(draft);
   const autoSaveSignature = JSON.stringify(normalizedDraft);
-  const dataOperationBusy = clearingCache || clearingCodexSessions;
+  const dataOperationBusy = clearingCache;
 
   useDebouncedAutoSave({
     dirty: dirty && !shortcutInvalid,
@@ -224,17 +189,190 @@ export const DesktopSettingsPanel = ({
     const previousSettings = lastExternalSettingsRef.current;
     lastExternalSettingsRef.current = setup.settings;
     setDraft((currentDraft) =>
-      rebaseDirtySettingsDraft(
-        currentDraft,
-        previousSettings,
-        setup.settings,
-      ),
+      rebaseDirtySettingsDraft(currentDraft, previousSettings, setup.settings),
     );
   }, [setup.settings]);
 
+  const clearCache = (): void => {
+    if (!isTauri() || clearingCache) return;
+    setClearingCache(true);
+    setCacheMessage(null);
+    void invoke("clear_webview_cache")
+      .then(() => {
+        setCacheMessage({ tone: "success", text: "WebView cache cleared." });
+      })
+      .catch((error) => {
+        console.error("Failed to clear the WebView cache", error);
+        setCacheMessage({
+          tone: "error",
+          text: "Could not clear the WebView cache.",
+        });
+      })
+      .finally(() => {
+        setClearingCache(false);
+      });
+  };
+
+  const desktopCommandStateRef = useRef({
+    draft,
+    normalizedDraft,
+    desktopAutostartMode,
+    dirty,
+    shortcutInvalid,
+    saving: setup.saving,
+    clearingCache,
+    save: setup.onSave,
+    setDraft,
+    clearCache,
+  });
+  desktopCommandStateRef.current = {
+    draft,
+    normalizedDraft,
+    desktopAutostartMode,
+    dirty,
+    shortcutInvalid,
+    saving: setup.saving,
+    clearingCache,
+    save: setup.onSave,
+    setDraft,
+    clearCache,
+  };
+  const desktopCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "overlay" as const, ownerId: "settings-dialog" };
+    const state = () => desktopCommandStateRef.current;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    const toggleCommand = (
+      id: string,
+      title: string,
+      field:
+        | "autostartEnabled"
+        | "alwaysRunAsAdministrator"
+        | "assistantBubbleEnabled"
+        | "assistantBubbleHideWhenFullscreen"
+        | "quickVoiceEnabled",
+      disabled = (): boolean => false,
+    ): CommandDefinition => ({
+      id,
+      title,
+      group: "Settings: Desktop",
+      scope,
+      availability: () =>
+        state().saving || disabled()
+          ? {
+              state: "disabled",
+              reason: "This desktop setting is unavailable.",
+            }
+          : { state: "enabled" },
+      current: () => state().draft[field],
+      execute: () =>
+        state().setDraft((current) => ({
+          ...current,
+          [field]: !current[field],
+        })),
+    });
+    return asPaletteCommands([
+      {
+        id: "settings.desktop.save",
+        title: "Save desktop settings",
+        group: "Settings: Desktop",
+        scope,
+        availability: () =>
+          state().saving
+            ? { state: "disabled", reason: "Desktop settings are saving." }
+            : state().shortcutInvalid
+              ? {
+                  state: "disabled",
+                  reason: "Fix the Quick Chat shortcut first.",
+                }
+              : state().dirty
+                ? { state: "enabled" }
+                : { state: "disabled", reason: "No desktop settings to save." },
+        execute: () => void state().save(state().normalizedDraft),
+      },
+      toggleCommand(
+        "settings.desktop.autostart.toggle",
+        "Toggle launch on sign-in",
+        "autostartEnabled",
+      ),
+      {
+        id: "settings.desktop.autostart-mode.select",
+        title: "Choose startup behavior",
+        group: "Settings: Desktop",
+        scope,
+        availability: () =>
+          state().saving || !state().draft.autostartEnabled
+            ? { state: "disabled", reason: "Enable launch on sign-in first." }
+            : { state: "enabled" },
+        children: () => ({
+          id: "settings.desktop.autostart-mode.select.page",
+          title: "Choose startup behavior",
+          searchPlaceholder: "Search startup behaviors",
+          numericSelection: true,
+          groups: [
+            {
+              id: "behaviors",
+              items: (
+                [
+                  ["window", "Open window"],
+                  ["minimized", "Start minimized"],
+                  ["tray", "Start in tray"],
+                ] as const
+              ).map(([mode, title], index) => ({
+                id: mode,
+                title,
+                current: state().desktopAutostartMode === mode,
+                numericKey: numericKey(index),
+                execute: () =>
+                  state().setDraft((current) =>
+                    applyDesktopAutostartMode(current, mode),
+                  ),
+              })),
+            },
+          ],
+        }),
+      },
+      toggleCommand(
+        "settings.desktop.administrator.toggle",
+        "Toggle always run as administrator",
+        "alwaysRunAsAdministrator",
+      ),
+      toggleCommand(
+        "settings.desktop.bubble.toggle",
+        "Toggle floating assistant bubble",
+        "assistantBubbleEnabled",
+      ),
+      toggleCommand(
+        "settings.desktop.bubble-fullscreen.toggle",
+        "Toggle hiding the bubble in fullscreen apps",
+        "assistantBubbleHideWhenFullscreen",
+        () => !state().draft.assistantBubbleEnabled,
+      ),
+      toggleCommand(
+        "settings.desktop.quick-chat.toggle",
+        "Toggle Quick Chat",
+        "quickVoiceEnabled",
+      ),
+      {
+        id: "settings.desktop.cache.clear",
+        title: "Clear WebView cache",
+        group: "Settings: Desktop",
+        scope,
+        availability: () =>
+          !isTauri()
+            ? { state: "hidden" }
+            : state().clearingCache
+              ? { state: "disabled", reason: "WebView cache is being cleared." }
+              : { state: "enabled" },
+        execute: () => state().clearCache(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(desktopCommands);
+
   return (
     <div className="grid gap-5">
-      {dirty || setup.saving || setup.message || cacheMessage || codexSessionMessage ? (
+      {dirty || setup.saving || setup.message || cacheMessage ? (
         <div className="sticky top-0 z-10 rounded-xl border border-slate-800 bg-slate-950/95 px-4 pb-4 shadow-lg shadow-black/20">
           <SettingsAutoSaveStatus
             dirty={dirty}
@@ -252,7 +390,6 @@ export const DesktopSettingsPanel = ({
           <div className="mt-3 grid gap-2">
             <SettingsStatus message={setup.message} />
             <SettingsStatus message={cacheMessage} />
-            <SettingsStatus message={codexSessionMessage} />
           </div>
         </div>
       ) : null}
@@ -262,144 +399,148 @@ export const DesktopSettingsPanel = ({
         description="Choose whether and how Machdoch starts with your computer."
       >
         <div className="grid gap-0">
-        <SettingPanel label="Launch on sign-in">
-          <ChoiceButtons
-            label="Launch on sign-in"
-            value={draft.autostartEnabled ? "enabled" : "disabled"}
-            options={[
-              { value: "enabled", label: "Enabled" },
-              { value: "disabled", label: "Disabled" },
-            ]}
-            disabled={setup.saving}
-            onChange={(value) => {
-              setDraft({
-                ...draft,
-                autostartEnabled: value === "enabled",
-              });
-            }}
-          />
-        </SettingPanel>
+          <SettingPanel label="Launch on sign-in">
+            <ChoiceButtons
+              label="Launch on sign-in"
+              value={draft.autostartEnabled ? "enabled" : "disabled"}
+              options={[
+                { value: "enabled", label: "Enabled" },
+                { value: "disabled", label: "Disabled" },
+              ]}
+              disabled={setup.saving}
+              onChange={(value) => {
+                setDraft({
+                  ...draft,
+                  autostartEnabled: value === "enabled",
+                });
+              }}
+            />
+          </SettingPanel>
 
-        <SettingPanel
-          label="Startup behavior"
-          detail={
-            draft.autostartEnabled
-              ? "Choose what appears after sign-in."
-              : "Available when launch on sign-in is enabled."
-          }
-        >
-          <ChoiceButtons
+          <SettingPanel
             label="Startup behavior"
-            value={desktopAutostartMode}
-            options={[
-              { value: "window", label: "Open window" },
-              { value: "minimized", label: "Start minimized" },
-              { value: "tray", label: "Start in tray" },
-            ]}
-            disabled={setup.saving || !draft.autostartEnabled}
-            onChange={(mode) => {
-              setDraft(applyDesktopAutostartMode(draft, mode));
-            }}
-          />
-        </SettingPanel>
+            detail={
+              draft.autostartEnabled
+                ? "Choose what appears after sign-in."
+                : "Available when launch on sign-in is enabled."
+            }
+          >
+            <ChoiceButtons
+              label="Startup behavior"
+              value={desktopAutostartMode}
+              options={[
+                { value: "window", label: "Open window" },
+                { value: "minimized", label: "Start minimized" },
+                { value: "tray", label: "Start in tray" },
+              ]}
+              disabled={setup.saving || !draft.autostartEnabled}
+              onChange={(mode) => {
+                setDraft(applyDesktopAutostartMode(draft, mode));
+              }}
+            />
+          </SettingPanel>
 
-        <SettingPanel
-          label="Always run as administrator"
-          detail="Request elevated access when Machdoch starts."
-        >
-          <ChoiceButtons
+          <SettingPanel
             label="Always run as administrator"
-            value={draft.alwaysRunAsAdministrator ? "enabled" : "disabled"}
-            options={[
-              { value: "enabled", label: "Enabled" },
-              { value: "disabled", label: "Disabled" },
-            ]}
-            disabled={setup.saving}
-            onChange={(value) => {
-              setDraft({
-                ...draft,
-                alwaysRunAsAdministrator: value === "enabled",
-              });
-            }}
-          />
-        </SettingPanel>
-
+            detail="Request elevated access when Machdoch starts."
+          >
+            <ChoiceButtons
+              label="Always run as administrator"
+              value={draft.alwaysRunAsAdministrator ? "enabled" : "disabled"}
+              options={[
+                { value: "enabled", label: "Enabled" },
+                { value: "disabled", label: "Disabled" },
+              ]}
+              disabled={setup.saving}
+              onChange={(value) => {
+                setDraft({
+                  ...draft,
+                  alwaysRunAsAdministrator: value === "enabled",
+                });
+              }}
+            />
+          </SettingPanel>
         </div>
       </SettingsCard>
 
       <SettingsCard title="Assistant surfaces">
         <div className="grid gap-0">
+          <SettingPanel label="Floating bubble">
+            <ChoiceButtons
+              label="Floating bubble"
+              value={draft.assistantBubbleEnabled ? "enabled" : "disabled"}
+              options={[
+                { value: "enabled", label: "Enabled" },
+                { value: "disabled", label: "Disabled" },
+              ]}
+              disabled={setup.saving}
+              onChange={(value) => {
+                setDraft({
+                  ...draft,
+                  assistantBubbleEnabled: value === "enabled",
+                });
+              }}
+            />
+          </SettingPanel>
 
-        <SettingPanel label="Floating bubble">
-          <ChoiceButtons
-            label="Floating bubble"
-            value={draft.assistantBubbleEnabled ? "enabled" : "disabled"}
-            options={[
-              { value: "enabled", label: "Enabled" },
-              { value: "disabled", label: "Disabled" },
-            ]}
-            disabled={setup.saving}
-            onChange={(value) => {
-              setDraft({
-                ...draft,
-                assistantBubbleEnabled: value === "enabled",
-              });
-            }}
-          />
-        </SettingPanel>
+          <SettingPanel
+            label="Fullscreen apps"
+            detail={
+              draft.assistantBubbleEnabled
+                ? undefined
+                : "Available when the floating bubble is enabled."
+            }
+          >
+            <ChoiceButtons
+              label="Floating bubble in fullscreen apps"
+              value={draft.assistantBubbleHideWhenFullscreen ? "hide" : "show"}
+              options={[
+                { value: "hide", label: "Hide bubble" },
+                { value: "show", label: "Keep visible" },
+              ]}
+              disabled={setup.saving || !draft.assistantBubbleEnabled}
+              onChange={(value) => {
+                setDraft({
+                  ...draft,
+                  assistantBubbleHideWhenFullscreen: value === "hide",
+                });
+              }}
+            />
+          </SettingPanel>
 
-        <SettingPanel
-          label="Fullscreen apps"
-          detail={
-            draft.assistantBubbleEnabled
-              ? undefined
-              : "Available when the floating bubble is enabled."
-          }
-        >
-          <ChoiceButtons
-            label="Floating bubble in fullscreen apps"
-            value={draft.assistantBubbleHideWhenFullscreen ? "hide" : "show"}
-            options={[
-              { value: "hide", label: "Hide bubble" },
-              { value: "show", label: "Keep visible" },
-            ]}
-            disabled={setup.saving || !draft.assistantBubbleEnabled}
-            onChange={(value) => {
-              setDraft({
-                ...draft,
-                assistantBubbleHideWhenFullscreen: value === "hide",
-              });
-            }}
-          />
-        </SettingPanel>
-
-        <SettingPanel
-          label="Temporary hide"
-          detail="Seconds before the bubble returns."
-        >
-          <Input
-            aria-label="Temporary bubble hide duration in seconds"
-            type="number"
-            min={DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min}
-            max={DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max}
-            step="1"
-            value={draft.assistantBubbleTemporarilyHideSeconds}
-            disabled={setup.saving || !draft.assistantBubbleEnabled}
-            onChange={(event) => {
-              setDraft({
-                ...draft,
-                assistantBubbleTemporarilyHideSeconds: parseIntegerSettingInput(
-                  event.target.value,
-                  DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min,
-                  DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max,
-                  draft.assistantBubbleTemporarilyHideSeconds,
-                ),
-              });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
-
+          <SettingPanel
+            label="Temporary hide"
+            detail="Seconds before the bubble returns."
+          >
+            <Input
+              aria-label="Temporary bubble hide duration in seconds"
+              type="number"
+              min={
+                DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min
+              }
+              max={
+                DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max
+              }
+              step="1"
+              value={draft.assistantBubbleTemporarilyHideSeconds}
+              disabled={setup.saving || !draft.assistantBubbleEnabled}
+              onChange={(event) => {
+                setDraft({
+                  ...draft,
+                  assistantBubbleTemporarilyHideSeconds:
+                    parseIntegerSettingInput(
+                      event.target.value,
+                      DESKTOP_SETTING_BOUNDS
+                        .assistantBubbleTemporarilyHideSeconds.min,
+                      DESKTOP_SETTING_BOUNDS
+                        .assistantBubbleTemporarilyHideSeconds.max,
+                      draft.assistantBubbleTemporarilyHideSeconds,
+                    ),
+                });
+              }}
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
         </div>
       </SettingsCard>
 
@@ -408,82 +549,80 @@ export const DesktopSettingsPanel = ({
         description="Control context size and automatic session retention."
       >
         <div className="grid gap-0">
+          <SettingPanel label="AI context cap">
+            <Input
+              aria-label="AI context message limit"
+              type="number"
+              min={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min}
+              max={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max}
+              step="1"
+              value={draft.aiContextMaxMessages}
+              onChange={(event) => {
+                setDraft({
+                  ...draft,
+                  aiContextMaxMessages: parseIntegerSettingInput(
+                    event.target.value,
+                    DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
+                    DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
+                    draft.aiContextMaxMessages,
+                  ),
+                });
+              }}
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
 
-        <SettingPanel label="AI context cap">
-          <Input
-            aria-label="AI context message limit"
-            type="number"
-            min={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min}
-            max={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max}
-            step="1"
-            value={draft.aiContextMaxMessages}
-            onChange={(event) => {
-              setDraft({
-                ...draft,
-                aiContextMaxMessages: parseIntegerSettingInput(
-                  event.target.value,
-                  DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
-                  DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
-                  draft.aiContextMaxMessages,
-                ),
-              });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
+          <SettingPanel
+            label="Inactive archive"
+            detail="Move open sessions to the archive after this many inactive days."
+          >
+            <Input
+              aria-label="Inactive session archive delay in days"
+              type="number"
+              min={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min}
+              max={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max}
+              step="1"
+              value={draft.inactiveSessionArchiveDays}
+              onChange={(event) => {
+                setDraft({
+                  ...draft,
+                  inactiveSessionArchiveDays: parseIntegerSettingInput(
+                    event.target.value,
+                    DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
+                    DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max,
+                    draft.inactiveSessionArchiveDays,
+                  ),
+                });
+              }}
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
 
-        <SettingPanel
-          label="Inactive archive"
-          detail="Move open sessions to the archive after this many inactive days."
-        >
-          <Input
-            aria-label="Inactive session archive delay in days"
-            type="number"
-            min={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min}
-            max={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max}
-            step="1"
-            value={draft.inactiveSessionArchiveDays}
-            onChange={(event) => {
-              setDraft({
-                ...draft,
-                inactiveSessionArchiveDays: parseIntegerSettingInput(
-                  event.target.value,
-                  DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
-                  DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max,
-                  draft.inactiveSessionArchiveDays,
-                ),
-              });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
-
-        <SettingPanel
-          label="Archived cleanup"
-          detail="Permanently delete archived sessions after this many days."
-        >
-          <Input
-            aria-label="Archived session deletion delay in days"
-            type="number"
-            min={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min}
-            max={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max}
-            step="1"
-            value={draft.archivedSessionRetentionDays}
-            onChange={(event) => {
-              setDraft({
-                ...draft,
-                archivedSessionRetentionDays: parseIntegerSettingInput(
-                  event.target.value,
-                  DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min,
-                  DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max,
-                  draft.archivedSessionRetentionDays,
-                ),
-              });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
-
+          <SettingPanel
+            label="Archived cleanup"
+            detail="Permanently delete archived sessions after this many days."
+          >
+            <Input
+              aria-label="Archived session deletion delay in days"
+              type="number"
+              min={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min}
+              max={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max}
+              step="1"
+              value={draft.archivedSessionRetentionDays}
+              onChange={(event) => {
+                setDraft({
+                  ...draft,
+                  archivedSessionRetentionDays: parseIntegerSettingInput(
+                    event.target.value,
+                    DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min,
+                    DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max,
+                    draft.archivedSessionRetentionDays,
+                  ),
+                });
+              }}
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
         </div>
       </SettingsCard>
 
@@ -492,110 +631,114 @@ export const DesktopSettingsPanel = ({
         description="Configure the global launcher and its voice-input behavior."
       >
         <div className="grid gap-0">
+          <SettingPanel label="Quick Chat">
+            <ChoiceButtons
+              label="Quick Chat status"
+              value={draft.quickVoiceEnabled ? "enabled" : "disabled"}
+              options={[
+                { value: "enabled", label: "Enabled" },
+                { value: "disabled", label: "Disabled" },
+              ]}
+              disabled={setup.saving}
+              onChange={(value) => {
+                setDraft({
+                  ...draft,
+                  quickVoiceEnabled: value === "enabled",
+                });
+              }}
+            />
+          </SettingPanel>
 
-        <SettingPanel label="Quick Chat">
-          <ChoiceButtons
-            label="Quick Chat status"
-            value={draft.quickVoiceEnabled ? "enabled" : "disabled"}
-            options={[
-              { value: "enabled", label: "Enabled" },
-              { value: "disabled", label: "Disabled" },
-            ]}
-            disabled={setup.saving}
-            onChange={(value) => {
-              setDraft({
-                ...draft,
-                quickVoiceEnabled: value === "enabled",
-              });
-            }}
-          />
-        </SettingPanel>
+          <SettingPanel
+            label="Global shortcut"
+            detail={
+              draft.quickVoiceEnabled
+                ? "Opens Quick Chat from anywhere."
+                : "Available when Quick Chat is enabled."
+            }
+          >
+            <div className="grid gap-1.5">
+              <Input
+                aria-label="Quick Chat global shortcut"
+                aria-invalid={shortcutInvalid ? true : undefined}
+                type="text"
+                value={draft.quickVoiceShortcut}
+                disabled={setup.saving || !draft.quickVoiceEnabled}
+                onChange={(event) => {
+                  setDraft({
+                    ...draft,
+                    quickVoiceShortcut: event.target.value,
+                  });
+                }}
+                placeholder={DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceShortcut}
+                autoComplete="off"
+                spellCheck={false}
+                className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+              />
+              {shortcutInvalid ? (
+                <p role="alert" className="text-xs text-rose-300">
+                  {shortcutConflict
+                    ? "This shortcut is already used in Machdoch. Choose another shortcut."
+                    : "Enter a shortcut before saving."}
+                </p>
+              ) : null}
+            </div>
+          </SettingPanel>
 
-        <SettingPanel
-          label="Global shortcut"
-          detail={
-            draft.quickVoiceEnabled
-              ? "Opens Quick Chat from anywhere."
-              : "Available when Quick Chat is enabled."
-          }
-        >
-          <div className="grid gap-1.5">
+          <SettingPanel
+            label="Silence timeout"
+            detail="Seconds before speech input is submitted."
+          >
             <Input
-              aria-label="Quick Chat global shortcut"
-              aria-invalid={shortcutInvalid ? true : undefined}
-              type="text"
-              value={draft.quickVoiceShortcut}
+              aria-label="Quick Chat silence timeout in seconds"
+              type="number"
+              min={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min}
+              max={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max}
+              step="0.1"
+              value={draft.quickVoiceSilenceSeconds}
               disabled={setup.saving || !draft.quickVoiceEnabled}
               onChange={(event) => {
                 setDraft({
                   ...draft,
-                  quickVoiceShortcut: event.target.value,
+                  quickVoiceSilenceSeconds: parseDecimalSettingInput(
+                    event.target.value,
+                    DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min,
+                    DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max,
+                    draft.quickVoiceSilenceSeconds,
+                    1,
+                  ),
                 });
               }}
-              placeholder={DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceShortcut}
-              autoComplete="off"
-              spellCheck={false}
-              className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
             />
-            {shortcutInvalid ? (
-              <p role="alert" className="text-xs text-rose-300">
-                {shortcutConflict
-                  ? "This shortcut is already used in Machdoch. Choose another shortcut."
-                  : "Enter a shortcut before saving."}
-              </p>
-            ) : null}
-          </div>
-        </SettingPanel>
+          </SettingPanel>
 
-        <SettingPanel label="Silence timeout" detail="Seconds before speech input is submitted.">
-          <Input
-            aria-label="Quick Chat silence timeout in seconds"
-            type="number"
-            min={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min}
-            max={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max}
-            step="0.1"
-            value={draft.quickVoiceSilenceSeconds}
-            disabled={setup.saving || !draft.quickVoiceEnabled}
-            onChange={(event) => {
-              setDraft({
-                ...draft,
-                quickVoiceSilenceSeconds: parseDecimalSettingInput(
-                  event.target.value,
-                  DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min,
-                  DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max,
-                  draft.quickVoiceSilenceSeconds,
-                  1,
-                ),
-              });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
-
-        <SettingPanel label="Quick Chat cap" detail="Maximum messages kept in Quick Chat context.">
-          <Input
-            aria-label="Quick Chat message limit"
-            type="number"
-            min={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min}
-            max={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max}
-            step="5"
-            value={draft.quickVoiceMaxMessages}
-            disabled={setup.saving || !draft.quickVoiceEnabled}
-            onChange={(event) => {
-              setDraft({
-                ...draft,
-                quickVoiceMaxMessages: parseIntegerSettingInput(
-                  event.target.value,
-                  DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min,
-                  DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max,
-                  draft.quickVoiceMaxMessages,
-                ),
-              });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
-
+          <SettingPanel
+            label="Quick Chat cap"
+            detail="Maximum messages kept in Quick Chat context."
+          >
+            <Input
+              aria-label="Quick Chat message limit"
+              type="number"
+              min={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min}
+              max={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max}
+              step="5"
+              value={draft.quickVoiceMaxMessages}
+              disabled={setup.saving || !draft.quickVoiceEnabled}
+              onChange={(event) => {
+                setDraft({
+                  ...draft,
+                  quickVoiceMaxMessages: parseIntegerSettingInput(
+                    event.target.value,
+                    DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min,
+                    DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max,
+                    draft.quickVoiceMaxMessages,
+                  ),
+                });
+              }}
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
         </div>
       </SettingsCard>
 
@@ -605,155 +748,21 @@ export const DesktopSettingsPanel = ({
           description="Inspect or clear local runtime data without removing app settings."
         >
           <div className="grid gap-0">
-
-        {isTauri() ? (
-          <SettingPanel
-            label="Codex session data"
-            detail="Inspect or remove only Codex session files created by Machdoch. Other Codex tasks are not touched. New Machdoch Codex runs are ephemeral."
-          >
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {codexUsage ? (
-                <span className="text-xs text-slate-400">
-                  {codexUsage.files} file{codexUsage.files === 1 ? "" : "s"} ·{" "}
-                  {formatStorageBytes(codexUsage.bytes)}
-                </span>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={checkingCodexUsage || clearingCodexSessions}
-                onClick={() => {
-                  setCheckingCodexUsage(true);
-                  setCodexSessionMessage(null);
-                  void invoke<MachdochCodexSessionUsage>(
-                    "get_machdoch_codex_session_usage",
-                  )
-                    .then((usage) => {
-                      setCodexUsage(usage);
-                      setCodexSessionMessage({
-                        tone: "success",
-                        text:
-                          usage.files === 0
-                            ? "No persisted Machdoch Codex sessions found."
-                            : `Found ${usage.files} Machdoch Codex session file${usage.files === 1 ? "" : "s"}.`,
-                      });
-                    })
-                    .catch((error) => {
-                      console.error("Failed to inspect Codex session data", error);
-                      setCodexSessionMessage({
-                        tone: "error",
-                        text: "Could not inspect Codex session data.",
-                      });
-                    })
-                    .finally(() => {
-                      setCheckingCodexUsage(false);
-                    });
-                }}
+            {isTauri() ? (
+              <SettingPanel
+                label="WebView cache"
+                detail="Clear cached browser resources. Your machdoch sessions and settings are preserved."
               >
-                {checkingCodexUsage ? "Checking..." : "Check usage"}
-              </Button>
-              {codexUsage && codexUsage.files > 0 && !confirmingCodexClear ? (
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={checkingCodexUsage || clearingCodexSessions}
-                  onClick={() => setConfirmingCodexClear(true)}
+                  disabled={clearingCache}
+                  onClick={clearCache}
                 >
-                  Clear Machdoch data
+                  {clearingCache ? "Clearing..." : "Clear cache"}
                 </Button>
-              ) : null}
-              {codexUsage && codexUsage.files > 0 && confirmingCodexClear ? (
-                <div className="flex flex-wrap items-center justify-end gap-2 rounded-lg border border-rose-500/20 bg-rose-500/10 p-2">
-                  <span className="text-xs text-rose-200">
-                    This permanently deletes {codexUsage.files} Machdoch session {codexUsage.files === 1 ? "file" : "files"}.
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={clearingCodexSessions}
-                    onClick={() => setConfirmingCodexClear(false)}
-                    className="text-slate-300 hover:bg-slate-800"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    disabled={clearingCodexSessions}
-                    onClick={() => {
-                    setClearingCodexSessions(true);
-                    setCodexSessionMessage(null);
-                    void invoke<MachdochCodexSessionCleanupResult>(
-                      "clear_machdoch_codex_sessions",
-                    )
-                      .then((result) => {
-                        setCodexUsage({
-                          files: result.remainingFiles,
-                          bytes: result.remainingBytes,
-                        });
-                        setCodexSessionMessage({
-                          tone: result.failedFiles > 0 ? "error" : "success",
-                          text: `Removed ${result.deletedFiles} file${result.deletedFiles === 1 ? "" : "s"} (${formatStorageBytes(result.deletedBytes)})${result.failedFiles > 0 ? `; ${result.failedFiles} could not be removed.` : "."}`,
-                        });
-                      })
-                      .catch((error) => {
-                        console.error("Failed to clear Codex session data", error);
-                        setCodexSessionMessage({
-                          tone: "error",
-                          text: "Could not clear Codex session data.",
-                        });
-                      })
-                      .finally(() => {
-                        setClearingCodexSessions(false);
-                        setConfirmingCodexClear(false);
-                      });
-                  }}
-                >
-                    {clearingCodexSessions ? "Deleting…" : "Delete files"}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </SettingPanel>
-        ) : null}
-
-        {isTauri() ? (
-          <SettingPanel
-            label="WebView cache"
-            detail="Clear cached browser resources. Your machdoch sessions and settings are preserved."
-          >
-            <Button
-              type="button"
-              variant="outline"
-              disabled={clearingCache}
-              onClick={() => {
-                setClearingCache(true);
-                setCacheMessage(null);
-                void invoke("clear_webview_cache")
-                  .then(() => {
-                    setCacheMessage({
-                      tone: "success",
-                      text: "WebView cache cleared.",
-                    });
-                  })
-                  .catch((error) => {
-                    console.error("Failed to clear the WebView cache", error);
-                    setCacheMessage({
-                      tone: "error",
-                      text: "Could not clear the WebView cache.",
-                    });
-                  })
-                  .finally(() => {
-                    setClearingCache(false);
-                  });
-              }}
-            >
-              {clearingCache ? "Clearing..." : "Clear cache"}
-            </Button>
-          </SettingPanel>
-        ) : null}
+              </SettingPanel>
+            ) : null}
           </div>
         </SettingsCard>
       ) : null}

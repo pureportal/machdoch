@@ -32,7 +32,6 @@ export interface SaveSmartContextPackInput extends SmartContextPackSettingOverri
   variables: Array<string | SmartContextPackVariable>;
   triggerPhrases: string[];
   triggerPathPatterns: string[];
-  autoApply: boolean;
 }
 
 export interface SmartContextPackComposerApplication {
@@ -549,11 +548,6 @@ export const applySmartContextPackToComposer = (
   };
 };
 
-export const isSmartContextPackAppliedToDraft = (
-  draft: string,
-  pack: SmartContextPack,
-): boolean => draft.includes(`## Context Pack: ${pack.name}`);
-
 const normalizeTriggerSearchText = (value: string): string => {
   return value.replace(/\s+/gu, " ").trim().toLowerCase();
 };
@@ -771,10 +765,6 @@ export const createSmartContextPackPreview = (
     warnings.push("folder size unknown");
   }
 
-  if (pack.trigger.autoApply) {
-    warnings.push("auto-apply");
-  }
-
   return {
     attachmentCount: pack.contextAttachments.length,
     promptFileCount,
@@ -901,7 +891,7 @@ export const createContextPackSummary = (
   }
 
   if (pack.trigger.phrases.length > 0 || pack.trigger.pathPatterns.length > 0) {
-    summary.push(pack.trigger.autoApply ? "auto trigger" : "trigger");
+    summary.push("trigger");
   }
 
   return summary;

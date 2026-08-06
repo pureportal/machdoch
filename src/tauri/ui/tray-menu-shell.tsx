@@ -7,17 +7,27 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import {
   hideMainWindowToTray,
   isMainWindowOpen,
   quitMachdoch,
   revealMainWindow,
 } from "./assistant-surface";
+import { IS_DEVELOPMENT_BUILD, MACHDOCH_DISPLAY_NAME } from "./build-info";
+import { CommandProvider } from "./commands/command-context";
+import { getDefaultCommandShortcut } from "./commands/command-defaults";
 import {
-  IS_DEVELOPMENT_BUILD,
-  MACHDOCH_DISPLAY_NAME,
-} from "./build-info";
+  asPaletteCommands,
+  type CommandDefinition,
+} from "./commands/command-types";
 
 const TRAY_MENU_BLUR_HIDE_DELAY_MS = 90;
 
@@ -71,6 +81,8 @@ const TrayMenuActionButton = ({
 
 export const TrayMenuShell = (): JSX.Element => {
   const [mainWindowOpen, setMainWindowOpen] = useState(() => !isTauri());
+  const mainWindowOpenRef = useRef(mainWindowOpen);
+  mainWindowOpenRef.current = mainWindowOpen;
 
   const hideTrayMenu = useCallback(async (): Promise<void> => {
     if (!isTauri()) {
@@ -119,6 +131,70 @@ export const TrayMenuShell = (): JSX.Element => {
     },
     [hideTrayMenu],
   );
+  const trayCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "view", ownerId: "tray" } as const;
+    return asPaletteCommands([
+      {
+        id: "tray.app.open",
+        title: `Open ${MACHDOCH_DISPLAY_NAME}`,
+        group: "Tray",
+        scope,
+        execute: () =>
+          selectAction({
+            id: "open-app",
+            label: `Open ${MACHDOCH_DISPLAY_NAME}`,
+            icon: ArrowUpRight,
+            tone: "slate",
+            onSelect: revealMainWindow,
+          }),
+      },
+      {
+        id: "tray.app.hide-to-tray",
+        title: "Hide app to tray",
+        group: "Tray",
+        scope,
+        availability: () =>
+          mainWindowOpenRef.current
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () =>
+          selectAction({
+            id: "hide-to-tray",
+            label: "Hide to tray",
+            icon: Minus,
+            tone: "slate",
+            onSelect: hideMainWindowToTray,
+          }),
+      },
+      {
+        id: "tray.app.quit",
+        title: `Quit ${MACHDOCH_DISPLAY_NAME}`,
+        group: "Tray",
+        scope,
+        execute: () =>
+          selectAction({
+            id: "quit",
+            label: `Quit ${MACHDOCH_DISPLAY_NAME}`,
+            icon: LogOut,
+            tone: "danger",
+            onSelect: quitMachdoch,
+          }),
+      },
+      {
+        id: "tray.hide",
+        title: "Hide tray menu",
+        group: "Tray",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("tray.hide"),
+            allowIn: ["document", "interactive-control"],
+          },
+        ],
+        execute: () => hideTrayMenu(),
+      },
+    ]);
+  }, [hideTrayMenu, selectAction]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -193,61 +269,51 @@ export const TrayMenuShell = (): JSX.Element => {
     };
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      void hideTrayMenu().catch(() => undefined);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [hideTrayMenu]);
-
   return (
-    <div className="fixed inset-0 overflow-hidden bg-transparent p-1.5">
-      <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-700/80 bg-slate-950/98 text-slate-100 shadow-[0_18px_50px_rgba(2,6,23,0.42)] backdrop-blur-xl">
-        <span
-          aria-hidden="true"
-          className="absolute left-4 right-4 top-0 h-px bg-gradient-to-r from-sky-400/0 via-sky-300/80 to-violet-300/0"
-        />
+    <CommandProvider
+      activeView="tray"
+      commands={trayCommands}
+      windowKind="tray"
+    >
+      <div className="fixed inset-0 overflow-hidden bg-transparent p-1.5">
+        <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-700/80 bg-slate-950/98 text-slate-100 shadow-[0_18px_50px_rgba(2,6,23,0.42)] backdrop-blur-xl">
+          <span
+            aria-hidden="true"
+            className="absolute left-4 right-4 top-0 h-px bg-gradient-to-r from-sky-400/0 via-sky-300/80 to-violet-300/0"
+          />
 
-        <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-          <div className="min-w-0 flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 text-sky-100"
-            >
-              <Sparkles className="h-5 w-5" />
-            </span>
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-sm font-semibold text-white">
-                machdoch
-              </p>
-              {IS_DEVELOPMENT_BUILD ? (
-                <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]">
-                  Developer
-                </span>
-              ) : null}
+          <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+            <div className="min-w-0 flex items-center gap-3">
+              <span
+                aria-hidden="true"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 text-sky-100"
+              >
+                <Sparkles className="h-5 w-5" />
+              </span>
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-sm font-semibold text-white">
+                  machdoch
+                </p>
+                {IS_DEVELOPMENT_BUILD ? (
+                  <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]">
+                    Developer
+                  </span>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <nav className="min-h-0 flex-1 space-y-1 p-2" aria-label="Tray menu">
-          {actions.map((action) => (
-            <TrayMenuActionButton
-              key={action.id}
-              action={action}
-              onSelect={selectAction}
-            />
-          ))}
-        </nav>
+          <nav className="min-h-0 flex-1 space-y-1 p-2" aria-label="Tray menu">
+            {actions.map((action) => (
+              <TrayMenuActionButton
+                key={action.id}
+                action={action}
+                onSelect={selectAction}
+              />
+            ))}
+          </nav>
+        </div>
       </div>
-    </div>
+    </CommandProvider>
   );
 };

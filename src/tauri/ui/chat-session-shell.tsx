@@ -8,7 +8,7 @@ import {
   useState,
   type JSX,
 } from "react";
-import { canArchiveSession } from "./chat-session.model";
+import { canArchiveSession, getSessionTitle } from "./chat-session.model";
 import { AppRail, type AppActivityState } from "./app-shell/app-rail";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
@@ -210,6 +210,7 @@ export const ChatSession = (): JSX.Element => {
     open: onboardingOpen && !controller.catalogOpen,
     id: "onboarding",
     kind: "modal",
+    allowGlobalCommands: ["app.palette.toggle"],
   });
   useCommandOverlay({
     open: controller.voiceInputOverlay.visible,
@@ -303,7 +304,10 @@ export const ChatSession = (): JSX.Element => {
     [activeApp, unsavedChangesMessage],
   );
 
+  const shellCommandStateRef = useRef({ activeApp, controller, selectApp });
+  shellCommandStateRef.current = { activeApp, controller, selectApp };
   const shellCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => shellCommandStateRef.current;
     const viewCommands: Array<{
       id: keyof typeof import("./commands/command-defaults").DEFAULT_COMMAND_SHORTCUTS;
       app: MainAppId;
@@ -328,8 +332,10 @@ export const ChatSession = (): JSX.Element => {
         title: "Open Workspace Management",
       },
     ];
-    const activeSession = controller.header.activeSession;
-    const disabled = (reason: string) => ({ state: "disabled" as const, reason });
+    const disabled = (reason: string) => ({
+      state: "disabled" as const,
+      reason,
+    });
     const enabled = { state: "enabled" as const };
     return [
       {
@@ -338,10 +344,15 @@ export const ChatSession = (): JSX.Element => {
         group: "Navigation",
         keywords: ["preferences", "configuration"],
         scope: { kind: "global", ownerId: "app" },
-        shortcuts: [{ chord: getDefaultCommandShortcut("app.settings.open") }],
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("app.settings.open"),
+            runtimes: ["tauri"],
+          },
+        ],
         palette: "visible",
         overlayPolicy: "replace-non-modal",
-        execute: () => controller.openProviderSettings(),
+        execute: () => state().controller.openProviderSettings(),
       },
       ...viewCommands.map(
         ({ id, app, title }, order): CommandDefinition => ({
@@ -357,10 +368,10 @@ export const ChatSession = (): JSX.Element => {
           ],
           palette: "visible",
           order: order + 10,
-          current: () => activeApp === app,
+          current: () => state().activeApp === app,
           overlayPolicy: "replace-non-modal",
           execute: () =>
-            selectApp(app) ? { type: "close" } : { type: "cancelled" },
+            state().selectApp(app) ? { type: "close" } : { type: "cancelled" },
         }),
       ),
       {
@@ -383,7 +394,7 @@ export const ChatSession = (): JSX.Element => {
         palette: "visible",
         order: 21,
         overlayPolicy: "replace-non-modal",
-        execute: () => controller.missionControl.setOpen(true),
+        execute: () => state().controller.missionControl.setOpen(true),
       },
       {
         id: "chat.session.new",
@@ -391,14 +402,38 @@ export const ChatSession = (): JSX.Element => {
         group: "Chat",
         keywords: ["conversation", "task"],
         scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("chat.session.new"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
         palette: "visible",
-        execute: () => controller.sidebar.onCreateSession(),
+        execute: () => state().controller.sidebar.onCreateSession(),
       },
       {
         id: "chat.sessions.search",
         title: "Search sessions",
         group: "Chat",
         scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("chat.sessions.search"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
         palette: "visible",
         execute: () => {
           window.requestAnimationFrame(() => {
@@ -409,18 +444,71 @@ export const ChatSession = (): JSX.Element => {
         },
       },
       {
-        id: typeof activeSession.pinnedAt === "number"
-          ? "chat.session.unpin"
-          : "chat.session.pin",
-        title: typeof activeSession.pinnedAt === "number"
-          ? "Unpin active session"
-          : "Pin active session",
+        id: "chat.session.open",
+        title: "Open session",
         group: "Chat",
+        keywords: ["switch conversation"],
         scope: { kind: "view", ownerId: "chat" },
         palette: "visible",
         availability: () =>
-          controller.header.canPinSession ? enabled : disabled("This session cannot be pinned"),
-        execute: () => controller.header.onTogglePinnedSession(),
+          state().controller.sidebar.filteredSessions.length > 0
+            ? enabled
+            : disabled("No sessions match the current filters"),
+        children: () => ({
+          id: "chat-session-open",
+          title: "Open session",
+          searchPlaceholder: "Choose session",
+          groups: [
+            {
+              id: "sessions",
+              items: state().controller.sidebar.filteredSessions.map(
+                (session) => ({
+                  id: session.id,
+                  title: getSessionTitle(session),
+                  keywords: [session.workspace ?? "", ...session.tags].filter(
+                    Boolean,
+                  ),
+                  current:
+                    session.id === state().controller.sidebar.activeSessionId,
+                  execute: () =>
+                    state().controller.sidebar.onActivateSession(session.id),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.session.pin",
+        title: "Pin active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () => {
+          const current = state().controller;
+          if (typeof current.header.activeSession.pinnedAt === "number")
+            return { state: "hidden" };
+          return current.header.canPinSession
+            ? enabled
+            : disabled("This session cannot be pinned");
+        },
+        execute: () => state().controller.header.onTogglePinnedSession(),
+      },
+      {
+        id: "chat.session.unpin",
+        title: "Unpin active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () => {
+          const current = state().controller;
+          if (typeof current.header.activeSession.pinnedAt !== "number")
+            return { state: "hidden" };
+          return current.header.canPinSession
+            ? enabled
+            : disabled("This session cannot be unpinned");
+        },
+        execute: () => state().controller.header.onTogglePinnedSession(),
       },
       {
         id: "chat.session.duplicate",
@@ -429,10 +517,41 @@ export const ChatSession = (): JSX.Element => {
         scope: { kind: "view", ownerId: "chat" },
         palette: "visible",
         availability: () =>
-          controller.header.canBranchSession
+          state().controller.header.canBranchSession
             ? enabled
             : disabled("This session cannot be duplicated"),
-        execute: () => controller.sidebar.onDuplicateSession(activeSession.id),
+        execute: () => {
+          const current = state().controller;
+          return current.sidebar.onDuplicateSession(
+            current.header.activeSession.id,
+          );
+        },
+      },
+      {
+        id: "chat.session.branch",
+        title: "Branch active session",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          state().controller.header.canBranchSession
+            ? enabled
+            : disabled("This session cannot be branched"),
+        execute: () => state().controller.header.onBranchSession(),
+      },
+      {
+        id: "chat.session.history.clear",
+        title: "Clear Quick Chat history",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          !state().controller.header.showClearSessionHistory
+            ? { state: "hidden" }
+            : state().controller.header.canClearSessionHistory
+              ? enabled
+              : disabled("Quick Chat history is already empty"),
+        execute: () => state().controller.header.onClearSessionHistory(),
       },
       {
         id: "chat.session.archive",
@@ -441,10 +560,15 @@ export const ChatSession = (): JSX.Element => {
         scope: { kind: "view", ownerId: "chat" },
         palette: "visible",
         availability: () =>
-          canArchiveSession(activeSession)
+          canArchiveSession(state().controller.header.activeSession)
             ? enabled
             : disabled("This session cannot be archived"),
-        execute: () => controller.sidebar.onArchiveSession(activeSession.id),
+        execute: () => {
+          const current = state().controller;
+          return current.sidebar.onArchiveSession(
+            current.header.activeSession.id,
+          );
+        },
       },
       {
         id: "chat.session.rename",
@@ -453,13 +577,35 @@ export const ChatSession = (): JSX.Element => {
         scope: { kind: "view", ownerId: "chat" },
         palette: "visible",
         availability: () =>
-          controller.header.canRenameSession
+          state().controller.header.canRenameSession
             ? enabled
             : disabled("This session cannot be renamed"),
         execute: () => {
           window.requestAnimationFrame(() => {
             window.requestAnimationFrame(() => {
-              controller.header.onStartRename();
+              state().controller.header.onStartRename();
+            });
+          });
+        },
+      },
+      {
+        id: "chat.session.tags.edit",
+        title: "Edit session tags",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          state().controller.header.canEditSessionMetadata
+            ? enabled
+            : disabled("This session's tags cannot be edited"),
+        execute: () => {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              const input = document.querySelector<HTMLInputElement>(
+                'input[aria-label="Session tags"]',
+              );
+              input?.focus({ preventScroll: true });
+              input?.select();
             });
           });
         },
@@ -471,19 +617,22 @@ export const ChatSession = (): JSX.Element => {
         scope: { kind: "view", ownerId: "chat" },
         palette: "visible",
         availability: () =>
-          controller.header.canDeleteSession
+          state().controller.header.canDeleteSession
             ? enabled
             : disabled("This session cannot be deleted"),
         execute: () => {
-          if (!window.confirm(`Delete “${controller.header.currentSessionTitle}”?`)) {
+          const current = state().controller;
+          if (
+            !window.confirm(`Delete “${current.header.currentSessionTitle}”?`)
+          ) {
             return { type: "cancelled" };
           }
-          controller.header.onDeleteSession();
+          current.header.onDeleteSession();
           return { type: "close" };
         },
       },
     ];
-  }, [activeApp, controller, selectApp]);
+  }, []);
 
   useEffect(() => {
     if (activeApp === "chat") {
@@ -655,40 +804,269 @@ export const ChatSession = (): JSX.Element => {
   return (
     <TooltipProvider delayDuration={300}>
       <CommandProvider activeView={activeApp} commands={shellCommands}>
-      <Dialog
-        open={controller.catalogOpen}
-        onOpenChange={controller.setCatalogOpen}
-      >
-        <div className="app-shell relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
-          <ShellTitlebar {...controller.titlebar} />
+        <Dialog
+          open={controller.catalogOpen}
+          onOpenChange={controller.setCatalogOpen}
+          commandOverlayId="settings-dialog"
+          commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+        >
+          <div className="app-shell relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
+            <ShellTitlebar {...controller.titlebar} />
 
-          <FileDropOverlay
-            active={controller.fileDrop.isActive}
-            label="Attach to task"
-          />
+            <FileDropOverlay
+              active={controller.fileDrop.isActive}
+              label="Attach to task"
+            />
 
-          {onboardingOpen && !controller.catalogOpen ? (
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
-                >
-                  Preparing settings…
+            {onboardingOpen && !controller.catalogOpen ? (
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
+                  >
+                    Preparing settings…
+                  </div>
+                }
+              >
+                <OnboardingWizard
+                  activeSession={controller.composer.activeSession}
+                  chooserProviders={controller.composer.chooserProviders}
+                  hasAnyProvider={controller.hasAnyProvider}
+                  isUiControlAvailable={
+                    controller.composer.isUiControlAvailable
+                  }
+                  uiControlDescription={
+                    controller.composer.uiControlDescription
+                  }
+                  settingsSection={controller.settingsDialog.settingsSection}
+                  onSettingsSectionChange={
+                    controller.settingsDialog.onSettingsSectionChange
+                  }
+                  providerSetup={controller.settingsDialog.providerSetup}
+                  workspaceSetup={controller.settingsDialog.workspaceSetup}
+                  webSearchSetup={controller.settingsDialog.webSearchSetup}
+                  mcpSetup={controller.settingsDialog.mcpSetup}
+                  agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
+                  appearanceSetup={appearance}
+                  memorySetup={controller.settingsDialog.memorySetup}
+                  desktopSetup={controller.settingsDialog.desktopSetup}
+                  voiceSetup={controller.settingsDialog.voiceSetup}
+                  onSelectFolder={controller.composer.onSelectFolder}
+                  onSessionModelSelection={
+                    controller.composer.onSessionModelSelection
+                  }
+                  onSessionModeSelection={
+                    controller.composer.onSessionModeSelection
+                  }
+                  onUiControlEnabledChange={
+                    controller.composer.onUiControlEnabledChange
+                  }
+                  onFinish={() => {
+                    return closeOnboarding(false);
+                  }}
+                  onSkip={() => {
+                    return closeOnboarding(true);
+                  }}
+                />
+              </Suspense>
+            ) : null}
+
+            {controller.voiceInputOverlay.visible ? (
+              <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
+                <VoiceInputOverlay
+                  title="Voice input"
+                  recording={controller.voiceInputOverlay.recording}
+                  transcribing={controller.voiceInputOverlay.transcribing}
+                  level={controller.voiceInputOverlay.level}
+                  statusText={controller.voiceInputOverlay.statusText}
+                  statusTone={controller.voiceInputOverlay.statusTone}
+                  primaryActionDisabled={
+                    controller.voiceInputOverlay.transcribing
+                  }
+                  onPrimaryAction={controller.voiceInputOverlay.onAction}
+                  className="rounded-xl border border-slate-800/70 bg-slate-950/96"
+                  headerClassName="px-8"
+                />
+              </div>
+            ) : null}
+
+            <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
+              <AppRail
+                activeApp={activeApp}
+                chatActivity={chatActivity}
+                ralphActivity={ralphActivity}
+                mediaActivity={mediaActivity}
+                onSelectApp={selectApp}
+                onOpenScheduler={() => setSchedulerOpen(true)}
+                onOpenMissionControl={() =>
+                  controller.missionControl.setOpen(true)
+                }
+                onOpenSettings={controller.openProviderSettings}
+              />
+
+              {activeApp === "chat" ? (
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <SessionsSidebar
+                    {...controller.sidebar}
+                    searchInputRef={sessionSearchInputRef}
+                  />
+
+                  {controller.isDesktop && !controller.hasAnyProvider ? (
+                    <ProviderEmptyState
+                      onOpenSettings={controller.openProviderSettings}
+                    />
+                  ) : (
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+                      <SessionHeader {...controller.header} />
+
+                      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                        <ScrollArea className="h-full min-w-0" type="always">
+                          <ConversationFeed
+                            key={controller.composer.activeSession.id}
+                            {...controller.conversation}
+                          />
+                        </ScrollArea>
+                        <ScrollToNewestButton
+                          visible={
+                            controller.conversation.showScrollToNewestButton
+                          }
+                          onClick={controller.conversation.onScrollToNewest}
+                          className="bottom-4 right-4"
+                        />
+                      </div>
+
+                      <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
+                        <div className="mx-auto w-full max-w-5xl min-w-0">
+                          <SessionComposer
+                            key={controller.composer.activeSession.id}
+                            {...controller.composer}
+                            onBrowseMediaAssets={() => {
+                              setPendingMediaSection("library");
+                              selectApp("media");
+                            }}
+                            onCreateMediaAsset={(prompt) => {
+                              setPendingMediaDraftPrompt(prompt);
+                              setPendingMediaSection("generate");
+                              selectApp("media");
+                            }}
+                          />
+                        </div>
+                      </footer>
+                    </main>
+                  )}
                 </div>
-              }
-            >
-              <OnboardingWizard
-                activeSession={controller.composer.activeSession}
-                chooserProviders={controller.composer.chooserProviders}
-                hasAnyProvider={controller.hasAnyProvider}
-                isUiControlAvailable={controller.composer.isUiControlAvailable}
-                uiControlDescription={controller.composer.uiControlDescription}
+              ) : null}
+
+              {activeApp === "ralph" ? (
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <Suspense fallback={appLoadingFallback}>
+                    <RalphApp
+                      isActive
+                      providerStatuses={controller.titlebar.providerStatuses}
+                      onOpenMediaRun={(runId) => {
+                        setPendingMediaRunId(runId);
+                        selectApp("media");
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              ) : null}
+
+              {activeApp === "media" ? (
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <Suspense fallback={appLoadingFallback}>
+                    <MediaStudio
+                      providerStatuses={controller.titlebar.providerStatuses}
+                      onOpenProviderSettings={controller.openProviderSettings}
+                      workspaceRoot={
+                        controller.composer.activeSession.workspace
+                      }
+                      openRunId={pendingMediaRunId}
+                      onOpenRunHandled={() => setPendingMediaRunId(null)}
+                      openSection={pendingMediaSection}
+                      onOpenSectionHandled={() => setPendingMediaSection(null)}
+                      openAssetId={pendingMediaAssetId}
+                      onOpenAssetHandled={() => setPendingMediaAssetId(null)}
+                      importPath={pendingMediaImportPath}
+                      onImportPathHandled={() =>
+                        setPendingMediaImportPath(null)
+                      }
+                      draftPrompt={pendingMediaDraftPrompt}
+                      onDraftPromptHandled={() =>
+                        setPendingMediaDraftPrompt(null)
+                      }
+                      onSendAssetToChat={(reference) => {
+                        if (controller.attachMediaAssetToChat(reference)) {
+                          selectApp("chat");
+                        }
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              ) : null}
+
+              <div
+                hidden={activeApp !== "marketplace"}
+                className={cn(
+                  "min-h-0 min-w-0 flex-1 overflow-hidden",
+                  activeApp === "marketplace" ? "flex" : "hidden",
+                )}
+              >
+                {activeApp === "marketplace" ? (
+                  <Suspense fallback={appLoadingFallback}>
+                    <McpMarketplace
+                      workspaceRoot={
+                        controller.composer.activeSession.workspace
+                      }
+                      onOpenSettings={() => {
+                        controller.settingsDialog.onSettingsSectionChange(
+                          "mcp",
+                        );
+                        controller.setCatalogOpen(true);
+                      }}
+                    />
+                  </Suspense>
+                ) : null}
+              </div>
+
+              {activeApp === "instructions" ? (
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <Suspense fallback={appLoadingFallback}>
+                    <InstructionManager
+                      setup={controller.instructionManagement}
+                      onDirtyChange={setInstructionDraftDirty}
+                    />
+                  </Suspense>
+                </div>
+              ) : null}
+
+              {activeApp === "workspaces" ? (
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <Suspense fallback={appLoadingFallback}>
+                    <WorkspaceManager
+                      setup={controller.instructionManagement}
+                      workspaceSetup={controller.workspaceManagement}
+                      activeWorkspaceRoot={
+                        controller.composer.activeSession.workspace
+                      }
+                      onDirtyChange={setWorkspaceDraftDirty}
+                    />
+                  </Suspense>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {controller.catalogOpen ? (
+            <Suspense fallback={null}>
+              <SettingsDialog
                 settingsSection={controller.settingsDialog.settingsSection}
                 onSettingsSectionChange={
                   controller.settingsDialog.onSettingsSectionChange
                 }
+                onClose={() => controller.setCatalogOpen(false)}
                 providerSetup={controller.settingsDialog.providerSetup}
                 workspaceSetup={controller.settingsDialog.workspaceSetup}
                 webSearchSetup={controller.settingsDialog.webSearchSetup}
@@ -698,286 +1076,78 @@ export const ChatSession = (): JSX.Element => {
                 memorySetup={controller.settingsDialog.memorySetup}
                 desktopSetup={controller.settingsDialog.desktopSetup}
                 voiceSetup={controller.settingsDialog.voiceSetup}
-                onSelectFolder={controller.composer.onSelectFolder}
-                onSessionModelSelection={
-                  controller.composer.onSessionModelSelection
-                }
-                onSessionModeSelection={
-                  controller.composer.onSessionModeSelection
-                }
-                onUiControlEnabledChange={
-                  controller.composer.onUiControlEnabledChange
-                }
-                onFinish={() => {
-                  return closeOnboarding(false);
-                }}
-                onSkip={() => {
-                  return closeOnboarding(true);
-                }}
               />
             </Suspense>
           ) : null}
+        </Dialog>
 
-          {controller.voiceInputOverlay.visible ? (
-            <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
-              <VoiceInputOverlay
-                title="Voice input"
-                recording={controller.voiceInputOverlay.recording}
-                transcribing={controller.voiceInputOverlay.transcribing}
-                level={controller.voiceInputOverlay.level}
-                statusText={controller.voiceInputOverlay.statusText}
-                statusTone={controller.voiceInputOverlay.statusTone}
-                primaryActionDisabled={
-                  controller.voiceInputOverlay.transcribing
-                }
-                onPrimaryAction={controller.voiceInputOverlay.onAction}
-                className="rounded-xl border border-slate-800/70 bg-slate-950/96"
-                headerClassName="px-8"
-              />
-            </div>
-          ) : null}
-
-          <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
-            <AppRail
-              activeApp={activeApp}
-              chatActivity={chatActivity}
-              ralphActivity={ralphActivity}
-              mediaActivity={mediaActivity}
-              onSelectApp={selectApp}
-              onOpenScheduler={() => setSchedulerOpen(true)}
-              onOpenMissionControl={() =>
-                controller.missionControl.setOpen(true)
-              }
-              onOpenSettings={controller.openProviderSettings}
-            />
-
-            {activeApp === "chat" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <SessionsSidebar
-                  {...controller.sidebar}
-                  searchInputRef={sessionSearchInputRef}
-                />
-
-                {controller.isDesktop && !controller.hasAnyProvider ? (
-                  <ProviderEmptyState
-                    onOpenSettings={controller.openProviderSettings}
-                  />
-                ) : (
-                  <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-                    <SessionHeader {...controller.header} />
-
-                    <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-                      <ScrollArea className="h-full min-w-0" type="always">
-                        <ConversationFeed
-                          key={controller.composer.activeSession.id}
-                          {...controller.conversation}
-                        />
-                      </ScrollArea>
-                      <ScrollToNewestButton
-                        visible={
-                          controller.conversation.showScrollToNewestButton
-                        }
-                        onClick={controller.conversation.onScrollToNewest}
-                        className="bottom-4 right-4"
-                      />
-                    </div>
-
-                    <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
-                      <div className="mx-auto w-full max-w-5xl min-w-0">
-                        <SessionComposer
-                          key={controller.composer.activeSession.id}
-                          {...controller.composer}
-                          onBrowseMediaAssets={() => {
-                            setPendingMediaSection("library");
-                            selectApp("media");
-                          }}
-                          onCreateMediaAsset={(prompt) => {
-                            setPendingMediaDraftPrompt(prompt);
-                            setPendingMediaSection("generate");
-                            selectApp("media");
-                          }}
-                        />
-                      </div>
-                    </footer>
-                  </main>
-                )}
-              </div>
-            ) : null}
-
-            {activeApp === "ralph" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <RalphApp
-                    isActive
-                    providerStatuses={controller.titlebar.providerStatuses}
-                    onOpenMediaRun={(runId) => {
-                      setPendingMediaRunId(runId);
-                      selectApp("media");
-                    }}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
-
-            {activeApp === "media" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <MediaStudio
-                    providerStatuses={controller.titlebar.providerStatuses}
-                    onOpenProviderSettings={controller.openProviderSettings}
-                    workspaceRoot={controller.composer.activeSession.workspace}
-                    openRunId={pendingMediaRunId}
-                    onOpenRunHandled={() => setPendingMediaRunId(null)}
-                    openSection={pendingMediaSection}
-                    onOpenSectionHandled={() => setPendingMediaSection(null)}
-                    openAssetId={pendingMediaAssetId}
-                    onOpenAssetHandled={() => setPendingMediaAssetId(null)}
-                    importPath={pendingMediaImportPath}
-                    onImportPathHandled={() => setPendingMediaImportPath(null)}
-                    draftPrompt={pendingMediaDraftPrompt}
-                    onDraftPromptHandled={() =>
-                      setPendingMediaDraftPrompt(null)
-                    }
-                    onSendAssetToChat={(reference) => {
-                      if (controller.attachMediaAssetToChat(reference)) {
-                        selectApp("chat");
-                      }
-                    }}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
-
-            <div
-              hidden={activeApp !== "marketplace"}
-              className={cn(
-                "min-h-0 min-w-0 flex-1 overflow-hidden",
-                activeApp === "marketplace" ? "flex" : "hidden",
-              )}
-            >
-              {activeApp === "marketplace" ? (
-                <Suspense fallback={appLoadingFallback}>
-                  <McpMarketplace
-                    workspaceRoot={controller.composer.activeSession.workspace}
-                    onOpenSettings={() => {
-                      controller.settingsDialog.onSettingsSectionChange("mcp");
-                      controller.setCatalogOpen(true);
-                    }}
-                  />
-                </Suspense>
-              ) : null}
-            </div>
-
-            {activeApp === "instructions" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <InstructionManager
-                    setup={controller.instructionManagement}
-                    onDirtyChange={setInstructionDraftDirty}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
-
-            {activeApp === "workspaces" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <WorkspaceManager
-                    setup={controller.instructionManagement}
-                    workspaceSetup={controller.workspaceManagement}
-                    activeWorkspaceRoot={
-                      controller.composer.activeSession.workspace
-                    }
-                    onDirtyChange={setWorkspaceDraftDirty}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        {controller.catalogOpen ? (
-          <Suspense fallback={null}>
-            <SettingsDialog
-              settingsSection={controller.settingsDialog.settingsSection}
-              onSettingsSectionChange={
-                controller.settingsDialog.onSettingsSectionChange
-              }
-              onClose={() => controller.setCatalogOpen(false)}
-              providerSetup={controller.settingsDialog.providerSetup}
-              workspaceSetup={controller.settingsDialog.workspaceSetup}
-              webSearchSetup={controller.settingsDialog.webSearchSetup}
-              mcpSetup={controller.settingsDialog.mcpSetup}
-              agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
-              appearanceSetup={appearance}
-              memorySetup={controller.settingsDialog.memorySetup}
-              desktopSetup={controller.settingsDialog.desktopSetup}
-              voiceSetup={controller.settingsDialog.voiceSetup}
-            />
-          </Suspense>
-        ) : null}
-      </Dialog>
-
-      <Dialog
-        open={controller.missionControl.open}
-        onOpenChange={controller.missionControl.setOpen}
-      >
-        <MissionControlPanel
-          status={controller.missionControl.status}
-          loading={controller.missionControl.loading}
-          message={controller.missionControl.message}
-          onEnable={controller.missionControl.onEnable}
-          onDisable={controller.missionControl.onDisable}
-          onOpenUrl={controller.missionControl.onOpenUrl}
-          onSavePort={controller.missionControl.onSavePort}
-          onForgetPairings={controller.missionControl.onForgetPairings}
-        />
-      </Dialog>
-
-      {schedulerOpen ? (
-        <Dialog open onOpenChange={setSchedulerOpen}>
-          <SchedulerPanel
-            workspaceRoot={controller.composer.activeSession.workspace}
+        <Dialog
+          open={controller.missionControl.open}
+          onOpenChange={controller.missionControl.setOpen}
+          commandOverlayId="mission-control"
+          commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+        >
+          <MissionControlPanel
+            status={controller.missionControl.status}
+            loading={controller.missionControl.loading}
+            message={controller.missionControl.message}
+            onEnable={controller.missionControl.onEnable}
+            onDisable={controller.missionControl.onDisable}
+            onOpenUrl={controller.missionControl.onOpenUrl}
+            onSavePort={controller.missionControl.onSavePort}
+            onForgetPairings={controller.missionControl.onForgetPairings}
           />
         </Dialog>
-      ) : null}
 
-      <AttachmentImagePreviewDialog
-        preview={controller.attachmentImagePreview.preview}
-        onOpenChange={controller.attachmentImagePreview.onOpenChange}
-        onEditMediaAsset={(attachment) => {
-          controller.attachmentImagePreview.onOpenChange(false);
-          setPendingMediaAssetId(attachment.assetId);
-          selectApp("media");
-        }}
-        onSaveToMediaLibrary={(attachment) => {
-          controller.attachmentImagePreview.onOpenChange(false);
-          setPendingMediaImportPath(attachment.path);
-          selectApp("media");
-        }}
-      />
+        {schedulerOpen ? (
+          <Dialog
+            open
+            onOpenChange={setSchedulerOpen}
+            commandOverlayId="scheduler"
+            commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+          >
+            <SchedulerPanel
+              workspaceRoot={controller.composer.activeSession.workspace}
+            />
+          </Dialog>
+        ) : null}
 
-      {controller.filePreview.preview ? (
-        <Suspense
-          fallback={
-            <FilePreviewDialogFallback
+        <AttachmentImagePreviewDialog
+          preview={controller.attachmentImagePreview.preview}
+          onOpenChange={controller.attachmentImagePreview.onOpenChange}
+          onEditMediaAsset={(attachment) => {
+            controller.attachmentImagePreview.onOpenChange(false);
+            setPendingMediaAssetId(attachment.assetId);
+            selectApp("media");
+          }}
+          onSaveToMediaLibrary={(attachment) => {
+            controller.attachmentImagePreview.onOpenChange(false);
+            setPendingMediaImportPath(attachment.path);
+            selectApp("media");
+          }}
+        />
+
+        {controller.filePreview.preview ? (
+          <Suspense
+            fallback={
+              <FilePreviewDialogFallback
+                preview={controller.filePreview.preview}
+                onOpenChange={controller.filePreview.onOpenChange}
+                onOpenExternal={controller.filePreview.onOpenExternal}
+              />
+            }
+          >
+            <FilePreviewDialog
               preview={controller.filePreview.preview}
               onOpenChange={controller.filePreview.onOpenChange}
               onOpenExternal={controller.filePreview.onOpenExternal}
             />
-          }
-        >
-          <FilePreviewDialog
-            preview={controller.filePreview.preview}
-            onOpenChange={controller.filePreview.onOpenChange}
-            onOpenExternal={controller.filePreview.onOpenExternal}
-          />
-        </Suspense>
-      ) : null}
+          </Suspense>
+        ) : null}
 
-      <ChatInputNeededDialog {...controller.inputNeeded} />
+        <ChatInputNeededDialog {...controller.inputNeeded} />
 
-      <ChatInterviewDialog {...controller.chatInterview} />
+        <ChatInterviewDialog {...controller.chatInterview} />
       </CommandProvider>
     </TooltipProvider>
   );

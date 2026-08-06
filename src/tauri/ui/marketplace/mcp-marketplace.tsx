@@ -41,6 +41,12 @@ import {
   type McpMarketplaceRegistrySource,
 } from "../../../core/mcp/marketplace.js";
 import { Button } from "../components/ui/button";
+import { getDefaultCommandShortcut } from "../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import type {
+  CommandDefinition,
+  CommandPageItem,
+} from "../commands/command-types";
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
@@ -98,6 +104,7 @@ import {
   type McpMarketplaceRegistrySourceState,
 } from "../lib/shell-store";
 import { cn } from "../lib/utils";
+import { isMcpConfigConflictError } from "../mcp-config-error";
 import {
   discoverMcpServer,
   loadMcpConfigDocument,
@@ -125,12 +132,7 @@ const MARKETPLACE_RESULT_LIST_OVERSCAN = 6;
 const MARKETPLACE_BACKGROUND_ENRICHMENT_BATCH_SIZE = 8;
 const MARKETPLACE_SEARCH_DEBOUNCE_MS = 450;
 const MARKETPLACE_CATALOG_DELTA_OVERLAP_MS = 60_000;
-const MCP_CONFIG_CONFLICT_PREFIX = "MACHDOCH_MCP_CONFIG_CONFLICT:";
 const MAX_MCP_CONFIG_MUTATION_ATTEMPTS = 4;
-
-const isMcpConfigConflict = (error: unknown): boolean => {
-  return getErrorText(error).includes(MCP_CONFIG_CONFLICT_PREFIX);
-};
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat(undefined, {
   compactDisplay: "short",
@@ -226,7 +228,9 @@ const fetchNextMarketplaceRegistryPages = async ({
   const requests = Object.values(pages).flatMap((page) => {
     const registry = registryById.get(page.registryId);
 
-    return registry && enabledRegistryIds.has(page.registryId) && page.nextCursor
+    return registry &&
+      enabledRegistryIds.has(page.registryId) &&
+      page.nextCursor
       ? [{ registry, registryId: page.registryId, cursor: page.nextCursor }]
       : [];
   });
@@ -592,9 +596,7 @@ export const McpMarketplace = ({
       appliedQuery,
     );
 
-    return stableOrder.map(
-      (result) => enrichedByKey.get(result.key) ?? result,
-    );
+    return stableOrder.map((result) => enrichedByKey.get(result.key) ?? result);
   }, [
     appliedQuery,
     enrichedResults,
@@ -728,9 +730,7 @@ export const McpMarketplace = ({
   }, []);
 
   const mutateInstalledDocument = useCallback(
-    (
-      updateRaw: (currentRaw: string) => string,
-    ): Promise<McpConfigDocument> => {
+    (updateRaw: (currentRaw: string) => string): Promise<McpConfigDocument> => {
       const operation = installedConfigMutationQueueRef.current
         .catch(() => undefined)
         .then(async () => {
@@ -755,7 +755,7 @@ export const McpMarketplace = ({
               break;
             } catch (error) {
               if (
-                !isMcpConfigConflict(error) ||
+                !isMcpConfigConflictError(error) ||
                 attempt === MAX_MCP_CONFIG_MUTATION_ATTEMPTS - 1
               ) {
                 throw error;
@@ -820,13 +820,16 @@ export const McpMarketplace = ({
             setResults(snapshot.results);
             setRegistryPages(snapshot.pages);
             setSelectedKey((current) =>
-              current && snapshot.results.some((result) => result.key === current)
+              current &&
+              snapshot.results.some((result) => result.key === current)
                 ? current
-                : snapshot.results[0]?.key ?? null,
+                : (snapshot.results[0]?.key ?? null),
             );
             setCatalogCacheStatus(
               `${
-                snapshot.incremental ? "Catalog delta updating" : "Catalog updating"
+                snapshot.incremental
+                  ? "Catalog delta updating"
+                  : "Catalog updating"
               }: ${snapshot.results.length} servers loaded${
                 snapshot.reachedRoundLimit ? ", more may be available" : ""
               }.`,
@@ -846,7 +849,7 @@ export const McpMarketplace = ({
         setSelectedKey((current) =>
           current && catalog.results.some((result) => result.key === current)
             ? current
-            : catalog.results[0]?.key ?? null,
+            : (catalog.results[0]?.key ?? null),
         );
         saveMarketplaceCatalogCache({
           pages: catalog.pages,
@@ -982,9 +985,7 @@ export const McpMarketplace = ({
         setCatalogCacheStatus(
           `${cached.results.length} cached servers restored${
             cached.truncated ? " (partial cache)" : ""
-          }; ${
-            updatedSince ? "checking for updates" : "updating catalog"
-          }...`,
+          }; ${updatedSince ? "checking for updates" : "updating catalog"}...`,
         );
         void refreshMarketplaceCatalog({
           background: true,
@@ -1350,7 +1351,10 @@ export const McpMarketplace = ({
     });
   };
 
-  const toggleRegistry = async (id: string, enabled: boolean): Promise<void> => {
+  const toggleRegistry = async (
+    id: string,
+    enabled: boolean,
+  ): Promise<void> => {
     await updateMarketplaceState((currentRegistries) =>
       currentRegistries.map((registry) =>
         registry.id === id ? { ...registry, enabled } : registry,
@@ -1380,7 +1384,9 @@ export const McpMarketplace = ({
     if (plan.blockedReasons.length > 0) {
       setMessage({
         tone: "error",
-        text: plan.blockedReasons[0] ?? "This MCP cannot be installed automatically.",
+        text:
+          plan.blockedReasons[0] ??
+          "This MCP cannot be installed automatically.",
       });
       return;
     }
@@ -1682,7 +1688,9 @@ export const McpMarketplace = ({
 
   const renderDiscoverList = (): JSX.Element => {
     return (
-      <div className={cn(PANEL_CLASS, "flex flex-col overflow-hidden lg:min-h-0")}>
+      <div
+        className={cn(PANEL_CLASS, "flex flex-col overflow-hidden lg:min-h-0")}
+      >
         <div className="border-b border-slate-800 p-3">
           <SearchField
             value={query}
@@ -1861,7 +1869,8 @@ export const McpMarketplace = ({
               ) : null}
               {field.secret ? (
                 <span className="leading-5 text-slate-500">
-                  Enter the environment variable name. The secret value is not stored in the MCP config.
+                  Enter the environment variable name. The secret value is not
+                  stored in the MCP config.
                 </span>
               ) : null}
             </label>
@@ -1874,7 +1883,12 @@ export const McpMarketplace = ({
   const renderServerDetail = (): JSX.Element => {
     if (!selectedResult || !plan) {
       return (
-        <div className={cn(PANEL_CLASS, "flex min-h-[12rem] items-center justify-center p-6 text-sm text-slate-500 lg:min-h-0")}>
+        <div
+          className={cn(
+            PANEL_CLASS,
+            "flex min-h-[12rem] items-center justify-center p-6 text-sm text-slate-500 lg:min-h-0",
+          )}
+        >
           Select an MCP server.
         </div>
       );
@@ -1891,7 +1905,9 @@ export const McpMarketplace = ({
     const renderWarningBlocks = (): JSX.Element | null => {
       const blocks = [
         ...(deprecated
-          ? ["This registry entry is deprecated. Review the project before installing."]
+          ? [
+              "This registry entry is deprecated. Review the project before installing.",
+            ]
           : []),
         ...plan.blockedReasons,
         ...plan.warnings,
@@ -2017,7 +2033,10 @@ export const McpMarketplace = ({
                 Generated command
               </div>
               <pre className="max-h-32 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300">
-                {[plan.generatedCommand.command, ...plan.generatedCommand.args].join(" ")}
+                {[
+                  plan.generatedCommand.command,
+                  ...plan.generatedCommand.args,
+                ].join(" ")}
               </pre>
             </div>
           ) : null}
@@ -2031,7 +2050,9 @@ export const McpMarketplace = ({
           selectedResult.updatedAtMs ||
           selectedResult.publishedAtMs,
       );
-      const githubPath = parseGitHubRepositoryPath(selectedResult.repositoryUrl);
+      const githubPath = parseGitHubRepositoryPath(
+        selectedResult.repositoryUrl,
+      );
       const npmPackage = getNpmPackageIdentifier(selectedResult);
       const hasMetricSource = Boolean(githubPath || npmPackage);
       const metricSourceLabel = [
@@ -2164,7 +2185,9 @@ export const McpMarketplace = ({
                   <ServerBadge>{selectedResult.registry.title}</ServerBadge>
                   <ServerBadge>{server.version}</ServerBadge>
                   <ServerBadge>{getInstallKindLabel(plan)}</ServerBadge>
-                  {selectedResult.authRequired ? <ServerBadge>auth required</ServerBadge> : null}
+                  {selectedResult.authRequired ? (
+                    <ServerBadge>auth required</ServerBadge>
+                  ) : null}
                 </div>
                 <div>
                   <h2 className="truncate text-2xl font-semibold text-white">
@@ -2227,10 +2250,13 @@ export const McpMarketplace = ({
     };
 
     return (
-      <div className={cn(PANEL_CLASS, "overflow-hidden lg:flex lg:min-h-0 lg:flex-col")}>
-        <div className="lg:hidden">
-          {renderServerDetailContent()}
-        </div>
+      <div
+        className={cn(
+          PANEL_CLASS,
+          "overflow-hidden lg:flex lg:min-h-0 lg:flex-col",
+        )}
+      >
+        <div className="lg:hidden">{renderServerDetailContent()}</div>
         <ScrollArea className="hidden min-h-0 flex-1 lg:block" type="always">
           {renderServerDetailContent()}
         </ScrollArea>
@@ -2298,7 +2324,9 @@ export const McpMarketplace = ({
                     {server.id}
                   </p>
                 </div>
-                <ServerBadge>{server.enabled ? "enabled" : "disabled"}</ServerBadge>
+                <ServerBadge>
+                  {server.enabled ? "enabled" : "disabled"}
+                </ServerBadge>
               </div>
               {server.description ? (
                 <p className="line-clamp-2 text-sm leading-6 text-slate-400">
@@ -2307,7 +2335,9 @@ export const McpMarketplace = ({
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <ServerBadge>{server.transportType}</ServerBadge>
-                {server.preset ? <ServerBadge>{server.preset}</ServerBadge> : null}
+                {server.preset ? (
+                  <ServerBadge>{server.preset}</ServerBadge>
+                ) : null}
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button
@@ -2371,7 +2401,8 @@ export const McpMarketplace = ({
         <div>
           <h2 className="text-xl font-semibold text-white">Registries</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Registry sources are global. The official registry is always available.
+            Registry sources are global. The official registry is always
+            available.
           </p>
         </div>
 
@@ -2418,14 +2449,24 @@ export const McpMarketplace = ({
 
         <div className="grid gap-3">
           {registries.map((registry) => (
-            <div key={registry.id} className={cn(PANEL_CLASS, "flex flex-wrap items-center justify-between gap-3 p-4")}>
+            <div
+              key={registry.id}
+              className={cn(
+                PANEL_CLASS,
+                "flex flex-wrap items-center justify-between gap-3 p-4",
+              )}
+            >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-semibold text-slate-100">
                     {registry.title}
                   </h3>
-                  {registry.official ? <ServerBadge>official</ServerBadge> : null}
-                  <ServerBadge>{registry.enabled ? "enabled" : "disabled"}</ServerBadge>
+                  {registry.official ? (
+                    <ServerBadge>official</ServerBadge>
+                  ) : null}
+                  <ServerBadge>
+                    {registry.enabled ? "enabled" : "disabled"}
+                  </ServerBadge>
                 </div>
                 <p className="mt-1 break-all font-mono text-xs text-slate-500">
                   {normalizeMcpMarketplaceRegistryBaseUrl(registry.baseUrl)}
@@ -2500,7 +2541,8 @@ export const McpMarketplace = ({
 
         <div className={cn(PANEL_CLASS, "grid gap-3 p-4")}>
           <div className="text-sm text-slate-400">
-            {installedDocument?.path ?? "Global MCP config path is available in the desktop app."}
+            {installedDocument?.path ??
+              "Global MCP config path is available in the desktop app."}
           </div>
           <pre className="max-h-[28rem] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300">
             {installedDocument
@@ -2511,6 +2553,712 @@ export const McpMarketplace = ({
       </div>
     );
   };
+  const marketplaceCommandStateRef = useRef({
+    addRegistry,
+    candidateId,
+    candidates,
+    controlsDisabled,
+    detailTab,
+    enrichingMetrics,
+    getRegistryDraft,
+    installKindFilter,
+    installedServers,
+    installing,
+    loadInstalledDocument,
+    marketplaceState,
+    onOpenSettings,
+    plan,
+    query,
+    refreshMarketplaceCatalog,
+    refreshMetricsForResults,
+    registries,
+    registryTesting,
+    removeInstalledServer,
+    removeRegistry,
+    searchBusy,
+    searchRegistries,
+    selectedCategory,
+    selectedResult,
+    setCandidateId,
+    setDetailTab,
+    setInstallKindFilter,
+    setInstalledServerEnabled,
+    setSelectedCategory,
+    setSelectedKey,
+    setSortMode,
+    setView,
+    sortMode,
+    testRegistryDraft,
+    toggleRegistry,
+    view,
+    visibleResults,
+    workspaceRoot,
+    installSelectedServer,
+  });
+  marketplaceCommandStateRef.current = {
+    addRegistry,
+    candidateId,
+    candidates,
+    controlsDisabled,
+    detailTab,
+    enrichingMetrics,
+    getRegistryDraft,
+    installKindFilter,
+    installedServers,
+    installing,
+    loadInstalledDocument,
+    marketplaceState,
+    onOpenSettings,
+    plan,
+    query,
+    refreshMarketplaceCatalog,
+    refreshMetricsForResults,
+    registries,
+    registryTesting,
+    removeInstalledServer,
+    removeRegistry,
+    searchBusy,
+    searchRegistries,
+    selectedCategory,
+    selectedResult,
+    setCandidateId,
+    setDetailTab,
+    setInstallKindFilter,
+    setInstalledServerEnabled,
+    setSelectedCategory,
+    setSelectedKey,
+    setSortMode,
+    setView,
+    sortMode,
+    testRegistryDraft,
+    toggleRegistry,
+    view,
+    visibleResults,
+    workspaceRoot,
+    installSelectedServer,
+  };
+  const marketplaceCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      ...VIEW_OPTIONS.map((option): CommandDefinition => {
+        const commandId = `marketplace.view.${option.id}` as
+          | "marketplace.view.discover"
+          | "marketplace.view.installed"
+          | "marketplace.view.registries"
+          | "marketplace.view.advanced";
+        return {
+          id: commandId,
+          title: `Open Marketplace ${option.label}`,
+          group: "Marketplace",
+          scope: { kind: "view", ownerId: "marketplace" },
+          shortcuts: [
+            {
+              chord: getDefaultCommandShortcut(commandId),
+              runtimes: ["tauri"],
+              allowIn: [
+                "document",
+                "text-entry",
+                "interactive-control",
+                "command-surface",
+              ],
+            },
+          ],
+          palette: "visible",
+          current: () => marketplaceCommandStateRef.current.view === option.id,
+          overlayPolicy: "replace-non-modal",
+          execute: () => marketplaceCommandStateRef.current.setView(option.id),
+        };
+      }),
+      {
+        id: "marketplace.refresh",
+        title: "Refresh Marketplace",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () => {
+          const state = marketplaceCommandStateRef.current;
+          return state.searchBusy
+            ? { state: "disabled", reason: "Marketplace is already updating" }
+            : { state: "enabled" };
+        },
+        execute: () => {
+          const state = marketplaceCommandStateRef.current;
+          if (state.view === "discover")
+            return state.refreshMarketplaceCatalog();
+          return state.loadInstalledDocument();
+        },
+      },
+      {
+        id: "marketplace.search",
+        title: "Search Marketplace",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.searchBusy
+            ? { state: "disabled", reason: "Marketplace is updating" }
+            : { state: "enabled" },
+        execute: () => {
+          const state = marketplaceCommandStateRef.current;
+          state.setView("discover");
+          state.searchRegistries(state.query);
+        },
+      },
+      {
+        id: "marketplace.server.select",
+        title: "Choose Marketplace server",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.visibleResults.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No Marketplace results" },
+        children: () => ({
+          id: "marketplace-server-select",
+          title: "Marketplace server",
+          searchPlaceholder: "Choose server",
+          groups: [
+            {
+              id: "servers",
+              items: marketplaceCommandStateRef.current.visibleResults.map(
+                (result) => ({
+                  id: result.key,
+                  title: getMcpRegistryServerTitle(result.entry.server),
+                  keywords: [
+                    result.entry.server.name,
+                    result.registry.title,
+                    result.installKind,
+                  ],
+                  current:
+                    marketplaceCommandStateRef.current.selectedResult?.key ===
+                    result.key,
+                  execute: () => {
+                    const state = marketplaceCommandStateRef.current;
+                    state.setView("discover");
+                    state.setSelectedKey(result.key);
+                  },
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.category.select",
+        title: "Filter Marketplace category",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        children: () => ({
+          id: "marketplace-category-select",
+          title: "Marketplace category",
+          searchPlaceholder: "Choose category",
+          groups: [
+            {
+              id: "categories",
+              items: [
+                {
+                  id: "all",
+                  title: "All",
+                  current:
+                    marketplaceCommandStateRef.current.selectedCategory ===
+                    "all",
+                  execute: () =>
+                    marketplaceCommandStateRef.current.setSelectedCategory(
+                      "all",
+                    ),
+                },
+                ...MCP_MARKETPLACE_CATEGORIES.map((category) => ({
+                  id: category.id,
+                  title: category.label,
+                  current:
+                    marketplaceCommandStateRef.current.selectedCategory ===
+                    category.id,
+                  execute: () =>
+                    marketplaceCommandStateRef.current.setSelectedCategory(
+                      category.id,
+                    ),
+                })),
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.install-kind.select",
+        title: "Filter Marketplace install type",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.controlsDisabled
+            ? { state: "disabled", reason: "Marketplace catalog is loading" }
+            : { state: "enabled" },
+        children: () => ({
+          id: "marketplace-install-kind-select",
+          title: "Install type",
+          searchPlaceholder: "Choose install type",
+          numericSelection: true,
+          groups: [
+            {
+              id: "types",
+              items: (
+                [
+                  ["all", "All install types"],
+                  ["remote", "Remote"],
+                  ["local", "Local packages"],
+                  ["auth-required", "Auth required"],
+                ] as const
+              ).map(
+                ([filter, title], index): CommandPageItem => ({
+                  id: filter,
+                  title,
+                  current:
+                    marketplaceCommandStateRef.current.installKindFilter ===
+                    filter,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () =>
+                    marketplaceCommandStateRef.current.setInstallKindFilter(
+                      filter,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.sort.select",
+        title: "Sort Marketplace results",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.controlsDisabled
+            ? { state: "disabled", reason: "Marketplace catalog is loading" }
+            : { state: "enabled" },
+        children: () => ({
+          id: "marketplace-sort-select",
+          title: "Sort Marketplace results",
+          searchPlaceholder: "Choose sort order",
+          groups: [
+            {
+              id: "sort",
+              items: (
+                [
+                  ["relevance", "Relevance"],
+                  ["recommended", "Recommended"],
+                  ["popularity", "Popularity"],
+                  ["stars", "Most starred"],
+                  ["downloads", "Most downloaded"],
+                  ["updated", "Recently updated"],
+                  ["name", "Name"],
+                  ["registry", "Registry"],
+                  ["install-method", "Install method"],
+                ] as const
+              ).map(([sort, title]) => ({
+                id: sort,
+                title,
+                current: marketplaceCommandStateRef.current.sortMode === sort,
+                execute: () =>
+                  marketplaceCommandStateRef.current.setSortMode(sort),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.detail-tab.select",
+        title: "Choose server detail tab",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.selectedResult
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select a server first" },
+        children: () => ({
+          id: "marketplace-detail-tab-select",
+          title: "Server detail",
+          searchPlaceholder: "Choose tab",
+          numericSelection: true,
+          groups: [
+            {
+              id: "tabs",
+              items: (
+                [
+                  ["overview", "Overview"],
+                  ["install", "Install"],
+                  ["trust", "Trust"],
+                  ["raw", "Raw"],
+                ] as const
+              ).map(
+                ([tab, title], index): CommandPageItem => ({
+                  id: tab,
+                  title,
+                  current: marketplaceCommandStateRef.current.detailTab === tab,
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () =>
+                    marketplaceCommandStateRef.current.setDetailTab(tab),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.install-method.select",
+        title: "Choose server install method",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.candidates.length > 1 &&
+          !marketplaceCommandStateRef.current.installing
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No alternate install methods" },
+        children: () => ({
+          id: "marketplace-install-method-select",
+          title: "Install method",
+          searchPlaceholder: "Choose method",
+          groups: [
+            {
+              id: "methods",
+              items: marketplaceCommandStateRef.current.candidates.map(
+                (candidate) => ({
+                  id: candidate.id,
+                  title: getCandidateLabel(candidate),
+                  current:
+                    marketplaceCommandStateRef.current.candidateId ===
+                      candidate.id ||
+                    (!marketplaceCommandStateRef.current.candidateId &&
+                      marketplaceCommandStateRef.current.candidates[0]?.id ===
+                        candidate.id),
+                  execute: () =>
+                    marketplaceCommandStateRef.current.setCandidateId(
+                      candidate.id,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.server.install",
+        title: "Install and enable selected server",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () => {
+          const state = marketplaceCommandStateRef.current;
+          if (!state.plan)
+            return { state: "disabled", reason: "Select a server first" };
+          if (state.installing)
+            return { state: "disabled", reason: "Installation is running" };
+          if (state.plan.missingCredentialFields.length > 0)
+            return {
+              state: "disabled",
+              reason: "Fill required credentials first",
+            };
+          if (state.plan.blockedReasons.length > 0)
+            return {
+              state: "disabled",
+              reason: state.plan.blockedReasons[0] ?? "Installation is blocked",
+            };
+          return { state: "enabled" };
+        },
+        execute: () =>
+          marketplaceCommandStateRef.current.installSelectedServer(),
+      },
+      {
+        id: "marketplace.server.link.open",
+        title: "Open selected server link",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () => {
+          const server =
+            marketplaceCommandStateRef.current.selectedResult?.entry.server;
+          return server?.repository?.url || server?.websiteUrl
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "The server has no external links" };
+        },
+        children: () => {
+          const server =
+            marketplaceCommandStateRef.current.selectedResult?.entry.server;
+          return {
+            id: "marketplace-server-link-open",
+            title: "Server link",
+            searchPlaceholder: "Choose link",
+            groups: [
+              {
+                id: "links",
+                items: [
+                  ...(server?.repository?.url
+                    ? [
+                        {
+                          id: "repository",
+                          title: "Repository",
+                          execute: () => {
+                            window.open(server.repository?.url, "_blank");
+                          },
+                        },
+                      ]
+                    : []),
+                  ...(server?.websiteUrl
+                    ? [
+                        {
+                          id: "website",
+                          title: "Website",
+                          execute: () => {
+                            window.open(server.websiteUrl, "_blank");
+                          },
+                        },
+                      ]
+                    : []),
+                ],
+              },
+            ],
+          };
+        },
+      },
+      {
+        id: "marketplace.installed.toggle",
+        title: "Enable or disable installed server",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.installedServers.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No installed servers" },
+        children: () => ({
+          id: "marketplace-installed-toggle",
+          title: "Installed servers",
+          searchPlaceholder: "Choose server",
+          groups: [
+            {
+              id: "servers",
+              items: marketplaceCommandStateRef.current.installedServers.map(
+                (server) => ({
+                  id: server.id,
+                  title: `${server.enabled ? "Disable" : "Enable"} ${server.title}`,
+                  keywords: [server.id],
+                  execute: () =>
+                    marketplaceCommandStateRef.current.setInstalledServerEnabled(
+                      server.id,
+                      !server.enabled,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.installed.discover",
+        title: "Discover installed server",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.workspaceRoot?.trim() &&
+          marketplaceCommandStateRef.current.installedServers.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Choose a workspace first" },
+        children: () => ({
+          id: "marketplace-installed-discover",
+          title: "Discover installed server",
+          searchPlaceholder: "Choose server",
+          groups: [
+            {
+              id: "servers",
+              items: marketplaceCommandStateRef.current.installedServers.map(
+                (server) => ({
+                  id: server.id,
+                  title: server.title,
+                  keywords: [server.id],
+                  execute: async () => {
+                    const workspace =
+                      marketplaceCommandStateRef.current.workspaceRoot?.trim();
+                    if (workspace)
+                      await discoverMcpServer(workspace, server.id);
+                  },
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.installed.remove",
+        title: "Remove installed server",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.installedServers.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No installed servers" },
+        children: () => ({
+          id: "marketplace-installed-remove",
+          title: "Remove installed server",
+          searchPlaceholder: "Choose server",
+          groups: [
+            {
+              id: "servers",
+              items: marketplaceCommandStateRef.current.installedServers.map(
+                (server) => ({
+                  id: server.id,
+                  title: server.title,
+                  keywords: [server.id],
+                  execute: () =>
+                    marketplaceCommandStateRef.current.removeInstalledServer(
+                      server.id,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.registry.add",
+        title: "Add custom registry",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.getRegistryDraft() &&
+          !marketplaceCommandStateRef.current.registryTesting
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "Enter a valid registry name and URL",
+              },
+        execute: () => marketplaceCommandStateRef.current.addRegistry(),
+      },
+      {
+        id: "marketplace.registry.test",
+        title: "Test custom registry",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.getRegistryDraft() &&
+          !marketplaceCommandStateRef.current.registryTesting
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "Enter a valid registry name and URL",
+              },
+        execute: () => marketplaceCommandStateRef.current.testRegistryDraft(),
+      },
+      {
+        id: "marketplace.registry.toggle",
+        title: "Enable or disable custom registry",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.marketplaceState.registries
+            .length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No custom registries" },
+        children: () => ({
+          id: "marketplace-registry-toggle",
+          title: "Custom registries",
+          searchPlaceholder: "Choose registry",
+          groups: [
+            {
+              id: "registries",
+              items:
+                marketplaceCommandStateRef.current.marketplaceState.registries.map(
+                  (registry) => ({
+                    id: registry.id,
+                    title: `${registry.enabled ? "Disable" : "Enable"} ${registry.title}`,
+                    keywords: [registry.baseUrl],
+                    execute: () =>
+                      marketplaceCommandStateRef.current.toggleRegistry(
+                        registry.id,
+                        !registry.enabled,
+                      ),
+                  }),
+                ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.registry.remove",
+        title: "Remove custom registry",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          marketplaceCommandStateRef.current.marketplaceState.registries
+            .length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No custom registries" },
+        children: () => ({
+          id: "marketplace-registry-remove",
+          title: "Remove custom registry",
+          searchPlaceholder: "Choose registry",
+          groups: [
+            {
+              id: "registries",
+              items:
+                marketplaceCommandStateRef.current.marketplaceState.registries.map(
+                  (registry) => ({
+                    id: registry.id,
+                    title: registry.title,
+                    keywords: [registry.baseUrl],
+                    execute: () =>
+                      marketplaceCommandStateRef.current.removeRegistry(
+                        registry.id,
+                      ),
+                  }),
+                ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "marketplace.metrics.refresh",
+        title: "Refresh Marketplace metrics",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        availability: () =>
+          !marketplaceCommandStateRef.current.enrichingMetrics &&
+          marketplaceCommandStateRef.current.visibleResults.length > 0
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "Marketplace metrics are unavailable",
+              },
+        execute: () =>
+          marketplaceCommandStateRef.current.refreshMetricsForResults(
+            marketplaceCommandStateRef.current.visibleResults,
+          ),
+      },
+      {
+        id: "marketplace.settings.open",
+        title: "Open MCP settings",
+        group: "Marketplace",
+        scope: { kind: "view", ownerId: "marketplace" },
+        palette: "visible",
+        execute: () => marketplaceCommandStateRef.current.onOpenSettings(),
+      },
+    ],
+    [marketplaceCommandStateRef],
+  );
+  useOptionalRegisterCommands(marketplaceCommands);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950 md:flex-row">
@@ -2519,13 +3267,19 @@ export const McpMarketplace = ({
         <header className="border-b border-slate-900 px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-xl font-semibold text-white">MCP Marketplace</h1>
+              <h1 className="text-xl font-semibold text-white">
+                MCP Marketplace
+              </h1>
               <p className="mt-1 text-sm text-slate-500">
-                Add global MCP connections and expose all capabilities to MachDoch.
+                Add global MCP connections and expose all capabilities to
+                MachDoch.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <ServerBadge>{registries.filter((registry) => registry.enabled).length} registries</ServerBadge>
+              <ServerBadge>
+                {registries.filter((registry) => registry.enabled).length}{" "}
+                registries
+              </ServerBadge>
               <ServerBadge>{results.length} servers loaded</ServerBadge>
             </div>
           </div>

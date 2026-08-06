@@ -67,6 +67,10 @@ import {
 import { readMediaAssetReferencePreview } from "../../media/media-runtime";
 import { type RuntimeProvider } from "../../model-catalog";
 import {
+  DesktopTaskRunProtocolError,
+  getDesktopTaskRunFailure,
+} from "../../desktop-task-error";
+import {
   createDefaultRalphInputValues,
   validateRalphInputFieldValues,
 } from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
@@ -131,7 +135,9 @@ import {
   createQueuedMessageDispatchPrompt,
   createQueuedPromptEnhancementRequest,
   extractEnhancedPrompt,
+  isPromptEnhancementCancellation,
   PROMPT_ENHANCEMENT_LABELS,
+  PromptEnhancementCancellationError,
   resolveImmediatePromptEnhancementPlacement,
   resolvePromptEnhancementOperationSessionId,
   resolveStagedPromptEnhancementSubmission,
@@ -195,7 +201,6 @@ import {
   getSmartContextPackModelSelection,
   getSmartContextPacksForWorkspace,
   importSmartContextPacksIntoShellState,
-  isSmartContextPackAppliedToDraft,
   type SaveSmartContextPackInput,
   type SmartContextPackScope,
   type SmartContextPackScopeFilter,
@@ -396,6 +401,12 @@ const createPromptEnhancementSessionMessages = (
       role: "user",
       content: pending.prompt,
       createdAt: pending.startedAt,
+      lifecycle: {
+        kind: "transient",
+        owner: "prompt-enhancement",
+        operationId: pending.taskId,
+        slot: "user",
+      },
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
     },
     {
@@ -404,6 +415,12 @@ const createPromptEnhancementSessionMessages = (
       role: "agent",
       content: "",
       createdAt: pending.startedAt,
+      lifecycle: {
+        kind: "transient",
+        owner: "prompt-enhancement",
+        operationId: pending.taskId,
+        slot: "thinking",
+      },
       source: {
         kind: "thinking",
         thinking: createPromptEnhancementThinkingTrace(pending),
@@ -1089,7 +1106,6 @@ export const useChatSessionController = (
     ],
   );
 
-  const autoAppliedContextPackIdsRef = useRef<Set<string>>(new Set());
   const matchedContextPackIds = useMemo(() => {
     if (
       !activeComposerSession.draft.trim() &&
@@ -1594,6 +1610,10 @@ export const useChatSessionController = (
           );
 
           if (result.outcome.status === "failed") {
+            const failure = getDesktopTaskRunFailure(result.outcome.failure);
+            const failureError = failure
+              ? new DesktopTaskRunProtocolError(failure)
+              : new Error("Desktop task returned malformed failure state.");
             return applySessionMessageLimit({
               ...session,
               updatedAt: timestamp,
@@ -1603,7 +1623,7 @@ export const useChatSessionController = (
                   id: `${taskId}-agent`,
                   taskId,
                   role: "agent",
-                  content: formatTaskExecutionError(result.outcome.error),
+                  content: formatTaskExecutionError(failureError),
                   createdAt: timestamp,
                 },
               ],
@@ -3703,7 +3723,6 @@ export const useChatSessionController = (
           trigger: {
             phrases: input.triggerPhrases ?? [],
             pathPatterns: input.triggerPathPatterns ?? [],
-            autoApply: input.autoApply ?? false,
           },
           ...(provider ? { provider } : {}),
           ...(provider && model ? { model } : {}),
@@ -4059,7 +4078,6 @@ export const useChatSessionController = (
         variables: extractSmartContextPackVariables(prompt),
         triggerPhrases: [],
         triggerPathPatterns: [],
-        autoApply: false,
         provider: messageSettings?.provider ?? state.activeSession.provider,
         model: messageSettings?.model ?? state.activeSession.model,
         mode: messageSettings?.mode ?? activeRunMode,
@@ -4096,7 +4114,7 @@ export const useChatSessionController = (
 
   const handleStartMessageEdit = useCallback(
     (message: ChatSessionMessage): void => {
-      if (message.role !== "user" || message.intent) {
+      if (message.role !== "user" || message.taskAction) {
         return;
       }
 
@@ -4175,46 +4193,6 @@ export const useChatSessionController = (
     messageEdit,
     state.activeSession.id,
     state.shellState.sessions,
-  ]);
-
-  useEffect(() => {
-    autoAppliedContextPackIdsRef.current.clear();
-  }, [state.activeSession.id, state.activeSession.workspace]);
-
-  useEffect(() => {
-    if (
-      messageEdit ||
-      (!activeComposerSession.draft.trim() &&
-        matchedContextPackIds.length === 0)
-    ) {
-      return;
-    }
-
-    const autoApplyPack = workspaceContextPacks.find((pack) => {
-      return (
-        pack.trigger.autoApply &&
-        pack.variables.length === 0 &&
-        !autoAppliedContextPackIdsRef.current.has(pack.id) &&
-        matchedContextPackIds.includes(pack.id) &&
-        !isSmartContextPackAppliedToDraft(activeComposerSession.draft, pack)
-      );
-    });
-
-    if (!autoApplyPack) {
-      return;
-    }
-
-    autoAppliedContextPackIdsRef.current.add(autoApplyPack.id);
-    void handleApplyContextPack(autoApplyPack.id).catch((error) => {
-      autoAppliedContextPackIdsRef.current.delete(autoApplyPack.id);
-      console.error("Failed to auto-apply context pack", error);
-    });
-  }, [
-    handleApplyContextPack,
-    matchedContextPackIds,
-    messageEdit,
-    activeComposerSession.draft,
-    workspaceContextPacks,
   ]);
 
   const handleRemoveContextAttachment = useCallback(
@@ -4703,7 +4681,7 @@ export const useChatSessionController = (
         );
 
         if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
-          throw new Error("cancelled");
+          throw new PromptEnhancementCancellationError(taskId);
         }
 
         const responseText =
@@ -4727,7 +4705,11 @@ export const useChatSessionController = (
         return enhancedPrompt;
       } catch (error) {
         const message = getPromptEnhancementErrorMessage(error);
-        const wasCancelled = /\bcancell?ed\b|\bcancellation\b/iu.test(message);
+        const wasCancelled = isPromptEnhancementCancellation(
+          error,
+          taskId,
+          ignoredDesktopTaskIdsRef.current,
+        );
 
         if (rendersSessionMessages && placement === "message") {
           removePromptEnhancementSessionPlaceholder(pending);

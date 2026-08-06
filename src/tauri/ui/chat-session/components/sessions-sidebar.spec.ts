@@ -11,6 +11,47 @@ import {
 
 const noop = (): void => {};
 
+const createCompletedSession = ({
+  id,
+  lastReadAt,
+}: {
+  id: string;
+  lastReadAt: number;
+}) =>
+  createSession({
+    id,
+    createdAt: 100,
+    updatedAt: 200,
+    lastReadAt,
+    manualTitle: id,
+    messages: [
+      {
+        id: `${id}-user`,
+        taskId: `${id}-task`,
+        role: "user",
+        content: "Request",
+        createdAt: 100,
+      },
+      {
+        id: `${id}-agent`,
+        taskId: `${id}-task`,
+        role: "agent",
+        content: "Response",
+        createdAt: 200,
+        source: {
+          kind: "thinking",
+          thinking: {
+            status: "complete",
+            mode: "machdoch",
+            startedAt: 100,
+            completedAt: 200,
+            timelineEvents: [],
+          },
+        },
+      },
+    ],
+  });
+
 const createProps = (
   overrides: Partial<SessionsSidebarProps> = {},
 ): SessionsSidebarProps => {
@@ -57,6 +98,44 @@ describe("SessionsSidebar", () => {
     );
 
     expect(markup).toContain('aria-label="Session actions for New session"');
+  });
+
+  it("renders completed session states without a new-reply badge", () => {
+    const unreadSession = createCompletedSession({
+      id: "Unread response",
+      lastReadAt: 100,
+    });
+    const readSession = createCompletedSession({
+      id: "Read response",
+      lastReadAt: 200,
+    });
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(
+          SessionsSidebar,
+          createProps({
+            totalSessions: 2,
+            activeSessionId: "another-session",
+            filteredSessions: [unreadSession, readSession],
+          }),
+        ),
+      ),
+    );
+
+    expect(markup).not.toContain("app-session-read-cue");
+    expect(markup).not.toContain(">New reply<");
+    expect(markup.match(/app-session-card--needs-read/g)).toHaveLength(1);
+    expect(markup).toContain(
+      'aria-label="Open session Unread response, new reply ready"',
+    );
+    expect(markup.match(/aria-label="Session status: Done"/g)).toHaveLength(2);
+    expect(
+      markup.match(
+        /aria-label="Session status: Done"[^>]*><svg[^>]*\blucide-check\b/g,
+      ),
+    ).toHaveLength(2);
   });
 
   it("routes the empty-session delete action", () => {

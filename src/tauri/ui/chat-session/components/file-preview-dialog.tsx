@@ -38,6 +38,7 @@ import {
   getFilePreviewTargetLineIndex,
   scrollFilePreviewTargetLineIntoView,
 } from "../_helpers/file-preview-target-line";
+import { MarkdownContent } from "../../components/markdown-content";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -47,8 +48,14 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../commands/command-types";
 import { cn } from "../../lib/utils";
-import { MessageMarkdown } from "./message-markdown";
 
 export type FilePreviewMode = "image" | "pdf" | "text";
 
@@ -114,7 +121,8 @@ const getLineSelectionPosition = (
   endpointLineIndex: number,
 ): FilePreviewSelectionPosition => {
   const selectionTop =
-    FILE_PREVIEW_VERTICAL_PADDING + endpointLineIndex * FILE_PREVIEW_LINE_HEIGHT;
+    FILE_PREVIEW_VERTICAL_PADDING +
+    endpointLineIndex * FILE_PREVIEW_LINE_HEIGHT;
   const topAboveSelection = selectionTop - FILE_PREVIEW_COPY_BUTTON_HEIGHT - 4;
 
   return {
@@ -139,7 +147,7 @@ const isSelectionBackward = (selection: Selection): boolean => {
 
   return Boolean(
     selection.anchorNode.compareDocumentPosition(selection.focusNode) &
-      Node.DOCUMENT_POSITION_PRECEDING,
+    Node.DOCUMENT_POSITION_PRECEDING,
   );
 };
 
@@ -182,8 +190,7 @@ export const FilePreviewStatus = ({
     return null;
   }
 
-  const showTargetLine =
-    preview.targetLine !== null && preview.targetLine > 1;
+  const showTargetLine = preview.targetLine !== null && preview.targetLine > 1;
 
   if (!showTargetLine && !preview.truncated && !preview.lossy) {
     return null;
@@ -218,9 +225,9 @@ export const FilePreviewVisualContent = ({
         aria-label={`Rendered preview of ${preview.title}`}
         className="min-h-0 flex-1 overflow-auto bg-slate-950"
       >
-        <MessageMarkdown
+        <MarkdownContent
           content={content}
-          className="app-file-preview-markdown mx-auto w-full max-w-5xl px-6 py-8 text-sm text-slate-200 sm:px-10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_hr]:border-slate-800 [&_img]:max-w-full [&_img]:rounded-lg"
+          className="app-file-preview-markdown mx-auto w-full max-w-5xl px-6 py-8 text-sm text-slate-200 sm:px-10"
         />
       </div>
     );
@@ -282,8 +289,7 @@ export const FilePreviewTextContent = ({
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const [previewSelection, setPreviewSelection] =
     useState<FilePreviewSelection | null>(null);
-  const [copyState, setCopyState] =
-    useState<FilePreviewCopyState>("idle");
+  const [copyState, setCopyState] = useState<FilePreviewCopyState>("idle");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLElement>(null);
   const codeSurfaceRef = useRef<HTMLDivElement>(null);
@@ -314,11 +320,7 @@ export const FilePreviewTextContent = ({
   );
   const searchResult = useMemo(
     () =>
-      findFilePreviewMatches(
-        preview.content ?? "",
-        searchQuery,
-        isRegexSearch,
-      ),
+      findFilePreviewMatches(preview.content ?? "", searchQuery, isRegexSearch),
     [isRegexSearch, preview.content, searchQuery],
   );
   const safeActiveMatchIndex =
@@ -388,26 +390,6 @@ export const FilePreviewTextContent = ({
       activeMatch.scrollIntoView({ block: "center", inline: "nearest" });
     }
   }, [activeViewMode, renderedContent, safeActiveMatchIndex]);
-
-  useEffect(() => {
-    if (activeViewMode !== "text") {
-      return;
-    }
-
-    const focusSearch = (event: KeyboardEvent): void => {
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === "f"
-      ) {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-
-    window.addEventListener("keydown", focusSearch);
-
-    return () => window.removeEventListener("keydown", focusSearch);
-  }, [activeViewMode]);
 
   useEffect(() => {
     const updateNativeSelection = (): void => {
@@ -598,9 +580,7 @@ export const FilePreviewTextContent = ({
     }
   };
 
-  const extendGutterDrag = (
-    event: ReactPointerEvent<HTMLDivElement>,
-  ): void => {
+  const extendGutterDrag = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (
       gutterDragPointerIdRef.current !== event.pointerId ||
       gutterDragAnchorRef.current === null ||
@@ -628,9 +608,7 @@ export const FilePreviewTextContent = ({
     selectLineRange(gutterDragAnchorRef.current, lineIndex);
   };
 
-  const finishGutterDrag = (
-    event: ReactPointerEvent<HTMLDivElement>,
-  ): void => {
+  const finishGutterDrag = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (gutterDragPointerIdRef.current !== event.pointerId) {
       return;
     }
@@ -684,6 +662,185 @@ export const FilePreviewTextContent = ({
   const regexSearchButtonLabel = isRegexSearch
     ? "Use plain text search"
     : "Use regular expression search";
+  const commandStateRef = useRef({
+    activeViewMode,
+    copySelectedText,
+    hasSelection: previewSelection !== null,
+    isRegexSearch,
+    matchCount: searchResult.matches.length,
+    moveActiveMatch,
+    searchInputRef,
+    searchQuery,
+    selectedLanguage,
+    setIsRegexSearch,
+    setSearchQuery,
+    setSelectedLanguage,
+    setViewMode,
+    visualKind,
+  });
+  commandStateRef.current = {
+    activeViewMode,
+    copySelectedText,
+    hasSelection: previewSelection !== null,
+    isRegexSearch,
+    matchCount: searchResult.matches.length,
+    moveActiveMatch,
+    searchInputRef,
+    searchQuery,
+    selectedLanguage,
+    setIsRegexSearch,
+    setSearchQuery,
+    setSelectedLanguage,
+    setViewMode,
+    visualKind,
+  };
+  const previewCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => commandStateRef.current;
+    const scope = { kind: "overlay", ownerId: "file-preview" } as const;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    return asPaletteCommands([
+      {
+        id: "file-preview.view.select",
+        title: "Choose preview mode",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().visualKind ? { state: "enabled" } : { state: "hidden" },
+        children: () => ({
+          id: "file-preview-view",
+          title: "Preview mode",
+          searchPlaceholder: "Choose preview mode",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: (["text", "visual"] as const).map((mode, index) => ({
+                id: mode,
+                title: mode === "text" ? "Text" : "Visual",
+                current: state().activeViewMode === mode,
+                numericKey: numericKey(index),
+                execute: () => state().setViewMode(mode),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "file-preview.syntax.select",
+        title: "Choose syntax highlighting",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().activeViewMode === "text"
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "file-preview-syntax",
+          title: "Syntax highlighting",
+          searchPlaceholder: "Choose language",
+          groups: [
+            {
+              id: "languages",
+              items: FILE_PREVIEW_SYNTAX_OPTIONS.map((option) => ({
+                id: option.language ?? "plaintext",
+                title: option.label,
+                current: state().selectedLanguage === option.language,
+                execute: () => state().setSelectedLanguage(option.language),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "file-preview.search.focus",
+        title: "Find in file",
+        group: "File preview",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("file-preview.search.focus"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        availability: () =>
+          state().activeViewMode === "text"
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              state().searchInputRef.current?.focus({ preventScroll: true });
+              state().searchInputRef.current?.select();
+            });
+          });
+        },
+      },
+      {
+        id: "file-preview.search.regex.toggle",
+        title: "Toggle regular expression search",
+        group: "File preview",
+        scope,
+        current: () => state().isRegexSearch,
+        availability: () =>
+          state().activeViewMode === "text"
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().setIsRegexSearch(!state().isRegexSearch),
+      },
+      {
+        id: "file-preview.search.previous",
+        title: "Previous search match",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().matchCount > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No search matches" },
+        execute: () => state().moveActiveMatch(-1),
+      },
+      {
+        id: "file-preview.search.next",
+        title: "Next search match",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().matchCount > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No search matches" },
+        execute: () => state().moveActiveMatch(1),
+      },
+      {
+        id: "file-preview.search.clear",
+        title: "Clear file search",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().searchQuery
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "The search is empty" },
+        execute: () => state().setSearchQuery(""),
+      },
+      {
+        id: "file-preview.selection.copy",
+        title: "Copy selected text",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().hasSelection
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select text or lines first" },
+        execute: () => state().copySelectedText(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(previewCommands);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-950">
@@ -887,9 +1044,7 @@ export const FilePreviewTextContent = ({
                       ? `Opened at line ${lineIndex + 1}; hold and drag to select a range`
                       : `Select line ${lineIndex + 1}; hold and drag to select a range`
                   }
-                  onPointerDown={(event) =>
-                    startGutterDrag(lineIndex, event)
-                  }
+                  onPointerDown={(event) => startGutterDrag(lineIndex, event)}
                   onClick={(event) => {
                     if (event.detail === 0) {
                       selectLine(lineIndex, event.shiftKey);
@@ -1044,10 +1199,46 @@ export const FilePreviewDialog = ({
   onOpenChange,
   onOpenExternal,
 }: FilePreviewDialogProps): JSX.Element => {
+  const commandStateRef = useRef({ onOpenChange, onOpenExternal, preview });
+  commandStateRef.current = { onOpenChange, onOpenExternal, preview };
+  const dialogCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => commandStateRef.current;
+    const scope = { kind: "overlay", ownerId: "file-preview" } as const;
+    return asPaletteCommands([
+      {
+        id: "file-preview.external.open",
+        title: "Open file externally",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().preview ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().onOpenExternal(),
+      },
+      {
+        id: "file-preview.close",
+        title: "Close file preview",
+        group: "File preview",
+        scope,
+        availability: () =>
+          state().preview ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().onOpenChange(false),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(dialogCommands);
+
   return (
-    <Dialog open={Boolean(preview)} onOpenChange={onOpenChange}>
+    <Dialog
+      open={Boolean(preview)}
+      onOpenChange={onOpenChange}
+      commandOverlayId="file-preview"
+      commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+    >
       {preview ? (
-        <DialogContent className="app-file-preview-dialog flex h-[min(860px,calc(100vh-32px))] w-[min(1120px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+        <DialogContent
+          data-command-owner="file-preview"
+          className="app-file-preview-dialog flex h-[min(860px,calc(100vh-32px))] w-[min(1120px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
+        >
           <DialogHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
             <div className="min-w-0">
               <DialogTitle className="truncate text-base font-semibold text-white">

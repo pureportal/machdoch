@@ -8,6 +8,7 @@ import {
   type SetStateAction,
 } from "react";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
+import { isMcpConfigConflictError } from "../../mcp-config-error";
 import {
   loadGlobalProviderAvailability,
   authorizeMcpOAuth,
@@ -73,12 +74,6 @@ import {
   createEmptyUserMemorySettings,
   getWebSearchProviderLabel,
 } from "./session-shell";
-
-const MCP_CONFIG_CONFLICT_PREFIX = "MACHDOCH_MCP_CONFIG_CONFLICT:";
-
-const isMcpConfigConflict = (error: unknown): boolean => {
-  return String(error).includes(MCP_CONFIG_CONFLICT_PREFIX);
-};
 
 export interface UseChatSessionRuntimeOptions {
   catalogOpen: boolean;
@@ -2308,7 +2303,7 @@ export const useChatSessionRuntime = (
         return;
       }
 
-      if (isMcpConfigConflict(error)) {
+      if (isMcpConfigConflictError(error)) {
         try {
           const latestDocument = await loadMcpConfigDocument(
             scope,

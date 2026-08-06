@@ -1,9 +1,15 @@
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
 } from "../../../../../core/runtime-contract.generated.js";
 import { Input } from "../../../components/ui/input";
+import { useOptionalRegisterCommands } from "../../../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../../../commands/command-types";
 import {
   getCatalogModelsForProvider,
   getDefaultReviewModelForProvider,
@@ -28,7 +34,10 @@ import {
 } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { AgentLimitsSettingsControls } from "./types";
-import { clampIntegerSetting, parseIntegerSettingInput } from "./number-settings";
+import {
+  clampIntegerSetting,
+  parseIntegerSettingInput,
+} from "./number-settings";
 
 export interface AgentLimitsSettingsPanelProps {
   setup: AgentLimitsSettingsControls;
@@ -36,7 +45,9 @@ export interface AgentLimitsSettingsPanelProps {
 
 const DEFAULT_REVIEW_MODEL_PROVIDER: RuntimeProvider = "openai";
 
-const isRuntimeProvider = (provider: string | undefined): provider is RuntimeProvider => {
+const isRuntimeProvider = (
+  provider: string | undefined,
+): provider is RuntimeProvider => {
   return SUPPORTED_PROVIDER_ORDER.includes(provider as RuntimeProvider);
 };
 
@@ -52,7 +63,8 @@ export const normalizeReviewModelDraft = (
     ? settings.provider
     : DEFAULT_REVIEW_MODEL_PROVIDER;
   const model =
-    settings.model?.trim() || getDefaultReviewModelForProvider(provider, catalog);
+    settings.model?.trim() ||
+    getDefaultReviewModelForProvider(provider, catalog);
 
   return {
     mode: "dedicated",
@@ -115,7 +127,9 @@ export const AgentLimitsSettingsPanel = ({
   const suppressUnmountFlushRef = useRef(false);
   const [providerModelCatalog, setProviderModelCatalog] =
     useState<ProviderModelCatalogSnapshot | null>(null);
-  const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
+  const [modelCatalogError, setModelCatalogError] = useState<string | null>(
+    null,
+  );
   const normalizedDraft = normalizeAgentLimitsDraft(draft);
   const dirty = hasAgentLimitsDraftChanges(normalizedDraft, setup.settings);
   const normalizedReviewDraft = normalizeReviewModelDraft(
@@ -203,11 +217,7 @@ export const AgentLimitsSettingsPanel = ({
     const previousSettings = lastExternalSettingsRef.current;
     lastExternalSettingsRef.current = setup.settings;
     setDraft((currentDraft) =>
-      rebaseDirtySettingsDraft(
-        currentDraft,
-        previousSettings,
-        setup.settings,
-      ),
+      rebaseDirtySettingsDraft(currentDraft, previousSettings, setup.settings),
     );
   }, [setup.settings]);
 
@@ -246,6 +256,227 @@ export const AgentLimitsSettingsPanel = ({
       cancelled = true;
     };
   }, []);
+
+  const agentCommandStateRef = useRef({
+    draft,
+    reviewDraft,
+    reviewProvider,
+    reviewModel,
+    reviewProviderModels,
+    providerModelCatalog,
+    dirty,
+    reviewDirty,
+    reviewDraftValid,
+    saving: setup.saving,
+    providerAvailability: setup.providerAvailability,
+    saveDirtySettings,
+    setDraft,
+    setReviewDraft,
+  });
+  agentCommandStateRef.current = {
+    draft,
+    reviewDraft,
+    reviewProvider,
+    reviewModel,
+    reviewProviderModels,
+    providerModelCatalog,
+    dirty,
+    reviewDirty,
+    reviewDraftValid,
+    saving: setup.saving,
+    providerAvailability: setup.providerAvailability,
+    saveDirtySettings,
+    setDraft,
+    setReviewDraft,
+  };
+  const agentCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = { kind: "overlay" as const, ownerId: "settings-dialog" };
+    const state = () => agentCommandStateRef.current;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    return asPaletteCommands([
+      {
+        id: "settings.agent.save",
+        title: "Save agent settings",
+        group: "Settings: Agent",
+        scope,
+        availability: () =>
+          state().saving
+            ? { state: "disabled", reason: "Agent settings are saving." }
+            : !state().dirty && !state().reviewDirty
+              ? { state: "disabled", reason: "No agent settings to save." }
+              : !state().reviewDraftValid
+                ? {
+                    state: "disabled",
+                    reason: "Choose a configured review provider.",
+                  }
+                : { state: "enabled" },
+        execute: () => void state().saveDirtySettings(),
+      },
+      {
+        id: "settings.agent.limit-mode.select",
+        title: "Choose agent limit mode",
+        group: "Settings: Agent",
+        scope,
+        availability: () =>
+          state().saving
+            ? { state: "disabled", reason: "Agent settings are saving." }
+            : { state: "enabled" },
+        children: () => ({
+          id: "settings.agent.limit-mode.select.page",
+          title: "Choose agent limit mode",
+          searchPlaceholder: "Search modes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: (
+                [
+                  ["finite", "Finite"],
+                  ["infinite", "Unlimited"],
+                ] as const
+              ).map(([mode, title], index) => ({
+                id: mode,
+                title,
+                current: state().draft.infinite === (mode === "infinite"),
+                numericKey: numericKey(index),
+                execute: () =>
+                  state().setDraft((current) => ({
+                    ...current,
+                    infinite: mode === "infinite",
+                  })),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.agent.review-mode.select",
+        title: "Choose review model mode",
+        group: "Settings: Agent",
+        scope,
+        availability: () =>
+          state().saving
+            ? { state: "disabled", reason: "Agent settings are saving." }
+            : { state: "enabled" },
+        children: () => ({
+          id: "settings.agent.review-mode.select.page",
+          title: "Choose review model mode",
+          searchPlaceholder: "Search review modes",
+          numericSelection: true,
+          groups: [
+            {
+              id: "modes",
+              items: (
+                [
+                  ["base", "Use task model"],
+                  ["dedicated", "Dedicated review model"],
+                ] as const
+              ).map(([mode, title], index) => ({
+                id: mode,
+                title,
+                current: state().reviewDraft.mode === mode,
+                numericKey: numericKey(index),
+                execute: () =>
+                  state().setReviewDraft(
+                    mode === "base"
+                      ? { mode: "base" }
+                      : {
+                          mode: "dedicated",
+                          provider: state().reviewProvider,
+                          model: state().reviewModel,
+                        },
+                  ),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.agent.review-provider.select",
+        title: "Choose review model provider",
+        group: "Settings: Agent",
+        scope,
+        availability: () =>
+          state().reviewDraft.mode !== "dedicated"
+            ? { state: "hidden" }
+            : state().saving
+              ? { state: "disabled", reason: "Agent settings are saving." }
+              : { state: "enabled" },
+        children: () => ({
+          id: "settings.agent.review-provider.select.page",
+          title: "Choose review model provider",
+          searchPlaceholder: "Search providers",
+          numericSelection: true,
+          groups: [
+            {
+              id: "providers",
+              items: SUPPORTED_PROVIDER_ORDER.map((provider, index) => ({
+                id: provider,
+                title: getProviderLabel(provider),
+                current: state().reviewProvider === provider,
+                numericKey: numericKey(index),
+                availability: state().providerAvailability.find(
+                  (item) => item.provider === provider,
+                )?.configured
+                  ? { state: "enabled" }
+                  : {
+                      state: "disabled",
+                      reason: "Configure this provider first.",
+                    },
+                execute: () =>
+                  state().setReviewDraft({
+                    mode: "dedicated",
+                    provider,
+                    model: getDefaultReviewModelForProvider(
+                      provider,
+                      state().providerModelCatalog,
+                    ),
+                  }),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "settings.agent.review-model.select",
+        title: "Choose review model",
+        group: "Settings: Agent",
+        scope,
+        availability: () =>
+          state().reviewDraft.mode !== "dedicated"
+            ? { state: "hidden" }
+            : state().reviewProviderModels.length
+              ? { state: "enabled" }
+              : {
+                  state: "disabled",
+                  reason: "No review models are available.",
+                },
+        children: () => ({
+          id: "settings.agent.review-model.select.page",
+          title: "Choose review model",
+          searchPlaceholder: "Search models",
+          groups: [
+            {
+              id: "models",
+              items: state().reviewProviderModels.map((model) => ({
+                id: model.id,
+                title: model.label,
+                current: state().reviewModel === model.id,
+                execute: () =>
+                  state().setReviewDraft({
+                    mode: "dedicated",
+                    provider: state().reviewProvider,
+                    model: model.id,
+                  }),
+              })),
+            },
+          ],
+        }),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(agentCommands);
 
   return (
     <SettingsCard title="Agent execution">

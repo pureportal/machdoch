@@ -5,7 +5,6 @@ import {
 } from "../../chat-session.model";
 import { getRenderedMessageContent } from "./execution-message.tsx";
 import { appendContextAttachmentsToTask } from "./session-context-attachments";
-import { shouldOmitTaskActionPromptFromAiContext } from "./task-action-prompts";
 
 export const DEFAULT_AI_CONTEXT_MESSAGE_LIMIT = 60;
 export const MIN_AI_CONTEXT_MESSAGE_LIMIT = 1;
@@ -27,18 +26,13 @@ export const clampAiContextMessageLimit = (value: unknown): number => {
 const createConversationHistoryEntry = (
   message: ChatSessionMessage,
 ): ConversationHistoryEntry | undefined => {
-  if (
-    message.role === "user" &&
-    (message.intent || shouldOmitTaskActionPromptFromAiContext(message.content))
-  ) {
+  if (message.role === "user" && message.taskAction) {
     return undefined;
   }
 
   const renderedContent = getRenderedMessageContent(message).trim();
   const contextAttachments =
-    message.role === "user"
-      ? (message.contextAttachments ?? [])
-      : [];
+    message.role === "user" ? (message.contextAttachments ?? []) : [];
   const content =
     message.role === "user" && contextAttachments.length > 0
       ? appendContextAttachmentsToTask(renderedContent, contextAttachments)

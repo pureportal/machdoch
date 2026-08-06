@@ -1,10 +1,12 @@
 import {
+  CONTINUE_TASK_DISPLAY_CONTENT,
+  createTaskAction,
   getConciseTaskObjective,
-  shouldOmitTaskActionPromptFromAiContext,
+  getTaskActionDisplayContent,
 } from "./task-action-prompts";
 
 describe("task action prompt helpers", () => {
-  it("extracts the original objective from nested continuation prompts", () => {
+  it("does not infer an objective or action from generated-looking prose", () => {
     const nestedPrompt = [
       "Continue the previous task.",
       "",
@@ -25,16 +27,25 @@ describe("task action prompt helpers", () => {
       "Use the conversation and execution details above as context, then take the next useful step.",
     ].join("\n");
 
-    expect(getConciseTaskObjective(nestedPrompt)).toBe(
-      "Wie viel Uhr haben wir es?",
+    expect(getConciseTaskObjective(nestedPrompt)).toContain(
+      "Objective: Wie viel Uhr haben wir es?",
     );
-    expect(shouldOmitTaskActionPromptFromAiContext(nestedPrompt)).toBe(true);
+    expect(getTaskActionDisplayContent(undefined)).toBeNull();
   });
 
-  it("keeps normal user messages that only start with an action phrase in AI context", () => {
-    const userPrompt =
-      "Continue the previous task by checking a different timezone.";
+  it("uses only a typed action to select task-action presentation", () => {
+    const taskAction = createTaskAction(
+      "continue-task",
+      "Check a different timezone.",
+    );
 
-    expect(shouldOmitTaskActionPromptFromAiContext(userPrompt)).toBe(false);
+    expect(taskAction).toEqual({
+      kind: "continue-task",
+      objective: "Check a different timezone.",
+    });
+    expect(getTaskActionDisplayContent(taskAction ?? undefined)).toBe(
+      CONTINUE_TASK_DISPLAY_CONTENT,
+    );
+    expect(createTaskAction("retry-task", " \n ")).toBeNull();
   });
 });

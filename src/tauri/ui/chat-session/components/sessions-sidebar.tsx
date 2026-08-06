@@ -17,6 +17,7 @@ import {
   useCallback,
   useEffect,
   Fragment,
+  useMemo,
   useRef,
   useState,
   type JSX,
@@ -45,6 +46,8 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "../../components/ui/search-field";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type { CommandDefinition } from "../../commands/command-types";
 import { useCommandOverlay } from "../../commands/use-command-overlay";
 import {
   Tooltip,
@@ -394,8 +397,10 @@ export const SessionsSidebar = ({
   const sessionProjectCount = sessionProjectFacets.filter(
     (project) => project.path !== null,
   ).length;
-  const selectedStatusFilters =
-    normalizeSessionStatusFilterSelection(sessionStatusFilters);
+  const selectedStatusFilters = useMemo(
+    () => normalizeSessionStatusFilterSelection(sessionStatusFilters),
+    [sessionStatusFilters],
+  );
 
   const toggleSessionStatusFilter = useCallback(
     (filter: SessionStatusFilter): void => {
@@ -488,6 +493,7 @@ export const SessionsSidebar = ({
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         closeSessionContextMenu();
       }
@@ -534,6 +540,237 @@ export const SessionsSidebar = ({
         onTogglePinnedSession,
       })
     : [];
+  const sidebarCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "chat.sessions.import",
+        title: "Import sessions",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        execute: () => importInputRef.current?.click(),
+      },
+      {
+        id: "chat.sessions.export",
+        title: "Export visible sessions",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        execute: () => onExportSessions(),
+      },
+      {
+        id: "chat.sessions.scope-filter.select",
+        title: "Filter sessions by scope",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        children: () => ({
+          id: "chat-sessions-scope-filter",
+          title: "Session scope",
+          searchPlaceholder: "Choose scope",
+          numericSelection: true,
+          groups: [
+            {
+              id: "scopes",
+              items: SESSION_SCOPE_FILTERS.map((filter, index) => ({
+                id: filter.id,
+                title: filter.label,
+                current: sessionScopeFilter === filter.id,
+                numericKey: String(index + 1) as
+                  | "1"
+                  | "2"
+                  | "3"
+                  | "4"
+                  | "5"
+                  | "6"
+                  | "7"
+                  | "8"
+                  | "9",
+                execute: () => onSessionScopeFilterChange(filter.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.sessions.status-filter.toggle",
+        title: "Filter sessions by status",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        children: () => ({
+          id: "chat-sessions-status-filter",
+          title: "Session status",
+          searchPlaceholder: "Choose status",
+          groups: [
+            {
+              id: "statuses",
+              items: SESSION_STATUS_FILTERS.map((filter) => ({
+                id: filter.id,
+                title: filter.label,
+                current: selectedStatusFilters.includes(filter.id),
+                execute: () => toggleSessionStatusFilter(filter.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.sessions.workspace-filter.select",
+        title: "Filter sessions by workspace",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          showSessionProjectFilter
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Only one workspace is present" },
+        children: () => ({
+          id: "chat-sessions-workspace-filter",
+          title: "Session workspace",
+          searchPlaceholder: "Choose workspace",
+          groups: [
+            {
+              id: "workspaces",
+              items: [
+                {
+                  id: ALL_SESSION_PROJECTS_FILTER,
+                  title: "All workspaces",
+                  current: sessionProjectFilter === ALL_SESSION_PROJECTS_FILTER,
+                  execute: () =>
+                    onSessionProjectFilterChange(ALL_SESSION_PROJECTS_FILTER),
+                },
+                ...sessionProjectFacets.map((project) => ({
+                  id: project.id,
+                  title: project.label,
+                  keywords: project.path ? [project.path] : undefined,
+                  current: sessionProjectFilter === project.id,
+                  execute: () => onSessionProjectFilterChange(project.id),
+                })),
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        id: "chat.sessions.tag-filter.toggle",
+        title: "Filter sessions by tag",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          sessionTagFacets.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No session tags" },
+        children: () => ({
+          id: "chat-sessions-tag-filter",
+          title: "Session tags",
+          searchPlaceholder: "Choose tag",
+          groups: [
+            {
+              id: "tags",
+              items: sessionTagFacets.map((tag) => ({
+                id: tag.label,
+                title: tag.label,
+                current: sessionTagFilters.some(
+                  (entry) => entry.toLowerCase() === tag.label.toLowerCase(),
+                ),
+                execute: () => onSessionTagFilterToggle(tag.label),
+              })),
+            },
+          ],
+        }),
+      },
+      ...(
+        [
+          {
+            id: "pin",
+            commandId: "chat.sessions.pin.select",
+            title: "Pin or unpin session",
+            eligible: canPinSession,
+            action: onTogglePinnedSession,
+          },
+          {
+            id: "duplicate",
+            commandId: "chat.sessions.duplicate.select",
+            title: "Duplicate session",
+            eligible: canDuplicateSession,
+            action: onDuplicateSession,
+          },
+          {
+            id: "archive",
+            commandId: "chat.sessions.archive.select",
+            title: "Archive session",
+            eligible: canArchiveSession,
+            action: onArchiveSession,
+          },
+          {
+            id: "delete",
+            commandId: "chat.sessions.delete.select",
+            title: "Delete empty session",
+            eligible: (session: ChatSessionRecord) =>
+              getSessionOverviewStatus(session) === "empty" &&
+              canDeleteSession(session),
+            action: onDeleteSession,
+          },
+        ] as const
+      ).map(
+        ({ id, commandId, title, eligible, action }): CommandDefinition => ({
+          id: commandId,
+          title,
+          group: "Chat",
+          scope: { kind: "view", ownerId: "chat" },
+          palette: "visible",
+          availability: () =>
+            filteredSessions.some(eligible)
+              ? { state: "enabled" }
+              : { state: "disabled", reason: "No eligible visible sessions" },
+          children: () => ({
+            id: `chat-sessions-${id}`,
+            title,
+            searchPlaceholder: "Choose session",
+            groups: [
+              {
+                id: "sessions",
+                items: filteredSessions.filter(eligible).map((session) => ({
+                  id: session.id,
+                  title:
+                    id === "pin"
+                      ? `${isSessionPinnedInSidebar(session) ? "Unpin" : "Pin"} ${getSessionTitle(session)}`
+                      : getSessionTitle(session),
+                  keywords: [session.workspace ?? "", ...session.tags].filter(
+                    Boolean,
+                  ),
+                  execute: () => action(session.id),
+                })),
+              },
+            ],
+          }),
+        }),
+      ),
+    ],
+    [
+      filteredSessions,
+      onArchiveSession,
+      onDeleteSession,
+      onDuplicateSession,
+      onExportSessions,
+      onSessionProjectFilterChange,
+      onSessionScopeFilterChange,
+      onSessionTagFilterToggle,
+      onTogglePinnedSession,
+      selectedStatusFilters,
+      sessionProjectFacets,
+      sessionProjectFilter,
+      sessionScopeFilter,
+      sessionTagFacets,
+      sessionTagFilters,
+      showSessionProjectFilter,
+      toggleSessionStatusFilter,
+    ],
+  );
+  useOptionalRegisterCommands(sidebarCommands);
 
   return (
     <aside className="app-sessions-sidebar flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
@@ -897,11 +1134,6 @@ export const SessionsSidebar = ({
 
                         <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
                           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                            {hasUnreadCompletion ? (
-                              <span className="app-session-read-cue inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase">
-                                New reply
-                              </span>
-                            ) : null}
                             {primaryTag ? (
                               <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
                                 {extraTagCount > 0

@@ -20,12 +20,19 @@ import {
   MAX_INSTRUCTION_SOURCE_BYTES,
 } from "../../../core/instruction-system/limits.js";
 import type { InstructionTagRule } from "../../../core/instruction-system/types.js";
-import { MessageMarkdown } from "../chat-session/components/message-markdown";
+import { MarkdownContent } from "../components/markdown-content";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { SearchField } from "../components/ui/search-field";
 import { Textarea } from "../components/ui/textarea";
+import { getDefaultCommandShortcut } from "../commands/command-defaults";
+import { useOptionalRegisterCommands } from "../commands/command-context";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+  type CommandPageItem,
+} from "../commands/command-types";
 import { cn } from "../lib/utils";
 import {
   cancelDesktopTask,
@@ -436,6 +443,457 @@ export const InstructionManager = ({
     }
   };
 
+  const restoreRecovery = (): void => {
+    if (!recovery?.backupValid || !recovery.backupDigest || busy) return;
+    void mutate({
+      operation: "recovery-restore",
+      expectedDigest: recovery.backupDigest,
+    });
+  };
+
+  const resetRecovery = (): void => {
+    if (!recovery?.resetDigest || busy) return;
+    if (
+      !window.confirm(
+        "Preserve the corrupt file and create an empty instruction library?",
+      )
+    )
+      return;
+    void mutate({
+      operation: "recovery-reset",
+      expectedDigest: recovery.resetDigest,
+    });
+  };
+
+  const setGlobalMode = (nextGlobal: boolean): void => {
+    if (formDisabled || hasManualAssignments) return;
+    setGlobal(nextGlobal);
+    if (nextGlobal) {
+      setEnabled(true);
+      setMatch(null);
+    }
+  };
+
+  const instructionCommandStateRef = useRef({
+    files,
+    filteredFiles,
+    selectedFileId,
+    selectedFile,
+    filter,
+    contentMode,
+    creating,
+    dirty,
+    enabled,
+    global,
+    match,
+    name,
+    body,
+    aiBusy,
+    aiCancelling,
+    formDisabled,
+    hasManualAssignments,
+    validationError,
+    tagDraftPending,
+    libraryUnavailable,
+    setup,
+    recovery,
+    startFile,
+    selectFile,
+    refresh,
+    saveFile,
+    discardChanges,
+    duplicateFile,
+    deleteFile,
+    restoreRecovery,
+    resetRecovery,
+    setFilter,
+    setContentMode,
+    setEnabled,
+    setGlobalMode,
+    setMatch,
+    runAiAssist,
+    cancelAiAssist,
+  });
+  instructionCommandStateRef.current = {
+    files,
+    filteredFiles,
+    selectedFileId,
+    selectedFile,
+    filter,
+    contentMode,
+    creating,
+    dirty,
+    enabled,
+    global,
+    match,
+    name,
+    body,
+    aiBusy,
+    aiCancelling,
+    formDisabled,
+    hasManualAssignments,
+    validationError,
+    tagDraftPending,
+    libraryUnavailable,
+    setup,
+    recovery,
+    startFile,
+    selectFile,
+    refresh,
+    saveFile,
+    discardChanges,
+    duplicateFile,
+    deleteFile,
+    restoreRecovery,
+    resetRecovery,
+    setFilter,
+    setContentMode,
+    setEnabled,
+    setGlobalMode,
+    setMatch,
+    runAiAssist,
+    cancelAiAssist,
+  };
+
+  const instructionCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const scope = {
+      kind: "view" as const,
+      ownerId: "instructions",
+      viewId: "instructions",
+    };
+    const state = () => instructionCommandStateRef.current;
+    const numericKey = (index: number): CommandPageItem["numericKey"] =>
+      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
+    return asPaletteCommands([
+      {
+        id: "instructions.file.new",
+        title: "New instruction file",
+        group: "Instructions",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("instructions.file.new"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        availability: () =>
+          state().formDisabled
+            ? { state: "disabled", reason: "Instruction library is busy." }
+            : { state: "enabled" },
+        overlayPolicy: "replace-non-modal",
+        execute: () => state().startFile(),
+      },
+      {
+        id: "instructions.file.open",
+        title: "Open instruction file",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().files.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No instruction files." },
+        children: () => ({
+          id: "instructions.file.open.page",
+          title: "Open instruction file",
+          searchPlaceholder: "Search instruction files",
+          numericSelection: true,
+          groups: [
+            {
+              id: "files",
+              items: state().files.map((file, index) => ({
+                id: file.id,
+                title: file.name,
+                keywords: [file.description ?? "", ...file.tags],
+                current: state().selectedFileId === file.id,
+                numericKey: numericKey(index),
+                availability:
+                  state().setup.saving || state().aiBusy
+                    ? { state: "disabled", reason: "Instructions are busy." }
+                    : { state: "enabled" },
+                execute: () => state().selectFile(file.id),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "instructions.refresh",
+        title: "Refresh instructions",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().setup.loading || state().setup.saving || state().aiBusy
+            ? { state: "disabled", reason: "Instructions are busy." }
+            : { state: "enabled" },
+        execute: () => state().refresh(),
+      },
+      {
+        id: "instructions.file.save",
+        title: "Save instruction file",
+        group: "Instructions",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("instructions.file.save"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        availability: () => {
+          const current = state();
+          if (!current.selectedFile && !current.creating)
+            return { state: "hidden" };
+          if (current.formDisabled)
+            return {
+              state: "disabled",
+              reason: "Instruction library is unavailable.",
+            };
+          if (current.tagDraftPending)
+            return {
+              state: "disabled",
+              reason: "Finish editing the pending tag.",
+            };
+          if (current.validationError)
+            return { state: "disabled", reason: current.validationError };
+          if (!current.dirty)
+            return { state: "disabled", reason: "No changes to save." };
+          return { state: "enabled" };
+        },
+        execute: () => void state().saveFile(),
+      },
+      {
+        id: "instructions.file.discard",
+        title: "Discard instruction changes",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().creating || state().dirty
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().discardChanges(),
+      },
+      {
+        id: "instructions.file.duplicate",
+        title: "Duplicate instruction file",
+        group: "Instructions",
+        scope,
+        availability: () => {
+          const current = state();
+          if (!current.selectedFile) return { state: "hidden" };
+          return current.formDisabled || current.dirty
+            ? { state: "disabled", reason: "Save or discard changes first." }
+            : { state: "enabled" };
+        },
+        execute: () => void state().duplicateFile(),
+      },
+      {
+        id: "instructions.file.delete",
+        title: "Delete instruction file",
+        group: "Instructions",
+        scope,
+        availability: () => {
+          const current = state();
+          if (!current.selectedFile) return { state: "hidden" };
+          if (current.hasManualAssignments)
+            return {
+              state: "disabled",
+              reason: "Remove workspace assignments first.",
+            };
+          return current.formDisabled || current.dirty
+            ? { state: "disabled", reason: "Save or discard changes first." }
+            : { state: "enabled" };
+        },
+        execute: () => void state().deleteFile(),
+      },
+      {
+        id: "instructions.filter.select",
+        title: "Filter instruction files",
+        group: "Instructions",
+        scope,
+        children: () => ({
+          id: "instructions.filter.select.page",
+          title: "Filter instruction files",
+          searchPlaceholder: "Search filters",
+          numericSelection: true,
+          groups: [
+            {
+              id: "filters",
+              items: (
+                ["all", "global", "tag-match", "manual", "disabled"] as const
+              ).map((value, index) => ({
+                id: value,
+                title:
+                  value === "tag-match"
+                    ? "Tag match"
+                    : `${value[0]?.toUpperCase()}${value.slice(1)}`,
+                current: state().filter === value,
+                numericKey: numericKey(index),
+                execute: () => state().setFilter(value),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "instructions.content.mode",
+        title: "Choose content view",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().selectedFile || state().creating
+            ? { state: "enabled" }
+            : { state: "hidden" },
+        children: () => ({
+          id: "instructions.content.mode.page",
+          title: "Choose content view",
+          searchPlaceholder: "Search views",
+          numericSelection: true,
+          groups: [
+            {
+              id: "views",
+              items: (["edit", "preview"] as const).map((mode, index) => ({
+                id: mode,
+                title: mode === "edit" ? "Edit" : "Preview",
+                current: state().contentMode === mode,
+                numericKey: numericKey(index),
+                execute: () => state().setContentMode(mode),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "instructions.file.toggle-enabled",
+        title: "Toggle instruction file",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          !state().selectedFile && !state().creating
+            ? { state: "hidden" }
+            : state().formDisabled || state().global
+              ? {
+                  state: "disabled",
+                  reason: "Global files are always enabled.",
+                }
+              : { state: "enabled" },
+        current: () => state().global || state().enabled,
+        execute: () => state().setEnabled(!state().enabled),
+      },
+      {
+        id: "instructions.file.toggle-global",
+        title: "Toggle global instruction file",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          !state().selectedFile && !state().creating
+            ? { state: "hidden" }
+            : state().formDisabled || state().hasManualAssignments
+              ? {
+                  state: "disabled",
+                  reason: "Remove workspace assignments first.",
+                }
+              : { state: "enabled" },
+        current: () => state().global,
+        execute: () => state().setGlobalMode(!state().global),
+      },
+      {
+        id: "instructions.file.toggle-tag-match",
+        title: "Toggle workspace tag match",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          !state().selectedFile && !state().creating
+            ? { state: "hidden" }
+            : state().formDisabled ||
+                state().global ||
+                state().hasManualAssignments
+              ? {
+                  state: "disabled",
+                  reason: "Assignment mode cannot be changed.",
+                }
+              : { state: "enabled" },
+        current: () => state().match !== null,
+        execute: () =>
+          state().setMatch(state().match ? null : createEmptyTagGroup()),
+      },
+      {
+        id: "instructions.ai.run",
+        title: "Create or improve with AI",
+        group: "Instructions",
+        scope,
+        availability: () => {
+          const current = state();
+          if (!current.selectedFile && !current.creating)
+            return { state: "hidden" };
+          if (!current.setup.workspaceRoot)
+            return { state: "disabled", reason: "Select a workspace first." };
+          if (!current.name.trim())
+            return { state: "disabled", reason: "Enter a file name first." };
+          if (current.formDisabled)
+            return {
+              state: "disabled",
+              reason: "Instruction file is unavailable.",
+            };
+          return current.aiBusy || current.aiCancelling
+            ? { state: "disabled", reason: "AI editing is already running." }
+            : { state: "enabled" };
+        },
+        execute: () => void state().runAiAssist(),
+      },
+      {
+        id: "instructions.ai.cancel",
+        title: "Cancel AI editing",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().aiBusy
+            ? state().aiCancelling
+              ? { state: "disabled", reason: "Cancellation is in progress." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => void state().cancelAiAssist(),
+      },
+      {
+        id: "instructions.recovery.restore",
+        title: "Restore instruction library backup",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().recovery?.backupValid && state().recovery?.backupDigest
+            ? state().setup.saving || state().aiBusy
+              ? { state: "disabled", reason: "Instructions are busy." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().restoreRecovery(),
+      },
+      {
+        id: "instructions.recovery.reset",
+        title: "Reset instruction library",
+        group: "Instructions",
+        scope,
+        availability: () =>
+          state().recovery?.resetDigest
+            ? state().setup.saving || state().aiBusy
+              ? { state: "disabled", reason: "Instructions are busy." }
+              : { state: "enabled" }
+            : { state: "hidden" },
+        execute: () => state().resetRecovery(),
+      },
+    ]);
+  }, []);
+  useOptionalRegisterCommands(instructionCommands);
+
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
@@ -536,12 +994,7 @@ export const InstructionManager = ({
               size="sm"
               variant="outline"
               disabled={busy}
-              onClick={() =>
-                void mutate({
-                  operation: "recovery-restore",
-                  expectedDigest: recovery.backupDigest as string,
-                })
-              }
+              onClick={restoreRecovery}
             >
               Restore
             </Button>
@@ -551,18 +1004,7 @@ export const InstructionManager = ({
               size="sm"
               variant="destructive"
               disabled={busy}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    "Preserve the corrupt file and create an empty instruction library?",
-                  )
-                )
-                  return;
-                void mutate({
-                  operation: "recovery-reset",
-                  expectedDigest: recovery.resetDigest as string,
-                });
-              }}
+              onClick={resetRecovery}
             >
               Reset
             </Button>
@@ -840,14 +1282,7 @@ export const InstructionManager = ({
                       type="checkbox"
                       checked={global}
                       disabled={formDisabled || hasManualAssignments}
-                      onChange={(event) => {
-                        const nextGlobal = event.target.checked;
-                        setGlobal(nextGlobal);
-                        if (nextGlobal) {
-                          setEnabled(true);
-                          setMatch(null);
-                        }
-                      }}
+                      onChange={(event) => setGlobalMode(event.target.checked)}
                       className="accent-sky-500"
                     />
                     Global
@@ -1054,7 +1489,7 @@ export const InstructionManager = ({
                     />
                   ) : body.trim() ? (
                     <article className="mx-auto max-w-4xl px-6 py-7 sm:px-8">
-                      <MessageMarkdown
+                      <MarkdownContent
                         content={body}
                         className="text-sm text-slate-200"
                       />

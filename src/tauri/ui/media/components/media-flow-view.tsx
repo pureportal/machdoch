@@ -3602,6 +3602,31 @@ export const MediaFlowView = ({
     setSelectionPanelOpen(false);
     setPalettePanelOpen(true);
   }, []);
+  const toggleFlowPanel = useCallback(
+    (
+      panel:
+        | "templates"
+        | "variables"
+        | "groups"
+        | "selection"
+        | "portability"
+        | "history"
+        | "plan",
+    ): void => {
+      setSelectedNodeId(null);
+      setTemplatesPanelOpen((open) => (panel === "templates" ? !open : false));
+      setVariablesPanelOpen((open) => (panel === "variables" ? !open : false));
+      setGroupsPanelOpen((open) => (panel === "groups" ? !open : false));
+      setSelectionPanelOpen((open) => (panel === "selection" ? !open : false));
+      setPortabilityPanelOpen((open) =>
+        panel === "portability" ? !open : false,
+      );
+      setHistoryPanelOpen((open) => (panel === "history" ? !open : false));
+      setPlanPanelOpen((open) => (panel === "plan" ? !open : false));
+      setPalettePanelOpen(false);
+    },
+    [],
+  );
 
   const addNodeFromCommand = useCallback(
     (nodeType: MediaNodeType): boolean => {
@@ -3620,6 +3645,94 @@ export const MediaFlowView = ({
     [addNodeFromCommand, flow],
   );
   const openCommandPage = useOptionalCommandPageLauncher();
+  const mediaCommandStateRef = useRef({
+    canPasteNode,
+    canRedoSemantic,
+    canUndoSemantic,
+    clipboardLabel,
+    flow,
+    hasUnsavedChanges,
+    history,
+    importInspection,
+    localRunDescription,
+    localRunPending,
+    localRunSupported,
+    nodeCommandPage,
+    onDismissImport,
+    onExportRevision,
+    onImportReviewed,
+    onInspectImport,
+    onNodeCopy,
+    onNodePaste,
+    onNodesCopy,
+    onOpenSavedFlow,
+    onRedoSemantic,
+    onRefreshHistory,
+    onRefreshSavedFlows,
+    onRestoreRevision,
+    onRunLocalFlow,
+    onRunOverlayClear,
+    onSaveRevision,
+    onUndoSemantic,
+    pasteBlockedReason,
+    portabilityLoading,
+    portabilitySupported,
+    remoteRunDescription,
+    remoteRunPending,
+    remoteRunSupported,
+    revisionLoading,
+    runOverlay,
+    savedFlows,
+    savedFlowsLoading,
+    selectedNodeId,
+    selectedNodeIds,
+    setRemoteConfirmationOpen,
+    toggleFlowPanel,
+  });
+  mediaCommandStateRef.current = {
+    canPasteNode,
+    canRedoSemantic,
+    canUndoSemantic,
+    clipboardLabel,
+    flow,
+    hasUnsavedChanges,
+    history,
+    importInspection,
+    localRunDescription,
+    localRunPending,
+    localRunSupported,
+    nodeCommandPage,
+    onDismissImport,
+    onExportRevision,
+    onImportReviewed,
+    onInspectImport,
+    onNodeCopy,
+    onNodePaste,
+    onNodesCopy,
+    onOpenSavedFlow,
+    onRedoSemantic,
+    onRefreshHistory,
+    onRefreshSavedFlows,
+    onRestoreRevision,
+    onRunLocalFlow,
+    onRunOverlayClear,
+    onSaveRevision,
+    onUndoSemantic,
+    pasteBlockedReason,
+    portabilityLoading,
+    portabilitySupported,
+    remoteRunDescription,
+    remoteRunPending,
+    remoteRunSupported,
+    revisionLoading,
+    runOverlay,
+    savedFlows,
+    savedFlowsLoading,
+    selectedNodeId,
+    selectedNodeIds,
+    setRemoteConfirmationOpen,
+    toggleFlowPanel,
+  };
   const mediaCommands = useMemo<readonly CommandDefinition[]>(
     () => [
       {
@@ -3629,7 +3742,7 @@ export const MediaFlowView = ({
         keywords: ["find node", "semantic node"],
         scope: { kind: "view", ownerId: "media" },
         palette: "visible",
-        children: () => nodeCommandPage,
+        children: () => mediaCommandStateRef.current.nodeCommandPage,
       },
       {
         id: "media.flow.undo",
@@ -3639,10 +3752,10 @@ export const MediaFlowView = ({
         shortcuts: [{ chord: getDefaultCommandShortcut("media.flow.undo") }],
         palette: "visible",
         availability: () =>
-          canUndoSemantic
+          mediaCommandStateRef.current.canUndoSemantic
             ? { state: "enabled" }
             : { state: "disabled", reason: "Nothing to undo" },
-        execute: () => onUndoSemantic(),
+        execute: () => mediaCommandStateRef.current.onUndoSemantic(),
       },
       {
         id: "media.flow.redo",
@@ -3651,18 +3764,21 @@ export const MediaFlowView = ({
         scope: { kind: "view", ownerId: "media" },
         shortcuts: [
           { chord: getDefaultCommandShortcut("media.flow.redo") },
-          { chord: getDefaultCommandShortcut("media.flow.redo-alternate") },
+          {
+            chord: getDefaultCommandShortcut("media.flow.redo-alternate"),
+            platforms: ["windows", "linux"],
+          },
         ],
         palette: "visible",
         availability: () =>
-          canRedoSemantic
+          mediaCommandStateRef.current.canRedoSemantic
             ? { state: "enabled" }
             : { state: "disabled", reason: "Nothing to redo" },
-        execute: () => onRedoSemantic(),
+        execute: () => mediaCommandStateRef.current.onRedoSemantic(),
       },
       {
         id: "media.selection.copy",
-        title: selectedNodeIds.length > 1 ? "Copy selected nodes" : "Copy selected node",
+        title: "Copy selected nodes",
         group: "Media",
         scope: { kind: "view", ownerId: "media" },
         shortcuts: [
@@ -3670,30 +3786,35 @@ export const MediaFlowView = ({
         ],
         palette: "visible",
         availability: () =>
-          selectedNodeIds.length > 0 || selectedNodeId
+          mediaCommandStateRef.current.selectedNodeIds.length > 0 ||
+          mediaCommandStateRef.current.selectedNodeId
             ? { state: "enabled" }
             : { state: "disabled", reason: "Select a node to copy" },
         execute: () => {
-          if (selectedNodeIds.length > 0) onNodesCopy(selectedNodeIds);
-          else if (selectedNodeId) onNodeCopy(selectedNodeId);
+          const state = mediaCommandStateRef.current;
+          if (state.selectedNodeIds.length > 0)
+            state.onNodesCopy(state.selectedNodeIds);
+          else if (state.selectedNodeId) state.onNodeCopy(state.selectedNodeId);
         },
       },
       {
         id: "media.flow.paste",
-        title: clipboardLabel ? `Paste ${clipboardLabel}` : "Paste copied node",
+        title: "Paste copied node",
         group: "Media",
         scope: { kind: "view", ownerId: "media" },
         shortcuts: [{ chord: getDefaultCommandShortcut("media.flow.paste") }],
         palette: "visible",
         availability: () =>
-          canPasteNode
+          mediaCommandStateRef.current.canPasteNode
             ? { state: "enabled" }
             : {
                 state: "disabled",
-                reason: pasteBlockedReason ?? "Copy a node before pasting",
+                reason:
+                  mediaCommandStateRef.current.pasteBlockedReason ??
+                  "Copy a node before pasting",
               },
         execute: () => {
-          const nodeId = onNodePaste();
+          const nodeId = mediaCommandStateRef.current.onNodePaste();
           if (nodeId) {
             setPalettePanelOpen(false);
             setGroupsPanelOpen(false);
@@ -3702,22 +3823,334 @@ export const MediaFlowView = ({
           }
         },
       },
+      {
+        id: "media.flow.save",
+        title: "Save workflow revision",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("media.flow.save"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return state.hasUnsavedChanges && !state.revisionLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.revisionLoading
+                  ? "A revision is being saved"
+                  : "No unsaved workflow changes",
+              };
+        },
+        execute: () => mediaCommandStateRef.current.onSaveRevision(),
+      },
+      {
+        id: "media.flow.open",
+        title: "Open saved workflow",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return !state.savedFlowsLoading && state.savedFlows.length > 0
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.savedFlowsLoading
+                  ? "Saved workflows are loading"
+                  : "No saved workflows",
+              };
+        },
+        children: () => ({
+          id: "media-flow-open",
+          title: "Open saved workflow",
+          searchPlaceholder: "Choose workflow",
+          groups: [
+            {
+              id: "workflows",
+              items: mediaCommandStateRef.current.savedFlows.map(
+                (savedFlow) => ({
+                  id: savedFlow.flowId,
+                  title: savedFlow.name,
+                  keywords: [`revision ${savedFlow.headRevisionNumber}`],
+                  current:
+                    mediaCommandStateRef.current.flow.id === savedFlow.flowId,
+                  execute: () =>
+                    mediaCommandStateRef.current.onOpenSavedFlow(
+                      savedFlow.flowId,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.flow.saved.refresh",
+        title: "Refresh saved workflows",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          mediaCommandStateRef.current.savedFlowsLoading
+            ? { state: "disabled", reason: "Saved workflows are loading" }
+            : { state: "enabled" },
+        execute: () => mediaCommandStateRef.current.onRefreshSavedFlows(),
+      },
+      {
+        id: "media.flow.history.refresh",
+        title: "Refresh workflow history",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          mediaCommandStateRef.current.revisionLoading
+            ? { state: "disabled", reason: "Workflow history is loading" }
+            : { state: "enabled" },
+        execute: () => mediaCommandStateRef.current.onRefreshHistory(),
+      },
+      {
+        id: "media.flow.revision.restore",
+        title: "Restore workflow revision",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          (mediaCommandStateRef.current.history?.revisions.length ?? 0) > 0 &&
+          !mediaCommandStateRef.current.revisionLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "No workflow revisions are available",
+              },
+        children: () => ({
+          id: "media-flow-revision-restore",
+          title: "Restore workflow revision",
+          searchPlaceholder: "Choose revision",
+          groups: [
+            {
+              id: "revisions",
+              items:
+                mediaCommandStateRef.current.history?.revisions.map(
+                  (revision) => ({
+                    id: revision.revisionId,
+                    title: `Revision ${revision.revisionNumber}`,
+                    keywords: [revision.createdAt],
+                    execute: () =>
+                      mediaCommandStateRef.current.onRestoreRevision(revision),
+                  }),
+                ) ?? [],
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.flow.run",
+        title: "Run workflow",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [{ chord: getDefaultCommandShortcut("media.flow.run") }],
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return !state.revisionLoading &&
+            !state.localRunPending &&
+            !state.remoteRunPending &&
+            (state.localRunSupported || state.remoteRunSupported)
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason:
+                  state.localRunPending || state.remoteRunPending
+                    ? "A workflow run is already starting"
+                    : "This workflow has no available executor",
+              };
+        },
+        execute: () => {
+          const state = mediaCommandStateRef.current;
+          if (state.localRunSupported) state.onRunLocalFlow();
+          else if (state.remoteRunSupported)
+            state.setRemoteConfirmationOpen(true);
+        },
+      },
+      {
+        id: "media.flow.run-local",
+        title: "Run workflow locally",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return state.localRunSupported &&
+            !state.localRunPending &&
+            !state.revisionLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.localRunPending
+                  ? "A local run is already starting"
+                  : state.localRunDescription,
+              };
+        },
+        execute: () => mediaCommandStateRef.current.onRunLocalFlow(),
+      },
+      {
+        id: "media.flow.run-remote.review",
+        title: "Review remote workflow run",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return state.remoteRunSupported &&
+            !state.remoteRunPending &&
+            !state.revisionLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.remoteRunPending
+                  ? "A remote run is already starting"
+                  : state.remoteRunDescription,
+              };
+        },
+        execute: () =>
+          mediaCommandStateRef.current.setRemoteConfirmationOpen(true),
+      },
+      {
+        id: "media.flow.import.inspect",
+        title: "Import workflow",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return state.portabilitySupported && !state.portabilityLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.portabilityLoading
+                  ? "A portability operation is running"
+                  : "Workflow import requires the desktop app",
+              };
+        },
+        execute: () => mediaCommandStateRef.current.onInspectImport(),
+      },
+      {
+        id: "media.flow.import.apply",
+        title: "Apply reviewed workflow import",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          mediaCommandStateRef.current.importInspection &&
+          !mediaCommandStateRef.current.portabilityLoading
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No reviewed import is ready" },
+        execute: () => mediaCommandStateRef.current.onImportReviewed(),
+      },
+      {
+        id: "media.flow.export",
+        title: "Export workflow revision",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = mediaCommandStateRef.current;
+          return state.portabilitySupported &&
+            Boolean(state.history?.head) &&
+            !state.hasUnsavedChanges &&
+            !state.portabilityLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.hasUnsavedChanges
+                  ? "Save the workflow before exporting"
+                  : "No saved revision is available",
+              };
+        },
+        execute: () => mediaCommandStateRef.current.onExportRevision(),
+      },
+      {
+        id: "media.flow.panel.select",
+        title: "Open workflow panel",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        children: () => ({
+          id: "media-flow-panel",
+          title: "Workflow panel",
+          searchPlaceholder: "Choose panel",
+          numericSelection: true,
+          groups: [
+            {
+              id: "panels",
+              items: (
+                [
+                  ["templates", "Templates"],
+                  ["variables", "Variables and presets"],
+                  ["groups", "Groups"],
+                  ["selection", "Selection"],
+                  ["portability", "Import"],
+                  ["history", "Revision history"],
+                  ["plan", "Runtime plan"],
+                ] as const
+              ).map(([panel, title], index) => ({
+                id: panel,
+                title,
+                numericKey: String(index + 1) as
+                  | "1"
+                  | "2"
+                  | "3"
+                  | "4"
+                  | "5"
+                  | "6"
+                  | "7",
+                availability:
+                  panel === "history" &&
+                  (mediaCommandStateRef.current.history?.revisions.length ??
+                    0) === 0
+                    ? {
+                        state: "disabled" as const,
+                        reason: "No revision history",
+                      }
+                    : panel === "portability" &&
+                        !mediaCommandStateRef.current.portabilitySupported
+                      ? {
+                          state: "disabled" as const,
+                          reason: "Workflow import requires the desktop app",
+                        }
+                      : ({ state: "enabled" } as const),
+                execute: () =>
+                  mediaCommandStateRef.current.toggleFlowPanel(panel),
+              })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.flow.run-overlay.clear",
+        title: "Clear workflow run overlay",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          mediaCommandStateRef.current.runOverlay
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No run overlay is open" },
+        execute: () => mediaCommandStateRef.current.onRunOverlayClear(),
+      },
     ],
-    [
-      canPasteNode,
-      canRedoSemantic,
-      canUndoSemantic,
-      clipboardLabel,
-      nodeCommandPage,
-      onNodeCopy,
-      onNodePaste,
-      onNodesCopy,
-      onRedoSemantic,
-      onUndoSemantic,
-      pasteBlockedReason,
-      selectedNodeId,
-      selectedNodeIds,
-    ],
+    [mediaCommandStateRef],
   );
   useOptionalRegisterCommands(mediaCommands);
   const undoShortcut = useOptionalCommandShortcut("media.flow.undo");
@@ -3727,6 +4160,7 @@ export const MediaFlowView = ({
 
   useEffect(() => {
     const handleKeyboardShortcut = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
       if (
         event.key === "Escape" &&
         (palettePanelOpen ||
@@ -4058,6 +4492,195 @@ export const MediaFlowView = ({
     onLayoutChange(next);
     setHistoryRevision((revision) => revision + 1);
   }, [layout, onLayoutChange]);
+  const layoutCommandStateRef = useRef({
+    autoLayout,
+    canGroupSelection,
+    commitLayout,
+    flow,
+    groupSelectedNodes,
+    layout,
+    onNodeRemove,
+    redoLayout,
+    selectAllFlowNodes,
+    selectedNodeId,
+    selectedNodeIds,
+    setGroupsPanelOpen,
+    setSelectedNodeId,
+    setSelectedNodeIds,
+    undoLayout,
+  });
+  layoutCommandStateRef.current = {
+    autoLayout,
+    canGroupSelection,
+    commitLayout,
+    flow,
+    groupSelectedNodes,
+    layout,
+    onNodeRemove,
+    redoLayout,
+    selectAllFlowNodes,
+    selectedNodeId,
+    selectedNodeIds,
+    setGroupsPanelOpen,
+    setSelectedNodeId,
+    setSelectedNodeIds,
+    undoLayout,
+  };
+  const layoutCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "media.layout.undo",
+        title: "Undo layout change",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          undoStack.current.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Nothing to undo in the layout" },
+        execute: () => layoutCommandStateRef.current.undoLayout(),
+      },
+      {
+        id: "media.layout.redo",
+        title: "Redo layout change",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          redoStack.current.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Nothing to redo in the layout" },
+        execute: () => layoutCommandStateRef.current.redoLayout(),
+      },
+      {
+        id: "media.layout.auto",
+        title: "Auto-layout workflow",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        execute: () => layoutCommandStateRef.current.autoLayout(),
+      },
+      {
+        id: "media.selection.select-all",
+        title: "Select all workflow nodes",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("media.selection.select-all"),
+            runtimes: ["tauri"],
+          },
+        ],
+        palette: "visible",
+        availability: () =>
+          layoutCommandStateRef.current.flow.nodes.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "The workflow has no nodes" },
+        execute: () => layoutCommandStateRef.current.selectAllFlowNodes(),
+      },
+      {
+        id: "media.selection.delete",
+        title: "Delete selected workflow nodes",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          { chord: getDefaultCommandShortcut("media.selection.delete") },
+          {
+            chord: getDefaultCommandShortcut(
+              "media.selection.delete-backspace",
+            ),
+          },
+        ],
+        palette: "visible",
+        availability: () => {
+          const state = layoutCommandStateRef.current;
+          return state.selectedNodeIds.length > 0 || state.selectedNodeId
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "Select one or more nodes" };
+        },
+        execute: () => {
+          const state = layoutCommandStateRef.current;
+          const nodeIds =
+            state.selectedNodeIds.length > 0
+              ? state.selectedNodeIds
+              : state.selectedNodeId
+                ? [state.selectedNodeId]
+                : [];
+          nodeIds.forEach((nodeId) => state.onNodeRemove(nodeId));
+          state.setSelectedNodeIds([]);
+          state.setSelectedNodeId(null);
+        },
+      },
+      {
+        id: "media.selection.group",
+        title: "Group selected workflow nodes",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          layoutCommandStateRef.current.canGroupSelection
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "Select at least two ungrouped nodes",
+              },
+        execute: () => layoutCommandStateRef.current.groupSelectedNodes(),
+      },
+      {
+        id: "media.layout.group.remove",
+        title: "Remove visual group",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          layoutCommandStateRef.current.layout.groups.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No visual groups" },
+        children: () => ({
+          id: "media-layout-group-remove",
+          title: "Remove visual group",
+          searchPlaceholder: "Choose group",
+          groups: [
+            {
+              id: "groups",
+              items: layoutCommandStateRef.current.layout.groups.map(
+                (group) => ({
+                  id: group.id,
+                  title: group.label,
+                  execute: () => {
+                    const state = layoutCommandStateRef.current;
+                    state.commitLayout(
+                      removeMediaFlowLayoutGroup(state.layout, group.id),
+                    );
+                  },
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.layout.comment.add",
+        title: "Add canvas comment",
+        group: "Media",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          layoutCommandStateRef.current.layout.comments.length < 64
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "The canvas has 64 comments" },
+        execute: () => {
+          const state = layoutCommandStateRef.current;
+          state.commitLayout(
+            addMediaFlowLayoutComment({ layout: state.layout }).layout,
+          );
+          state.setGroupsPanelOpen(true);
+        },
+      },
+    ],
+    [layoutCommandStateRef],
+  );
+  useOptionalRegisterCommands(layoutCommands);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950">
@@ -4691,7 +5314,10 @@ export const MediaFlowView = ({
             : "grid-cols-1",
         )}
       >
-        <div className="relative min-h-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.06),transparent_32%)]">
+        <div
+          data-command-focus="document"
+          className="relative min-h-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.06),transparent_32%)]"
+        >
           <ReactFlowProvider>
             <ReactFlow
               nodes={canvasNodes}
@@ -4730,6 +5356,7 @@ export const MediaFlowView = ({
               onMoveStart={(event) => {
                 if (event) setFollowRun(false);
               }}
+              deleteKeyCode={[]}
               nodesDraggable
               nodesConnectable
               elementsSelectable

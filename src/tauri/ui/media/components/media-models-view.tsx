@@ -62,6 +62,8 @@ import {
 } from "../../../../core/media/model-readiness.js";
 import { matchesMediaModelQuery } from "../../../../core/media/model-library.js";
 import { Badge } from "../../components/ui/badge";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import type { CommandDefinition } from "../../commands/command-types";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -82,7 +84,8 @@ const CATALOG_MODEL_PAGE_SIZE = 16;
 
 const FFMPEG_DOWNLOAD_URL = "https://www.ffmpeg.org/download.html";
 const PYTHON_DOWNLOAD_URL = "https://www.python.org/downloads/";
-const PYTORCH_INSTALL_URL = "https://pytorch.org/get-started/previous-versions/";
+const PYTORCH_INSTALL_URL =
+  "https://pytorch.org/get-started/previous-versions/";
 const AMD_PYTORCH_INSTALL_URL =
   "https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html";
 const LOCAL_DIFFUSERS_PYTHON_REQUIREMENT = "3.10+";
@@ -94,13 +97,43 @@ const LOCAL_DIFFUSERS_PACKAGE_REQUIREMENTS = [
     version: "2.13.0 / ROCm 2.12.0",
     acceptedVersions: ["2.13.0", "2.12.0+rocm7.14.0"],
   },
-  { id: "diffusers", name: "Diffusers", version: "0.39.0", acceptedVersions: ["0.39.0"] },
-  { id: "transformers", name: "Transformers", version: "5.13.0", acceptedVersions: ["5.13.0"] },
-  { id: "accelerate", name: "Accelerate", version: "1.14.0", acceptedVersions: ["1.14.0"] },
+  {
+    id: "diffusers",
+    name: "Diffusers",
+    version: "0.39.0",
+    acceptedVersions: ["0.39.0"],
+  },
+  {
+    id: "transformers",
+    name: "Transformers",
+    version: "5.13.0",
+    acceptedVersions: ["5.13.0"],
+  },
+  {
+    id: "accelerate",
+    name: "Accelerate",
+    version: "1.14.0",
+    acceptedVersions: ["1.14.0"],
+  },
   { id: "peft", name: "PEFT", version: "0.19.1", acceptedVersions: ["0.19.1"] },
-  { id: "safetensors", name: "Safetensors", version: "0.8.0", acceptedVersions: ["0.8.0"] },
-  { id: "pillow", name: "Pillow", version: "12.3.0", acceptedVersions: ["12.3.0"] },
-  { id: "imageio-ffmpeg", name: "ImageIO FFmpeg", version: "0.6.0", acceptedVersions: ["0.6.0"] },
+  {
+    id: "safetensors",
+    name: "Safetensors",
+    version: "0.8.0",
+    acceptedVersions: ["0.8.0"],
+  },
+  {
+    id: "pillow",
+    name: "Pillow",
+    version: "12.3.0",
+    acceptedVersions: ["12.3.0"],
+  },
+  {
+    id: "imageio-ffmpeg",
+    name: "ImageIO FFmpeg",
+    version: "0.6.0",
+    acceptedVersions: ["0.6.0"],
+  },
 ] as const;
 const LOCAL_DIFFUSERS_PACKAGE_INSTALL_COMMAND =
   "python -m pip install diffusers==0.39.0 transformers==5.13.0 accelerate==1.14.0 peft==0.19.1 safetensors==0.8.0 Pillow==12.3.0 imageio-ffmpeg==0.6.0";
@@ -160,9 +193,7 @@ interface MediaModelsViewProps {
   onConfirmRemoval: (request: RemoveMediaModelRequest) => void;
   onDismissRemoval: () => void;
   onChooseModelImport: () => void;
-  onInspectWorkspaceArtifact: (
-    artifact: MediaDiscoveredModelArtifact,
-  ) => void;
+  onInspectWorkspaceArtifact: (artifact: MediaDiscoveredModelArtifact) => void;
   onImportModel: (request: ImportMediaLocalModelRequest) => void;
   onDismissModelImport: () => void;
   onProbeModel: (modelId: string) => void;
@@ -189,7 +220,9 @@ type MediaModelPurpose =
   | "image-analysis"
   | "other";
 
-const getMediaModelPurpose = (model: MediaModelDescriptor): MediaModelPurpose => {
+const getMediaModelPurpose = (
+  model: MediaModelDescriptor,
+): MediaModelPurpose => {
   const hasCapability = (capability: MediaCapability): boolean =>
     model.capabilities.includes(capability);
 
@@ -201,10 +234,7 @@ const getMediaModelPurpose = (model: MediaModelDescriptor): MediaModelPurpose =>
     return "video-generation";
   }
 
-  if (
-    hasCapability("text-to-audio") ||
-    hasCapability("audio-to-audio")
-  ) {
+  if (hasCapability("text-to-audio") || hasCapability("audio-to-audio")) {
     return "audio-generation";
   }
 
@@ -240,14 +270,16 @@ const MEDIA_MODEL_PURPOSE_GROUPS = [
   {
     id: "image-generation",
     title: "Image generation",
-    description: "Create and edit pixel-based images from prompts and references.",
+    description:
+      "Create and edit pixel-based images from prompts and references.",
     icon: ImageIcon,
     iconClassName: "text-fuchsia-300",
   },
   {
     id: "video-generation",
     title: "Video generation",
-    description: "Create clips from prompts, first frames, and guided transitions.",
+    description:
+      "Create clips from prompts, first frames, and guided transitions.",
     icon: Clapperboard,
     iconClassName: "text-emerald-300",
   },
@@ -307,10 +339,8 @@ const formatBytes = (bytes: number | null): string => {
   return `${(bytes / 1_024 ** 3).toFixed(1)} GiB`;
 };
 
-const formatBytesWithSuffix = (
-  bytes: number | null,
-  suffix: string,
-): string => (bytes === null ? "Not reported" : `${formatBytes(bytes)} ${suffix}`);
+const formatBytesWithSuffix = (bytes: number | null, suffix: string): string =>
+  bytes === null ? "Not reported" : `${formatBytes(bytes)} ${suffix}`;
 
 const formatFileBytes = (bytes: number): string => {
   if (bytes < 1_024) {
@@ -344,7 +374,8 @@ const ACTIVE_INSTALL_STATUSES = [
 ] as const;
 
 const isActiveInstall = (job: MediaModelInstallJob | null): boolean =>
-  job !== null && ACTIVE_INSTALL_STATUSES.includes(
+  job !== null &&
+  ACTIVE_INSTALL_STATUSES.includes(
     job.status as (typeof ACTIVE_INSTALL_STATUSES)[number],
   );
 
@@ -403,44 +434,77 @@ const ModelInstallDialog = ({
               Install {plan.displayName}
             </DialogTitle>
             <DialogDescription className="text-xs leading-5 text-slate-500">
-              A commit-pinned, allowlisted Diffusers package. Nothing is activated until every reviewed byte passes verification.
+              A commit-pinned, allowlisted Diffusers package. Nothing is
+              activated until every reviewed byte passes verification.
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3.5">
-                <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">Download</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatBytes(plan.totalBytes)}</div>
-                <div className="mt-1 text-[10px] text-slate-600">{plan.files.length} allowlisted files</div>
+                <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">
+                  Download
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {formatBytes(plan.totalBytes)}
+                </div>
+                <div className="mt-1 text-[10px] text-slate-600">
+                  {plan.files.length} allowlisted files
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-3.5">
-                <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">Working space</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatBytes(plan.requiredWorkingBytes)}</div>
-                <div className="mt-1 text-[10px] text-slate-600">includes staging headroom</div>
+                <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">
+                  Working space
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {formatBytes(plan.requiredWorkingBytes)}
+                </div>
+                <div className="mt-1 text-[10px] text-slate-600">
+                  includes staging headroom
+                </div>
               </div>
-              <div className={cn(
-                "rounded-xl border p-3.5",
-                insufficientSpace
-                  ? "border-rose-400/25 bg-rose-950/20"
-                  : "border-slate-800 bg-slate-900/45",
-              )}>
-                <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">Available</div>
-                <div className={cn("mt-1.5 text-sm font-semibold", insufficientSpace ? "text-rose-200" : "text-slate-200")}>
+              <div
+                className={cn(
+                  "rounded-xl border p-3.5",
+                  insufficientSpace
+                    ? "border-rose-400/25 bg-rose-950/20"
+                    : "border-slate-800 bg-slate-900/45",
+                )}
+              >
+                <div className="text-[9px] tracking-[0.12em] text-slate-600 uppercase">
+                  Available
+                </div>
+                <div
+                  className={cn(
+                    "mt-1.5 text-sm font-semibold",
+                    insufficientSpace ? "text-rose-200" : "text-slate-200",
+                  )}
+                >
                   {formatBytes(plan.availableBytes)}
                 </div>
-                <div className="mt-1 text-[10px] text-slate-600">checked again before queueing</div>
+                <div className="mt-1 text-[10px] text-slate-600">
+                  checked again before queueing
+                </div>
               </div>
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
               <dl className="grid gap-3 text-[11px] sm:grid-cols-[120px_1fr]">
                 <dt className="text-slate-600">Pinned revision</dt>
-                <dd className="break-all font-mono text-slate-300">{plan.revision}</dd>
+                <dd className="break-all font-mono text-slate-300">
+                  {plan.revision}
+                </dd>
                 <dt className="text-slate-600">Manifest SHA-256</dt>
-                <dd title={plan.manifestDigest} className="font-mono text-slate-300">{compactDigest(plan.manifestDigest)}</dd>
+                <dd
+                  title={plan.manifestDigest}
+                  className="font-mono text-slate-300"
+                >
+                  {compactDigest(plan.manifestDigest)}
+                </dd>
                 <dt className="text-slate-600">Install location</dt>
-                <dd className="break-all font-mono text-slate-400">{plan.targetLabel}</dd>
+                <dd className="break-all font-mono text-slate-400">
+                  {plan.targetLabel}
+                </dd>
               </dl>
             </div>
 
@@ -450,8 +514,12 @@ const ModelInstallDialog = ({
                 aria-live="polite"
               >
                 <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className="font-semibold capitalize text-violet-100">{job.status}</span>
-                  <span className="font-mono text-violet-300">{Math.round(job.progress * 100)}%</span>
+                  <span className="font-semibold capitalize text-violet-100">
+                    {job.status}
+                  </span>
+                  <span className="font-mono text-violet-300">
+                    {Math.round(job.progress * 100)}%
+                  </span>
                 </div>
                 <div
                   role="progressbar"
@@ -467,13 +535,24 @@ const ModelInstallDialog = ({
                   />
                 </div>
                 <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-slate-500">
-                  <span>{job.filesCompleted}/{job.filesTotal} files · {formatBytes(job.bytesDownloaded)} verified or downloaded</span>
-                  <span className="max-w-full break-all font-mono">{job.currentFile ?? "Safe checkpoint"}</span>
+                  <span>
+                    {job.filesCompleted}/{job.filesTotal} files ·{" "}
+                    {formatBytes(job.bytesDownloaded)} verified or downloaded
+                  </span>
+                  <span className="max-w-full break-all font-mono">
+                    {job.currentFile ?? "Safe checkpoint"}
+                  </span>
                 </div>
-                {job.error ? <p className="mt-3 text-xs leading-5 text-rose-200">{job.error}</p> : null}
+                {job.error ? (
+                  <p className="mt-3 text-xs leading-5 text-rose-200">
+                    {job.error}
+                  </p>
+                ) : null}
                 {job.id.startsWith("browser-") ? (
                   <p className="mt-3 text-[10px] leading-4 text-amber-200/70">
-                    Browser preview simulates the state machine only. The desktop app performs the real disk, network, and digest operations.
+                    Browser preview simulates the state machine only. The
+                    desktop app performs the real disk, network, and digest
+                    operations.
                   </p>
                 ) : null}
               </div>
@@ -485,12 +564,24 @@ const ModelInstallDialog = ({
               </summary>
               <div className="max-h-52 overflow-auto border-t border-slate-800 px-4 py-2">
                 {plan.files.map((file) => (
-                  <div key={file.path} className="grid grid-cols-[1fr_auto] gap-3 border-b border-slate-800/60 py-2 text-[10px] last:border-b-0">
+                  <div
+                    key={file.path}
+                    className="grid grid-cols-[1fr_auto] gap-3 border-b border-slate-800/60 py-2 text-[10px] last:border-b-0"
+                  >
                     <div className="min-w-0">
-                      <div className="break-all font-mono text-slate-300">{file.path}</div>
-                      <div className="mt-0.5 font-mono text-slate-700" title={file.sha256}>{compactDigest(file.sha256)}</div>
+                      <div className="break-all font-mono text-slate-300">
+                        {file.path}
+                      </div>
+                      <div
+                        className="mt-0.5 font-mono text-slate-700"
+                        title={file.sha256}
+                      >
+                        {compactDigest(file.sha256)}
+                      </div>
                     </div>
-                    <div className="text-slate-500">{formatFileBytes(file.byteSize)}</div>
+                    <div className="text-slate-500">
+                      {formatFileBytes(file.byteSize)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -503,26 +594,45 @@ const ModelInstallDialog = ({
                 </div>
                 <ul className="mt-2 space-y-1.5 text-[10px] leading-4 text-slate-500">
                   <li>HTTPS from a fixed repository and immutable commit</li>
-                  <li>Resumable partial files with exact size and SHA-256 checks</li>
-                  <li>Atomic revision activation; interrupted commits are re-verified</li>
+                  <li>
+                    Resumable partial files with exact size and SHA-256 checks
+                  </li>
+                  <li>
+                    Atomic revision activation; interrupted commits are
+                    re-verified
+                  </li>
                 </ul>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/25 p-4">
-                <div className="text-xs font-semibold text-slate-300">Deliberately excluded</div>
+                <div className="text-xs font-semibold text-slate-300">
+                  Deliberately excluded
+                </div>
                 <ul className="mt-2 space-y-1.5 text-[10px] leading-4 text-slate-500">
-                  {plan.excludedPaths.map((path) => <li key={path}>{path}</li>)}
+                  {plan.excludedPaths.map((path) => (
+                    <li key={path}>{path}</li>
+                  ))}
                 </ul>
               </div>
             </div>
 
             {error ? (
-              <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+              >
                 {error}
               </div>
             ) : null}
             {insufficientSpace ? (
-              <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
-                Free at least {formatBytes(plan.requiredWorkingBytes - (plan.availableBytes ?? 0))} on the Media Studio volume before installing.
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+              >
+                Free at least{" "}
+                {formatBytes(
+                  plan.requiredWorkingBytes - (plan.availableBytes ?? 0),
+                )}{" "}
+                on the Media Studio volume before installing.
               </div>
             ) : null}
 
@@ -531,7 +641,9 @@ const ModelInstallDialog = ({
                 <input
                   type="checkbox"
                   checked={licenseAccepted}
-                  onChange={(event) => setLicenseAccepted(event.currentTarget.checked)}
+                  onChange={(event) =>
+                    setLicenseAccepted(event.currentTarget.checked)
+                  }
                   className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-950 accent-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
                 />
                 <span>
@@ -544,7 +656,11 @@ const ModelInstallDialog = ({
                   >
                     {plan.license.name}
                   </a>{" "}
-                  for revision <span className="font-mono text-slate-400">{plan.revision.slice(0, 12)}</span>.
+                  for revision{" "}
+                  <span className="font-mono text-slate-400">
+                    {plan.revision.slice(0, 12)}
+                  </span>
+                  .
                 </span>
               </label>
             ) : null}
@@ -559,13 +675,20 @@ const ModelInstallDialog = ({
                 onClick={() => onCancel(job.id)}
                 className="border-rose-400/25 text-rose-200 hover:bg-rose-950/30"
               >
-                {job.status === "canceling" ? "Canceling at checkpoint…" : "Cancel download"}
+                {job.status === "canceling"
+                  ? "Canceling at checkpoint…"
+                  : "Cancel download"}
               </Button>
             ) : null}
             {!job ? (
               <Button
                 type="button"
-                disabled={loading || !licenseAccepted || insufficientSpace || plan.alreadyInstalled}
+                disabled={
+                  loading ||
+                  !licenseAccepted ||
+                  insufficientSpace ||
+                  plan.alreadyInstalled
+                }
                 onClick={() =>
                   onStart({
                     modelId: plan.modelId,
@@ -577,8 +700,14 @@ const ModelInstallDialog = ({
                 }
                 className="bg-violet-500 text-white hover:bg-violet-400"
               >
-                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                {plan.alreadyInstalled ? "Revision already installed" : "Install verified package"}
+                {loading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {plan.alreadyInstalled
+                  ? "Revision already installed"
+                  : "Install verified package"}
               </Button>
             ) : null}
           </DialogFooter>
@@ -614,10 +743,13 @@ const ModelImportDialog = ({
   onDismiss: () => void;
 }): JSX.Element => {
   const [displayName, setDisplayName] = useState("");
-  const [architecture, setArchitecture] =
-    useState<ImportMediaLocalModelRequest["architecture"]>("stable-diffusion-xl");
+  const [architecture, setArchitecture] = useState<
+    ImportMediaLocalModelRequest["architecture"]
+  >("stable-diffusion-xl");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [licenseName, setLicenseName] = useState("Custom / community model terms");
+  const [licenseName, setLicenseName] = useState(
+    "Custom / community model terms",
+  );
   const [commercialUse, setCommercialUse] =
     useState<ImportMediaLocalModelRequest["commercialUse"]>("review-required");
   const [confirmRights, setConfirmRights] = useState(false);
@@ -643,7 +775,10 @@ const ModelImportDialog = ({
     "mt-1.5 h-10 w-full rounded-lg border border-slate-800 bg-slate-950/80 px-3 text-xs text-slate-200 outline-none placeholder:text-slate-700 focus:border-violet-400/50 focus:ring-2 focus:ring-violet-400/10";
 
   return (
-    <Dialog open={inspection !== null} onOpenChange={(open) => !open && onDismiss()}>
+    <Dialog
+      open={inspection !== null}
+      onOpenChange={(open) => !open && onDismiss()}
+    >
       {inspection ? (
         <DialogContent
           className="max-h-[min(880px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-violet-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none"
@@ -651,7 +786,8 @@ const ModelImportDialog = ({
             confirmRights && !result
               ? {
                   title: "Discard this model review?",
-                  description: "The checkpoint will need to be inspected again.",
+                  description:
+                    "The checkpoint will need to be inspected again.",
                   confirmLabel: "Discard review",
                 }
               : false
@@ -665,28 +801,44 @@ const ModelImportDialog = ({
               Review {inspection.sourceFileName}
             </DialogTitle>
             <DialogDescription className="text-xs leading-5 text-slate-500">
-              Machdoch accepts data-only safetensors checkpoints and copies the verified file into its managed model store.
+              Machdoch accepts data-only safetensors checkpoints and copies the
+              verified file into its managed model store.
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">File size</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatBytes(inspection.byteSize)}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  File size
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {formatBytes(inspection.byteSize)}
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Tensor inventory</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{inspection.tensorCount.toLocaleString()}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Tensor inventory
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {inspection.tensorCount.toLocaleString()}
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Detection</div>
-                <div className="mt-1.5 text-sm font-semibold capitalize text-slate-200">{inspection.architectureConfidence}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Detection
+                </div>
+                <div className="mt-1.5 text-sm font-semibold capitalize text-slate-200">
+                  {inspection.architectureConfidence}
+                </div>
               </div>
             </div>
 
             {inspection.blockingReason ? (
-              <div role="alert" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-100">
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-100"
+              >
                 {inspection.blockingReason}
               </div>
             ) : null}
@@ -698,7 +850,9 @@ const ModelImportDialog = ({
                   value={displayName}
                   maxLength={120}
                   disabled={Boolean(result)}
-                  onChange={(event) => setDisplayName(event.currentTarget.value)}
+                  onChange={(event) =>
+                    setDisplayName(event.currentTarget.value)
+                  }
                   className={fieldClassName}
                 />
               </label>
@@ -708,17 +862,25 @@ const ModelImportDialog = ({
                   value={architecture}
                   disabled={Boolean(result)}
                   onChange={(event) =>
-                    setArchitecture(event.currentTarget.value as ImportMediaLocalModelRequest["architecture"])
+                    setArchitecture(
+                      event.currentTarget
+                        .value as ImportMediaLocalModelRequest["architecture"],
+                    )
                   }
                   className={fieldClassName}
                 >
                   {LOCAL_MODEL_ARCHITECTURES.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
                   ))}
                 </select>
               </label>
               <label className="text-[11px] font-medium text-slate-400 sm:col-span-2">
-                Publisher page <span className="font-normal text-slate-600">(optional, HTTPS)</span>
+                Publisher page{" "}
+                <span className="font-normal text-slate-600">
+                  (optional, HTTPS)
+                </span>
                 <input
                   type="url"
                   value={sourceUrl}
@@ -735,7 +897,9 @@ const ModelImportDialog = ({
                   value={licenseName}
                   maxLength={256}
                   disabled={Boolean(result)}
-                  onChange={(event) => setLicenseName(event.currentTarget.value)}
+                  onChange={(event) =>
+                    setLicenseName(event.currentTarget.value)
+                  }
                   className={fieldClassName}
                 />
               </label>
@@ -745,11 +909,16 @@ const ModelImportDialog = ({
                   value={commercialUse}
                   disabled={Boolean(result)}
                   onChange={(event) =>
-                    setCommercialUse(event.currentTarget.value as ImportMediaLocalModelRequest["commercialUse"])
+                    setCommercialUse(
+                      event.currentTarget
+                        .value as ImportMediaLocalModelRequest["commercialUse"],
+                    )
                   }
                   className={fieldClassName}
                 >
-                  <option value="review-required">Review required / unknown</option>
+                  <option value="review-required">
+                    Review required / unknown
+                  </option>
                   <option value="allowed">Publisher allows it</option>
                 </select>
               </label>
@@ -761,7 +930,9 @@ const ModelImportDialog = ({
                   Detected checkpoint metadata
                 </summary>
                 <div className="space-y-1 border-t border-slate-800 px-4 py-3 font-mono text-[10px] break-all text-slate-500">
-                  {inspection.metadataSummary.map((item) => <p key={item}>{item}</p>)}
+                  {inspection.metadataSummary.map((item) => (
+                    <p key={item}>{item}</p>
+                  ))}
                   <p>header sha256 {compactDigest(inspection.headerDigest)}</p>
                 </div>
               </details>
@@ -777,23 +948,37 @@ const ModelImportDialog = ({
             </ul>
 
             {error ? (
-              <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+              >
                 {error}
               </div>
             ) : null}
             {result ? (
-              <div role="status" className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs leading-5 text-emerald-200">
-                {result.alreadyInstalled ? "This exact checkpoint was already installed." : "Checkpoint imported and verified."} {formatBytes(result.byteSize)} · sha256 {compactDigest(result.digest)}
+              <div
+                role="status"
+                className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs leading-5 text-emerald-200"
+              >
+                {result.alreadyInstalled
+                  ? "This exact checkpoint was already installed."
+                  : "Checkpoint imported and verified."}{" "}
+                {formatBytes(result.byteSize)} · sha256{" "}
+                {compactDigest(result.digest)}
               </div>
             ) : inspection.canImport ? (
               <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-violet-400/15 bg-violet-950/10 p-4 text-xs leading-5 text-slate-300">
                 <input
                   type="checkbox"
                   checked={confirmRights}
-                  onChange={(event) => setConfirmRights(event.currentTarget.checked)}
+                  onChange={(event) =>
+                    setConfirmRights(event.currentTarget.checked)
+                  }
                   className="mt-0.5 h-4 w-4 accent-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
                 />
-                I reviewed the publisher&apos;s license and model page, have the right to use these weights, and confirmed the selected base architecture.
+                I reviewed the publisher&apos;s license and model page, have the
+                right to use these weights, and confirmed the selected base
+                architecture.
               </label>
             ) : null}
           </div>
@@ -817,7 +1002,11 @@ const ModelImportDialog = ({
                 }
                 className="bg-violet-500 text-white hover:bg-violet-400"
               >
-                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {loading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
                 Copy and verify checkpoint
               </Button>
             ) : null}
@@ -863,10 +1052,14 @@ const CivitaiAddonImportDialog = ({
             <Cloud className="h-3.5 w-3.5" /> Reviewed Civitai import
           </div>
           <DialogTitle className="text-lg text-white">
-            {inspection ? `Review ${inspection.modelName}` : "Import LoRA or embedding from Civitai"}
+            {inspection
+              ? `Review ${inspection.modelName}`
+              : "Import LoRA or embedding from Civitai"}
           </DialogTitle>
           <DialogDescription className="text-xs leading-5 text-slate-500">
-            Paste a Civitai model URL, modelId@versionId, or full AIR identifier. Metadata is reviewed before any model bytes are downloaded.
+            Paste a Civitai model URL, modelId@versionId, or full AIR
+            identifier. Metadata is reviewed before any model bytes are
+            downloaded.
           </DialogDescription>
         </DialogHeader>
 
@@ -887,13 +1080,17 @@ const CivitaiAddonImportDialog = ({
             <>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                  <div className="text-[9px] tracking-wider text-slate-600 uppercase">Publisher</div>
+                  <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                    Publisher
+                  </div>
                   <div className="mt-1.5 text-sm font-semibold text-slate-200">
                     {inspection.creator ?? "Not reported"}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                  <div className="text-[9px] tracking-wider text-slate-600 uppercase">Type</div>
+                  <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                    Type
+                  </div>
                   <div className="mt-1.5 text-sm font-semibold text-slate-200">
                     {inspection.kind === "lora"
                       ? "LoRA"
@@ -903,7 +1100,9 @@ const CivitaiAddonImportDialog = ({
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                  <div className="text-[9px] tracking-wider text-slate-600 uppercase">Base model</div>
+                  <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                    Base model
+                  </div>
                   <div className="mt-1.5 text-sm font-semibold text-slate-200">
                     {inspection.baseModel ?? "Not reported"}
                   </div>
@@ -911,27 +1110,49 @@ const CivitaiAddonImportDialog = ({
               </div>
 
               <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/25 px-4 py-3 text-xs leading-5 text-slate-400">
-                <div className="font-semibold text-slate-200">{inspection.versionName}</div>
+                <div className="font-semibold text-slate-200">
+                  {inspection.versionName}
+                </div>
                 <div className="mt-1">
-                  Version {inspection.versionId} · {inspection.availability ?? "unknown availability"} · {inspection.status ?? "unknown status"}
+                  Version {inspection.versionId} ·{" "}
+                  {inspection.availability ?? "unknown availability"} ·{" "}
+                  {inspection.status ?? "unknown status"}
                 </div>
                 {inspection.file ? (
                   <div className="mt-2 break-all font-mono text-[10px] text-slate-500">
-                    {inspection.file.name} · {formatFileBytes(inspection.file.byteSize)} · sha256 {compactDigest(inspection.file.sha256)}
+                    {inspection.file.name} ·{" "}
+                    {formatFileBytes(inspection.file.byteSize)} · sha256{" "}
+                    {compactDigest(inspection.file.sha256)}
                   </div>
                 ) : null}
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3 text-[11px] leading-5 text-slate-400">
-                  <div className="font-semibold text-slate-300">Civitai scan claims</div>
-                  <div>Pickle: {inspection.file?.pickleScanResult ?? "Not reported"}</div>
-                  <div>Virus: {inspection.file?.virusScanResult ?? "Not reported"}</div>
+                  <div className="font-semibold text-slate-300">
+                    Civitai scan claims
+                  </div>
+                  <div>
+                    Pickle:{" "}
+                    {inspection.file?.pickleScanResult ?? "Not reported"}
+                  </div>
+                  <div>
+                    Virus: {inspection.file?.virusScanResult ?? "Not reported"}
+                  </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3 text-[11px] leading-5 text-slate-400">
-                  <div className="font-semibold text-slate-300">Publisher permission claims</div>
+                  <div className="font-semibold text-slate-300">
+                    Publisher permission claims
+                  </div>
                   <div>Commercial use: {commercialClaims}</div>
-                  <div>Derivatives: {inspection.licenseClaims.allowDerivatives === null ? "Not reported" : inspection.licenseClaims.allowDerivatives ? "Allowed" : "Not allowed"}</div>
+                  <div>
+                    Derivatives:{" "}
+                    {inspection.licenseClaims.allowDerivatives === null
+                      ? "Not reported"
+                      : inspection.licenseClaims.allowDerivatives
+                        ? "Allowed"
+                        : "Not allowed"}
+                  </div>
                 </div>
               </div>
 
@@ -941,7 +1162,10 @@ const CivitaiAddonImportDialog = ({
                 </div>
               ) : null}
               {inspection.blockingReason ? (
-                <div role="alert" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-100">
+                <div
+                  role="alert"
+                  className="mt-4 rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-100"
+                >
                   {inspection.blockingReason}
                 </div>
               ) : null}
@@ -964,7 +1188,10 @@ const CivitaiAddonImportDialog = ({
             </>
           )}
           {error ? (
-            <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+            <div
+              role="alert"
+              className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+            >
               {error}
             </div>
           ) : null}
@@ -978,20 +1205,30 @@ const CivitaiAddonImportDialog = ({
               onClick={() => onInspect(source.trim())}
               className="bg-cyan-500 text-slate-950 hover:bg-cyan-400"
             >
-              {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}
+              {loading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileCheck2 className="h-4 w-4" />
+              )}
               Review Civitai add-on
             </Button>
           ) : (
             <Button
               type="button"
               disabled={!inspection.canDownload || loading}
-              onClick={() => onDownload({
-                source: inspection.sourceUrl,
-                reviewToken: inspection.reviewToken,
-              })}
+              onClick={() =>
+                onDownload({
+                  source: inspection.sourceUrl,
+                  reviewToken: inspection.reviewToken,
+                })
+              }
               className="bg-cyan-500 text-slate-950 hover:bg-cyan-400"
             >
-              {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {loading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
               Download and inspect safetensors
             </Button>
           )}
@@ -1019,12 +1256,15 @@ const ModelAddonImportDialog = ({
   onDismiss: () => void;
 }): JSX.Element => {
   const [displayName, setDisplayName] = useState("");
-  const [architecture, setArchitecture] =
-    useState<ImportMediaModelAddonRequest["architecture"]>("stable-diffusion-xl");
+  const [architecture, setArchitecture] = useState<
+    ImportMediaModelAddonRequest["architecture"]
+  >("stable-diffusion-xl");
   const [triggerWords, setTriggerWords] = useState("");
   const [token, setToken] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [licenseName, setLicenseName] = useState("Custom / community model terms");
+  const [licenseName, setLicenseName] = useState(
+    "Custom / community model terms",
+  );
   const [commercialUse, setCommercialUse] =
     useState<ImportMediaModelAddonRequest["commercialUse"]>("review-required");
   const [confirmRights, setConfirmRights] = useState(false);
@@ -1038,7 +1278,10 @@ const ModelAddonImportDialog = ({
         "stable-diffusion-xl",
     );
     setTriggerWords(
-      [...inspection.suggestedTriggerWords, ...(civitaiSource?.trainedWords ?? [])]
+      [
+        ...inspection.suggestedTriggerWords,
+        ...(civitaiSource?.trainedWords ?? []),
+      ]
         .filter((word, index, words) => words.indexOf(word) === index)
         .join(", "),
     );
@@ -1072,49 +1315,82 @@ const ModelAddonImportDialog = ({
     "mt-1.5 h-10 w-full rounded-lg border border-slate-800 bg-slate-950/80 px-3 text-xs text-slate-200 outline-none placeholder:text-slate-700 focus:border-violet-400/50 focus:ring-2 focus:ring-violet-400/10";
 
   return (
-    <Dialog open={inspection !== null} onOpenChange={(open) => !open && onDismiss()}>
+    <Dialog
+      open={inspection !== null}
+      onOpenChange={(open) => !open && onDismiss()}
+    >
       {inspection ? (
         <DialogContent className="max-h-[min(880px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-violet-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.14em] text-violet-300 uppercase">
               <Layers3 className="h-3.5 w-3.5" /> Import model add-on
             </div>
-            <DialogTitle className="text-lg text-white">Review {inspection.sourceFileName}</DialogTitle>
+            <DialogTitle className="text-lg text-white">
+              Review {inspection.sourceFileName}
+            </DialogTitle>
             <DialogDescription className="text-xs leading-5 text-slate-500">
-              Only the safetensors header and tensor inventory are inspected. No model code or pickle data is executed.
+              Only the safetensors header and tensor inventory are inspected. No
+              model code or pickle data is executed.
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Detected type</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Detected type
+                </div>
                 <div className="mt-1.5 text-sm font-semibold text-slate-200">
-                  {kind === "lora" ? "LoRA" : kind === "textual-inversion" ? "Embedding" : "Unknown"}
+                  {kind === "lora"
+                    ? "LoRA"
+                    : kind === "textual-inversion"
+                      ? "Embedding"
+                      : "Unknown"}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">File size</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatFileBytes(inspection.byteSize)}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  File size
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {formatFileBytes(inspection.byteSize)}
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Targets</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Targets
+                </div>
                 <div className="mt-1.5 text-xs font-semibold text-slate-200">
-                  {inspection.targetComponents.map((component) => component.replaceAll("-", " ")).join(" · ") || "Unknown"}
+                  {inspection.targetComponents
+                    .map((component) => component.replaceAll("-", " "))
+                    .join(" · ") || "Unknown"}
                 </div>
               </div>
             </div>
 
             {inspection.embeddingVectors.length > 0 ? (
               <div className="mt-4 rounded-xl border border-violet-400/15 bg-violet-950/10 px-4 py-3">
-                <div className="text-[9px] font-semibold tracking-wider text-violet-300 uppercase">Verified embedding layout</div>
+                <div className="text-[9px] font-semibold tracking-wider text-violet-300 uppercase">
+                  Verified embedding layout
+                </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   {inspection.embeddingVectors.map((profile) => (
-                    <div key={`${profile.component}:${profile.tensorKey}`} className="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
+                    <div
+                      key={`${profile.component}:${profile.tensorKey}`}
+                      className="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2"
+                    >
                       <div className="text-[10px] font-medium text-slate-300">
-                        {profile.component.replaceAll("-", " ")} · {profile.vectorCount} {profile.vectorCount === 1 ? "vector" : "vectors"} × {profile.dimension}
+                        {profile.component.replaceAll("-", " ")} ·{" "}
+                        {profile.vectorCount}{" "}
+                        {profile.vectorCount === 1 ? "vector" : "vectors"} ×{" "}
+                        {profile.dimension}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[9px] text-slate-600" title={profile.tensorKey}>{profile.tensorKey}</div>
+                      <div
+                        className="mt-1 truncate font-mono text-[9px] text-slate-600"
+                        title={profile.tensorKey}
+                      >
+                        {profile.tensorKey}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1123,26 +1399,48 @@ const ModelAddonImportDialog = ({
 
             {inspection.loraProfile ? (
               <div className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-950/10 px-4 py-3">
-                <div className="text-[9px] font-semibold tracking-wider text-cyan-300 uppercase">Verified LoRA tensor profile</div>
+                <div className="text-[9px] font-semibold tracking-wider text-cyan-300 uppercase">
+                  Verified LoRA tensor profile
+                </div>
                 <div className="mt-2 grid gap-2 text-[10px] text-slate-300 sm:grid-cols-3">
                   <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
-                    <span className="block text-[9px] text-slate-600 uppercase">Algorithm</span>
-                    {inspection.loraProfile.algorithm === "locon" ? "LoCon" : inspection.loraProfile.algorithm === "dora" ? "DoRA" : "LoRA"} · {inspection.loraProfile.dialect.replaceAll("-", " ")}
+                    <span className="block text-[9px] text-slate-600 uppercase">
+                      Algorithm
+                    </span>
+                    {inspection.loraProfile.algorithm === "locon"
+                      ? "LoCon"
+                      : inspection.loraProfile.algorithm === "dora"
+                        ? "DoRA"
+                        : "LoRA"}{" "}
+                    · {inspection.loraProfile.dialect.replaceAll("-", " ")}
                   </div>
                   <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
-                    <span className="block text-[9px] text-slate-600 uppercase">Rank</span>
-                    {inspection.loraProfile.rankMinimum === inspection.loraProfile.rankMaximum ? inspection.loraProfile.rankMinimum : `${inspection.loraProfile.rankMinimum}–${inspection.loraProfile.rankMaximum}`} · {inspection.loraProfile.targetModuleCount} modules
+                    <span className="block text-[9px] text-slate-600 uppercase">
+                      Rank
+                    </span>
+                    {inspection.loraProfile.rankMinimum ===
+                    inspection.loraProfile.rankMaximum
+                      ? inspection.loraProfile.rankMinimum
+                      : `${inspection.loraProfile.rankMinimum}–${inspection.loraProfile.rankMaximum}`}{" "}
+                    · {inspection.loraProfile.targetModuleCount} modules
                   </div>
                   <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
-                    <span className="block text-[9px] text-slate-600 uppercase">Advanced tensors</span>
-                    {inspection.loraProfile.convolutionTargetCount} convolution · {inspection.loraProfile.magnitudeVectorCount} magnitude · {inspection.loraProfile.networkAlphaCount} alpha
+                    <span className="block text-[9px] text-slate-600 uppercase">
+                      Advanced tensors
+                    </span>
+                    {inspection.loraProfile.convolutionTargetCount} convolution
+                    · {inspection.loraProfile.magnitudeVectorCount} magnitude ·{" "}
+                    {inspection.loraProfile.networkAlphaCount} alpha
                   </div>
                 </div>
               </div>
             ) : null}
 
             {inspection.blockingReason ? (
-              <div role="alert" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-100">
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-100"
+              >
                 {inspection.blockingReason}
               </div>
             ) : null}
@@ -1150,38 +1448,118 @@ const ModelAddonImportDialog = ({
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="text-[11px] font-medium text-slate-400">
                 Display name
-                <input value={displayName} maxLength={120} disabled={Boolean(result)} onChange={(event) => setDisplayName(event.currentTarget.value)} className={fieldClassName} />
+                <input
+                  value={displayName}
+                  maxLength={120}
+                  disabled={Boolean(result)}
+                  onChange={(event) =>
+                    setDisplayName(event.currentTarget.value)
+                  }
+                  className={fieldClassName}
+                />
               </label>
               <label className="text-[11px] font-medium text-slate-400">
-                Base architecture {kind === "textual-inversion" && inspection.detectedArchitecture ? <span className="font-normal text-slate-600">(locked to tensor dimensions)</span> : null}
-                <select value={architecture} disabled={Boolean(result) || (kind === "textual-inversion" && inspection.detectedArchitecture !== null)} onChange={(event) => setArchitecture(event.currentTarget.value as ImportMediaModelAddonRequest["architecture"])} className={fieldClassName}>
-                  {LOCAL_MODEL_ARCHITECTURES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                Base architecture{" "}
+                {kind === "textual-inversion" &&
+                inspection.detectedArchitecture ? (
+                  <span className="font-normal text-slate-600">
+                    (locked to tensor dimensions)
+                  </span>
+                ) : null}
+                <select
+                  value={architecture}
+                  disabled={
+                    Boolean(result) ||
+                    (kind === "textual-inversion" &&
+                      inspection.detectedArchitecture !== null)
+                  }
+                  onChange={(event) =>
+                    setArchitecture(
+                      event.currentTarget
+                        .value as ImportMediaModelAddonRequest["architecture"],
+                    )
+                  }
+                  className={fieldClassName}
+                >
+                  {LOCAL_MODEL_ARCHITECTURES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </label>
               {kind === "lora" ? (
                 <label className="text-[11px] font-medium text-slate-400 sm:col-span-2">
-                  Trigger words <span className="font-normal text-slate-600">(comma separated, optional)</span>
-                  <input value={triggerWords} maxLength={1_024} disabled={Boolean(result)} onChange={(event) => setTriggerWords(event.currentTarget.value)} className={fieldClassName} />
+                  Trigger words{" "}
+                  <span className="font-normal text-slate-600">
+                    (comma separated, optional)
+                  </span>
+                  <input
+                    value={triggerWords}
+                    maxLength={1_024}
+                    disabled={Boolean(result)}
+                    onChange={(event) =>
+                      setTriggerWords(event.currentTarget.value)
+                    }
+                    className={fieldClassName}
+                  />
                 </label>
               ) : null}
               {kind === "textual-inversion" ? (
                 <label className="text-[11px] font-medium text-slate-400 sm:col-span-2">
                   Prompt token
-                  <input value={token} maxLength={128} disabled={Boolean(result)} onChange={(event) => setToken(event.currentTarget.value)} className={fieldClassName} />
+                  <input
+                    value={token}
+                    maxLength={128}
+                    disabled={Boolean(result)}
+                    onChange={(event) => setToken(event.currentTarget.value)}
+                    className={fieldClassName}
+                  />
                 </label>
               ) : null}
               <label className="text-[11px] font-medium text-slate-400 sm:col-span-2">
-                Publisher page <span className="font-normal text-slate-600">(optional, HTTPS)</span>
-                <input type="url" value={sourceUrl} maxLength={2_048} disabled={Boolean(result)} placeholder="https://civitai.com/models/…" onChange={(event) => setSourceUrl(event.currentTarget.value)} className={fieldClassName} />
+                Publisher page{" "}
+                <span className="font-normal text-slate-600">
+                  (optional, HTTPS)
+                </span>
+                <input
+                  type="url"
+                  value={sourceUrl}
+                  maxLength={2_048}
+                  disabled={Boolean(result)}
+                  placeholder="https://civitai.com/models/…"
+                  onChange={(event) => setSourceUrl(event.currentTarget.value)}
+                  className={fieldClassName}
+                />
               </label>
               <label className="text-[11px] font-medium text-slate-400">
                 License / usage terms
-                <input value={licenseName} maxLength={256} disabled={Boolean(result)} onChange={(event) => setLicenseName(event.currentTarget.value)} className={fieldClassName} />
+                <input
+                  value={licenseName}
+                  maxLength={256}
+                  disabled={Boolean(result)}
+                  onChange={(event) =>
+                    setLicenseName(event.currentTarget.value)
+                  }
+                  className={fieldClassName}
+                />
               </label>
               <label className="text-[11px] font-medium text-slate-400">
                 Commercial use
-                <select value={commercialUse} disabled={Boolean(result)} onChange={(event) => setCommercialUse(event.currentTarget.value as ImportMediaModelAddonRequest["commercialUse"])} className={fieldClassName}>
-                  <option value="review-required">Review required / unknown</option>
+                <select
+                  value={commercialUse}
+                  disabled={Boolean(result)}
+                  onChange={(event) =>
+                    setCommercialUse(
+                      event.currentTarget
+                        .value as ImportMediaModelAddonRequest["commercialUse"],
+                    )
+                  }
+                  className={fieldClassName}
+                >
+                  <option value="review-required">
+                    Review required / unknown
+                  </option>
                   <option value="allowed">Publisher allows it</option>
                 </select>
               </label>
@@ -1194,43 +1572,89 @@ const ModelAddonImportDialog = ({
             ) : null}
             {civitaiSource ? (
               <div className="mt-4 rounded-xl border border-violet-400/15 bg-violet-950/10 px-4 py-3 text-xs leading-5 text-violet-100">
-                Downloaded from Civitai: {civitaiSource.modelName} · {civitaiSource.versionName}
-                {civitaiSource.baseModel ? ` · publisher base ${civitaiSource.baseModel}` : ""}.
-                The tensor inspection above remains authoritative for the file type; confirm the exact checkpoint family and publisher terms before copying it into the managed library.
+                Downloaded from Civitai: {civitaiSource.modelName} ·{" "}
+                {civitaiSource.versionName}
+                {civitaiSource.baseModel
+                  ? ` · publisher base ${civitaiSource.baseModel}`
+                  : ""}
+                . The tensor inspection above remains authoritative for the file
+                type; confirm the exact checkpoint family and publisher terms
+                before copying it into the managed library.
               </div>
             ) : null}
             <ul className="mt-4 space-y-2 text-[10px] leading-4 text-slate-500">
-              {inspection.warnings.map((warning) => <li key={warning} className="flex gap-2"><Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/70" />{warning}</li>)}
+              {inspection.warnings.map((warning) => (
+                <li key={warning} className="flex gap-2">
+                  <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/70" />
+                  {warning}
+                </li>
+              ))}
             </ul>
-            {error ? <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs text-rose-200">{error}</div> : null}
+            {error ? (
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs text-rose-200"
+              >
+                {error}
+              </div>
+            ) : null}
             {result ? (
-              <div role="status" className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs text-emerald-200">
-                {result.alreadyInstalled ? "This exact add-on was already installed." : "Add-on imported and verified."} {formatFileBytes(result.byteSize)} · sha256 {compactDigest(result.digest)}
+              <div
+                role="status"
+                className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs text-emerald-200"
+              >
+                {result.alreadyInstalled
+                  ? "This exact add-on was already installed."
+                  : "Add-on imported and verified."}{" "}
+                {formatFileBytes(result.byteSize)} · sha256{" "}
+                {compactDigest(result.digest)}
               </div>
             ) : inspection.canImport ? (
               <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-violet-400/15 bg-violet-950/10 p-4 text-xs leading-5 text-slate-300">
-                <input type="checkbox" checked={confirmRights} onChange={(event) => setConfirmRights(event.currentTarget.checked)} className="mt-0.5 h-4 w-4 accent-violet-500" />
-                I reviewed the publisher&apos;s license, have the right to use these weights, and confirmed the selected base architecture.
+                <input
+                  type="checkbox"
+                  checked={confirmRights}
+                  onChange={(event) =>
+                    setConfirmRights(event.currentTarget.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 accent-violet-500"
+                />
+                I reviewed the publisher&apos;s license, have the right to use
+                these weights, and confirmed the selected base architecture.
               </label>
             ) : null}
           </div>
 
           <DialogFooter className="border-t border-slate-800 px-6 py-4">
             {!result && kind ? (
-              <Button type="button" disabled={!canSubmit} onClick={() => onImport({
-                sourcePath: inspection.sourcePath,
-                reviewToken: inspection.reviewToken,
-                displayName: displayName.trim(),
-                kind,
-                architecture,
-                triggerWords: triggerWords.split(",").map((word) => word.trim()).filter(Boolean),
-                token: kind === "textual-inversion" ? token.trim() : null,
-                sourceUrl: sourceUrl.trim() || null,
-                licenseName: licenseName.trim(),
-                commercialUse,
-                confirmRights,
-              })} className="bg-violet-500 text-white hover:bg-violet-400">
-                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <Button
+                type="button"
+                disabled={!canSubmit}
+                onClick={() =>
+                  onImport({
+                    sourcePath: inspection.sourcePath,
+                    reviewToken: inspection.reviewToken,
+                    displayName: displayName.trim(),
+                    kind,
+                    architecture,
+                    triggerWords: triggerWords
+                      .split(",")
+                      .map((word) => word.trim())
+                      .filter(Boolean),
+                    token: kind === "textual-inversion" ? token.trim() : null,
+                    sourceUrl: sourceUrl.trim() || null,
+                    licenseName: licenseName.trim(),
+                    commercialUse,
+                    confirmRights,
+                  })
+                }
+                className="bg-violet-500 text-white hover:bg-violet-400"
+              >
+                {loading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
                 Copy and verify add-on
               </Button>
             ) : null}
@@ -1267,24 +1691,40 @@ const ModelAddonRemovalDialog = ({
             <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.14em] text-rose-300 uppercase">
               <Trash2 className="h-3.5 w-3.5" /> Reviewed add-on removal
             </div>
-            <DialogTitle className="text-lg text-white">Remove {plan.displayName}</DialogTitle>
+            <DialogTitle className="text-lg text-white">
+              Remove {plan.displayName}
+            </DialogTitle>
             <DialogDescription className="text-xs leading-5 text-slate-500">
-              The immutable {plan.kind === "lora" ? "LoRA" : "embedding"} bytes are detached from the managed library. Historical provenance is preserved.
+              The immutable {plan.kind === "lora" ? "LoRA" : "embedding"} bytes
+              are detached from the managed library. Historical provenance is
+              preserved.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Installed</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatFileBytes(plan.installedBytes)}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Installed
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {formatFileBytes(plan.installedBytes)}
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Saved flows</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{plan.savedFlowCount}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Saved flows
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {plan.savedFlowCount}
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Historical runs</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{plan.historicalRunCount}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Historical runs
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {plan.historicalRunCount}
+                </div>
               </div>
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900/25 px-4 py-3 font-mono text-[10px] break-all text-slate-500">
@@ -1299,16 +1739,29 @@ const ModelAddonRemovalDialog = ({
               ))}
             </ul>
             {!plan.canRemove ? (
-              <div role="alert" className="rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-200">
-                {plan.blockingRunCount} active run(s) still reference this add-on. Finish or cancel them before removing it.
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs leading-5 text-amber-200"
+              >
+                {plan.blockingRunCount} active run(s) still reference this
+                add-on. Finish or cancel them before removing it.
               </div>
             ) : null}
             {error ? (
-              <div role="alert" className="rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs text-rose-200">{error}</div>
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs text-rose-200"
+              >
+                {error}
+              </div>
             ) : null}
             {result ? (
-              <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs leading-5 text-emerald-200">
-                Add-on removed. {result.cleanupPending
+              <div
+                role="status"
+                className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs leading-5 text-emerald-200"
+              >
+                Add-on removed.{" "}
+                {result.cleanupPending
                   ? "Byte cleanup will resume on next startup."
                   : `${formatFileBytes(result.reclaimedBytes)} reclaimed.`}
               </div>
@@ -1317,10 +1770,13 @@ const ModelAddonRemovalDialog = ({
                 <input
                   type="checkbox"
                   checked={confirmed}
-                  onChange={(event) => setConfirmed(event.currentTarget.checked)}
+                  onChange={(event) =>
+                    setConfirmed(event.currentTarget.checked)
+                  }
                   className="mt-0.5 h-4 w-4 accent-rose-500"
                 />
-                I understand saved flows keep this exact add-on reference and will fail preflight until the same digest is imported again.
+                I understand saved flows keep this exact add-on reference and
+                will fail preflight until the same digest is imported again.
               </label>
             ) : null}
           </div>
@@ -1329,14 +1785,20 @@ const ModelAddonRemovalDialog = ({
               <Button
                 type="button"
                 disabled={!plan.canRemove || !confirmed || loading}
-                onClick={() => onConfirm({
-                  addonId: plan.addonId,
-                  confirmationToken: plan.confirmationToken,
-                  confirmRemoval: true,
-                })}
+                onClick={() =>
+                  onConfirm({
+                    addonId: plan.addonId,
+                    confirmationToken: plan.confirmationToken,
+                    confirmRemoval: true,
+                  })
+                }
                 className="bg-rose-500 text-white hover:bg-rose-400"
               >
-                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {loading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
                 Remove add-on
               </Button>
             ) : null}
@@ -1377,18 +1839,27 @@ const ModelRemovalDialog = ({
               Remove {plan.displayName}
             </DialogTitle>
             <DialogDescription className="text-xs leading-5 text-slate-500">
-              The active revision is detached atomically before its bytes are cleaned from the managed model store.
+              The active revision is detached atomically before its bytes are
+              cleaned from the managed model store.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Revision</div>
-                <div className="mt-1.5 break-all font-mono text-[10px] text-slate-300">{plan.revision}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Revision
+                </div>
+                <div className="mt-1.5 break-all font-mono text-[10px] text-slate-300">
+                  {plan.revision}
+                </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                <div className="text-[9px] tracking-wider text-slate-600 uppercase">Installed bytes</div>
-                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatBytes(plan.installedBytes)}</div>
+                <div className="text-[9px] tracking-wider text-slate-600 uppercase">
+                  Installed bytes
+                </div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">
+                  {formatBytes(plan.installedBytes)}
+                </div>
               </div>
             </div>
             <div className="rounded-xl border border-slate-800 bg-slate-900/25 px-4 py-3 font-mono text-[10px] break-all text-slate-500">
@@ -1403,16 +1874,29 @@ const ModelRemovalDialog = ({
               ))}
             </ul>
             {!plan.canRemove ? (
-              <div role="alert" className="rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs text-amber-200">
-                Finish or cancel installation job <span className="font-mono">{plan.blockingJobId}</span> first.
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-xs text-amber-200"
+              >
+                Finish or cancel installation job{" "}
+                <span className="font-mono">{plan.blockingJobId}</span> first.
               </div>
             ) : null}
             {error ? (
-              <div role="alert" className="rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs text-rose-200">{error}</div>
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs text-rose-200"
+              >
+                {error}
+              </div>
             ) : null}
             {result ? (
-              <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs leading-5 text-emerald-200">
-                Revision removed. {result.cleanupPending
+              <div
+                role="status"
+                className="rounded-xl border border-emerald-400/20 bg-emerald-950/20 px-4 py-3 text-xs leading-5 text-emerald-200"
+              >
+                Revision removed.{" "}
+                {result.cleanupPending
                   ? "Byte cleanup will resume on next startup."
                   : `${formatBytes(result.reclaimedBytes)} reclaimed.`}
               </div>
@@ -1421,10 +1905,13 @@ const ModelRemovalDialog = ({
                 <input
                   type="checkbox"
                   checked={confirmed}
-                  onChange={(event) => setConfirmed(event.currentTarget.checked)}
+                  onChange={(event) =>
+                    setConfirmed(event.currentTarget.checked)
+                  }
                   className="mt-0.5 h-4 w-4 accent-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
                 />
-                I understand saved flows will be blocked until this exact local model revision is installed again.
+                I understand saved flows will be blocked until this exact local
+                model revision is installed again.
               </label>
             )}
           </div>
@@ -1442,7 +1929,11 @@ const ModelRemovalDialog = ({
                 }
                 className="bg-rose-600 text-white hover:bg-rose-500"
               >
-                {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {loading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
                 Remove installed revision
               </Button>
             ) : null}
@@ -1474,10 +1965,12 @@ const CatalogInspection = ({
           id="media-catalog-heading"
           className="flex items-center gap-2 text-sm font-semibold text-slate-100"
         >
-          <Database className="h-4 w-4 text-violet-300" /> Durable catalog snapshot
+          <Database className="h-4 w-4 text-violet-300" /> Durable catalog
+          snapshot
         </h2>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Capability and lifecycle data is versioned independently from saved flows.
+          Capability and lifecycle data is versioned independently from saved
+          flows.
         </p>
       </div>
       <Button
@@ -1499,7 +1992,8 @@ const CatalogInspection = ({
 
     {error ? (
       <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-xs text-rose-200">
-        Catalog refresh failed. The last valid built-in snapshot remains active. {error}
+        Catalog refresh failed. The last valid built-in snapshot remains active.{" "}
+        {error}
       </div>
     ) : null}
 
@@ -1538,11 +2032,14 @@ const CatalogInspection = ({
         >
           <span className="text-slate-300">{provider.displayName}</span>
           <span
-            className={provider.configured ? "text-emerald-300" : "text-amber-300"}
+            className={
+              provider.configured ? "text-emerald-300" : "text-amber-300"
+            }
           >
             {provider.configured ? "ready" : "configuration required"}
           </span>
-          {provider.lifecycle !== "active" && provider.lifecycle !== "preview" ? (
+          {provider.lifecycle !== "active" &&
+          provider.lifecycle !== "preview" ? (
             <span className="text-slate-700">{provider.lifecycle}</span>
           ) : null}
         </div>
@@ -1568,7 +2065,8 @@ const getPackageRequirementState = (
   runtimeReady: boolean,
 ): RuntimeRequirementState => {
   if (observedVersion === null) return "missing";
-  if (observedVersion === undefined) return runtimeReady ? "unknown" : "missing";
+  if (observedVersion === undefined)
+    return runtimeReady ? "unknown" : "missing";
   return acceptedVersions.includes(observedVersion) ? "ready" : "mismatch";
 };
 
@@ -1579,13 +2077,14 @@ const RuntimeRequirementBadge = ({
   state: RuntimeRequirementState;
   observedVersion: string | null | undefined;
 }): JSX.Element => {
-  const label = state === "ready"
-    ? `Installed ${observedVersion ?? ""}`.trim()
-    : state === "missing"
-      ? "Not detected"
-      : state === "mismatch"
-        ? `Installed ${observedVersion ?? "unknown"}`
-        : "Not reported";
+  const label =
+    state === "ready"
+      ? `Installed ${observedVersion ?? ""}`.trim()
+      : state === "missing"
+        ? "Not detected"
+        : state === "mismatch"
+          ? `Installed ${observedVersion ?? "unknown"}`
+          : "Not reported";
 
   return (
     <span
@@ -1644,16 +2143,19 @@ const LocalDiffusersRequirements = ({
           </p>
           {runtime.deviceLabel ? (
             <p className="mt-1 text-[10px] text-slate-600">
-              Execution device: <span className="text-slate-400">{runtime.deviceLabel}</span>
+              Execution device:{" "}
+              <span className="text-slate-400">{runtime.deviceLabel}</span>
             </p>
           ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Badge
             variant="outline"
-            className={runtime.ready
-              ? "border-emerald-400/25 text-emerald-300"
-              : "border-amber-400/25 text-amber-300"}
+            className={
+              runtime.ready
+                ? "border-emerald-400/25 text-emerald-300"
+                : "border-amber-400/25 text-amber-300"
+            }
           >
             {runtime.ready ? "Ready" : "Action required"}
           </Badge>
@@ -1679,7 +2181,9 @@ const LocalDiffusersRequirements = ({
         <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <div className="text-[11px] font-semibold text-slate-300">Python</div>
+              <div className="text-[11px] font-semibold text-slate-300">
+                Python
+              </div>
               <div className="mt-0.5 text-[9px] text-slate-600">
                 Required {LOCAL_DIFFUSERS_PYTHON_REQUIREMENT}
               </div>
@@ -1761,19 +2265,26 @@ const LocalDiffusersInstallGuideDialog = ({
     <DialogContent className="max-h-[calc(100vh-32px)] w-[min(680px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none">
       <DialogHeader className="text-left">
         <DialogTitle className="flex items-center gap-2 text-base text-white">
-          <Download className="h-4 w-4 text-amber-300" /> Install Local Diffusers requirements
+          <Download className="h-4 w-4 text-amber-300" /> Install Local
+          Diffusers requirements
         </DialogTitle>
         <DialogDescription className="text-xs leading-5 text-slate-500">
-          The desktop app checks its bundled Python runtime first, then a supported Python executable on PATH. Install into the runtime machdoch can discover.
+          The desktop app checks its bundled Python runtime first, then a
+          supported Python executable on PATH. Install into the runtime machdoch
+          can discover.
         </DialogDescription>
       </DialogHeader>
 
       <div className="min-h-0 overflow-y-auto pr-1">
         <ol className="space-y-4 text-xs leading-5 text-slate-300">
           <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-            <div className="font-semibold text-slate-100">1. Install Python {LOCAL_DIFFUSERS_PYTHON_REQUIREMENT}</div>
+            <div className="font-semibold text-slate-100">
+              1. Install Python {LOCAL_DIFFUSERS_PYTHON_REQUIREMENT}
+            </div>
             <p className="mt-1 text-slate-500">
-              Ensure <code className="font-mono text-slate-300">python</code> or <code className="font-mono text-slate-300">python3</code> is available on PATH.
+              Ensure <code className="font-mono text-slate-300">python</code> or{" "}
+              <code className="font-mono text-slate-300">python3</code> is
+              available on PATH.
             </p>
             <a
               href={PYTHON_DOWNLOAD_URL}
@@ -1781,13 +2292,17 @@ const LocalDiffusersInstallGuideDialog = ({
               rel="noreferrer"
               className="mt-2 inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
             >
-              Open official Python downloads <ExternalLink className="h-3 w-3" />
+              Open official Python downloads{" "}
+              <ExternalLink className="h-3 w-3" />
             </a>
           </li>
           <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-            <div className="font-semibold text-slate-100">2. Install PyTorch for your exact accelerator</div>
+            <div className="font-semibold text-slate-100">
+              2. Install PyTorch for your exact accelerator
+            </div>
             <p className="mt-1 text-slate-500">
-              Generic bundles use PyTorch 2.13.0. AMD Windows uses the official architecture-specific PyTorch 2.12.0 + ROCm 7.14 wheel.
+              Generic bundles use PyTorch 2.13.0. AMD Windows uses the official
+              architecture-specific PyTorch 2.12.0 + ROCm 7.14 wheel.
             </p>
             <div className="mt-2 flex flex-wrap gap-3">
               <a
@@ -1809,9 +2324,13 @@ const LocalDiffusersInstallGuideDialog = ({
             </div>
           </li>
           <li className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-            <div className="font-semibold text-slate-100">3. Install the remaining pinned packages</div>
+            <div className="font-semibold text-slate-100">
+              3. Install the remaining pinned packages
+            </div>
             <p className="mt-1 text-slate-500">
-              Run this with the same Python command. Use <code className="font-mono text-slate-300">python3</code> instead when required by your system.
+              Run this with the same Python command. Use{" "}
+              <code className="font-mono text-slate-300">python3</code> instead
+              when required by your system.
             </p>
             <code className="mt-3 block overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[10px] leading-5 text-slate-300 select-all">
               {LOCAL_DIFFUSERS_PACKAGE_INSTALL_COMMAND}
@@ -1820,7 +2339,8 @@ const LocalDiffusersInstallGuideDialog = ({
         </ol>
 
         <p className="mt-4 text-[10px] leading-4 text-slate-600">
-          Use Re-probe runtime after installation; restarting the desktop app is not required.
+          Use Re-probe runtime after installation; restarting the desktop app is
+          not required.
         </p>
       </div>
       <DialogFooter>
@@ -1869,10 +2389,12 @@ const HardwareInspection = ({
           id="media-hardware-heading"
           className="flex items-center gap-2 text-sm font-semibold text-slate-100"
         >
-          <ServerCog className="h-4 w-4 text-cyan-300" /> Local runtime inspection
+          <ServerCog className="h-4 w-4 text-cyan-300" /> Local runtime
+          inspection
         </h2>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Executable and driver visibility is reported separately from validated model compatibility.
+          Executable and driver visibility is reported separately from validated
+          model compatibility.
         </p>
       </div>
       <Button
@@ -1919,7 +2441,10 @@ const HardwareInspection = ({
               Memory
             </div>
             <div className="mt-1 text-xs text-slate-300">
-              {formatBytesWithSuffix(hardware.availableMemoryBytes, "available")}
+              {formatBytesWithSuffix(
+                hardware.availableMemoryBytes,
+                "available",
+              )}
             </div>
             <div className="mt-1 text-[10px] text-slate-600">
               {formatBytesWithSuffix(hardware.totalMemoryBytes, "total")}
@@ -1954,20 +2479,25 @@ const HardwareInspection = ({
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/35 p-4">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-slate-300">FFmpeg toolchain</span>
+              <span className="text-xs font-semibold text-slate-300">
+                FFmpeg toolchain
+              </span>
               <ProbeBadge probe={hardware.ffmpeg} />
             </div>
             <p className="mt-2 line-clamp-2 text-[10px] leading-4 text-slate-600">
               {hardware.ffmpeg.version ?? hardware.ffmpeg.diagnostic}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800/70 pt-3">
-              <span className="text-[10px] font-semibold text-slate-500">ffprobe verification</span>
+              <span className="text-[10px] font-semibold text-slate-500">
+                ffprobe verification
+              </span>
               <ProbeBadge probe={hardware.ffprobe} />
             </div>
             <p className="mt-2 line-clamp-2 text-[10px] leading-4 text-slate-600">
               {hardware.ffprobe.version ?? hardware.ffprobe.diagnostic}
             </p>
-            {hardware.ffmpeg.status !== "available" || hardware.ffprobe.status !== "available" ? (
+            {hardware.ffmpeg.status !== "available" ||
+            hardware.ffprobe.status !== "available" ? (
               <Button
                 asChild
                 variant="outline"
@@ -1982,14 +2512,20 @@ const HardwareInspection = ({
           </div>
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/35 p-4">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-slate-300">NVIDIA driver probe</span>
+              <span className="text-xs font-semibold text-slate-300">
+                NVIDIA driver probe
+              </span>
               <ProbeBadge probe={hardware.nvidiaSmi} />
             </div>
             {hardware.nvidiaGpus.length > 0 ? (
               <div className="mt-2 space-y-1 text-[10px] text-slate-500">
                 {hardware.nvidiaGpus.map((gpu, index) => (
                   <div key={`${gpu.name}-${index}`}>
-                    {gpu.name} · {gpu.memoryTotalMb === null ? "VRAM unknown" : `${Math.round(gpu.memoryTotalMb / 1_024)} GB VRAM`} · driver {gpu.driverVersion}
+                    {gpu.name} ·{" "}
+                    {gpu.memoryTotalMb === null
+                      ? "VRAM unknown"
+                      : `${Math.round(gpu.memoryTotalMb / 1_024)} GB VRAM`}{" "}
+                    · driver {gpu.driverVersion}
                   </div>
                 ))}
               </div>
@@ -2000,11 +2536,11 @@ const HardwareInspection = ({
             )}
           </div>
         </div>
-
       </>
     ) : loading ? (
       <div className="mt-5 flex h-28 items-center justify-center text-xs text-slate-600">
-        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Inspecting local runtime…
+        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Inspecting local
+        runtime…
       </div>
     ) : null}
   </section>
@@ -2126,12 +2662,7 @@ export const MediaModelsView = ({
     [addonQuery, catalog.addons],
   );
   const addonPagination = useMemo(
-    () =>
-      paginateMediaItems(
-        filteredAddons,
-        addonPage,
-        MODEL_ADDON_PAGE_SIZE,
-      ),
+    () => paginateMediaItems(filteredAddons, addonPage, MODEL_ADDON_PAGE_SIZE),
     [addonPage, filteredAddons],
   );
   useEffect(() => {
@@ -2179,6 +2710,452 @@ export const MediaModelsView = ({
       (model) => getMediaModelPurpose(model) === group.id,
     ),
   })).filter((group) => group.models.length > 0);
+  const modelsCommandStateRef = useRef({
+    addonImportLoading,
+    addonImportSupported,
+    addonRemovalLoading,
+    catalog,
+    catalogLoading,
+    civitaiAddonLoading,
+    hardwareLoading,
+    installLoading,
+    localDiffusers,
+    localRuntimeLoading,
+    modelImportLoading,
+    modelImportSupported,
+    modelProbeLoadingId,
+    modelProbeSupported,
+    onChooseAddonImport,
+    onChooseModelImport,
+    onInspectWorkspaceArtifact,
+    onOpenProviderSettings,
+    onProbeModel,
+    onRefreshCatalog,
+    onRefreshHardware,
+    onRefreshLocalRuntime,
+    onRefreshWorkspaceModels,
+    onReviewAddonRemoval,
+    onReviewInstall,
+    onReviewRemoval,
+    removalLoading,
+    setCivitaiDialogOpen,
+    setLocalDiffusersGuideOpen,
+    workspaceModels,
+    workspaceModelsLoading,
+  });
+  modelsCommandStateRef.current = {
+    addonImportLoading,
+    addonImportSupported,
+    addonRemovalLoading,
+    catalog,
+    catalogLoading,
+    civitaiAddonLoading,
+    hardwareLoading,
+    installLoading,
+    localDiffusers,
+    localRuntimeLoading,
+    modelImportLoading,
+    modelImportSupported,
+    modelProbeLoadingId,
+    modelProbeSupported,
+    onChooseAddonImport,
+    onChooseModelImport,
+    onInspectWorkspaceArtifact,
+    onOpenProviderSettings,
+    onProbeModel,
+    onRefreshCatalog,
+    onRefreshHardware,
+    onRefreshLocalRuntime,
+    onRefreshWorkspaceModels,
+    onReviewAddonRemoval,
+    onReviewInstall,
+    onReviewRemoval,
+    removalLoading,
+    setCivitaiDialogOpen,
+    setLocalDiffusersGuideOpen,
+    workspaceModels,
+    workspaceModelsLoading,
+  };
+  const modelCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "media.models.refresh-all",
+        title: "Refresh model status",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = modelsCommandStateRef.current;
+          return state.catalogLoading ||
+            state.hardwareLoading ||
+            state.workspaceModelsLoading ||
+            state.localRuntimeLoading
+            ? {
+                state: "disabled",
+                reason: "Model status is already refreshing",
+              }
+            : { state: "enabled" };
+        },
+        execute: () => {
+          const state = modelsCommandStateRef.current;
+          state.onRefreshCatalog();
+          state.onRefreshHardware();
+          state.onRefreshWorkspaceModels();
+          state.onRefreshLocalRuntime();
+        },
+      },
+      ...(
+        [
+          {
+            id: "media.models.catalog.refresh",
+            title: "Refresh model catalog",
+            loading: () => modelsCommandStateRef.current.catalogLoading,
+            action: () => modelsCommandStateRef.current.onRefreshCatalog(),
+          },
+          {
+            id: "media.models.hardware.refresh",
+            title: "Refresh hardware inspection",
+            loading: () => modelsCommandStateRef.current.hardwareLoading,
+            action: () => modelsCommandStateRef.current.onRefreshHardware(),
+          },
+          {
+            id: "media.models.workspace.refresh",
+            title: "Scan workspace models",
+            loading: () => modelsCommandStateRef.current.workspaceModelsLoading,
+            action: () =>
+              modelsCommandStateRef.current.onRefreshWorkspaceModels(),
+          },
+          {
+            id: "media.models.runtime.refresh",
+            title: "Re-probe local model runtime",
+            loading: () => modelsCommandStateRef.current.localRuntimeLoading,
+            action: () => modelsCommandStateRef.current.onRefreshLocalRuntime(),
+          },
+        ] as const
+      ).map(
+        ({ id, title, loading, action }): CommandDefinition => ({
+          id,
+          title,
+          group: "Media Models",
+          scope: { kind: "view", ownerId: "media" },
+          palette: "visible",
+          availability: () =>
+            loading()
+              ? { state: "disabled", reason: "Refresh is already running" }
+              : { state: "enabled" },
+          execute: action,
+        }),
+      ),
+      {
+        id: "media.models.checkpoint.import",
+        title: "Import model checkpoint",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = modelsCommandStateRef.current;
+          return state.modelImportSupported &&
+            !state.modelImportLoading &&
+            !state.addonImportLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.modelImportSupported
+                  ? "A model import is already running"
+                  : "Model import requires the desktop app",
+              };
+        },
+        execute: () => modelsCommandStateRef.current.onChooseModelImport(),
+      },
+      {
+        id: "media.models.addon.import",
+        title: "Import LoRA or embedding",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = modelsCommandStateRef.current;
+          return state.addonImportSupported &&
+            !state.addonImportLoading &&
+            !state.modelImportLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.addonImportSupported
+                  ? "A model import is already running"
+                  : "Model add-on import requires the desktop app",
+              };
+        },
+        execute: () => modelsCommandStateRef.current.onChooseAddonImport(),
+      },
+      {
+        id: "media.models.civitai.import",
+        title: "Import model add-on from Civitai",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = modelsCommandStateRef.current;
+          return state.addonImportSupported &&
+            !state.civitaiAddonLoading &&
+            !state.addonImportLoading &&
+            !state.modelImportLoading
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: state.addonImportSupported
+                  ? "A model import is already running"
+                  : "Civitai import requires the desktop app",
+              };
+        },
+        execute: () => modelsCommandStateRef.current.setCivitaiDialogOpen(true),
+      },
+      {
+        id: "media.models.provider-settings.open",
+        title: "Open media provider settings",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        execute: () => modelsCommandStateRef.current.onOpenProviderSettings(),
+      },
+      {
+        id: "media.models.runtime-install.open",
+        title: "Open local runtime installation guide",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          modelsCommandStateRef.current.localDiffusers
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "Local runtime status is unavailable",
+              },
+        execute: () =>
+          modelsCommandStateRef.current.setLocalDiffusersGuideOpen(true),
+      },
+      {
+        id: "media.models.workspace-artifact.import",
+        title: "Review workspace model import",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          modelsCommandStateRef.current.workspaceModels?.entries.some(
+            (entry) =>
+              entry.status === "importable" &&
+              (entry.kind === "checkpoint" || entry.kind === "model-addon"),
+          )
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No importable workspace models" },
+        children: () => ({
+          id: "media-models-workspace-artifact-import",
+          title: "Review workspace model import",
+          searchPlaceholder: "Choose model artifact",
+          groups: [
+            {
+              id: "artifacts",
+              items:
+                modelsCommandStateRef.current.workspaceModels?.entries
+                  .filter(
+                    (entry) =>
+                      entry.status === "importable" &&
+                      (entry.kind === "checkpoint" ||
+                        entry.kind === "model-addon"),
+                  )
+                  .map((entry) => ({
+                    id: entry.relativePath,
+                    title: entry.displayName,
+                    keywords: [entry.relativePath, entry.kind],
+                    availability:
+                      entry.kind === "model-addon"
+                        ? modelsCommandStateRef.current.addonImportSupported &&
+                          !modelsCommandStateRef.current.addonImportLoading
+                          ? { state: "enabled" }
+                          : {
+                              state: "disabled",
+                              reason: "Model add-on import is unavailable",
+                            }
+                        : modelsCommandStateRef.current.modelImportSupported &&
+                            !modelsCommandStateRef.current.modelImportLoading
+                          ? { state: "enabled" }
+                          : {
+                              state: "disabled",
+                              reason: "Checkpoint import is unavailable",
+                            },
+                    execute: () =>
+                      modelsCommandStateRef.current.onInspectWorkspaceArtifact(
+                        entry,
+                      ),
+                  })) ?? [],
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.models.verify",
+        title: "Verify installed model",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const state = modelsCommandStateRef.current;
+          return state.catalog.models.some(
+            (model) =>
+              model.management.verification === "model-probe" &&
+              model.installed &&
+              !isMediaModelReady(model),
+          ) &&
+            state.modelProbeSupported &&
+            state.modelProbeLoadingId === null &&
+            state.localDiffusers?.ready === true
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "No model is ready for verification",
+              };
+        },
+        children: () => ({
+          id: "media-models-verify",
+          title: "Verify installed model",
+          searchPlaceholder: "Choose model",
+          groups: [
+            {
+              id: "models",
+              items: modelsCommandStateRef.current.catalog.models
+                .filter(
+                  (model) =>
+                    model.management.verification === "model-probe" &&
+                    model.installed &&
+                    !isMediaModelReady(model),
+                )
+                .map((model) => ({
+                  id: model.id,
+                  title: model.displayName,
+                  execute: () =>
+                    modelsCommandStateRef.current.onProbeModel(model.id),
+                })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.models.install.review",
+        title: "Review model installation",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          !modelsCommandStateRef.current.installLoading &&
+          modelsCommandStateRef.current.catalog.models.some(
+            (model) =>
+              model.management.acquisition === "managed-install" &&
+              !isMediaModelReady(model),
+          )
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "No model installation is available",
+              },
+        children: () => ({
+          id: "media-models-install-review",
+          title: "Review model installation",
+          searchPlaceholder: "Choose model",
+          groups: [
+            {
+              id: "models",
+              items: modelsCommandStateRef.current.catalog.models
+                .filter(
+                  (model) =>
+                    model.management.acquisition === "managed-install" &&
+                    !isMediaModelReady(model),
+                )
+                .map((model) => ({
+                  id: model.id,
+                  title: model.displayName,
+                  execute: () =>
+                    modelsCommandStateRef.current.onReviewInstall(model.id),
+                })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.models.remove.review",
+        title: "Review model removal",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          !modelsCommandStateRef.current.removalLoading &&
+          modelsCommandStateRef.current.catalog.models.some(
+            (model) =>
+              isMediaModelReady(model) &&
+              (model.management.acquisition === "managed-install" ||
+                model.management.acquisition === "file-import"),
+          )
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No removable models" },
+        children: () => ({
+          id: "media-models-remove-review",
+          title: "Review model removal",
+          searchPlaceholder: "Choose model",
+          groups: [
+            {
+              id: "models",
+              items: modelsCommandStateRef.current.catalog.models
+                .filter(
+                  (model) =>
+                    isMediaModelReady(model) &&
+                    (model.management.acquisition === "managed-install" ||
+                      model.management.acquisition === "file-import"),
+                )
+                .map((model) => ({
+                  id: model.id,
+                  title: model.displayName,
+                  execute: () =>
+                    modelsCommandStateRef.current.onReviewRemoval(model.id),
+                })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.models.addon.remove.review",
+        title: "Review model add-on removal",
+        group: "Media Models",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          !modelsCommandStateRef.current.addonRemovalLoading &&
+          modelsCommandStateRef.current.catalog.addons.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No removable model add-ons" },
+        children: () => ({
+          id: "media-models-addon-remove-review",
+          title: "Review model add-on removal",
+          searchPlaceholder: "Choose add-on",
+          groups: [
+            {
+              id: "addons",
+              items: modelsCommandStateRef.current.catalog.addons.map(
+                (addon) => ({
+                  id: addon.id,
+                  title: addon.displayName,
+                  execute: () =>
+                    modelsCommandStateRef.current.onReviewAddonRemoval(
+                      addon.id,
+                    ),
+                }),
+              ),
+            },
+          ],
+        }),
+      },
+    ],
+    [modelsCommandStateRef],
+  );
+  useOptionalRegisterCommands(modelCommands);
 
   return (
     <div className="h-full overflow-y-auto bg-slate-950 px-5 py-6 sm:px-7 sm:py-7">
@@ -2255,11 +3232,19 @@ export const MediaModelsView = ({
                 addonImportLoading ||
                 modelImportLoading
               }
-              title={addonImportSupported ? undefined : "Available in the native desktop app"}
+              title={
+                addonImportSupported
+                  ? undefined
+                  : "Available in the native desktop app"
+              }
               onClick={() => setCivitaiDialogOpen(true)}
               className="border-cyan-400/25 bg-cyan-950/10 text-cyan-200 hover:bg-cyan-950/30"
             >
-              {civitaiAddonLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />}
+              {civitaiAddonLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Cloud className="h-4 w-4" />
+              )}
               Import from Civitai
             </Button>
             <Button
@@ -2270,11 +3255,19 @@ export const MediaModelsView = ({
                 addonImportLoading ||
                 modelImportLoading
               }
-              title={addonImportSupported ? undefined : "Available in the native desktop app"}
+              title={
+                addonImportSupported
+                  ? undefined
+                  : "Available in the native desktop app"
+              }
               onClick={onChooseAddonImport}
               className="border-cyan-400/25 bg-cyan-950/10 text-cyan-200 hover:bg-cyan-950/30"
             >
-              {addonImportLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Layers3 className="h-4 w-4" />}
+              {addonImportLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Layers3 className="h-4 w-4" />
+              )}
               Import LoRA / embedding
             </Button>
             <Button
@@ -2285,33 +3278,53 @@ export const MediaModelsView = ({
                 modelImportLoading ||
                 addonImportLoading
               }
-              title={modelImportSupported ? undefined : "Available in the native desktop app"}
+              title={
+                modelImportSupported
+                  ? undefined
+                  : "Available in the native desktop app"
+              }
               onClick={onChooseModelImport}
               className="border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
             >
-              {modelImportLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {modelImportLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
               Import checkpoint
             </Button>
           </div>
         </div>
 
         {modelImportError && !modelImportInspection ? (
-          <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+          >
             {modelImportError}
           </div>
         ) : null}
         {addonImportError && !addonImportInspection ? (
-          <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+          >
             {addonImportError}
           </div>
         ) : null}
         {addonRemovalError && !addonRemovalPlan ? (
-          <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+          >
             {addonRemovalError}
           </div>
         ) : null}
         {modelProbeError ? (
-          <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200">
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-rose-400/20 bg-rose-950/20 px-4 py-3 text-xs leading-5 text-rose-200"
+          >
             {modelProbeError}
           </div>
         ) : null}
@@ -2344,18 +3357,27 @@ export const MediaModelsView = ({
               className="border-emerald-400/25 bg-emerald-950/10 text-emerald-200 hover:bg-emerald-950/30"
             >
               <RefreshCw
-                className={cn("h-4 w-4", workspaceModelsLoading && "animate-spin")}
+                className={cn(
+                  "h-4 w-4",
+                  workspaceModelsLoading && "animate-spin",
+                )}
               />
               {workspaceModelsLoading ? "Scanning…" : "Scan models"}
             </Button>
           </div>
           {workspaceModelsError ? (
-            <p role="alert" className="mt-3 text-[10px] leading-4 text-rose-300">
+            <p
+              role="alert"
+              className="mt-3 text-[10px] leading-4 text-rose-300"
+            >
               {workspaceModelsError}
             </p>
           ) : null}
           {workspaceModels?.warnings.map((warning) => (
-            <p key={warning} className="mt-3 text-[10px] leading-4 text-amber-200/75">
+            <p
+              key={warning}
+              className="mt-3 text-[10px] leading-4 text-amber-200/75"
+            >
               {warning}
             </p>
           ))}
@@ -2368,14 +3390,16 @@ export const MediaModelsView = ({
               className="mt-3 rounded-lg border border-amber-400/20 bg-amber-950/15 px-3 py-2 text-[10px] leading-4 text-amber-200/80"
             >
               These are partial results because the bounded workspace scan
-              reached a safety limit. Narrow the models directory and scan
-              again before assuming a package is absent.
+              reached a safety limit. Narrow the models directory and scan again
+              before assuming a package is absent.
             </p>
           ) : null}
           {workspaceModels && workspaceModels.entries.length > 0 ? (
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <label className="relative min-w-[min(100%,18rem)] flex-1">
-                <span className="sr-only">Filter discovered model artifacts</span>
+                <span className="sr-only">
+                  Filter discovered model artifacts
+                </span>
                 <SearchField
                   value={workspaceQuery}
                   onChange={(event) => {
@@ -2451,7 +3475,8 @@ export const MediaModelsView = ({
                         variant="outline"
                         className={cn(
                           "text-[8px]",
-                          entry.status === "ready" || entry.status === "importable"
+                          entry.status === "ready" ||
+                            entry.status === "importable"
                             ? "border-emerald-400/25 text-emerald-300"
                             : entry.status === "incompatible" ||
                                 entry.status === "incomplete"
@@ -2548,7 +3573,10 @@ export const MediaModelsView = ({
             )}
           >
             {localDiffusers?.ready === false ? (
-              <TriangleAlert className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+              <TriangleAlert
+                className="h-4 w-4 shrink-0 text-amber-300"
+                aria-hidden="true"
+              />
             ) : null}
             <span>System details</span>
             {localDiffusers?.ready === false ? (
@@ -2557,7 +3585,8 @@ export const MediaModelsView = ({
               </span>
             ) : null}
             <span className="text-slate-600">
-              {catalog.providers.length} providers · {catalog.models.length} models
+              {catalog.providers.length} providers · {catalog.models.length}{" "}
+              models
             </span>
             <ChevronDown className="ml-auto h-4 w-4 text-slate-600 transition-transform group-open:rotate-180" />
           </summary>
@@ -2595,14 +3624,23 @@ export const MediaModelsView = ({
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 id="media-addons-heading" className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                <Layers3 className="h-4 w-4 text-cyan-300" /> Looks &amp; concepts
+              <h2
+                id="media-addons-heading"
+                className="flex items-center gap-2 text-sm font-semibold text-slate-100"
+              >
+                <Layers3 className="h-4 w-4 text-cyan-300" /> Looks &amp;
+                concepts
               </h2>
               <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                Reusable LoRA adapters and textual-inversion embeddings. Compatibility is checked against the chosen provider and model before a run.
+                Reusable LoRA adapters and textual-inversion embeddings.
+                Compatibility is checked against the chosen provider and model
+                before a run.
               </p>
             </div>
-            <Badge variant="outline" className="border-cyan-400/20 text-[9px] text-cyan-300">
+            <Badge
+              variant="outline"
+              className="border-cyan-400/20 text-[9px] text-cyan-300"
+            >
               {filteredAddons.length === catalog.addons.length
                 ? catalog.addons.length
                 : `${filteredAddons.length} of ${catalog.addons.length}`}
@@ -2651,63 +3689,103 @@ export const MediaModelsView = ({
                   className="mt-4 rounded-lg"
                 />
               ) : (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {addonPagination.items.map((addon) => (
-                <article key={addon.id} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/35 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="break-words text-xs leading-5 font-semibold text-slate-200">{addon.displayName}</h3>
-                      <p className="mt-1 text-[9px] text-slate-600">{addon.architecture.replaceAll("-", " ")} · {formatFileBytes(addon.byteSize)}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Badge variant="outline" className="border-violet-400/20 text-[8px] text-violet-300">
-                        {addon.kind === "lora" ? "LoRA" : "Embedding"}
-                      </Badge>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        disabled={addonRemovalLoading}
-                        aria-label={`Remove ${addon.displayName}`}
-                        onClick={() => onReviewAddonRemoval(addon.id)}
-                        className="h-7 w-7 text-slate-600 hover:bg-rose-950/30 hover:text-rose-300"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="mt-2 break-words text-[9px] leading-4 text-slate-500">
-                    {addon.targetComponents.map((component) => component.replaceAll("-", " ")).join(" · ")}
-                    {addon.baseModelHint ? ` · ${addon.baseModelHint}` : ""}
-                  </p>
-                  {addon.embeddingVectors.length > 0 ? (
-                    <p className="mt-1 text-[9px] text-violet-300/70">
-                      {addon.embeddingVectors.map((profile) => `${profile.vectorCount}×${profile.dimension}`).join(" · ")}
-                    </p>
-                  ) : null}
-                  {addon.loraProfile ? (
-                    <p className="mt-1 break-words text-[9px] leading-4 text-cyan-300/70">
-                      {addon.loraProfile.algorithm === "locon" ? "LoCon" : addon.loraProfile.algorithm === "dora" ? "DoRA" : "LoRA"} · rank {addon.loraProfile.rankMinimum === addon.loraProfile.rankMaximum ? addon.loraProfile.rankMinimum : `${addon.loraProfile.rankMinimum}–${addon.loraProfile.rankMaximum}`} · {addon.loraProfile.targetModuleCount} modules
-                    </p>
-                  ) : null}
-                  {addon.triggerWords.length > 0 ? <p className="mt-2 break-words font-mono text-[9px] leading-4 text-cyan-300/70">{addon.triggerWords.join(", ")}</p> : null}
-                  {addon.defaultToken ? <p className="mt-2 break-all font-mono text-[9px] leading-4 text-cyan-300/70">{addon.defaultToken}</p> : null}
-                  <details className="group/details mt-3 border-t border-slate-800/70 pt-2">
-                    <summary className="cursor-pointer list-none text-[9px] text-slate-600 outline-none hover:text-slate-300 focus-visible:ring-2 focus-visible:ring-cyan-400/30">
-                      File, license &amp; digest
-                    </summary>
-                    <div className="mt-2 space-y-1.5 text-[9px] leading-4 text-slate-600">
-                      <p className="break-all font-mono">{addon.relativePath}</p>
-                      <p className="break-all font-mono">sha256:{addon.digest}</p>
-                      <p className="break-words">
-                        {addon.license.name} ·{" "}
-                        {addon.license.commercialUse.replaceAll("-", " ")}
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {addonPagination.items.map((addon) => (
+                    <article
+                      key={addon.id}
+                      className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/35 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="break-words text-xs leading-5 font-semibold text-slate-200">
+                            {addon.displayName}
+                          </h3>
+                          <p className="mt-1 text-[9px] text-slate-600">
+                            {addon.architecture.replaceAll("-", " ")} ·{" "}
+                            {formatFileBytes(addon.byteSize)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Badge
+                            variant="outline"
+                            className="border-violet-400/20 text-[8px] text-violet-300"
+                          >
+                            {addon.kind === "lora" ? "LoRA" : "Embedding"}
+                          </Badge>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            disabled={addonRemovalLoading}
+                            aria-label={`Remove ${addon.displayName}`}
+                            onClick={() => onReviewAddonRemoval(addon.id)}
+                            className="h-7 w-7 text-slate-600 hover:bg-rose-950/30 hover:text-rose-300"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="mt-2 break-words text-[9px] leading-4 text-slate-500">
+                        {addon.targetComponents
+                          .map((component) => component.replaceAll("-", " "))
+                          .join(" · ")}
+                        {addon.baseModelHint ? ` · ${addon.baseModelHint}` : ""}
                       </p>
-                    </div>
-                  </details>
-                </article>
-              ))}
-            </div>
+                      {addon.embeddingVectors.length > 0 ? (
+                        <p className="mt-1 text-[9px] text-violet-300/70">
+                          {addon.embeddingVectors
+                            .map(
+                              (profile) =>
+                                `${profile.vectorCount}×${profile.dimension}`,
+                            )
+                            .join(" · ")}
+                        </p>
+                      ) : null}
+                      {addon.loraProfile ? (
+                        <p className="mt-1 break-words text-[9px] leading-4 text-cyan-300/70">
+                          {addon.loraProfile.algorithm === "locon"
+                            ? "LoCon"
+                            : addon.loraProfile.algorithm === "dora"
+                              ? "DoRA"
+                              : "LoRA"}{" "}
+                          · rank{" "}
+                          {addon.loraProfile.rankMinimum ===
+                          addon.loraProfile.rankMaximum
+                            ? addon.loraProfile.rankMinimum
+                            : `${addon.loraProfile.rankMinimum}–${addon.loraProfile.rankMaximum}`}{" "}
+                          · {addon.loraProfile.targetModuleCount} modules
+                        </p>
+                      ) : null}
+                      {addon.triggerWords.length > 0 ? (
+                        <p className="mt-2 break-words font-mono text-[9px] leading-4 text-cyan-300/70">
+                          {addon.triggerWords.join(", ")}
+                        </p>
+                      ) : null}
+                      {addon.defaultToken ? (
+                        <p className="mt-2 break-all font-mono text-[9px] leading-4 text-cyan-300/70">
+                          {addon.defaultToken}
+                        </p>
+                      ) : null}
+                      <details className="group/details mt-3 border-t border-slate-800/70 pt-2">
+                        <summary className="cursor-pointer list-none text-[9px] text-slate-600 outline-none hover:text-slate-300 focus-visible:ring-2 focus-visible:ring-cyan-400/30">
+                          File, license &amp; digest
+                        </summary>
+                        <div className="mt-2 space-y-1.5 text-[9px] leading-4 text-slate-600">
+                          <p className="break-all font-mono">
+                            {addon.relativePath}
+                          </p>
+                          <p className="break-all font-mono">
+                            sha256:{addon.digest}
+                          </p>
+                          <p className="break-words">
+                            {addon.license.name} ·{" "}
+                            {addon.license.commercialUse.replaceAll("-", " ")}
+                          </p>
+                        </div>
+                      </details>
+                    </article>
+                  ))}
+                </div>
               )}
               <MediaPagination
                 page={addonPagination.page}
@@ -2734,7 +3812,9 @@ export const MediaModelsView = ({
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-slate-100">Model catalog</h2>
+                <h2 className="text-sm font-semibold text-slate-100">
+                  Model catalog
+                </h2>
                 <p className="mt-1 text-[11px] text-slate-500">
                   Installed, managed, remote, and discovered runtime models.
                 </p>
@@ -2779,276 +3859,346 @@ export const MediaModelsView = ({
               title={`No models match “${modelQuery.trim()}”.`}
               role="status"
             />
-          ) : modelGroups.map((group) => {
-            const GroupIcon = group.icon;
+          ) : (
+            modelGroups.map((group) => {
+              const GroupIcon = group.icon;
 
-            return (
-              <section key={group.id} aria-labelledby={`media-${group.id}-models-heading`}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2
-                    id={`media-${group.id}-models-heading`}
-                    className="flex items-center gap-2 text-sm font-semibold text-slate-100"
-                  >
-                    <GroupIcon className={cn("h-4 w-4", group.iconClassName)} />
-                    {group.title}
-                  </h2>
-                  <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                    {group.description}
-                  </p>
-                </div>
-                <Badge variant="outline" className="border-slate-700 text-[9px] text-slate-400">
-                  {group.models.length} on page
-                </Badge>
-              </div>
-
-              <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                {group.models.map((model) => {
-                  const ready = isMediaModelReady(model);
-                  const TargetIcon = model.target === "remote" ? Cloud : Cpu;
-                  const modelInstallJob =
-                    installJob?.modelId === model.id ? installJob : null;
-                  return (
-              <article
-                key={model.id}
-                className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/25 p-4"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div
-                      className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                        model.target === "remote"
-                          ? "bg-sky-950/50 text-sky-300"
-                          : "bg-violet-950/50 text-violet-300",
-                      )}
-                    >
-                      <TargetIcon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="break-words text-sm leading-5 font-semibold text-slate-100">
-                        {model.displayName}
-                      </h3>
-                      <div className="mt-1 break-words text-[10px] leading-4 text-slate-500">
-                        {model.target === "remote"
-                          ? "Remote"
-                          : model.bundled
-                            ? "Built in"
-                            : model.userImported
-                              ? "Imported"
-                              : "Local"} · {model.family}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1.5 text-[11px]",
-                        ready ? "text-emerald-300" : "text-amber-300",
-                      )}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                      {readinessLabel(model)}
-                    </span>
-                    {model.lifecycle !== "active" && model.lifecycle !== "preview" ? (
-                      <span className="text-[9px] text-amber-300">
-                        {model.lifecycle.replaceAll("-", " ")}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                {model.target === "local" &&
-                (model.minVramGb != null || model.expectedDownloadGb != null) ? (
-                  <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-slate-500">
-                    {model.minVramGb != null ? (
-                      <div className="flex items-center gap-2 text-slate-500">
-                        <HardDrive className="h-3.5 w-3.5" /> {model.minVramGb} GB VRAM
-                      </div>
-                    ) : null}
-                    {model.expectedDownloadGb != null ? (
-                      <div className="flex items-center gap-2 text-slate-500">
-                        <Download className="h-3.5 w-3.5" /> {model.expectedDownloadGb} GiB download
-                      </div>
-                    ) : null}
-                  </dl>
-                ) : null}
-
-                <details className="group/details mt-3 border-t border-slate-800/70 pt-2">
-                  <summary className="cursor-pointer list-none text-[10px] text-slate-500 outline-none hover:text-slate-300 focus-visible:ring-2 focus-visible:ring-violet-400/30">
-                    Details
-                  </summary>
-                  <div className="mt-2 space-y-2 text-[10px] leading-4 text-slate-500">
-                    <p className="break-all font-mono text-slate-600">{model.id}</p>
-                    <p className="break-words">{model.capabilities.join(" · ")}</p>
-                    <p>
-                      {model.license.name} · {model.license.commercialUse.replaceAll("-", " ")}
-                    </p>
-                    <p className="capitalize">
-                      {model.installationStatus.replaceAll("-", " ")}
-                    </p>
-                    {model.runtimeReadinessDiagnostic ? (
-                      <p className={model.runtimeReadiness === "failed" ? "text-rose-300/70" : "text-amber-200/60"}>
-                        {model.runtimeReadinessDiagnostic}
-                      </p>
-                    ) : null}
-                    {model.limitation ? (
-                      <p className="text-amber-200/60">{model.limitation}</p>
-                    ) : null}
-                  </div>
-                </details>
-
-                {(model.target === "remote" ||
-                  model.management.acquisition === "external-runtime") &&
-                !model.configured ? (
-                  <div className="mt-auto pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={onOpenProviderSettings}
-                      className="w-full border-slate-700 bg-slate-950/40 text-slate-300 hover:bg-slate-900"
-                    >
-                      Configure provider <ExternalLink className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ) : model.management.verification === "model-probe" &&
-                  model.installed &&
-                  !ready ? (
-                  <div className="mt-auto pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={
-                        !modelProbeSupported ||
-                        modelProbeLoadingId !== null ||
-                        localDiffusers?.ready !== true
-                      }
-                      title={
-                        localDiffusers?.ready === true
-                          ? "Load this checkpoint once in the isolated offline worker"
-                          : "Install the pinned Local Diffusers runtime before verification"
-                      }
-                      onClick={() => onProbeModel(model.id)}
-                      className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
-                    >
-                      {modelProbeLoadingId === model.id ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <FileCheck2 className="h-4 w-4" />
-                      )}
-                      {modelProbeLoadingId === model.id ? "Verifying model…" : "Verify model"}
-                    </Button>
-                  </div>
-                ) : model.management.verification === "runtime-probe" &&
-                  model.installed &&
-                  !ready ? (
-                  <div className="mt-auto pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={localRuntimeLoading}
-                      onClick={onRefreshLocalRuntime}
-                      className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
-                    >
-                      {localRuntimeLoading ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                      {localRuntimeLoading ? "Probing runtime…" : "Re-probe runtime"}
-                    </Button>
-                  </div>
-                ) : model.management.acquisition === "file-import" && !ready ? (
-                  <div className="mt-auto pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={
-                        !modelImportSupported ||
-                        modelImportLoading ||
-                        addonImportLoading
-                      }
-                      onClick={onChooseModelImport}
-                      className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
-                    >
-                      <Upload className="h-4 w-4" /> Import checkpoint again
-                    </Button>
-                  </div>
-                ) : model.management.acquisition === "workspace-discovery" &&
-                  !ready ? (
-                  <div className="mt-auto pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={workspaceModelsLoading}
-                      onClick={onRefreshWorkspaceModels}
-                      className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
-                    >
-                      {workspaceModelsLoading ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                      {workspaceModelsLoading ? "Scanning workspace…" : "Scan workspace models"}
-                    </Button>
-                  </div>
-                ) : model.management.acquisition === "managed-install" &&
-                  !ready ? (
-                  <div className="mt-auto space-y-3 pt-4">
-                      {modelInstallJob ? (
-                        <div className="rounded-lg border border-violet-400/15 bg-violet-950/10 px-3 py-2.5" aria-live="polite">
-                          <div className="flex items-center justify-between gap-3 text-[10px]">
-                            <span className="capitalize text-violet-200">{modelInstallJob.status}</span>
-                            <span className="font-mono text-violet-300">{Math.round(modelInstallJob.progress * 100)}%</span>
-                          </div>
-                          <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-800">
-                            <div className="h-full rounded-full bg-violet-400 transition-[width]" style={{ width: `${Math.max(1, modelInstallJob.progress * 100)}%` }} />
-                          </div>
-                          {modelInstallJob.failure ? (
-                            <div className="mt-2 rounded-md border border-rose-300/15 bg-rose-400/5 p-2 text-[9px] leading-4 text-rose-100/75">
-                              <span className="font-mono text-[8px] text-rose-200/55">
-                                {modelInstallJob.failure.code}
-                              </span>
-                              <p>{modelInstallJob.failure.message}</p>
-                            </div>
-                          ) : modelInstallJob.error ? (
-                            <p className="mt-2 text-[10px] leading-4 text-rose-200">
-                              {modelInstallJob.error}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={installLoading}
-                        onClick={() => onReviewInstall(model.id)}
-                        className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+              return (
+                <section
+                  key={group.id}
+                  aria-labelledby={`media-${group.id}-models-heading`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2
+                        id={`media-${group.id}-models-heading`}
+                        className="flex items-center gap-2 text-sm font-semibold text-slate-100"
                       >
-                        {installLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {modelInstallJob ? "Open installation details" : "Review installation"}
-                      </Button>
+                        <GroupIcon
+                          className={cn("h-4 w-4", group.iconClassName)}
+                        />
+                        {group.title}
+                      </h2>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                        {group.description}
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="border-slate-700 text-[9px] text-slate-400"
+                    >
+                      {group.models.length} on page
+                    </Badge>
                   </div>
-                ) : ready &&
-                  (model.management.acquisition === "managed-install" ||
-                    model.management.acquisition === "file-import") ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={removalLoading}
-                    onClick={() => onReviewRemoval(model.id)}
-                    className="mt-auto w-full pt-4 text-slate-500 hover:bg-rose-950/20 hover:text-rose-200"
-                  >
-                    {removalLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    Review removal
-                  </Button>
-                ) : null}
-              </article>
-            );
-                })}
-              </div>
-              </section>
-            );
-          })}
+
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    {group.models.map((model) => {
+                      const ready = isMediaModelReady(model);
+                      const TargetIcon =
+                        model.target === "remote" ? Cloud : Cpu;
+                      const modelInstallJob =
+                        installJob?.modelId === model.id ? installJob : null;
+                      return (
+                        <article
+                          key={model.id}
+                          className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/25 p-4"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div
+                                className={cn(
+                                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                                  model.target === "remote"
+                                    ? "bg-sky-950/50 text-sky-300"
+                                    : "bg-violet-950/50 text-violet-300",
+                                )}
+                              >
+                                <TargetIcon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="break-words text-sm leading-5 font-semibold text-slate-100">
+                                  {model.displayName}
+                                </h3>
+                                <div className="mt-1 break-words text-[10px] leading-4 text-slate-500">
+                                  {model.target === "remote"
+                                    ? "Remote"
+                                    : model.bundled
+                                      ? "Built in"
+                                      : model.userImported
+                                        ? "Imported"
+                                        : "Local"}{" "}
+                                  · {model.family}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 text-[11px]",
+                                  ready ? "text-emerald-300" : "text-amber-300",
+                                )}
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                                {readinessLabel(model)}
+                              </span>
+                              {model.lifecycle !== "active" &&
+                              model.lifecycle !== "preview" ? (
+                                <span className="text-[9px] text-amber-300">
+                                  {model.lifecycle.replaceAll("-", " ")}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {model.target === "local" &&
+                          (model.minVramGb != null ||
+                            model.expectedDownloadGb != null) ? (
+                            <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-slate-500">
+                              {model.minVramGb != null ? (
+                                <div className="flex items-center gap-2 text-slate-500">
+                                  <HardDrive className="h-3.5 w-3.5" />{" "}
+                                  {model.minVramGb} GB VRAM
+                                </div>
+                              ) : null}
+                              {model.expectedDownloadGb != null ? (
+                                <div className="flex items-center gap-2 text-slate-500">
+                                  <Download className="h-3.5 w-3.5" />{" "}
+                                  {model.expectedDownloadGb} GiB download
+                                </div>
+                              ) : null}
+                            </dl>
+                          ) : null}
+
+                          <details className="group/details mt-3 border-t border-slate-800/70 pt-2">
+                            <summary className="cursor-pointer list-none text-[10px] text-slate-500 outline-none hover:text-slate-300 focus-visible:ring-2 focus-visible:ring-violet-400/30">
+                              Details
+                            </summary>
+                            <div className="mt-2 space-y-2 text-[10px] leading-4 text-slate-500">
+                              <p className="break-all font-mono text-slate-600">
+                                {model.id}
+                              </p>
+                              <p className="break-words">
+                                {model.capabilities.join(" · ")}
+                              </p>
+                              <p>
+                                {model.license.name} ·{" "}
+                                {model.license.commercialUse.replaceAll(
+                                  "-",
+                                  " ",
+                                )}
+                              </p>
+                              <p className="capitalize">
+                                {model.installationStatus.replaceAll("-", " ")}
+                              </p>
+                              {model.runtimeReadinessDiagnostic ? (
+                                <p
+                                  className={
+                                    model.runtimeReadiness === "failed"
+                                      ? "text-rose-300/70"
+                                      : "text-amber-200/60"
+                                  }
+                                >
+                                  {model.runtimeReadinessDiagnostic}
+                                </p>
+                              ) : null}
+                              {model.limitation ? (
+                                <p className="text-amber-200/60">
+                                  {model.limitation}
+                                </p>
+                              ) : null}
+                            </div>
+                          </details>
+
+                          {(model.target === "remote" ||
+                            model.management.acquisition ===
+                              "external-runtime") &&
+                          !model.configured ? (
+                            <div className="mt-auto pt-4">
+                              <Button
+                                variant="outline"
+                                onClick={onOpenProviderSettings}
+                                className="w-full border-slate-700 bg-slate-950/40 text-slate-300 hover:bg-slate-900"
+                              >
+                                Configure provider{" "}
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ) : model.management.verification === "model-probe" &&
+                            model.installed &&
+                            !ready ? (
+                            <div className="mt-auto pt-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={
+                                  !modelProbeSupported ||
+                                  modelProbeLoadingId !== null ||
+                                  localDiffusers?.ready !== true
+                                }
+                                title={
+                                  localDiffusers?.ready === true
+                                    ? "Load this checkpoint once in the isolated offline worker"
+                                    : "Install the pinned Local Diffusers runtime before verification"
+                                }
+                                onClick={() => onProbeModel(model.id)}
+                                className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                              >
+                                {modelProbeLoadingId === model.id ? (
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileCheck2 className="h-4 w-4" />
+                                )}
+                                {modelProbeLoadingId === model.id
+                                  ? "Verifying model…"
+                                  : "Verify model"}
+                              </Button>
+                            </div>
+                          ) : model.management.verification ===
+                              "runtime-probe" &&
+                            model.installed &&
+                            !ready ? (
+                            <div className="mt-auto pt-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={localRuntimeLoading}
+                                onClick={onRefreshLocalRuntime}
+                                className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                              >
+                                {localRuntimeLoading ? (
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                                {localRuntimeLoading
+                                  ? "Probing runtime…"
+                                  : "Re-probe runtime"}
+                              </Button>
+                            </div>
+                          ) : model.management.acquisition === "file-import" &&
+                            !ready ? (
+                            <div className="mt-auto pt-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={
+                                  !modelImportSupported ||
+                                  modelImportLoading ||
+                                  addonImportLoading
+                                }
+                                onClick={onChooseModelImport}
+                                className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                              >
+                                <Upload className="h-4 w-4" /> Import checkpoint
+                                again
+                              </Button>
+                            </div>
+                          ) : model.management.acquisition ===
+                              "workspace-discovery" && !ready ? (
+                            <div className="mt-auto pt-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={workspaceModelsLoading}
+                                onClick={onRefreshWorkspaceModels}
+                                className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                              >
+                                {workspaceModelsLoading ? (
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                                {workspaceModelsLoading
+                                  ? "Scanning workspace…"
+                                  : "Scan workspace models"}
+                              </Button>
+                            </div>
+                          ) : model.management.acquisition ===
+                              "managed-install" && !ready ? (
+                            <div className="mt-auto space-y-3 pt-4">
+                              {modelInstallJob ? (
+                                <div
+                                  className="rounded-lg border border-violet-400/15 bg-violet-950/10 px-3 py-2.5"
+                                  aria-live="polite"
+                                >
+                                  <div className="flex items-center justify-between gap-3 text-[10px]">
+                                    <span className="capitalize text-violet-200">
+                                      {modelInstallJob.status}
+                                    </span>
+                                    <span className="font-mono text-violet-300">
+                                      {Math.round(
+                                        modelInstallJob.progress * 100,
+                                      )}
+                                      %
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-800">
+                                    <div
+                                      className="h-full rounded-full bg-violet-400 transition-[width]"
+                                      style={{
+                                        width: `${Math.max(1, modelInstallJob.progress * 100)}%`,
+                                      }}
+                                    />
+                                  </div>
+                                  {modelInstallJob.failure ? (
+                                    <div className="mt-2 rounded-md border border-rose-300/15 bg-rose-400/5 p-2 text-[9px] leading-4 text-rose-100/75">
+                                      <span className="font-mono text-[8px] text-rose-200/55">
+                                        {modelInstallJob.failure.code}
+                                      </span>
+                                      <p>{modelInstallJob.failure.message}</p>
+                                    </div>
+                                  ) : modelInstallJob.error ? (
+                                    <p className="mt-2 text-[10px] leading-4 text-rose-200">
+                                      {modelInstallJob.error}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={installLoading}
+                                onClick={() => onReviewInstall(model.id)}
+                                className="w-full border-violet-400/25 bg-violet-950/10 text-violet-200 hover:bg-violet-950/30"
+                              >
+                                {installLoading ? (
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
+                                {modelInstallJob
+                                  ? "Open installation details"
+                                  : "Review installation"}
+                              </Button>
+                            </div>
+                          ) : ready &&
+                            (model.management.acquisition ===
+                              "managed-install" ||
+                              model.management.acquisition ===
+                                "file-import") ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              disabled={removalLoading}
+                              onClick={() => onReviewRemoval(model.id)}
+                              className="mt-auto w-full pt-4 text-slate-500 hover:bg-rose-950/20 hover:text-rose-200"
+                            >
+                              {removalLoading ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                              Review removal
+                            </Button>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })
+          )}
           <MediaPagination
             page={modelPagination.page}
             pageCount={modelPagination.pageCount}

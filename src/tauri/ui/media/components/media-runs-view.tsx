@@ -28,6 +28,9 @@ import type {
 import { paginateMediaItems } from "../../../../core/media/gallery.js";
 import { matchesMediaRunQuery } from "../../../../core/media/run-library.js";
 import { Badge } from "../../components/ui/badge";
+import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+import type { CommandDefinition } from "../../commands/command-types";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { SearchField } from "../../components/ui/search-field";
@@ -196,23 +199,28 @@ const RunInspector = ({
       ? "Fixture"
       : run.executor === "openai-image-api"
         ? "OpenAI image generation"
-      : run.executor === "mock-remote-provider"
-        ? "Remote adapter"
-        : run.executor === "local-transform"
-          ? "Local transform"
-          : run.executor === "local-analysis"
-            ? "Local analysis"
-            : "Local import";
+        : run.executor === "mock-remote-provider"
+          ? "Remote adapter"
+          : run.executor === "local-transform"
+            ? "Local transform"
+            : run.executor === "local-analysis"
+              ? "Local analysis"
+              : "Local import";
   const reviewAssets = pendingReview
     ? pendingReview.candidateAssetIds
         .map((assetId) => run.assets.find((asset) => asset.id === assetId))
         .filter((asset): asset is MediaAssetRecord => Boolean(asset))
     : [];
-  const decidedReview = [...run.humanReviews].reverse().find(
-    (review) => review.status === "approved" || review.status === "rejected",
-  );
+  const decidedReview = [...run.humanReviews]
+    .reverse()
+    .find(
+      (review) => review.status === "approved" || review.status === "rejected",
+    );
   const outputStat = pendingReview
-    ? { label: "Candidates", value: `${pendingReview.candidateAssetIds.length} ready` }
+    ? {
+        label: "Candidates",
+        value: `${pendingReview.candidateAssetIds.length} ready`,
+      }
     : decidedReview
       ? decidedReview.status === "rejected"
         ? { label: "Outcome", value: "Rejected" }
@@ -220,7 +228,10 @@ const RunInspector = ({
             label: "Approved",
             value: `${decidedReview.selectedAssetIds.length} selected`,
           }
-      : { label: "Published", value: `${run.assets.length} / ${run.outputCount}` };
+      : {
+          label: "Published",
+          value: `${run.assets.length} / ${run.outputCount}`,
+        };
   const reviewCommentValid =
     !pendingReview?.requireComment || comment.trim().length > 0;
   const toggleReviewAsset = (assetId: string): void => {
@@ -292,9 +303,7 @@ const RunInspector = ({
       <div className="mt-5 grid grid-cols-2 gap-2 text-[10px]">
         <div className="rounded-lg bg-slate-950/60 p-2.5">
           <span className="text-slate-600">Executor</span>
-          <span className="mt-1 block text-slate-300">
-            {executorLabel}
-          </span>
+          <span className="mt-1 block text-slate-300">{executorLabel}</span>
         </div>
         <div className="rounded-lg bg-slate-950/60 p-2.5">
           <span className="text-slate-600">{outputStat.label}</span>
@@ -413,7 +422,9 @@ const RunInspector = ({
                       }
                       disabled={
                         humanReviewPending ||
-                        (!selected && atLimit && pendingReview.maxSelections > 1)
+                        (!selected &&
+                          atLimit &&
+                          pendingReview.maxSelections > 1)
                       }
                       onClick={() => toggleReviewAsset(asset.id)}
                       className={cn(
@@ -568,7 +579,8 @@ const RunInspector = ({
               variant="outline"
               className="border-sky-400/20 text-[9px] text-sky-200"
             >
-              {planSnapshot.nodes.length} nodes · {planSnapshot.steps.length} steps
+              {planSnapshot.nodes.length} nodes · {planSnapshot.steps.length}{" "}
+              steps
             </Badge>
           </div>
           {run.executor === "deterministic-fixture" ? (
@@ -576,14 +588,18 @@ const RunInspector = ({
               role="note"
               className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-[9px] leading-4 text-amber-100/80"
             >
-              Fixture evidence only: remote, paid, and model steps below describe the pinned plan but were not submitted or executed. The stored images came from the deterministic fixture executor.
+              Fixture evidence only: remote, paid, and model steps below
+              describe the pinned plan but were not submitted or executed. The
+              stored images came from the deterministic fixture executor.
             </p>
           ) : run.executor === "mock-remote-provider" ? (
             <p
               role="note"
               className="mt-3 rounded-lg border border-violet-300/20 bg-violet-300/8 px-3 py-2 text-[9px] leading-4 text-violet-100/80"
             >
-              Provider durability simulation: this run exercises submission and reconciliation states against the built-in mock adapter; it does not contact or charge a third party.
+              Provider durability simulation: this run exercises submission and
+              reconciliation states against the built-in mock adapter; it does
+              not contact or charge a third party.
             </p>
           ) : null}
           <ol className="mt-3 space-y-2.5" aria-label="Expanded plan nodes">
@@ -644,7 +660,8 @@ const RunInspector = ({
             {run.flowRevisionId
               ? `revision ${run.flowRevisionId} · `
               : "unrevisioned run · "}
-            flow {planSnapshot.flowFingerprint.slice(0, 16)}… · schema {planSnapshot.schemaVersion}
+            flow {planSnapshot.flowFingerprint.slice(0, 16)}… · schema{" "}
+            {planSnapshot.schemaVersion}
           </p>
         </section>
       ) : null}
@@ -691,12 +708,14 @@ const RunInspector = ({
                   }
                   className="mt-3 h-8 w-full bg-violet-300 text-[10px] text-slate-950 hover:bg-violet-200"
                 >
-                  {providerReviewPending ? "Reconciling…" : "Lookup original request"}
+                  {providerReviewPending
+                    ? "Reconciling…"
+                    : "Lookup original request"}
                 </Button>
               ) : (
                 <p className="mt-2 text-[9px] leading-4 text-amber-100/60">
-                  This endpoint has no documented request lookup. Check the provider usage
-                  dashboard before closing this guard.
+                  This endpoint has no documented request lookup. Check the
+                  provider usage dashboard before closing this guard.
                 </p>
               )}
               <Button
@@ -738,13 +757,15 @@ const RunInspector = ({
             <div>
               <dt className="text-slate-600">Adapter</dt>
               <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.adapterId} · v{providerJob.policy.adapterVersion}
+                {providerJob.policy.adapterId} · v
+                {providerJob.policy.adapterVersion}
               </dd>
             </div>
             <div>
               <dt className="text-slate-600">Endpoint / region</dt>
               <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.endpointVersion} · {providerJob.policy.region}
+                {providerJob.policy.endpointVersion} ·{" "}
+                {providerJob.policy.region}
               </dd>
             </div>
             <div>
@@ -780,7 +801,8 @@ const RunInspector = ({
             <div>
               <dt className="text-slate-600">Uploads</dt>
               <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.uploadAssetCount} assets · {providerJob.policy.uploadBytes} B
+                {providerJob.policy.uploadAssetCount} assets ·{" "}
+                {providerJob.policy.uploadBytes} B
               </dd>
             </div>
             <div>
@@ -794,7 +816,8 @@ const RunInspector = ({
             <p>{providerJob.policy.retryPolicy}</p>
             <p className="mt-1">{providerJob.policy.cancellationSemantics}</p>
             <p className="mt-1 font-mono text-slate-600">
-              request sha256 {providerJob.requestDigest.slice(0, 16)}… · {providerJob.pollAttempts} polls
+              request sha256 {providerJob.requestDigest.slice(0, 16)}… ·{" "}
+              {providerJob.pollAttempts} polls
             </p>
           </div>
         </section>
@@ -895,6 +918,155 @@ export const MediaRunsView = ({
       runListRef.current?.scrollTo({ top: 0 });
     });
   };
+  const runsCommandStateRef = useRef({
+    onCancel,
+    onCreate,
+    onInspectInFlow,
+    onRefresh,
+    onRetry,
+    onSelect,
+    runs,
+    selectedRun,
+  });
+  runsCommandStateRef.current = {
+    onCancel,
+    onCreate,
+    onInspectInFlow,
+    onRefresh,
+    onRetry,
+    onSelect,
+    runs,
+    selectedRun,
+  };
+  const runCommands = useMemo<readonly CommandDefinition[]>(
+    () => [
+      {
+        id: "media.activity.recipe.new",
+        title: "New media recipe",
+        group: "Media Activity",
+        scope: { kind: "view", ownerId: "media" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("media.activity.recipe.new"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        execute: () => runsCommandStateRef.current.onCreate(),
+      },
+      {
+        id: "media.activity.refresh",
+        title: "Refresh media runs",
+        group: "Media Activity",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        execute: () => runsCommandStateRef.current.onRefresh(),
+      },
+      {
+        id: "media.activity.run.open",
+        title: "Open media run",
+        group: "Media Activity",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          runsCommandStateRef.current.runs.some(isRuntimeRun)
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No runtime runs" },
+        children: () => ({
+          id: "media-activity-run-open",
+          title: "Open media run",
+          searchPlaceholder: "Choose run",
+          groups: [
+            {
+              id: "runs",
+              items: runsCommandStateRef.current.runs
+                .filter(isRuntimeRun)
+                .map((run) => ({
+                  id: run.id,
+                  title: run.flowName,
+                  keywords: [run.prompt, run.status, run.modelLabel],
+                  current:
+                    runsCommandStateRef.current.selectedRun?.id === run.id,
+                  execute: () => runsCommandStateRef.current.onSelect(run.id),
+                })),
+            },
+          ],
+        }),
+      },
+      {
+        id: "media.activity.run.inspect-flow",
+        title: "Inspect selected run in workflow",
+        group: "Media Activity",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () =>
+          runsCommandStateRef.current.selectedRun?.planSnapshot
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "The selected run has no workflow snapshot",
+              },
+        execute: () => {
+          const run = runsCommandStateRef.current.selectedRun;
+          if (run?.planSnapshot)
+            runsCommandStateRef.current.onInspectInFlow(run);
+        },
+      },
+      {
+        id: "media.activity.run.cancel",
+        title: "Cancel selected run",
+        group: "Media Activity",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const run = runsCommandStateRef.current.selectedRun;
+          return run &&
+            run.executor !== "openai-image-api" &&
+            ["queued", "running", "waiting-for-review"].includes(run.status)
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "The selected run cannot be canceled",
+              };
+        },
+        execute: () => {
+          const run = runsCommandStateRef.current.selectedRun;
+          if (run) runsCommandStateRef.current.onCancel(run.id);
+        },
+      },
+      {
+        id: "media.activity.run.retry",
+        title: "Retry selected run",
+        group: "Media Activity",
+        scope: { kind: "view", ownerId: "media" },
+        palette: "visible",
+        availability: () => {
+          const run = runsCommandStateRef.current.selectedRun;
+          return run &&
+            run.executor === "deterministic-fixture" &&
+            ["failed", "canceled"].includes(run.status) &&
+            run.humanReviews.length === 0
+            ? { state: "enabled" }
+            : {
+                state: "disabled",
+                reason: "The selected run cannot be retried",
+              };
+        },
+        execute: () => {
+          const run = runsCommandStateRef.current.selectedRun;
+          if (run) runsCommandStateRef.current.onRetry(run.id);
+        },
+      },
+    ],
+    [runsCommandStateRef],
+  );
+  useOptionalRegisterCommands(runCommands);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950 px-5 py-6 sm:px-7 sm:py-7">
@@ -937,7 +1109,10 @@ export const MediaRunsView = ({
               iconClassName="text-slate-600"
               className="border-slate-800 bg-slate-900/50 text-slate-300 placeholder:text-slate-600"
             />
-            <span aria-live="polite" className="text-[10px] tabular-nums text-slate-600">
+            <span
+              aria-live="polite"
+              className="text-[10px] tabular-nums text-slate-600"
+            >
               {filteredRuns.length} of {runs.length} runs
             </span>
           </div>
@@ -974,97 +1149,101 @@ export const MediaRunsView = ({
                 className="sticky top-0 z-10 mb-3 bg-slate-950/95 backdrop-blur"
               />
               <div className="overflow-hidden rounded-2xl border border-slate-800">
-              {runPagination.items.map((run) => {
-                const runtimeRun = isRuntimeRun(run);
-                const selected = selectedRun?.id === run.id;
-                const content = (
-                  <>
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="min-w-0 break-words text-sm font-semibold text-slate-100">
-                            {run.flowName}
-                          </h2>
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1.5 text-[11px] capitalize",
-                              STATUS_STYLES[run.status],
-                            )}
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                            {run.status}
-                          </span>
+                {runPagination.items.map((run) => {
+                  const runtimeRun = isRuntimeRun(run);
+                  const selected = selectedRun?.id === run.id;
+                  const content = (
+                    <>
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="min-w-0 break-words text-sm font-semibold text-slate-100">
+                              {run.flowName}
+                            </h2>
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1.5 text-[11px] capitalize",
+                                STATUS_STYLES[run.status],
+                              )}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                              {run.status}
+                            </span>
+                          </div>
+                          <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
+                            {run.prompt || "No prompt supplied"}
+                          </p>
                         </div>
-                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
-                          {run.prompt || "No prompt supplied"}
-                        </p>
-                      </div>
-                      <div className="text-right text-[10px] text-slate-600">
-                        {formatCreatedAt(run.createdAt)}
-                      </div>
-                    </div>
-                    {runtimeRun ? (
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between text-[10px] text-slate-600">
-                          <span className="min-w-0 break-words pr-2">{run.currentStep}</span>
-                          <span className="shrink-0 tabular-nums">
-                            {Math.round(run.progress * 100)}%
-                          </span>
-                        </div>
-                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-800">
-                          <div
-                            className="h-full rounded-full bg-cyan-400 transition-[width]"
-                            style={{ width: `${Math.round(run.progress * 100)}%` }}
-                          />
+                        <div className="text-right text-[10px] text-slate-600">
+                          {formatCreatedAt(run.createdAt)}
                         </div>
                       </div>
-                    ) : null}
-                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-slate-500">
-                      <span className="flex items-center gap-1.5">
-                        <Cpu className="h-3.5 w-3.5" /> {run.modelLabel}
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <RadioTower className="h-3.5 w-3.5" />
-                        {run.target ?? "unresolved"}
-                      </span>
-                      <span>{run.outputCount} outputs</span>
-                      {run.diagnosticCount > 0 ? (
-                        <span>{run.diagnosticCount} diagnostics</span>
+                      {runtimeRun ? (
+                        <div className="mt-4">
+                          <div className="flex items-center justify-between text-[10px] text-slate-600">
+                            <span className="min-w-0 break-words pr-2">
+                              {run.currentStep}
+                            </span>
+                            <span className="shrink-0 tabular-nums">
+                              {Math.round(run.progress * 100)}%
+                            </span>
+                          </div>
+                          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-800">
+                            <div
+                              className="h-full rounded-full bg-cyan-400 transition-[width]"
+                              style={{
+                                width: `${Math.round(run.progress * 100)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
                       ) : null}
-                    </div>
-                  </>
-                );
+                      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-slate-500">
+                        <span className="flex items-center gap-1.5">
+                          <Cpu className="h-3.5 w-3.5" /> {run.modelLabel}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <RadioTower className="h-3.5 w-3.5" />
+                          {run.target ?? "unresolved"}
+                        </span>
+                        <span>{run.outputCount} outputs</span>
+                        {run.diagnosticCount > 0 ? (
+                          <span>{run.diagnosticCount} diagnostics</span>
+                        ) : null}
+                      </div>
+                    </>
+                  );
 
-                return runtimeRun ? (
-                  <button
-                    key={run.id}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => onSelect(run.id)}
-                    className={cn(
-                      "block w-full border-b border-slate-800/80 bg-slate-900/25 p-5 text-left outline-none transition-colors last:border-b-0 hover:bg-slate-900/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60",
-                      selected && "bg-slate-900/65",
-                    )}
-                  >
-                    {content}
-                  </button>
-                ) : (
-                  <article
-                    key={run.id}
-                    className="border-b border-slate-800/80 bg-slate-900/25 p-5 last:border-b-0"
-                  >
-                    {content}
-                  </article>
-                );
-              })}
-              {filteredRuns.length === 0 ? (
-                <EmptyState
-                  icon={Search}
-                  title={`No runs match “${query.trim()}”.`}
-                  role="status"
-                  className="min-h-52 rounded-none border-0 bg-transparent"
-                />
-              ) : null}
+                  return runtimeRun ? (
+                    <button
+                      key={run.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => onSelect(run.id)}
+                      className={cn(
+                        "block w-full border-b border-slate-800/80 bg-slate-900/25 p-5 text-left outline-none transition-colors last:border-b-0 hover:bg-slate-900/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60",
+                        selected && "bg-slate-900/65",
+                      )}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <article
+                      key={run.id}
+                      className="border-b border-slate-800/80 bg-slate-900/25 p-5 last:border-b-0"
+                    >
+                      {content}
+                    </article>
+                  );
+                })}
+                {filteredRuns.length === 0 ? (
+                  <EmptyState
+                    icon={Search}
+                    title={`No runs match “${query.trim()}”.`}
+                    role="status"
+                    className="min-h-52 rounded-none border-0 bg-transparent"
+                  />
+                ) : null}
               </div>
             </div>
             {selectedRun ? (

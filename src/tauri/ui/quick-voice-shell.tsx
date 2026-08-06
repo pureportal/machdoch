@@ -30,6 +30,12 @@ import {
 } from "./runtime";
 import { Button } from "./components/ui/button";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
+import { CommandProvider } from "./commands/command-context";
+import { getDefaultCommandShortcut } from "./commands/command-defaults";
+import {
+  asPaletteCommands,
+  type CommandDefinition,
+} from "./commands/command-types";
 
 const VOICE_ACTIVITY_THRESHOLD = 0.012;
 const VOICE_ACTIVITY_FRAME_COUNT = 2;
@@ -109,12 +115,15 @@ export const QuickVoiceShell = (): JSX.Element => {
     (delay = 900): void => {
       clearHideTimeout();
       hideTimeoutRef.current = window.setTimeout(() => {
-        void controller.flushPersistence()
+        void controller
+          .flushPersistence()
           .catch((error) => {
             console.error("Failed to flush Quick Voice state", error);
           })
           .finally(() => {
-            void getCurrentWindow().close().catch(() => undefined);
+            void getCurrentWindow()
+              .close()
+              .catch(() => undefined);
           });
       }, delay);
     },
@@ -165,10 +174,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     try {
       const recordedBlob = await stopRecording();
 
-      if (
-        !recordedBlob ||
-        operationSequenceRef.current !== operationSequence
-      ) {
+      if (!recordedBlob || operationSequenceRef.current !== operationSequence) {
         return;
       }
 
@@ -292,10 +298,7 @@ export const QuickVoiceShell = (): JSX.Element => {
   ]);
 
   useEffect(() => {
-    if (
-      controller.quickVoiceSettingsLoaded &&
-      pendingStartRequestRef.current
-    ) {
+    if (controller.quickVoiceSettingsLoaded && pendingStartRequestRef.current) {
       pendingStartRequestRef.current = false;
       void startRecording();
     }
@@ -360,7 +363,9 @@ export const QuickVoiceShell = (): JSX.Element => {
           console.error("Failed to position Quick Voice window", error);
         }
 
-        const isVisible = await getCurrentWindow().isVisible().catch(() => false);
+        const isVisible = await getCurrentWindow()
+          .isVisible()
+          .catch(() => false);
 
         if (
           !disposed &&
@@ -428,12 +433,15 @@ export const QuickVoiceShell = (): JSX.Element => {
     clearHideTimeout();
     setFinalizing(false);
     setStatusText(null);
-    void controller.flushPersistence()
+    void controller
+      .flushPersistence()
       .catch((error) => {
         console.error("Failed to flush Quick Voice state", error);
       })
       .finally(() => {
-        void getCurrentWindow().close().catch(() => undefined);
+        void getCurrentWindow()
+          .close()
+          .catch(() => undefined);
       });
   }, [
     cancelRecording,
@@ -441,6 +449,112 @@ export const QuickVoiceShell = (): JSX.Element => {
     controller.flushPersistence,
     resetVoiceActivity,
   ]);
+  const openFullApp = useCallback((): void => {
+    void revealMainWindow().catch((error) => {
+      console.error("Failed to reveal main window", error);
+    });
+  }, []);
+  const quickVoiceCommandStateRef = useRef({
+    browserSupported,
+    enabled: desktopSettings.quickVoiceEnabled,
+    finalizing,
+    hasConfiguredProvider: configuredProvider !== null,
+    hideQuickVoice,
+    loaded: controller.quickVoiceSettingsLoaded,
+    openFullApp,
+    recording,
+    startRecording,
+    stopRecording: finalizeRecording,
+    transcribing,
+  });
+  quickVoiceCommandStateRef.current = {
+    browserSupported,
+    enabled: desktopSettings.quickVoiceEnabled,
+    finalizing,
+    hasConfiguredProvider: configuredProvider !== null,
+    hideQuickVoice,
+    loaded: controller.quickVoiceSettingsLoaded,
+    openFullApp,
+    recording,
+    startRecording,
+    stopRecording: finalizeRecording,
+    transcribing,
+  };
+  const quickVoiceCommands = useMemo<readonly CommandDefinition[]>(() => {
+    const state = () => quickVoiceCommandStateRef.current;
+    const scope = { kind: "view", ownerId: "quick-voice" } as const;
+    const startAvailability = () => {
+      const current = state();
+      if (current.recording) return { state: "hidden" } as const;
+      if (current.finalizing || current.transcribing) {
+        return {
+          state: "disabled",
+          reason: "Transcription is in progress",
+        } as const;
+      }
+      if (!current.loaded) {
+        return { state: "disabled", reason: "Settings are loading" } as const;
+      }
+      if (!current.enabled) {
+        return {
+          state: "disabled",
+          reason: "Quick Voice is disabled",
+        } as const;
+      }
+      if (!current.browserSupported) {
+        return {
+          state: "disabled",
+          reason: "Microphone recording is unavailable",
+        } as const;
+      }
+      if (!current.hasConfiguredProvider) {
+        return {
+          state: "disabled",
+          reason: "A speech-to-text provider is required",
+        } as const;
+      }
+      return { state: "enabled" } as const;
+    };
+    return asPaletteCommands([
+      {
+        id: "quick-voice.recording.start",
+        title: "Start recording",
+        group: "Quick Voice",
+        scope,
+        availability: startAvailability,
+        execute: () => state().startRecording(),
+      },
+      {
+        id: "quick-voice.recording.stop",
+        title: "Stop and send recording",
+        group: "Quick Voice",
+        scope,
+        availability: () =>
+          state().recording ? { state: "enabled" } : { state: "hidden" },
+        execute: () => state().stopRecording(),
+      },
+      {
+        id: "quick-voice.app.open",
+        title: "Open full app",
+        group: "Quick Voice",
+        scope,
+        execute: () => state().openFullApp(),
+      },
+      {
+        id: "quick-voice.hide",
+        title: "Hide Quick Voice",
+        group: "Quick Voice",
+        scope,
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("quick-voice.hide"),
+            allowIn: ["document", "interactive-control"],
+          },
+        ],
+        execute: () => state().hideQuickVoice(),
+      },
+    ]);
+  }, []);
 
   useEffect(() => {
     void syncQuickVoiceWindowPosition().catch((error) => {
@@ -457,57 +571,59 @@ export const QuickVoiceShell = (): JSX.Element => {
         : desktopSettings.quickVoiceShortcut;
 
   return (
-    <div
-      className="app-shell fixed inset-0 overflow-hidden bg-transparent"
-      style={{ background: "transparent" }}
+    <CommandProvider
+      activeView="quick-voice"
+      commands={quickVoiceCommands}
+      windowKind="quick-voice"
     >
-      <VoiceInputOverlay
-        title="Quick Voice"
-        recording={recording}
-        transcribing={finalizing || transcribing}
-        level={level}
-        statusText={statusText}
-        idleBadgeText={idleBadgeText}
-        showIdleStartAction
-        primaryActionDisabled={finalizing || transcribing}
-        onPrimaryAction={() => {
-          if (recording) {
-            void finalizeRecording();
-            return;
-          }
+      <div
+        className="app-shell fixed inset-0 overflow-hidden bg-transparent"
+        style={{ background: "transparent" }}
+      >
+        <VoiceInputOverlay
+          title="Quick Voice"
+          recording={recording}
+          transcribing={finalizing || transcribing}
+          level={level}
+          statusText={statusText}
+          idleBadgeText={idleBadgeText}
+          showIdleStartAction
+          primaryActionDisabled={finalizing || transcribing}
+          onPrimaryAction={() => {
+            if (recording) {
+              void finalizeRecording();
+              return;
+            }
 
-          void startRecording();
-        }}
-        className="rounded-3xl border border-slate-800"
-        headerActions={
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Open full app"
-              onClick={() => {
-                void revealMainWindow().catch((error) => {
-                  console.error("Failed to reveal main window", error);
-                });
-              }}
-              className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-            >
-              <ArrowUpRight className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Hide quick voice"
-              onClick={hideQuickVoice}
-              className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </>
-        }
-      />
-    </div>
+            void startRecording();
+          }}
+          className="rounded-3xl border border-slate-800"
+          headerActions={
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Open full app"
+                onClick={openFullApp}
+                className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Hide quick voice"
+                onClick={hideQuickVoice}
+                className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </>
+          }
+        />
+      </div>
+    </CommandProvider>
   );
 };
