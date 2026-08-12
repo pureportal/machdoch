@@ -1736,7 +1736,9 @@ impl GenerateMediaVideoRequest {
         if self.fps == 0 || self.fps > 60 {
             return Err("fps must be between 1 and 60".to_string());
         }
-        if ltx_video && (!(9..=257).contains(&self.num_frames) || (self.num_frames - 1) % 8 != 0) {
+        if ltx_video
+            && (!(9..=257).contains(&self.num_frames) || !(self.num_frames - 1).is_multiple_of(8))
+        {
             return Err(
                 "LTX-Video numFrames must be from 9 through 257 in the required 8k+1 form"
                     .to_string(),
@@ -1744,7 +1746,8 @@ impl GenerateMediaVideoRequest {
         }
         let maximum_frames = if framepack_video { 129 } else { 121 };
         if !ltx_video
-            && (!(17..=maximum_frames).contains(&self.num_frames) || (self.num_frames - 1) % 4 != 0)
+            && (!(17..=maximum_frames).contains(&self.num_frames)
+                || !(self.num_frames - 1).is_multiple_of(4))
         {
             return Err(format!(
                 "{} numFrames must be from 17 through {maximum_frames} in the required 4k+1 form",
@@ -2552,7 +2555,7 @@ fn spawn_provider_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
     std::thread::Builder::new()
         .name(format!(
             "media-provider-{}",
-            &run_id.chars().take(24).collect::<String>()
+            run_id.chars().take(24).collect::<String>()
         ))
         .spawn(move || {
             let _sleep_inhibition = sleep_inhibition;
@@ -2592,7 +2595,7 @@ fn spawn_fixture_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
     std::thread::Builder::new()
         .name(format!(
             "media-fixture-{}",
-            &run_id.chars().take(24).collect::<String>()
+            run_id.chars().take(24).collect::<String>()
         ))
         .spawn(move || {
             let _sleep_inhibition = sleep_inhibition;

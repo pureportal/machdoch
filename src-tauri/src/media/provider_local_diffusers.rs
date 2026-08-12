@@ -1079,16 +1079,20 @@ fn installed_model(paths: &MediaRuntimePaths, model_id: &str) -> MediaResult<Ins
     })
 }
 
+struct ModelProbeRecord<'a> {
+    runtime_fingerprint: &'a str,
+    status: &'a str,
+    worker_version: &'a str,
+    pipeline_class: Option<&'a str>,
+    device_label: Option<&'a str>,
+    diagnostic: &'a str,
+    checked_at: &'a str,
+}
+
 fn record_model_probe(
     paths: &MediaRuntimePaths,
     model: &InstalledModel,
-    runtime_fingerprint: &str,
-    status: &str,
-    worker_version: &str,
-    pipeline_class: Option<&str>,
-    device_label: Option<&str>,
-    diagnostic: &str,
-    checked_at: &str,
+    record: ModelProbeRecord<'_>,
 ) -> MediaResult<()> {
     let connection = database::open(paths)?;
     connection
@@ -1111,13 +1115,13 @@ fn record_model_probe(
                 model.id,
                 model.revision,
                 model.digest,
-                runtime_fingerprint,
-                status,
-                worker_version,
-                pipeline_class,
-                device_label,
-                diagnostic,
-                checked_at,
+                record.runtime_fingerprint,
+                record.status,
+                record.worker_version,
+                record.pipeline_class,
+                record.device_label,
+                record.diagnostic,
+                record.checked_at,
             ],
         )
         .map_err(|error| format!("failed to persist model runtime readiness: {error}"))?;
@@ -1137,13 +1141,15 @@ fn persist_failed_model_probe(
     record_model_probe(
         paths,
         model,
-        runtime_fingerprint,
-        "failed",
-        worker_version,
-        pipeline_class,
-        runtime.device_label.as_deref(),
-        &diagnostic,
-        checked_at,
+        ModelProbeRecord {
+            runtime_fingerprint,
+            status: "failed",
+            worker_version,
+            pipeline_class,
+            device_label: runtime.device_label.as_deref(),
+            diagnostic: &diagnostic,
+            checked_at,
+        },
     )?;
     Ok(LocalModelRuntimeProbeResult {
         schema_version: 1,
@@ -1286,13 +1292,15 @@ pub(crate) fn probe_model(
     record_model_probe(
         paths,
         &model,
-        &fingerprint,
-        "ready",
-        &response.worker_version,
-        Some(&response.pipeline_class),
-        Some(&response.device_label),
-        &response.diagnostic,
-        &checked_at,
+        ModelProbeRecord {
+            runtime_fingerprint: &fingerprint,
+            status: "ready",
+            worker_version: &response.worker_version,
+            pipeline_class: Some(&response.pipeline_class),
+            device_label: Some(&response.device_label),
+            diagnostic: &response.diagnostic,
+            checked_at: &checked_at,
+        },
     )?;
     Ok(LocalModelRuntimeProbeResult {
         schema_version: 1,

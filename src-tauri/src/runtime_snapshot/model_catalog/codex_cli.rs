@@ -65,14 +65,13 @@ fn is_codex_cli_runtime_model(model_id: &str) -> bool {
 
         let suffix_parts = parts.collect::<Vec<_>>();
 
-        return match suffix_parts.as_slice() {
-            [] => true,
-            ["preview"] => true,
-            ["mini" | "nano" | "sol" | "terra" | "luna"] => true,
-            ["mini" | "nano", "preview"] => true,
-            ["codex", ..] => true,
-            _ => false,
-        };
+        return matches!(
+            suffix_parts.as_slice(),
+            [] | ["preview"]
+                | ["mini" | "nano" | "sol" | "terra" | "luna"]
+                | ["mini" | "nano", "preview"]
+                | ["codex", ..]
+        );
     }
 
     false

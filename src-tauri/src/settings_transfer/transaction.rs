@@ -2155,10 +2155,9 @@ mod tests {
 
     #[test]
     fn recovery_ralph_paths_match_only_the_managed_layout() {
-        for valid in ["ralph/flows/global-flow.json"] {
-            validate_backup_file_path(SettingsCategoryId::GlobalRalphFlows, valid)
-                .unwrap_or_else(|error| panic!("{valid} should be valid: {error}"));
-        }
+        let valid = "ralph/flows/global-flow.json";
+        validate_backup_file_path(SettingsCategoryId::GlobalRalphFlows, valid)
+            .unwrap_or_else(|error| panic!("{valid} should be valid: {error}"));
         for invalid in [
             "ralph/flows/nested/global-flow.json",
             "ralph/runs/global-flow.json",

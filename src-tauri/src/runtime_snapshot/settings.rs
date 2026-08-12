@@ -275,7 +275,7 @@ pub(super) fn normalize_user_memory_entries(
     }
 
     let mut normalized = merged.into_values().collect::<Vec<_>>();
-    normalized.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    normalized.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
     normalized.truncate(MAX_GLOBAL_MEMORY_ENTRIES);
     normalized
 }

@@ -75,7 +75,7 @@ fn normalize_remote_control_config(
     });
     config
         .paired_devices
-        .sort_by(|left, right| right.last_seen_at.cmp(&left.last_seen_at));
+        .sort_by_key(|device| std::cmp::Reverse(device.last_seen_at));
     config.paired_devices.truncate(MAX_PAIRED_DEVICES);
 
     let mut seen_command_ids = std::collections::HashSet::new();

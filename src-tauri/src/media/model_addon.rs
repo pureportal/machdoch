@@ -857,10 +857,19 @@ fn normalize_trigger_words(values: &[String]) -> MediaResult<Vec<String>> {
     Ok(normalized)
 }
 
+#[derive(Debug)]
+struct ValidatedAddonRequest {
+    display_name: String,
+    license_name: String,
+    trigger_words: Vec<String>,
+    token: Option<String>,
+    source_url: Option<String>,
+}
+
 fn validate_request(
     request: &ImportMediaModelAddonRequest,
     inspection: &MediaModelAddonImportInspection,
-) -> MediaResult<(String, String, Vec<String>, Option<String>, Option<String>)> {
+) -> MediaResult<ValidatedAddonRequest> {
     if !request.confirm_rights {
         return Err(
             "confirmRights is required after reviewing the add-on source and license".to_string(),
@@ -920,7 +929,13 @@ fn validate_request(
     if request.kind == "lora" && token.is_some() {
         return Err("token is only valid for textual-inversion embeddings".to_string());
     }
-    Ok((display_name, license_name, trigger_words, token, source_url))
+    Ok(ValidatedAddonRequest {
+        display_name,
+        license_name,
+        trigger_words,
+        token,
+        source_url,
+    })
 }
 
 fn stored_addon_exists(paths: &MediaRuntimePaths, digest: &str) -> MediaResult<bool> {
@@ -1362,8 +1377,13 @@ pub(crate) fn import_reviewed_with_source(
             "the selected add-on file changed; inspect it again before importing".to_string(),
         );
     }
-    let (display_name, license_name, trigger_words, token, source_url) =
-        validate_request(request, &inspection)?;
+    let ValidatedAddonRequest {
+        display_name,
+        license_name,
+        trigger_words,
+        token,
+        source_url,
+    } = validate_request(request, &inspection)?;
     let required_bytes = inspection.byte_size.saturating_mul(105).div_ceil(100);
     let models_root = paths.models_root()?;
     let addons_root = models_root.join("addons");
@@ -1560,7 +1580,7 @@ mod tests {
 
     fn write_safetensors(path: &Path, entries: Value, data: &[u8]) {
         let mut header = serde_json::to_vec(&entries).expect("header should encode");
-        while (8 + header.len()) % 8 != 0 {
+        while !(8 + header.len()).is_multiple_of(8) {
             header.push(b' ');
         }
         let mut bytes = (header.len() as u64).to_le_bytes().to_vec();

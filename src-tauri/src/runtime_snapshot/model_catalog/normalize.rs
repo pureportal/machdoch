@@ -154,13 +154,12 @@ pub(super) fn is_openai_runtime_model(model_id: &str) -> bool {
         return false;
     }
 
-    match parts.collect::<Vec<_>>().as_slice() {
-        [] => true,
-        ["preview"] => true,
-        ["mini" | "nano" | "sol" | "terra" | "luna"] => true,
-        ["mini" | "nano", "preview"] => true,
-        _ => false,
-    }
+    matches!(
+        parts.collect::<Vec<_>>().as_slice(),
+        [] | ["preview"]
+            | ["mini" | "nano" | "sol" | "terra" | "luna"]
+            | ["mini" | "nano", "preview"]
+    )
 }
 
 pub(super) fn is_anthropic_runtime_model(model_id: &str) -> bool {

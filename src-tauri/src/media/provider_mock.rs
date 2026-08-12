@@ -458,8 +458,8 @@ fn finish_submission(
             "provider.acceptance",
         )?;
     } else {
-        let provider_job_id = format!("mock-job-{}", &job_id.replace(':', "-"));
-        let provider_request_id = format!("mock-request-{}", &job_id.replace(':', "-"));
+        let provider_job_id = format!("mock-job-{}", job_id.replace(':', "-"));
+        let provider_request_id = format!("mock-request-{}", job_id.replace(':', "-"));
         let retention_expires_at =
             (Utc::now() + chrono::Duration::hours(1)).to_rfc3339_opts(SecondsFormat::Millis, true);
         transaction

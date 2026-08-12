@@ -36,12 +36,12 @@ pub(super) fn format_diagnostic_snippet(value: &str) -> String {
 }
 
 pub(super) fn format_timeout_duration(timeout_ms: u64) -> String {
-    if timeout_ms % (60 * 60 * 1_000) == 0 {
+    if timeout_ms.is_multiple_of(60 * 60 * 1_000) {
         let hours = timeout_ms / (60 * 60 * 1_000);
         return format!("{hours} hour{}", if hours == 1 { "" } else { "s" });
     }
 
-    if timeout_ms % (60 * 1_000) == 0 {
+    if timeout_ms.is_multiple_of(60 * 1_000) {
         let minutes = timeout_ms / (60 * 1_000);
         return format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" });
     }

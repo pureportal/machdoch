@@ -78,7 +78,11 @@ pub(super) fn validate_audio_base64_encoded_len(
 fn max_base64_encoded_len_for_decoded_size(max_size_bytes: usize) -> usize {
     (max_size_bytes / 3)
         .saturating_mul(4)
-        .saturating_add(if max_size_bytes % 3 == 0 { 0 } else { 4 })
+        .saturating_add(if max_size_bytes.is_multiple_of(3) {
+            0
+        } else {
+            4
+        })
 }
 
 pub(super) fn decode_audio_base64(value: &str) -> Result<Vec<u8>, String> {

@@ -522,9 +522,12 @@ mod tests {
 
     #[test]
     fn instruction_cli_retains_large_but_bounded_library_responses() {
-        assert!(
-            INSTRUCTION_CLI_SPEC.stdout_capture_limit_bytes > SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES
-        );
+        const {
+            assert!(
+                INSTRUCTION_CLI_SPEC.stdout_capture_limit_bytes
+                    > SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES
+            );
+        }
         assert_eq!(
             INSTRUCTION_CLI_SPEC.stdout_capture_limit_bytes,
             128 * 1024 * 1024
@@ -547,7 +550,7 @@ mod tests {
     fn auxiliary_cli_test_child_entrypoint() {
         match env::var(TEST_CHILD_MODE_ENV).as_deref() {
             Ok("json") => {
-                println!("{}", r#"{"ok":true}"#);
+                println!(r#"{{"ok":true}}"#);
                 eprintln!("child stderr");
             }
             Ok("hang") => thread::sleep(Duration::from_secs(60)),

@@ -112,7 +112,7 @@ pub(crate) fn relaunch_as_administrator_if_configured() -> Result<bool, String> 
             return Ok(false);
         }
 
-        return start_elevated_relaunch();
+        start_elevated_relaunch()
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -138,7 +138,7 @@ pub(crate) fn restart_as_administrator_if_needed<R: Runtime>(
             app.exit(0);
         }
 
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]

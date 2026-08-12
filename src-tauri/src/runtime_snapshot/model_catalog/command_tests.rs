@@ -145,14 +145,12 @@ fn agent_cli_test_child_entrypoint() {
                 .env(TEST_CHILD_MODE_ENV, "hold-pipes")
                 .env(TEST_DESCENDANT_PID_FILE_ENV, &pid_file);
 
-            let descendant = descendant
+            let mut descendant = descendant
                 .spawn()
                 .expect("descendant test process should start");
             fs::write(pid_file, descendant.id().to_string())
                 .expect("descendant pid file should be written");
-            loop {
-                thread::park();
-            }
+            let _ = descendant.wait();
         }
         Ok("hold-pipes") => {
             println!("descendant holding stdout");

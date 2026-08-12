@@ -945,7 +945,7 @@ mod tests {
 
     fn write_safetensors(path: &Path, entries: Value, data: &[u8]) {
         let mut header = serde_json::to_vec(&entries).expect("header should encode");
-        while (8 + header.len()) % 8 != 0 {
+        while !(8 + header.len()).is_multiple_of(8) {
             header.push(b' ');
         }
         let mut bytes = (header.len() as u64).to_le_bytes().to_vec();

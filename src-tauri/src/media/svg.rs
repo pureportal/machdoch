@@ -177,7 +177,7 @@ fn render_tree_at_edge(
     let mut pixmap = tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| "SVG preview target could not be allocated".to_string())?;
     resvg::render(
-        &tree,
+        tree,
         tiny_skia::Transform::from_scale(scale, scale),
         &mut pixmap.as_mut(),
     );

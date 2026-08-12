@@ -89,7 +89,7 @@ pub(super) fn create_snapshot_locked(inner: &RemoteControlInner) -> RemoteContro
 
 fn sorted_sessions(inner: &RemoteControlInner) -> Vec<RemoteTaskSession> {
     let mut sessions = inner.sessions.values().cloned().collect::<Vec<_>>();
-    sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    sessions.sort_by_key(|session| std::cmp::Reverse(session.updated_at));
     sessions
 }
 

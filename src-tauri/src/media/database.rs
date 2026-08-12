@@ -4380,8 +4380,8 @@ fn query_visible_assets(
         .map_err(|error| format!("failed to query media assets: {error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to decode media assets: {error}"))?;
-    attach_asset_inputs(&connection, &mut assets)?;
-    attach_asset_tags(&connection, &mut assets)?;
+    attach_asset_inputs(connection, &mut assets)?;
+    attach_asset_tags(connection, &mut assets)?;
     Ok(assets)
 }
 

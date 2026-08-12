@@ -126,11 +126,7 @@ fn resolve_langdock_region(env: &HashMap<String, String>) -> String {
         .map(String::as_str)
         .map(str::trim)
         .map(str::to_ascii_lowercase)
-        .filter(|value| {
-            LANGDOCK_SUPPORTED_REGIONS
-                .iter()
-                .any(|region| *region == value.as_str())
-        })
+        .filter(|value| LANGDOCK_SUPPORTED_REGIONS.contains(&value.as_str()))
         .unwrap_or_else(|| LANGDOCK_DEFAULT_REGION.to_string())
 }
 

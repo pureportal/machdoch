@@ -789,7 +789,9 @@ mod tests {
 
     #[test]
     fn ralph_command_timeout_allows_long_autonomous_runs() {
-        assert!(RALPH_COMMAND_TIMEOUT_MS > AUXILIARY_CLI_COMMAND_TIMEOUT_MS);
+        const {
+            assert!(RALPH_COMMAND_TIMEOUT_MS > AUXILIARY_CLI_COMMAND_TIMEOUT_MS);
+        }
         assert_eq!(
             format_timeout_duration(RALPH_COMMAND_TIMEOUT_MS),
             "12 hours"

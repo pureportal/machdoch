@@ -322,7 +322,7 @@ fn cleanup_cached_runtime_files(runtime_directory: &Path, current_file_name: &st
         })
         .collect::<Vec<_>>();
 
-    previous_files.sort_by(|left, right| right.0.cmp(&left.0));
+    previous_files.sort_by_key(|entry| std::cmp::Reverse(entry.0));
 
     for (_, stale_path) in previous_files
         .into_iter()
