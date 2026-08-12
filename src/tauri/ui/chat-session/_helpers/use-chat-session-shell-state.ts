@@ -2293,6 +2293,7 @@ export interface ChatSessionShellStateController {
     sessionId: string,
     updater: (session: ChatSessionRecord) => ChatSessionRecord,
   ) => void;
+  getSessionById: (sessionId: string) => ChatSessionRecord | null;
   setDraftValue: Dispatch<SetStateAction<string>>;
 }
 
@@ -3251,6 +3252,14 @@ export const useChatSessionShellState = (
     [applyTransientShellState],
   );
 
+  const getSessionById = useCallback(
+    (sessionId: string): ChatSessionRecord | null =>
+      shellStateRef.current.sessions.find(
+        (session) => session.id === sessionId,
+      ) ?? null,
+    [],
+  );
+
   const setDraftValue = useCallback(
     (value: SetStateAction<string>): void => {
       const sessionId = activeSession.id;
@@ -3380,6 +3389,7 @@ export const useChatSessionShellState = (
     updateActiveSession,
     updateSessionById,
     updateSessionByIdTransient,
+    getSessionById,
     setDraftValue,
   };
 };

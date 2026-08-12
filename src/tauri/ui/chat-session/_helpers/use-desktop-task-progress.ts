@@ -1,11 +1,5 @@
-import {
-  useEffect,
-  useRef,
-  type MutableRefObject,
-} from "react";
-import {
-  subscribeToDesktopTaskProgress,
-} from "../../runtime";
+import { useEffect, useRef, type MutableRefObject } from "react";
+import { subscribeToDesktopTaskProgress } from "../../runtime";
 import {
   appendThinkingProgress,
   type TaskThinkingTrace,
@@ -34,6 +28,26 @@ export type HandleDesktopTaskProgress = (
   timestamp: number,
 ) => void;
 
+export interface DesktopTaskProgressRoute {
+  onProgress?: HandleDesktopTaskProgress;
+}
+
+export const routeDesktopTaskProgress = (
+  routes: ReadonlyMap<string, DesktopTaskProgressRoute> | undefined,
+  taskId: string,
+  progress: TaskExecutionProgress,
+  timestamp: number,
+): boolean => {
+  const route = routes?.get(taskId);
+
+  if (!route) {
+    return false;
+  }
+
+  route.onProgress?.(progress, timestamp);
+  return true;
+};
+
 export type HandleUnhandledDesktopTaskProgress = (
   sessionId: string,
   taskId: string,
@@ -49,7 +63,7 @@ export const useDesktopTaskProgress = (options: {
   enabled?: boolean;
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   ignoredDesktopTaskIdsRef: MutableRefObject<Set<string>>;
-  progressHandlersRef?: MutableRefObject<Map<string, HandleDesktopTaskProgress>>;
+  progressRoutesRef?: MutableRefObject<Map<string, DesktopTaskProgressRoute>>;
   onUnhandledProgress?: HandleUnhandledDesktopTaskProgress;
   resolveSessionIdForTask?: ResolveDesktopTaskSessionId;
   updateThinkingTrace: UpdateThinkingTrace;
@@ -200,7 +214,9 @@ export const useDesktopTaskProgress = (options: {
 
       if (
         !sessionId ||
-        currentOptions.ignoredDesktopTaskIdsRef.current.has(progressEvent.taskId)
+        currentOptions.ignoredDesktopTaskIdsRef.current.has(
+          progressEvent.taskId,
+        )
       ) {
         return;
       }
@@ -227,12 +243,14 @@ export const useDesktopTaskProgress = (options: {
         );
       }
 
-      const progressHandler = currentOptions.progressHandlersRef?.current.get(
-        progressEvent.taskId,
-      );
-
-      if (progressHandler) {
-        progressHandler(progressEvent.progress, progressEvent.timestamp);
+      if (
+        routeDesktopTaskProgress(
+          currentOptions.progressRoutesRef?.current,
+          progressEvent.taskId,
+          progressEvent.progress,
+          progressEvent.timestamp,
+        )
+      ) {
         return;
       }
 

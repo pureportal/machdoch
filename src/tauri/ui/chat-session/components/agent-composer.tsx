@@ -69,6 +69,7 @@ export interface AgentComposerProps {
   variant: AgentComposerVariant;
   draftIdentity: string;
   draft: string;
+  draftRevision: number;
   textareaLabel: string;
   placeholder: string;
   chooserProviders: RuntimeProvider[];
@@ -126,6 +127,7 @@ export interface AgentComposerProps {
 const useBufferedDraft = (
   draftIdentity: string,
   draft: string,
+  draftRevision: number,
   onDraftChange: (value: string) => void,
 ): {
   value: string;
@@ -137,6 +139,7 @@ const useBufferedDraft = (
   const valueRef = useRef(draft);
   const identityRef = useRef(draftIdentity);
   const publishedValueRef = useRef(draft);
+  const publishedRevisionRef = useRef(draftRevision);
   const pendingValuesRef = useRef<string[]>([]);
   const onDraftChangeRef = useRef(onDraftChange);
 
@@ -175,13 +178,23 @@ const useBufferedDraft = (
 
     identityRef.current = draftIdentity;
     publishedValueRef.current = draft;
+    publishedRevisionRef.current = draftRevision;
     pendingValuesRef.current = [];
     valueRef.current = draft;
     setValueState(draft);
-  }, [draft, draftIdentity]);
+  }, [draft, draftIdentity, draftRevision]);
 
   useEffect(() => {
     if (identityRef.current !== draftIdentity) {
+      return;
+    }
+
+    if (draft.length === 0 && draftRevision !== publishedRevisionRef.current) {
+      pendingValuesRef.current = [];
+      publishedValueRef.current = draft;
+      publishedRevisionRef.current = draftRevision;
+      valueRef.current = draft;
+      setValueState(draft);
       return;
     }
 
@@ -189,18 +202,23 @@ const useBufferedDraft = (
     if (pendingIndex >= 0) {
       pendingValuesRef.current.splice(0, pendingIndex + 1);
       publishedValueRef.current = draft;
+      publishedRevisionRef.current = draftRevision;
       return;
     }
 
-    if (draft === publishedValueRef.current) {
+    if (
+      draft === publishedValueRef.current &&
+      draftRevision === publishedRevisionRef.current
+    ) {
       return;
     }
 
     pendingValuesRef.current = [];
     publishedValueRef.current = draft;
+    publishedRevisionRef.current = draftRevision;
     valueRef.current = draft;
     setValueState(draft);
-  }, [draft, draftIdentity]);
+  }, [draft, draftIdentity, draftRevision]);
 
   return { value, setValue, flush, getValue };
 };
@@ -357,6 +375,7 @@ export const AgentComposer = ({
   variant,
   draftIdentity,
   draft,
+  draftRevision,
   textareaLabel,
   placeholder,
   chooserProviders,
@@ -401,7 +420,12 @@ export const AgentComposer = ({
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
-  const bufferedDraft = useBufferedDraft(draftIdentity, draft, onDraftChange);
+  const bufferedDraft = useBufferedDraft(
+    draftIdentity,
+    draft,
+    draftRevision,
+    onDraftChange,
+  );
   const styles = getVariantStyles(variant);
   const canSubmit = canSend && Boolean(bufferedDraft.value.trim());
   const showCancelButton = isExecuting && (variant === "quick" || !canSubmit);

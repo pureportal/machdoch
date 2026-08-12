@@ -124,6 +124,12 @@ import {
   type ChatInterviewStartContext,
 } from "./chat-interview";
 import {
+  createComposerClearGuard,
+  createComposerSubmissionSessionSnapshot,
+  isComposerClearGuardCurrent,
+  type ComposerClearGuard,
+} from "./composer-submission";
+import {
   getFilePreviewFileName,
   getFilePreviewRenderKind,
   resolveFilePreviewSyntax,
@@ -211,7 +217,7 @@ import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionVoice } from "./use-chat-session-voice";
 import {
   useDesktopTaskProgress,
-  type HandleDesktopTaskProgress,
+  type DesktopTaskProgressRoute,
 } from "./use-desktop-task-progress";
 import { useRemoteMissionControl } from "./use-remote-mission-control";
 import { useSessionComposerState } from "./use-session-composer-state";
@@ -220,7 +226,6 @@ import { useSessionLifecycle } from "./use-session-lifecycle";
 import { useSessionSettingsActions } from "./use-session-settings";
 import {
   useSessionTaskSubmission,
-  type ComposerClearGuard,
   type SessionOperationConflictSubmission,
 } from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
@@ -293,23 +298,6 @@ const getMessageTaskId = (message: ChatSessionMessage): string => {
   return message.taskId ?? message.id;
 };
 
-const createComposerClearGuard = (
-  session: Pick<
-    ChatSessionRecord,
-    | "draft"
-    | "draftContextAttachments"
-    | "draftUpdatedAt"
-    | "draftAttachmentsUpdatedAt"
-  >,
-): ComposerClearGuard => ({
-  draft: session.draft,
-  contextAttachments: session.draftContextAttachments.map((attachment) => ({
-    ...attachment,
-  })),
-  draftUpdatedAt: session.draftUpdatedAt,
-  draftAttachmentsUpdatedAt: session.draftAttachmentsUpdatedAt,
-});
-
 const areComposerAttachmentsEqual = (
   left: readonly ChatSessionContextAttachment[],
   right: readonly ChatSessionContextAttachment[],
@@ -342,21 +330,6 @@ const isQueuedPromptEnhancementInputCurrent = (
       baseline.contextAttachments,
       current.contextAttachments,
     )
-  );
-};
-
-const isComposerClearGuardCurrent = (
-  session: ChatSessionRecord,
-  guard: ComposerClearGuard,
-): boolean => {
-  return (
-    session.draft === guard.draft &&
-    areComposerAttachmentsEqual(
-      session.draftContextAttachments,
-      guard.contextAttachments,
-    ) &&
-    session.draftUpdatedAt === guard.draftUpdatedAt &&
-    session.draftAttachmentsUpdatedAt === guard.draftAttachmentsUpdatedAt
   );
 };
 
@@ -684,8 +657,8 @@ export const useChatSessionController = (
   const inactiveDesktopTaskRecoveryRoutesRef = useRef<
     Map<string, InactiveDesktopTaskRecoveryRoute>
   >(new Map());
-  const desktopTaskProgressHandlersRef = useRef<
-    Map<string, HandleDesktopTaskProgress>
+  const desktopTaskProgressRoutesRef = useRef<
+    Map<string, DesktopTaskProgressRoute>
   >(new Map());
   const recoveredTaskAssistantTextRef = useRef<Map<string, string>>(new Map());
   const finalizedRecoveredTaskIdsRef = useRef<Set<string>>(new Set());
@@ -2053,7 +2026,7 @@ export const useChatSessionController = (
     activeDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
     onUnhandledProgress: handleUnhandledDesktopTaskProgress,
-    progressHandlersRef: desktopTaskProgressHandlersRef,
+    progressRoutesRef: desktopTaskProgressRoutesRef,
     resolveSessionIdForTask: resolveSessionIdForDesktopTask,
     updateThinkingTrace: updateTransientThinkingTrace,
   });
@@ -2850,6 +2823,7 @@ export const useChatSessionController = (
       if (pendingPromptEnhancement) {
         ignoredDesktopTaskIdsRef.current.add(targetTaskId);
         activeDesktopTasksRef.current.delete(targetTaskId);
+        desktopTaskProgressRoutesRef.current.delete(targetTaskId);
         setPromptEnhancementStatus(null);
         setPromptEnhancementPendingTasks((current) =>
           current.filter((pending) => pending.taskId !== targetTaskId),
@@ -4363,17 +4337,11 @@ export const useChatSessionController = (
       });
 
       if (clearedComposer) {
-        state.applyShellState((currentState) => {
-          const clearedSession = currentState.sessions.find(
-            (session) => session.id === sessionId,
-          );
+        const clearedSession = state.getSessionById(sessionId);
 
-          if (clearedSession) {
-            clearedComposer = createComposerClearGuard(clearedSession);
-          }
-
-          return currentState;
-        });
+        if (clearedSession) {
+          clearedComposer = createComposerClearGuard(clearedSession);
+        }
         invalidateAttachmentMutation(`session:${sessionId}`);
       }
 
@@ -4381,8 +4349,8 @@ export const useChatSessionController = (
     },
     [
       composerState.resetDraftHistoryState,
+      state.getSessionById,
       invalidateAttachmentMutation,
-      state.applyShellState,
       state.activeSession.id,
       state.updateSessionById,
     ],
@@ -4563,7 +4531,7 @@ export const useChatSessionController = (
     aiContextMessageLimit,
     activeDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
-    progressHandlersRef: desktopTaskProgressHandlersRef,
+    progressRoutesRef: desktopTaskProgressRoutesRef,
     applySessionMessageLimit,
     updateThinkingTrace,
     onComposerCleared: (sessionId) =>
@@ -4636,6 +4604,7 @@ export const useChatSessionController = (
       // Keep its enhancement out of the generic desktop-task route so streamed
       // progress cannot synthesize a thinking message or execution timeline.
       if (rendersSessionMessages) {
+        desktopTaskProgressRoutesRef.current.set(taskId, {});
         activeDesktopTasksRef.current.set(taskId, sessionSnapshot.id);
         showPromptEnhancementSessionPlaceholder(pending);
       }
@@ -4728,6 +4697,7 @@ export const useChatSessionController = (
         throw error instanceof Error ? error : new Error(message);
       } finally {
         activeDesktopTasksRef.current.delete(taskId);
+        desktopTaskProgressRoutesRef.current.delete(taskId);
         ignoredDesktopTaskIdsRef.current.delete(taskId);
         if (rendersSessionMessages) {
           removePromptEnhancementSessionPlaceholder(pending);
@@ -6298,7 +6268,7 @@ export const useChatSessionController = (
   ): void => {
     if (interviewTaskId) {
       activeDesktopTasksRef.current.delete(interviewTaskId);
-      desktopTaskProgressHandlersRef.current.delete(interviewTaskId);
+      desktopTaskProgressRoutesRef.current.delete(interviewTaskId);
       ignoredDesktopTaskIdsRef.current.delete(interviewTaskId);
     }
 
@@ -6474,9 +6444,8 @@ export const useChatSessionController = (
     );
 
     activeDesktopTasksRef.current.set(taskId, context.sessionSnapshot.id);
-    desktopTaskProgressHandlersRef.current.set(
-      taskId,
-      (progress, timestamp) => {
+    desktopTaskProgressRoutesRef.current.set(taskId, {
+      onProgress: (progress, timestamp) => {
         setChatInterview((current) => {
           if (current?.taskId !== taskId) {
             return current;
@@ -6492,7 +6461,7 @@ export const useChatSessionController = (
           };
         });
       },
-    );
+    });
 
     setChatInterview((current) => ({
       context,
@@ -6564,7 +6533,7 @@ export const useChatSessionController = (
           : current,
       );
     } finally {
-      desktopTaskProgressHandlersRef.current.delete(taskId);
+      desktopTaskProgressRoutesRef.current.delete(taskId);
       activeDesktopTasksRef.current.delete(taskId);
       ignoredDesktopTaskIdsRef.current.delete(taskId);
     }
@@ -6764,7 +6733,7 @@ export const useChatSessionController = (
     if (taskId && activeDesktopTasksRef.current.has(taskId)) {
       ignoredDesktopTaskIdsRef.current.add(taskId);
       activeDesktopTasksRef.current.delete(taskId);
-      desktopTaskProgressHandlersRef.current.delete(taskId);
+      desktopTaskProgressRoutesRef.current.delete(taskId);
       void cancelDesktopTask(taskId).catch((error) => {
         console.error("Failed to cancel closed task interview:", error);
       });
@@ -7118,12 +7087,17 @@ export const useChatSessionController = (
       return;
     }
 
-    const baseSessionSnapshot =
+    const renderedSessionSnapshot =
       currentEdit?.session ?? committedHistorySession ?? activeComposerSession;
-    const sessionSnapshot =
-      draft === baseSessionSnapshot.draft
-        ? baseSessionSnapshot
-        : { ...baseSessionSnapshot, draft };
+    const currentSessionSnapshot =
+      currentEdit || committedHistorySession
+        ? null
+        : state.getSessionById(renderedSessionSnapshot.id);
+    const sessionSnapshot = createComposerSubmissionSessionSnapshot(
+      renderedSessionSnapshot,
+      currentSessionSnapshot,
+      draft,
+    );
     const contextAttachments = sessionSnapshot.draftContextAttachments.map(
       (attachment) => ({ ...attachment }),
     );
@@ -7513,6 +7487,7 @@ export const useChatSessionController = (
     },
     quickTaskComposer: {
       draft: quickTaskDraft,
+      draftRevision: quickTaskSession?.draftUpdatedAt ?? 0,
       chooserProviders: providerChooserState.chooserProviders,
       provider: quickTaskProvider,
       model: quickTaskModel,

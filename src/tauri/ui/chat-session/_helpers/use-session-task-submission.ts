@@ -32,6 +32,10 @@ import {
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
 import {
+  isComposerClearGuardCurrent,
+  type ComposerClearGuard,
+} from "./composer-submission";
+import {
   appendContextAttachmentsToTask,
   areContextAttachmentRecordsEqual,
   createPromptHistoryUpdate,
@@ -71,7 +75,7 @@ import type { ChatSessionRuntimeController } from "./use-chat-session-runtime";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
 import type { ChatSessionVoiceController } from "./use-chat-session-voice";
 import type {
-  HandleDesktopTaskProgress,
+  DesktopTaskProgressRoute,
   UpdateThinkingTrace,
 } from "./use-desktop-task-progress";
 
@@ -87,13 +91,6 @@ const TERMINAL_PROGRESS_STATE_BY_STATUS = {
 >;
 const TERMINAL_PROGRESS_FALLBACK_DELAY_MS = 1_500;
 
-export interface ComposerClearGuard {
-  draft: string;
-  contextAttachments: ChatSessionContextAttachment[];
-  draftUpdatedAt: number;
-  draftAttachmentsUpdatedAt: number;
-}
-
 const areContextAttachmentsEqual = (
   left: readonly ChatSessionContextAttachment[],
   right: readonly ChatSessionContextAttachment[],
@@ -108,25 +105,6 @@ const areContextAttachmentsEqual = (
         areContextAttachmentRecordsEqual(attachment, candidate)
       );
     })
-  );
-};
-
-const isComposerClearGuardCurrent = (
-  session: ChatSessionRecord,
-  guard: ComposerClearGuard | undefined,
-): boolean => {
-  if (!guard) {
-    return true;
-  }
-
-  return (
-    session.draft === guard.draft &&
-    areContextAttachmentsEqual(
-      session.draftContextAttachments,
-      guard.contextAttachments,
-    ) &&
-    session.draftUpdatedAt === guard.draftUpdatedAt &&
-    session.draftAttachmentsUpdatedAt === guard.draftAttachmentsUpdatedAt
   );
 };
 
@@ -345,7 +323,7 @@ export const useSessionTaskSubmission = (options: {
   aiContextMessageLimit: number;
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   ignoredDesktopTaskIdsRef: MutableRefObject<Set<string>>;
-  progressHandlersRef: MutableRefObject<Map<string, HandleDesktopTaskProgress>>;
+  progressRoutesRef: MutableRefObject<Map<string, DesktopTaskProgressRoute>>;
   applySessionMessageLimit: (session: ChatSessionRecord) => ChatSessionRecord;
   updateThinkingTrace: UpdateThinkingTrace;
   onSessionOperationConflict?: (
@@ -424,16 +402,7 @@ export const useSessionTaskSubmission = (options: {
       const currentOptions = latestOptionsRef.current;
       const submittedSessionSnapshot = submitOptions.sessionSnapshot;
       const sessionId = submittedSessionSnapshot.id;
-      let latestShellState = currentOptions.state.shellState;
-
-      currentOptions.state.applyShellState((currentState) => {
-        latestShellState = currentState;
-        return currentState;
-      });
-
-      const currentSession = latestShellState.sessions.find(
-        (session) => session.id === sessionId,
-      );
+      const currentSession = currentOptions.state.getSessionById(sessionId);
 
       if (!currentSession && !submitOptions.createSessionIfMissing) {
         return false;
@@ -560,7 +529,7 @@ export const useSessionTaskSubmission = (options: {
 
       const cleanupTaskTracking = (): void => {
         clearTerminalFallbackTimeout();
-        currentOptions.progressHandlersRef.current.delete(taskId);
+        currentOptions.progressRoutesRef.current.delete(taskId);
         currentOptions.activeDesktopTasksRef.current.delete(taskId);
       };
 
@@ -929,14 +898,16 @@ export const useSessionTaskSubmission = (options: {
         }, TERMINAL_PROGRESS_FALLBACK_DELAY_MS);
       };
 
-      currentOptions.progressHandlersRef.current.set(taskId, (progress) => {
-        const assistantText = progress.assistantText?.trim();
+      currentOptions.progressRoutesRef.current.set(taskId, {
+        onProgress: (progress) => {
+          const assistantText = progress.assistantText?.trim();
 
-        if (assistantText) {
-          latestAssistantText = assistantText;
-        }
+          if (assistantText) {
+            latestAssistantText = assistantText;
+          }
 
-        scheduleTerminalProgressFallback(progress);
+          scheduleTerminalProgressFallback(progress);
+        },
       });
 
       if (
@@ -1166,7 +1137,7 @@ export const useSessionTaskSubmission = (options: {
 
           taskFinalized = true;
           clearTerminalFallbackTimeout();
-          currentOptions.progressHandlersRef.current.delete(taskId);
+          currentOptions.progressRoutesRef.current.delete(taskId);
 
           if (currentOptions.ignoredDesktopTaskIdsRef.current.has(taskId)) {
             cleanupTaskTracking();

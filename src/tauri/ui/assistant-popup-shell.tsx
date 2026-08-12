@@ -208,6 +208,7 @@ const QuickTaskComposer = ({
       draftIdentity="quick-task"
       textareaRef={inputRef}
       draft={quickTaskComposer.draft}
+      draftRevision={quickTaskComposer.draftRevision}
       textareaLabel="Quick chat composer"
       placeholder="Quick Chat..."
       chooserProviders={quickTaskComposer.chooserProviders}

@@ -486,6 +486,7 @@ export const SessionComposer = ({
                 : activeSession.id
             }
             draft={activeSession.draft}
+            draftRevision={activeSession.draftUpdatedAt}
             textareaLabel={editingMessageId ? "Edit message" : "Task composer"}
             placeholder={
               editingMessageId
