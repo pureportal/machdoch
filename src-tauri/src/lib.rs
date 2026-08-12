@@ -16,6 +16,7 @@ mod ui_control;
 mod ui_operation;
 mod voice;
 mod workspace_git;
+mod workspace_run;
 mod workspace_tools;
 
 use tauri::Manager as _;
@@ -155,6 +156,7 @@ pub fn run() {
         .manage(settings_transfer::SettingsTransferState::default())
         .manage(ui_operation::CrossWindowOperationState::default())
         .manage(runtime_snapshot::McpConfigWriteLock::default())
+        .manage(workspace_run::WorkspaceRunState::default())
         .manage(workspace_tools::WorkspaceTerminalState::default())
         .on_window_event(|window, event| {
             desktop_shell::handle_window_event(window, event);
@@ -177,6 +179,13 @@ pub fn run() {
 
             if let Err(error) = media::initialize_runtime(app.handle()) {
                 eprintln!("Failed to initialize Media Studio: {error}");
+            }
+
+            if let Err(error) = app
+                .state::<workspace_run::WorkspaceRunState>()
+                .initialize(app.handle())
+            {
+                eprintln!("Failed to initialize workspace run control: {error}");
             }
 
             desktop_shell::apply_startup_mode(app.handle(), launch_context);
@@ -235,6 +244,13 @@ pub fn run() {
             workspace_git::get_workspace_git_diff,
             workspace_git::get_workspace_pull_requests,
             workspace_git::run_workspace_git_action,
+            workspace_run::detect_workspace_run_configurations,
+            workspace_run::get_workspace_run_configuration_document,
+            workspace_run::get_workspace_run_snapshot,
+            workspace_run::restart_workspace_run_configuration,
+            workspace_run::save_workspace_run_configuration_document,
+            workspace_run::start_workspace_run_configuration,
+            workspace_run::stop_workspace_run_configuration,
             workspace_tools::files::create_workspace_entry,
             workspace_tools::files::delete_workspace_entry,
             workspace_tools::files::list_workspace_directory,
@@ -365,6 +381,7 @@ pub fn run() {
         .expect("error while building machdoch desktop shell")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<workspace_run::WorkspaceRunState>().shutdown();
                 app.state::<sleep_inhibition::SystemSleepInhibitor>()
                     .shutdown();
             }

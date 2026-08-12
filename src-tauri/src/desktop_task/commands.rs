@@ -8,6 +8,7 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
+use tauri::Manager as _;
 
 use crate::{
     child_process::{SupervisedChild, SupervisedChildSpawnError},
@@ -221,6 +222,11 @@ pub(super) fn execute_desktop_task(
     let normalized_model = normalize_optional_string(model.as_deref());
     let normalized_reasoning = normalize_optional_string(reasoning.as_deref());
     let conversation_context = enrich_ui_control_conversation_context(conversation_context)?;
+    let conversation_context = crate::workspace_run::enrich_conversation_context(
+        &app_handle,
+        &normalized_workspace_root,
+        conversation_context,
+    )?;
     let conversation_context_path = conversation_context
         .as_ref()
         .map(write_conversation_context_file)
@@ -242,9 +248,8 @@ pub(super) fn execute_desktop_task(
         deterministic_action_json: deterministic_action_json.as_deref(),
     });
     let mut cli_command =
-        crate::shared_cli::create_shared_cli_command(&cli_args).map_err(|error| {
+        crate::shared_cli::create_shared_cli_command(&cli_args).inspect_err(|_error| {
             cleanup_temporary_file(conversation_context_path.as_ref());
-            error
         })?;
 
     cli_command
@@ -260,6 +265,16 @@ pub(super) fn execute_desktop_task(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    if let Some(credentials) = app_handle
+        .state::<crate::workspace_run::WorkspaceRunState>()
+        .control_credentials()
+    {
+        cli_command
+            .command
+            .env("MACHDOCH_RUN_CONTROL_ADDRESS", credentials.address)
+            .env("MACHDOCH_RUN_CONTROL_TOKEN", credentials.token);
+    }
 
     let mut child = SupervisedChild::spawn_with_required_isolation(&mut cli_command.command)
         .map_err(|error| {
@@ -552,7 +567,7 @@ mod tests {
         });
 
         let error = stop_shared_cli_after_wait_error(
-            io::Error::new(io::ErrorKind::Other, "simulated wait failure"),
+            io::Error::other("simulated wait failure"),
             &mut child,
             thread::spawn(|| Ok(())),
             stdout_worker,

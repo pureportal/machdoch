@@ -63,6 +63,13 @@ import {
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
 import { MAX_TASK_INPUT_BYTES } from "../../shared/task-input-limits.js";
+import {
+  createEmptyWorkspaceRunDocument,
+  type WorkspaceRunConfigurationDocument,
+  type WorkspaceRunDetectionResult,
+  type WorkspaceRunLogBatch,
+  type WorkspaceRunSnapshot,
+} from "../../shared/workspace-run.js";
 import { MCP_PRESETS } from "../../core/mcp/presets.js";
 import {
   MCP_CONFIG_SCHEMA_VERSION,
@@ -4613,6 +4620,158 @@ export const runWorkspaceGitAction = async (
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
+};
+
+export const WORKSPACE_RUN_STATE_EVENT = "workspace-run-state-changed";
+export const WORKSPACE_RUN_LOG_EVENT = "workspace-run-log-appended";
+
+const createEmptyWorkspaceRunSnapshot = (
+  workspaceRoot: string,
+): WorkspaceRunSnapshot => ({
+  workspaceRoot,
+  primaryConfigurationId: null,
+  configurations: [],
+});
+
+export const loadWorkspaceRunConfigurationDocument = async (
+  workspaceRoot: string,
+): Promise<WorkspaceRunConfigurationDocument> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands()) return createEmptyWorkspaceRunDocument();
+  try {
+    return await tauriCore.invoke<WorkspaceRunConfigurationDocument>(
+      "get_workspace_run_configuration_document",
+      { workspaceRoot: root },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const loadWorkspaceRunSnapshot = async (
+  workspaceRoot: string,
+): Promise<WorkspaceRunSnapshot> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands()) return createEmptyWorkspaceRunSnapshot(root);
+  try {
+    return await tauriCore.invoke<WorkspaceRunSnapshot>(
+      "get_workspace_run_snapshot",
+      { workspaceRoot: root },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const saveWorkspaceRunConfigurationDocument = async (
+  workspaceRoot: string,
+  document: WorkspaceRunConfigurationDocument,
+): Promise<WorkspaceRunSnapshot> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createEmptyWorkspaceRunSnapshot(root),
+      primaryConfigurationId: document.primaryConfigurationId,
+      configurations: [],
+    };
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceRunSnapshot>(
+      "save_workspace_run_configuration_document",
+      { request: { workspaceRoot: root, document } },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+const runWorkspaceConfigurationAction = async (
+  action:
+    | "start_workspace_run_configuration"
+    | "stop_workspace_run_configuration"
+    | "restart_workspace_run_configuration",
+  workspaceRoot: string,
+  configurationId?: string,
+): Promise<WorkspaceRunSnapshot> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands()) return createEmptyWorkspaceRunSnapshot(root);
+  try {
+    return await tauriCore.invoke<WorkspaceRunSnapshot>(action, {
+      request: {
+        workspaceRoot: root,
+        ...(configurationId?.trim()
+          ? { configurationId: configurationId.trim() }
+          : {}),
+      },
+    });
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const startWorkspaceRunConfiguration = async (
+  workspaceRoot: string,
+  configurationId?: string,
+): Promise<WorkspaceRunSnapshot> =>
+  runWorkspaceConfigurationAction(
+    "start_workspace_run_configuration",
+    workspaceRoot,
+    configurationId,
+  );
+
+export const stopWorkspaceRunConfiguration = async (
+  workspaceRoot: string,
+  configurationId?: string,
+): Promise<WorkspaceRunSnapshot> =>
+  runWorkspaceConfigurationAction(
+    "stop_workspace_run_configuration",
+    workspaceRoot,
+    configurationId,
+  );
+
+export const restartWorkspaceRunConfiguration = async (
+  workspaceRoot: string,
+  configurationId?: string,
+): Promise<WorkspaceRunSnapshot> =>
+  runWorkspaceConfigurationAction(
+    "restart_workspace_run_configuration",
+    workspaceRoot,
+    configurationId,
+  );
+
+export const detectWorkspaceRunConfigurations = async (
+  workspaceRoot: string,
+): Promise<WorkspaceRunDetectionResult> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands()) {
+    return { document: createEmptyWorkspaceRunDocument(), detections: [] };
+  }
+  try {
+    return await tauriCore.invoke<WorkspaceRunDetectionResult>(
+      "detect_workspace_run_configurations",
+      { workspaceRoot: root },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
+
+export const listenWorkspaceRunState = async (
+  listener: (snapshot: WorkspaceRunSnapshot) => void,
+): Promise<() => void> => {
+  if (!canInvokeTauriCommands()) return () => undefined;
+  return listen<WorkspaceRunSnapshot>(WORKSPACE_RUN_STATE_EVENT, (event) => {
+    listener(event.payload);
+  });
+};
+
+export const listenWorkspaceRunLogs = async (
+  listener: (batch: WorkspaceRunLogBatch) => void,
+): Promise<() => void> => {
+  if (!canInvokeTauriCommands()) return () => undefined;
+  return listen<WorkspaceRunLogBatch>(WORKSPACE_RUN_LOG_EVENT, (event) => {
+    listener(event.payload);
+  });
 };
 
 const requireWorkspaceRoot = (workspaceRoot: string): string => {

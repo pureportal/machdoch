@@ -393,7 +393,7 @@ pub(crate) fn assign_child_process_to_kill_on_close_job(
             ));
         }
 
-        return Ok(ChildProcessJob { handle });
+        Ok(ChildProcessJob { handle })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -428,7 +428,7 @@ pub(crate) fn terminate_child_process_tree(child: &mut Child) {
     {
         if signal_process_group(child, "-TERM") {
             for _ in 0..10 {
-                if child.try_wait().ok().flatten().is_some() {
+                if !process_group_exists(child) {
                     return;
                 }
                 thread::sleep(Duration::from_millis(50));
@@ -439,6 +439,23 @@ pub(crate) fn terminate_child_process_tree(child: &mut Child) {
     }
 
     let _ = child.kill();
+}
+
+impl ChildProcessJob {
+    pub(crate) fn terminate(&self) -> bool {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            TerminateJobObject(self.handle, 1).is_ok()
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        false
+    }
+}
+
+#[cfg(unix)]
+fn process_group_exists(child: &Child) -> bool {
+    signal_process_group(child, "-0")
 }
 
 #[cfg(target_os = "windows")]
