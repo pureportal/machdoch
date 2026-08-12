@@ -83,6 +83,7 @@ import {
   type WorkspaceOperationLock,
 } from "./workspace-operation-lock";
 import { WorkspaceTools } from "./workspace-tools";
+import { WorkspaceRunPanel } from "./workspace-run-panel";
 
 type GitSection = "status" | "branches" | "remotes" | "pull-requests";
 
@@ -1616,6 +1617,8 @@ export const WorkspaceManager = ({
                   </Button>
                 </div>
               </div>
+
+              <WorkspaceRunPanel workspaceRoot={selectedWorkspace.root} />
 
               <WorkspaceTools
                 key={selectedWorkspace.key}
