@@ -10,7 +10,7 @@ export type RunMode = (typeof RUN_MODES)[number];
 export const REASONING_MODES = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
 export type ReasoningMode = (typeof REASONING_MODES)[number];
 
-export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "mcp", "scheduler", "utilities"] as const;
+export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
 export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli"] as const;

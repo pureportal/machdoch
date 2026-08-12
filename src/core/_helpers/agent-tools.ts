@@ -5,10 +5,7 @@ import type {
   ToolRiskLevel,
   UiControlRuntimeInfo,
 } from "../types.js";
-import type {
-  RuntimeConfig,
-  ToolName,
-} from "../runtime-contract.generated.js";
+import type { RuntimeConfig, ToolName } from "../runtime-contract.generated.js";
 import {
   createToolErrorResult,
   type AgentToolDefinition,
@@ -25,12 +22,10 @@ import {
   recordMacroToolCall,
 } from "./macro-recorder-tool-definitions.js";
 import { createPackageToolDefinitions } from "./package-tool-definitions.js";
+import { createRunToolDefinitions } from "./run-tool-definitions.js";
 import { createSchedulerToolDefinitions } from "./scheduler-tool-definitions.js";
 import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
-import {
-  compactTraceText,
-  stringifyUnknown,
-} from "./runtime-text.js";
+import { compactTraceText, stringifyUnknown } from "./runtime-text.js";
 import { createDesktopUiToolDefinitions } from "./desktop-ui-tool-definitions.js";
 import { createShellNetworkToolDefinitions } from "./shell-network-tool-definitions.js";
 
@@ -81,9 +76,7 @@ export const resolveActionDecision = (
   };
 };
 
-const isReadOnlyToolDefinition = (
-  definition: AgentToolDefinition,
-): boolean => {
+const isReadOnlyToolDefinition = (definition: AgentToolDefinition): boolean => {
   return isReadOnlyAction(definition.effect);
 };
 
@@ -96,6 +89,7 @@ export const createToolDefinitions = (
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
+    ...createRunToolDefinitions(),
     ...createUtilityToolDefinitions(),
     ...createMacroRecorderToolDefinitions(),
     ...createBrowserToolDefinitions(),

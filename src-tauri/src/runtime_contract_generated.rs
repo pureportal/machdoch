@@ -10,13 +10,14 @@ pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
 pub const REASONING_MODES: [&str; 9] = [
     "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 ];
-pub const VALID_TOOLS: [&str; 9] = [
+pub const VALID_TOOLS: [&str; 10] = [
     "filesystem",
     "shell",
     "network",
     "browser",
     "git",
     "packages",
+    "run",
     "mcp",
     "scheduler",
     "utilities",

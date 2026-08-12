@@ -123,6 +123,28 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     ],
   },
   {
+    name: "run",
+    title: "Workspace Run",
+    description:
+      "Inspect and control saved workspace applications, servers, and composite run configurations.",
+    riskLevel: "medium",
+    keywords: [
+      "application",
+      "backend",
+      "crash",
+      "frontend",
+      "fullstack",
+      "health check",
+      "hot reload",
+      "restart",
+      "run configuration",
+      "server",
+      "start",
+      "status",
+      "stop",
+    ],
+  },
+  {
     name: "mcp",
     title: "MCP Servers",
     description:

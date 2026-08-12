@@ -75,10 +75,14 @@ describe("resolveConversationContext", () => {
   it("preserves explicit conversation state when no CLI overrides are provided", async () => {
     const explicitContext: TaskConversationContext = {
       history: [{ role: "user", content: "Summarize the repo" }],
+      workspace: { selection: "selected", root: "C:/workspace" },
+      workspaceRun: {
+        workspaceRoot: "C:/workspace",
+        primaryConfigurationId: null,
+        configurations: [],
+      },
       sessionMemoryEnabled: true,
-      sessionMemory: [
-        createMemoryEntry("session", "Prefers concise output"),
-      ],
+      sessionMemory: [createMemoryEntry("session", "Prefers concise output")],
       globalMemoryEnabled: false,
       globalMemory: [createMemoryEntry("global", "Uses Windows")],
     };
@@ -199,6 +203,12 @@ describe("createInteractiveChatSessionState", () => {
       globalMemoryEnabled: true,
       globalMemory: [createMemoryEntry("global", "Uses Windows")],
       uiControlEnabled: true,
+      workspace: { selection: "selected", root: "C:/workspace" },
+      workspaceRun: {
+        workspaceRoot: "C:/workspace",
+        primaryConfigurationId: null,
+        configurations: [],
+      },
       uiControl: {
         available: true,
         platform: "windows",
@@ -211,6 +221,12 @@ describe("createInteractiveChatSessionState", () => {
 
     expect(createInteractiveChatSessionState(seededContext, false)).toEqual({
       history: [{ role: "user", content: "Continue from the previous run" }],
+      workspace: { selection: "selected", root: "C:/workspace" },
+      workspaceRun: {
+        workspaceRoot: "C:/workspace",
+        primaryConfigurationId: null,
+        configurations: [],
+      },
       sessionMemoryEnabled: false,
       sessionMemory: [createMemoryEntry("session", "Prefers terse answers")],
       globalMemoryEnabled: true,

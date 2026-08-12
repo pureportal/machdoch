@@ -11,6 +11,7 @@ import type {
   InstructionDeliveryReceipt,
   InstructionSourceKind,
 } from "./instruction-system/types.js";
+import type { WorkspaceRunSnapshot } from "../shared/workspace-run.js";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
@@ -152,6 +153,7 @@ export interface TaskConversationContext {
   globalMemory?: ConversationMemoryEntry[];
   uiControlEnabled?: boolean;
   uiControl?: UiControlRuntimeInfo;
+  workspaceRun?: WorkspaceRunSnapshot;
 }
 
 export interface TaskExecutionMemoryUpdate {

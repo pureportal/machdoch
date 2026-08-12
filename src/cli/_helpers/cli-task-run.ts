@@ -60,6 +60,8 @@ interface CliContextPathEntry {
 
 export interface InteractiveChatSessionState {
   history: ConversationHistoryEntry[];
+  workspace?: TaskConversationContext["workspace"];
+  workspaceRun?: TaskConversationContext["workspaceRun"];
   sessionMemory: ConversationMemoryEntry[];
   sessionMemoryEnabled: boolean;
   globalMemoryEnabled?: boolean;
@@ -246,6 +248,12 @@ export const resolveConversationContext = async (
 
   return {
     history: baseContext?.history ?? [],
+    ...(baseContext?.workspace !== undefined
+      ? { workspace: baseContext.workspace }
+      : {}),
+    ...(baseContext?.workspaceRun !== undefined
+      ? { workspaceRun: baseContext.workspaceRun }
+      : {}),
     ...(baseContext?.sessionMemory !== undefined
       ? { sessionMemory: baseContext.sessionMemory }
       : {}),
@@ -281,6 +289,12 @@ export const createInteractiveChatSessionState = (
 } => {
   const sessionState: InteractiveChatSessionState = {
     history: baseContext?.history ?? [],
+    ...(baseContext?.workspace !== undefined
+      ? { workspace: baseContext.workspace }
+      : {}),
+    ...(baseContext?.workspaceRun !== undefined
+      ? { workspaceRun: baseContext.workspaceRun }
+      : {}),
     sessionMemory: baseContext?.sessionMemory ?? [],
     sessionMemoryEnabled: baseContext?.sessionMemoryEnabled ?? true,
     ...(baseContext?.globalMemoryEnabled !== undefined
@@ -618,6 +632,12 @@ export const runInteractiveChat = async (
   try {
     const createCurrentConversationContext = (): TaskConversationContext => ({
       history: sessionState.history,
+      ...(sessionState.workspace !== undefined
+        ? { workspace: sessionState.workspace }
+        : {}),
+      ...(sessionState.workspaceRun !== undefined
+        ? { workspaceRun: sessionState.workspaceRun }
+        : {}),
       sessionMemory: sessionState.sessionMemory,
       sessionMemoryEnabled: sessionState.sessionMemoryEnabled,
       ...(sessionState.globalMemoryEnabled !== undefined

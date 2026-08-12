@@ -22,6 +22,182 @@ const MAX_RECENT_HISTORY_CHARS = 3_600;
 const MAX_CONVERSATION_SUMMARY_INPUT_CHARS = 10_000;
 const MAX_CONVERSATION_SUMMARY_SECTION_LINES = 12;
 const MAX_MEMORY_PROMPT_ENTRIES = 10;
+const MAX_WORKSPACE_RUN_CONTEXT_CHARS = 12_000;
+
+type WorkspaceRunContext = NonNullable<TaskConversationContext["workspaceRun"]>;
+type WorkspaceRunStatus = WorkspaceRunContext["configurations"][number];
+
+const redactWorkspaceRunText = (
+  value: string,
+  environmentValues: readonly string[],
+): string =>
+  environmentValues.reduce(
+    (redacted, secret) => redacted.replaceAll(secret, "<redacted>"),
+    value,
+  );
+
+const redactWorkspaceRunStatus = (
+  status: WorkspaceRunStatus,
+): WorkspaceRunStatus => {
+  if (status.configuration.kind === "composite") {
+    return {
+      ...status,
+      children: status.children.map(redactWorkspaceRunStatus),
+    };
+  }
+  const environmentValues = Array.from(
+    new Set(
+      Object.values(status.configuration.environment).filter(
+        (value) => value && value !== "<redacted>",
+      ),
+    ),
+  ).sort((left, right) => right.length - left.length);
+  const redact = (value: string): string =>
+    redactWorkspaceRunText(value, environmentValues);
+  return {
+    ...status,
+    configuration: {
+      ...status.configuration,
+      command: redact(status.configuration.command),
+      workingDirectory: redact(status.configuration.workingDirectory),
+      environment: Object.fromEntries(
+        Object.keys(status.configuration.environment).map((key) => [
+          key,
+          "<redacted>",
+        ]),
+      ),
+      urls: status.configuration.urls.map(redact),
+      ...(status.configuration.healthCheck === undefined
+        ? {}
+        : {
+            healthCheck: status.configuration.healthCheck
+              ? {
+                  ...status.configuration.healthCheck,
+                  ...(status.configuration.healthCheck.host === undefined
+                    ? {}
+                    : {
+                        host:
+                          status.configuration.healthCheck.host === null
+                            ? null
+                            : redact(status.configuration.healthCheck.host),
+                      }),
+                  ...(status.configuration.healthCheck.url === undefined
+                    ? {}
+                    : {
+                        url:
+                          status.configuration.healthCheck.url === null
+                            ? null
+                            : redact(status.configuration.healthCheck.url),
+                      }),
+                }
+              : null,
+          }),
+    },
+    health: status.health
+      ? {
+          ...status.health,
+          message: status.health.message ? redact(status.health.message) : null,
+        }
+      : null,
+    recentFailures: status.recentFailures.map((failure) => ({
+      ...failure,
+      message: redact(failure.message),
+    })),
+    logs: status.logs.map((log) => ({ ...log, line: redact(log.line) })),
+    children: status.children.map(redactWorkspaceRunStatus),
+  };
+};
+
+const compactWorkspaceRunStatus = (
+  status: WorkspaceRunStatus,
+): Record<string, unknown> => ({
+  id: status.configuration.id,
+  name: status.configuration.name,
+  kind: status.configuration.kind,
+  state: status.state,
+  pid: status.pid,
+  exitCode: status.exitCode,
+  restartCount: status.restartCount,
+  health: status.health,
+  ...(status.configuration.kind === "task"
+    ? {
+        workingDirectory: status.configuration.workingDirectory,
+        hotReload: status.configuration.hotReload,
+        ports: status.configuration.ports,
+        urls: status.configuration.urls,
+        healthCheck: status.configuration.healthCheck,
+        restartPolicy: status.configuration.restartPolicy,
+      }
+    : {
+        startOrder: status.configuration.startOrder,
+      }),
+  recentFailures: status.recentFailures.slice(-2),
+  logs: status.logs.slice(-3),
+  children: status.children.map(compactWorkspaceRunStatus),
+});
+
+const minimalWorkspaceRunStatus = (
+  status: WorkspaceRunStatus,
+): Record<string, unknown> => ({
+  id: status.configuration.id,
+  name: status.configuration.name,
+  kind: status.configuration.kind,
+  state: status.state,
+  restartCount: status.restartCount,
+  ...(status.configuration.kind === "task"
+    ? { hotReload: status.configuration.hotReload }
+    : {}),
+  children: status.children.map((child) => ({
+    id: child.configuration.id,
+    state: child.state,
+  })),
+});
+
+export const serializeWorkspaceRunContext = (
+  context: WorkspaceRunContext,
+): string => {
+  const sanitized = {
+    ...context,
+    configurations: context.configurations.map(redactWorkspaceRunStatus),
+  };
+  const serialized = JSON.stringify(sanitized);
+  if (serialized.length <= MAX_WORKSPACE_RUN_CONTEXT_CHARS) {
+    return serialized;
+  }
+
+  const compact = JSON.stringify({
+    workspaceRoot: sanitized.workspaceRoot,
+    primaryConfigurationId: sanitized.primaryConfigurationId,
+    configurations: sanitized.configurations.map(compactWorkspaceRunStatus),
+  });
+  if (compact.length <= MAX_WORKSPACE_RUN_CONTEXT_CHARS) {
+    return compact;
+  }
+
+  const configurations: Record<string, unknown>[] = [];
+  for (const status of sanitized.configurations) {
+    configurations.push(minimalWorkspaceRunStatus(status));
+    const candidate = JSON.stringify({
+      workspaceRoot: sanitized.workspaceRoot.slice(0, 1_024),
+      primaryConfigurationId: sanitized.primaryConfigurationId,
+      configurations,
+      omittedConfigurationCount:
+        sanitized.configurations.length - configurations.length,
+    });
+    if (candidate.length > MAX_WORKSPACE_RUN_CONTEXT_CHARS) {
+      configurations.pop();
+      break;
+    }
+  }
+
+  return JSON.stringify({
+    workspaceRoot: sanitized.workspaceRoot.slice(0, 1_024),
+    primaryConfigurationId: sanitized.primaryConfigurationId,
+    configurations,
+    omittedConfigurationCount:
+      sanitized.configurations.length - configurations.length,
+  });
+};
 
 export interface PreparedConversationPromptContext {
   workspace: {
@@ -245,12 +421,12 @@ export const prepareConversationPromptContext = async (
           config,
           omittedHistory,
           signal,
-        )) ??
-        createDeterministicConversationSummary(omittedHistory))
+        )) ?? createDeterministicConversationSummary(omittedHistory))
       : undefined;
   const recentHistoryLines = recentHistory.map(formatConversationHistoryEntry);
   const sessionMemoryLines = createMemoryLines(sessionEntries);
   const globalMemoryLines = createMemoryLines(globalEntries);
+  const workspaceRunContext = conversationContext?.workspaceRun;
   const promptSections = [
     summary
       ? [
@@ -278,6 +454,13 @@ export const prepareConversationPromptContext = async (
           "<global_memory>",
           ...globalMemoryLines.map((line) => `- ${line}`),
           "</global_memory>",
+        ].join("\n")
+      : undefined,
+    workspaceRunContext
+      ? [
+          "<workspace_run_context>",
+          serializeWorkspaceRunContext(workspaceRunContext),
+          "</workspace_run_context>",
         ].join("\n")
       : undefined,
     uiControlEnabled

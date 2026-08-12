@@ -50,6 +50,7 @@
         "browser",
         "git",
         "packages",
+        "run",
         "mcp",
         "scheduler",
         "utilities"
