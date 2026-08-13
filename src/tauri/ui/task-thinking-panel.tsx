@@ -14,7 +14,14 @@ import {
   TerminalSquare,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import { createTaskTimeoutIndicator } from "./_helpers/task-timeout-indicator.helper";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
@@ -170,9 +177,15 @@ const getPreview = (
 };
 
 const StoryItemDetails = ({
+  disclosureId,
+  isExpanded,
   item,
+  onExpandedChange,
 }: {
+  disclosureId: string;
+  isExpanded: boolean;
   item: TaskExecutionStoryItem;
+  onExpandedChange: (disclosureId: string, isExpanded: boolean) => void;
 }): JSX.Element | null => {
   const inputPreview = getPreview(item, "argumentsPreview");
   const outputPreview = getPreview(item, "outputPreview");
@@ -196,8 +209,17 @@ const StoryItemDetails = ({
         : "Technical details";
 
   return (
-    <details className="app-thinking-disclosure mt-2 min-w-0 text-xs text-slate-400">
-      <summary className="w-fit cursor-pointer rounded-md text-[11px] font-medium text-slate-400 outline-none hover:text-slate-200 focus-visible:ring-2 focus-visible:ring-sky-400/60">
+    <details
+      open={isExpanded}
+      className="app-thinking-disclosure mt-2 min-w-0 text-xs text-slate-400"
+    >
+      <summary
+        onClick={(event) => {
+          event.preventDefault();
+          onExpandedChange(disclosureId, !isExpanded);
+        }}
+        className="w-fit cursor-pointer rounded-md text-[11px] font-medium text-slate-400 outline-none hover:text-slate-200 focus-visible:ring-2 focus-visible:ring-sky-400/60"
+      >
         {summary}
       </summary>
       <div className="mt-2 grid min-w-0 gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
@@ -274,11 +296,17 @@ const StoryItemDetails = ({
 };
 
 const StoryRow = ({
+  disclosureId,
+  isDetailsExpanded,
   item,
   isLast,
+  onDetailsExpandedChange,
 }: {
+  disclosureId: string;
+  isDetailsExpanded: boolean;
   item: TaskExecutionStoryItem;
   isLast: boolean;
+  onDetailsExpandedChange: (disclosureId: string, isExpanded: boolean) => void;
 }): JSX.Element => {
   const Icon = storyIcons[item.kind];
 
@@ -323,7 +351,12 @@ const StoryRow = ({
             {item.detail}
           </p>
         ) : null}
-        <StoryItemDetails item={item} />
+        <StoryItemDetails
+          disclosureId={disclosureId}
+          isExpanded={isDetailsExpanded}
+          item={item}
+          onExpandedChange={onDetailsExpandedChange}
+        />
       </div>
     </li>
   );
@@ -410,6 +443,29 @@ export const TaskThinkingPanel = ({
       : `${formatElapsedTime(timeoutIndicator.remainingMs)} until timeout if no further activity`
     : undefined;
   const [isCollapsed, setIsCollapsed] = useState<boolean>(!isRunning);
+  const [expandedDisclosureIds, setExpandedDisclosureIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const handleDisclosureExpandedChange = useCallback(
+    (disclosureId: string, isExpanded: boolean): void => {
+      setExpandedDisclosureIds((currentIds) => {
+        if (currentIds.has(disclosureId) === isExpanded) {
+          return currentIds;
+        }
+
+        const nextIds = new Set(currentIds);
+
+        if (isExpanded) {
+          nextIds.add(disclosureId);
+        } else {
+          nextIds.delete(disclosureId);
+        }
+
+        return nextIds;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!isRunning || isCollapsed || !shouldFollowLatestRef.current) {
@@ -584,8 +640,13 @@ export const TaskThinkingPanel = ({
                 {storyItems.map((item, index) => (
                   <StoryRow
                     key={storyItemKeys[index]}
+                    disclosureId={storyItemKeys[index] ?? item.id}
+                    isDetailsExpanded={expandedDisclosureIds.has(
+                      storyItemKeys[index] ?? item.id,
+                    )}
                     item={item}
                     isLast={index === storyItems.length - 1 && !hasLiveRows}
+                    onDetailsExpandedChange={handleDisclosureExpandedChange}
                   />
                 ))}
 

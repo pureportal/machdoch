@@ -334,6 +334,23 @@ body {
     user-select: text;
 }
 
+.app-thinking-panel,
+.app-thinking-panel :where(*) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.app-thinking-panel :where(button, button *, summary, summary *) {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.app-workspace-run-output,
+.app-workspace-run-output :where(*) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 .app-message-container {
     scroll-margin-block: 4.5rem;
 }

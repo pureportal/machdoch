@@ -150,6 +150,15 @@ describe("WorkspaceRunPanel", () => {
     expect(screen.getByText("backend error")).toBeTruthy();
     const output = screen.getByRole("log", { name: "Fullstack output" });
     expect(output).toBeTruthy();
+    expect(output.classList.contains("app-workspace-run-output")).toBe(true);
+    expect(output.classList.contains("select-text")).toBe(true);
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(screen.getByText("frontend ready"));
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    expect(selection?.toString()).toContain("frontend ready");
+    expect(fireEvent.copy(output)).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
         .disabled,
@@ -171,6 +180,7 @@ describe("WorkspaceRunPanel", () => {
       rules: { "color-contrast": { enabled: false } },
     });
     expect(accessibility.violations).toEqual([]);
+    selection?.removeAllRanges();
   });
 
   it("retains output and presents successful exits as completed", async () => {

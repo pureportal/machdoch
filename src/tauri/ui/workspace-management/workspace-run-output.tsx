@@ -127,7 +127,7 @@ export const WorkspaceRunOutput = ({
         tabIndex={0}
         onScroll={handleScroll}
         className={cn(
-          "overflow-y-auto border-t border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70",
+          "app-workspace-run-output cursor-text select-text overflow-y-auto border-t border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70",
           compact
             ? "max-h-[min(13rem,32vh)] min-h-24"
             : "max-h-[min(22rem,42vh)] min-h-32",

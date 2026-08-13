@@ -222,6 +222,60 @@ describe("createTaskExecutionStory", () => {
     expect(story[0]?.outputLines).toHaveLength(2);
     expect(story[2]?.detail).toBe("shell · 1 stdout line");
   });
+
+  it("keeps a terminal group identity stable as retained output lines roll", () => {
+    const trace: TaskThinkingTrace = {
+      status: "running",
+      mode: "machdoch",
+      startedAt: 1_000,
+      timelineEvents: [
+        {
+          id: "started",
+          kind: "state",
+          phase: "started",
+          label: "Started",
+          detail: "Running the task.",
+          tone: "info",
+          timestamp: 1_000,
+          elapsedMs: 0,
+        },
+      ],
+      actionOutputLines: [
+        {
+          id: "line-1",
+          toolName: "shell",
+          stream: "stderr",
+          text: "first retained line",
+          timestamp: 1_100,
+        },
+        {
+          id: "line-2",
+          toolName: "shell",
+          stream: "stderr",
+          text: "second retained line",
+          timestamp: 1_200,
+        },
+      ],
+    };
+    const initialTerminalItem = createTaskExecutionStory(trace).find(
+      (item) => item.kind === "terminal",
+    );
+    const advancedTerminalItem = createTaskExecutionStory({
+      ...trace,
+      actionOutputLines: [
+        trace.actionOutputLines![1]!,
+        {
+          id: "line-3",
+          toolName: "shell",
+          stream: "stderr",
+          text: "new retained line",
+          timestamp: 1_300,
+        },
+      ],
+    }).find((item) => item.kind === "terminal");
+
+    expect(initialTerminalItem?.id).toBe(advancedTerminalItem?.id);
+  });
 });
 
 describe("appendThinkingProgress terminal output", () => {

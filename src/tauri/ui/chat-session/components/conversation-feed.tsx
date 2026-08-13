@@ -51,6 +51,7 @@ import {
 } from "../_helpers/ai-context-window";
 import {
   createExecutionThinkingTrace,
+  getExecutionMessageRenderKey,
   getRenderedMessageContent,
 } from "../_helpers/execution-message.tsx";
 import {
@@ -1688,7 +1689,7 @@ export const ConversationFeed = ({
       ) : null}
       {renderedMessages.map((message) => (
         <ConversationMessageRow
-          key={message.id}
+          key={getExecutionMessageRenderKey(message)}
           message={message}
           aiContextMessageLimit={normalizedAiContextMessageLimit}
           canContinueMessage={

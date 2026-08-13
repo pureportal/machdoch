@@ -92,6 +92,21 @@ export const getRenderedMessageContent = (
   return message.content;
 };
 
+export const getExecutionMessageRenderKey = (
+  message: ChatSessionMessage,
+): string => {
+  if (
+    message.role === "agent" &&
+    message.taskId &&
+    (message.source?.kind === "thinking" ||
+      message.source?.kind === "execution")
+  ) {
+    return `task-execution:${message.taskId}`;
+  }
+
+  return message.id;
+};
+
 export const normalizeMarkdownForSpeech = (content: string): string => {
   const normalized = content
     .replace(/```[\s\S]*?```/g, " Code sample omitted. ")

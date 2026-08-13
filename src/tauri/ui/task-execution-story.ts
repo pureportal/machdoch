@@ -320,7 +320,7 @@ const appendOutputLine = (
   }
 
   items.push({
-    id: `terminal-${line.id}`,
+    id: `terminal:${line.toolName}:after:${previousItem?.id ?? "execution-start"}`,
     kind: "terminal",
     phase: "streaming",
     label: "Terminal activity",
