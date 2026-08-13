@@ -182,10 +182,7 @@ const limitTimelineDetail = (value: string): string => {
   return `${normalized.slice(0, TIMELINE_DETAIL_LIMIT - 1)}...`;
 };
 
-const createTimelineEventId = (
-  timestamp: number,
-  index: number,
-): string => {
+const createTimelineEventId = (timestamp: number, index: number): string => {
   return `timeline-${timestamp}-${index}`;
 };
 
@@ -262,38 +259,6 @@ const createTimelineEventFromProgressEvent = (
   };
 };
 
-const createOutputTimelineEvents = (
-  progress: TaskExecutionProgress,
-  timestamp: number,
-  startedAt: number,
-  startIndex: number,
-): TaskThinkingTimelineEvent[] => {
-  const output = progress.actionOutput;
-
-  if (!output || output.chunk.length === 0) {
-    return [];
-  }
-
-  return output.chunk
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .split("\n")
-    .map(limitOutputLine)
-    .filter((line) => line.length > 0)
-    .map((line, index) => ({
-      id: createTimelineEventId(timestamp, startIndex + index),
-      kind: "output" as const,
-      phase: "streaming" as const,
-      label: `${output.toolName} ${output.stream}`,
-      detail: line,
-      tone: output.stream === "stderr" ? "warning" : "success",
-      timestamp,
-      elapsedMs: Math.max(0, timestamp - startedAt),
-      toolName: output.toolName,
-      stream: output.stream,
-    }));
-};
-
 const isSameTimelineEvent = (
   left: TaskThinkingTimelineEvent | undefined,
   right: TaskThinkingTimelineEvent,
@@ -351,7 +316,10 @@ const createTimelineEvents = (
   const candidates: TaskThinkingTimelineEvent[] = [];
   const startIndex = getNextGeneratedIdIndex(existingEvents, "timeline");
 
-  if (progress.timelineEvent) {
+  if (
+    progress.timelineEvent &&
+    !(progress.actionOutput && progress.timelineEvent.kind === "output")
+  ) {
     candidates.push(
       createTimelineEventFromProgressEvent(
         progress.timelineEvent,
@@ -361,15 +329,6 @@ const createTimelineEvents = (
       ),
     );
   }
-
-  candidates.push(
-    ...createOutputTimelineEvents(
-      progress,
-      timestamp,
-      startedAt,
-      startIndex + candidates.length,
-    ),
-  );
 
   const stateEvent = createStateTimelineEvent(
     progress,
@@ -465,7 +424,8 @@ const createTokenUsageEventKey = (
   const scope = [
     event.provider ?? "provider",
     event.model ?? "model",
-    typeof executorIteration === "number" || typeof executorIteration === "string"
+    typeof executorIteration === "number" ||
+    typeof executorIteration === "string"
       ? `executor-${executorIteration}`
       : undefined,
     typeof validatorPass === "number" || typeof validatorPass === "string"
@@ -499,10 +459,7 @@ const createTokenUsageSummary = (
     const key = createTokenUsageEventKey(event, index);
     const currentUsage = usageByModelCall.get(key);
 
-    usageByModelCall.set(
-      key,
-      mergeCumulativeTokenUsage(currentUsage, usage),
-    );
+    usageByModelCall.set(key, mergeCumulativeTokenUsage(currentUsage, usage));
   });
 
   let summary: TaskExecutionTokenUsage | undefined;
@@ -527,7 +484,9 @@ const createActionOutputLines = (
 
   const existingLines = trace.actionOutputLines ?? [];
   const startIndex = getNextGeneratedIdIndex(existingLines, "output");
-  const normalizedChunk = output.chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalizedChunk = output.chunk
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   const nextLines = normalizedChunk
     .split("\n")
     .map(limitOutputLine)
@@ -610,10 +569,12 @@ export const appendThinkingProgress = (
     timestamp,
   );
   const nextTokenUsage = hasTimelineChanges
-    ? createTokenUsageSummary(nextTimelineEvents) ?? trace.tokenUsage
+    ? (createTokenUsageSummary(nextTimelineEvents) ?? trace.tokenUsage)
     : trace.tokenUsage;
   const completedAt =
-    nextStatus === "complete" ? trace.completedAt ?? timestamp : trace.completedAt;
+    nextStatus === "complete"
+      ? (trace.completedAt ?? timestamp)
+      : trace.completedAt;
 
   return {
     ...trace,

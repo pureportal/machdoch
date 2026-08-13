@@ -1997,14 +1997,9 @@ body {
 }
 
 :root[data-density="compact"] .app-thinking-scroll {
-    height: 8.5rem !important;
+    height: auto !important;
+    max-height: 12rem !important;
     padding: 0.65rem !important;
-}
-
-:root[data-density="compact"] .app-thinking-detail-block {
-    margin-bottom: 0.65rem !important;
-    border-radius: 0.75rem !important;
-    padding: 0.45rem 0.6rem !important;
 }
 
 :root[data-density="compact"] .app-thinking-code {
@@ -2323,15 +2318,28 @@ body {
     color: var(--app-sky-700) !important;
 }
 
+:root[data-theme="light"] .app-thinking-main-icon[data-tone="success"] {
+    background: hsl(164 44% 94%) !important;
+    border-color: hsl(165 34% 76%) !important;
+    color: hsl(173 42% 25%) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon[data-tone="warning"] {
+    background: hsl(42 92% 94%) !important;
+    border-color: hsl(40 72% 72%) !important;
+    color: hsl(36 82% 31%) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon[data-tone="danger"] {
+    background: hsl(352 88% 95%) !important;
+    border-color: hsl(352 64% 78%) !important;
+    color: hsl(348 68% 36%) !important;
+}
+
 :root[data-theme="light"] .app-thinking-toggle {
     background: white !important;
     border-color: hsl(212 28% 84%) !important;
     color: var(--app-text-soft) !important;
-}
-
-:root[data-theme="light"] .app-thinking-detail-block {
-    background: color-mix(in srgb, var(--app-surface) 84%, var(--app-sky-50)) !important;
-    border-color: hsl(205 36% 84%) !important;
 }
 
 :root[data-theme="light"] .app-thinking-code {
