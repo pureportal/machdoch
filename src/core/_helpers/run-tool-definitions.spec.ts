@@ -107,5 +107,11 @@ describe.sequential("workspace run tools", () => {
     expect(
       definitions.every((definition) => definition.backingTool === "run"),
     ).toBe(true);
+    expect(
+      definitions.some(
+        (definition) =>
+          definition.spec.name === "draft_workspace_run_configurations",
+      ),
+    ).toBe(false);
   });
 });

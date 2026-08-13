@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { cn } from "../../lib/utils";
+import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 
 export interface SessionHeaderProps {
   activeSession: ChatSessionRecord;
@@ -112,6 +113,15 @@ export const SessionHeader = ({
       </div>
 
       <div className="app-session-header-controls flex shrink-0 items-center gap-2">
+        <WorkspaceRunDialogControl
+          workspaceRoot={activeSession.workspace}
+          detectionContext={{
+            provider: activeSession.provider,
+            model: activeSession.model,
+            reasoning: activeSession.reasoning,
+            sessionId: activeSession.id,
+          }}
+        />
         {canEditSessionMetadata ? (
           <Input
             value={tagDraft}

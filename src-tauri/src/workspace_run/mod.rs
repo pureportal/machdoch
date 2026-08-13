@@ -1,5 +1,4 @@
 mod control;
-mod detection;
 mod health;
 mod manager;
 pub mod model;
@@ -14,12 +13,9 @@ use tauri::{Emitter as _, Manager as _};
 
 use self::{
     control::{ControlCredentials, RunControlBridge},
-    detection::detect_configurations,
     manager::RunManager,
-    model::{
-        RunConfigurationDocument, RunDetectionResult, RunWorkspaceSnapshot, RUN_EVENT_NAME,
-        RUN_LOG_EVENT_NAME,
-    },
+    model::{RunConfigurationDocument, RunWorkspaceSnapshot, RUN_EVENT_NAME, RUN_LOG_EVENT_NAME},
+    persistence::precheck_document,
 };
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
@@ -92,6 +88,13 @@ pub struct SaveRunConfigurationRequest {
     document: RunConfigurationDocument,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrecheckRunConfigurationRequest {
+    workspace_root: String,
+    document_json: String,
+}
+
 #[tauri::command]
 pub fn get_workspace_run_configuration_document(
     state: tauri::State<'_, WorkspaceRunState>,
@@ -152,11 +155,11 @@ pub async fn restart_workspace_run_configuration(
 }
 
 #[tauri::command]
-pub fn detect_workspace_run_configurations(
-    workspace_root: String,
-) -> Result<RunDetectionResult, String> {
-    let workspace = resolve_workspace_root_path(&workspace_root)?;
-    detect_configurations(&workspace)
+pub fn precheck_workspace_run_configuration_json(
+    request: PrecheckRunConfigurationRequest,
+) -> Result<RunConfigurationDocument, String> {
+    let workspace = resolve_workspace_root_path(&request.workspace_root)?;
+    precheck_document(&workspace, &request.document_json)
 }
 
 pub fn enrich_conversation_context(

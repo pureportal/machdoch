@@ -19,13 +19,14 @@ import type {
 import { WorkspaceRunPanel } from "./workspace-run-panel";
 
 const runtime = vi.hoisted(() => ({
-  detectWorkspaceRunConfigurations: vi.fn(),
   listenWorkspaceRunLogs: vi.fn(),
   listenWorkspaceRunState: vi.fn(),
   loadWorkspaceRunConfigurationDocument: vi.fn(),
   loadWorkspaceRunSnapshot: vi.fn(),
   openExternalUrl: vi.fn(),
+  precheckWorkspaceRunConfigurationJson: vi.fn(),
   restartWorkspaceRunConfiguration: vi.fn(),
+  runDesktopTask: vi.fn(),
   saveWorkspaceRunConfigurationDocument: vi.fn(),
   startWorkspaceRunConfiguration: vi.fn(),
   stopWorkspaceRunConfiguration: vi.fn(),
@@ -85,7 +86,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("WorkspaceRunPanel", () => {
-  it("opens configuration for an unconfigured chat workspace", async () => {
+  it("opens configuration for an unconfigured workspace", async () => {
     const snapshot: WorkspaceRunSnapshot = {
       workspaceRoot: "C:/workspace",
       primaryConfigurationId: null,
@@ -101,7 +102,6 @@ describe("WorkspaceRunPanel", () => {
     render(
       createElement(WorkspaceRunPanel, {
         workspaceRoot: "C:/workspace",
-        variant: "chat",
       }),
     );
 
@@ -143,7 +143,6 @@ describe("WorkspaceRunPanel", () => {
     render(
       createElement(WorkspaceRunPanel, {
         workspaceRoot: "C:/workspace",
-        variant: "chat",
       }),
     );
 

@@ -121,6 +121,13 @@ describe("SessionComposer edit enhancement", () => {
       createElement(
         SessionComposer,
         createProps({
+          activeSession: createSession({
+            id: "session-1",
+            provider: "openai",
+            model: "gpt-5.4",
+            workspace: "C:/workspace",
+            draft: EDIT_DRAFT,
+          }),
           editingMessageId: null,
           promptEnhancementMode: "off",
           promptEnhancementPending: null,
@@ -134,5 +141,7 @@ describe("SessionComposer edit enhancement", () => {
     expect(markup).toContain("<textarea");
     expect(markup).toContain(EDIT_DRAFT);
     expect(markup).not.toContain("Enhance ongoing");
+    expect(markup).not.toContain('aria-label="Workspace run"');
+    expect(markup).not.toContain("Run configuration JSON");
   });
 });

@@ -16,13 +16,17 @@ RunManager (Tauri/Rust) ---- state snapshots + log batches ----> React surfaces
         +---- authenticated 127.0.0.1 bridge ----> agent run tools
         |
         +---- bounded AI snapshot ----> conversation context
+
+Header Play dialog ---- read-only AI workspace inspection ----> reviewed JSON draft
+                                                           |
+                                                           +---- Rust precheck
 ```
 
 The manager resolves and canonicalizes the active workspace before every operation. A task's `workingDirectory` must be relative, exist, and remain inside that workspace after canonicalization. Commands therefore start from the selected workspace on Windows and Linux, including child-package directories.
 
 Runtime state is keyed by canonical workspace and configuration id. Starting an active task is idempotent, so a composite, Workspace Management, chat, and the AI cannot create duplicate instances of the same saved task. Operations are serialized per workspace without blocking independent workspaces. React surfaces receive coalesced state and output events and perform a low-frequency reconciliation poll so window or event timing cannot leave a stale control visible.
 
-The desktop process injects a fresh, size-bounded `workspaceRun` snapshot into each chat task. Environment names remain visible, but their values and occurrences of those values in commands, diagnostics, health results, and captured output are redacted from AI context and tool results. Dedicated agent tools then query live state or start, stop, and restart configurations through a random-token loopback bridge. The bridge address and token are process environment values used by tool implementations and are not placed in model-visible context. Ask mode receives only status and draft-detection tools; lifecycle mutations require Machdoch mode.
+The desktop process injects a fresh, size-bounded `workspaceRun` snapshot into each chat task. Environment names remain visible, but their values and occurrences of those values in commands, diagnostics, health results, and captured output are redacted from AI context and tool results. Dedicated agent tools then query live state or start, stop, and restart configurations through a random-token loopback bridge. The bridge address and token are process environment values used by tool implementations and are not placed in model-visible context. Ask mode can read status; lifecycle mutations require Machdoch mode.
 
 ## Configuration model
 
@@ -107,9 +111,9 @@ The manager keeps the last valid document while a run is active. This keeps the 
 
 ## Detection and review
 
-Detection scans up to three workspace levels while excluding dependency and build directories. It recognizes runnable `package.json` scripts, package managers from lockfiles, explicit ports and URLs, common watch/dev commands, Docker Compose files, and Rust binaries in mixed stacks. Multiple independent applications produce a `Fullstack Start` draft. A root package remains primary only when its command explicitly orchestrates the workspace, avoiding both duplicate starts and omitted nested applications.
+Detection runs a read-only Ask task in the active workspace. The AI inspects manifests, scripts, project files, documentation, and launch or container configuration with workspace tools, then chooses commands from that evidence instead of matching an exhaustive framework or command list. Unknown ports, URLs, and health checks remain omitted and marked for review.
 
-Detection never saves or executes a result. Workspace Management opens the generated JSON for review, and uncertainty markers identify fields such as ports or health checks that could not be determined. The AI exposes the same detector as a read-only draft tool. Unknown values are omitted rather than inferred from framework defaults.
+Detection never saves or executes a result. The tagged AI response must parse as JSON, its metadata must match the drafted configurations, and the Rust precheck must accept the complete schema and every workspace-relative working directory before the dialog replaces the editable draft. Edited JSON passes the same precheck before save. Starting a configuration independently reloads and validates saved state before creating a process.
 
 ## Research-informed choices
 
@@ -123,6 +127,6 @@ Features that would add clutter or unsafe implicit behavior were intentionally o
 
 ## Verification boundaries
 
-Automated Rust tests cover document validation, mixed-stack detection, composite state and prevalidation, workspace-relative paths, concurrent idempotent starts, stdout and stderr retention, bounded fast output, successful and failed lifecycle transitions, crash recovery, failed-health restart limits, stale or invalid persisted state, event synchronization, shutdown during health checks, and descendant process cleanup. TypeScript tests cover control selection, completion presentation, composite output ordering, visible active and retained output, invalid-configuration recovery, repeated UI actions, prompt redaction, and the authenticated AI status bridge.
+Automated Rust tests cover document and JSON precheck validation, composite state and prevalidation, workspace-relative paths, concurrent idempotent starts, stdout and stderr retention, bounded fast output, successful and failed lifecycle transitions, crash recovery, failed-health restart limits, stale or invalid persisted state, event synchronization, shutdown during health checks, and descendant process cleanup. TypeScript tests cover the header dialog and lifecycle animation, AI draft parsing, precheck recovery, control selection, completion presentation, composite output ordering, visible active and retained output, repeated UI actions, prompt redaction, and the authenticated AI status bridge.
 
 Runtime state and logs are intentionally not restored after Machdoch exits. A normal exit stops managed processes; Windows kill-on-close adds crash cleanup. A force-killed Unix desktop process cannot run its shutdown handler, so an operating-system-level orphan remains possible in that exceptional case.

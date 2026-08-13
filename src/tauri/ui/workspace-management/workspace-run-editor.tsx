@@ -8,18 +8,25 @@ import type {
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import {
-  detectWorkspaceRunConfigurations,
+  precheckWorkspaceRunConfigurationJson,
   saveWorkspaceRunConfigurationDocument,
 } from "../runtime";
+import {
+  generateWorkspaceRunDetection,
+  validateWorkspaceRunDetections,
+  type WorkspaceRunAiContext,
+} from "./workspace-run-ai";
 
 export const WorkspaceRunEditor = ({
   workspaceRoot,
   document,
+  detectionContext,
   onDirtyChange,
   onSaved,
 }: {
   workspaceRoot: string;
   document: WorkspaceRunConfigurationDocument;
+  detectionContext?: WorkspaceRunAiContext;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved: (
     document: WorkspaceRunConfigurationDocument,
@@ -58,11 +65,19 @@ export const WorkspaceRunEditor = ({
     setBusy("detect");
     setError(null);
     try {
-      const result = await detectWorkspaceRunConfigurations(workspaceRoot);
-      const nextDraft = JSON.stringify(result.document, null, 2);
+      const generated = await generateWorkspaceRunDetection(
+        workspaceRoot,
+        detectionContext,
+      );
+      const checkedDocument = await precheckWorkspaceRunConfigurationJson(
+        workspaceRoot,
+        generated.documentJson,
+      );
+      validateWorkspaceRunDetections(checkedDocument, generated.detections);
+      const nextDraft = JSON.stringify(checkedDocument, null, 2);
       setDraft(nextDraft);
       onDirtyChange?.(nextDraft !== serializedDocument);
-      setDetections(result.detections);
+      setDetections(generated.detections);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -74,17 +89,17 @@ export const WorkspaceRunEditor = ({
     setBusy("save");
     setError(null);
     try {
-      const parsed: unknown = JSON.parse(draft);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Run configuration must be a JSON object.");
-      }
+      const checkedDocument = await precheckWorkspaceRunConfigurationJson(
+        workspaceRoot,
+        draft,
+      );
       const snapshot = await saveWorkspaceRunConfigurationDocument(
         workspaceRoot,
-        parsed as WorkspaceRunConfigurationDocument,
+        checkedDocument,
       );
       setDetections([]);
       onDirtyChange?.(false);
-      onSaved(parsed as WorkspaceRunConfigurationDocument, snapshot);
+      onSaved(checkedDocument, snapshot);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

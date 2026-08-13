@@ -1,7 +1,7 @@
 import { createConnection } from "node:net";
 import type { AgentToolDefinition } from "./agent-tools-shared.js";
 
-type RunControlAction = "status" | "start" | "stop" | "restart" | "detect";
+type RunControlAction = "status" | "start" | "stop" | "restart";
 
 interface RunControlResponse {
   ok: boolean;
@@ -213,33 +213,5 @@ export const createRunToolDefinitions = (): AgentToolDefinition[] => {
       "restart",
       "Stop and start a saved workspace run configuration, including tasks that do not support hot reload.",
     ),
-    {
-      spec: {
-        name: "draft_workspace_run_configurations",
-        description:
-          "Inspect the active codebase for likely applications, commands, working directories, explicit ports and URLs, composite setups, and hot-reload support. Returns an unsaved draft with uncertainty markers for review.",
-        inputSchema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {},
-        },
-      },
-      backingTool: "run",
-      riskLevel: "low",
-      effect: "read",
-      execute: async (_args, context) => {
-        const result = await sendRunControlRequest(
-          "detect",
-          context.workspaceRoot,
-          undefined,
-          context.signal,
-        );
-        return createResult(
-          "draft_workspace_run_configurations",
-          result,
-          "draft_workspace_run_configurations -> draft",
-        );
-      },
-    },
   ];
 };

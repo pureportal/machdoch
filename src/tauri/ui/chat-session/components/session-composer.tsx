@@ -43,7 +43,6 @@ import { SessionPromptEnhancementPicker } from "./session-prompt-enhancement-pic
 import { SessionReasoningPicker } from "./session-reasoning-picker";
 import { SmartContextPackPicker } from "./smart-context-packs";
 import { WorkspacePicker } from "./workspace-picker";
-import { WorkspaceRunPanel } from "../../workspace-management/workspace-run-panel";
 
 export interface SessionComposerProps {
   activeSession: ChatSessionRecord;
@@ -455,13 +454,6 @@ export const SessionComposer = ({
         <PromptEnhancementPending
           modeLabel={promptEnhancementPending.modeLabel}
           className="app-prompt-enhancement-blocker"
-        />
-      ) : null}
-
-      {!editingMessageId ? (
-        <WorkspaceRunPanel
-          workspaceRoot={activeSession.workspace}
-          variant="chat"
         />
       ) : null}
 

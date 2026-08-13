@@ -35,6 +35,7 @@ import {
   stopWorkspaceRunConfiguration,
 } from "../runtime";
 import { createWorkspaceRootKey } from "./workspace-management-model";
+import type { WorkspaceRunAiContext } from "./workspace-run-ai";
 import { WorkspaceRunEditor } from "./workspace-run-editor";
 import {
   applyWorkspaceRunLogBatch,
@@ -162,10 +163,12 @@ const ConfigurationSummary = ({
 
 export const WorkspaceRunPanel = ({
   workspaceRoot,
-  variant = "management",
+  detectionContext,
+  onDocumentDirtyChange,
 }: {
   workspaceRoot: string | null | undefined;
-  variant?: "management" | "chat";
+  detectionContext?: WorkspaceRunAiContext;
+  onDocumentDirtyChange?: (dirty: boolean) => void;
 }): JSX.Element | null => {
   const normalizedRoot = workspaceRoot?.trim() || null;
   const rootKey = normalizedRoot
@@ -190,9 +193,13 @@ export const WorkspaceRunPanel = ({
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const handleDocumentDirtyChange = useCallback((dirty: boolean): void => {
-    documentDirtyRef.current = dirty;
-  }, []);
+  const handleDocumentDirtyChange = useCallback(
+    (dirty: boolean): void => {
+      documentDirtyRef.current = dirty;
+      onDocumentDirtyChange?.(dirty);
+    },
+    [onDocumentDirtyChange],
+  );
 
   const refreshSnapshot = useCallback(async (): Promise<void> => {
     if (!normalizedRoot || !rootKey) return;
@@ -410,7 +417,6 @@ export const WorkspaceRunPanel = ({
   const presentation = displayedStatus
     ? workspaceRunStatusPresentation(displayedStatus)
     : null;
-  const compact = variant === "chat";
   const loadError = documentError ?? snapshotError;
   const error = actionError ?? loadError;
   const showOutput = Boolean(
@@ -426,12 +432,7 @@ export const WorkspaceRunPanel = ({
       aria-busy={loading || busyAction !== null}
       className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/30"
     >
-      <div
-        className={cn(
-          "flex min-w-0 flex-wrap items-center gap-2.5",
-          compact ? "px-3 py-2" : "px-4 py-3",
-        )}
-      >
+      <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-4 py-3">
         <Play aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />
         <div className="min-w-[8rem] flex-1">
           {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
@@ -560,7 +561,7 @@ export const WorkspaceRunPanel = ({
         />
       ) : null}
       {showOutput && displayedStatus ? (
-        <WorkspaceRunOutput status={displayedStatus} compact={compact} />
+        <WorkspaceRunOutput status={displayedStatus} compact={false} />
       ) : null}
       {document ? (
         <details
@@ -575,12 +576,11 @@ export const WorkspaceRunPanel = ({
               className="ml-auto size-3.5 transition-transform group-open/config:rotate-180"
             />
           </summary>
-          <div
-            className={cn("border-t border-slate-800", compact ? "p-3" : "p-4")}
-          >
+          <div className="border-t border-slate-800 p-4">
             <WorkspaceRunEditor
               workspaceRoot={normalizedRoot}
               document={document}
+              detectionContext={detectionContext}
               onDirtyChange={handleDocumentDirtyChange}
               onSaved={(nextDocument, nextSnapshot) => {
                 setDocument(nextDocument);

@@ -11,8 +11,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::{detection::detect_configurations, manager::RunManager};
-use crate::runtime_snapshot::resolve_workspace_root_path;
+use super::manager::RunManager;
 
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 
@@ -99,7 +98,6 @@ enum ControlAction {
     Start,
     Stop,
     Restart,
-    Detect,
 }
 
 #[derive(Serialize)]
@@ -169,10 +167,6 @@ fn execute_request(
         }
         ControlAction::Restart => {
             serialize_snapshot(manager.restart(&request.workspace_root, configuration_id)?)
-        }
-        ControlAction::Detect => {
-            let workspace = resolve_workspace_root_path(&request.workspace_root)?;
-            serde_json::to_value(detect_configurations(&workspace)?)
         }
     };
     result.map_err(|error| format!("Failed to serialize run-control state: {error}"))

@@ -269,29 +269,6 @@ pub struct RunWorkspaceSnapshot {
     pub configurations: Vec<RunConfigurationStatus>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunDetection {
-    pub configuration_id: String,
-    pub confidence: RunDetectionConfidence,
-    pub evidence: Vec<String>,
-    pub uncertain_fields: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum RunDetectionConfidence {
-    High,
-    Medium,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunDetectionResult {
-    pub document: RunConfigurationDocument,
-    pub detections: Vec<RunDetection>,
-}
-
 pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), String> {
     if document.schema_version != RUN_SCHEMA_VERSION {
         return Err(format!(

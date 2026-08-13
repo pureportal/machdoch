@@ -122,11 +122,6 @@ export interface WorkspaceRunDetection {
   uncertainFields: string[];
 }
 
-export interface WorkspaceRunDetectionResult {
-  document: WorkspaceRunConfigurationDocument;
-  detections: WorkspaceRunDetection[];
-}
-
 export const createEmptyWorkspaceRunDocument =
   (): WorkspaceRunConfigurationDocument => ({
     schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,

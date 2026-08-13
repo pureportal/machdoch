@@ -66,7 +66,6 @@ import { MAX_TASK_INPUT_BYTES } from "../../shared/task-input-limits.js";
 import {
   createEmptyWorkspaceRunDocument,
   type WorkspaceRunConfigurationDocument,
-  type WorkspaceRunDetectionResult,
   type WorkspaceRunLogBatch,
   type WorkspaceRunSnapshot,
 } from "../../shared/workspace-run.js";
@@ -4739,17 +4738,20 @@ export const restartWorkspaceRunConfiguration = async (
     configurationId,
   );
 
-export const detectWorkspaceRunConfigurations = async (
+export const precheckWorkspaceRunConfigurationJson = async (
   workspaceRoot: string,
-): Promise<WorkspaceRunDetectionResult> => {
+  documentJson: string,
+): Promise<WorkspaceRunConfigurationDocument> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands()) {
-    return { document: createEmptyWorkspaceRunDocument(), detections: [] };
+    throw new Error(
+      "Run configuration precheck is only available in the desktop app.",
+    );
   }
   try {
-    return await tauriCore.invoke<WorkspaceRunDetectionResult>(
-      "detect_workspace_run_configurations",
-      { workspaceRoot: root },
+    return await tauriCore.invoke<WorkspaceRunConfigurationDocument>(
+      "precheck_workspace_run_configuration_json",
+      { request: { workspaceRoot: root, documentJson } },
     );
   } catch (error) {
     throw normalizeWorkspaceToolsError(error);
