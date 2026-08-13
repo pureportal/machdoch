@@ -717,6 +717,43 @@ body {
     word-break: normal;
 }
 
+.app-mermaid-diagram {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.app-mermaid-diagram-scroll {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(72vh, 48rem);
+    padding: 1rem;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 1rem;
+    background-color: color-mix(in srgb, var(--app-surface) 88%, transparent);
+    scrollbar-width: thin;
+}
+
+.app-mermaid-diagram-scroll:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--app-sky-400) 70%, transparent);
+    outline-offset: 2px;
+}
+
+.app-mermaid-diagram .app-mermaid-diagram-image {
+    display: block;
+    max-width: none;
+    height: auto;
+    margin-inline: auto;
+}
+
+.app-mermaid-diagram-error {
+    margin: 0 0 0.5rem;
+    color: var(--app-text-muted);
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+}
+
 .app-markdown > [data-md-field] + [data-md-field] {
     margin-top: 0.25rem;
 }
@@ -1829,6 +1866,11 @@ body {
 :root[data-density="compact"] .app-markdown-code-block .app-markdown-code {
     padding: 0 !important;
     border-radius: 0 !important;
+}
+
+:root[data-density="compact"] .app-mermaid-diagram-scroll {
+    padding: 0.65rem !important;
+    border-radius: 0.75rem !important;
 }
 
 :root[data-density="compact"] .app-markdown-table-scroll {

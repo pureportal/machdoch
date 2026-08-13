@@ -62,6 +62,33 @@ const ready = true;
     expect(markup).toContain('aria-label="Copy code block to clipboard"');
   });
 
+  it("routes Mermaid fences through the diagram renderer without changing ordinary fences", () => {
+    const mermaidMarkup = renderMarkdown(`Before
+
+\`\`\`mermaid
+flowchart LR
+  A --> B
+\`\`\`
+
+After
+`);
+    const ordinaryMarkup = renderMarkdown(`\`\`\`typescript
+const diagram = "mermaid";
+\`\`\``);
+
+    expect(mermaidMarkup).toContain('class="app-mermaid-diagram"');
+    expect(mermaidMarkup).toContain('data-mermaid-status="loading"');
+    expect(mermaidMarkup).toContain(
+      'class="app-markdown-code language-mermaid"',
+    );
+    expect(mermaidMarkup).toContain("Before");
+    expect(mermaidMarkup).toContain("After");
+    expect(ordinaryMarkup).not.toContain("app-mermaid-diagram");
+    expect(ordinaryMarkup).toContain(
+      'class="app-markdown-code language-typescript"',
+    );
+  });
+
   it("renders every heading level, Setext headings, and inline formatting in headings", () => {
     const markup = renderMarkdown(`# **Primary**
 

@@ -25,6 +25,7 @@ import {
   type WorkspaceMarkdownLinkOpenHandler,
 } from "./workspace-markdown-links";
 import { cn } from "../lib/utils";
+import { MermaidDiagram } from "./mermaid-diagram";
 import { Button } from "./ui/button";
 import {
   Tooltip,
@@ -177,6 +178,25 @@ const CopyableCodeBlock = ({
   );
 };
 
+const getMermaidCodeBlockSource = (children: ReactNode): string | null => {
+  const codeElement =
+    Array.isArray(children) && children.length === 1 ? children[0] : children;
+
+  if (
+    !isValidElement<{
+      children?: ReactNode;
+      className?: string;
+    }>(codeElement) ||
+    !codeElement.props.className
+      ?.split(/\s+/u)
+      .some((className) => /^language-mermaid$/iu.test(className))
+  ) {
+    return null;
+  }
+
+  return getReactNodeText(codeElement.props.children).replace(/\n$/u, "");
+};
+
 const createMarkdownUrlTransform =
   (
     workspaceRoot: string | null | undefined,
@@ -211,9 +231,16 @@ const createMarkdownComponents = (
       </p>
     );
   },
-  pre: ({ children }): JSX.Element => (
-    <CopyableCodeBlock>{children}</CopyableCodeBlock>
-  ),
+  pre: ({ children }): JSX.Element => {
+    const mermaidSource = getMermaidCodeBlockSource(children);
+    const codeBlock = <CopyableCodeBlock>{children}</CopyableCodeBlock>;
+
+    return mermaidSource === null ? (
+      codeBlock
+    ) : (
+      <MermaidDiagram source={mermaidSource} fallback={codeBlock} />
+    );
+  },
   code: ({ children, className, node: _node, ...props }): JSX.Element => (
     <code {...props} className={cn("app-markdown-code", className)}>
       {children}
