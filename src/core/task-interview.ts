@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { loadRuntimeConfig } from "./config.js";
 import { discoverCustomizations } from "./customizations.js";
 import { executeTask } from "./execution.js";
+import { requireInternalTaskRuntimeConfig } from "./internal-task-model.js";
 import {
   createToolErrorResult,
   type AgentToolDefinition,
@@ -475,11 +476,6 @@ export const createTaskInterviewWithAgent = async (
   const config =
     options.config ??
     (await loadRuntimeConfig(workspaceRoot, "machdoch", undefined, undefined, undefined));
-  const interviewerConfig: RuntimeConfig = {
-    ...config,
-    mode: "ask",
-    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
-  };
 
   if (!prompt) {
     return {
@@ -487,8 +483,8 @@ export const createTaskInterviewWithAgent = async (
       session,
       fields: [],
       summary: "Expected a prompt before starting a task interview.",
-      provider: interviewerConfig.provider,
-      model: interviewerConfig.model,
+      provider: config.internalTaskModel.provider,
+      model: config.internalTaskModel.model,
     };
   }
 
@@ -510,10 +506,16 @@ export const createTaskInterviewWithAgent = async (
         completedSession,
         finalSummary,
       ),
-      provider: interviewerConfig.provider,
-      model: interviewerConfig.model,
+      provider: config.internalTaskModel.provider,
+      model: config.internalTaskModel.model,
     };
   }
+
+  const interviewerConfig: RuntimeConfig = {
+    ...requireInternalTaskRuntimeConfig(config),
+    mode: "ask",
+    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
+  };
 
   const customizations =
     options.customizations ??

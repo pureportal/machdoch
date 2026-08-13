@@ -79,7 +79,17 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
     label: "Providers",
     group: "Setup",
     description: "Models and API credentials.",
-    keywords: ["api", "keys", "openai", "anthropic", "google", "media"],
+    keywords: [
+      "api",
+      "keys",
+      "openai",
+      "anthropic",
+      "google",
+      "media",
+      "internal",
+      "background",
+      "model",
+    ],
   },
   {
     id: "workspace",

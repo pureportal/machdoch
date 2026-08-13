@@ -1,17 +1,8 @@
-import type { ReasoningMode } from "../../../core/runtime-contract.generated.js";
 import type {
   WorkspaceRunConfigurationDocument,
   WorkspaceRunDetection,
 } from "../../../shared/workspace-run.js";
-import type { RuntimeProvider } from "../model-catalog";
-import { runDesktopTask } from "../runtime";
-
-export interface WorkspaceRunAiContext {
-  provider?: RuntimeProvider;
-  model?: string;
-  reasoning?: ReasoningMode;
-  sessionId?: string;
-}
+import { runInternalDesktopTask } from "../internal-task-model";
 
 export interface GeneratedWorkspaceRunDetection {
   documentJson: string;
@@ -122,19 +113,12 @@ export const validateWorkspaceRunDetections = (
 
 export const generateWorkspaceRunDetection = async (
   workspaceRoot: string,
-  context: WorkspaceRunAiContext = {},
 ): Promise<GeneratedWorkspaceRunDetection> => {
-  const taskRun = await runDesktopTask(
+  const taskRun = await runInternalDesktopTask(
     workspaceRoot,
     createWorkspaceRunDetectionTask(),
     {
       mode: "ask",
-      ...(context.provider ? { provider: context.provider } : {}),
-      ...(context.model?.trim() ? { model: context.model.trim() } : {}),
-      ...(context.reasoning ? { reasoning: context.reasoning } : {}),
-      ...(context.sessionId?.trim()
-        ? { sessionId: context.sessionId.trim() }
-        : {}),
       taskId: `workspace-run-detection-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     },
   );

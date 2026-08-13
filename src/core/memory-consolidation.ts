@@ -1,7 +1,6 @@
 import { rememberUserGlobalMemory } from "./env.js";
-import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { compactTraceText } from "./_helpers/runtime-text.js";
-import { resolveReviewModelRuntimeConfig } from "./review-model.js";
+import { createInternalTaskModelExecution } from "./internal-task-model.js";
 import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
@@ -365,19 +364,18 @@ const extractModelMemoryCandidates = async (
 
   try {
     const memoryDecisionTool = createMemoryDecisionTool();
-    const reviewConfig = resolveReviewModelRuntimeConfig(config);
-    const adapter = await createProviderAdapter(
-      reviewConfig,
+    const execution = await createInternalTaskModelExecution(
+      config,
       [memoryDecisionTool],
       consolidationOptions.modelAdapter,
     );
 
-    if (!adapter) {
+    if (!execution) {
       return [];
     }
 
-    const turn = await adapter.startTurn({
-      model: reviewConfig.model,
+    const turn = await execution.adapter.startTurn({
+      model: execution.config.model,
       systemPrompt: createMemoryReviewSystemPrompt(),
       userPrompt: createMemoryReviewUserPrompt(
         task,

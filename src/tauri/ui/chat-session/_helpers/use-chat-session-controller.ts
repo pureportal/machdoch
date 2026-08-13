@@ -67,6 +67,10 @@ import {
 import { readMediaAssetReferencePreview } from "../../media/media-runtime";
 import { type RuntimeProvider } from "../../model-catalog";
 import {
+  runInternalDesktopTask,
+  runInternalTaskInterview,
+} from "../../internal-task-model";
+import {
   DesktopTaskRunProtocolError,
   getDesktopTaskRunFailure,
 } from "../../desktop-task-error";
@@ -91,8 +95,6 @@ import {
   resolveAttachedImagePreviewSource,
   resolveDroppedPaths,
   resolveWorkspaceFilePreviewSource,
-  runDesktopTask,
-  runTaskInterview,
   saveClipboardImageAttachment,
   mutateInstructions,
   syncChatCompletionIndicator,
@@ -4574,11 +4576,6 @@ export const useChatSessionController = (
         .toString(36)
         .slice(2, 8)}`;
       const sessionSnapshot = submission.sessionSnapshot;
-      const reasoning = normalizeSessionReasoningOverride(
-        sessionSnapshot.reasoning,
-        sessionSnapshot.provider,
-        sessionSnapshot.model,
-      );
       const pending: PromptEnhancementPendingState = {
         taskId,
         sessionId: sessionSnapshot.id,
@@ -4622,7 +4619,7 @@ export const useChatSessionController = (
       }
 
       try {
-        const taskRun = await runDesktopTask(
+        const taskRun = await runInternalDesktopTask(
           sessionSnapshot.workspace,
           createPromptEnhancementTask({
             mode: activeMode,
@@ -4637,9 +4634,6 @@ export const useChatSessionController = (
               aiContextMessageLimit,
             ),
             mode: "ask",
-            provider: sessionSnapshot.provider,
-            model: sessionSnapshot.model,
-            ...(reasoning ? { reasoning } : {}),
             ...(imagePaths.length > 0 ? { imagePaths } : {}),
             sessionId: resolvePromptEnhancementOperationSessionId(
               sessionSnapshot.id,
@@ -6482,24 +6476,25 @@ export const useChatSessionController = (
     }));
 
     try {
-      const result = await runTaskInterview(context.sessionSnapshot.workspace, {
-        prompt: context.task,
-        mode: context.mode,
-        provider: context.provider,
-        model: context.model,
-        contextNotes: createTaskInterviewContextNotes(
-          context,
-          aiContextMessageLimit,
-        ),
-        ...(context.reasoning ? { reasoning: context.reasoning } : {}),
-        maxTurns: 5,
-        taskId,
-        ...(session ? { session } : {}),
-        ...(answers ? { answers } : {}),
-        ...(answerComments && Object.keys(answerComments).length > 0
-          ? { answerComments }
-          : {}),
-      });
+      const result = await runInternalTaskInterview(
+        context.sessionSnapshot.workspace,
+        {
+          prompt: context.task,
+          mode: context.mode,
+          contextNotes: createTaskInterviewContextNotes(
+            context,
+            aiContextMessageLimit,
+          ),
+          ...(context.reasoning ? { reasoning: context.reasoning } : {}),
+          maxTurns: 5,
+          taskId,
+          ...(session ? { session } : {}),
+          ...(answers ? { answers } : {}),
+          ...(answerComments && Object.keys(answerComments).length > 0
+            ? { answerComments }
+            : {}),
+        },
+      );
 
       await applyChatInterviewResult(context, taskId, result, requestRevision);
     } catch (error) {
@@ -7259,6 +7254,7 @@ export const useChatSessionController = (
       canEditSessionMetadata: !isQuickVoiceSession(state.activeSession),
       canPinSession: canPinSession(state.activeSession),
       canBranchSession: canDuplicateSession(state.activeSession),
+      primaryTaskRunning: activeSessionExecuting,
       showClearSessionHistory: isQuickVoiceSession(state.activeSession),
       canClearSessionHistory:
         isQuickVoiceSession(state.activeSession) &&
@@ -7555,6 +7551,7 @@ export const useChatSessionController = (
       onSettingsSectionChange: state.setSettingsSection,
       providerSetup: {
         provider: runtime.providerSetupProvider,
+        providerAvailability: runtime.globalProviders ?? [],
         keyValue: runtime.providerSetupKey,
         loading: runtime.providerSetupLoading,
         saving: runtime.providerSetupSaving,

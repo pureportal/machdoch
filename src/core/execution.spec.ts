@@ -98,6 +98,10 @@ const createConfig = (
     reviewModel: {
       mode: "base",
     },
+    internalTaskModel: {
+      provider: "unconfigured",
+      model: "gpt-5.5",
+    },
     ...overrides,
   };
 };

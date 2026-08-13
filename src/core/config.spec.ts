@@ -354,6 +354,31 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
+  it("resolves the configured internal task provider and model", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await mkdir(join(workspaceRoot, ".user-config"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".user-config", "user-config.json"),
+      JSON.stringify({
+        internalTaskModel: {
+          provider: "anthropic",
+          model: "claude-internal",
+        },
+      }),
+    );
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      "ANTHROPIC_API_KEY=sk-ant-internal-test\n",
+    );
+
+    expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
+      provider: "anthropic",
+      model: "claude-internal",
+    });
+  });
+
   it("persists the workspace default model into .machdoch/config.json", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

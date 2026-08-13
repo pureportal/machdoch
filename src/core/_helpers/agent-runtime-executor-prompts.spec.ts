@@ -30,6 +30,10 @@ const createRuntimeConfig = (
     reviewModel: {
       mode: "base",
     },
+    internalTaskModel: {
+      provider: "openai",
+      model: "gpt-5.5",
+    },
     ...overrides,
   };
 };

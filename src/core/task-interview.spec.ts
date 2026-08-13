@@ -27,6 +27,10 @@ const runtimeConfig: RuntimeConfig = {
       provider: "openai",
       configured: true,
     },
+    {
+      provider: "anthropic",
+      configured: true,
+    },
   ],
   webSearch: {
     activeProvider: "none",
@@ -34,6 +38,10 @@ const runtimeConfig: RuntimeConfig = {
   },
   reviewModel: {
     mode: "base",
+  },
+  internalTaskModel: {
+    provider: "anthropic",
+    model: "claude-internal",
   },
 };
 
@@ -151,6 +159,8 @@ describe("createTaskInterviewWithAgent", () => {
     expect(executionConfig).toEqual(
       expect.objectContaining({
         mode: "ask",
+        provider: "anthropic",
+        model: "claude-internal",
         reasoning: "medium",
       }),
     );

@@ -9,7 +9,7 @@ import type {
 } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
-import { createProviderAdapter } from "./provider-adapters.js";
+import { createInternalTaskModelExecution } from "../internal-task-model.js";
 import {
   compactTraceText,
   createTextSection,
@@ -348,17 +348,16 @@ const summarizeConversationHistory = async (
     return undefined;
   }
 
-  const adapter = await createProviderAdapter(config, [], undefined);
-
-  if (!adapter) {
-    return undefined;
-  }
-
-  const transcript = createConversationTranscript(history);
-
   try {
-    const turn = await adapter.startTurn({
-      model: config.model,
+    const execution = await createInternalTaskModelExecution(config);
+
+    if (!execution) {
+      return undefined;
+    }
+
+    const transcript = createConversationTranscript(history);
+    const turn = await execution.adapter.startTurn({
+      model: execution.config.model,
       systemPrompt: [
         "You summarize prior chat context for a coding agent.",
         "Extract only durable facts that matter for the next turn: user preferences, goals, decisions, relevant files, blockers, and unresolved follow-ups.",

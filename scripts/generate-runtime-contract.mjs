@@ -108,6 +108,9 @@ const webSearchEnvKeys = metadata.webSearchEnvKeys;
 const defaultAgentLimits = getDefaultObject("UserAgentLimitsSettings");
 const agentLimitBounds = getBoundsObject("UserAgentLimitsSettings");
 const defaultReviewModelSettings = getDefaultObject("UserReviewModelSettings");
+const defaultInternalTaskModelSettings = getDefaultObject(
+  "UserInternalTaskModelSettings",
+);
 const defaultDesktopSettings = getDefaultObject("UserDesktopSettings");
 const desktopSettingBounds = getBoundsObject("UserDesktopSettings");
 const schemaVersion = metadata.schemaVersion;
@@ -183,6 +186,7 @@ export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = ${json(webSearchEnvKeys)} as const
 export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = ${json(defaultAgentLimits)} as const satisfies UserAgentLimitsSettings;
 export const AGENT_LIMIT_BOUNDS = ${json(agentLimitBounds)} as const;
 export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = ${json(defaultReviewModelSettings)} as const satisfies UserReviewModelSettings;
+export const DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS = ${json(defaultInternalTaskModelSettings)} as const satisfies UserInternalTaskModelSettings;
 export const DEFAULT_USER_DESKTOP_SETTINGS = ${json(defaultDesktopSettings)} as const satisfies UserDesktopSettings;
 export const DESKTOP_SETTING_BOUNDS = ${json(desktopSettingBounds)} as const;
 
@@ -283,6 +287,11 @@ export interface RuntimeReviewModelConfig {
   model?: string;
 }
 
+export interface RuntimeInternalTaskModelConfig {
+  provider: ModelProvider;
+  model: string;
+}
+
 export interface UserWebSearchSettings {
   activeProvider: WebSearchProvider;
   apiKeys: UserWebSearchApiKeys;
@@ -314,6 +323,7 @@ export interface RuntimeConfig {
   providerAvailability: ProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
   reviewModel: RuntimeReviewModelConfig;
+  internalTaskModel: RuntimeInternalTaskModelConfig;
 }
 
 export interface UiControlAvailability {
@@ -326,7 +336,7 @@ export interface UiControlAvailability {
   reason?: string;
 }
 
-export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits"> {
+export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "internalTaskModel"> {
   defaultMode: RunMode;
   defaultReasoning: ReasoningMode;
   agentLimits: RuntimeAgentLimits;
@@ -401,6 +411,7 @@ export interface UserConfigFile {
   agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
   reviewModel?: UserReviewModelConfigFile;
+  internalTaskModel?: UserInternalTaskModelConfigFile;
   providerEnrollment?: ProviderEnrollmentConfigFile;
 }
 
@@ -412,6 +423,16 @@ export interface UserAgentLimitsSettings {
 
 export interface UserReviewModelSettings {
   mode: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
+export interface UserInternalTaskModelConfigFile {
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
+export interface UserInternalTaskModelSettings {
   provider?: ConfiguredModelProvider;
   model?: string;
 }

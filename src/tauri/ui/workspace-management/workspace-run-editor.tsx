@@ -2,7 +2,6 @@ import { LoaderCircle, Save, Sparkles } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type JSX } from "react";
 import type {
   WorkspaceRunConfigurationDocument,
-  WorkspaceRunDetection,
   WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
 import { Button } from "../components/ui/button";
@@ -12,21 +11,19 @@ import {
   saveWorkspaceRunConfigurationDocument,
 } from "../runtime";
 import {
-  generateWorkspaceRunDetection,
-  validateWorkspaceRunDetections,
-  type WorkspaceRunAiContext,
-} from "./workspace-run-ai";
+  clearWorkspaceRunDetection,
+  startWorkspaceRunDetection,
+  useWorkspaceRunDetectionState,
+} from "./workspace-run-detection-state";
 
 export const WorkspaceRunEditor = ({
   workspaceRoot,
   document,
-  detectionContext,
   onDirtyChange,
   onSaved,
 }: {
   workspaceRoot: string;
   document: WorkspaceRunConfigurationDocument;
-  detectionContext?: WorkspaceRunAiContext;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved: (
     document: WorkspaceRunConfigurationDocument,
@@ -38,22 +35,39 @@ export const WorkspaceRunEditor = ({
     [document],
   );
   const [draft, setDraft] = useState(serializedDocument);
-  const [detections, setDetections] = useState<WorkspaceRunDetection[]>([]);
-  const [busy, setBusy] = useState<"detect" | "save" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const detectionState = useWorkspaceRunDetectionState(workspaceRoot);
   const errorId = useId();
   const dirty = draft !== serializedDocument;
+  const busy =
+    detectionState.phase === "detecting" ? "detect" : saving ? "save" : null;
+  const detections = detectionState.result?.detections ?? [];
+  const error = saveError ?? detectionState.error;
 
   useEffect(() => {
     setDraft(serializedDocument);
   }, [serializedDocument]);
 
   useEffect(() => {
+    if (!detectionState.result) return;
+    const nextDraft = JSON.stringify(detectionState.result.document, null, 2);
+    setDraft(nextDraft);
+    onDirtyChange?.(nextDraft !== serializedDocument);
+  }, [
+    detectionState.phase,
+    detectionState.result,
+    detectionState.revision,
+    onDirtyChange,
+    serializedDocument,
+  ]);
+
+  useEffect(() => {
     onDirtyChange?.(dirty);
     return () => onDirtyChange?.(false);
   }, [dirty, onDirtyChange]);
 
-  const detect = async (): Promise<void> => {
+  const detect = (): void => {
     if (
       dirty &&
       !window.confirm(
@@ -62,32 +76,13 @@ export const WorkspaceRunEditor = ({
     ) {
       return;
     }
-    setBusy("detect");
-    setError(null);
-    try {
-      const generated = await generateWorkspaceRunDetection(
-        workspaceRoot,
-        detectionContext,
-      );
-      const checkedDocument = await precheckWorkspaceRunConfigurationJson(
-        workspaceRoot,
-        generated.documentJson,
-      );
-      validateWorkspaceRunDetections(checkedDocument, generated.detections);
-      const nextDraft = JSON.stringify(checkedDocument, null, 2);
-      setDraft(nextDraft);
-      onDirtyChange?.(nextDraft !== serializedDocument);
-      setDetections(generated.detections);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(null);
-    }
+    setSaveError(null);
+    void startWorkspaceRunDetection(workspaceRoot);
   };
 
   const save = async (): Promise<void> => {
-    setBusy("save");
-    setError(null);
+    setSaving(true);
+    setSaveError(null);
     try {
       const checkedDocument = await precheckWorkspaceRunConfigurationJson(
         workspaceRoot,
@@ -97,13 +92,13 @@ export const WorkspaceRunEditor = ({
         workspaceRoot,
         checkedDocument,
       );
-      setDetections([]);
+      clearWorkspaceRunDetection(workspaceRoot);
       onDirtyChange?.(false);
       onSaved(checkedDocument, snapshot);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setSaveError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setBusy(null);
+      setSaving(false);
     }
   };
 
@@ -115,7 +110,7 @@ export const WorkspaceRunEditor = ({
           size="sm"
           variant="outline"
           disabled={busy !== null}
-          onClick={() => void detect()}
+          onClick={detect}
         >
           {busy === "detect" ? (
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
@@ -169,7 +164,8 @@ export const WorkspaceRunEditor = ({
           const nextDraft = event.currentTarget.value;
           setDraft(nextDraft);
           onDirtyChange?.(nextDraft !== serializedDocument);
-          setError(null);
+          setSaveError(null);
+          clearWorkspaceRunDetection(workspaceRoot);
         }}
         className="min-h-72 max-h-[min(32rem,55vh)] resize-y overflow-auto border-slate-800 bg-slate-950 font-mono text-xs leading-5 text-slate-200"
       />

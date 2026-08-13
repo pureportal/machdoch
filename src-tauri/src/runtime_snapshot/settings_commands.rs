@@ -6,12 +6,14 @@ use super::{
     normalize_optional_string, resolve_audio_active_provider, resolve_web_search_active_provider,
     settings::{
         normalize_user_agent_limits_settings, normalize_user_agent_limits_settings_input,
-        normalize_user_memory_entries, normalize_user_review_model_settings,
-        normalize_user_review_model_settings_input,
+        normalize_user_internal_task_model_settings,
+        normalize_user_internal_task_model_settings_input, normalize_user_memory_entries,
+        normalize_user_review_model_settings, normalize_user_review_model_settings_input,
     },
     settings_types::{
-        UserAgentLimitsSettings, UserMemorySettings, UserReviewModelSettings,
-        UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
+        UserAgentLimitsSettings, UserInternalTaskModelSettings, UserMemorySettings,
+        UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings,
+        UserWebSearchSettings,
     },
     user_config::{load_user_config_file, update_user_config_file},
 };
@@ -227,6 +229,15 @@ pub(super) fn load_user_review_model_settings() -> Result<UserReviewModelSetting
     Ok(normalize_user_review_model_settings(&config.review_model))
 }
 
+pub(super) fn load_user_internal_task_model_settings(
+) -> Result<UserInternalTaskModelSettings, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(normalize_user_internal_task_model_settings(
+        &config.internal_task_model,
+    ))
+}
+
 pub(super) fn save_user_web_search_api_key_value(
     provider: &str,
     api_key: &str,
@@ -338,5 +349,16 @@ pub(super) fn save_user_review_model_settings_value(
         config.review_model.mode = Some(normalized_settings.mode.clone());
         config.review_model.provider = normalized_settings.provider.clone();
         config.review_model.model = normalized_settings.model.clone();
+    })
+}
+
+pub(super) fn save_user_internal_task_model_settings_value(
+    settings: &UserInternalTaskModelSettings,
+) -> Result<PathBuf, String> {
+    let normalized_settings = normalize_user_internal_task_model_settings_input(settings);
+
+    update_user_config_file(|config| {
+        config.internal_task_model.provider = normalized_settings.provider.clone();
+        config.internal_task_model.model = normalized_settings.model.clone();
     })
 }

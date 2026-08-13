@@ -6,11 +6,11 @@ import {
   validateWorkspaceRunDetections,
 } from "./workspace-run-ai";
 
-const runtime = vi.hoisted(() => ({
-  runDesktopTask: vi.fn(),
+const internalTask = vi.hoisted(() => ({
+  runInternalDesktopTask: vi.fn(),
 }));
 
-vi.mock("../runtime", () => runtime);
+vi.mock("../internal-task-model", () => internalTask);
 
 const document: WorkspaceRunConfigurationDocument = {
   schemaVersion: 1,
@@ -100,7 +100,7 @@ describe("workspace run AI detection", () => {
         },
       ],
     })}</machdoch_workspace_run_detection>`;
-    runtime.runDesktopTask.mockResolvedValue({
+    internalTask.runInternalDesktopTask.mockResolvedValue({
       execution: {
         task: "detect",
         mode: "ask",
@@ -111,23 +111,17 @@ describe("workspace run AI detection", () => {
       },
     });
 
-    await generateWorkspaceRunDetection("C:/active-workspace", {
-      provider: "openai",
-      model: "gpt-5.4",
-      reasoning: "high",
-      sessionId: "session-1",
-    });
+    await generateWorkspaceRunDetection("C:/active-workspace");
 
-    expect(runtime.runDesktopTask).toHaveBeenCalledWith(
+    expect(internalTask.runInternalDesktopTask).toHaveBeenCalledWith(
       "C:/active-workspace",
       expect.stringContaining("Inspect the active workspace"),
       expect.objectContaining({
         mode: "ask",
-        provider: "openai",
-        model: "gpt-5.4",
-        reasoning: "high",
-        sessionId: "session-1",
       }),
     );
+    expect(
+      internalTask.runInternalDesktopTask.mock.calls[0]?.[2],
+    ).not.toHaveProperty("sessionId");
   });
 });

@@ -9,6 +9,7 @@ import {
   getUserConfigPath,
   hasConfiguredValue,
   loadUserAgentLimitsSettings,
+  loadUserInternalTaskModelSettings,
   loadUserReviewModelSettings,
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
@@ -36,6 +37,8 @@ import type {
   RuntimeAgentLimitOverrides,
   RunMode,
   RuntimeConfig,
+  RuntimeInternalTaskModelConfig,
+  UserInternalTaskModelSettings,
   WebSearchProvider,
   WebSearchProviderAvailability,
   WorkspaceConfigFile,
@@ -349,6 +352,30 @@ const getDefaultModelForRuntimeProvider = (provider: ModelProvider): string => {
   ];
 };
 
+const resolveInternalTaskModel = (
+  settings: UserInternalTaskModelSettings,
+  availability: ProviderAvailability[],
+): RuntimeInternalTaskModelConfig => {
+  const savedProvider = settings.provider;
+  const provider =
+    savedProvider &&
+    availability.some(
+      (entry) => entry.provider === savedProvider && entry.configured,
+    )
+      ? savedProvider
+      : (availability.find((entry) => entry.configured)?.provider ??
+        "unconfigured");
+  const savedModel = normalizeOptionalString(settings.model);
+
+  return {
+    provider,
+    model:
+      provider === savedProvider && savedModel
+        ? savedModel
+        : getDefaultModelForRuntimeProvider(provider),
+  };
+};
+
 /**
  * Loads the effective runtime configuration for a workspace, including
  * environment variables, workspace config, and provider availability.
@@ -365,6 +392,8 @@ export const loadRuntimeConfig = async (
   const userWebSearchSettings = await loadUserWebSearchSettings();
   const userAgentLimitsSettings = await loadUserAgentLimitsSettings();
   const userReviewModelSettings = await loadUserReviewModelSettings();
+  const userInternalTaskModelSettings =
+    await loadUserInternalTaskModelSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
   const providerAvailability = getProviderAvailability(env);
   const webSearchProviderAvailability = getWebSearchProviderAvailability(env);
@@ -426,5 +455,9 @@ export const loadRuntimeConfig = async (
       providerAvailability: webSearchProviderAvailability,
     },
     reviewModel: userReviewModelSettings,
+    internalTaskModel: resolveInternalTaskModel(
+      userInternalTaskModelSettings,
+      providerAvailability,
+    ),
   };
 };

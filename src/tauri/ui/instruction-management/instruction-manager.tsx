@@ -34,9 +34,9 @@ import {
   type CommandPageItem,
 } from "../commands/command-types";
 import { cn } from "../lib/utils";
+import { runInternalDesktopTask } from "../internal-task-model";
 import {
   cancelDesktopTask,
-  runDesktopTask,
   type InstructionMutationInput,
   type InstructionProfileView,
 } from "../runtime";
@@ -347,7 +347,7 @@ export const InstructionManager = ({
     setAiCancelling(false);
     setAiError(null);
     try {
-      const result = await runDesktopTask(
+      const result = await runInternalDesktopTask(
         setup.workspaceRoot,
         createInstructionAiTask({
           mode: body.trim() ? "improve" : "create",

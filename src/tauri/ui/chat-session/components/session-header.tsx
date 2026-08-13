@@ -16,6 +16,7 @@ export interface SessionHeaderProps {
   canEditSessionMetadata: boolean;
   canPinSession: boolean;
   canBranchSession: boolean;
+  primaryTaskRunning: boolean;
   showClearSessionHistory: boolean;
   canClearSessionHistory: boolean;
   onTagCommit: (tags: string[]) => void;
@@ -40,6 +41,7 @@ export const SessionHeader = ({
   canEditSessionMetadata,
   canPinSession,
   canBranchSession,
+  primaryTaskRunning,
   showClearSessionHistory,
   canClearSessionHistory,
   onTagCommit,
@@ -115,12 +117,7 @@ export const SessionHeader = ({
       <div className="app-session-header-controls flex shrink-0 items-center gap-2">
         <WorkspaceRunDialogControl
           workspaceRoot={activeSession.workspace}
-          detectionContext={{
-            provider: activeSession.provider,
-            model: activeSession.model,
-            reasoning: activeSession.reasoning,
-            sessionId: activeSession.id,
-          }}
+          primaryTaskRunning={primaryTaskRunning}
         />
         {canEditSessionMetadata ? (
           <Input

@@ -4,7 +4,8 @@ use std::{
 };
 
 use super::settings_types::{
-    UserAgentLimitsConfigFile, UserAgentLimitsSettings, UserDesktopSettings, UserMemoryEntry,
+    UserAgentLimitsConfigFile, UserAgentLimitsSettings, UserDesktopSettings,
+    UserInternalTaskModelConfigFile, UserInternalTaskModelSettings, UserMemoryEntry,
     UserReviewModelConfigFile, UserReviewModelSettings,
 };
 use super::{is_valid_model_provider, normalize_optional_string};
@@ -155,6 +156,35 @@ pub(super) fn normalize_user_review_model_settings_input(
 ) -> UserReviewModelSettings {
     normalize_user_review_model_settings(&UserReviewModelConfigFile {
         mode: Some(settings.mode.clone()),
+        provider: settings.provider.clone(),
+        model: settings.model.clone(),
+    })
+}
+
+pub(super) fn normalize_user_internal_task_model_settings(
+    settings: &UserInternalTaskModelConfigFile,
+) -> UserInternalTaskModelSettings {
+    let provider = normalize_optional_string(settings.provider.as_deref());
+    let model = normalize_optional_string(settings.model.as_deref());
+
+    match (provider, model) {
+        (Some(provider), Some(model)) if is_valid_model_provider(&provider) => {
+            UserInternalTaskModelSettings {
+                provider: Some(provider),
+                model: Some(model),
+            }
+        }
+        _ => UserInternalTaskModelSettings {
+            provider: None,
+            model: None,
+        },
+    }
+}
+
+pub(super) fn normalize_user_internal_task_model_settings_input(
+    settings: &UserInternalTaskModelSettings,
+) -> UserInternalTaskModelSettings {
+    normalize_user_internal_task_model_settings(&UserInternalTaskModelConfigFile {
         provider: settings.provider.clone(),
         model: settings.model.clone(),
     })

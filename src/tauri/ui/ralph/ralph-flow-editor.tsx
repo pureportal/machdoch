@@ -122,6 +122,7 @@ import {
   type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "../model-catalog";
+import { runInternalRalphGenerationInterview } from "../internal-task-model";
 import {
   cancelDesktopTask,
   createRalphFlow,
@@ -136,7 +137,6 @@ import {
   restoreRalphFlowRevision,
   resumeRalphRun,
   runRalphFlow,
-  runRalphGenerationInterview,
   saveRalphFlow,
   showRalphRunDetail,
   showRalphRunLog,
@@ -4222,14 +4222,11 @@ export const RalphFlowEditor = ({
     }));
 
     try {
-      const result = await runRalphGenerationInterview(workspaceRoot, {
+      const result = await runInternalRalphGenerationInterview(workspaceRoot, {
         prompt: context.generationPrompt,
         scope: context.targetScope,
         name: context.targetFlowName,
         mode: runMode,
-        provider: generationProvider,
-        model: generationModel,
-        ...(generationReasoning ? { reasoning: generationReasoning } : {}),
         ...(context.existingFlow ? { existingFlow: context.existingFlow } : {}),
         target: context.target,
         maxTurns: 5,

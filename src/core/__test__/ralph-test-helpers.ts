@@ -132,6 +132,10 @@ export const runtimeConfig: RuntimeConfig = {
   reviewModel: {
     mode: "base",
   },
+  internalTaskModel: {
+    provider: "openai",
+    model: "gpt-internal",
+  },
 };
 
 export const customizations: CustomizationDiscoveryResult = {

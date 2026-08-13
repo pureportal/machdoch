@@ -14,7 +14,7 @@ import {
   listenWorkspaceRunState,
   loadWorkspaceRunSnapshot,
 } from "../../runtime";
-import type { WorkspaceRunAiContext } from "../../workspace-management/workspace-run-ai";
+import { useWorkspaceRunDetectionState } from "../../workspace-management/workspace-run-detection-state";
 import { WorkspaceRunPanel } from "../../workspace-management/workspace-run-panel";
 import { workspaceRunIsActive } from "../../workspace-management/workspace-run-model";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
@@ -23,10 +23,10 @@ const RUN_RECONCILIATION_INTERVAL_MS = 5_000;
 
 export const WorkspaceRunDialogControl = ({
   workspaceRoot,
-  detectionContext,
+  primaryTaskRunning,
 }: {
   workspaceRoot: string | null | undefined;
-  detectionContext?: WorkspaceRunAiContext;
+  primaryTaskRunning: boolean;
 }): JSX.Element => {
   const normalizedRoot = workspaceRoot?.trim() || null;
   const rootKey = normalizedRoot
@@ -37,6 +37,7 @@ export const WorkspaceRunDialogControl = ({
   const [open, setOpen] = useState(false);
   const [documentDirty, setDocumentDirty] = useState(false);
   const [snapshot, setSnapshot] = useState<WorkspaceRunSnapshot | null>(null);
+  const detectionState = useWorkspaceRunDetectionState(normalizedRoot);
 
   const refreshSnapshot = useCallback(async (): Promise<void> => {
     if (!normalizedRoot || !rootKey) return;
@@ -85,7 +86,9 @@ export const WorkspaceRunDialogControl = ({
     };
   }, [normalizedRoot, refreshSnapshot, rootKey]);
 
-  const running = snapshot?.configurations.some(workspaceRunIsActive) ?? false;
+  const detecting = detectionState.phase === "detecting";
+  const scriptRunning =
+    snapshot?.configurations.some(workspaceRunIsActive) ?? false;
   const handleOpenChange = (nextOpen: boolean): void => {
     if (
       !nextOpen &&
@@ -106,27 +109,59 @@ export const WorkspaceRunDialogControl = ({
           variant="ghost"
           size="sm"
           disabled={!normalizedRoot}
-          aria-label={running ? "Play, workspace running" : "Play workspace"}
-          data-running={running ? "true" : "false"}
+          aria-label="Run workspace"
+          data-detecting={detecting ? "true" : "false"}
+          data-script-running={scriptRunning ? "true" : "false"}
+          data-primary-task-running={primaryTaskRunning ? "true" : "false"}
           className={cn(
-            "relative h-9 rounded-2xl px-3 text-slate-300 hover:bg-slate-900 hover:text-white",
-            running &&
+            "relative isolate h-9 overflow-hidden rounded-2xl border border-transparent px-3 text-slate-300 hover:bg-slate-900 hover:text-white",
+            scriptRunning &&
               "border border-emerald-400/25 bg-emerald-500/10 text-emerald-100",
+            !scriptRunning &&
+              primaryTaskRunning &&
+              "border-sky-400/25 bg-sky-500/10 text-sky-100",
+            !scriptRunning &&
+              !primaryTaskRunning &&
+              detecting &&
+              "border-violet-400/25 bg-violet-500/10 text-violet-100",
           )}
         >
-          <span className="relative grid size-4 place-items-center">
-            {running ? (
-              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/35 motion-reduce:animate-none" />
+          {primaryTaskRunning ? (
+            <span
+              aria-hidden="true"
+              data-run-activity="primary-task"
+              className="absolute inset-0 animate-pulse bg-sky-400/[0.07] motion-reduce:animate-none"
+            />
+          ) : null}
+          <span className="relative z-10 grid size-4 place-items-center">
+            {scriptRunning ? (
+              <span
+                aria-hidden="true"
+                data-run-activity="script"
+                className="absolute inset-0 animate-ping rounded-full bg-emerald-400/30 motion-reduce:animate-none"
+              />
+            ) : null}
+            {detecting ? (
+              <span
+                aria-hidden="true"
+                data-run-activity="detection"
+                className="absolute -inset-0.5 animate-spin rounded-full border border-violet-300/60 border-b-transparent motion-reduce:animate-none"
+              />
             ) : null}
             <Play
               aria-hidden="true"
               className={cn(
                 "relative size-4",
-                running && "fill-emerald-300 text-emerald-300",
+                scriptRunning && "fill-emerald-300 text-emerald-300",
+                !scriptRunning && primaryTaskRunning && "text-sky-300",
+                !scriptRunning &&
+                  !primaryTaskRunning &&
+                  detecting &&
+                  "text-violet-300",
               )}
             />
           </span>
-          Play
+          <span className="relative z-10">Run</span>
         </Button>
       </DialogTrigger>
       <DialogContent
@@ -139,7 +174,6 @@ export const WorkspaceRunDialogControl = ({
         <div className="min-h-0 overflow-y-auto p-5">
           <WorkspaceRunPanel
             workspaceRoot={normalizedRoot}
-            detectionContext={detectionContext}
             onDocumentDirtyChange={setDocumentDirty}
           />
         </div>

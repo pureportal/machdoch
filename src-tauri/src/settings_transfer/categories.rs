@@ -158,6 +158,24 @@ fn normalized_review_model(value: &Map<String, Value>) -> Value {
     }
 }
 
+fn normalized_internal_task_model(value: &Map<String, Value>) -> Value {
+    let provider = value
+        .get("provider")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|provider| VALID_MODEL_PROVIDERS.contains(provider));
+    let model = value
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|model| !model.is_empty());
+
+    match (provider, model) {
+        (Some(provider), Some(model)) => json!({ "provider": provider, "model": model }),
+        _ => json!({ "provider": null, "model": null }),
+    }
+}
+
 fn bool_or(value: Option<&Value>, fallback: bool) -> Value {
     Value::Bool(value.and_then(Value::as_bool).unwrap_or(fallback))
 }
@@ -266,6 +284,7 @@ fn snapshot_agent_provider_preferences() -> Result<CategorySnapshot, String> {
     let speech = object_or_empty(root.get("speechToText"));
     let limits = object_or_empty(root.get("agentLimits"));
     let review = object_or_empty(root.get("reviewModel"));
+    let internal_task = object_or_empty(root.get("internalTaskModel"));
 
     let value = json!({
         "webSearchActiveProvider": enum_string_or(web_search.get("activeProvider"), &VALID_WEB_SEARCH_PROVIDERS, "none"),
@@ -277,13 +296,14 @@ fn snapshot_agent_provider_preferences() -> Result<CategorySnapshot, String> {
             "autopilotExecutorIterations": u64_clamped(limits.get("autopilotExecutorIterations"), u64::from(DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS), 1, u64::from(MAX_CONFIGURED_AUTOPILOT_ITERATIONS)),
         },
         "reviewModel": normalized_review_model(&review),
+        "internalTaskModel": normalized_internal_task_model(&internal_task),
         "providerEnrollment": normalized_provider_enrollment(root.get("providerEnrollment")),
     });
     validate_agent_provider_value(&value)?;
     create_json_snapshot(
         SettingsCategoryId::AgentProviderPreferences,
         value,
-        6,
+        7,
         false,
     )
 }
@@ -1107,6 +1127,7 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
             "speechToTextActiveProvider",
             "agentLimits",
             "reviewModel",
+            "internalTaskModel",
             "providerEnrollment",
         ],
     )?;
@@ -1189,6 +1210,28 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
                         && !model.chars().any(char::is_control)
                 }) => {}
         _ => return Err("Review-model preferences are internally inconsistent.".to_string()),
+    }
+    let internal_task = root
+        .get("internalTaskModel")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "Internal-task model preferences are invalid.".to_string())?;
+    require_exact_keys(internal_task, &["provider", "model"])?;
+    let internal_provider = internal_task.get("provider");
+    let internal_model = internal_task.get("model");
+    match (internal_provider, internal_model) {
+        (Some(provider), Some(model)) if provider.is_null() && model.is_null() => {}
+        (Some(provider), Some(model))
+            if provider
+                .as_str()
+                .is_some_and(|provider| VALID_MODEL_PROVIDERS.contains(&provider))
+                && model.as_str().is_some_and(|model| {
+                    !model.trim().is_empty()
+                        && model.len() <= 512
+                        && !model.chars().any(char::is_control)
+                }) => {}
+        _ => {
+            return Err("Internal-task model preferences are internally inconsistent.".to_string())
+        }
     }
     validate_provider_enrollment(
         root.get("providerEnrollment")
@@ -2054,6 +2097,7 @@ mod tests {
                 "autopilotExecutorIterations": 16
             },
             "reviewModel": { "mode": "base", "provider": null, "model": null },
+            "internalTaskModel": { "provider": null, "model": null },
             "providerEnrollment": {
                 "schemaVersion": 1,
                 "enabled": true,

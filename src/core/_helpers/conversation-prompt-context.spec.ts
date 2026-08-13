@@ -1,9 +1,45 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   WorkspaceRunConfigurationStatus,
   WorkspaceRunSnapshot,
 } from "../../shared/workspace-run.js";
-import { serializeWorkspaceRunContext } from "./conversation-prompt-context.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import {
+  prepareConversationPromptContext,
+  serializeWorkspaceRunContext,
+} from "./conversation-prompt-context.js";
+
+const providerAdapters = vi.hoisted(() => ({
+  createProviderAdapter: vi.fn(),
+}));
+
+vi.mock("./provider-adapters.js", () => providerAdapters);
+vi.mock("../env.js", () => ({
+  loadUserMemorySettings: vi.fn(async () => ({
+    globalEnabled: false,
+    entries: [],
+  })),
+}));
+
+const runtimeConfig: RuntimeConfig = {
+  workspaceRoot: "C:/workspace",
+  mode: "machdoch",
+  provider: "openai",
+  model: "gpt-primary",
+  reasoning: "default",
+  offline: false,
+  compatibility: { discoverGithubCustomizations: false },
+  providerAvailability: [
+    { provider: "openai", configured: true },
+    { provider: "anthropic", configured: true },
+  ],
+  webSearch: { activeProvider: "none", providerAvailability: [] },
+  reviewModel: { mode: "base" },
+  internalTaskModel: {
+    provider: "anthropic",
+    model: "claude-internal",
+  },
+};
 
 const taskStatus = (
   id: string,
@@ -90,5 +126,43 @@ describe("workspace run prompt context", () => {
     expect(serialized.length).toBeLessThanOrEqual(12_000);
     expect(() => JSON.parse(serialized)).not.toThrow();
     expect(serialized).not.toContain("secret-value");
+  });
+});
+
+describe("conversation summary model", () => {
+  it("uses the internal task selection instead of the primary task model", async () => {
+    const startTurn = vi.fn(async () => ({
+      text: "- Earlier requirement",
+      toolCalls: [],
+    }));
+    providerAdapters.createProviderAdapter.mockResolvedValue({
+      startTurn,
+      continueTurn: vi.fn(),
+    });
+
+    const context = await prepareConversationPromptContext(
+      "Continue the implementation",
+      runtimeConfig,
+      {
+        history: Array.from({ length: 10 }, (_, index) => ({
+          role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+          content: `Conversation message ${index + 1}`,
+        })),
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(providerAdapters.createProviderAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "anthropic",
+        model: "claude-internal",
+      }),
+      [],
+      undefined,
+    );
+    expect(startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "claude-internal" }),
+    );
+    expect(context.promptBlock).toContain("- Earlier requirement");
   });
 });

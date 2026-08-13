@@ -9,6 +9,7 @@ import {
   loadProcessEnv,
   loadUserAgentCliPaths,
   loadUserApiKeys,
+  loadUserInternalTaskModelSettings,
   loadUserMemorySettings,
   loadUserReviewModelSettings,
   loadUserWebSearchApiKeys,
@@ -19,6 +20,7 @@ import {
   saveUserApiKey,
   saveUserDesktopSettingsPatch,
   saveUserGlobalMemoryEnabled,
+  saveUserInternalTaskModelSettings,
   saveUserReviewModelSettings,
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
@@ -345,7 +347,7 @@ describe("user config API key helpers", () => {
     );
   });
 
-  it("persists review model settings for validator and memory passes", async () => {
+  it("persists review model settings for validator passes", async () => {
     isolateEnvironment();
     const configDirectory = await createWorkspace();
     process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
@@ -375,5 +377,31 @@ describe("user config API key helpers", () => {
     expect(await loadUserReviewModelSettings()).toEqual({
       mode: "base",
     });
+  });
+
+  it("persists the internal task model independently", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    expect(await loadUserInternalTaskModelSettings()).toEqual({});
+
+    await saveUserInternalTaskModelSettings({
+      provider: "google",
+      model: "gemini-internal-fast",
+    });
+
+    expect(await loadUserInternalTaskModelSettings()).toEqual({
+      provider: "google",
+      model: "gemini-internal-fast",
+    });
+    expect(await loadUserReviewModelSettings()).toEqual({ mode: "base" });
+
+    await saveUserInternalTaskModelSettings({
+      provider: "google",
+      model: " ",
+    });
+
+    expect(await loadUserInternalTaskModelSettings()).toEqual({});
   });
 });

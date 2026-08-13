@@ -5,6 +5,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
+  DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   RUN_MODES,
   RUNTIME_ENV_KEYS,
@@ -75,6 +76,9 @@ describe("generated runtime contract", () => {
     );
     expect(DEFAULT_USER_REVIEW_MODEL_SETTINGS).toEqual(
       readDefaults(contract.$defs.UserReviewModelSettings?.properties),
+    );
+    expect(DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS).toEqual(
+      readDefaults(contract.$defs.UserInternalTaskModelSettings?.properties),
     );
     expect(DEFAULT_USER_DESKTOP_SETTINGS).toEqual(
       readDefaults(contract.$defs.UserDesktopSettings?.properties),

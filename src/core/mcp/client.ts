@@ -51,9 +51,9 @@ import { randomUUID } from "node:crypto";
 import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
-import { createProviderAdapter } from "../_helpers/provider-adapters.js";
 import { loadRuntimeConfig } from "../config.js";
 import { loadWorkspaceEnv } from "../env.js";
+import { createInternalTaskModelExecution } from "../internal-task-model.js";
 import type { AgentModelImageInput } from "../types.js";
 import {
   getEnabledMcpServer,
@@ -395,7 +395,7 @@ const assertSupportedSamplingRequest = (request: CreateMessageRequest): void => 
   }
 };
 
-const createProviderSamplingHandler: McpSamplingHandler = async ({
+export const createProviderSamplingHandler: McpSamplingHandler = async ({
   workspaceRoot,
   server,
   request,
@@ -404,20 +404,20 @@ const createProviderSamplingHandler: McpSamplingHandler = async ({
   assertSupportedSamplingRequest(request);
 
   const config = await loadRuntimeConfig(workspaceRoot);
-  const adapter = await createProviderAdapter(config, [], undefined);
+  const execution = await createInternalTaskModelExecution(config);
 
-  if (!adapter) {
+  if (!execution) {
     throw new McpError(
       ErrorCode.InvalidRequest,
-      "MCP sampling is enabled, but no machdoch model adapter is available for the current workspace runtime configuration.",
+      "MCP sampling is enabled, but no model adapter is available for the configured internal task model.",
     );
   }
 
   const imageInputs: AgentModelImageInput[] = [];
   const requestedMaxChars = Math.max(1, request.params.maxTokens) * 4;
   const maxChars = Math.min(server.maxResponseChars, requestedMaxChars);
-  const turn = await adapter.startTurn({
-    model: config.model,
+  const turn = await execution.adapter.startTurn({
+    model: execution.config.model,
     systemPrompt:
       request.params.systemPrompt ??
       "Answer the MCP server sampling request. Do not call tools.",
@@ -435,7 +435,7 @@ const createProviderSamplingHandler: McpSamplingHandler = async ({
       type: "text",
       text,
     },
-    model: config.model,
+    model: execution.config.model,
     stopReason: normalizeSamplingStopReason(turn.stopReason, truncated),
   };
 };

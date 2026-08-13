@@ -30,6 +30,7 @@ export interface SettingsStatusMessage {
 
 export interface ProviderSetupControls {
   provider: UserApiKeyProvider;
+  providerAvailability: RuntimeProviderAvailability[];
   keyValue: string;
   loading: boolean;
   saving: boolean;

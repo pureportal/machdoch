@@ -113,6 +113,10 @@ describe("createProviderAdapter Langdock routing", () => {
     reviewModel: {
       mode: "base",
     },
+    internalTaskModel: {
+      provider: "langdock",
+      model,
+    },
   });
 
   let workspaceRoot: string;

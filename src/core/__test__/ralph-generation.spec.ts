@@ -244,7 +244,13 @@ describe("createRalphFlowWithAgent", () => {
 
     const result = await createRalphGenerationInterviewWithAgent("C:/workspace", {
       prompt: "Create a release flow.",
-      config: runtimeConfig,
+      config: {
+        ...runtimeConfig,
+        internalTaskModel: {
+          provider: "anthropic",
+          model: "claude-internal",
+        },
+      },
       customizations,
       session: {
         id: "interview-1",
@@ -284,6 +290,8 @@ describe("createRalphFlowWithAgent", () => {
     expect(vi.mocked(executeTask).mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
         mode: "ask",
+        provider: "anthropic",
+        model: "claude-internal",
         reasoning: "medium",
       }),
     );

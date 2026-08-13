@@ -422,6 +422,32 @@
         }
       }
     },
+    "UserInternalTaskModelConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "UserInternalTaskModelSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "UserAgentLimitsSettings": {
       "type": "object",
       "additionalProperties": false,
@@ -666,6 +692,9 @@
         },
         "reviewModel": {
           "$ref": "#/$defs/UserReviewModelConfigFile"
+        },
+        "internalTaskModel": {
+          "$ref": "#/$defs/UserInternalTaskModelConfigFile"
         },
         "agentCliPaths": {
           "$ref": "#/$defs/UserAgentCliPaths"

@@ -207,6 +207,10 @@ const createConfig = (
   reviewModel: {
     mode: "base",
   },
+  internalTaskModel: {
+    provider: overrides.provider ?? "codex-cli",
+    model: overrides.model ?? "gpt-5.5",
+  },
 });
 
 const preparedConversationContext: PreparedConversationPromptContext = {

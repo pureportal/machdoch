@@ -306,7 +306,7 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
     setting: "review-model",
     category: "Agent",
     scope: "user",
-    description: "Model used for short validator and memory-manager passes.",
+    description: "Model used for validator passes.",
     acceptedValues: "base|<provider>:<model>",
   },
   {

@@ -1188,6 +1188,17 @@ fn apply_agent_provider(
     );
     replace_member(root, value, "agentLimits")?;
     replace_member(root, value, "reviewModel")?;
+    let internal_task_model = value["internalTaskModel"]
+        .as_object()
+        .ok_or_else(|| "Imported internal-task model preferences are invalid.".to_string())?;
+    if internal_task_model
+        .get("provider")
+        .is_some_and(Value::is_null)
+    {
+        root.remove("internalTaskModel");
+    } else {
+        replace_member(root, value, "internalTaskModel")?;
+    }
 
     let incoming = value["providerEnrollment"]
         .as_object()

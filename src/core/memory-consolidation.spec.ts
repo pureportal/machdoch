@@ -49,6 +49,10 @@ const createConfig = (
     reviewModel: {
       mode: "base",
     },
+    internalTaskModel: {
+      provider: "openai",
+      model: "gpt-5.5",
+    },
     ...overrides,
   };
 };
@@ -131,7 +135,7 @@ describe("consolidateTaskExecutionMemory", () => {
       "The Vite health check can fail when another dev server already owns port 5173";
     const memoryAdapter: AgentModelAdapter = {
       startTurn: async (params) => {
-        expect(params.model).toBe("gpt-5.5-mini");
+        expect(params.model).toBe("claude-internal");
         expect(params.systemPrompt).toContain("post-task memory manager");
         expect(params.systemPrompt).toContain("technical limitations");
         expect(params.userPrompt).toContain("Tool retry guard");
@@ -170,7 +174,11 @@ describe("consolidateTaskExecutionMemory", () => {
         reviewModel: {
           mode: "dedicated",
           provider: "openai",
-          model: "gpt-5.5-mini",
+          model: "gpt-review",
+        },
+        internalTaskModel: {
+          provider: "anthropic",
+          model: "claude-internal",
         },
       }),
       createExecutionResult(task),

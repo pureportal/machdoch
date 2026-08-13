@@ -8,6 +8,7 @@ import {
   SettingsCredentialForm,
   SettingsProviderChoice,
 } from "./shared";
+import { InternalTaskModelSettingsPanel } from "./internal-task-model-settings-panel";
 import type { ProviderSetupControls } from "./types";
 
 export interface ProviderSettingsPanelProps {
@@ -21,40 +22,46 @@ export const ProviderSettingsPanel = ({
   const [credentialDirty, setCredentialDirty] = useState(false);
 
   return (
-    <SettingsCard title="Model provider keys">
-      <SettingsProviderChoice
-        label="Provider"
-        detail={
-          credentialDirty
-            ? "Save or restore the edited key before switching providers."
-            : undefined
-        }
-        value={setup.provider}
-        options={USER_API_KEY_PROVIDER_ORDER.map((provider) => ({
-          value: provider,
-          label: getUserApiKeyProviderLabel(provider),
-        }))}
-        disabled={setup.loading || setup.saving || credentialDirty}
-        onChange={setup.onProviderChange}
-      />
+    <>
+      <SettingsCard title="Model provider keys">
+        <SettingsProviderChoice
+          label="Provider"
+          detail={
+            credentialDirty
+              ? "Save or restore the edited key before switching providers."
+              : undefined
+          }
+          value={setup.provider}
+          options={USER_API_KEY_PROVIDER_ORDER.map((provider) => ({
+            value: provider,
+            label: getUserApiKeyProviderLabel(provider),
+          }))}
+          disabled={setup.loading || setup.saving || credentialDirty}
+          onChange={setup.onProviderChange}
+        />
 
-      <SettingsCredentialForm
-        resetKey={setup.provider}
-        providerLabel={providerLabel}
-        keyValue={setup.keyValue}
-        loading={setup.loading}
-        saving={setup.saving}
-        message={setup.message}
-        dirtyText="Provider key changes will save automatically"
-        cleanText="Provider key is up to date"
-        portalAction={{
-          label: `Open ${providerLabel} API key settings`,
-          title: `Open ${providerLabel} API key settings`,
-          onClick: () => setup.onOpenProviderPortal(setup.provider),
-        }}
-        onDirtyChange={setCredentialDirty}
-        onSave={setup.onSave}
+        <SettingsCredentialForm
+          resetKey={setup.provider}
+          providerLabel={providerLabel}
+          keyValue={setup.keyValue}
+          loading={setup.loading}
+          saving={setup.saving}
+          message={setup.message}
+          dirtyText="Provider key changes will save automatically"
+          cleanText="Provider key is up to date"
+          portalAction={{
+            label: `Open ${providerLabel} API key settings`,
+            title: `Open ${providerLabel} API key settings`,
+            onClick: () => setup.onOpenProviderPortal(setup.provider),
+          }}
+          onDirtyChange={setCredentialDirty}
+          onSave={setup.onSave}
+        />
+      </SettingsCard>
+
+      <InternalTaskModelSettingsPanel
+        providerAvailability={setup.providerAvailability}
       />
-    </SettingsCard>
+    </>
   );
 };

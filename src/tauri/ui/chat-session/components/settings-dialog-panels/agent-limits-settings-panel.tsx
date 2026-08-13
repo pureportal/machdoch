@@ -558,7 +558,7 @@ export const AgentLimitsSettingsPanel = ({
 
         <SettingPanel
           label="Review model"
-          detail="Applies to validator and memory passes."
+          detail="Applies to validator passes."
         >
           <ChoiceButtons
             label="Review model mode"

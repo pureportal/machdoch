@@ -35,7 +35,6 @@ import {
   stopWorkspaceRunConfiguration,
 } from "../runtime";
 import { createWorkspaceRootKey } from "./workspace-management-model";
-import type { WorkspaceRunAiContext } from "./workspace-run-ai";
 import { WorkspaceRunEditor } from "./workspace-run-editor";
 import {
   applyWorkspaceRunLogBatch,
@@ -163,11 +162,9 @@ const ConfigurationSummary = ({
 
 export const WorkspaceRunPanel = ({
   workspaceRoot,
-  detectionContext,
   onDocumentDirtyChange,
 }: {
   workspaceRoot: string | null | undefined;
-  detectionContext?: WorkspaceRunAiContext;
   onDocumentDirtyChange?: (dirty: boolean) => void;
 }): JSX.Element | null => {
   const normalizedRoot = workspaceRoot?.trim() || null;
@@ -430,9 +427,9 @@ export const WorkspaceRunPanel = ({
     <section
       aria-label="Workspace run"
       aria-busy={loading || busyAction !== null}
-      className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/30"
+      className="min-w-0"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-2.5 pb-4">
         <Play aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />
         <div className="min-w-[8rem] flex-1">
           {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
@@ -580,7 +577,6 @@ export const WorkspaceRunPanel = ({
             <WorkspaceRunEditor
               workspaceRoot={normalizedRoot}
               document={document}
-              detectionContext={detectionContext}
               onDirtyChange={handleDocumentDirtyChange}
               onSaved={(nextDocument, nextSnapshot) => {
                 setDocument(nextDocument);

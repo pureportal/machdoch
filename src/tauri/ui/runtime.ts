@@ -51,6 +51,7 @@ import type {
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
+  DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
@@ -87,6 +88,7 @@ import type {
   SpeechToTextProvider as SharedSpeechToTextProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
   UserDesktopSettings as SharedUserDesktopSettings,
+  UserInternalTaskModelSettings as SharedUserInternalTaskModelSettings,
   UserApiProvider as SharedUserApiProvider,
   UserReviewModelSettings as SharedUserReviewModelSettings,
   UserProviderApiKeys as SharedUserProviderApiKeys,
@@ -243,6 +245,9 @@ export interface UserMemorySettings {
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
+
+export type UserInternalTaskModelSettings =
+  SharedUserInternalTaskModelSettings;
 
 export type UserDesktopSettings = SharedUserDesktopSettings;
 
@@ -3014,6 +3019,11 @@ const createDefaultUserReviewModelSettings = (): UserReviewModelSettings => {
   return { ...DEFAULT_USER_REVIEW_MODEL_SETTINGS };
 };
 
+const createDefaultUserInternalTaskModelSettings =
+  (): UserInternalTaskModelSettings => {
+    return { ...DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS };
+  };
+
 const normalizeUserAgentLimitsSettings = (
   settings: UserAgentLimitsSettings,
 ): UserAgentLimitsSettings => {
@@ -3053,6 +3063,28 @@ const normalizeUserReviewModelSettings = (
 
   return {
     mode: "dedicated",
+    provider: provider as (typeof VALID_MODEL_PROVIDERS)[number],
+    model,
+  };
+};
+
+const normalizeUserInternalTaskModelSettings = (
+  settings: UserInternalTaskModelSettings,
+): UserInternalTaskModelSettings => {
+  const provider = settings.provider?.trim();
+  const model = settings.model?.trim();
+
+  if (
+    !provider ||
+    !VALID_MODEL_PROVIDERS.includes(
+      provider as (typeof VALID_MODEL_PROVIDERS)[number],
+    ) ||
+    !model
+  ) {
+    return createDefaultUserInternalTaskModelSettings();
+  }
+
+  return {
     provider: provider as (typeof VALID_MODEL_PROVIDERS)[number],
     model,
   };
@@ -3436,6 +3468,17 @@ export const loadUserReviewModelSettings =
     );
   };
 
+export const loadUserInternalTaskModelSettings =
+  async (): Promise<UserInternalTaskModelSettings> => {
+    return loadTauriValueOrFallback(
+      "get_user_internal_task_model_settings",
+      createDefaultUserInternalTaskModelSettings,
+      "Failed to load user internal-task model settings",
+      createDefaultUserInternalTaskModelSettings,
+      true,
+    );
+  };
+
 export const loadDesktopLaunchId = async (): Promise<string | null> => {
   return loadTauriValueOrFallback<string | null>(
     "get_desktop_launch_id",
@@ -3672,6 +3715,27 @@ export const saveUserReviewModelSettings = async (
       { settings: normalizedSettings },
     );
     await emitUserSettingsChanged("review-model");
+    return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveUserInternalTaskModelSettings = async (
+  settings: UserInternalTaskModelSettings,
+): Promise<UserInternalTaskModelSettings> => {
+  const normalizedSettings = normalizeUserInternalTaskModelSettings(settings);
+
+  if (!canInvokeTauriCommands()) {
+    return normalizedSettings;
+  }
+
+  try {
+    const result = await tauriCore.invoke<UserInternalTaskModelSettings>(
+      "save_user_internal_task_model_settings",
+      { settings: normalizedSettings },
+    );
+    await emitUserSettingsChanged("internal-task-model");
     return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
@@ -6373,6 +6437,7 @@ export type UserSettingsChangeKind =
   | "memory"
   | "agent-limits"
   | "review-model"
+  | "internal-task-model"
   | "provider-enrollment"
   | "mcp";
 

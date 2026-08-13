@@ -53,6 +53,13 @@ pub struct UserReviewModelSettings {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UserInternalTaskModelSettings {
+    pub(super) provider: Option<String>,
+    pub(super) model: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserAgentLimitsSettings {
     pub(super) infinite: bool,
     pub(super) executor_turns: u32,
@@ -123,6 +130,8 @@ pub(super) struct UserConfigFile {
     pub(super) memory: UserMemoryConfigFile,
     #[serde(default)]
     pub(super) review_model: UserReviewModelConfigFile,
+    #[serde(default)]
+    pub(super) internal_task_model: UserInternalTaskModelConfigFile,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -184,6 +193,13 @@ pub(super) struct UserMemoryConfigFile {
 #[serde(rename_all = "camelCase")]
 pub(super) struct UserReviewModelConfigFile {
     pub(super) mode: Option<String>,
+    pub(super) provider: Option<String>,
+    pub(super) model: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct UserInternalTaskModelConfigFile {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
 }

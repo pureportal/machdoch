@@ -14,6 +14,7 @@ import type {
   WorkspaceRunConfigurationStatus,
   WorkspaceRunSnapshot,
 } from "../../../../shared/workspace-run.js";
+import { clearWorkspaceRunDetection } from "../../workspace-management/workspace-run-detection-state";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 
 const runtime = vi.hoisted(() => ({
@@ -29,8 +30,13 @@ const runtime = vi.hoisted(() => ({
   startWorkspaceRunConfiguration: vi.fn(),
   stopWorkspaceRunConfiguration: vi.fn(),
 }));
+const ai = vi.hoisted(() => ({
+  generateWorkspaceRunDetection: vi.fn(),
+  validateWorkspaceRunDetections: vi.fn(),
+}));
 
 vi.mock("../../runtime", () => runtime);
+vi.mock("../../workspace-management/workspace-run-ai", () => ai);
 
 const taskStatus = (
   state: WorkspaceRunConfigurationStatus["state"],
@@ -74,6 +80,7 @@ const createSnapshot = (
 });
 
 beforeEach(() => {
+  clearWorkspaceRunDetection("C:/workspace");
   vi.clearAllMocks();
   const stopped = createSnapshot("stopped");
   const document: WorkspaceRunConfigurationDocument = {
@@ -87,12 +94,13 @@ beforeEach(() => {
   runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue(document);
   runtime.listenWorkspaceRunLogs.mockResolvedValue(() => undefined);
   runtime.openExternalUrl.mockResolvedValue(undefined);
+  ai.validateWorkspaceRunDetections.mockImplementation(() => undefined);
 });
 
 afterEach(() => cleanup());
 
 describe("WorkspaceRunDialogControl", () => {
-  it("keeps controls in a dialog and follows live process lifecycle state", async () => {
+  it("keeps unwrapped controls in a dialog and combines live activity states", async () => {
     const stateListeners: Array<(snapshot: WorkspaceRunSnapshot) => void> = [];
     runtime.listenWorkspaceRunState.mockImplementation(
       async (listener: (snapshot: WorkspaceRunSnapshot) => void) => {
@@ -100,20 +108,27 @@ describe("WorkspaceRunDialogControl", () => {
         return () => undefined;
       },
     );
-    render(
+    const view = render(
       createElement(WorkspaceRunDialogControl, {
         workspaceRoot: "C:/workspace",
+        primaryTaskRunning: false,
       }),
     );
 
-    const play = await screen.findByRole("button", { name: "Play workspace" });
+    const run = await screen.findByRole("button", { name: "Run workspace" });
+    expect(run.textContent).toContain("Run");
+    expect(run.textContent).not.toContain("Play");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
 
-    fireEvent.click(play);
+    fireEvent.click(run);
 
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Start" })).toBeTruthy();
+    const panel = screen.getByRole("region", { name: "Workspace run" });
+    expect(panel.classList.contains("border")).toBe(false);
+    expect(panel.classList.contains("rounded-xl")).toBe(false);
+    expect(panel.classList.contains("bg-slate-900/30")).toBe(false);
     fireEvent.click(screen.getByText("Configuration"));
     expect(await screen.findByRole("button", { name: "Detect" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -123,11 +138,24 @@ describe("WorkspaceRunDialogControl", () => {
       for (const listener of stateListeners)
         listener(createSnapshot("running"));
     });
-    const runningPlay = await screen.findByRole("button", {
-      name: "Play, workspace running",
+    const runningRun = await screen.findByRole("button", {
+      name: "Run workspace",
     });
-    expect(runningPlay.getAttribute("data-running")).toBe("true");
-    expect(runningPlay.querySelector(".animate-ping")).toBeTruthy();
+    expect(runningRun.getAttribute("data-script-running")).toBe("true");
+    expect(
+      runningRun.querySelector('[data-run-activity="script"]'),
+    ).toBeTruthy();
+
+    view.rerender(
+      createElement(WorkspaceRunDialogControl, {
+        workspaceRoot: "C:/workspace",
+        primaryTaskRunning: true,
+      }),
+    );
+    expect(runningRun.getAttribute("data-primary-task-running")).toBe("true");
+    expect(
+      runningRun.querySelector('[data-run-activity="primary-task"]'),
+    ).toBeTruthy();
 
     act(() => {
       for (const listener of stateListeners)
@@ -136,10 +164,111 @@ describe("WorkspaceRunDialogControl", () => {
     await waitFor(() =>
       expect(
         screen
-          .getByRole("button", { name: "Play workspace" })
-          .getAttribute("data-running"),
+          .getByRole("button", { name: "Run workspace" })
+          .getAttribute("data-script-running"),
       ).toBe("false"),
     );
-    expect(play.querySelector(".animate-ping")).toBeNull();
+    expect(run.querySelector('[data-run-activity="script"]')).toBeNull();
+    expect(run.getAttribute("data-primary-task-running")).toBe("true");
+  });
+
+  it("keeps detection running and retains its result across control mounts", async () => {
+    let finishDetection:
+      | ((result: { documentJson: string; detections: [] }) => void)
+      | undefined;
+    ai.generateWorkspaceRunDetection.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDetection = resolve;
+        }),
+    );
+    const detectedDocument: WorkspaceRunConfigurationDocument = {
+      schemaVersion: 1,
+      primaryConfigurationId: "detected",
+      configurations: [
+        {
+          id: "detected",
+          name: "Detected",
+          kind: "task",
+          command: "pnpm dev",
+          workingDirectory: ".",
+          environment: {},
+          hotReload: true,
+          ports: [],
+          urls: [],
+          restartPolicy: {
+            onCrash: false,
+            maxRestarts: 5,
+            windowMs: 60_000,
+            backoffMs: 1_000,
+            maxBackoffMs: 30_000,
+          },
+        },
+      ],
+    };
+    runtime.precheckWorkspaceRunConfigurationJson.mockResolvedValue(
+      detectedDocument,
+    );
+    runtime.loadWorkspaceRunSnapshot.mockResolvedValue(
+      createSnapshot("running"),
+    );
+    runtime.listenWorkspaceRunState.mockResolvedValue(() => undefined);
+
+    const firstSession = render(
+      createElement(WorkspaceRunDialogControl, {
+        workspaceRoot: "C:/workspace",
+        primaryTaskRunning: true,
+      }),
+    );
+    const detectingRun = await screen.findByRole("button", {
+      name: "Run workspace",
+    });
+    fireEvent.click(detectingRun);
+    fireEvent.click(await screen.findByText("Configuration"));
+    fireEvent.click(await screen.findByRole("button", { name: "Detect" }));
+
+    await waitFor(() =>
+      expect(detectingRun.getAttribute("data-detecting")).toBe("true"),
+    );
+    expect(
+      detectingRun.querySelector('[data-run-activity="detection"]'),
+    ).toBeTruthy();
+    expect(detectingRun.getAttribute("data-script-running")).toBe("true");
+    expect(detectingRun.getAttribute("data-primary-task-running")).toBe("true");
+    expect(
+      detectingRun.querySelector('[data-run-activity="script"]'),
+    ).toBeTruthy();
+    expect(
+      detectingRun.querySelector('[data-run-activity="primary-task"]'),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    firstSession.unmount();
+
+    render(
+      createElement(WorkspaceRunDialogControl, {
+        workspaceRoot: "C:/workspace",
+        primaryTaskRunning: true,
+      }),
+    );
+    const nextSessionRun = await screen.findByRole("button", {
+      name: "Run workspace",
+    });
+    expect(nextSessionRun.getAttribute("data-detecting")).toBe("true");
+
+    await act(async () => {
+      finishDetection?.({ documentJson: "{}", detections: [] });
+    });
+    await waitFor(() =>
+      expect(nextSessionRun.getAttribute("data-detecting")).toBe("false"),
+    );
+    expect(ai.generateWorkspaceRunDetection).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(nextSessionRun);
+    fireEvent.click(await screen.findByText("Configuration"));
+    const editor = await screen.findByLabelText("Run configuration JSON");
+    await waitFor(() =>
+      expect((editor as HTMLTextAreaElement).value).toContain('"detected"'),
+    );
   });
 });

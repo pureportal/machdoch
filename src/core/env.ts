@@ -17,6 +17,7 @@ import {
 } from "./_helpers/agent-runtime-types.js";
 import {
   AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
+  DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   PROVIDER_ENV_KEY_BY_PROVIDER,
   RUNTIME_ENV_KEYS,
@@ -39,6 +40,7 @@ import type {
   UserAgentCliPaths as SharedUserAgentCliPaths,
   UserConfigFile as SharedUserConfigFile,
   UserDesktopSettings,
+  UserInternalTaskModelSettings as SharedUserInternalTaskModelSettings,
   UserApiProvider,
   UserReviewModelSettings as SharedUserReviewModelSettings,
   UserReviewModelMode,
@@ -63,6 +65,8 @@ const TRUSTED_AGENT_CLI_ENV_KEYS = new Set<string>(
 );
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
+export type UserInternalTaskModelSettings =
+  SharedUserInternalTaskModelSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
 type UserConfigFile = SharedUserConfigFile;
 
@@ -203,6 +207,22 @@ const normalizeUserReviewModelSettings = (
   return {
     mode: "dedicated",
     provider: provider as ConfiguredModelProvider,
+    model,
+  };
+};
+
+const normalizeUserInternalTaskModelSettings = (
+  settings: Partial<UserInternalTaskModelSettings> | undefined,
+): UserInternalTaskModelSettings => {
+  const provider = normalizeOptionalString(settings?.provider);
+  const model = normalizeOptionalString(settings?.model);
+
+  if (!provider || !isConfiguredModelProvider(provider) || !model) {
+    return { ...DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS };
+  }
+
+  return {
+    provider,
     model,
   };
 };
@@ -700,7 +720,7 @@ export const saveUserAgentLimitsSettings = async (
 };
 
 /**
- * Loads the saved model selection for short validator and memory-manager passes.
+ * Loads the saved model selection for validator passes.
  */
 export const loadUserReviewModelSettings =
   async (): Promise<UserReviewModelSettings> => {
@@ -710,7 +730,7 @@ export const loadUserReviewModelSettings =
   };
 
 /**
- * Persists the model selection for short validator and memory-manager passes.
+ * Persists the model selection for validator passes.
  */
 export const saveUserReviewModelSettings = async (
   settings: UserReviewModelSettings,
@@ -720,6 +740,24 @@ export const saveUserReviewModelSettings = async (
   return updateUserConfigFile((config) => ({
     ...config,
     reviewModel: normalizedSettings,
+  }));
+};
+
+export const loadUserInternalTaskModelSettings =
+  async (): Promise<UserInternalTaskModelSettings> => {
+    const { config } = await loadUserConfigFile();
+
+    return normalizeUserInternalTaskModelSettings(config.internalTaskModel);
+  };
+
+export const saveUserInternalTaskModelSettings = async (
+  settings: UserInternalTaskModelSettings,
+): Promise<string> => {
+  const normalizedSettings = normalizeUserInternalTaskModelSettings(settings);
+
+  return updateUserConfigFile((config) => ({
+    ...config,
+    internalTaskModel: normalizedSettings,
   }));
 };
 

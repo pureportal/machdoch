@@ -13,6 +13,7 @@ import type {
   WorkspaceRunConfigurationDocument,
   WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
+import { clearWorkspaceRunDetection } from "./workspace-run-detection-state";
 import { WorkspaceRunEditor } from "./workspace-run-editor";
 
 const runtime = vi.hoisted(() => ({
@@ -39,6 +40,7 @@ const snapshot: WorkspaceRunSnapshot = {
 };
 
 beforeEach(() => {
+  clearWorkspaceRunDetection("C:/workspace");
   vi.clearAllMocks();
 });
 

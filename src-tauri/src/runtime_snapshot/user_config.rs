@@ -212,6 +212,12 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         "reviewModel",
         &["mode", "provider", "model"],
     );
+    merge_known_object_members(
+        &mut target,
+        source,
+        "internalTaskModel",
+        &["provider", "model"],
+    );
 
     Ok(Value::Object(target))
 }

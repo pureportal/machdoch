@@ -39,10 +39,11 @@ use mcp_config::{
 use model_catalog::{create_provider_model_http_client, fetch_provider_model_catalog};
 use settings::create_timestamp_millis;
 use settings_commands::{
-    load_user_agent_limits_settings, load_user_api_keys, load_user_memory_settings,
-    load_user_review_model_settings, load_user_speech_to_text_settings, load_user_voice_settings,
-    load_user_web_search_settings, save_user_agent_limits_settings_value, save_user_api_key,
-    save_user_global_memory_enabled_value, save_user_review_model_settings_value,
+    load_user_agent_limits_settings, load_user_api_keys, load_user_internal_task_model_settings,
+    load_user_memory_settings, load_user_review_model_settings, load_user_speech_to_text_settings,
+    load_user_voice_settings, load_user_web_search_settings, save_user_agent_limits_settings_value,
+    save_user_api_key, save_user_global_memory_enabled_value,
+    save_user_internal_task_model_settings_value, save_user_review_model_settings_value,
     save_user_speech_to_text_active_provider_value, save_user_speech_to_text_input_device_value,
     save_user_voice_active_provider_value, save_user_web_search_active_provider_value,
     save_user_web_search_api_key_value,
@@ -53,8 +54,9 @@ pub(super) use settings_commands::{
 };
 pub(crate) use settings_types::UserDesktopLaunchPreferences;
 pub use settings_types::{
-    McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserMemorySettings,
-    UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
+    McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserInternalTaskModelSettings,
+    UserMemorySettings, UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings,
+    UserWebSearchSettings,
 };
 pub use types::{
     AudioProviderAvailability, ProviderAvailability, ProviderModelCatalogProvider,
@@ -265,6 +267,12 @@ pub async fn get_user_review_model_settings() -> Result<UserReviewModelSettings,
 }
 
 #[tauri::command]
+pub async fn get_user_internal_task_model_settings() -> Result<UserInternalTaskModelSettings, String>
+{
+    load_user_internal_task_model_settings()
+}
+
+#[tauri::command]
 pub async fn save_user_desktop_settings(
     app: tauri::AppHandle,
     settings: UserDesktopSettings,
@@ -358,6 +366,14 @@ pub async fn save_user_review_model_settings(
 ) -> Result<UserReviewModelSettings, String> {
     save_user_review_model_settings_value(&settings)?;
     load_user_review_model_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_internal_task_model_settings(
+    settings: UserInternalTaskModelSettings,
+) -> Result<UserInternalTaskModelSettings, String> {
+    save_user_internal_task_model_settings_value(&settings)?;
+    load_user_internal_task_model_settings()
 }
 
 #[tauri::command]

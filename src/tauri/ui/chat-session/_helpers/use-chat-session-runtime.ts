@@ -294,10 +294,10 @@ const getReviewModelSettingsSavedMessage = (
   settings: UserReviewModelSettings,
 ): string => {
   if (settings.mode !== "dedicated" || !settings.provider || !settings.model) {
-    return "Review model saved. Validator and memory passes will use the base request model.";
+    return "Review model saved. Validator passes will use the base request model.";
   }
 
-  return `Review model saved. Validator and memory passes will use ${getProviderLabel(settings.provider)} / ${settings.model}.`;
+  return `Review model saved. Validator passes will use ${getProviderLabel(settings.provider)} / ${settings.model}.`;
 };
 
 const getRunModeLabel = (mode: RuntimeSnapshot["mode"]): string => {

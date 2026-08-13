@@ -93,6 +93,7 @@ export const AGENT_LIMIT_BOUNDS = {
 export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = {
   "mode": "base"
 } as const satisfies UserReviewModelSettings;
+export const DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS = {} as const satisfies UserInternalTaskModelSettings;
 export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "autostartEnabled": false,
   "autostartMinimized": false,
@@ -233,6 +234,11 @@ export interface RuntimeReviewModelConfig {
   model?: string;
 }
 
+export interface RuntimeInternalTaskModelConfig {
+  provider: ModelProvider;
+  model: string;
+}
+
 export interface UserWebSearchSettings {
   activeProvider: WebSearchProvider;
   apiKeys: UserWebSearchApiKeys;
@@ -264,6 +270,7 @@ export interface RuntimeConfig {
   providerAvailability: ProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
   reviewModel: RuntimeReviewModelConfig;
+  internalTaskModel: RuntimeInternalTaskModelConfig;
 }
 
 export interface UiControlAvailability {
@@ -276,7 +283,7 @@ export interface UiControlAvailability {
   reason?: string;
 }
 
-export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits"> {
+export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "internalTaskModel"> {
   defaultMode: RunMode;
   defaultReasoning: ReasoningMode;
   agentLimits: RuntimeAgentLimits;
@@ -351,6 +358,7 @@ export interface UserConfigFile {
   agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
   reviewModel?: UserReviewModelConfigFile;
+  internalTaskModel?: UserInternalTaskModelConfigFile;
   providerEnrollment?: ProviderEnrollmentConfigFile;
 }
 
@@ -362,6 +370,16 @@ export interface UserAgentLimitsSettings {
 
 export interface UserReviewModelSettings {
   mode: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
+export interface UserInternalTaskModelConfigFile {
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
+export interface UserInternalTaskModelSettings {
   provider?: ConfiguredModelProvider;
   model?: string;
 }
