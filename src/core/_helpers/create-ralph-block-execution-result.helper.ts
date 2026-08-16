@@ -80,12 +80,23 @@ export const createRalphValidatorExecutionResult = (
   return {
     blockId: block.id,
     output: result.status === "executed" ? decision : "ERROR",
-    status: result.status === "executed" && decision !== "ERROR" ? "completed" : "error",
+    status:
+      result.status === "executed" && decision !== "ERROR"
+        ? "completed"
+        : "error",
     attempt: 1,
     result,
     summary: result.summary,
     markdown: getRalphResultMarkdown(result),
     ...(isError ? { error: result.reason ?? result.summary } : {}),
+    ...(result.status === "executed" && decision === "ERROR"
+      ? {
+          failure: {
+            kind: "terminal-decision" as const,
+            retryable: false as const,
+          },
+        }
+      : {}),
   };
 };
 
@@ -119,7 +130,7 @@ export const createRalphDecisionExecutionResult = (
     output === "ERROR"
       ? result.status === "executed"
         ? createDecisionOutputError(block, result)
-        : result.reason ?? result.summary
+        : (result.reason ?? result.summary)
       : undefined;
 
   return {

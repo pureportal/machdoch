@@ -3,7 +3,6 @@ import type {
   AgentModelToolSpec,
   TaskExecutionNarrative,
   TaskExecutionSection,
-  TaskExecutionControl,
   TaskResultProtocol,
 } from "../types.js";
 import { coerceString } from "./agent-runtime-shared.js";
@@ -12,6 +11,11 @@ import {
   type TaskFinalResponsePayload,
 } from "./agent-runtime-types.js";
 import { createTextSection, limitText } from "./runtime-text.js";
+import {
+  createTaskResultControlSchema,
+  parseTaskExecutionControl,
+  validateTaskResultProtocol,
+} from "./task-result-protocol.js";
 
 export const FINAL_RESPONSE_TOOL_NAME = "submit_final_response";
 
@@ -28,88 +32,6 @@ const hasExactKeys = (
     keys.length === expected.length &&
     keys.every((key, index) => key === expected[index])
   );
-};
-
-const validateResultProtocol = (
-  value: unknown,
-): TaskResultProtocol | undefined => {
-  if (!isRecord(value) || typeof value.kind !== "string") {
-    return undefined;
-  }
-
-  if (value.kind === "ralph-iteration") {
-    return hasExactKeys(value, ["kind"])
-      ? { kind: "ralph-iteration" }
-      : undefined;
-  }
-  if (value.kind === "ralph-validator") {
-    return hasExactKeys(value, ["kind"])
-      ? { kind: "ralph-validator" }
-      : undefined;
-  }
-  if (
-    value.kind === "ralph-route" &&
-    hasExactKeys(value, ["kind", "labels"]) &&
-    Array.isArray(value.labels) &&
-    value.labels.length > 0 &&
-    value.labels.every(
-      (label, index, labels) =>
-        typeof label === "string" &&
-        label.length > 0 &&
-        label.trim() === label &&
-        labels.indexOf(label) === index,
-    )
-  ) {
-    return { kind: "ralph-route", labels: [...value.labels] };
-  }
-
-  return undefined;
-};
-
-const createControlSchema = (
-  rawProtocol: TaskResultProtocol,
-): Record<string, unknown> => {
-  const protocol = validateResultProtocol(rawProtocol);
-  if (!protocol) {
-    throw new Error("The structured result protocol is missing or invalid.");
-  }
-
-  switch (protocol.kind) {
-    case "ralph-iteration":
-      return {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          kind: { const: "ralph-iteration" },
-          decision: { type: "string", enum: ["DONE", "CONTINUE"] },
-        },
-        required: ["kind", "decision"],
-      };
-    case "ralph-validator":
-      return {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          kind: { const: "ralph-validator" },
-          decision: {
-            type: "string",
-            enum: ["DONE", "CONTINUE", "RETRY", "ERROR"],
-          },
-        },
-        required: ["kind", "decision"],
-      };
-    case "ralph-route": {
-      return {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          kind: { const: "ralph-route" },
-          label: { type: "string", enum: protocol.labels },
-        },
-        required: ["kind", "label"],
-      };
-    }
-  }
 };
 
 export const createFinalResponseTool = (
@@ -188,7 +110,7 @@ export const createFinalResponseTool = (
         },
         ...(resultProtocol
           ? {
-              control: createControlSchema(resultProtocol),
+              control: createTaskResultControlSchema(resultProtocol),
             }
           : {}),
       },
@@ -205,44 +127,6 @@ export const createFinalResponseTool = (
       ],
     },
   };
-};
-
-const parseControl = (
-  value: unknown,
-  protocol: TaskResultProtocol,
-): TaskExecutionControl | undefined => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  if (!hasExactKeys(record, ["decision", "kind"]) && protocol.kind !== "ralph-route") {
-    return undefined;
-  }
-  if (protocol.kind === "ralph-route" && !hasExactKeys(record, ["kind", "label"])) {
-    return undefined;
-  }
-
-  switch (protocol.kind) {
-    case "ralph-iteration":
-      return record.kind === "ralph-iteration" &&
-        (record.decision === "DONE" || record.decision === "CONTINUE")
-        ? { kind: "ralph-iteration", decision: record.decision }
-        : undefined;
-    case "ralph-validator":
-      return record.kind === "ralph-validator" &&
-        (record.decision === "DONE" ||
-          record.decision === "CONTINUE" ||
-          record.decision === "RETRY" ||
-          record.decision === "ERROR")
-        ? { kind: "ralph-validator", decision: record.decision }
-        : undefined;
-    case "ralph-route":
-      return record.kind === "ralph-route" &&
-        typeof record.label === "string" &&
-        protocol.labels.includes(record.label)
-        ? { kind: "ralph-route", label: record.label }
-        : undefined;
-  }
 };
 
 const readExactStringArray = (
@@ -294,7 +178,7 @@ export const parseFinalResponsePayload = (
   const validatedProtocol =
     resultProtocol === undefined
       ? undefined
-      : validateResultProtocol(resultProtocol);
+      : validateTaskResultProtocol(resultProtocol);
   if (resultProtocol !== undefined && validatedProtocol === undefined) {
     return undefined;
   }
@@ -324,7 +208,7 @@ export const parseFinalResponsePayload = (
   const verification = readExactStringArray(record, "verification");
   const followUps = readExactStringArray(record, "followUps");
   const control = validatedProtocol
-    ? parseControl(record.control, validatedProtocol)
+    ? parseTaskExecutionControl(record.control, validatedProtocol)
     : undefined;
 
   if (

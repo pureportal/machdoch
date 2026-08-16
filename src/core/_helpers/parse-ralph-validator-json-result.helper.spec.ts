@@ -3,7 +3,7 @@ import { parseRalphValidatorJsonResult } from "./parse-ralph-validator-json-resu
 describe("parseRalphValidatorJsonResult", () => {
   const validResult = {
     decision: "DONE",
-    confidence: "high",
+    confidence: 0.9,
     summary: "Verified.",
     evidence: ["Tests passed."],
     remainingWork: [],
@@ -20,6 +20,9 @@ describe("parseRalphValidatorJsonResult", () => {
     { ...validResult, authority: "DONE" },
     { ...validResult, evidence: ["valid", 1] },
     { ...validResult, remainingWork: "none" },
+    { ...validResult, confidence: "high" },
+    { ...validResult, confidence: -0.1 },
+    { ...validResult, confidence: 1.1 },
     { decision: "DONE", summary: "Missing fields." },
     null,
   ])("rejects malformed or prose-derived verdict state %#", (value) => {

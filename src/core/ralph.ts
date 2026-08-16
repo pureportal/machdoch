@@ -159,7 +159,10 @@ import {
   getRalphResultMarkdown as getResultMarkdown,
   truncateRalphResultText as truncateResultText,
 } from "./_helpers/ralph-result-text.helper.js";
-import { parseRalphValidatorJsonResult } from "./_helpers/parse-ralph-validator-json-result.helper.js";
+import {
+  parseRalphValidatorJsonResult,
+  RALPH_VALIDATOR_JSON_SCHEMA,
+} from "./_helpers/parse-ralph-validator-json-result.helper.js";
 import {
   getRalphInputFieldVariableNames,
   normalizeRalphInputResponseValues,
@@ -1093,7 +1096,7 @@ export interface RalphBlockExecutionResult {
 }
 
 export interface RalphBlockFailure {
-  kind: "persistence";
+  kind: "persistence" | "terminal-decision";
   retryable: false;
 }
 
@@ -4317,10 +4320,27 @@ const executePromptBlock = async (
         blockProgressEvents,
       );
     }
+
+    if (iteration === maxIterations) {
+      return withRalphBlockProgress(
+        createRalphBlockExecutionErrorResult(
+          block,
+          new Error(
+            `The prompt requested another iteration after reaching its ${maxIterations}-iteration limit.`,
+          ),
+          iteration,
+        ),
+        blockProgressEvents,
+      );
+    }
   }
 
   return withRalphBlockProgress(
-    createRalphPromptExecutionResult(block, result, maxIterations),
+    createRalphBlockExecutionErrorResult(
+      block,
+      new Error("The prompt iteration loop ended without a decision."),
+      maxIterations,
+    ),
     blockProgressEvents,
   );
 };
@@ -12444,22 +12464,6 @@ const executePromptJsonUtilityBlock = async (
   );
 };
 
-const RALPH_VALIDATOR_JSON_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
-  properties: {
-    decision: {
-      type: "string",
-      enum: ["DONE", "CONTINUE", "RETRY", "ERROR"],
-    },
-    confidence: { type: "string" },
-    summary: { type: "string" },
-    evidence: { type: "array", items: { type: "string" } },
-    remainingWork: { type: "array", items: { type: "string" } },
-  },
-};
-
 const executeValidatorJsonUtilityBlock = async (
   flow: RalphFlow,
   block: RalphUtilityBlock,
@@ -12509,20 +12513,27 @@ const executeValidatorJsonUtilityBlock = async (
 
   const decision: RalphValidatorDecision = output.decision;
 
-  return withRalphBlockProgress(
-    createUtilityResult(
-      block,
+  const result = createUtilityResult(
+    block,
+    decision,
+    output.summary,
+    {
+      output,
       decision,
-      output.summary,
-      {
-        output,
-        decision,
-        confidence: output.confidence,
-        evidence: output.evidence,
-        remainingWork: output.remainingWork,
-      },
-      decision === "ERROR" ? "error" : "completed",
-    ),
+      confidence: output.confidence,
+      evidence: output.evidence,
+      remainingWork: output.remainingWork,
+    },
+    decision === "ERROR" ? "error" : "completed",
+  );
+
+  return withRalphBlockProgress(
+    decision === "ERROR"
+      ? {
+          ...result,
+          failure: { kind: "terminal-decision", retryable: false },
+        }
+      : result,
     promptResult.progress ?? [],
   );
 };
@@ -13662,9 +13673,8 @@ const updateResultContext = (
         context.repositoryContext,
         repositoryContext,
       );
-    } else {
-      context.repositoryContext = repositoryContext;
     }
+    context.repositoryContext = repositoryContext;
   }
   const repositoryBaseline =
     isRecord(result.data) && isRecord(result.data.repositoryBaseline)

@@ -93,7 +93,6 @@ export const resolveRalphRepositoryContext = async (input: {
       : "nested";
   const identity = {
     workspaceRoot: normalizeComparablePath(workspaceRoot),
-    projectRoot: normalizeComparablePath(projectPath),
     worktreeRoot: normalizeComparablePath(worktreeRoot),
   };
 
@@ -115,7 +114,7 @@ export const assertRalphRepositoryContextUnchanged = (
 ): void => {
   if (expected.digest !== actual.digest) {
     throw new Error(
-      `RALPH repository identity changed from ${expected.digest} to ${actual.digest}; refusing to resume in a different worktree or project root.`,
+      `RALPH repository identity changed from ${expected.digest} to ${actual.digest}; refusing to resume in a different workspace or worktree.`,
     );
   }
 };

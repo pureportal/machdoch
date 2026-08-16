@@ -1652,6 +1652,71 @@ describe("runRalphFlow", () => {
     expect(executeTask).toHaveBeenCalledTimes(2);
   });
 
+  it("fails instead of reporting success when CONTINUE exhausts the prompt limit", async () => {
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({
+        summary: "More work remains.",
+        control: { kind: "ralph-iteration", decision: "CONTINUE" },
+        response: {
+          markdown: "More work remains.",
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "prompt",
+            type: "PROMPT",
+            title: "Prompt",
+            prompt: "Complete the task.",
+            settings: { maxIterations: 2 },
+          },
+          { id: "success", type: "END", title: "Success" },
+          { id: "failed", type: "END", title: "Failed", status: "failed" },
+        ],
+        edges: [
+          {
+            id: "start-to-prompt",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "prompt",
+          },
+          {
+            id: "prompt-to-success",
+            from: "prompt",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
+          {
+            id: "prompt-to-failed",
+            from: "prompt",
+            fromOutput: "ERROR",
+            to: "failed",
+          },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 5 },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(executeTask).toHaveBeenCalledTimes(2);
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "prompt"),
+    ).toMatchObject({
+      output: "ERROR",
+      error: expect.stringContaining("2-iteration limit"),
+    });
+  });
+
   it("skips generated, dependency, and build folders when searching files", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-search-"));
 
@@ -3290,6 +3355,114 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("moves model execution between packages in the same worktree", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-package-transition-"),
+    );
+    const firstPackage = join(workspace, "apps", "first");
+    const secondPackage = join(workspace, "apps", "second");
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({ summary: "Package inspected." }),
+    );
+
+    try {
+      await Promise.all([
+        mkdir(firstPackage, { recursive: true }),
+        mkdir(secondPackage, { recursive: true }),
+      ]);
+      await Promise.all([
+        writeFile(join(firstPackage, "package.json"), "{}\n", "utf8"),
+        writeFile(join(secondPackage, "package.json"), "{}\n", "utf8"),
+      ]);
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "detect-first",
+              type: "UTILITY",
+              title: "Detect First Package",
+              utility: {
+                type: "DETECT_PROJECT_COMMANDS",
+                rootPath: "apps/first",
+              },
+            },
+            {
+              id: "inspect-first",
+              type: "PROMPT",
+              title: "Inspect First Package",
+              prompt: "Inspect the first package.",
+            },
+            {
+              id: "detect-second",
+              type: "UTILITY",
+              title: "Detect Second Package",
+              utility: {
+                type: "DETECT_PROJECT_COMMANDS",
+                rootPath: "apps/second",
+              },
+            },
+            {
+              id: "inspect-second",
+              type: "PROMPT",
+              title: "Inspect Second Package",
+              prompt: "Inspect the second package.",
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            {
+              id: "start-to-first",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "detect-first",
+            },
+            {
+              id: "first-detect-to-prompt",
+              from: "detect-first",
+              fromOutput: "SUCCESS",
+              to: "inspect-first",
+            },
+            {
+              id: "first-prompt-to-second",
+              from: "inspect-first",
+              fromOutput: "SUCCESS",
+              to: "detect-second",
+            },
+            {
+              id: "second-detect-to-prompt",
+              from: "detect-second",
+              fromOutput: "SUCCESS",
+              to: "inspect-second",
+            },
+            {
+              id: "second-prompt-to-success",
+              from: "inspect-second",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(executeTask).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(executeTask).mock.calls[0]?.[1].workspaceRoot).toBe(
+        await realpath(firstPackage),
+      );
+      expect(vi.mocked(executeTask).mock.calls[1]?.[1].workspaceRoot).toBe(
+        await realpath(secondPackage),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("does not regenerate valid PROMPT_JSON after a non-retryable persistence failure", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "ralph-prompt-persistence-"),
@@ -4255,7 +4428,7 @@ describe("runRalphFlow", () => {
         response: {
           markdown: JSON.stringify({
             decision: "CONTINUE",
-            confidence: "high",
+            confidence: 0.9,
             summary: "More work remains.",
             evidence: ["Task one is incomplete."],
             remainingWork: ["Finish task one."],
@@ -4328,6 +4501,93 @@ describe("runRalphFlow", () => {
             ],
           }),
         },
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("routes a valid validator ERROR without repeating the model call", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-validator-error-"));
+
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        summary: "External state is unavailable.",
+        response: {
+          markdown: JSON.stringify({
+            decision: "ERROR",
+            confidence: 1,
+            summary: "External state is unavailable.",
+            evidence: ["Credential lookup failed."],
+            remainingWork: ["Retry after credentials are restored."],
+          }),
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "validator-json",
+              type: "UTILITY",
+              title: "Validator JSON",
+              settings: {
+                retry: { mode: "finite", maxRetries: 2, delaySeconds: 0 },
+              },
+              utility: {
+                type: "VALIDATOR_JSON",
+                prompt: "Return a validator decision.",
+              },
+            },
+            {
+              id: "record-error",
+              type: "UTILITY",
+              title: "Record Error",
+              utility: { type: "NOTIFY", message: "Deferred." },
+            },
+            { id: "failed", type: "END", title: "Failed", status: "failed" },
+          ],
+          edges: [
+            {
+              id: "start-to-validator",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "validator-json",
+            },
+            {
+              id: "validator-to-record-error",
+              from: "validator-json",
+              fromOutput: "ERROR",
+              to: "record-error",
+            },
+            {
+              id: "record-error-to-failed",
+              from: "record-error",
+              fromOutput: "SUCCESS",
+              to: "failed",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("blocked");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      expect(result.events.some((event) => event.type === "retry")).toBe(false);
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "validator-json"),
+      ).toMatchObject({
+        output: "ERROR",
+        failure: { kind: "terminal-decision", retryable: false },
       });
     } finally {
       await rm(workspace, { recursive: true, force: true });

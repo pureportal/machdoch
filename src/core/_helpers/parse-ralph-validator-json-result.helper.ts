@@ -10,11 +10,31 @@ export type RalphValidatorJsonDecision =
 
 export interface RalphValidatorJsonResult {
   decision: RalphValidatorJsonDecision;
-  confidence: string;
+  confidence: number;
   summary: string;
   evidence: string[];
   remainingWork: string[];
 }
+
+export const RALPH_VALIDATOR_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
+  properties: {
+    decision: {
+      type: "string",
+      enum: RALPH_VALIDATOR_JSON_DECISIONS,
+    },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    summary: { type: "string" },
+    evidence: { type: "array", items: { type: "string" }, maxItems: 30 },
+    remainingWork: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 30,
+    },
+  },
+} as const;
 
 const EXPECTED_KEYS = [
   "confidence",
@@ -45,7 +65,10 @@ export const parseRalphValidatorJsonResult = (
     !RALPH_VALIDATOR_JSON_DECISIONS.includes(
       record.decision as RalphValidatorJsonDecision,
     ) ||
-    typeof record.confidence !== "string" ||
+    typeof record.confidence !== "number" ||
+    !Number.isFinite(record.confidence) ||
+    record.confidence < 0 ||
+    record.confidence > 1 ||
     typeof record.summary !== "string" ||
     !isExactStringArray(record.evidence) ||
     !isExactStringArray(record.remainingWork)

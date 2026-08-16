@@ -80,4 +80,58 @@ describe("RALPH repository context", () => {
       assertRalphRepositoryContextUnchanged(before, after),
     ).not.toThrow();
   });
+
+  it("keeps repository identity stable across packages in one worktree", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-repository-"));
+    temporaryDirectories.push(workspace);
+    const firstPackage = join(workspace, "apps", "first");
+    const secondPackage = join(workspace, "apps", "second");
+    await Promise.all([
+      mkdir(firstPackage, { recursive: true }),
+      mkdir(secondPackage, { recursive: true }),
+    ]);
+    execFileSync("git", ["init", "-q"], { cwd: workspace });
+
+    const first = await resolveRalphRepositoryContext({
+      workspaceRoot: workspace,
+      projectPath: firstPackage,
+    });
+    const second = await resolveRalphRepositoryContext({
+      workspaceRoot: workspace,
+      projectPath: secondPackage,
+    });
+
+    expect(second.projectRoot).not.toBe(first.projectRoot);
+    expect(second.worktreeRoot).toBe(first.worktreeRoot);
+    expect(second.digest).toBe(first.digest);
+    expect(() =>
+      assertRalphRepositoryContextUnchanged(first, second),
+    ).not.toThrow();
+  });
+
+  it("rejects a transition to a different nested worktree", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-repository-"));
+    temporaryDirectories.push(workspace);
+    const firstRepository = join(workspace, "first");
+    const secondRepository = join(workspace, "second");
+    await Promise.all([
+      mkdir(firstRepository, { recursive: true }),
+      mkdir(secondRepository, { recursive: true }),
+    ]);
+    execFileSync("git", ["init", "-q"], { cwd: firstRepository });
+    execFileSync("git", ["init", "-q"], { cwd: secondRepository });
+
+    const first = await resolveRalphRepositoryContext({
+      workspaceRoot: workspace,
+      projectPath: firstRepository,
+    });
+    const second = await resolveRalphRepositoryContext({
+      workspaceRoot: workspace,
+      projectPath: secondRepository,
+    });
+
+    expect(() => assertRalphRepositoryContextUnchanged(first, second)).toThrow(
+      /different workspace or worktree/u,
+    );
+  });
 });

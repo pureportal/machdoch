@@ -36,7 +36,11 @@ const decisionBlock: RalphDecisionBlock = {
 describe("createRalphBlockExecutionErrorResult", () => {
   it("creates an error result from an Error and preserves the attempt", () => {
     expect(
-      createRalphBlockExecutionErrorResult(promptBlock, new Error("No access"), 3),
+      createRalphBlockExecutionErrorResult(
+        promptBlock,
+        new Error("No access"),
+        3,
+      ),
     ).toEqual({
       blockId: "prompt",
       output: "ERROR",
@@ -52,7 +56,9 @@ describe("createRalphBlockExecutionErrorResult", () => {
     [undefined, "undefined"],
     ["plain failure", "plain failure"],
   ] as const)("normalizes unknown thrown value %#", (input, message) => {
-    expect(createRalphBlockExecutionErrorResult(promptBlock, input)).toMatchObject({
+    expect(
+      createRalphBlockExecutionErrorResult(promptBlock, input),
+    ).toMatchObject({
       blockId: "prompt",
       output: "ERROR",
       status: "error",
@@ -94,7 +100,9 @@ describe("createRalphPromptExecutionResult", () => {
       reason: "Approval required.",
     });
 
-    expect(createRalphPromptExecutionResult(promptBlock, result, 1)).toMatchObject({
+    expect(
+      createRalphPromptExecutionResult(promptBlock, result, 1),
+    ).toMatchObject({
       blockId: "prompt",
       output: "ERROR",
       status: "error",
@@ -107,14 +115,16 @@ describe("createRalphPromptExecutionResult", () => {
   });
 
   it("creates a no-result error when execution returns undefined", () => {
-    expect(createRalphPromptExecutionResult(promptBlock, undefined, 0)).toEqual({
-      blockId: "prompt",
-      output: "ERROR",
-      status: "error",
-      attempt: 0,
-      summary: "Fix issue did not produce a result.",
-      error: "Fix issue did not produce a result.",
-    });
+    expect(createRalphPromptExecutionResult(promptBlock, undefined, 0)).toEqual(
+      {
+        blockId: "prompt",
+        output: "ERROR",
+        status: "error",
+        attempt: 0,
+        summary: "Fix issue did not produce a result.",
+        error: "Fix issue did not produce a result.",
+      },
+    );
   });
 });
 
@@ -132,15 +142,17 @@ describe("createRalphValidatorExecutionResult", () => {
       control: { kind: "ralph-validator", decision: "DONE" },
     });
 
-    expect(createRalphValidatorExecutionResult(validatorBlock, result)).toEqual({
-      blockId: "validator",
-      output: "DONE",
-      status: "completed",
-      attempt: 1,
-      result,
-      summary: "Ready.",
-      markdown: "Looks good. Quoted RALPH_DECISION: ERROR is prose.",
-    });
+    expect(createRalphValidatorExecutionResult(validatorBlock, result)).toEqual(
+      {
+        blockId: "validator",
+        output: "DONE",
+        status: "completed",
+        attempt: 1,
+        result,
+        summary: "Ready.",
+        markdown: "Looks good. Quoted RALPH_DECISION: ERROR is prose.",
+      },
+    );
   });
 
   it("treats missing structured validator control as an error", () => {
@@ -155,7 +167,9 @@ describe("createRalphValidatorExecutionResult", () => {
       },
     });
 
-    expect(createRalphValidatorExecutionResult(validatorBlock, result)).toMatchObject({
+    expect(
+      createRalphValidatorExecutionResult(validatorBlock, result),
+    ).toMatchObject({
       output: "ERROR",
       status: "error",
       summary: "No marker.",
@@ -178,10 +192,27 @@ describe("createRalphValidatorExecutionResult", () => {
       control: { kind: "ralph-validator", decision: "DONE" },
     });
 
-    expect(createRalphValidatorExecutionResult(validatorBlock, result)).toMatchObject({
+    expect(
+      createRalphValidatorExecutionResult(validatorBlock, result),
+    ).toMatchObject({
       output: "ERROR",
       status: "error",
       error: "Stopped.",
+    });
+  });
+
+  it("marks an explicit validator ERROR as terminal", () => {
+    const result = createExecutionResult({
+      summary: "Cannot continue.",
+      control: { kind: "ralph-validator", decision: "ERROR" },
+    });
+
+    expect(
+      createRalphValidatorExecutionResult(validatorBlock, result),
+    ).toMatchObject({
+      output: "ERROR",
+      status: "error",
+      failure: { kind: "terminal-decision", retryable: false },
     });
   });
 });
@@ -223,7 +254,9 @@ describe("createRalphDecisionExecutionResult", () => {
       },
     });
 
-    expect(createRalphDecisionExecutionResult(decisionBlock, result)).toMatchObject({
+    expect(
+      createRalphDecisionExecutionResult(decisionBlock, result),
+    ).toMatchObject({
       output: "ERROR",
       status: "error",
       summary:
@@ -241,7 +274,9 @@ describe("createRalphDecisionExecutionResult", () => {
     });
     delete result.response;
 
-    expect(createRalphDecisionExecutionResult(decisionBlock, result)).toMatchObject({
+    expect(
+      createRalphDecisionExecutionResult(decisionBlock, result),
+    ).toMatchObject({
       output: "ERROR",
       status: "error",
       summary: "Tool denied.",

@@ -25,6 +25,7 @@ import {
   assertWindowsCommandLineLength,
   maybeExecuteExternalAgentProviderTask,
 } from "./external-agent-provider.ts";
+import { createExternalAgentResultProtocolInstructions } from "./external-agent-result-protocol.ts";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -432,6 +433,67 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.child.listenerCount("exit")).toBe(0);
     expect(call?.child.listenerCount("close")).toBe(0);
     expect(call?.child.listenerCount("error")).toBe(0);
+  });
+
+  it.each([
+    ["codex-cli", "gpt-5.5", "MACHDOCH_CODEX_CLI_PATH"],
+    ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],
+    ["copilot-cli", "gpt-5.4", "MACHDOCH_COPILOT_CLI_PATH"],
+  ] as const)(
+    "preserves structured RALPH controls through %s",
+    async (provider, model, binaryEnvironmentKey) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryEnvironmentKey] = process.execPath;
+      const protocol = { kind: "ralph-iteration" } as const;
+      const doneLine = createExternalAgentResultProtocolInstructions(protocol)
+        .find((line) => line.startsWith("DONE: "))
+        ?.slice("DONE: ".length);
+      expect(doneLine).toBeDefined();
+      const params = createParams(workspaceRoot, { provider, model });
+      params.resultProtocol = protocol;
+
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      const systemInstructions = await readRunScopedSystemInstructions(
+        provider,
+        call,
+      );
+      expect(systemInstructions).toContain(
+        "exactly one Machdoch control record",
+      );
+
+      call.child.stdout.write(`Completed delegated work.\n${doneLine}`);
+      call.child.emit("close", 0, null);
+
+      const result = await resultPromise;
+      expect(result).toMatchObject({
+        status: "executed",
+        control: { kind: "ralph-iteration", decision: "DONE" },
+        response: { markdown: "Completed delegated work." },
+      });
+      expect(result?.response?.markdown).not.toContain("MACHDOCH_CONTROL");
+    },
+  );
+
+  it("fails closed when an external agent omits required RALPH control", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot);
+    params.resultProtocol = { kind: "ralph-validator" };
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stdout.write("Completed without controller data.");
+    call.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "blocked",
+      summary: expect.stringContaining("valid Machdoch control record"),
+    });
   });
 
   it("cancels pending Codex recovery after a normal close", async () => {

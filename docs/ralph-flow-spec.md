@@ -116,9 +116,11 @@ Each executable block has a retry policy:
 Prompt blocks also have internal execution settings:
 
 - `maxIterations` defaults to `1`.
-- If `maxIterations > 1`, the prompt may request another pass with
-  `RALPH_ITERATION: CONTINUE`; successful output otherwise completes early, and
-  the configured value remains a hard cap.
+- If `maxIterations > 1`, the execution adapter must return a structured
+  `DONE` or `CONTINUE` control decision. `DONE` completes early; `CONTINUE`
+  starts another pass in the same conversation.
+- `CONTINUE` at the configured hard cap is an error instead of successful
+  completion.
 - Internal prompt validators are disabled by default for Ralph but can be enabled per prompt block.
 
 ## Per-Block Execution Settings

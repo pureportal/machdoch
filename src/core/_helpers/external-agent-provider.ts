@@ -29,6 +29,10 @@ import type {
   ModelDrivenExecutionParams,
 } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
+import {
+  createExternalAgentResultProtocolInstructions,
+  parseExternalAgentProtocolResult,
+} from "./external-agent-result-protocol.js";
 import { normalizeLocalCommandCwd } from "./process-execution.js";
 import { createTextSection, limitText } from "./runtime-text.js";
 import {
@@ -279,18 +283,25 @@ const createExternalAgentOperatingInstructions = (
 
 const createExternalAgentCompletionContract = (
   delegationMode: ExternalAgentDelegationMode,
+  resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
 ): string[] => {
-  if (delegationMode === "read-only-artifact") {
-    return [
-      "Return exactly the artifact or answer requested by the user task.",
-      "Preserve any output contract in the user task exactly.",
-      "Do not add change summaries, verification summaries, or follow-up prose unless the user task explicitly asks for them.",
-    ];
-  }
+  const completionInstructions =
+    delegationMode === "read-only-artifact"
+      ? [
+          "Return exactly the artifact or answer requested by the user task.",
+          "Preserve any output contract in the user task exactly.",
+          "Do not add change summaries, verification summaries, or follow-up prose unless the user task explicitly asks for them.",
+        ]
+      : [
+          "Work until the task is complete or a concrete blocker prevents progress.",
+          "Final response must summarize what changed, verification performed, anything that could not be verified, and remaining assumptions or risks.",
+        ];
 
   return [
-    "Work until the task is complete or a concrete blocker prevents progress.",
-    "Final response must summarize what changed, verification performed, anything that could not be verified, and remaining assumptions or risks.",
+    ...completionInstructions,
+    ...(resultProtocol
+      ? createExternalAgentResultProtocolInstructions(resultProtocol)
+      : []),
   ];
 };
 
@@ -299,6 +310,7 @@ const createExternalAgentSystemInstructions = (
   runtimeSystemPromptSections: readonly string[],
   providerLabel: string,
   delegationMode: ExternalAgentDelegationMode,
+  resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
 ): string => {
   const runtimeSectionsBlock =
     runtimeSystemPromptSections.length > 0
@@ -315,9 +327,10 @@ const createExternalAgentSystemInstructions = (
     ...createExternalAgentOperatingInstructions(delegationMode),
     runtimeSectionsBlock,
     "Completion contract:",
-    ...createExternalAgentCompletionContract(delegationMode).map(
-      (line) => `- ${line}`,
-    ),
+    ...createExternalAgentCompletionContract(
+      delegationMode,
+      resultProtocol,
+    ).map((line) => `- ${line}`),
   ]
     .filter(
       (part): part is string =>
@@ -1550,6 +1563,7 @@ const executeExternalAgentCliTask = async (
     params.systemPromptSections ?? [],
     providerLabel,
     delegationMode,
+    params.resultProtocol,
   );
   const resolution = params.taskContext.instructionResolution;
   const instructionPlan = params.instructionDeliveryPlan;
@@ -1994,9 +2008,60 @@ const executeExternalAgentCliTask = async (
     );
   }
 
-  const answer =
-    stdout ||
-    `${providerLabel} completed successfully but did not print a final message.`;
+  const protocolResult = params.resultProtocol
+    ? parseExternalAgentProtocolResult(stdout, params.resultProtocol)
+    : undefined;
+  if (params.resultProtocol && !protocolResult) {
+    const reason = `${providerLabel} completed without a valid Machdoch control record.`;
+
+    await emitAgentProgress(
+      params.task,
+      params.config,
+      "blocked",
+      reason,
+      loopState,
+      params.onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "failed",
+          label: providerLabel,
+          detail: reason,
+          tone: "danger",
+          provider,
+          model: params.config.model,
+          metadata: {
+            durationMs,
+            resultProtocol: params.resultProtocol.kind,
+            ...providerShutdownMetadata,
+          },
+        },
+      },
+    );
+
+    return createExecutionResult(
+      {
+        task: params.task,
+        mode: params.config.mode,
+        status: "blocked",
+        summary: reason,
+        executedTools: ["shell"],
+        metadata: instructionMetadata,
+        outputSections: [
+          ...params.contextSections,
+          commandSection,
+          createTextSection(`${providerLabel} diagnostics`, reason, 80),
+        ],
+      },
+      reason,
+    );
+  }
+
+  const answer = params.resultProtocol
+    ? protocolResult?.answer || `${providerLabel} completed.`
+    : stdout ||
+      `${providerLabel} completed successfully but did not print a final message.`;
 
   await emitAgentProgress(
     params.task,
@@ -2060,6 +2125,7 @@ const executeExternalAgentCliTask = async (
       verification: [],
       followUps: [],
     },
+    ...(protocolResult ? { control: protocolResult.control } : {}),
   });
 };
 
