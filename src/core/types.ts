@@ -647,6 +647,7 @@ export interface TaskExecutionOptions {
   idleTimeoutMs?: number | null;
   /** Explicit local action selected by trusted application state. */
   deterministicAction?: TaskDeterministicAction;
+  captureFileChanges?: boolean;
   /** Structured completion state required by an orchestrating protocol. */
   resultProtocol?: TaskResultProtocol;
 }

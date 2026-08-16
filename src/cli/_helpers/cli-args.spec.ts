@@ -132,11 +132,28 @@ describe("cli args public parser", () => {
     });
 
     expect(
-      parseCliArgs(
-        ["--quick", "--task", "create file hacked.txt"],
-        { currentWorkingDirectory: "C:/workspace" },
-      ),
+      parseCliArgs(["--quick", "--task", "create file hacked.txt"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
     ).not.toHaveProperty("deterministicAction");
+  });
+
+  it("parses the desktop missing-workspace file-change guard", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--quick",
+          "--task",
+          "Summarize the request",
+          "--skip-file-change-detection",
+        ],
+        { currentWorkingDirectory: "C:/Users/example" },
+      ),
+    ).toMatchObject({
+      command: "run",
+      workspaceRoot: "C:/Users/example",
+      skipFileChangeDetection: true,
+    });
   });
 
   it("rejects malformed, unknown, or non-one-shot deterministic actions", () => {

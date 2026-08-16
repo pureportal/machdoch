@@ -14,6 +14,7 @@ static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct CliCommandOptions<'a> {
     pub(super) workspace_root: &'a str,
+    pub(super) file_change_detection_enabled: bool,
     pub(super) mode: Option<&'a str>,
     pub(super) provider: Option<&'a str>,
     pub(super) model: Option<&'a str>,
@@ -37,6 +38,10 @@ pub(super) fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
     if let Some(mode) = options.mode {
         args.push("--mode".to_string());
         args.push(mode.to_string());
+    }
+
+    if !options.file_change_detection_enabled {
+        args.push("--skip-file-change-detection".to_string());
     }
 
     if let Some(provider) = options.provider {
@@ -185,6 +190,7 @@ mod tests {
     fn desktop_cli_args_force_one_shot_json_execution_with_stdin_task() {
         let args = build_cli_args(CliCommandOptions {
             workspace_root: "C:/workspace",
+            file_change_detection_enabled: true,
             mode: Some("ask"),
             provider: Some("openai"),
             model: Some("gpt-5.2"),
@@ -204,6 +210,7 @@ mod tests {
         assert!(args.contains(&"--reasoning".to_string()));
         assert!(args.contains(&"high".to_string()));
         assert!(args.contains(&"--deterministic-action-json".to_string()));
+        assert!(!args.contains(&"--skip-file-change-detection".to_string()));
     }
 
     #[test]
@@ -214,6 +221,7 @@ mod tests {
         ];
         let args = build_cli_args(CliCommandOptions {
             workspace_root: "C:/workspace",
+            file_change_detection_enabled: true,
             mode: None,
             provider: Some("openai"),
             model: Some("gpt-5.5"),
@@ -230,6 +238,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             image_paths,
         );
+    }
+
+    #[test]
+    fn desktop_cli_args_skip_file_change_detection_without_a_workspace() {
+        let args = build_cli_args(CliCommandOptions {
+            workspace_root: "C:/Users/example",
+            file_change_detection_enabled: false,
+            mode: Some("machdoch"),
+            provider: None,
+            model: None,
+            reasoning: None,
+            conversation_context_file: None,
+            image_paths: &[],
+            deterministic_action_json: None,
+        });
+
+        assert!(args.contains(&"--skip-file-change-detection".to_string()));
     }
 
     #[test]

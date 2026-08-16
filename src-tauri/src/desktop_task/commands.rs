@@ -203,6 +203,7 @@ pub(super) fn execute_desktop_task(
         session_id: _,
         deterministic_action,
     } = request;
+    let file_change_detection_enabled = !workspace_root.trim().is_empty();
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
     let mut resolved_image_paths = image_paths.unwrap_or_default();
@@ -239,6 +240,7 @@ pub(super) fn execute_desktop_task(
 
     let cli_args = build_cli_args(CliCommandOptions {
         workspace_root: &normalized_workspace_root,
+        file_change_detection_enabled,
         mode: normalized_mode.as_deref(),
         provider: normalized_provider.as_deref(),
         model: normalized_model.as_deref(),

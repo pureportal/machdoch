@@ -392,6 +392,7 @@ export const printTaskPreview = async (
       ...(args.deterministicAction
         ? { deterministicAction: args.deterministicAction }
         : {}),
+      ...(args.skipFileChangeDetection ? { captureFileChanges: false } : {}),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {

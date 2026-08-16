@@ -312,6 +312,7 @@ export interface ParsedCliArgs {
   contextPaths?: string[];
   imagePaths?: string[];
   deterministicAction?: TaskDeterministicAction;
+  skipFileChangeDetection?: boolean;
   json: boolean;
   verbose: boolean;
   workspaceRoot: string;

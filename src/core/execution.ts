@@ -703,7 +703,7 @@ export const createTaskExecutionController = (
 
       try {
         fileChangeCapture =
-          config.mode === "machdoch"
+          config.mode === "machdoch" && options.captureFileChanges !== false
             ? await startTaskFileChangeCapture(config.workspaceRoot)
             : undefined;
         const result = await runTaskExecutionStateMachine(

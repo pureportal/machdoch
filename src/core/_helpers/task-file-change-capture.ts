@@ -1155,12 +1155,18 @@ const createFailedCapture = (
 };
 
 export const startTaskFileChangeCapture = async (
-  workspaceRoot: string,
+  workspaceRoot: string | null | undefined,
 ): Promise<TaskFileChangeCapture | undefined> => {
+  const normalizedWorkspaceRoot = workspaceRoot?.trim();
+
+  if (!normalizedWorkspaceRoot) {
+    return undefined;
+  }
+
   let discovery: Awaited<ReturnType<typeof discoverWorkspaceGitRepositories>>;
 
   try {
-    discovery = await discoverWorkspaceGitRepositories(workspaceRoot);
+    discovery = await discoverWorkspaceGitRepositories(normalizedWorkspaceRoot);
   } catch (error) {
     return createFailedCapture({
       stage: "discovery",

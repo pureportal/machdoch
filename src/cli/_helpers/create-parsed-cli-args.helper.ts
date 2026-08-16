@@ -44,6 +44,7 @@ export const createParsedArgs = (
     | "contextPaths"
     | "imagePaths"
     | "deterministicAction"
+    | "skipFileChangeDetection"
   >,
   options?: {
     helpTopic?: string;
@@ -62,6 +63,7 @@ export const createParsedArgs = (
     contextPaths?: string[];
     imagePaths?: string[];
     deterministicAction?: TaskDeterministicAction;
+    skipFileChangeDetection?: boolean;
     interview?: TaskInterviewCliOptions;
     ralph?: RalphCliOptions;
     scheduler?: SchedulerCliOptions;
@@ -106,6 +108,9 @@ export const createParsedArgs = (
     ...(options?.deterministicAction
       ? { deterministicAction: options.deterministicAction }
       : {}),
+    ...(options?.skipFileChangeDetection
+      ? { skipFileChangeDetection: true }
+      : {}),
     ...(options?.task ? { task: options.task } : {}),
     ...(options?.interview ? { interview: options.interview } : {}),
     ...(options?.ralph ? { ralph: options.ralph } : {}),
@@ -133,6 +138,7 @@ export const createSharedParsedOptions = (options: {
   contextPaths?: string[];
   imagePaths?: string[];
   deterministicAction?: TaskDeterministicAction;
+  skipFileChangeDetection?: boolean;
 }): Omit<ParsedCliArgs, "command" | "task"> => {
   return {
     json: options.json,
@@ -163,6 +169,9 @@ export const createSharedParsedOptions = (options: {
       : {}),
     ...(options.deterministicAction
       ? { deterministicAction: options.deterministicAction }
+      : {}),
+    ...(options.skipFileChangeDetection
+      ? { skipFileChangeDetection: true }
       : {}),
   };
 };

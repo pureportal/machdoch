@@ -61,6 +61,12 @@ afterEach(async () => {
 });
 
 describe("task file change capture", () => {
+  it("skips capture when no workspace is configured", async () => {
+    await expect(startTaskFileChangeCapture(null)).resolves.toBeUndefined();
+    await expect(startTaskFileChangeCapture("")).resolves.toBeUndefined();
+    await expect(startTaskFileChangeCapture("   ")).resolves.toBeUndefined();
+  });
+
   it("aggregates file changes from sibling repositories", async () => {
     const workspaceRoot = await mkdtemp(
       join(tmpdir(), "machdoch-file-changes-multi-"),
@@ -101,6 +107,48 @@ describe("task file change capture", () => {
         path: "ui/created.ts",
         repositoryPath: "ui",
         operation: "added",
+      }),
+    ]);
+  });
+
+  it("captures repositories only within the configured workspace", async () => {
+    const parentRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-file-changes-scope-"),
+    );
+    workspacesToClean.push(parentRoot);
+    const workspaceRoot = join(parentRoot, "workspace");
+    const workspaceRepository = join(workspaceRoot, "app");
+    const outsideRepository = join(parentRoot, "outside");
+    await Promise.all([
+      initializeGitWorkspace(workspaceRepository),
+      initializeGitWorkspace(outsideRepository),
+    ]);
+    await Promise.all([
+      writeFile(join(workspaceRepository, "inside.ts"), "one\n", "utf8"),
+      writeFile(join(outsideRepository, "outside.ts"), "one\n", "utf8"),
+    ]);
+    await Promise.all([
+      commitWorkspace(workspaceRepository),
+      commitWorkspace(outsideRepository),
+    ]);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await Promise.all([
+      writeFile(join(workspaceRepository, "inside.ts"), "one\ntwo\n", "utf8"),
+      writeFile(join(outsideRepository, "outside.ts"), "one\ntwo\n", "utf8"),
+    ]);
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      repositoryCount: 1,
+      status: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "app/inside.ts",
+        repositoryPath: "app",
       }),
     ]);
   });

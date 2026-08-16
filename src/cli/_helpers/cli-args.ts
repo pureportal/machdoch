@@ -134,6 +134,7 @@ export const parseCliArgs = (
         infinite?: boolean;
         "conversation-context-file"?: string;
         "deterministic-action-json"?: string;
+        "skip-file-change-detection"?: boolean;
         context?: string[];
         image?: string[];
         cwd?: string;
@@ -268,6 +269,7 @@ export const parseCliArgs = (
         infinite: { type: "boolean" },
         "conversation-context-file": { type: "string" },
         "deterministic-action-json": { type: "string" },
+        "skip-file-change-detection": { type: "boolean" },
         context: { type: "string", multiple: true },
         image: { type: "string", multiple: true },
         cwd: { type: "string" },
@@ -415,6 +417,8 @@ export const parseCliArgs = (
   const rawConversationContextFile = normalizeOptionalString(
     values?.["conversation-context-file"],
   );
+  const skipFileChangeDetection =
+    values?.["skip-file-change-detection"] === true;
   const rawDeterministicActionJson = normalizeOptionalString(
     values?.["deterministic-action-json"],
   );
@@ -957,6 +961,7 @@ export const parseCliArgs = (
     ...(rawContextPaths ? { contextPaths: rawContextPaths } : {}),
     ...(rawImagePaths ? { imagePaths: rawImagePaths } : {}),
     ...(deterministicAction ? { deterministicAction } : {}),
+    ...(skipFileChangeDetection ? { skipFileChangeDetection: true } : {}),
   });
 
   if (setGlobalMemoryEnabled !== undefined) {
