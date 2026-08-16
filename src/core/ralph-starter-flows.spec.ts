@@ -16,6 +16,10 @@ import {
   type RalphFlow,
   type RalphUtilityBlock,
 } from "./ralph.js";
+import {
+  parseRalphValidatorJsonResult,
+  RALPH_VALIDATOR_JSON_SCHEMA,
+} from "./_helpers/parse-ralph-validator-json-result.helper.js";
 
 const evaluateStarterTransform = (
   block: RalphUtilityBlock,
@@ -2678,6 +2682,86 @@ describe("Ralph starter flows", () => {
         ) {
           assertStrictObjectSchemas(block.utility.schema);
         }
+      }
+    }
+  });
+
+  it("uses one executor pass and one canonical validator contract in every starter", () => {
+    const validDecision = {
+      decision: "DONE",
+      confidence: 0.95,
+      summary: "Verified.",
+      evidence: ["Checks passed."],
+      remainingWork: [],
+    } as const;
+    expect(parseRalphValidatorJsonResult(validDecision)).toEqual(validDecision);
+
+    for (const starterFlow of STARTER_RALPH_FLOWS) {
+      const promptBlocks = starterFlow.flow.blocks.filter(
+        (block) => block.type === "PROMPT",
+      );
+      expect(promptBlocks.length).toBeGreaterThan(0);
+      expect(
+        promptBlocks.every((block) => block.settings?.maxIterations === 1),
+      ).toBe(true);
+
+      const validators = starterFlow.flow.blocks.filter(
+        (block): block is RalphUtilityBlock =>
+          block.type === "UTILITY" && block.utility.type === "VALIDATOR_JSON",
+      );
+      expect(validators).toHaveLength(1);
+      expect(validators[0]?.utility.schema).toEqual(
+        RALPH_VALIDATOR_JSON_SCHEMA,
+      );
+      expect(
+        starterFlow.flow.edges
+          .filter((edge) => edge.from === validators[0]?.id)
+          .map((edge) => edge.fromOutput),
+      ).toEqual(
+        expect.arrayContaining([
+          "DONE",
+          "CONTINUE",
+          "RETRY",
+          "ERROR",
+          "INVALID",
+        ]),
+      );
+    }
+  });
+
+  it("routes scope orchestration errors to retained terminal reports", () => {
+    for (const starterFlowId of [
+      "autonomous-code-improvement-loop",
+      "autonomous-ui-improvement-loop",
+      "autonomous-refactoring-flow",
+      "security-fix-loop",
+    ]) {
+      const flow = getRalphStarterFlow(starterFlowId)?.flow;
+      if (!flow) {
+        throw new Error(`Missing starter ${starterFlowId}.`);
+      }
+      const retainedReport = flow.blocks.find(
+        (block) =>
+          block.type === "UTILITY" &&
+          block.utility.type === "FINAL_REPORT" &&
+          block.id.startsWith("retained-"),
+      );
+      expect(retainedReport).toBeDefined();
+
+      for (const block of flow.blocks) {
+        const isScopeInfrastructure =
+          block.type === "UTILITY" &&
+          (block.utility.type === "SCAN_SCOPE_EVIDENCE" ||
+            block.utility.type === "UPDATE_SCOPE_REGISTRY" ||
+            block.utility.type === "SELECT_SCOPE" ||
+            block.id === "scope-cycle-complete");
+        if (!isScopeInfrastructure) {
+          continue;
+        }
+        const errorEdge = flow.edges.find(
+          (edge) => edge.from === block.id && edge.fromOutput === "ERROR",
+        );
+        expect(errorEdge?.to).toBe(retainedReport?.id);
       }
     }
   });

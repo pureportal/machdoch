@@ -1,5 +1,6 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
+import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
 
 const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
 
@@ -47,22 +48,6 @@ const RALPH_TASK_SCHEMA = {
       maxItems: 20,
     },
     priority: { type: "number", minimum: 0, maximum: 100 },
-  },
-} as const;
-
-const RALPH_VALIDATOR_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
-  properties: {
-    decision: {
-      type: "string",
-      enum: ["DONE", "CONTINUE", "RETRY", "ERROR"],
-    },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
-    summary: { type: "string" },
-    evidence: { type: "array", items: { type: "string" }, maxItems: 30 },
-    remainingWork: { type: "array", items: { type: "string" }, maxItems: 30 },
   },
 } as const;
 
@@ -451,7 +436,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         reasoning: "medium",
         attachments: [],
         packs: [],
-        maxIterations: 3,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
@@ -625,7 +610,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
-        schema: RALPH_VALIDATOR_SCHEMA,
+        schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
           "Validate implementation against JSON checklist {{data:resolve-checklist-path:output.path}}, selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, feature request, acceptance criteria, research, baseline verification {{result:baseline-verification}}, post-change verification {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}}. Judge only the active feature and required adjacent tests/docs/imports; ignore unrelated workspace changes. The selected tasks must already be in runtime-owned verifying state. Return DONE only when all tasks and acceptance criteria pass, at least one implementation file changed since the deterministic baseline unless the task explicitly required state-only work, and no new/worsened verification failure exists. Return CONTINUE when bounded work remains, RETRY for own regressions, and ERROR only for unavailable external credentials/state or repeated non-progress. Never wait for a human. Include confidence, summary, evidence, and remainingWork.",
       },
@@ -1545,7 +1530,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 15,
+  version: 16,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

@@ -1,20 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
+import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
 
 const RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
-
-const RALPH_VALIDATOR_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
-  properties: {
-    decision: { type: "string", enum: ["DONE", "CONTINUE", "RETRY", "ERROR"] },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
-    summary: { type: "string" },
-    evidence: { type: "array", items: { type: "string" }, maxItems: 30 },
-    remainingWork: { type: "array", items: { type: "string" }, maxItems: 30 },
-  },
-} as const;
 
 const autonomousRefactoringFlow: RalphFlow = {
   schemaVersion: 1,
@@ -690,7 +678,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
-        schema: RALPH_VALIDATOR_SCHEMA,
+        schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
           "Validate the cohesive refactor package for selected scope {{result:select-scope}} against conventions, plan, validation routing/result, scope guard {{result:scope-change-guard}}, git diff, notes, tests, public contracts, and exclusions. Ignore unrelated changes. Return DONE only when the package is complete, in scope, behavior-preserving as intended, and has no new/worsened failure; CONTINUE for bounded work; RETRY for own regressions; ERROR only for unavailable external state or repeated non-progress. Include confidence, summary, evidence, and remainingWork.",
       },
@@ -926,7 +914,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "scan-scopes-error",
       from: "scan-scopes",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-outcome-report",
     },
     {
       id: "update-registry-to-select",
@@ -944,7 +932,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "update-registry-error",
       from: "update-scope-registry",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-outcome-report",
     },
     {
       id: "select-scope-to-detect-commands",
@@ -962,7 +950,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "select-scope-error",
       from: "select-scope",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-outcome-report",
     },
     {
       id: "detect-commands-to-propose",
@@ -1515,7 +1503,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 15,
+  version: 16,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

@@ -1,20 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
+import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
 
 const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
-
-const RALPH_VALIDATOR_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
-  properties: {
-    decision: { type: "string", enum: ["DONE", "CONTINUE", "RETRY", "ERROR"] },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
-    summary: { type: "string" },
-    evidence: { type: "array", items: { type: "string" }, maxItems: 30 },
-    remainingWork: { type: "array", items: { type: "string" }, maxItems: 30 },
-  },
-} as const;
 
 const securityFixLoopFlow: RalphFlow = {
   schemaVersion: 1,
@@ -437,7 +425,7 @@ const securityFixLoopFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 4,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
@@ -494,7 +482,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
-        schema: RALPH_VALIDATOR_SCHEMA,
+        schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
           "Validate the latest security iteration for selected scope {{result:select-scope}} against structured findings, scope guard {{result:scope-change-guard}}, git diff, baseline/post-change verification, and tests. Ignore unrelated changes. Return DONE only when no qualifying finding remains, changes are in scope, and no new/worsened verification failure exists; CONTINUE for bounded repairs; RETRY for own regressions; ERROR only for unavailable external state or repeated non-progress. Include confidence, summary, evidence, and remainingWork.",
       },
@@ -700,7 +688,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "scan-scopes-error",
       from: "scan-scopes",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-outcome-report",
     },
     {
       id: "update-registry-to-select",
@@ -718,7 +706,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "update-registry-error",
       from: "update-scope-registry",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-outcome-report",
     },
     {
       id: "select-scope-to-detect-commands",
@@ -736,7 +724,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "select-scope-error",
       from: "select-scope",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-outcome-report",
     },
     {
       id: "detect-commands-to-research-decision",
@@ -1156,14 +1144,14 @@ const securityFixLoopFlow: RalphFlow = {
       id: "scope-cycle-error",
       from: "scope-cycle-complete",
       fromOutput: "ERROR",
-      to: "select-scope",
+      to: "retained-outcome-report",
     },
   ],
 };
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 11,
+  version: 12,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],

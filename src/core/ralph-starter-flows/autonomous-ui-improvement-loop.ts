@@ -1,20 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
+import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
 
 const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
-
-const RALPH_VALIDATOR_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
-  properties: {
-    decision: { type: "string", enum: ["DONE", "CONTINUE", "RETRY", "ERROR"] },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
-    summary: { type: "string" },
-    evidence: { type: "array", items: { type: "string" }, maxItems: 30 },
-    remainingWork: { type: "array", items: { type: "string" }, maxItems: 30 },
-  },
-} as const;
 
 const ENRICHED_UI_DESIGN_POLICY = [
   "Preserve the repository's existing design-system conventions, component APIs, tokens, routing, data fetching, and accessibility patterns before inventing new UI primitives.",
@@ -762,7 +750,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         reasoning: "high",
         attachments: [],
         packs: [],
-        maxIterations: 4,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
@@ -834,7 +822,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         reasoning: "medium",
         attachments: [],
         packs: [],
-        maxIterations: 2,
+        maxIterations: 1,
       },
       type: "PROMPT",
       prompt:
@@ -1074,7 +1062,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
-        schema: RALPH_VALIDATOR_SCHEMA,
+        schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
           "Validate the latest autonomous UI improvement package. Package: {{data:choose-ui-improvement:output.selectedCandidate}}. Scope cluster: {{result:select-scope}}. Strict review: {{data:independent-ui-review:output}}. Baseline verification: {{result:baseline-verification}}. Post-change verification: {{result:run-verification}}. Runtime URL resolution: {{data:resolve-runtime-urls:output}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Judge only the active package and required adjacent tests/docs/imports; ignore unrelated workspace changes. Return DONE only when every acceptance criterion and related change in the cohesive package is complete, the result reaches the planned target-versus-sibling-view standard, satisfies designPolicy={{designPolicy:text=}}, has no obvious desktop/mobile overflow, overlapping text, badge/copy/icon misuse, accessibility or hydration regression, and introduces no new or worsened failure relative to baseline. Changed lines or files are evidence of activity, never evidence of completion by themselves. Return CONTINUE for bounded implementation work, RETRY for own regressions, and ERROR only when unavailable credentials/external state or repeated non-progress makes this package deferrable. The flow counter enforces maxUiImprovementPasses={{maxUiImprovementPasses:number=8}}. Never wait for a human decision; make the best bounded reversible design assumption.",
       },
@@ -1324,7 +1312,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "scan-ui-scopes-error",
       from: "scan-ui-scopes",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-active-report",
     },
     {
       id: "update-registry-to-select",
@@ -1342,7 +1330,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "update-registry-error",
       from: "update-scope-registry",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-active-report",
     },
     {
       id: "select-scope-to-detect",
@@ -1360,7 +1348,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "select-scope-error",
       from: "select-scope",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-active-report",
     },
     {
       id: "detect-success-to-history",
@@ -2170,14 +2158,14 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "scope-cycle-error",
       from: "scope-cycle-complete",
       fromOutput: "ERROR",
-      to: "select-scope",
+      to: "retained-active-report",
     },
   ],
 };
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 14,
+  version: 15,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

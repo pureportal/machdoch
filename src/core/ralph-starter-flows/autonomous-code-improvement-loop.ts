@@ -1,20 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
+import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
 
 const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
-
-const RALPH_VALIDATOR_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
-  properties: {
-    decision: { type: "string", enum: ["DONE", "CONTINUE", "RETRY", "ERROR"] },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
-    summary: { type: "string" },
-    evidence: { type: "array", items: { type: "string" }, maxItems: 30 },
-    remainingWork: { type: "array", items: { type: "string" }, maxItems: 30 },
-  },
-} as const;
 
 const autonomousCodeImprovementLoopFlow: RalphFlow = {
   schemaVersion: 1,
@@ -1035,7 +1023,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
-        schema: RALPH_VALIDATOR_SCHEMA,
+        schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
           "Validate the autonomous code improvement package against selected scope {{result:select-scope}}, strict review {{data:independent-review:output}}, baseline/post-change verification, visual review, scope guard {{result:scope-change-guard}}, work-yield evidence {{data:work-yield-analysis:output}}, and git diff {{result:git-diff-summary}}. Ignore unrelated workspace changes. Return DONE only when acceptance criteria pass, scope guard is IN_SCOPE, deterministic work yield proves relevant changed files, and no new/worsened failure exists. Return CONTINUE for bounded remaining work, RETRY for own regressions or reviewer FIX, and ERROR only for unavailable external state or repeated non-progress. Security-only enhancements are not a completion requirement in this nonsecurity flow. Never wait for a human; include confidence, summary, evidence, and remainingWork.",
       },
@@ -1270,7 +1258,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       id: "scan-scopes-error",
       from: "scan-scopes",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-active-report",
     },
     {
       id: "update-registry-to-select",
@@ -1288,7 +1276,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       id: "update-registry-error",
       from: "update-scope-registry",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-active-report",
     },
     {
       id: "select-scope-to-detect",
@@ -1306,7 +1294,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       id: "select-scope-error",
       from: "select-scope",
       fromOutput: "ERROR",
-      to: "record-invalid-outcome",
+      to: "retained-active-report",
     },
     {
       id: "detect-success-to-history",
@@ -2111,7 +2099,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 16,
+  version: 17,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],
