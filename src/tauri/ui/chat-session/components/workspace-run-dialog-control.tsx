@@ -174,6 +174,7 @@ export const WorkspaceRunDialogControl = ({
         <div className="min-h-0 overflow-y-auto p-5">
           <WorkspaceRunPanel
             workspaceRoot={normalizedRoot}
+            view="all"
             onDocumentDirtyChange={setDocumentDirty}
           />
         </div>

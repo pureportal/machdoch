@@ -60,6 +60,12 @@ const STATE_TONE_CLASS = {
 } as const;
 const RUN_RECONCILIATION_IDLE_MS = 10_000;
 
+export type WorkspaceRunPanelView =
+  | "all"
+  | "summary"
+  | "output"
+  | "configuration";
+
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
@@ -162,10 +168,14 @@ const ConfigurationSummary = ({
 
 export const WorkspaceRunPanel = ({
   workspaceRoot,
+  view,
   onDocumentDirtyChange,
+  onConfigurationRequired,
 }: {
   workspaceRoot: string | null | undefined;
+  view: WorkspaceRunPanelView;
   onDocumentDirtyChange?: (dirty: boolean) => void;
+  onConfigurationRequired?: () => void;
 }): JSX.Element | null => {
   const normalizedRoot = workspaceRoot?.trim() || null;
   const rootKey = normalizedRoot
@@ -176,6 +186,8 @@ export const WorkspaceRunPanel = ({
   const actionTokenRef = useRef<symbol | null>(null);
   const lastRunEventAtRef = useRef(0);
   const documentDirtyRef = useRef(false);
+  const documentRootKeyRef = useRef<string | null>(null);
+  const configurationRequestRootKeyRef = useRef<string | null>(null);
   const [snapshot, setSnapshot] = useState<WorkspaceRunSnapshot | null>(null);
   const [document, setDocument] =
     useState<WorkspaceRunConfigurationDocument | null>(null);
@@ -247,12 +259,14 @@ export const WorkspaceRunPanel = ({
     }
 
     if (documentResult.status === "fulfilled") {
+      documentRootKeyRef.current = rootKey;
       setDocument(documentResult.value);
       setDocumentError(null);
       if (documentResult.value.configurations.length === 0) {
         setConfigurationOpen(true);
       }
     } else {
+      documentRootKeyRef.current = rootKey;
       setDocument((current) => current ?? createEmptyWorkspaceRunDocument());
       setDocumentError(errorMessage(documentResult.reason));
       setConfigurationOpen(true);
@@ -263,6 +277,8 @@ export const WorkspaceRunPanel = ({
   useEffect(() => {
     actionTokenRef.current = null;
     documentDirtyRef.current = false;
+    documentRootKeyRef.current = null;
+    configurationRequestRootKeyRef.current = null;
     setSnapshot(null);
     setDocument(null);
     setSelectedConfigurationId(null);
@@ -303,6 +319,7 @@ export const WorkspaceRunPanel = ({
             : nextSnapshot,
         );
         if (!documentDirtyRef.current) {
+          documentRootKeyRef.current = rootKey;
           setDocument({
             schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,
             primaryConfigurationId: nextSnapshot.primaryConfigurationId,
@@ -352,6 +369,21 @@ export const WorkspaceRunPanel = ({
       unlistenLogs?.();
     };
   }, [loadPanel, normalizedRoot, refreshSnapshot, rootKey]);
+
+  useEffect(() => {
+    if (
+      view !== "all" &&
+      !loading &&
+      document &&
+      documentRootKeyRef.current === rootKey &&
+      document.configurations.length === 0 &&
+      onConfigurationRequired &&
+      configurationRequestRootKeyRef.current !== rootKey
+    ) {
+      configurationRequestRootKeyRef.current = rootKey;
+      onConfigurationRequired();
+    }
+  }, [document, loading, onConfigurationRequired, rootKey, view]);
 
   const primaryStatus = workspaceRunPrimaryStatus(snapshot);
   const displayedStatus = useMemo(() => {
@@ -422,14 +454,24 @@ export const WorkspaceRunPanel = ({
       workspaceRunIsActive(displayedStatus) ||
       hasOutput(displayedStatus)),
   );
+  const outputVisible = view === "output" || (view === "all" && showOutput);
 
   return (
     <section
       aria-label="Workspace run"
       aria-busy={loading || busyAction !== null}
-      className="min-w-0"
+      className={cn(
+        "min-w-0",
+        view !== "all" &&
+          "overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_16px_48px_rgba(0,0,0,0.16)]",
+      )}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2.5 pb-4">
+      <div
+        className={cn(
+          "flex min-w-0 flex-wrap items-center gap-2.5",
+          view === "all" ? "pb-4" : "px-4 py-3.5",
+        )}
+      >
         <Play aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />
         <div className="min-w-[8rem] flex-1">
           {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
@@ -557,10 +599,12 @@ export const WorkspaceRunPanel = ({
           }}
         />
       ) : null}
-      {showOutput && displayedStatus ? (
-        <WorkspaceRunOutput status={displayedStatus} compact={false} />
+      {displayedStatus ? (
+        <div hidden={!outputVisible}>
+          <WorkspaceRunOutput status={displayedStatus} compact={false} />
+        </div>
       ) : null}
-      {document ? (
+      {document && view === "all" ? (
         <details
           open={configurationOpen}
           onToggle={(event) => setConfigurationOpen(event.currentTarget.open)}
@@ -590,6 +634,26 @@ export const WorkspaceRunPanel = ({
             />
           </div>
         </details>
+      ) : null}
+      {document && view !== "all" ? (
+        <div
+          hidden={view !== "configuration"}
+          className="border-t border-slate-800 p-4"
+        >
+          <WorkspaceRunEditor
+            workspaceRoot={normalizedRoot}
+            document={document}
+            onDirtyChange={handleDocumentDirtyChange}
+            onSaved={(nextDocument, nextSnapshot) => {
+              setDocument(nextDocument);
+              setSnapshot(nextSnapshot);
+              setSelectedConfigurationId(nextSnapshot.primaryConfigurationId);
+              setDocumentError(null);
+              setSnapshotError(null);
+              setActionError(null);
+            }}
+          />
+        </div>
       ) : null}
     </section>
   );

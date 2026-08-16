@@ -86,6 +86,89 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("WorkspaceRunPanel", () => {
+  it("shows only the selected workspace detail section", async () => {
+    const running = taskStatus("Server", "running");
+    running.logs = [
+      { sequence: 1, at: 1, stream: "stdout", line: "server ready" },
+    ];
+    const snapshot: WorkspaceRunSnapshot = {
+      workspaceRoot: "C:/workspace",
+      primaryConfigurationId: "Server",
+      configurations: [running],
+    };
+    runtime.loadWorkspaceRunSnapshot.mockResolvedValue(snapshot);
+    runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue(
+      documentFromSnapshot(snapshot),
+    );
+
+    const panel = render(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "summary",
+      }),
+    );
+
+    await screen.findByText("Running");
+    expect(screen.queryByRole("log")).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: "Run configuration JSON" }),
+    ).toBeNull();
+
+    panel.rerender(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "output",
+      }),
+    );
+    expect(screen.getByRole("log", { name: "Server output" })).toBeTruthy();
+    expect(
+      screen.queryByRole("textbox", { name: "Run configuration JSON" }),
+    ).toBeNull();
+
+    panel.rerender(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "configuration",
+      }),
+    );
+    expect(screen.queryByRole("log")).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Run configuration JSON" }),
+    ).toBeTruthy();
+  });
+
+  it("requests configuration once for an unconfigured workspace", async () => {
+    const snapshot: WorkspaceRunSnapshot = {
+      workspaceRoot: "C:/workspace",
+      primaryConfigurationId: null,
+      configurations: [],
+    };
+    runtime.loadWorkspaceRunSnapshot.mockResolvedValue(snapshot);
+    runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue({
+      schemaVersion: 1,
+      primaryConfigurationId: null,
+      configurations: [],
+    });
+    const onConfigurationRequired = vi.fn();
+    const panel = render(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "output",
+        onConfigurationRequired,
+      }),
+    );
+
+    await waitFor(() => expect(onConfigurationRequired).toHaveBeenCalledOnce());
+    panel.rerender(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "summary",
+        onConfigurationRequired,
+      }),
+    );
+    expect(onConfigurationRequired).toHaveBeenCalledOnce();
+  });
+
   it("opens configuration for an unconfigured workspace", async () => {
     const snapshot: WorkspaceRunSnapshot = {
       workspaceRoot: "C:/workspace",
@@ -102,6 +185,7 @@ describe("WorkspaceRunPanel", () => {
     render(
       createElement(WorkspaceRunPanel, {
         workspaceRoot: "C:/workspace",
+        view: "all",
       }),
     );
 
@@ -143,6 +227,7 @@ describe("WorkspaceRunPanel", () => {
     render(
       createElement(WorkspaceRunPanel, {
         workspaceRoot: "C:/workspace",
+        view: "all",
       }),
     );
 
@@ -201,7 +286,12 @@ describe("WorkspaceRunPanel", () => {
       documentFromSnapshot(snapshot),
     );
 
-    render(createElement(WorkspaceRunPanel, { workspaceRoot: "C:/workspace" }));
+    render(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "all",
+      }),
+    );
 
     expect(await screen.findByText("build complete")).toBeTruthy();
     expect(screen.getByText("Completed")).toBeTruthy();
@@ -230,7 +320,12 @@ describe("WorkspaceRunPanel", () => {
       },
     );
 
-    render(createElement(WorkspaceRunPanel, { workspaceRoot: "C:/workspace" }));
+    render(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "all",
+      }),
+    );
     expect(await screen.findByText("No output yet")).toBeTruthy();
     act(() =>
       emitLogs?.({
@@ -261,7 +356,12 @@ describe("WorkspaceRunPanel", () => {
       new Error("Failed to parse .machdoch/run.json"),
     );
 
-    render(createElement(WorkspaceRunPanel, { workspaceRoot: "C:/workspace" }));
+    render(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "all",
+      }),
+    );
 
     expect(
       await screen.findByText("Failed to parse .machdoch/run.json"),
@@ -291,7 +391,12 @@ describe("WorkspaceRunPanel", () => {
           finishStart = resolve;
         }),
     );
-    render(createElement(WorkspaceRunPanel, { workspaceRoot: "C:/workspace" }));
+    render(
+      createElement(WorkspaceRunPanel, {
+        workspaceRoot: "C:/workspace",
+        view: "all",
+      }),
+    );
     const start = await screen.findByRole("button", { name: "Start" });
 
     fireEvent.click(start);

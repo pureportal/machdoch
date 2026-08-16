@@ -156,7 +156,7 @@ export const WorkspaceTools = ({
     <section
       ref={containerRef}
       aria-label="Workspace files and terminal"
-      className="flex h-[clamp(32rem,calc(100vh-13.5rem),54rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_18px_60px_rgba(0,0,0,0.18)]"
+      className="flex h-[clamp(28rem,calc(100vh-28rem),44rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_18px_60px_rgba(0,0,0,0.18)] xl:h-[clamp(28rem,calc(100vh-20rem),50rem)]"
     >
       <div className="grid min-h-[17.5rem] min-w-0 flex-1 grid-cols-[clamp(12rem,24%,16rem)_minmax(0,1fr)] overflow-hidden">
         <WorkspaceFileTree

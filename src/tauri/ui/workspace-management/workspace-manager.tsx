@@ -70,6 +70,12 @@ import {
   getManagedWorkspaceName,
   getManagedWorkspaceTags,
 } from "./workspace-management-model";
+import {
+  WorkspaceDetailNavigation,
+  type WorkspaceDetailSection,
+  workspaceDetailPanelId,
+  workspaceDetailTabId,
+} from "./workspace-detail-navigation";
 import { WorkspaceGitStatus } from "./workspace-git-status";
 import type { WorkspaceManagementControls } from "./types";
 import {
@@ -133,6 +139,8 @@ export const WorkspaceManager = ({
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraftPending, setTagDraftPending] = useState(false);
+  const [workspaceSection, setWorkspaceSection] =
+    useState<WorkspaceDetailSection>("output");
   const [gitSection, setGitSection] = useState<GitSection>("status");
   const [gitOverview, setGitOverview] = useState<WorkspaceGitOverview | null>(
     null,
@@ -159,6 +167,7 @@ export const WorkspaceManager = ({
   const [remoteName, setRemoteName] = useState("");
   const [remoteUrl, setRemoteUrl] = useState("");
   const [workspaceToolsDirty, setWorkspaceToolsDirty] = useState(false);
+  const [workspaceRunDirty, setWorkspaceRunDirty] = useState(false);
   const [workspaceToolsRefreshToken, setWorkspaceToolsRefreshToken] =
     useState(0);
   const displayNameErrorId = useId();
@@ -235,7 +244,8 @@ export const WorkspaceManager = ({
       normalizedDisplayName !== normalizedSavedDisplayName ||
       !sameStrings(tags, savedTags)),
   );
-  const workspaceDraftDirty = workspaceSettingsDirty || workspaceToolsDirty;
+  const workspaceDraftDirty =
+    workspaceSettingsDirty || workspaceToolsDirty || workspaceRunDirty;
 
   useEffect(() => {
     onDirtyChange?.(workspaceDraftDirty);
@@ -643,6 +653,7 @@ export const WorkspaceManager = ({
       return;
     }
     setWorkspaceToolsDirty(false);
+    setWorkspaceRunDirty(false);
     setTagDraftPending(false);
     setSelectedWorkspaceKey(workspaceKey);
   };
@@ -726,6 +737,7 @@ export const WorkspaceManager = ({
       await workspaceSetup.onRelink(selectedWorkspace.root, root);
     }
     setWorkspaceToolsDirty(false);
+    setWorkspaceRunDirty(false);
     setTagDraftPending(false);
   };
 
@@ -763,6 +775,7 @@ export const WorkspaceManager = ({
       if (!saved) return;
     }
     setWorkspaceToolsDirty(false);
+    setWorkspaceRunDirty(false);
     setTagDraftPending(false);
     await workspaceSetup.onRemove(selectedWorkspace.root);
   };
@@ -1567,8 +1580,8 @@ export const WorkspaceManager = ({
               <EmptyState icon={FolderGit2} title="Select a workspace" />
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-360 space-y-6 p-5 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="mx-auto w-full max-w-360 space-y-4 p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/20 px-4 py-3.5">
                 <div className="min-w-0">
                   <h2 className="truncate text-base font-semibold text-slate-100">
                     {getManagedWorkspaceName(selectedWorkspace)}
@@ -1618,743 +1631,801 @@ export const WorkspaceManager = ({
                 </div>
               </div>
 
-              <WorkspaceRunPanel workspaceRoot={selectedWorkspace.root} />
-
-              <WorkspaceTools
-                key={selectedWorkspace.key}
-                workspaceRoot={selectedWorkspace.root}
-                refreshToken={workspaceToolsRefreshToken}
-                onDirtyChange={setWorkspaceToolsDirty}
-                onWorkspaceMutation={refreshWorkspaceState}
+              <WorkspaceDetailNavigation
+                activeSection={workspaceSection}
+                onSectionChange={setWorkspaceSection}
               />
 
-              <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
-                <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                  Name
-                  <Input
-                    value={displayName}
-                    maxLength={
-                      MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH * 2
-                    }
-                    disabled={setup.saving || !instructionLibraryAvailable}
-                    aria-invalid={displayNameError !== null}
-                    aria-describedby={
-                      displayNameError && workspaceSettingsDirty
-                        ? displayNameErrorId
-                        : undefined
-                    }
-                    onChange={(event) => setDisplayName(event.target.value)}
-                    className="h-9 border-slate-800 bg-slate-950"
-                  />
-                </label>
-                <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                  Tags
-                  <TagEditor
-                    value={tags}
-                    disabled={setup.saving || !instructionLibraryAvailable}
-                    onChange={setTags}
-                    onPendingChange={setTagDraftPending}
-                  />
-                </label>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={
-                    setup.saving ||
-                    !instructionLibraryAvailable ||
-                    !workspaceSettingsDirty ||
-                    tagDraftPending ||
-                    displayNameError !== null
+              <div
+                id={workspaceDetailPanelId(workspaceSection)}
+                role="tabpanel"
+                aria-labelledby={workspaceDetailTabId(workspaceSection)}
+                className="space-y-4 outline-none"
+                tabIndex={0}
+              >
+                <WorkspaceRunPanel
+                  workspaceRoot={selectedWorkspace.root}
+                  view={
+                    workspaceSection === "output"
+                      ? "output"
+                      : workspaceSection === "configuration"
+                        ? "configuration"
+                        : "summary"
                   }
-                  aria-describedby={
-                    tagDraftPending ? pendingTagMessageId : undefined
+                  onDocumentDirtyChange={setWorkspaceRunDirty}
+                  onConfigurationRequired={() =>
+                    setWorkspaceSection("configuration")
                   }
-                  onClick={saveWorkspaceSettings}
-                >
-                  <Save className="size-4" />
-                  Save
-                </Button>
-                {displayNameError && workspaceSettingsDirty ? (
-                  <p
-                    id={displayNameErrorId}
-                    role="alert"
-                    className="text-xs text-red-300 md:col-span-3"
-                  >
-                    {displayNameError}
-                  </p>
-                ) : null}
-                {tagDraftPending ? (
-                  <p
-                    id={pendingTagMessageId}
-                    className="text-xs text-slate-500 md:col-span-3"
-                  >
-                    Add or clear the pending tag before saving.
-                  </p>
-                ) : null}
-              </section>
+                />
 
-              <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
-                <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-4 py-3">
-                  <GitBranch className="size-4 text-sky-300" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {(gitRepositories?.repositories.length ?? 0) > 1 ? (
-                        <select
-                          aria-label="Git repository"
-                          value={selectedGitRepositoryRoot ?? ""}
-                          disabled={gitBusy || gitAction !== null}
-                          onChange={(event) =>
-                            selectGitRepository(event.currentTarget.value)
-                          }
-                          className="h-8 min-w-0 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-200 outline-none focus-visible:border-sky-500 focus-visible:ring-1 focus-visible:ring-sky-500/50 disabled:opacity-50"
-                        >
-                          {gitRepositories?.repositories.map((repository) => (
-                            <option
-                              key={repository.repositoryRoot}
-                              value={repository.repositoryRoot}
-                            >
-                              {workspaceGitRepositoryLabel(repository)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <h3 className="truncate text-sm font-medium text-slate-100">
-                          {selectedGitRepository
-                            ? workspaceGitRepositoryLabel(selectedGitRepository)
-                            : "Git"}
-                        </h3>
-                      )}
-                      {selectedGitOverview ? (
-                        <Badge
-                          variant={
-                            selectedGitOverview.clean ? "outline" : "secondary"
-                          }
-                        >
-                          {selectedGitOverview.clean
-                            ? "Clean"
-                            : `${selectedGitOverview.totalChanges} changed`}
-                        </Badge>
-                      ) : null}
-                      {selectedGitOverview?.ahead ? (
-                        <Badge variant="outline">
-                          ↑ {selectedGitOverview.ahead}
-                        </Badge>
-                      ) : null}
-                      {selectedGitOverview?.behind ? (
-                        <Badge variant="outline">
-                          ↓ {selectedGitOverview.behind}
-                        </Badge>
-                      ) : null}
-                    </div>
-                    {selectedGitOverview ? (
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {selectedGitOverview.branch}
-                        {selectedGitOverview.upstream
-                          ? ` · ${selectedGitOverview.upstream}`
-                          : ""}
+                <div hidden={workspaceSection !== "files"}>
+                  <WorkspaceTools
+                    key={selectedWorkspace.key}
+                    workspaceRoot={selectedWorkspace.root}
+                    refreshToken={workspaceToolsRefreshToken}
+                    onDirtyChange={setWorkspaceToolsDirty}
+                    onWorkspaceMutation={refreshWorkspaceState}
+                  />
+                </div>
+
+                {workspaceSection === "settings" ? (
+                  <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
+                    <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+                      Name
+                      <Input
+                        value={displayName}
+                        maxLength={
+                          MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH * 2
+                        }
+                        disabled={setup.saving || !instructionLibraryAvailable}
+                        aria-invalid={displayNameError !== null}
+                        aria-describedby={
+                          displayNameError && workspaceSettingsDirty
+                            ? displayNameErrorId
+                            : undefined
+                        }
+                        onChange={(event) => setDisplayName(event.target.value)}
+                        className="h-9 border-slate-800 bg-slate-950"
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+                      Tags
+                      <TagEditor
+                        value={tags}
+                        disabled={setup.saving || !instructionLibraryAvailable}
+                        onChange={setTags}
+                        onPendingChange={setTagDraftPending}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        setup.saving ||
+                        !instructionLibraryAvailable ||
+                        !workspaceSettingsDirty ||
+                        tagDraftPending ||
+                        displayNameError !== null
+                      }
+                      aria-describedby={
+                        tagDraftPending ? pendingTagMessageId : undefined
+                      }
+                      onClick={saveWorkspaceSettings}
+                    >
+                      <Save className="size-4" />
+                      Save
+                    </Button>
+                    {displayNameError && workspaceSettingsDirty ? (
+                      <p
+                        id={displayNameErrorId}
+                        role="alert"
+                        className="text-xs text-red-300 md:col-span-3"
+                      >
+                        {displayNameError}
                       </p>
                     ) : null}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      gitBusy ||
-                      gitAction !== null ||
-                      selectedGitOverview === null
-                    }
-                    onClick={() => void runGitAction("fetch")}
-                  >
-                    {gitAction === "fetch" ? (
-                      <LoaderCircle className="size-4 animate-spin" />
-                    ) : (
-                      <CloudDownload className="size-4" />
-                    )}
-                    Fetch
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      gitBusy ||
-                      gitAction !== null ||
-                      !selectedGitOverview?.upstream
-                    }
-                    onClick={() => void runGitAction("pull")}
-                  >
-                    {gitAction === "pull" ? (
-                      <LoaderCircle className="size-4 animate-spin" />
-                    ) : (
-                      <ArrowDownToLine className="size-4" />
-                    )}
-                    Pull
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    disabled={gitBusy || gitAction !== null}
-                    aria-label="Refresh Git"
-                    onClick={() => void refreshGit()}
-                  >
-                    <RefreshCw
-                      className={cn("size-4", gitBusy && "animate-spin")}
-                    />
-                  </Button>
-                </div>
+                    {tagDraftPending ? (
+                      <p
+                        id={pendingTagMessageId}
+                        className="text-xs text-slate-500 md:col-span-3"
+                      >
+                        Add or clear the pending tag before saving.
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
 
-                <div
-                  role="tablist"
-                  aria-label="Git workspace views"
-                  className="flex overflow-x-auto border-b border-slate-800 px-2"
-                >
-                  {(
-                    [
-                      ["status", "Status", GitFork],
-                      ["branches", "Branches", GitBranch],
-                      ["remotes", "Remotes", Network],
-                      ["pull-requests", "Pull requests", GitPullRequest],
-                    ] as const
-                  ).map(([value, label, Icon]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="tab"
-                      id={`workspace-git-tab-${value}`}
-                      aria-controls={`workspace-git-panel-${value}`}
-                      aria-selected={gitSection === value}
-                      tabIndex={gitSection === value ? 0 : -1}
-                      onClick={() => setGitSection(value)}
-                      onKeyDown={(event) => {
-                        if (
-                          !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                            event.key,
-                          )
-                        ) {
-                          return;
+                {workspaceSection === "git" ? (
+                  <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
+                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-4 py-3">
+                      <GitBranch className="size-4 text-sky-300" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(gitRepositories?.repositories.length ?? 0) > 1 ? (
+                            <select
+                              aria-label="Git repository"
+                              value={selectedGitRepositoryRoot ?? ""}
+                              disabled={gitBusy || gitAction !== null}
+                              onChange={(event) =>
+                                selectGitRepository(event.currentTarget.value)
+                              }
+                              className="h-8 min-w-0 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-200 outline-none focus-visible:border-sky-500 focus-visible:ring-1 focus-visible:ring-sky-500/50 disabled:opacity-50"
+                            >
+                              {gitRepositories?.repositories.map(
+                                (repository) => (
+                                  <option
+                                    key={repository.repositoryRoot}
+                                    value={repository.repositoryRoot}
+                                  >
+                                    {workspaceGitRepositoryLabel(repository)}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          ) : (
+                            <h3 className="truncate text-sm font-medium text-slate-100">
+                              {selectedGitRepository
+                                ? workspaceGitRepositoryLabel(
+                                    selectedGitRepository,
+                                  )
+                                : "Git"}
+                            </h3>
+                          )}
+                          {selectedGitOverview ? (
+                            <Badge
+                              variant={
+                                selectedGitOverview.clean
+                                  ? "outline"
+                                  : "secondary"
+                              }
+                            >
+                              {selectedGitOverview.clean
+                                ? "Clean"
+                                : `${selectedGitOverview.totalChanges} changed`}
+                            </Badge>
+                          ) : null}
+                          {selectedGitOverview?.ahead ? (
+                            <Badge variant="outline">
+                              ↑ {selectedGitOverview.ahead}
+                            </Badge>
+                          ) : null}
+                          {selectedGitOverview?.behind ? (
+                            <Badge variant="outline">
+                              ↓ {selectedGitOverview.behind}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {selectedGitOverview ? (
+                          <p className="mt-1 truncate text-xs text-slate-500">
+                            {selectedGitOverview.branch}
+                            {selectedGitOverview.upstream
+                              ? ` · ${selectedGitOverview.upstream}`
+                              : ""}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          gitBusy ||
+                          gitAction !== null ||
+                          selectedGitOverview === null
                         }
-                        event.preventDefault();
-                        const tabs = Array.from(
-                          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                            '[role="tab"]',
-                          ) ?? [],
-                        );
-                        const currentIndex = tabs.indexOf(event.currentTarget);
-                        const nextIndex =
-                          event.key === "Home"
-                            ? 0
-                            : event.key === "End"
-                              ? tabs.length - 1
-                              : event.key === "ArrowRight"
-                                ? (currentIndex + 1) % tabs.length
-                                : (currentIndex - 1 + tabs.length) %
-                                  tabs.length;
-                        tabs[nextIndex]?.focus();
-                        tabs[nextIndex]?.click();
-                      }}
-                      className={cn(
-                        "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs",
-                        gitSection === value
-                          ? "border-sky-400 text-sky-200"
-                          : "border-transparent text-slate-500 hover:text-slate-200",
-                      )}
-                    >
-                      <Icon className="size-3.5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div
-                  id={`workspace-git-panel-${gitSection}`}
-                  role="tabpanel"
-                  aria-labelledby={`workspace-git-tab-${gitSection}`}
-                  className="p-4"
-                >
-                  {gitRepositoriesLoading && !gitRepositories ? (
-                    <div className="grid h-40 place-items-center">
-                      <LoaderCircle className="size-5 animate-spin text-slate-500" />
-                    </div>
-                  ) : gitRepositoriesError && !gitRepositories ? (
-                    <EmptyState
-                      icon={Unplug}
-                      title="Git unavailable"
-                      description={gitRepositoriesError}
-                    />
-                  ) : gitRepositories?.repositories.length === 0 ? (
-                    <EmptyState
-                      icon={
-                        gitRepositories.issues.length > 0 ? Unplug : FolderGit2
-                      }
-                      title={
-                        gitRepositories.issues.length > 0
-                          ? "Repositories unavailable"
-                          : "No Git repositories"
-                      }
-                      description={gitDiscoveryNotice ?? undefined}
-                    />
-                  ) : gitLoading && !selectedGitOverview ? (
-                    <div className="grid h-40 place-items-center">
-                      <LoaderCircle className="size-5 animate-spin text-slate-500" />
-                    </div>
-                  ) : gitError && !selectedGitOverview ? (
-                    <EmptyState
-                      icon={Unplug}
-                      title="Repository unavailable"
-                      description={gitError}
-                    />
-                  ) : selectedGitOverview ? (
-                    <>
-                      {gitRepositoriesError ? (
-                        <p
-                          role="alert"
-                          className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
-                        >
-                          {gitRepositoriesError}
-                        </p>
-                      ) : gitDiscoveryNotice ? (
-                        <p
-                          role="status"
-                          className="mb-4 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
-                        >
-                          {gitDiscoveryNotice}
-                        </p>
-                      ) : null}
-                      {gitError ? (
-                        <p
-                          role="alert"
-                          className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
-                        >
-                          {gitError}
-                        </p>
-                      ) : null}
-                      {gitSection === "status" ? (
-                        <WorkspaceGitStatus
-                          workspaceRoot={selectedWorkspace.root}
-                          repositoryRoot={
-                            selectedGitRepository?.repositoryRoot ??
-                            selectedGitOverview.repositoryRoot
-                          }
-                          overview={selectedGitOverview}
+                        onClick={() => void runGitAction("fetch")}
+                      >
+                        {gitAction === "fetch" ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <CloudDownload className="size-4" />
+                        )}
+                        Fetch
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          gitBusy ||
+                          gitAction !== null ||
+                          !selectedGitOverview?.upstream
+                        }
+                        onClick={() => void runGitAction("pull")}
+                      >
+                        {gitAction === "pull" ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <ArrowDownToLine className="size-4" />
+                        )}
+                        Pull
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        disabled={gitBusy || gitAction !== null}
+                        aria-label="Refresh Git"
+                        onClick={() => void refreshGit()}
+                      >
+                        <RefreshCw
+                          className={cn("size-4", gitBusy && "animate-spin")}
                         />
-                      ) : null}
-                      {gitSection === "branches" ? (
-                        <div className="grid gap-4 xl:grid-cols-2">
-                          <div className="space-y-2">
-                            <div className="flex gap-2">
-                              <Input
-                                value={branchName}
-                                onChange={(event) =>
-                                  setBranchName(event.target.value)
-                                }
-                                placeholder="New branch"
-                                className="h-9 border-slate-800 bg-slate-950"
-                              />
-                              <Button
-                                size="sm"
-                                disabled={
-                                  gitAction !== null || !branchName.trim()
-                                }
-                                onClick={() =>
-                                  void runGitAction("create-branch", {
-                                    branchName,
-                                  })
-                                }
-                              >
-                                <Plus className="size-4" />
-                                Create
-                              </Button>
-                            </div>
-                            {selectedGitOverview.localBranches.map((branch) => (
-                              <div
-                                key={branch.name}
-                                className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
-                              >
-                                <GitBranch className="size-3.5 shrink-0 text-slate-500" />
-                                <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                  {branch.name}
-                                </span>
-                                <code className="text-[11px] text-slate-600">
-                                  {branch.commit}
-                                </code>
-                                {branch.current ? (
-                                  <Badge variant="outline">Current</Badge>
-                                ) : (
+                      </Button>
+                    </div>
+
+                    <div
+                      role="tablist"
+                      aria-label="Git workspace views"
+                      className="flex overflow-x-auto border-b border-slate-800 px-2"
+                    >
+                      {(
+                        [
+                          ["status", "Status", GitFork],
+                          ["branches", "Branches", GitBranch],
+                          ["remotes", "Remotes", Network],
+                          ["pull-requests", "Pull requests", GitPullRequest],
+                        ] as const
+                      ).map(([value, label, Icon]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="tab"
+                          id={`workspace-git-tab-${value}`}
+                          aria-controls={`workspace-git-panel-${value}`}
+                          aria-selected={gitSection === value}
+                          tabIndex={gitSection === value ? 0 : -1}
+                          onClick={() => setGitSection(value)}
+                          onKeyDown={(event) => {
+                            if (
+                              ![
+                                "ArrowLeft",
+                                "ArrowRight",
+                                "Home",
+                                "End",
+                              ].includes(event.key)
+                            ) {
+                              return;
+                            }
+                            event.preventDefault();
+                            const tabs = Array.from(
+                              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                                '[role="tab"]',
+                              ) ?? [],
+                            );
+                            const currentIndex = tabs.indexOf(
+                              event.currentTarget,
+                            );
+                            const nextIndex =
+                              event.key === "Home"
+                                ? 0
+                                : event.key === "End"
+                                  ? tabs.length - 1
+                                  : event.key === "ArrowRight"
+                                    ? (currentIndex + 1) % tabs.length
+                                    : (currentIndex - 1 + tabs.length) %
+                                      tabs.length;
+                            tabs[nextIndex]?.focus();
+                            tabs[nextIndex]?.click();
+                          }}
+                          className={cn(
+                            "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs",
+                            gitSection === value
+                              ? "border-sky-400 text-sky-200"
+                              : "border-transparent text-slate-500 hover:text-slate-200",
+                          )}
+                        >
+                          <Icon className="size-3.5" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div
+                      id={`workspace-git-panel-${gitSection}`}
+                      role="tabpanel"
+                      aria-labelledby={`workspace-git-tab-${gitSection}`}
+                      className="p-4"
+                    >
+                      {gitRepositoriesLoading && !gitRepositories ? (
+                        <div className="grid h-40 place-items-center">
+                          <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                        </div>
+                      ) : gitRepositoriesError && !gitRepositories ? (
+                        <EmptyState
+                          icon={Unplug}
+                          title="Git unavailable"
+                          description={gitRepositoriesError}
+                        />
+                      ) : gitRepositories?.repositories.length === 0 ? (
+                        <EmptyState
+                          icon={
+                            gitRepositories.issues.length > 0
+                              ? Unplug
+                              : FolderGit2
+                          }
+                          title={
+                            gitRepositories.issues.length > 0
+                              ? "Repositories unavailable"
+                              : "No Git repositories"
+                          }
+                          description={gitDiscoveryNotice ?? undefined}
+                        />
+                      ) : gitLoading && !selectedGitOverview ? (
+                        <div className="grid h-40 place-items-center">
+                          <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                        </div>
+                      ) : gitError && !selectedGitOverview ? (
+                        <EmptyState
+                          icon={Unplug}
+                          title="Repository unavailable"
+                          description={gitError}
+                        />
+                      ) : selectedGitOverview ? (
+                        <>
+                          {gitRepositoriesError ? (
+                            <p
+                              role="alert"
+                              className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
+                            >
+                              {gitRepositoriesError}
+                            </p>
+                          ) : gitDiscoveryNotice ? (
+                            <p
+                              role="status"
+                              className="mb-4 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
+                            >
+                              {gitDiscoveryNotice}
+                            </p>
+                          ) : null}
+                          {gitError ? (
+                            <p
+                              role="alert"
+                              className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
+                            >
+                              {gitError}
+                            </p>
+                          ) : null}
+                          {gitSection === "status" ? (
+                            <WorkspaceGitStatus
+                              workspaceRoot={selectedWorkspace.root}
+                              repositoryRoot={
+                                selectedGitRepository?.repositoryRoot ??
+                                selectedGitOverview.repositoryRoot
+                              }
+                              overview={selectedGitOverview}
+                            />
+                          ) : null}
+                          {gitSection === "branches" ? (
+                            <div className="grid gap-4 xl:grid-cols-2">
+                              <div className="space-y-2">
+                                <div className="flex gap-2">
+                                  <Input
+                                    value={branchName}
+                                    onChange={(event) =>
+                                      setBranchName(event.target.value)
+                                    }
+                                    placeholder="New branch"
+                                    className="h-9 border-slate-800 bg-slate-950"
+                                  />
                                   <Button
                                     size="sm"
-                                    variant="ghost"
-                                    disabled={gitAction !== null}
+                                    disabled={
+                                      gitAction !== null || !branchName.trim()
+                                    }
                                     onClick={() =>
-                                      void runGitAction("checkout", {
-                                        branchName: branch.name,
+                                      void runGitAction("create-branch", {
+                                        branchName,
                                       })
                                     }
                                   >
-                                    Switch
+                                    <Plus className="size-4" />
+                                    Create
                                   </Button>
+                                </div>
+                                {selectedGitOverview.localBranches.map(
+                                  (branch) => (
+                                    <div
+                                      key={branch.name}
+                                      className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
+                                    >
+                                      <GitBranch className="size-3.5 shrink-0 text-slate-500" />
+                                      <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                                        {branch.name}
+                                      </span>
+                                      <code className="text-[11px] text-slate-600">
+                                        {branch.commit}
+                                      </code>
+                                      {branch.current ? (
+                                        <Badge variant="outline">Current</Badge>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          disabled={gitAction !== null}
+                                          onClick={() =>
+                                            void runGitAction("checkout", {
+                                              branchName: branch.name,
+                                            })
+                                          }
+                                        >
+                                          Switch
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ),
                                 )}
                               </div>
-                            ))}
-                          </div>
-                          <div className="space-y-2">
-                            {selectedGitOverview.remoteBranches.length === 0 ? (
+                              <div className="space-y-2">
+                                {selectedGitOverview.remoteBranches.length ===
+                                0 ? (
+                                  <EmptyState
+                                    icon={GitBranch}
+                                    title="No remote branches"
+                                    size="compact"
+                                  />
+                                ) : (
+                                  selectedGitOverview.remoteBranches.map(
+                                    (branch) => (
+                                      <div
+                                        key={branch.name}
+                                        className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
+                                      >
+                                        <Network className="size-3.5 shrink-0 text-slate-500" />
+                                        <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                                          {branch.name}
+                                        </span>
+                                        <code className="text-[11px] text-slate-600">
+                                          {branch.commit}
+                                        </code>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          disabled={gitAction !== null}
+                                          onClick={() =>
+                                            void runGitAction(
+                                              "checkout-remote",
+                                              {
+                                                branchName: branch.name,
+                                              },
+                                            )
+                                          }
+                                        >
+                                          Track
+                                        </Button>
+                                      </div>
+                                    ),
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                          {gitSection === "remotes" ? (
+                            <div className="space-y-3">
+                              <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
+                                <Input
+                                  value={remoteName}
+                                  onChange={(event) =>
+                                    setRemoteName(event.target.value)
+                                  }
+                                  placeholder="Name"
+                                  className="h-9 border-slate-800 bg-slate-950"
+                                />
+                                <Input
+                                  value={remoteUrl}
+                                  onChange={(event) =>
+                                    setRemoteUrl(event.target.value)
+                                  }
+                                  placeholder="Remote URL"
+                                  className="h-9 border-slate-800 bg-slate-950"
+                                />
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    gitAction !== null ||
+                                    !remoteName.trim() ||
+                                    !remoteUrl.trim()
+                                  }
+                                  onClick={() =>
+                                    void runGitAction("add-remote", {
+                                      remoteName,
+                                      remoteUrl,
+                                    })
+                                  }
+                                >
+                                  <Plus className="size-4" />
+                                  Add
+                                </Button>
+                              </div>
+                              {selectedGitOverview.remotes.length === 0 ? (
+                                <EmptyState
+                                  icon={Network}
+                                  title="No remotes"
+                                  size="compact"
+                                />
+                              ) : (
+                                selectedGitOverview.remotes.map((remote) => (
+                                  <div
+                                    key={remote.name}
+                                    className="flex min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3"
+                                  >
+                                    <Network className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium text-slate-200">
+                                        {remote.name}
+                                      </p>
+                                      <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                                        {remote.fetchUrl ?? remote.pushUrl}
+                                      </p>
+                                    </div>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      disabled={gitAction !== null}
+                                      aria-label={`Remove ${remote.name}`}
+                                      onClick={() => removeRemote(remote.name)}
+                                    >
+                                      <Trash2 className="size-4 text-red-300" />
+                                    </Button>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          ) : null}
+                          {gitSection === "pull-requests" ? (
+                            pullRequestsLoading && !pullRequests ? (
+                              <div className="grid h-36 place-items-center">
+                                <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                              </div>
+                            ) : pullRequestsError ? (
                               <EmptyState
-                                icon={GitBranch}
-                                title="No remote branches"
+                                icon={GitPullRequest}
+                                title="Pull requests unavailable"
+                                description={pullRequestsError}
+                                size="compact"
+                                action={
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void refreshPullRequests()}
+                                  >
+                                    <RefreshCw className="size-3.5" />
+                                    Retry
+                                  </Button>
+                                }
+                              />
+                            ) : pullRequests && !pullRequests.available ? (
+                              <EmptyState
+                                icon={GitPullRequest}
+                                title="Pull requests unavailable"
+                                description={pullRequests.reason}
+                                size="compact"
+                              />
+                            ) : pullRequests?.items.length === 0 ? (
+                              <EmptyState
+                                icon={GitPullRequest}
+                                title="No open pull requests"
                                 size="compact"
                               />
                             ) : (
-                              selectedGitOverview.remoteBranches.map(
-                                (branch) => (
-                                  <div
-                                    key={branch.name}
-                                    className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
+                              <div className="space-y-2">
+                                {pullRequests?.items.map((pullRequest) => (
+                                  <button
+                                    key={pullRequest.number}
+                                    type="button"
+                                    onClick={() =>
+                                      void openExternalUrl(pullRequest.url)
+                                    }
+                                    className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3 text-left hover:border-slate-700 hover:bg-slate-950/50"
                                   >
-                                    <Network className="size-3.5 shrink-0 text-slate-500" />
-                                    <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                      {branch.name}
-                                    </span>
-                                    <code className="text-[11px] text-slate-600">
-                                      {branch.commit}
-                                    </code>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={gitAction !== null}
-                                      onClick={() =>
-                                        void runGitAction("checkout-remote", {
-                                          branchName: branch.name,
-                                        })
-                                      }
-                                    >
-                                      Track
-                                    </Button>
-                                  </div>
-                                ),
-                              )
-                            )}
-                          </div>
-                        </div>
-                      ) : null}
-                      {gitSection === "remotes" ? (
-                        <div className="space-y-3">
-                          <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
-                            <Input
-                              value={remoteName}
-                              onChange={(event) =>
-                                setRemoteName(event.target.value)
-                              }
-                              placeholder="Name"
-                              className="h-9 border-slate-800 bg-slate-950"
-                            />
-                            <Input
-                              value={remoteUrl}
-                              onChange={(event) =>
-                                setRemoteUrl(event.target.value)
-                              }
-                              placeholder="Remote URL"
-                              className="h-9 border-slate-800 bg-slate-950"
-                            />
-                            <Button
-                              size="sm"
-                              disabled={
-                                gitAction !== null ||
-                                !remoteName.trim() ||
-                                !remoteUrl.trim()
-                              }
-                              onClick={() =>
-                                void runGitAction("add-remote", {
-                                  remoteName,
-                                  remoteUrl,
-                                })
-                              }
-                            >
-                              <Plus className="size-4" />
-                              Add
-                            </Button>
-                          </div>
-                          {selectedGitOverview.remotes.length === 0 ? (
-                            <EmptyState
-                              icon={Network}
-                              title="No remotes"
-                              size="compact"
-                            />
-                          ) : (
-                            selectedGitOverview.remotes.map((remote) => (
-                              <div
-                                key={remote.name}
-                                className="flex min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3"
-                              >
-                                <Network className="mt-0.5 size-4 shrink-0 text-slate-500" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-slate-200">
-                                    {remote.name}
-                                  </p>
-                                  <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                                    {remote.fetchUrl ?? remote.pushUrl}
-                                  </p>
-                                </div>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  disabled={gitAction !== null}
-                                  aria-label={`Remove ${remote.name}`}
-                                  onClick={() => removeRemote(remote.name)}
-                                >
-                                  <Trash2 className="size-4 text-red-300" />
-                                </Button>
+                                    <GitPullRequest className="mt-0.5 size-4 shrink-0 text-emerald-300" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm text-slate-200">
+                                        #{pullRequest.number}{" "}
+                                        {pullRequest.title}
+                                      </p>
+                                      <p className="mt-1 truncate text-xs text-slate-500">
+                                        {pullRequest.headBranch} →{" "}
+                                        {pullRequest.baseBranch}
+                                      </p>
+                                    </div>
+                                    {pullRequest.draft ? (
+                                      <Badge variant="outline">Draft</Badge>
+                                    ) : null}
+                                    <ExternalLink className="size-3.5 text-slate-600" />
+                                  </button>
+                                ))}
                               </div>
-                            ))
-                          )}
-                        </div>
+                            )
+                          ) : null}
+                        </>
                       ) : null}
-                      {gitSection === "pull-requests" ? (
-                        pullRequestsLoading && !pullRequests ? (
-                          <div className="grid h-36 place-items-center">
-                            <LoaderCircle className="size-5 animate-spin text-slate-500" />
-                          </div>
-                        ) : pullRequestsError ? (
-                          <EmptyState
-                            icon={GitPullRequest}
-                            title="Pull requests unavailable"
-                            description={pullRequestsError}
-                            size="compact"
-                            action={
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void refreshPullRequests()}
-                              >
-                                <RefreshCw className="size-3.5" />
-                                Retry
-                              </Button>
-                            }
-                          />
-                        ) : pullRequests && !pullRequests.available ? (
-                          <EmptyState
-                            icon={GitPullRequest}
-                            title="Pull requests unavailable"
-                            description={pullRequests.reason}
-                            size="compact"
-                          />
-                        ) : pullRequests?.items.length === 0 ? (
-                          <EmptyState
-                            icon={GitPullRequest}
-                            title="No open pull requests"
-                            size="compact"
-                          />
-                        ) : (
-                          <div className="space-y-2">
-                            {pullRequests?.items.map((pullRequest) => (
-                              <button
-                                key={pullRequest.number}
-                                type="button"
-                                onClick={() =>
-                                  void openExternalUrl(pullRequest.url)
-                                }
-                                className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3 text-left hover:border-slate-700 hover:bg-slate-950/50"
-                              >
-                                <GitPullRequest className="mt-0.5 size-4 shrink-0 text-emerald-300" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm text-slate-200">
-                                    #{pullRequest.number} {pullRequest.title}
-                                  </p>
-                                  <p className="mt-1 truncate text-xs text-slate-500">
-                                    {pullRequest.headBranch} →{" "}
-                                    {pullRequest.baseBranch}
-                                  </p>
-                                </div>
-                                {pullRequest.draft ? (
-                                  <Badge variant="outline">Draft</Badge>
-                                ) : null}
-                                <ExternalLink className="size-3.5 text-slate-600" />
-                              </button>
-                            ))}
-                          </div>
-                        )
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-medium text-slate-200">
-                    Instructions
-                  </h3>
-                  <span className="text-xs text-slate-500">
-                    {effectiveInstructionProfileCount} effective
-                  </span>
-                </div>
-                {instructionLibraryError ? (
-                  <p role="alert" className="text-sm text-red-300">
-                    {instructionLibraryError}
-                  </p>
-                ) : !registry ? (
-                  setup.loading ? (
-                    <div className="grid h-24 place-items-center">
-                      <LoaderCircle className="size-5 animate-spin text-slate-500" />
                     </div>
-                  ) : (
-                    <EmptyState
-                      icon={FolderGit2}
-                      title="Instruction library unavailable"
-                      size="compact"
-                    />
-                  )
-                ) : profiles.length === 0 ? (
-                  <EmptyState
-                    icon={FolderGit2}
-                    title="No instruction files"
-                    size="compact"
-                  />
-                ) : (
-                  <div className="space-y-2">
-                    {workspaceSettingsDirty ? (
-                      <p className="text-xs text-slate-500">
-                        Save workspace settings before changing assignments.
+                  </section>
+                ) : null}
+
+                {workspaceSection === "settings" ? (
+                  <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-medium text-slate-200">
+                        Instructions
+                      </h3>
+                      <span className="text-xs text-slate-500">
+                        {effectiveInstructionProfileCount} effective
+                      </span>
+                    </div>
+                    {instructionLibraryError ? (
+                      <p role="alert" className="text-sm text-red-300">
+                        {instructionLibraryError}
                       </p>
-                    ) : null}
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {profiles.map((profile) => {
-                        const rootScope =
-                          selectedInstructionWorkspace?.scopes.find(
-                            (scope) => scope.path === ".",
-                          ) ?? null;
-                        const rootAssigned =
-                          rootScope?.profiles.includes(profile.id) ?? false;
-                        const scopedAssignments =
-                          selectedInstructionWorkspace?.scopes.filter(
-                            (scope) =>
-                              scope.path !== "." &&
-                              scope.profiles.includes(profile.id),
-                          ) ?? [];
-                        const automatic = profileIsAutomaticForWorkspace(
-                          profile,
-                          selectedInstructionWorkspace,
-                        );
-                        const active =
-                          profileIsEnabled(profile) &&
-                          (profile.global || automatic || rootAssigned);
-                        const state = !profileIsEnabled(profile)
-                          ? `${profile.match !== undefined ? "Tag match" : "Manual"} · Disabled`
-                          : profile.global
-                            ? "Always applied"
-                            : profile.match !== undefined
-                              ? automatic
-                                ? "Tag match"
-                                : "No tag match"
-                              : rootAssigned
-                                ? "Manual"
-                                : scopedAssignments.length > 0
-                                  ? `${scopedAssignments.length} scoped`
-                                  : "Available";
-                        const readOnly =
-                          profile.global || profile.match !== undefined;
-                        return (
-                          <div
-                            key={profile.id}
-                            className={cn(
-                              "min-w-0 rounded-lg border bg-slate-950/45 px-3 py-2.5",
-                              active ? "border-sky-900/80" : "border-slate-800",
-                              !profileIsEnabled(profile) && "opacity-55",
-                            )}
-                          >
-                            <div className="flex min-w-0 items-start gap-2">
-                              {readOnly ? (
-                                <span
-                                  aria-hidden="true"
-                                  className={cn(
-                                    "mt-0.5 grid size-4 place-items-center rounded-sm border",
-                                    active
-                                      ? "border-sky-500/70 text-sky-300"
-                                      : "border-slate-700 text-transparent",
-                                  )}
-                                >
-                                  <Check className="size-3" />
-                                </span>
-                              ) : (
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Assign ${profile.name} manually`}
-                                  checked={rootAssigned}
-                                  disabled={
-                                    setup.saving ||
-                                    workspaceSettingsDirty ||
-                                    !instructionLibraryAvailable ||
-                                    (!profileIsEnabled(profile) &&
-                                      !rootAssigned)
-                                  }
-                                  onChange={(event) =>
-                                    setRootProfileAssignment(
-                                      profile.id,
-                                      event.target.checked,
-                                    )
-                                  }
-                                  className="mt-0.5 accent-sky-500"
-                                />
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm text-slate-200">
-                                  {profile.name}
-                                </p>
-                                {profile.description ? (
-                                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-                                    {profile.description}
-                                  </p>
-                                ) : null}
-                              </div>
-                              <span
+                    ) : !registry ? (
+                      setup.loading ? (
+                        <div className="grid h-24 place-items-center">
+                          <LoaderCircle className="size-5 animate-spin text-slate-500" />
+                        </div>
+                      ) : (
+                        <EmptyState
+                          icon={FolderGit2}
+                          title="Instruction library unavailable"
+                          size="compact"
+                        />
+                      )
+                    ) : profiles.length === 0 ? (
+                      <EmptyState
+                        icon={FolderGit2}
+                        title="No instruction files"
+                        size="compact"
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {workspaceSettingsDirty ? (
+                          <p className="text-xs text-slate-500">
+                            Save workspace settings before changing assignments.
+                          </p>
+                        ) : null}
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {profiles.map((profile) => {
+                            const rootScope =
+                              selectedInstructionWorkspace?.scopes.find(
+                                (scope) => scope.path === ".",
+                              ) ?? null;
+                            const rootAssigned =
+                              rootScope?.profiles.includes(profile.id) ?? false;
+                            const scopedAssignments =
+                              selectedInstructionWorkspace?.scopes.filter(
+                                (scope) =>
+                                  scope.path !== "." &&
+                                  scope.profiles.includes(profile.id),
+                              ) ?? [];
+                            const automatic = profileIsAutomaticForWorkspace(
+                              profile,
+                              selectedInstructionWorkspace,
+                            );
+                            const active =
+                              profileIsEnabled(profile) &&
+                              (profile.global || automatic || rootAssigned);
+                            const state = !profileIsEnabled(profile)
+                              ? `${profile.match !== undefined ? "Tag match" : "Manual"} · Disabled`
+                              : profile.global
+                                ? "Always applied"
+                                : profile.match !== undefined
+                                  ? automatic
+                                    ? "Tag match"
+                                    : "No tag match"
+                                  : rootAssigned
+                                    ? "Manual"
+                                    : scopedAssignments.length > 0
+                                      ? `${scopedAssignments.length} scoped`
+                                      : "Available";
+                            const readOnly =
+                              profile.global || profile.match !== undefined;
+                            return (
+                              <div
+                                key={profile.id}
                                 className={cn(
-                                  "shrink-0 text-[11px]",
-                                  active ? "text-sky-300" : "text-slate-600",
+                                  "min-w-0 rounded-lg border bg-slate-950/45 px-3 py-2.5",
+                                  active
+                                    ? "border-sky-900/80"
+                                    : "border-slate-800",
+                                  !profileIsEnabled(profile) && "opacity-55",
                                 )}
                               >
-                                {state}
-                              </span>
-                            </div>
-                            {scopedAssignments.length > 0 ? (
-                              <ul className="mt-2 space-y-1 border-t border-slate-800 pt-2">
-                                {scopedAssignments.map((scope) => (
-                                  <li
-                                    key={scope.path}
-                                    className="flex min-w-0 items-center gap-1.5 pl-6"
-                                  >
-                                    <code className="min-w-0 flex-1 truncate text-xs text-slate-500">
-                                      {scope.path}
-                                    </code>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-xs"
-                                      aria-label={`Remove ${profile.name} from ${scope.path}`}
+                                <div className="flex min-w-0 items-start gap-2">
+                                  {readOnly ? (
+                                    <span
+                                      aria-hidden="true"
+                                      className={cn(
+                                        "mt-0.5 grid size-4 place-items-center rounded-sm border",
+                                        active
+                                          ? "border-sky-500/70 text-sky-300"
+                                          : "border-slate-700 text-transparent",
+                                      )}
+                                    >
+                                      <Check className="size-3" />
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`Assign ${profile.name} manually`}
+                                      checked={rootAssigned}
                                       disabled={
                                         setup.saving ||
                                         workspaceSettingsDirty ||
-                                        !instructionLibraryAvailable
+                                        !instructionLibraryAvailable ||
+                                        (!profileIsEnabled(profile) &&
+                                          !rootAssigned)
                                       }
-                                      onClick={() =>
-                                        removeScopedProfileAssignment(
+                                      onChange={(event) =>
+                                        setRootProfileAssignment(
                                           profile.id,
-                                          scope.path,
-                                          scope.profiles,
+                                          event.target.checked,
                                         )
                                       }
-                                      className="text-slate-600 hover:text-red-300"
-                                    >
-                                      <X />
-                                    </Button>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </section>
+                                      className="mt-0.5 accent-sky-500"
+                                    />
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm text-slate-200">
+                                      {profile.name}
+                                    </p>
+                                    {profile.description ? (
+                                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                        {profile.description}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <span
+                                    className={cn(
+                                      "shrink-0 text-[11px]",
+                                      active
+                                        ? "text-sky-300"
+                                        : "text-slate-600",
+                                    )}
+                                  >
+                                    {state}
+                                  </span>
+                                </div>
+                                {scopedAssignments.length > 0 ? (
+                                  <ul className="mt-2 space-y-1 border-t border-slate-800 pt-2">
+                                    {scopedAssignments.map((scope) => (
+                                      <li
+                                        key={scope.path}
+                                        className="flex min-w-0 items-center gap-1.5 pl-6"
+                                      >
+                                        <code className="min-w-0 flex-1 truncate text-xs text-slate-500">
+                                          {scope.path}
+                                        </code>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-xs"
+                                          aria-label={`Remove ${profile.name} from ${scope.path}`}
+                                          disabled={
+                                            setup.saving ||
+                                            workspaceSettingsDirty ||
+                                            !instructionLibraryAvailable
+                                          }
+                                          onClick={() =>
+                                            removeScopedProfileAssignment(
+                                              profile.id,
+                                              scope.path,
+                                              scope.profiles,
+                                            )
+                                          }
+                                          className="text-slate-600 hover:text-red-300"
+                                        >
+                                          <X />
+                                        </Button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+              </div>
             </div>
           )}
         </section>
