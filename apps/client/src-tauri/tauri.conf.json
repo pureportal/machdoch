@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "machdoch",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -22,7 +22,9 @@
         "enable": true,
         "scope": []
       },
-      "capabilities": ["default"]
+      "capabilities": [
+        "default"
+      ]
     },
     "windows": [
       {
@@ -52,11 +54,21 @@
       "python/media_diffusers_requirements.txt": "python/media_diffusers_requirements.txt",
       "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
     },
-    "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
+    "targets": [
+      "msi",
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "windows": {
       "wix": {
-        "fragmentPaths": ["windows/file-manager-context-menu.wxs"],
-        "componentRefs": ["MachdochFileManagerContextMenu"]
+        "fragmentPaths": [
+          "windows/file-manager-context-menu.wxs"
+        ],
+        "componentRefs": [
+          "MachdochFileManagerContextMenu"
+        ]
       },
       "nsis": {
         "installerHooks": "windows/nsis-hooks.nsh"
@@ -64,7 +76,9 @@
     },
     "linux": {
       "deb": {
-        "recommends": ["python3-nautilus"],
+        "recommends": [
+          "python3-nautilus"
+        ],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
@@ -72,7 +86,9 @@
         }
       },
       "rpm": {
-        "recommends": ["nautilus-python"],
+        "recommends": [
+          "nautilus-python"
+        ],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
