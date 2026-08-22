@@ -5,7 +5,9 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/landing/package.json apps/landing/package.json
 
-RUN corepack enable && pnpm install --frozen-lockfile
+RUN npm install --global corepack@0.34.6 \
+    && corepack enable \
+    && pnpm install --frozen-lockfile
 
 COPY apps/landing apps/landing
 
