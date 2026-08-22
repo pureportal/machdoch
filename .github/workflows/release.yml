@@ -5,11 +5,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - package.json
-      - apps/client/package.json
-      - apps/client/src-tauri/tauri.conf.json
-      - apps/landing/package.json
     tags:
       - "v*"
 
@@ -332,6 +327,63 @@ jobs:
           subject-path: ${{ steps.assets.outputs.paths }}
           sbom-path: sbom-${{ matrix.platform }}.spdx.json
 
+  build-and-publish-landing:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}-landing
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=raw,value=${{ needs.prepare-release.outputs.tag_name }},enable=${{ needs.prepare-release.outputs.should_release == 'true' }}
+            type=sha,format=long
+
+      - name: Build and publish landing image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/landing/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MACHDOCH_LANDING_URL=${{ vars.MACHDOCH_LANDING_URL }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest image provenance
+        if: ${{ github.event.repository.visibility == 'public' }}
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
   finalize-release-assets:
     needs: [prepare-release, build-and-release]
     if: needs.prepare-release.outputs.should_release == 'true'
@@ -372,7 +424,7 @@ jobs:
           node .github/scripts/release-assets.mjs verify "$VERSION" release.json
 
   publish-release:
-    needs: [prepare-release, finalize-release-assets]
+    needs: [prepare-release, finalize-release-assets, build-and-publish-landing]
     if: needs.prepare-release.outputs.should_release == 'true' && needs.prepare-release.outputs.publish_on_success == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -386,7 +438,7 @@ jobs:
 
   cleanup-release:
     name: Cleanup Draft Release on Failure
-    needs: [prepare-release, build-and-release, finalize-release-assets, publish-release]
+    needs: [prepare-release, build-and-release, build-and-publish-landing, finalize-release-assets, publish-release]
     if: always() && needs.prepare-release.outputs.should_release == 'true' && failure() && needs.prepare-release.outputs.delete_on_failure == 'true'
     runs-on: ubuntu-latest
     permissions:

@@ -1,0 +1,12 @@
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!apps
+!apps/landing
+!apps/landing/**
+apps/landing/.cache
+apps/landing/.env*
+apps/landing/dist
+apps/landing/node_modules
+apps/landing/*.tsbuildinfo
