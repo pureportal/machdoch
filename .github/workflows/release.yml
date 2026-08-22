@@ -7,7 +7,9 @@ on:
       - main
     paths:
       - package.json
-      - src-tauri/tauri.conf.json
+      - apps/client/package.json
+      - apps/client/src-tauri/tauri.conf.json
+      - apps/landing/package.json
     tags:
       - "v*"
 
@@ -79,7 +81,10 @@ jobs:
           };
 
           const packageVersion = readJsonFile('package.json').version ?? '';
-          const tauriVersion = readJsonFile('src-tauri/tauri.conf.json').version ?? '';
+          const clientVersion = readJsonFile('apps/client/package.json').version ?? '';
+          const landingVersion = readJsonFile('apps/landing/package.json').version ?? '';
+          const tauriVersion =
+            readJsonFile('apps/client/src-tauri/tauri.conf.json').version ?? '';
 
           if (!packageVersion) {
             console.error('package.json is missing a version.');
@@ -87,13 +92,29 @@ jobs:
           }
 
           if (!tauriVersion) {
-            console.error('src-tauri/tauri.conf.json is missing a version.');
+            console.error(
+              'apps/client/src-tauri/tauri.conf.json is missing a version.',
+            );
             process.exit(1);
           }
 
-          if (packageVersion !== tauriVersion) {
+          if (!clientVersion) {
+            console.error('apps/client/package.json is missing a version.');
+            process.exit(1);
+          }
+
+          if (!landingVersion) {
+            console.error('apps/landing/package.json is missing a version.');
+            process.exit(1);
+          }
+
+          if (
+            packageVersion !== clientVersion ||
+            packageVersion !== landingVersion ||
+            packageVersion !== tauriVersion
+          ) {
             console.error(
-              `package.json version ${packageVersion} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`,
+              `Release versions do not match: package.json=${packageVersion}, apps/client/package.json=${clientVersion}, apps/landing/package.json=${landingVersion}, apps/client/src-tauri/tauri.conf.json=${tauriVersion}.`,
             );
             process.exit(1);
           }
@@ -127,12 +148,8 @@ jobs:
 
             if (hasBeforeRevision) {
               const previousPackageVersion = readVersionAtRevision(beforeSha, 'package.json');
-              const previousTauriVersion = readVersionAtRevision(beforeSha, 'src-tauri/tauri.conf.json');
 
-              if (
-                previousPackageVersion === version &&
-                previousTauriVersion === version
-              ) {
+              if (previousPackageVersion === version) {
                 console.log(
                   `Version stayed at ${version}; skipping the release pipeline for this push.`,
                 );
@@ -227,14 +244,9 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            bundle_patterns: |
-              src-tauri/target/release/bundle/msi/*.msi
-              src-tauri/target/release/bundle/nsis/*-setup.exe
+            asset_platform: windows
           - platform: ubuntu-24.04
-            bundle_patterns: |
-              src-tauri/target/release/bundle/deb/*.deb
-              src-tauri/target/release/bundle/rpm/*.rpm
-              src-tauri/target/release/bundle/appimage/*.AppImage
+            asset_platform: linux
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -267,37 +279,24 @@ jobs:
 
       - name: Build release assets
         shell: bash
-        run: pnpm tauri build
+        run: pnpm tauri:build
 
       - name: List bundle outputs
         shell: bash
         run: |
-          ls -la src-tauri/target/release/bundle || true
-          find src-tauri/target/release/bundle -maxdepth 3 -type f || true
+          ls -la apps/client/src-tauri/target/release/bundle || true
+          find apps/client/src-tauri/target/release/bundle -maxdepth 3 -type f || true
 
-      - name: Collect bundle artifacts
-        id: bundles
+      - name: Prepare canonical release assets
+        id: assets
         shell: bash
-        run: |
-          shopt -s nullglob
-          files=()
-          while IFS= read -r pattern; do
-            [ -z "$pattern" ] && continue
-            for file in $pattern; do
-              if [ -f "$file" ]; then
-                files+=("$file")
-              fi
-            done
-          done <<'EOF'
-          ${{ matrix.bundle_patterns }}
-          EOF
-
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No release artifacts found."
-            exit 1
-          fi
-
-          printf "paths<<EOF\n%s\nEOF\n" "$(printf "%s\n" "${files[@]}")" >> "$GITHUB_OUTPUT"
+        run: >-
+          node .github/scripts/release-assets.mjs prepare
+          "${{ matrix.asset_platform }}"
+          apps/client/src-tauri/target/release/bundle
+          release-assets
+          apps/client/src-tauri/tauri.conf.json
+          "$GITHUB_OUTPUT"
 
       - name: Upload release assets
         env:
@@ -309,63 +308,7 @@ jobs:
             [ -z "$file" ] && continue
             gh release upload "$TAG_NAME" "$file" --clobber
           done <<'EOF'
-          ${{ steps.bundles.outputs.paths }}
-          EOF
-
-      - name: Create stable release aliases
-        id: aliases
-        shell: bash
-        run: |
-          rm -rf release-aliases
-          mkdir -p release-aliases
-
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-
-            case "$file" in
-              *.msi)
-                cp "$file" release-aliases/machdoch-windows-x64.msi
-                ;;
-              *-setup.exe)
-                cp "$file" release-aliases/machdoch-windows-x64-setup.exe
-                ;;
-              *.deb)
-                cp "$file" release-aliases/machdoch-linux-amd64.deb
-                ;;
-              *.rpm)
-                cp "$file" release-aliases/machdoch-linux-x86_64.rpm
-                ;;
-              *.AppImage)
-                cp "$file" release-aliases/machdoch-linux-amd64.AppImage
-                ;;
-              *)
-                echo "No stable alias configured for $file"
-                ;;
-            esac
-          done <<'EOF'
-          ${{ steps.bundles.outputs.paths }}
-          EOF
-
-          mapfile -t aliases < <(find release-aliases -maxdepth 1 -type f | sort)
-
-          if [ ${#aliases[@]} -eq 0 ]; then
-            echo "No stable release aliases were created."
-            exit 1
-          fi
-
-          printf "paths<<EOF\n%s\nEOF\n" "$(printf "%s\n" "${aliases[@]}")" >> "$GITHUB_OUTPUT"
-
-      - name: Upload stable release aliases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
-        shell: bash
-        run: |
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            gh release upload "$TAG_NAME" "$file" --clobber
-          done <<'EOF'
-          ${{ steps.aliases.outputs.paths }}
+          ${{ steps.assets.outputs.paths }}
           EOF
 
       - name: Generate SBOM
@@ -380,21 +323,56 @@ jobs:
         if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: |
-            ${{ steps.bundles.outputs.paths }}
-            ${{ steps.aliases.outputs.paths }}
+          subject-path: ${{ steps.assets.outputs.paths }}
 
       - name: Attest SBOM
         if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-sbom@v3
         with:
-          subject-path: |
-            ${{ steps.bundles.outputs.paths }}
-            ${{ steps.aliases.outputs.paths }}
+          subject-path: ${{ steps.assets.outputs.paths }}
           sbom-path: sbom-${{ matrix.platform }}.spdx.json
 
-  publish-release:
+  finalize-release-assets:
     needs: [prepare-release, build-and-release]
+    if: needs.prepare-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.13
+
+      - name: Remove superseded installer assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        shell: bash
+        run: |
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets > release.json
+          node .github/scripts/release-assets.mjs superseded "$VERSION" release.json > superseded-assets.txt
+
+          while IFS= read -r asset; do
+            [ -z "$asset" ] && continue
+            gh release delete-asset "$TAG_NAME" "$asset" --yes --repo "$GITHUB_REPOSITORY"
+          done < superseded-assets.txt
+
+      - name: Verify canonical release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        shell: bash
+        run: |
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets > release.json
+          node .github/scripts/release-assets.mjs verify "$VERSION" release.json
+
+  publish-release:
+    needs: [prepare-release, finalize-release-assets]
     if: needs.prepare-release.outputs.should_release == 'true' && needs.prepare-release.outputs.publish_on_success == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -408,7 +386,7 @@ jobs:
 
   cleanup-release:
     name: Cleanup Draft Release on Failure
-    needs: [prepare-release, build-and-release, publish-release]
+    needs: [prepare-release, build-and-release, finalize-release-assets, publish-release]
     if: always() && needs.prepare-release.outputs.should_release == 'true' && failure() && needs.prepare-release.outputs.delete_on_failure == 'true'
     runs-on: ubuntu-latest
     permissions:
