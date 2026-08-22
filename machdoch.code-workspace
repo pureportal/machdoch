@@ -1,0 +1,55 @@
+{
+  "folders": [
+    {
+      "name": "root",
+      "path": ".",
+    },
+    {
+      "name": "client",
+      "path": "apps/client",
+    },
+    {
+      "name": "landing",
+      "path": "apps/landing",
+    },
+  ],
+  "settings": {
+    "powershell.cwd": "${workspaceFolder:root}",
+    "terminal.integrated.cwd": "${workspaceFolder:root}",
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Start Machdoch",
+        "type": "shell",
+        "command": "pnpm",
+        "args": ["run", "start:machdoch"],
+        "options": {
+          "cwd": "${workspaceFolder:root}",
+        },
+        "problemMatcher": [],
+      },
+      {
+        "label": "Start Landing Page",
+        "type": "shell",
+        "command": "pnpm",
+        "args": ["run", "start:landing"],
+        "options": {
+          "cwd": "${workspaceFolder:root}",
+        },
+        "problemMatcher": [],
+      },
+      {
+        "label": "Start Complete Stack",
+        "type": "shell",
+        "command": "pnpm",
+        "args": ["run", "start:all"],
+        "options": {
+          "cwd": "${workspaceFolder:root}",
+        },
+        "problemMatcher": [],
+      },
+    ],
+  },
+}

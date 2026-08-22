@@ -5,9 +5,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const versionPattern =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const bumpKinds = new Set(["patch", "minor", "major"]);
-const usage = `Usage:\n  npm run version:bump -- <patch|minor|major|x.y.z> [--dry-run]\n\nExamples:\n  npm run version:bump -- patch\n  npm run version:bump -- minor --dry-run\n  npm run version:bump -- 0.3.0\n`;
+const usage = `Usage:\n  pnpm version:bump -- <patch|minor|major|x.y.z> [--dry-run]\n\nExamples:\n  pnpm version:bump -- patch\n  pnpm version:bump -- minor --dry-run\n  pnpm version:bump -- 2.3.0\n`;
 
 const targetFiles = [
   {
@@ -22,53 +23,67 @@ const targetFiles = [
     },
   },
   {
-    path: "package-lock.json",
+    path: "apps/client/package.json",
     update: (content, currentVersion, nextVersion) => {
-      const packageLock = JSON.parse(content);
+      const packageJson = JSON.parse(content);
 
-      assertVersion(packageLock.version, currentVersion, "package-lock.json");
+      assertVersion(
+        packageJson.version,
+        currentVersion,
+        "apps/client/package.json",
+      );
+      packageJson.version = nextVersion;
 
-      const rootPackage = packageLock.packages?.[""];
-      if (!rootPackage || typeof rootPackage !== "object") {
-        throw new Error('package-lock.json is missing packages[""]');
-      }
-
-      assertVersion(rootPackage.version, currentVersion, 'package-lock.json packages[""]');
-
-      packageLock.version = nextVersion;
-      rootPackage.version = nextVersion;
-
-      return `${JSON.stringify(packageLock, null, 2)}\n`;
+      return `${JSON.stringify(packageJson, null, 2)}\n`;
     },
   },
   {
-    path: "src-tauri/Cargo.toml",
+    path: "apps/landing/package.json",
+    update: (content, currentVersion, nextVersion) => {
+      const packageJson = JSON.parse(content);
+
+      assertVersion(
+        packageJson.version,
+        currentVersion,
+        "apps/landing/package.json",
+      );
+      packageJson.version = nextVersion;
+
+      return `${JSON.stringify(packageJson, null, 2)}\n`;
+    },
+  },
+  {
+    path: "apps/client/src-tauri/Cargo.toml",
     update: (content, currentVersion, nextVersion) =>
       replaceSingleVersion(
         content,
         /^(version = ")([^"]+)(")$/m,
         currentVersion,
         nextVersion,
-        "src-tauri/Cargo.toml",
+        "apps/client/src-tauri/Cargo.toml",
       ),
   },
   {
-    path: "src-tauri/Cargo.lock",
+    path: "apps/client/src-tauri/Cargo.lock",
     update: (content, currentVersion, nextVersion) =>
       replaceSingleVersion(
         content,
         /(\[\[package\]\]\r?\nname = "machdoch"\r?\nversion = ")([^"]+)(")/,
         currentVersion,
         nextVersion,
-        "src-tauri/Cargo.lock",
+        "apps/client/src-tauri/Cargo.lock",
       ),
   },
   {
-    path: "src-tauri/tauri.conf.json",
+    path: "apps/client/src-tauri/tauri.conf.json",
     update: (content, currentVersion, nextVersion) => {
       const tauriConfig = JSON.parse(content);
 
-      assertVersion(tauriConfig.version, currentVersion, "src-tauri/tauri.conf.json");
+      assertVersion(
+        tauriConfig.version,
+        currentVersion,
+        "apps/client/src-tauri/tauri.conf.json",
+      );
       tauriConfig.version = nextVersion;
 
       return `${JSON.stringify(tauriConfig, null, 2)}\n`;
@@ -111,16 +126,12 @@ if (nextVersion === currentVersion) {
 const fileUpdates = [];
 for (const targetFile of targetFiles) {
   const filePath = resolve(projectRoot, targetFile.path);
-  let originalContent;
-  try {
-    originalContent = await readFile(filePath, "utf8");
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      continue;
-    }
-    throw error;
-  }
-  const nextContent = targetFile.update(originalContent, currentVersion, nextVersion);
+  const originalContent = await readFile(filePath, "utf8");
+  const nextContent = targetFile.update(
+    originalContent,
+    currentVersion,
+    nextVersion,
+  );
 
   if (nextContent === originalContent) {
     throw new Error(`No change was produced for ${targetFile.path}.`);
@@ -189,7 +200,9 @@ function parseVersion(version) {
 
 function assertValidVersion(version, label) {
   if (!versionPattern.test(version)) {
-    throw new Error(`${label} must be a valid semver version, received ${version}.`);
+    throw new Error(
+      `${label} must be a valid semver version, received ${version}.`,
+    );
   }
 }
 
@@ -201,7 +214,13 @@ function assertVersion(actualVersion, expectedVersion, label) {
   }
 }
 
-function replaceSingleVersion(content, pattern, currentVersion, nextVersion, label) {
+function replaceSingleVersion(
+  content,
+  pattern,
+  currentVersion,
+  nextVersion,
+  label,
+) {
   const match = content.match(pattern);
   if (!match) {
     throw new Error(`Could not find version in ${label}.`);

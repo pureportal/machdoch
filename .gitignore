@@ -35,8 +35,8 @@ lerna-debug.log*
 *.seed
 
 # Rust / Tauri build artifacts
-src-tauri/target/
-src-tauri/target-*/
+apps/client/src-tauri/target/
+apps/client/src-tauri/target-*/
 **/*.rs.bk
 *.pdb
 
@@ -64,6 +64,6 @@ models/
 
 # Developer-only accelerator runtimes are assembled locally and are never
 # shipped from the source tree.
-src-tauri/python/runtime/
+apps/client/src-tauri/python/runtime/
 __pycache__/
 *.py[cod]

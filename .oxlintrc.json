@@ -10,10 +10,11 @@
     "node": true
   },
   "ignorePatterns": [
-    "coverage/**",
-    "dist/**",
-    "node_modules/**",
-    "src-tauri/target/**"
+    "**/coverage/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/src-tauri/gen/**",
+    "**/src-tauri/target*/**"
   ],
   "rules": {
     "typescript/no-base-to-string": "off",
@@ -28,11 +29,11 @@
   "overrides": [
     {
       "files": [
-        "src/**/*.spec.ts",
-        "src/**/*.spec.tsx",
-        "src/**/*.test.ts",
-        "src/**/*.test.tsx",
-        "vitest*.ts"
+        "apps/client/src/**/*.spec.ts",
+        "apps/client/src/**/*.spec.tsx",
+        "apps/client/src/**/*.test.ts",
+        "apps/client/src/**/*.test.tsx",
+        "apps/client/vitest*.ts"
       ],
       "env": {
         "vitest": true

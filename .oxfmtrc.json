@@ -2,11 +2,11 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 80,
   "ignorePatterns": [
-    "coverage/**",
-    "dist/**",
-    "node_modules/**",
-    "src-tauri/gen/**",
-    "src-tauri/target/**"
+    "**/coverage/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/src-tauri/gen/**",
+    "**/src-tauri/target*/**"
   ],
   "sortPackageJson": false
 }

@@ -27,6 +27,7 @@
 - [Limitations](#limitations)
 - [Troubleshooting](#troubleshooting)
 - [Updates and help](#updates-and-help)
+- [Development](#development)
 
 ## What Machdoch is
 
@@ -560,3 +561,24 @@ Machdoch releases are distributed through GitHub. Before updating a pre-alpha in
 - [Report a problem](https://github.com/pureportal/machdoch/issues)
 
 Third-party model providers, MCP servers, websites, search services, media models, and generated or imported assets remain subject to their own terms, pricing, privacy policies, and licenses.
+
+## Development
+
+Open `machdoch.code-workspace` to load the repository root, desktop client, and landing page together.
+
+| Path               | Purpose                                                                   |
+| ------------------ | ------------------------------------------------------------------------- |
+| `apps/client`  | Desktop application, CLI, Tauri crate, tests, and client-specific scripts |
+| `apps/landing` | Public landing page                                                       |
+| `assets/branding`  | Shared Machdoch branding                                                  |
+
+Run workspace commands from the repository root:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm verify
+pnpm build:ui
+pnpm tauri:build
+```
+
+Use `pnpm dev:ui` for the browser UI, `pnpm tauri:dev` for the desktop app, and `pnpm dev:landing` for the landing page.
