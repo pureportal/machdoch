@@ -32,7 +32,7 @@ delivery or alpha defect.
 Run:
 
 ```powershell
-python scripts/evaluate_media_quality.py `
+python apps/client/scripts/evaluate_media_quality.py `
   --input baseline=path\to\baseline.webm `
   --input candidate=path\to\candidate.webm `
   --output tmp\quality-evidence
@@ -73,13 +73,13 @@ duplicate the closure pose, or assemble a ping-pong loop.
 Encode the result through the application path and verify repeated playback:
 
 ```powershell
-python scripts/render_source_anchored_loop_with_studio.py `
+python apps/client/scripts/render_source_anchored_loop_with_studio.py `
   manifest.json tmp\studio-source-anchored-run `
   --encoding-quality lossless
-$ffmpeg = "src-tauri\python\runtime\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
+$ffmpeg = "apps\client\src-tauri\python\runtime\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
 & $ffmpeg -stream_loop 2 -i tmp\studio-source-anchored-run\studio-encode\output-0000.webm `
   -t 9 -c copy tmp\three-cycle.webm
-python scripts/verify_loop_playback.py tmp\three-cycle.webm `
+python apps/client/scripts/verify_loop_playback.py tmp\three-cycle.webm `
   --frames-per-cycle 48 --cycles 3 --fps 16
 ```
 

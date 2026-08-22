@@ -643,7 +643,7 @@ Rules:
 
 ### 11.1 Local safetensors inspection
 
-Extend the existing bounded safetensors inspector in `src-tauri/src/media/model_import.rs`. Complete checkpoints continue through model import; likely add-ons route to a dedicated add-on review instead of being treated as a blocking dead end.
+Extend the existing bounded safetensors inspector in `apps/client/src-tauri/src/media/model_import.rs`. Complete checkpoints continue through model import; likely add-ons route to a dedicated add-on review instead of being treated as a blocking dead end.
 
 Inspection is data-only and bounded:
 

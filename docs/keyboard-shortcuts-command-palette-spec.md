@@ -74,30 +74,30 @@ The implementation follows these resolved defaults:
 **Codebase observation**
 
 - The desktop application uses Tauri 2, React 19, TypeScript, Vite, and Tailwind CSS.
-- shadcn is configured in <code>components.json</code> with the New York style and Radix variant. Existing primitives live in <code>src/tauri/ui/components/ui</code>.
+- shadcn is configured in <code>apps/client/components.json</code> with the New York style and Radix variant. Existing primitives live in <code>apps/client/src/tauri/ui/components/ui</code>.
 - The repository already depends on the <code>radix-ui</code> umbrella package. Dialog, Popover, Dropdown Menu, Sheet, and Tooltip wrappers are present.
 - At the pre-implementation inspection point there was no shadcn Command wrapper and no direct dependency on cmdk, kbar, react-hotkeys-hook, or another application hotkey registry. This implementation adds the repository-local Command wrapper and cmdk 1.1.x; it does not add a hotkey library.
 - CodeMirror and xterm are embedded and already have their own keyboard behavior.
 - State is predominantly React state and hooks, with Tauri Store or localStorage persistence in focused modules. There is no general client-state library or router that should be introduced just for commands.
-- <code>vite.ui.config.ts</code> currently transpiles Windows builds to Chrome 105, macOS builds to Safari 13, and other builds to ES2022. Those are build targets, not a statement of the installed WebView version. Tauri uses evergreen WebView2 on Windows, the OS-provided WKWebView on macOS, and distro-provided WebKitGTK on Linux. New event/focus code must meet the configured build floors and receive real-platform smoke coverage because the actual WebKit version varies by supported OS or distribution.
+- <code>apps/client/vite.ui.config.ts</code> currently transpiles Windows builds to Chrome 105, macOS builds to Safari 13, and other builds to ES2022. Those are build targets, not a statement of the installed WebView version. Tauri uses evergreen WebView2 on Windows, the OS-provided WKWebView on macOS, and distro-provided WebKitGTK on Linux. New event/focus code must meet the configured build floors and receive real-platform smoke coverage because the actual WebKit version varies by supported OS or distribution.
 
 Relevant locations:
 
-- <code>package.json</code>
-- <code>components.json</code>
-- <code>src/tauri/ui/components/ui/dialog.tsx</code>
-- <code>src/tauri/ui/components/ui/popover.tsx</code>
-- <code>src/tauri/ui/components/ui/dropdown-menu.tsx</code>
-- <code>src/tauri/ui/components/ui/sheet.tsx</code>
-- <code>src/tauri/ui/styles.css</code>
+- <code>apps/client/package.json</code>
+- <code>apps/client/components.json</code>
+- <code>apps/client/src/tauri/ui/components/ui/dialog.tsx</code>
+- <code>apps/client/src/tauri/ui/components/ui/popover.tsx</code>
+- <code>apps/client/src/tauri/ui/components/ui/dropdown-menu.tsx</code>
+- <code>apps/client/src/tauri/ui/components/ui/sheet.tsx</code>
+- <code>apps/client/src/tauri/ui/styles.css</code>
 
 ### 3.2 Main window and view model
 
 **Codebase observation**
 
-<code>src/tauri/ui/preview/app.tsx</code> selects a React application by Tauri window label. The default/main window renders the chat-session application. Assistant Bubble, Assistant Popup, Quick Voice, and Tray Menu are separate roots.
+<code>apps/client/src/tauri/ui/preview/app.tsx</code> selects a React application by Tauri window label. The default/main window renders the chat-session application. Assistant Bubble, Assistant Popup, Quick Voice, and Tray Menu are separate roots.
 
-The main application does not use URL routing. <code>src/tauri/ui/chat-session-shell.tsx</code> owns a local shell state and conditionally renders the active application. Its current main app identifiers are:
+The main application does not use URL routing. <code>apps/client/src/tauri/ui/chat-session-shell.tsx</code> owns a local shell state and conditionally renders the active application. Its current main app identifiers are:
 
 - <code>chat</code>
 - <code>ralph</code>
@@ -106,7 +106,7 @@ The main application does not use URL routing. <code>src/tauri/ui/chat-session-s
 - <code>instructions</code>
 - <code>workspaces</code>
 
-The same order is visible in <code>src/tauri/ui/app-shell/app-rail.tsx</code>. Shell state is persisted through <code>src/tauri/ui/lib/shell-store.ts</code>.
+The same order is visible in <code>apps/client/src/tauri/ui/app-shell/app-rail.tsx</code>. Shell state is persisted through <code>apps/client/src/tauri/ui/lib/shell-store.ts</code>.
 
 The existing <code>selectApp</code> path contains unsaved-change guards for Instructions and Workspaces. Global navigation commands MUST invoke that path and MUST NOT mutate <code>activeApp</code> directly. During implementation, adapt <code>selectApp</code> to report completed versus cancelled so palette closing can follow the actual result.
 
@@ -146,7 +146,7 @@ The following inventory is implementation input, not a request to remove compone
 | Media library preview | Arrow Left/Right and Space control the open gallery preview | This is focused overlay/component navigation, not an application command. Keep it local and register the preview as an overlay if it becomes modal. |
 | Tray menu | Escape hides the separate tray window | It is outside the main-window provider and remains local. |
 
-There is also an operating-system-global Quick Voice/Quick Chat shortcut implemented through <code>tauri-plugin-global-shortcut</code> in <code>src-tauri/src/desktop_shell/shortcut.rs</code>. Its current default is <code>CommandOrControl+Alt+V</code>, and Settings accepts a configurable native shortcut string. The installed native parser accepts <code>CommandOrControl</code>, <code>CommandOrCtrl</code>, <code>CmdOrControl</code>, and <code>CmdOrCtrl</code> as platform Mod aliases, <code>Command</code>/<code>Cmd</code>/<code>Super</code> as the system modifier, and physical <code>Key…</code>/<code>Digit…</code> primary-key spellings. This facility fires outside the application and is not a DOM shortcut. It MUST remain separate, but its configured chord should appear in shortcut diagnostics so the application does not advertise a conflicting in-window command.
+There is also an operating-system-global Quick Voice/Quick Chat shortcut implemented through <code>tauri-plugin-global-shortcut</code> in <code>apps/client/src-tauri/src/desktop_shell/shortcut.rs</code>. Its current default is <code>CommandOrControl+Alt+V</code>, and Settings accepts a configurable native shortcut string. The installed native parser accepts <code>CommandOrControl</code>, <code>CommandOrCtrl</code>, <code>CmdOrControl</code>, and <code>CmdOrCtrl</code> as platform Mod aliases, <code>Command</code>/<code>Cmd</code>/<code>Super</code> as the system modifier, and physical <code>Key…</code>/<code>Digit…</code> primary-key spellings. This facility fires outside the application and is not a DOM shortcut. It MUST remain separate, but its configured chord should appear in shortcut diagnostics so the application does not advertise a conflicting in-window command.
 
 ### 3.5 Test baseline
 
@@ -699,7 +699,7 @@ If the palette itself invokes a view switch, keep it open until the existing uns
 Add a focused command subsystem rather than a general state framework:
 
 ~~~text
-src/tauri/ui/commands/
+apps/client/src/tauri/ui/commands/
   command-types.ts
   command-defaults.ts
   command-registry.ts
@@ -712,7 +712,7 @@ src/tauri/ui/commands/
   command-context.tsx
   command-palette.tsx
 
-src/tauri/ui/components/ui/
+apps/client/src/tauri/ui/components/ui/
   command.tsx
 ~~~
 

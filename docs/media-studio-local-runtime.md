@@ -18,7 +18,7 @@ name a Python class or branch on a model family:
 - model architecture is extensible catalog data. Import and discovery can add
   a compatible checkpoint or add-on without adding another generation screen;
 - executable workspace packages are registered through declarative discovered
-  runtime profiles in `src/core/media/discovered-model-profiles.ts`, keeping
+  runtime profiles in `apps/client/src/core/media/discovered-model-profiles.ts`, keeping
   family-specific package metadata out of the Studio UI and compiler;
 - output, alpha, license, lifecycle, runtime-readiness, and hardware
   constraints are validated before execution.
@@ -77,7 +77,7 @@ are retained in run provenance.
 ## Pinned Windows AMD path
 
 The Windows worker is launched from
-`src-tauri/python/runtime/Scripts/python.exe` in development and from the
+`apps/client/src-tauri/python/runtime/Scripts/python.exe` in development and from the
 equivalent bundled resource in a packaged build. It runs offline with pinned
 PyTorch, Diffusers, Transformers, Accelerate, PEFT, Pillow, safetensors, and
 imageio-ffmpeg versions.

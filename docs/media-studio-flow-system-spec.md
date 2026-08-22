@@ -368,25 +368,25 @@ flowchart TD
 
 Repository-aligned modules to add:
 
-- `src/shared/media-runtime.schema.json`: canonical strict contract for flow, node, port, asset reference, run, provider, model, hardware, and IPC records.
-- `src/core/media/contracts.generated.ts`: generated browser-safe TypeScript constants and types, following the repository's existing runtime-contract pattern.
-- `src/core/media/schemas.ts`: Ajv validators and normalization for current media documents.
-- `src/core/media/compiler.ts`: semantic graph validation, subflow expansion, capability constraints, cardinality analysis, and execution-plan generation.
-- `src/core/media/node-registry.ts`: versioned built-in node definitions and schema-derived UI hints.
-- `src/core/media/capabilities.ts`: provider/model capability matching with explainable rejection reasons.
-- `src/core/media/edit-intents.ts`, `storyboard.ts`, and `optimization.ts`: provider-neutral contracts for structured edits, shots, and runtime policies.
-- `src/tauri/ui/media/*`: lazy-loaded Media Studio shell, Simple Mode, Flow Mode, Library, Runs, Models, inspector, canvas, and timeline UI. This is the actual UI root in the current repository; do not create a parallel `src/ui` tree.
-- `src/tauri/ui/media/lib/*`: wrappers around XYFlow and any accepted canvas/timeline packages so UI library state never becomes the saved flow format.
-- `src-tauri/src/media/mod.rs`: Tauri media command registration and managed `MediaRuntimeState`.
-- `src-tauri/src/media/storage.rs`: SQLite metadata/index/queue transactions plus content-addressed file operations.
-- `src-tauri/src/media/scheduler.rs`: CPU, GPU, encoder, download, and remote-provider resource reservations.
-- `src-tauri/src/media/workers.rs`: authenticated worker lifecycle, health, cancellation, and event ingestion.
-- `src-tauri/src/media/providers/*`: remote HTTP adapters, credential resolution, polling/reconciliation, output download, and redaction. The privileged backend revalidates every compiled plan before performing network or file operations.
-- `src-tauri/src/media/models.rs`: signed catalog verification, model install plans, license acknowledgement, pinned downloads, checksums, quarantine, and atomic promotion.
-- `src-tauri/src/media/provenance.rs`: local lineage and an internal C2PA adapter boundary. Keep the pre-1.0 `c2pa-rs` API behind this module.
+- `apps/client/src/shared/media-runtime.schema.json`: canonical strict contract for flow, node, port, asset reference, run, provider, model, hardware, and IPC records.
+- `apps/client/src/core/media/contracts.generated.ts`: generated browser-safe TypeScript constants and types, following the repository's existing runtime-contract pattern.
+- `apps/client/src/core/media/schemas.ts`: Ajv validators and normalization for current media documents.
+- `apps/client/src/core/media/compiler.ts`: semantic graph validation, subflow expansion, capability constraints, cardinality analysis, and execution-plan generation.
+- `apps/client/src/core/media/node-registry.ts`: versioned built-in node definitions and schema-derived UI hints.
+- `apps/client/src/core/media/capabilities.ts`: provider/model capability matching with explainable rejection reasons.
+- `apps/client/src/core/media/edit-intents.ts`, `storyboard.ts`, and `optimization.ts`: provider-neutral contracts for structured edits, shots, and runtime policies.
+- `apps/client/src/tauri/ui/media/*`: lazy-loaded Media Studio shell, Simple Mode, Flow Mode, Library, Runs, Models, inspector, canvas, and timeline UI. This is the actual UI root in the current repository; do not create a parallel `apps/client/src/ui` tree.
+- `apps/client/src/tauri/ui/media/lib/*`: wrappers around XYFlow and any accepted canvas/timeline packages so UI library state never becomes the saved flow format.
+- `apps/client/src-tauri/src/media/mod.rs`: Tauri media command registration and managed `MediaRuntimeState`.
+- `apps/client/src-tauri/src/media/storage.rs`: SQLite metadata/index/queue transactions plus content-addressed file operations.
+- `apps/client/src-tauri/src/media/scheduler.rs`: CPU, GPU, encoder, download, and remote-provider resource reservations.
+- `apps/client/src-tauri/src/media/workers.rs`: authenticated worker lifecycle, health, cancellation, and event ingestion.
+- `apps/client/src-tauri/src/media/providers/*`: remote HTTP adapters, credential resolution, polling/reconciliation, output download, and redaction. The privileged backend revalidates every compiled plan before performing network or file operations.
+- `apps/client/src-tauri/src/media/models.rs`: signed catalog verification, model install plans, license acknowledgement, pinned downloads, checksums, quarantine, and atomic promotion.
+- `apps/client/src-tauri/src/media/provenance.rs`: local lineage and an internal C2PA adapter boundary. Keep the pre-1.0 `c2pa-rs` API behind this module.
 - `media-worker/pyproject.toml` and `media-worker/src/machdoch_media_worker/*`: isolated Python package for PyTorch, Diffusers, native model runners, and CPU tools that are materially better in Python.
-- `src-tauri/src/media_contract_generated.rs` and `media-worker/src/machdoch_media_worker/contracts_generated.py`: generated Rust and Python contract types/constants where practical.
-- `scripts/generate-media-contract.mjs`: contract generation/check command following the existing JSON-Schema-first runtime-contract pattern.
+- `apps/client/src-tauri/src/media_contract_generated.rs` and `media-worker/src/machdoch_media_worker/contracts_generated.py`: generated Rust and Python contract types/constants where practical.
+- `apps/client/scripts/generate-media-contract.mjs`: contract generation/check command following the existing JSON-Schema-first runtime-contract pattern.
 
 The Python worker should be an internal managed worker, not an app-facing web server. Communicate through stdio JSON-RPC, named pipes, or a localhost port bound to loopback with a random per-session token. The parent app owns lifecycle, health checks, and shutdown.
 
@@ -394,15 +394,15 @@ The Python worker should be an internal managed worker, not an app-facing web se
 
 The app shell includes `media` in `MainAppId` and requires the current
 versioned shell state in
-`src/tauri/ui/lib/_helpers/shell-store-normalizers.helper.ts`; earlier state is
+`apps/client/src/tauri/ui/lib/_helpers/shell-store-normalizers.helper.ts`; earlier state is
 recreated. The Media Studio item and activity badge live in
-`src/tauri/ui/app-shell/app-rail.tsx`, and the media shell is lazy-loaded from
-`src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph
+`apps/client/src/tauri/ui/app-shell/app-rail.tsx`, and the media shell is lazy-loaded from
+`apps/client/src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph
 and Marketplace. A broken or slow media bundle must not delay Chat startup.
 
-Do not extend `src/tauri/ui/ralph/ralph-flow-editor.tsx` into a second domain. It is already a large control-flow editor and Ralph edges represent execution outcomes, while media edges carry typed values. Extract only small presentation primitives that are genuinely reusable, such as node chrome, selection styling, minimap conventions, keyboard helpers, and viewport persistence. Media graph state, validation, undo history, ports, and execution remain independent.
+Do not extend `apps/client/src/tauri/ui/ralph/ralph-flow-editor.tsx` into a second domain. It is already a large control-flow editor and Ralph edges represent execution outcomes, while media edges carry typed values. Extract only small presentation primitives that are genuinely reusable, such as node chrome, selection styling, minimap conventions, keyboard helpers, and viewport persistence. Media graph state, validation, undo history, ports, and execution remain independent.
 
-Register `MediaRuntimeState` beside the existing desktop task state in `src-tauri/src/lib.rs`, but do not reuse `DesktopTaskLimiter` as the media scheduler. Agent commands and media inference have different resource semantics. Media needs reservations for VRAM, system RAM, CPU threads, encoders, downloads, and remote concurrency, plus a single-writer durable queue. The existing attachment-grant, path-validation, cancellation, atomic-write, and cooperative-lock patterns in `src-tauri/src/desktop_task.rs` are useful precedents and should be factored or mirrored without broadening existing permissions.
+Register `MediaRuntimeState` beside the existing desktop task state in `apps/client/src-tauri/src/lib.rs`, but do not reuse `DesktopTaskLimiter` as the media scheduler. Agent commands and media inference have different resource semantics. Media needs reservations for VRAM, system RAM, CPU threads, encoders, downloads, and remote concurrency, plus a single-writer durable queue. The existing attachment-grant, path-validation, cancellation, atomic-write, and cooperative-lock patterns in `apps/client/src-tauri/src/desktop_task.rs` are useful precedents and should be factored or mirrored without broadening existing permissions.
 
 The first Tauri IPC surface should be narrow and typed:
 
@@ -2627,7 +2627,7 @@ References resolve through privileged Tauri commands, check workspace access on 
 
 ### Chat Integration
 
-`ChatSessionContextAttachment` in `src/tauri/ui/chat-session.model.ts` is a
+`ChatSessionContextAttachment` in `apps/client/src/tauri/ui/chat-session.model.ts` is a
 closed discriminated union. Path records require `source: "path"`; media cards
 use `MediaAssetReference` or `MediaRunReference`. Persisted shell state must use
 the current schema, and earlier records are rejected rather than migrated.
@@ -2844,7 +2844,7 @@ Before adding a package:
 - Measure bundle impact and enforce lazy loading for heavy creative/media packages.
 - Verify accessibility for UI interaction packages.
 - Verify keyboard and pointer behavior for pen/touch/mouse where relevant.
-- Add a wrapper module under `src/tauri/ui/media/lib/*` or `src/core/media/*` so package replacement does not affect flow semantics.
+- Add a wrapper module under `apps/client/src/tauri/ui/media/lib/*` or `apps/client/src/core/media/*` so package replacement does not affect flow semantics.
 - Add targeted tests for the wrapper, not only component snapshots.
 
 ## Implementation Requirements
@@ -3656,7 +3656,7 @@ Deliverables:
 - Write schema version 1 for semantic flow, separate layout, node definition, compiled plan, run/event/job, logical asset/blob, provider capability, model descriptor, and worker RPC.
 - Define the RFC 8785-compatible canonicalization profile, document/execution/plan/cache identities, rational media time, color metadata, quality observation, and unknown-node rejection contracts before implementing cache or timeline logic.
 - Build deterministic mock provider and mock worker adapters that generate fixture images/reports and exercise progress, cancellation, crash, partial output, retry, and remote reconciliation.
-- Spike SQLite WAL/current-schema bootstrap/resource leases and content-addressed streaming ingest in `src-tauri/src/media`.
+- Spike SQLite WAL/current-schema bootstrap/resource leases and content-addressed streaming ingest in `apps/client/src-tauri/src/media`.
 - Spike an authenticated framed managed-Python-worker protocol, replay-safe ids, bounded/backpressured event classes, two-phase output publication, environment fingerprint, cooperative/forced cancellation, and process-tree shutdown without starting an app-facing server.
 - Build a fault-injection remote adapter harness that crashes before submit, during submit, after paid acceptance, during polling, after provider success, and during download/CAS commit. Prove the `acceptance-unknown` path never blindly resubmits.
 - Probe NVIDIA CUDA, CPU, disk, and FFmpeg on the initial platform. Record unsupported AMD/MPS paths honestly rather than stubbing success.

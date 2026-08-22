@@ -229,21 +229,21 @@ Severity: P0
 
 Evidence:
 
-- [`RalphRunStatus`](../src/core/ralph.ts#L418-L424) has no deferred, no-op,
+- [`RalphRunStatus`](../apps/client/src/core/ralph.ts#L418-L424) has no deferred, no-op,
   budget-exhausted, or verification-inconclusive state.
-- [`RalphEndBlock`](../src/core/ralph.ts#L880-L883) can declare only `success`,
+- [`RalphEndBlock`](../apps/client/src/core/ralph.ts#L880-L883) can declare only `success`,
   `failed`, `cancelled`, or `review`.
-- [END mapping](../src/core/ralph.ts#L12758-L12770) converts success or an
+- [END mapping](../apps/client/src/core/ralph.ts#L12758-L12770) converts success or an
   omitted status to `completed`.
 - Both starter flows intentionally declare their deferred END as
-  [`status: "success"`](../src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L698-L712)
+  [`status: "success"`](../apps/client/src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L698-L712)
   and
-  [`status: "success"`](../src/core/ralph-starter-flows/autonomous-code-improvement-loop.ts#L1005-L1020).
-- [`finishRun`](../src/core/ralph.ts#L13396-L13414) normally drops the
+  [`status: "success"`](../apps/client/src/core/ralph-starter-flows/autonomous-code-improvement-loop.ts#L1005-L1020).
+- [`finishRun`](../apps/client/src/core/ralph.ts#L13396-L13414) normally drops the
   checkpoint for `completed`.
-- [`RalphRunRecord`](../src/core/ralph.ts#L1374-L1394) has no semantic outcome,
+- [`RalphRunRecord`](../apps/client/src/core/ralph.ts#L1374-L1394) has no semantic outcome,
   and
-  [`createRalphRunRecord`](../src/core/_helpers/create-ralph-run-record.helper.ts#L269-L312)
+  [`createRalphRunRecord`](../apps/client/src/core/_helpers/create-ralph-run-record.helper.ts#L269-L312)
   does not copy top-level autonomy metadata.
 
 Impact:
@@ -270,10 +270,10 @@ Evidence:
 
 - The current starters describe themselves as bounded runs that select one
   package
-  ([refactor](../src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L19-L35),
-  [improvement](../src/core/ralph-starter-flows/autonomous-code-improvement-loop.ts#L19-L35)).
+  ([refactor](../apps/client/src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L19-L35),
+  [improvement](../apps/client/src/core/ralph-starter-flows/autonomous-code-improvement-loop.ts#L19-L35)).
 - A current regression test explicitly
-  [requires termination after one selected package](../src/core/ralph-starter-flows.spec.ts#L2117-L2150).
+  [requires termination after one selected package](../apps/client/src/core/ralph-starter-flows.spec.ts#L2117-L2150).
 - Commit `116d490` intentionally removed the same-run scope cycle and changed
   transition exhaustion to a visible crash with a checkpoint.
 - The product specification still says graph loops may be endless and runtime
@@ -304,20 +304,20 @@ Severity: P0
 Evidence:
 
 - Project command detection walks upward to a manifest inside the workspace
-  ([implementation](../src/core/ralph.ts#L10172-L10202)).
+  ([implementation](../apps/client/src/core/ralph.ts#L10172-L10202)).
 - A prompt block with the default workspace continues to receive the base
   workspace root
-  ([block configuration](../src/core/ralph.ts#L3311-L3336)).
+  ([block configuration](../apps/client/src/core/ralph.ts#L3311-L3336)).
 - Both affected starters hard-code Git snapshot and diff `cwd: "."`
-  ([refactor snapshot and diff](../src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L365-L376),
-  [refactor diff](../src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L492-L502)).
+  ([refactor snapshot and diff](../apps/client/src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L365-L376),
+  [refactor diff](../apps/client/src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L492-L502)).
 - The snapshot helper correctly resolves the Git root of the `cwd` it receives
-  ([snapshot helper](../src/core/_helpers/ralph-git-change-snapshot.helper.ts#L208-L239));
+  ([snapshot helper](../apps/client/src/core/_helpers/ralph-git-change-snapshot.helper.ts#L208-L239));
   the caller supplied the wrong identity.
 - A tested nested-repository discovery implementation already exposes
   `root`, `captureRoot`, `workspacePath`, and source
-  ([discovery](../src/core/_helpers/task-file-change-repository-discovery.ts#L12-L23),
-  [tests](../src/core/_helpers/task-file-change-repository-discovery.spec.ts#L57-L107)).
+  ([discovery](../apps/client/src/core/_helpers/task-file-change-repository-discovery.ts#L12-L23),
+  [tests](../apps/client/src/core/_helpers/task-file-change-repository-discovery.spec.ts#L57-L107)).
 
 Impact:
 
@@ -341,19 +341,19 @@ Severity: P0
 
 Evidence:
 
-- [`executeCommandUtilityBlock`](../src/core/ralph.ts#L5203-L5295) maps every
+- [`executeCommandUtilityBlock`](../apps/client/src/core/ralph.ts#L5203-L5295) maps every
   nonzero check exit to `FAILED` and process/timeout exceptions to `ERROR`.
 - Python command detection adds a medium-confidence whole-workspace
   `python -m pytest` merely because `pyproject.toml` exists
-  ([detection](../src/core/ralph.ts#L10326-L10333)).
+  ([detection](../apps/client/src/core/ralph.ts#L10326-L10333)).
 - Verification tiers are constructed independently
-  ([tier construction](../src/core/ralph.ts#L10354-L10416)).
+  ([tier construction](../apps/client/src/core/ralph.ts#L10354-L10416)).
 - Starter baselines use the focused command before risk-based post-change tier
   selection
-  ([refactor baseline](../src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L422-L446)).
+  ([refactor baseline](../apps/client/src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L422-L446)).
 - The existing failure signature hashes a capped, lightly normalized block
   result for repeat-loop detection
-  ([failure signature](../src/core/_helpers/create-ralph-failure-signature.helper.ts#L23-L62));
+  ([failure signature](../apps/client/src/core/_helpers/create-ralph-failure-signature.helper.ts#L23-L62));
   it is not a baseline/post verification comparator.
 
 Impact:
@@ -381,12 +381,12 @@ Evidence:
 
 - Refactor validation failures route to repair, then direct deferral when the
   counter is exhausted
-  ([edges](../src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L745-L765)).
+  ([edges](../apps/client/src/core/ralph-starter-flows/repository-refactor-validation-loop.ts#L745-L765)).
 - Code-improvement validation does the same
-  ([edges](../src/core/ralph-starter-flows/autonomous-code-improvement-loop.ts#L1067-L1089)).
+  ([edges](../apps/client/src/core/ralph-starter-flows/autonomous-code-improvement-loop.ts#L1067-L1089)).
 - Current flow validation checks topology, possible outputs, reachability, and
   terminal paths
-  ([flow validation](../src/core/_helpers/validate-ralph-flow.helper.ts#L410-L453));
+  ([flow validation](../apps/client/src/core/_helpers/validate-ralph-flow.helper.ts#L410-L453));
   it does not enforce a post-mutation evidence funnel.
 
 Impact:
@@ -410,24 +410,24 @@ Severity: P0
 Evidence:
 
 - The default run lease is two minutes
-  ([constant](../src/core/ralph.ts#L273)).
+  ([constant](../apps/client/src/core/ralph.ts#L273)).
 - Each durable mutation acquires a lock, rereads the full run record, fences the
   lease, and performs the mutation
-  ([ownership path](../src/core/ralph.ts#L13219-L13363)).
-- [`persistRunBoundary`](../src/core/ralph.ts#L13864-L13945) refreshes task
+  ([ownership path](../apps/client/src/core/ralph.ts#L13219-L13363)).
+- [`persistRunBoundary`](../apps/client/src/core/ralph.ts#L13864-L13945) refreshes task
   leases, rebuilds a checkpoint, creates a partial result and record, and
   replaces `run.json`.
 - The active-block heartbeat calls that same function every lease-duration
   third and chains heartbeats through one growing promise
-  ([heartbeat](../src/core/ralph.ts#L14206-L14231)).
+  ([heartbeat](../apps/client/src/core/ralph.ts#L14206-L14231)).
 - A degraded required heartbeat aborts the active block and crashes the run
-  ([abort path](../src/core/ralph.ts#L14258-L14280)).
+  ([abort path](../apps/client/src/core/ralph.ts#L14258-L14280)).
 - Atomic replace retries transient Windows errors for only the fixed sequence
   `0, 5, 10, 25, 50, 100, 250` ms
-  ([atomic helper](../src/core/_helpers/write-file-atomically.helper.ts#L5-L38)).
+  ([atomic helper](../apps/client/src/core/_helpers/write-file-atomically.helper.ts#L5-L38)).
 - Atomic-write tests cover ordinary replacement, a stale-write guard, and temp
   scavenging, but not injected rename contention
-  ([tests](../src/core/_helpers/write-file-atomically.helper.spec.ts#L9-L67)).
+  ([tests](../apps/client/src/core/_helpers/write-file-atomically.helper.spec.ts#L9-L67)).
 
 Impact:
 
@@ -456,7 +456,7 @@ Evidence:
   several local utilities implement idempotent reconciliation.
 - A pending non-replay-safe block instead receives a generic indeterminate
   `ERROR`
-  ([resume path](../src/core/ralph.ts#L14119-L14247)).
+  ([resume path](../apps/client/src/core/ralph.ts#L14119-L14247)).
 - Tests correctly require no blind replay, but the generic result has no
   repository-aware way to determine whether an agent already changed files.
 
@@ -482,20 +482,20 @@ Evidence:
 
 - CLI JSON summarization omits outcome, autonomy, durability, verification
   disposition, and checkpoint availability
-  ([summary](../src/cli/_helpers/cli-ralph-commands.ts#L641-L668)).
+  ([summary](../apps/client/src/cli/_helpers/cli-ralph-commands.ts#L641-L668)).
 - The CLI sets a nonzero exit only when execution throws; a returned
   `crashed` or `blocked` result is printed and returned without changing the
   process exit code
-  ([run command](../src/cli/_helpers/cli-ralph-commands.ts#L1634-L1688)).
+  ([run command](../apps/client/src/cli/_helpers/cli-ralph-commands.ts#L1634-L1688)).
 - The desktop bridge treats only a nonzero CLI process status as failure
-  ([bridge](../src-tauri/src/desktop_task/ralph.rs#L297-L314)).
+  ([bridge](../apps/client/src-tauri/src/desktop_task/ralph.rs#L297-L314)).
 - The scheduler maps every RALPH `completed` status to task `executed`
-  ([mapping](../src/cli/_helpers/cli-scheduler-commands.ts#L821-L855)).
+  ([mapping](../apps/client/src/cli/_helpers/cli-scheduler-commands.ts#L821-L855)).
 - Scheduled recovery treats a completed record as terminal and reconciles it
   without resuming
-  ([recovery](../src/cli/_helpers/cli-scheduler-commands.ts#L1023-L1177)).
+  ([recovery](../apps/client/src/cli/_helpers/cli-scheduler-commands.ts#L1023-L1177)).
 - UI presentation renders every `completed` run as green “Completed”
-  ([presentation](../src/tauri/ui/ralph/_helpers/ralph-run-presentation.helper.ts#L87-L150)).
+  ([presentation](../apps/client/src/tauri/ui/ralph/_helpers/ralph-run-presentation.helper.ts#L87-L150)).
 
 Impact:
 
@@ -543,7 +543,7 @@ Severity: P2, after contracts stabilize
 
 Evidence:
 
-- `src/core/ralph.ts` is 14,873 lines and 431 KB at the inspected HEAD.
+- `apps/client/src/core/ralph.ts` is 14,873 lines and 431 KB at the inspected HEAD.
 - It still owns public domain types, block dispatch, command execution,
   project-command detection, prompts, graph execution, leases, checkpoints,
   recovery, logging, and terminal mapping.
@@ -1182,7 +1182,7 @@ Goal: reduce coupling and operating cost after behavior contracts are stable.
 Proposed ownership:
 
 ```text
-src/core/ralph/
+apps/client/src/core/ralph/
   model/          flow, run, outcome, verification, repository types
   engine/         compiled graph and pure transition reducer
   execution/      block adapter registry and effect capabilities
@@ -1195,7 +1195,7 @@ src/core/ralph/
 
 Extraction strategy:
 
-- Keep only current exports and public entry points in `src/core/ralph.ts`.
+- Keep only current exports and public entry points in `apps/client/src/core/ralph.ts`.
 - Extract only code changed by each preceding phase.
 - Establish dependency direction: model → repository/verification primitives →
   execution/durability → engine → campaign/adapters.
@@ -1349,13 +1349,13 @@ The following focused baseline passed on the inspected tree:
 
 ```text
 pnpm exec vitest run \
-  src/core/__test__/ralph-run.spec.ts \
-  src/core/ralph-starter-flows.spec.ts \
-  src/core/_helpers/write-file-atomically.helper.spec.ts \
-  src/core/_helpers/task-file-change-repository-discovery.spec.ts \
-  src/core/_helpers/validate-ralph-flow.helper.spec.ts \
-  src/cli/_helpers/cli-ralph-commands.spec.ts \
-  src/cli/_helpers/cli-scheduler-commands.spec.ts
+  apps/client/src/core/__test__/ralph-run.spec.ts \
+  apps/client/src/core/ralph-starter-flows.spec.ts \
+  apps/client/src/core/_helpers/write-file-atomically.helper.spec.ts \
+  apps/client/src/core/_helpers/task-file-change-repository-discovery.spec.ts \
+  apps/client/src/core/_helpers/validate-ralph-flow.helper.spec.ts \
+  apps/client/src/cli/_helpers/cli-ralph-commands.spec.ts \
+  apps/client/src/cli/_helpers/cli-scheduler-commands.spec.ts
 
 Test Files  7 passed (7)
 Tests       144 passed (144)

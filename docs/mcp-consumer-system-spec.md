@@ -93,27 +93,27 @@ flowchart TD
 
 Core modules to add:
 
-- `src/core/mcp/config.ts`: load, merge, validate, and save MCP config.
-- `src/core/mcp/types.ts`: config, metadata, runtime, preset, and run-record types.
-- `src/core/mcp/connection-manager.ts`: lifecycle, pooling, sessions, transport selection, reconnects.
-- `src/core/mcp/transports/stdio.ts`: subprocess transport.
-- `src/core/mcp/transports/streamable-http.ts`: current HTTP transport.
-- `src/core/mcp/transports/legacy-sse.ts`: compatibility fallback.
-- `src/core/mcp/authorization.ts`: OAuth and header/token handling.
-- `src/core/mcp/discovery.ts`: tools/resources/prompts discovery and schema hashing.
-- `src/core/mcp/tool-adapter.ts`: MCP tool to machdoch `AgentToolDefinition` conversion.
-- `src/core/mcp/resource-adapter.ts`: resource read and context attachment support.
-- `src/core/mcp/prompt-adapter.ts`: prompt invocation support.
-- `src/core/mcp/presets.ts`: Serper, GitHub, Chrome DevTools, and custom templates.
-- `src/core/mcp/run-cache.ts`: per-run caching for search/resource/tool outputs where configured.
+- `apps/client/src/core/mcp/config.ts`: load, merge, validate, and save MCP config.
+- `apps/client/src/core/mcp/types.ts`: config, metadata, runtime, preset, and run-record types.
+- `apps/client/src/core/mcp/connection-manager.ts`: lifecycle, pooling, sessions, transport selection, reconnects.
+- `apps/client/src/core/mcp/transports/stdio.ts`: subprocess transport.
+- `apps/client/src/core/mcp/transports/streamable-http.ts`: current HTTP transport.
+- `apps/client/src/core/mcp/transports/legacy-sse.ts`: compatibility fallback.
+- `apps/client/src/core/mcp/authorization.ts`: OAuth and header/token handling.
+- `apps/client/src/core/mcp/discovery.ts`: tools/resources/prompts discovery and schema hashing.
+- `apps/client/src/core/mcp/tool-adapter.ts`: MCP tool to machdoch `AgentToolDefinition` conversion.
+- `apps/client/src/core/mcp/resource-adapter.ts`: resource read and context attachment support.
+- `apps/client/src/core/mcp/prompt-adapter.ts`: prompt invocation support.
+- `apps/client/src/core/mcp/presets.ts`: Serper, GitHub, Chrome DevTools, and custom templates.
+- `apps/client/src/core/mcp/run-cache.ts`: per-run caching for search/resource/tool outputs where configured.
 
 Existing integration points:
 
-- Extend `src/shared/runtime-config.schema.json` and regenerate runtime contracts.
+- Extend `apps/client/src/shared/runtime-config.schema.json` and regenerate runtime contracts.
 - Extend `ToolName` with `mcp`.
-- Extend `src/core/tools.ts` with an MCP registry entry.
-- Extend `src/core/_helpers/agent-tools.ts` to include MCP tool definitions.
-- Extend `src/core/ralph.ts` with MCP settings and block execution types.
+- Extend `apps/client/src/core/tools.ts` with an MCP registry entry.
+- Extend `apps/client/src/core/_helpers/agent-tools.ts` to include MCP tool definitions.
+- Extend `apps/client/src/core/ralph.ts` with MCP settings and block execution types.
 
 ## Configuration Model
 

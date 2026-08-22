@@ -267,7 +267,7 @@ The exact post-change source state passed:
 - production core TypeScript build and production Vite UI build;
 - Tauri debug production-path build with `--no-bundle`;
 - optimized Tauri release build with `--no-bundle`
-  (`src-tauri/target/release/machdoch.exe`).
+  (`apps/client/src-tauri/target/release/machdoch.exe`).
 
 The production Vite build also verifies that the MCP quality driver is absent
 from release chunks. It remains available only in the explicit debug build
@@ -655,16 +655,13 @@ bad/fixed plate comparison is
 
 ## Implemented pipeline changes
 
-### Source image, edit, and identity conditioning
+### Source image, edit, and reference conditioning
 
-- KREA local edits now use the adapter's actual dual-conditioning recipe:
-  clean VAE source tokens with separate source/target RoPE frames plus
-  Qwen3-VL image-grounded prompt states. A generic LoRA-only graph is rejected.
-- The reviewed v1.2 rank-64 adapter is pinned by exact SHA-256
-  `f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423`.
-- `editStrength`, `referenceBoost`, `referenceFit`, `groundingPixels`, and the
-  explicit `requireChromaBackground` gate are real worker inputs and are
-  retained in response and catalog provenance.
+- Local image edits use FLUX.2 Klein native inpainting. The base image and
+  global edit strength reach the inpaint pipeline; mask strength scales only
+  the painted mask alpha.
+- FLUX.2 accepts the supported image references as native image conditioning.
+  KREA 2 remains text-to-image only and is not offered for image edits.
 - Chroma staging is opt-in instead of inferred from prompt substrings. This
   prevents negative instructions such as "do not include a green screen" from
   rejecting valid opaque style, replace, or general edit outputs, while still
@@ -757,29 +754,13 @@ no result is stretched or produced by cropping the same delivered frame.
 
 ## Research conclusions and implementation decisions
 
-- The linked [KREA identity-edit model card](https://huggingface.co/conradlocke/krea2-identity-edit)
-  describes v1.2 as an identity-preserving restaging adapter and explicitly
-  warns that preservation still requires source comparison and rerolls. It
-  requires dual source conditioning; the owner's technical explanation and
-  the compatible
-  [ComfyUI implementation](https://github.com/lbouaraba/comfyui-krea2edit)
-  drove Machdoch's Qwen3-VL plus clean-VAE-token implementation. Stock
-  text-to-image LoRA loading is not treated as compatible.
-- The final style-only stress pass used the adapter at reference boost 0.5 and
-  edit strength 0.92. It successfully discarded the witch and source
-  composition while retaining palette, line/detail language, and cinematic
-  lighting. The result validates a useful creative-restyle role, but its
-  painterly rendering confirms that a purpose-trained style encoder remains
-  preferable when exact cel-technique matching matters.
-- The adapter inherits the KREA 2 Community License. The model card currently
-  identifies a commercial revenue threshold below USD 1 million and content
-  moderation/disclosure obligations. Machdoch records the exact adapter and
-  model digests, but deployment owners must still evaluate their own license
-  status.
-- The official
-  [Diffusers KREA 2 API](https://huggingface.co/docs/diffusers/main/api/pipelines/krea2)
-  provides the base KREA pipeline, but not the adapter-specific identity graph.
-  This is why the implementation performs the reviewed conditioning explicitly.
+- The current [Diffusers FLUX.2 API](https://huggingface.co/docs/diffusers/api/pipelines/flux2)
+  exposes native image/reference conditioning and a dedicated inpainting path
+  with global `strength`. The implementation retains the base image rather
+  than compositing a simulated edit.
+- The official [Diffusers KREA 2 API](https://huggingface.co/docs/diffusers/main/api/pipelines/krea2)
+  documents the text-to-image pipeline, not a native image-edit contract, so
+  KREA is not used for image conditioning.
 - The official
   [WAN 2.2 TI2V 5B model card](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers)
   positions 5B 720p generation for consumer hardware such as a 4090. On this

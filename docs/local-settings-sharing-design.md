@@ -8,9 +8,9 @@ Implemented: 2026-07-17
 
 Target: Machdoch desktop on Windows, macOS, and Linux
 
-The implementation lives in `src-tauri/src/settings_transfer/`, with its typed UI contract in
-`src/tauri/ui/settings-transfer.ts` and the complete sender/receiver settings experience in
-`src/tauri/ui/chat-session/components/settings-dialog-panels/settings-transfer-panel.tsx`.
+The implementation lives in `apps/client/src-tauri/src/settings_transfer/`, with its typed UI contract in
+`apps/client/src/tauri/ui/settings-transfer.ts` and the complete sender/receiver settings experience in
+`apps/client/src/tauri/ui/chat-session/components/settings-dialog-panels/settings-transfer-panel.tsx`.
 Section 11 is retained as a record of product-policy decisions that may be revisited; the shipped
 protocol uses the closed catalog and exact behavior specified in the preceding sections.
 
@@ -447,7 +447,7 @@ If any replace or verification step fails, roll back every selected category fro
 
 This gives application-level all-or-nothing behavior. A non-cooperating external process could still observe a short interval between individual file replacements. Strict multi-file atomic visibility would require a larger migration to immutable generation directories plus one atomic “current generation” pointer; that is not justified for this feature unless cross-process observation becomes a hard requirement.
 
-The existing Rust [`atomic_file.rs`](../src-tauri/src/atomic_file.rs), [`cooperative_file_lock.rs`](../src-tauri/src/cooperative_file_lock.rs), and TypeScript atomic/lock helpers are directly reusable. Windows replacement already uses `MoveFileExW` with replace-existing and write-through flags.
+The existing Rust [`atomic_file.rs`](../apps/client/src-tauri/src/atomic_file.rs), [`cooperative_file_lock.rs`](../apps/client/src-tauri/src/cooperative_file_lock.rs), and TypeScript atomic/lock helpers are directly reusable. Windows replacement already uses `MoveFileExW` with replace-existing and write-through flags.
 
 ### 5.4 Exact replacement by category
 
@@ -649,13 +649,13 @@ The repository already has a clear semantic split, but global settings span more
 
 The canonical repository documentation for the first rows is also summarized in [`README.md`](../README.md). Relevant implementation sources include:
 
-- [`runtime_snapshot/settings_types.rs`](../src-tauri/src/runtime_snapshot/settings_types.rs), [`user_config.rs`](../src-tauri/src/runtime_snapshot/user_config.rs), and [`workspace.rs`](../src-tauri/src/runtime_snapshot/workspace.rs);
-- [`instruction-system/`](../src/core/instruction-system), including its
+- [`runtime_snapshot/settings_types.rs`](../apps/client/src-tauri/src/runtime_snapshot/settings_types.rs), [`user_config.rs`](../apps/client/src-tauri/src/runtime_snapshot/user_config.rs), and [`workspace.rs`](../apps/client/src-tauri/src/runtime_snapshot/workspace.rs);
+- [`instruction-system/`](../apps/client/src/core/instruction-system), including its
   strict store, portable export, resolver, delivery, and recovery boundaries;
-- [`mcp/config.ts`](../src/core/mcp/config.ts) and [`runtime_snapshot/mcp_config.rs`](../src-tauri/src/runtime_snapshot/mcp_config.rs);
-- [`create-ralph-storage-paths.helper.ts`](../src/core/_helpers/create-ralph-storage-paths.helper.ts) and [`ralph.ts`](../src/core/ralph.ts);
-- [`shell-store.ts`](../src/tauri/ui/lib/shell-store.ts), its normalizers, and [`shell_state.rs`](../src-tauri/src/shell_state.rs);
-- [`provider-enrollment/config.ts`](../src/core/provider-enrollment/config.ts), [`scheduler.ts`](../src/core/scheduler.ts), and [`media/mod.rs`](../src-tauri/src/media/mod.rs).
+- [`mcp/config.ts`](../apps/client/src/core/mcp/config.ts) and [`runtime_snapshot/mcp_config.rs`](../apps/client/src-tauri/src/runtime_snapshot/mcp_config.rs);
+- [`create-ralph-storage-paths.helper.ts`](../apps/client/src/core/_helpers/create-ralph-storage-paths.helper.ts) and [`ralph.ts`](../apps/client/src/core/ralph.ts);
+- [`shell-store.ts`](../apps/client/src/tauri/ui/lib/shell-store.ts), its normalizers, and [`shell_state.rs`](../apps/client/src-tauri/src/shell_state.rs);
+- [`provider-enrollment/config.ts`](../apps/client/src/core/provider-enrollment/config.ts), [`scheduler.ts`](../apps/client/src/core/scheduler.ts), and [`media/mod.rs`](../apps/client/src-tauri/src/media/mod.rs).
 
 ### 9.2 Existing mechanisms to reuse—and limits
 
@@ -688,8 +688,8 @@ The paths below are proposals based on the inspected layout, not claims that the
 
 #### B. Backend transfer engine
 
-- Add `src-tauri/src/settings_transfer/` with state machine, category adapters, discovery, Noise transport/framing, staging/transaction/recovery, redacted diagnostics, and tests.
-- Manage `SettingsTransferState` in [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs), register Tauri commands, and run crash recovery in setup before settings/provider/network consumers.
+- Add `apps/client/src-tauri/src/settings_transfer/` with state machine, category adapters, discovery, Noise transport/framing, staging/transaction/recovery, redacted diagnostics, and tests.
+- Manage `SettingsTransferState` in [`apps/client/src-tauri/src/lib.rs`](../apps/client/src-tauri/src/lib.rs), register Tauri commands, and run crash recovery in setup before settings/provider/network consumers.
 - Add backend commands along the lines of `start_settings_transfer`, `stop_settings_transfer`, `start_settings_receive`, `stop_settings_receive`, `connect_settings_transfer`, `confirm_settings_pairing`, `approve_settings_replacement`, and `get_settings_transfer_status`. Commands take IDs/selections, never paths or workspace roots.
 - Emit one typed state event stream with phases such as `idle`, `advertising`, `connecting`, `pairing`, `review`, `transferring`, `validating`, `committing`, `rollingBack`, `completed`, and `failed`.
 - Add dependencies after review: `mdns-sd`, `snow`, a cancellation-token facility such as `tokio-util`, and `zeroize`; possibly `socket2` for tested dual-stack/interface control and a JSON-schema validator if schemas are enforced in Rust.
@@ -710,9 +710,9 @@ The paths below are proposals based on the inspected layout, not claims that the
 
 #### D. Desktop UI
 
-- Extend [`session-shell.ts`](../src/tauri/ui/chat-session/_helpers/session-shell.ts) and [`settings-dialog.tsx`](../src/tauri/ui/chat-session/components/settings-dialog.tsx) with a Transfer section and icon.
+- Extend [`session-shell.ts`](../apps/client/src/tauri/ui/chat-session/_helpers/session-shell.ts) and [`settings-dialog.tsx`](../apps/client/src/tauri/ui/chat-session/components/settings-dialog.tsx) with a Transfer section and icon.
 - Add a focused transfer panel/wizard under `settings-dialog-panels`, plus a `use-settings-transfer` controller that subscribes to backend state and always invokes stop on close/unmount.
-- Add typed command/event wrappers to [`runtime.ts`](../src/tauri/ui/runtime.ts); ensure error logging accepts only redacted backend diagnostics.
+- Add typed command/event wrappers to [`runtime.ts`](../apps/client/src/tauri/ui/runtime.ts); ensure error logging accepts only redacted backend diagnostics.
 - Update the main controller/property wiring, settings dialog tests, styles, and accessibility labels/focus behavior.
 - Keep every category and effect visible in scrollable review UI, including unavailable entries and preserved categories; do not collapse important omissions behind a count.
 
@@ -839,7 +839,7 @@ Authoritative standards and primary implementation documentation used in this de
 - [RFC 8826: Security Considerations for WebRTC](https://www.rfc-editor.org/rfc/rfc8826.html), especially section 4.3.2.2, and [RFC 6189: ZRTP](https://www.rfc-editor.org/rfc/rfc6189.html), especially section 4.4.1.1 — SAS comparison and the commitment needed to prevent trial-DH/SAS grinding without PKI.
 - [RFC 8446: TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446.html) — standards-based encrypted-channel alternative.
 - [`mdns-sd` Rust documentation](https://docs.rs/mdns-sd/latest/mdns_sd/) — browse/register/interface/unregister/shutdown feasibility in the existing Rust backend.
-- [Apple TN3179: Understanding local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) and [Tauri macOS bundle documentation](https://v2.tauri.app/distribute/macos-application-bundle/) — required local-network usage text, Bonjour service declarations, and `src-tauri/Info.plist` merging.
+- [Apple TN3179: Understanding local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) and [Tauri macOS bundle documentation](https://v2.tauri.app/distribute/macos-application-bundle/) — required local-network usage text, Bonjour service declarations, and `apps/client/src-tauri/Info.plist` merging.
 - [Microsoft file and directory naming rules](https://learn.microsoft.com/windows/win32/fileio/naming-a-file) — cross-platform rejection of Windows-reserved characters, control characters, device names, and aliases before commit.
 - [Tokio `AsyncReadExt` documentation](https://docs.rs/tokio/latest/tokio/io/trait.AsyncReadExt.html) — cancellation-safety constraints for framed reads used from `select!` branches.
 - [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html) — exclusion/redaction of tokens, passwords, encryption keys, and sensitive values from logs.
