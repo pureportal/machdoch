@@ -1,19 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
-use rusqlite::{params, OptionalExtension as _};
+use rusqlite::{params, Connection, OptionalExtension as _};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 use super::{
     database, hardware,
     model_import::{self, ParsedSafetensorsHeader},
-    ImportMediaModelAddonRequest, MediaEmbeddingVectorProfile, MediaLoraTensorProfile,
-    MediaModelAddonCapability, MediaModelAddonImportInspection, MediaModelAddonImportResult,
-    MediaResult, MediaRuntimePaths,
+    ImportMediaModelAddonRequest, MediaAssetImportDuplicate, MediaEmbeddingVectorProfile,
+    MediaLoraTensorProfile, MediaModelAddonCapability, MediaModelAddonImportInspection,
+    MediaModelAddonImportResult, MediaResult, MediaRuntimePaths,
 };
 
 pub(crate) const MODEL_ADDON_ID_PREFIX: &str = "local-addon:sha256:";
@@ -123,6 +123,45 @@ fn tensor_last_dimension(header: &ParsedSafetensorsHeader, key: &str) -> Option<
         .and_then(Value::as_array)
         .and_then(|shape| shape.last())
         .and_then(Value::as_u64)
+}
+
+fn tensor_first_dimension(header: &ParsedSafetensorsHeader, key: &str) -> Option<u64> {
+    header
+        .tensor_shapes
+        .get(key)
+        .and_then(Value::as_array)
+        .and_then(|shape| shape.first())
+        .and_then(Value::as_u64)
+}
+
+fn lora_pair_dimensions(header: &ParsedSafetensorsHeader, key_fragment: &str) -> Vec<(u64, u64)> {
+    let keys = header
+        .tensor_keys
+        .iter()
+        .map(|key| (key.to_lowercase(), key))
+        .collect::<HashMap<_, _>>();
+    keys.iter()
+        .filter_map(|(lower_key, original_key)| {
+            if !lower_key.contains(key_fragment) {
+                return None;
+            }
+            LORA_TENSOR_PAIRS.iter().find_map(|(left, right)| {
+                let stem = lower_key.strip_suffix(left)?;
+                let paired_key = keys.get(&format!("{stem}{right}"))?;
+                Some((
+                    tensor_last_dimension(header, original_key)?,
+                    tensor_first_dimension(header, paired_key)?,
+                ))
+            })
+        })
+        .collect()
+}
+
+fn has_lora_key_fragment(header: &ParsedSafetensorsHeader, fragment: &str) -> bool {
+    header
+        .tensor_keys
+        .iter()
+        .any(|key| key.to_lowercase().contains(fragment))
 }
 
 fn has_lora_pair(header: &ParsedSafetensorsHeader) -> bool {
@@ -573,20 +612,94 @@ fn detect_embedding_architecture(
         .map(|key| key.to_lowercase())
         .collect::<Vec<_>>();
     if keys.iter().any(|key| key == "t5") {
-        return (Some("flux-1".to_string()), "medium");
+        return (Some("flux-1".to_string()), "high");
     }
     if keys.iter().any(|key| key == "clip_l" || key == "clip_g") {
-        return (Some("stable-diffusion-xl".to_string()), "medium");
+        return (Some("stable-diffusion-xl".to_string()), "high");
     }
     if dimensions.contains(&768) && dimensions.contains(&1280) {
-        return (Some("stable-diffusion-xl".to_string()), "medium");
+        return (Some("stable-diffusion-xl".to_string()), "high");
     }
     if dimensions.len() == 1 && dimensions.contains(&1024) {
-        return (Some("stable-diffusion-2".to_string()), "medium");
+        return (Some("stable-diffusion-2".to_string()), "high");
     }
     if dimensions.len() == 1 && dimensions.contains(&768) {
-        return (Some("stable-diffusion-1".to_string()), "medium");
+        return (Some("stable-diffusion-1".to_string()), "high");
     }
+    (None, "unknown")
+}
+
+fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>, &'static str) {
+    let flux_2_modulation = [
+        "double_stream_modulation_img.linear",
+        "double_stream_modulation_txt.linear",
+        "single_stream_modulation.linear",
+    ]
+    .iter()
+    .any(|fragment| {
+        lora_pair_dimensions(header, fragment)
+            .iter()
+            .any(|dimensions| matches!(*dimensions, (3_072, 18_432) | (3_072, 3_072)))
+    });
+    let flux_2_fused_projection =
+        lora_pair_dimensions(header, "to_qkv_mlp_proj").contains(&(3_072, 27_648));
+    if flux_2_modulation || flux_2_fused_projection {
+        return (Some("flux-2".to_string()), "high");
+    }
+
+    let krea_query = lora_pair_dimensions(header, ".attn.wq").contains(&(6_144, 6_144));
+    let krea_key = lora_pair_dimensions(header, ".attn.wk").contains(&(6_144, 1_536));
+    let krea_namespace = has_lora_key_fragment(header, "diffusion_model.blocks.");
+    if krea_namespace && krea_query && krea_key {
+        return (Some("krea-2".to_string()), "high");
+    }
+
+    let flux_1_original_namespace = [
+        "lora_unet_double_blocks_",
+        "lora_unet_single_blocks_",
+        "model.diffusion_model.double_blocks.",
+        "model.diffusion_model.single_blocks.",
+        "double_blocks.",
+        "single_blocks.",
+    ]
+    .iter()
+    .any(|fragment| has_lora_key_fragment(header, fragment));
+    let flux_1_diffusers_namespace =
+        has_lora_key_fragment(header, "transformer.transformer_blocks.")
+            && has_lora_key_fragment(header, "transformer.single_transformer_blocks.")
+            && !has_lora_key_fragment(header, "to_qkv_mlp_proj");
+    if flux_1_original_namespace || flux_1_diffusers_namespace {
+        return (Some("flux-1".to_string()), "high");
+    }
+
+    let stable_diffusion_3_namespace =
+        has_lora_key_fragment(header, "transformer.transformer_blocks.")
+            && has_lora_key_fragment(header, ".attn.add_q_proj")
+            && !has_lora_key_fragment(header, "transformer.single_transformer_blocks.");
+    if stable_diffusion_3_namespace {
+        return (Some("stable-diffusion-3".to_string()), "high");
+    }
+
+    if has_lora_key_fragment(header, "lora_te2_") || has_lora_key_fragment(header, "text_encoder_2")
+    {
+        return (Some("stable-diffusion-xl".to_string()), "high");
+    }
+
+    let cross_attention_dimensions = ["attn2_to_k", "attn2.to_k", "attn2_to_v", "attn2.to_v"]
+        .iter()
+        .flat_map(|fragment| lora_pair_dimensions(header, fragment))
+        .map(|(input, _)| input)
+        .collect::<HashSet<_>>();
+    if cross_attention_dimensions.contains(&2_048) {
+        return (Some("stable-diffusion-xl".to_string()), "high");
+    }
+    if cross_attention_dimensions.len() == 1 && cross_attention_dimensions.contains(&1_024) {
+        return (Some("stable-diffusion-2".to_string()), "high");
+    }
+    if cross_attention_dimensions.len() == 1 && cross_attention_dimensions.contains(&768) {
+        return (Some("stable-diffusion-1".to_string()), "high");
+    }
+
     (None, "unknown")
 }
 
@@ -594,25 +707,236 @@ fn detect_addon_architecture(
     header: &ParsedSafetensorsHeader,
     kind: Option<&str>,
 ) -> (Option<String>, &'static str) {
-    let detected = model_import::detect_architecture(header);
-    if detected.0.is_some() {
-        return detected;
+    match kind {
+        Some("lora") => detect_lora_architecture(header),
+        Some("textual-inversion") => detect_embedding_architecture(header),
+        _ => (None, "unknown"),
     }
-    let keys = header
-        .tensor_keys
-        .iter()
-        .map(|key| key.to_lowercase())
-        .collect::<Vec<_>>();
-    if keys
-        .iter()
-        .any(|key| key.contains("double_blocks") || key.contains("single_blocks"))
+}
+
+#[derive(Debug)]
+struct TensorDerivedAddonProfile {
+    architecture: Option<String>,
+    architecture_confidence: &'static str,
+    target_components: Vec<String>,
+    embedding_vectors: Vec<MediaEmbeddingVectorProfile>,
+    lora_profile: Option<MediaLoraTensorProfile>,
+}
+
+#[derive(Debug)]
+pub(crate) struct TensorVerifiedAddonProfile {
+    pub(crate) architecture: String,
+    pub(crate) target_components: Vec<String>,
+    pub(crate) embedding_vectors: Vec<MediaEmbeddingVectorProfile>,
+    pub(crate) lora_profile: Option<MediaLoraTensorProfile>,
+}
+
+fn derive_addon_tensor_profile(
+    header: &ParsedSafetensorsHeader,
+    kind: &str,
+) -> MediaResult<TensorDerivedAddonProfile> {
+    if detect_kind(header) != Some(kind) {
+        return Err("the managed add-on tensor kind does not match its catalog record".to_string());
+    }
+    let (architecture, architecture_confidence) = detect_addon_architecture(header, Some(kind));
+    let embedding_vectors = if kind == "textual-inversion" {
+        embedding_vector_profiles(header)?
+    } else {
+        Vec::new()
+    };
+    let lora_profile = if kind == "lora" {
+        Some(lora_tensor_profile(header)?)
+    } else {
+        None
+    };
+    let target_components = if embedding_vectors.is_empty() {
+        detected_target_components(header, kind)
+    } else {
+        embedding_vectors
+            .iter()
+            .map(|profile| profile.component.clone())
+            .collect()
+    };
+    Ok(TensorDerivedAddonProfile {
+        architecture,
+        architecture_confidence,
+        target_components,
+        embedding_vectors,
+        lora_profile,
+    })
+}
+
+pub(crate) fn verify_managed_addon_header(
+    path: &Path,
+    kind: &str,
+    expected_header_digest: &str,
+    expected_byte_size: u64,
+) -> MediaResult<TensorVerifiedAddonProfile> {
+    let header = model_import::parse_header(path.to_string_lossy().as_ref())?;
+    if header.header_digest != expected_header_digest || header.byte_size != expected_byte_size {
+        return Err("the managed add-on header no longer matches its catalog record".to_string());
+    }
+    let profile = derive_addon_tensor_profile(&header, kind)?;
+    let architecture = profile
+        .architecture
+        .filter(|_| profile.architecture_confidence == "high")
+        .ok_or_else(|| {
+            "the managed add-on does not have a tensor-verified model architecture".to_string()
+        })?;
+    Ok(TensorVerifiedAddonProfile {
+        architecture,
+        target_components: profile.target_components,
+        embedding_vectors: profile.embedding_vectors,
+        lora_profile: profile.lora_profile,
+    })
+}
+
+fn managed_addon_file(
+    paths: &MediaRuntimePaths,
+    relative_path: &str,
+    digest: &str,
+) -> MediaResult<PathBuf> {
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        || relative_path != format!("addons/sha256/{digest}")
     {
-        return (Some("flux-1".to_string()), "medium");
+        return Err("the managed add-on catalog path is invalid".to_string());
     }
-    if kind == Some("textual-inversion") {
-        return detect_embedding_architecture(header);
+    let models_root = fs::canonicalize(paths.models_root()?)
+        .map_err(|error| format!("failed to resolve managed model storage: {error}"))?;
+    let addon_file = fs::canonicalize(models_root.join(relative_path).join("addon.safetensors"))
+        .map_err(|error| format!("failed to resolve managed add-on data: {error}"))?;
+    if !addon_file.starts_with(&models_root) {
+        return Err("the managed add-on path escapes model storage".to_string());
     }
-    (None, "unknown")
+    Ok(addon_file)
+}
+
+pub(crate) fn reconcile_managed_addon_profiles(
+    paths: &MediaRuntimePaths,
+    connection: &mut Connection,
+) -> MediaResult<()> {
+    let rows = {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, kind, architecture, architecture_confidence,
+                        target_components_json, embedding_vectors_json, lora_profile_json,
+                        digest, header_digest, byte_size, relative_path
+                 FROM media_model_addons",
+            )
+            .map_err(|error| format!("failed to inspect managed add-on profiles: {error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, String>(10)?,
+                ))
+            })
+            .map_err(|error| format!("failed to query managed add-on profiles: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode managed add-on profiles: {error}"))?;
+        rows
+    };
+
+    for (
+        id,
+        kind,
+        stored_architecture,
+        stored_confidence,
+        stored_targets,
+        stored_embeddings,
+        stored_lora_profile,
+        digest,
+        header_digest,
+        byte_size,
+        relative_path,
+    ) in rows
+    {
+        let reconciled = managed_addon_file(paths, &relative_path, &digest)
+            .and_then(|path| model_import::parse_header(path.to_string_lossy().as_ref()))
+            .and_then(|header| {
+                if header.header_digest != header_digest
+                    || header.byte_size != byte_size.max(0) as u64
+                {
+                    return Err(
+                        "the managed add-on header no longer matches its catalog record"
+                            .to_string(),
+                    );
+                }
+                derive_addon_tensor_profile(&header, &kind)
+            });
+        let (architecture, confidence, targets, embeddings, lora_profile) = match reconciled {
+            Ok(profile) => {
+                let architecture = profile
+                    .architecture
+                    .filter(|_| profile.architecture_confidence == "high")
+                    .unwrap_or_else(|| stored_architecture.clone());
+                (
+                    architecture,
+                    profile.architecture_confidence.to_string(),
+                    serde_json::to_string(&profile.target_components).map_err(|error| {
+                        format!("failed to encode reconciled add-on targets: {error}")
+                    })?,
+                    serde_json::to_string(&profile.embedding_vectors).map_err(|error| {
+                        format!("failed to encode reconciled embedding profiles: {error}")
+                    })?,
+                    profile
+                        .lora_profile
+                        .as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|error| {
+                            format!("failed to encode reconciled LoRA profile: {error}")
+                        })?,
+                )
+            }
+            Err(_) => (
+                stored_architecture.clone(),
+                "unknown".to_string(),
+                stored_targets.clone(),
+                stored_embeddings.clone(),
+                stored_lora_profile.clone(),
+            ),
+        };
+        if architecture == stored_architecture
+            && confidence == stored_confidence
+            && targets == stored_targets
+            && embeddings == stored_embeddings
+            && lora_profile == stored_lora_profile
+        {
+            continue;
+        }
+        connection
+            .execute(
+                "UPDATE media_model_addons
+                 SET architecture = ?2, architecture_confidence = ?3,
+                     target_components_json = ?4, embedding_vectors_json = ?5,
+                     lora_profile_json = ?6, updated_at = ?7
+                 WHERE id = ?1",
+                params![
+                    id,
+                    architecture,
+                    confidence,
+                    targets,
+                    embeddings,
+                    lora_profile,
+                    database::now(),
+                ],
+            )
+            .map_err(|error| format!("failed to reconcile managed add-on profile: {error}"))?;
+    }
+    Ok(())
 }
 
 fn bounded_metadata_value(
@@ -716,6 +1040,10 @@ fn inspection_review_token(
 
 pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaModelAddonImportInspection> {
     let header = model_import::parse_header(source_path)?;
+    let (content_size, content_digest) = model_import::hash_file(&header.canonical_path)?;
+    if content_size != header.byte_size {
+        return Err("the add-on file changed while it was being inspected".to_string());
+    }
     let detected_kind = detect_kind(&header);
     let (detected_architecture, architecture_confidence) =
         detect_addon_architecture(&header, detected_kind);
@@ -793,6 +1121,8 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaModelAddonImportIns
         byte_size: header.byte_size,
         tensor_count: header.tensor_count,
         header_digest: header.header_digest.clone(),
+        content_digest,
+        duplicate: None,
         review_token: inspection_review_token(
             &header,
             detected_kind,
@@ -811,6 +1141,40 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaModelAddonImportIns
         metadata_summary: model_import::metadata_summary(&header),
         warnings,
     })
+}
+
+fn imported_duplicate(
+    paths: &MediaRuntimePaths,
+    digest: &str,
+) -> MediaResult<Option<MediaAssetImportDuplicate>> {
+    database::open(paths)?
+        .query_row(
+            "SELECT id, display_name, kind FROM media_model_addons WHERE digest = ?1 LIMIT 1",
+            [digest],
+            |row| {
+                let kind = row.get::<_, String>(2)?;
+                Ok(MediaAssetImportDuplicate {
+                    resource_id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    kind: if kind == "textual-inversion" {
+                        "embedding".to_string()
+                    } else {
+                        "lora".to_string()
+                    },
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| format!("failed to inspect duplicate add-on state: {error}"))
+}
+
+pub(crate) fn inspect_for_import(
+    paths: &MediaRuntimePaths,
+    source_path: &str,
+) -> MediaResult<MediaModelAddonImportInspection> {
+    let mut inspection = inspect(source_path)?;
+    inspection.duplicate = imported_duplicate(paths, &inspection.content_digest)?;
+    Ok(inspection)
 }
 
 fn validated_token(value: Option<&str>) -> MediaResult<Option<String>> {
@@ -881,14 +1245,16 @@ fn validate_request(
     if inspection.detected_kind.as_deref() != Some(request.kind.as_str()) {
         return Err("the selected add-on kind does not match the inspected tensors".to_string());
     }
-    if request.kind == "textual-inversion"
-        && inspection.detected_architecture.as_deref().is_some()
+    if inspection.detected_architecture.as_deref().is_some()
         && inspection.detected_architecture.as_deref() != Some(request.architecture.as_str())
     {
-        return Err(
+        return Err(if request.kind == "textual-inversion" {
             "the selected architecture does not match the embedding tensor dimensions and encoder slots"
-                .to_string(),
-        );
+                .to_string()
+        } else {
+            "the selected architecture does not match the inspected LoRA tensor namespaces"
+                .to_string()
+        });
     }
     if !model_import::SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
         return Err("architecture is not a supported local image family".to_string());
@@ -921,6 +1287,14 @@ fn validate_request(
     let display_name = model_import::validated_text("displayName", &request.display_name, 120)?;
     let license_name = model_import::validated_text("licenseName", &request.license_name, 256)?;
     let source_url = model_import::validated_source_url(request.source_url.as_deref())?;
+    if request.content_digest.len() != 64
+        || !request
+            .content_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("contentDigest must be a lowercase SHA-256 digest".to_string());
+    }
     let trigger_words = normalize_trigger_words(&request.trigger_words)?;
     let token = validated_token(request.token.as_deref())?;
     if request.kind == "textual-inversion" && token.is_none() {
@@ -1411,6 +1785,12 @@ pub(crate) fn import_reviewed_with_source(
             return Err(error);
         }
     };
+    if digest != request.content_digest {
+        let _ = fs::remove_dir_all(&stage_root);
+        return Err(
+            "the selected add-on file changed; inspect it again before importing".to_string(),
+        );
+    }
     let copied_inspection = match inspect(staged_addon.to_string_lossy().as_ref()) {
         Ok(value) if value.detected_kind == inspection.detected_kind => value,
         Ok(_) => {
@@ -1600,17 +1980,17 @@ mod tests {
                     "ss_base_model_version": "sdxl_base_v1-0",
                     "ss_output_name": "Gallery light"
                 },
-                "lora_unet_block.lora_up.weight": {
-                    "dtype": "F32", "shape": [1, 1], "data_offsets": [0, 4]
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_down.weight": {
+                    "dtype": "F32", "shape": [1, 2048], "data_offsets": [0, 8192]
                 },
-                "lora_unet_block.lora_down.weight": {
-                    "dtype": "F32", "shape": [1, 1], "data_offsets": [4, 8]
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.lora_up.weight": {
+                    "dtype": "F32", "shape": [1, 1], "data_offsets": [8192, 8196]
                 },
-                "lora_unet_block.alpha": {
-                    "dtype": "F32", "shape": [], "data_offsets": [8, 12]
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.alpha": {
+                    "dtype": "F32", "shape": [], "data_offsets": [8196, 8200]
                 }
             }),
-            &[0; 12],
+            &vec![0; 8200],
         );
         let inspection = inspect(path.to_string_lossy().as_ref()).expect("inspection should pass");
         assert_eq!(inspection.detected_kind.as_deref(), Some("lora"));
@@ -1646,19 +2026,19 @@ mod tests {
                     "format": "pt"
                 },
                 "transformer.double_stream_modulation_img.linear.lora_A.weight": {
-                    "dtype": "F32", "shape": [2, 4], "data_offsets": [0, 32]
+                    "dtype": "F32", "shape": [2, 3072], "data_offsets": [0, 24576]
                 },
                 "transformer.double_stream_modulation_img.linear.lora_B.weight": {
-                    "dtype": "F32", "shape": [4, 2], "data_offsets": [32, 64]
+                    "dtype": "F32", "shape": [18432, 2], "data_offsets": [24576, 172032]
                 },
                 "transformer.single_stream_modulation.linear.lora_A.weight": {
-                    "dtype": "F32", "shape": [2, 4], "data_offsets": [64, 96]
+                    "dtype": "F32", "shape": [2, 3072], "data_offsets": [172032, 196608]
                 },
                 "transformer.single_stream_modulation.linear.lora_B.weight": {
-                    "dtype": "F32", "shape": [4, 2], "data_offsets": [96, 128]
+                    "dtype": "F32", "shape": [18432, 2], "data_offsets": [196608, 344064]
                 }
             }),
-            &[0; 128],
+            &vec![0; 344064],
         );
 
         let inspection =
@@ -1667,6 +2047,85 @@ mod tests {
         assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
         assert_eq!(inspection.architecture_confidence, "high");
         assert_eq!(inspection.target_components, vec!["denoiser"]);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn ignores_stale_lora_architecture_metadata_without_tensor_evidence() {
+        let path = temp_path("stale-lora-metadata");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "__metadata__": {
+                    "ss_base_model_version": "sdxl_base_v1-0",
+                    "base_model": "FLUX.2 Klein"
+                },
+                "adapter.layer.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 4], "data_offsets": [0, 32]
+                },
+                "adapter.layer.lora_B.weight": {
+                    "dtype": "F32", "shape": [4, 2], "data_offsets": [32, 64]
+                }
+            }),
+            &[0; 64],
+        );
+
+        let inspection = inspect(path.to_string_lossy().as_ref())
+            .expect("metadata-only LoRA inspection should complete");
+        assert_eq!(inspection.detected_architecture, None);
+        assert_eq!(inspection.architecture_confidence, "unknown");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn detects_flux_2_attention_only_lora_from_fused_projection_shape() {
+        let path = temp_path("flux-2-attention-lora");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "transformer.single_transformer_blocks.0.attn.to_qkv_mlp_proj.lora_A.weight": {
+                    "dtype": "F32", "shape": [4, 3072], "data_offsets": [0, 49152]
+                },
+                "transformer.single_transformer_blocks.0.attn.to_qkv_mlp_proj.lora_B.weight": {
+                    "dtype": "F32", "shape": [27648, 4], "data_offsets": [49152, 491520]
+                }
+            }),
+            &vec![0; 491520],
+        );
+
+        let inspection = inspect(path.to_string_lossy().as_ref())
+            .expect("attention-only FLUX.2 LoRA inspection should pass");
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
+        assert_eq!(inspection.architecture_confidence, "high");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn detects_krea_2_lora_without_architecture_metadata() {
+        let path = temp_path("krea-2-lora");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "diffusion_model.blocks.0.attn.wq.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [0, 49152]
+                },
+                "diffusion_model.blocks.0.attn.wq.lora_B.weight": {
+                    "dtype": "F32", "shape": [6144, 2], "data_offsets": [49152, 98304]
+                },
+                "diffusion_model.blocks.0.attn.wk.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [98304, 147456]
+                },
+                "diffusion_model.blocks.0.attn.wk.lora_B.weight": {
+                    "dtype": "F32", "shape": [1536, 2], "data_offsets": [147456, 159744]
+                }
+            }),
+            &vec![0; 159744],
+        );
+
+        let inspection =
+            inspect(path.to_string_lossy().as_ref()).expect("KREA 2 LoRA inspection should pass");
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("krea-2"));
+        assert_eq!(inspection.architecture_confidence, "high");
         let _ = fs::remove_file(path);
     }
 
@@ -1833,6 +2292,7 @@ mod tests {
                 trigger_words: Vec::new(),
                 token: Some("<gallery-light>".to_string()),
                 source_url: None,
+                content_digest: inspection.content_digest.clone(),
                 license_name: "Publisher terms".to_string(),
                 commercial_use: "review-required".to_string(),
                 confirm_rights: true,
@@ -1917,6 +2377,7 @@ mod tests {
                 trigger_words: Vec::new(),
                 token: Some("<gallery-light>".to_string()),
                 source_url: None,
+                content_digest: inspection.content_digest.clone(),
                 license_name: "Publisher terms".to_string(),
                 commercial_use: "review-required".to_string(),
                 confirm_rights: true,
@@ -1978,6 +2439,7 @@ mod tests {
                 trigger_words: vec!["gallerylight".to_string()],
                 token: None,
                 source_url: Some("https://civitai.com/models/123".to_string()),
+                content_digest: inspection.content_digest.clone(),
                 license_name: "Publisher terms".to_string(),
                 commercial_use: "review-required".to_string(),
                 confirm_rights: true,
@@ -1986,6 +2448,13 @@ mod tests {
         )
         .expect("LoRA should import");
         assert!(result.addon_id.starts_with(MODEL_ADDON_ID_PREFIX));
+        let duplicate = inspect_for_import(&paths, source.to_string_lossy().as_ref())
+            .expect("duplicate inspection should pass")
+            .duplicate
+            .expect("imported add-on should be detected");
+        assert_eq!(duplicate.resource_id, result.addon_id);
+        assert_eq!(duplicate.display_name, "Gallery light");
+        assert_eq!(duplicate.kind, "lora");
         let mut connection = database::open(&paths).expect("database should open");
         catalog::synchronize(&mut connection).expect("catalog should synchronize");
         let snapshot =
@@ -2019,6 +2488,77 @@ mod tests {
             .addons
             .iter()
             .all(|addon| addon.id != result.addon_id));
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reconciles_stale_catalog_architecture_from_managed_tensors() {
+        let source = temp_path("reconciled-krea-lora");
+        let (root, paths) = test_paths("reconciled-krea-lora");
+        fs::create_dir_all(&root).expect("store should be created");
+        write_safetensors(
+            &source,
+            serde_json::json!({
+                "diffusion_model.blocks.0.attn.wq.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [0, 49152]
+                },
+                "diffusion_model.blocks.0.attn.wq.lora_B.weight": {
+                    "dtype": "F32", "shape": [6144, 2], "data_offsets": [49152, 98304]
+                },
+                "diffusion_model.blocks.0.attn.wk.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [98304, 147456]
+                },
+                "diffusion_model.blocks.0.attn.wk.lora_B.weight": {
+                    "dtype": "F32", "shape": [1536, 2], "data_offsets": [147456, 159744]
+                }
+            }),
+            &vec![0; 159744],
+        );
+        database::initialize(&paths).expect("database should initialize");
+        let inspection =
+            inspect(source.to_string_lossy().as_ref()).expect("KREA LoRA inspection should pass");
+        let result = import_reviewed_with_source(
+            &paths,
+            &ImportMediaModelAddonRequest {
+                source_path: inspection.source_path.clone(),
+                review_token: inspection.review_token,
+                display_name: "KREA detail".to_string(),
+                kind: "lora".to_string(),
+                architecture: "krea-2".to_string(),
+                trigger_words: Vec::new(),
+                token: None,
+                source_url: None,
+                content_digest: inspection.content_digest,
+                license_name: "Publisher terms".to_string(),
+                commercial_use: "review-required".to_string(),
+                confirm_rights: true,
+            },
+            None,
+        )
+        .expect("KREA LoRA should import");
+        let mut connection = database::open(&paths).expect("database should open");
+        connection
+            .execute(
+                "UPDATE media_model_addons
+                 SET architecture = 'flux-2', architecture_confidence = 'high'
+                 WHERE id = ?1",
+                [&result.addon_id],
+            )
+            .expect("stale catalog fixture should be written");
+
+        reconcile_managed_addon_profiles(&paths, &mut connection)
+            .expect("managed profile should reconcile");
+        let (architecture, confidence) = connection
+            .query_row(
+                "SELECT architecture, architecture_confidence
+                 FROM media_model_addons WHERE id = ?1",
+                [&result.addon_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .expect("reconciled add-on should remain cataloged");
+        assert_eq!(architecture, "krea-2");
+        assert_eq!(confidence, "high");
         let _ = fs::remove_file(source);
         let _ = fs::remove_dir_all(root);
     }

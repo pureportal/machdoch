@@ -25,12 +25,17 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager as _};
 
 pub(crate) type MediaResult<T> = Result<T, String>;
+
+const LOCAL_MODEL_PROBE_COMMAND_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const MAX_IMAGE_GENERATION_SEED: u64 = 9_007_199_254_740_991;
+const IMAGE_TASK_NODE_TYPES: &[&str] = &["task.generate-image", "task.edit-image"];
 
 use error::{command_result, MediaCommandResult, MediaError};
 
@@ -168,6 +173,8 @@ pub(crate) struct MediaRuntimeStatus {
     mode: &'static str,
     direct_generation_model_ids: Vec<String>,
     direct_reference_image_model_ids: Vec<String>,
+    direct_inpainting_model_ids: Vec<String>,
+    direct_pose_model_ids: Vec<String>,
     local_diffusers: provider_local_diffusers::LocalDiffusersRuntimeStatus,
 }
 
@@ -211,6 +218,20 @@ fn direct_reference_image_model_ids(
         local_diffusers,
     )?);
     Ok(model_ids)
+}
+
+fn direct_inpainting_model_ids(
+    paths: &MediaRuntimePaths,
+    local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    provider_local_diffusers::runnable_inpainting_model_ids(paths, local_diffusers)
+}
+
+fn direct_pose_model_ids(
+    paths: &MediaRuntimePaths,
+    local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    provider_local_diffusers::runnable_pose_model_ids(paths, local_diffusers)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -362,6 +383,14 @@ pub(crate) struct MediaModelCatalogSnapshot {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct MediaAssetImportDuplicate {
+    resource_id: String,
+    display_name: String,
+    kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct MediaLocalModelImportInspection {
     schema_version: u32,
     can_import: bool,
@@ -371,6 +400,8 @@ pub(crate) struct MediaLocalModelImportInspection {
     byte_size: u64,
     tensor_count: u32,
     header_digest: String,
+    content_digest: String,
+    duplicate: Option<MediaAssetImportDuplicate>,
     review_token: String,
     suggested_display_name: String,
     detected_architecture: Option<String>,
@@ -387,6 +418,7 @@ pub(crate) struct ImportMediaLocalModelRequest {
     display_name: String,
     architecture: String,
     source_url: Option<String>,
+    content_digest: String,
     license_name: String,
     commercial_use: String,
     confirm_rights: bool,
@@ -418,6 +450,8 @@ pub(crate) struct MediaModelAddonImportInspection {
     byte_size: u64,
     tensor_count: u32,
     header_digest: String,
+    content_digest: String,
+    duplicate: Option<MediaAssetImportDuplicate>,
     review_token: String,
     suggested_display_name: String,
     detected_kind: Option<String>,
@@ -444,6 +478,7 @@ pub(crate) struct ImportMediaModelAddonRequest {
     trigger_words: Vec<String>,
     token: Option<String>,
     source_url: Option<String>,
+    content_digest: String,
     license_name: String,
     commercial_use: String,
     confirm_rights: bool,
@@ -1082,6 +1117,142 @@ pub(crate) struct EnqueueMockRemoteRunRequest {
     plan_snapshot: Option<MediaRunPlanSnapshot>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct MediaImageReference {
+    pub(crate) asset_id: String,
+    pub(crate) role: String,
+    pub(crate) influence: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct MediaImageMaskPoint {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct MediaImageMaskStroke {
+    pub(crate) mode: String,
+    pub(crate) size: f64,
+    pub(crate) opacity: f64,
+    pub(crate) softness: f64,
+    pub(crate) points: Vec<MediaImageMaskPoint>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct MediaImageMask {
+    pub(crate) schema_version: u32,
+    pub(crate) source_asset_id: String,
+    pub(crate) inverted: bool,
+    pub(crate) strokes: Vec<MediaImageMaskStroke>,
+}
+
+pub(crate) fn normalize_media_image_mask(
+    mask: &mut MediaImageMask,
+    expected_source_asset_id: Option<&str>,
+) -> MediaResult<()> {
+    if mask.schema_version != 2 {
+        return Err("editMask requires schemaVersion 2".to_string());
+    }
+    mask.source_asset_id = required_text("editMask.sourceAssetId", &mask.source_asset_id, 256)?;
+    if expected_source_asset_id.is_some_and(|asset_id| asset_id != mask.source_asset_id) {
+        return Err("editMask must match baseImageAssetId".to_string());
+    }
+    if mask.strokes.len() > 256 {
+        return Err("editMask cannot contain more than 256 strokes".to_string());
+    }
+    let mut point_count = 0_usize;
+    for stroke in &mask.strokes {
+        if !matches!(stroke.mode.as_str(), "paint" | "erase")
+            || !stroke.size.is_finite()
+            || !(0.0025..=0.5).contains(&stroke.size)
+            || !stroke.opacity.is_finite()
+            || !(0.01..=1.0).contains(&stroke.opacity)
+            || !stroke.softness.is_finite()
+            || !(0.0..=1.0).contains(&stroke.softness)
+            || stroke.points.is_empty()
+        {
+            return Err("editMask contains an invalid stroke".to_string());
+        }
+        point_count += stroke.points.len();
+        if stroke.points.iter().any(|point| {
+            !point.x.is_finite()
+                || !point.y.is_finite()
+                || !(0.0..=1.0).contains(&point.x)
+                || !(0.0..=1.0).contains(&point.y)
+        }) {
+            return Err("editMask contains an invalid point".to_string());
+        }
+    }
+    if point_count > 8_192 {
+        return Err("editMask cannot contain more than 8192 points".to_string());
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct MediaImageOutputBranch {
+    id: String,
+    output_node_id: String,
+    format: String,
+    quality: u8,
+    jpeg_background: String,
+    operations: Vec<MediaImagePostProcessingOperation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum MediaImagePostProcessingOperation {
+    Crop {
+        node_id: String,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    },
+    Resize {
+        node_id: String,
+        width: u32,
+        height: u32,
+        fit: String,
+    },
+    TextOverlay {
+        node_id: String,
+        text: String,
+        position: String,
+        margin: u32,
+        font_size: u32,
+        color: String,
+        background_color: String,
+        background_opacity: f64,
+    },
+    ColorAdjust {
+        node_id: String,
+        brightness: i32,
+        contrast: f64,
+        saturation: f64,
+    },
+    Sharpen {
+        node_id: String,
+        sigma: f64,
+        threshold: i32,
+    },
+    MetadataStrip {
+        node_id: String,
+        preserve_color_profile: bool,
+    },
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct GenerateMediaImagesRequest {
@@ -1106,20 +1277,23 @@ pub(crate) struct GenerateMediaImagesRequest {
     subject_cutout_model_priority: Vec<String>,
     #[serde(default)]
     negative_prompt: String,
-    #[serde(default)]
-    reference_image_asset_id: Option<String>,
+    reference_images: Vec<MediaImageReference>,
+    base_image_asset_id: Option<String>,
+    edit_mask: Option<MediaImageMask>,
+    pose_image_asset_id: Option<String>,
+    pose_strength: Option<f64>,
+    pose_start: Option<f64>,
+    pose_end: Option<f64>,
+    seed: Option<u64>,
     #[serde(default)]
     edit_strength: Option<f64>,
     #[serde(default)]
-    reference_boost: Option<f64>,
+    mask_strength: Option<f64>,
     #[serde(default)]
     require_chroma_background: bool,
     #[serde(default)]
-    grounding_pixels: Option<u32>,
-    #[serde(default)]
-    reference_fit: Option<String>,
-    #[serde(default)]
     memory_profile: Option<String>,
+    output_branches: Vec<MediaImageOutputBranch>,
     plan_snapshot: MediaRunPlanSnapshot,
 }
 
@@ -1488,7 +1662,10 @@ impl EnqueueFixtureRunRequest {
         }
         self.flow_name = required_text("flowName", &self.flow_name, 256)?;
         self.plan_id = required_text("planId", &self.plan_id, 128)?;
-        self.prompt = required_text("prompt", &self.prompt, 8_000)?;
+        self.prompt = self.prompt.trim().to_string();
+        if self.prompt.chars().count() > 8_000 {
+            return Err("prompt exceeds 8000 characters".to_string());
+        }
         self.model_label = required_text("modelLabel", &self.model_label, 256)?;
 
         if !(1..=8).contains(&self.output_count) {
@@ -1520,7 +1697,10 @@ impl EnqueueMockRemoteRunRequest {
         }
         self.flow_name = required_text("flowName", &self.flow_name, 256)?;
         self.plan_id = required_text("planId", &self.plan_id, 128)?;
-        self.prompt = required_text("prompt", &self.prompt, 8_000)?;
+        self.prompt = self.prompt.trim().to_string();
+        if self.prompt.chars().count() > 8_000 {
+            return Err("prompt exceeds 8000 characters".to_string());
+        }
         self.model_label = required_text("modelLabel", &self.model_label, 256)?;
         if !(1..=8).contains(&self.output_count) {
             return Err("outputCount must be between 1 and 8".to_string());
@@ -1554,7 +1734,138 @@ impl EnqueueMockRemoteRunRequest {
     }
 }
 
+fn validate_rgb_hex(label: &str, value: &str) -> MediaResult<()> {
+    if value.len() != 7
+        || !value.starts_with('#')
+        || !value[1..]
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        return Err(format!("{label} must be a six-digit hex color"));
+    }
+    Ok(())
+}
+
+impl MediaImagePostProcessingOperation {
+    fn validate(&mut self) -> MediaResult<()> {
+        let node_id = match self {
+            Self::Crop {
+                node_id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                if *x > 1_000_000
+                    || *y > 1_000_000
+                    || *width == 0
+                    || *height == 0
+                    || *width > 32_768
+                    || *height > 32_768
+                {
+                    return Err("output branch crop bounds are invalid".to_string());
+                }
+                node_id
+            }
+            Self::Resize {
+                node_id,
+                width,
+                height,
+                fit,
+            } => {
+                if *width == 0 || *height == 0 || *width > 32_768 || *height > 32_768 {
+                    return Err("output branch resize dimensions are invalid".to_string());
+                }
+                if !matches!(fit.as_str(), "contain" | "cover" | "stretch") {
+                    return Err("output branch resize fit is invalid".to_string());
+                }
+                node_id
+            }
+            Self::TextOverlay {
+                node_id,
+                text,
+                position,
+                margin,
+                font_size,
+                color,
+                background_color,
+                background_opacity,
+            } => {
+                *text = text.trim().to_string();
+                if text.is_empty()
+                    || text.chars().count() > 256
+                    || !text
+                        .chars()
+                        .all(|character| character == '\n' || (' '..='~').contains(&character))
+                {
+                    return Err("output branch overlay text must be printable ASCII".to_string());
+                }
+                if !matches!(
+                    position.as_str(),
+                    "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center"
+                ) || *margin > 1_024
+                    || !(8..=256).contains(font_size)
+                    || !background_opacity.is_finite()
+                    || !(0.0..=1.0).contains(background_opacity)
+                {
+                    return Err("output branch text overlay configuration is invalid".to_string());
+                }
+                validate_rgb_hex("output branch text color", color)?;
+                validate_rgb_hex("output branch background color", background_color)?;
+                node_id
+            }
+            Self::ColorAdjust {
+                node_id,
+                brightness,
+                contrast,
+                saturation,
+            } => {
+                if !(-100..=100).contains(brightness)
+                    || !contrast.is_finite()
+                    || !(-100.0..=100.0).contains(contrast)
+                    || !saturation.is_finite()
+                    || !(0.0..=200.0).contains(saturation)
+                {
+                    return Err("output branch color adjustment is invalid".to_string());
+                }
+                node_id
+            }
+            Self::Sharpen {
+                node_id,
+                sigma,
+                threshold,
+            } => {
+                if !sigma.is_finite()
+                    || !(0.1..=10.0).contains(sigma)
+                    || !(0..=255).contains(threshold)
+                {
+                    return Err("output branch sharpen configuration is invalid".to_string());
+                }
+                node_id
+            }
+            Self::MetadataStrip { node_id, .. } => node_id,
+        };
+        *node_id = required_text("outputBranches[].operations[].nodeId", node_id, 128)?;
+        Ok(())
+    }
+
+    fn node_identity(&self) -> (&str, &'static str) {
+        match self {
+            Self::Crop { node_id, .. } => (node_id, "operation.crop"),
+            Self::Resize { node_id, .. } => (node_id, "operation.resize"),
+            Self::TextOverlay { node_id, .. } => (node_id, "operation.text-overlay"),
+            Self::ColorAdjust { node_id, .. } => (node_id, "operation.color-adjust"),
+            Self::Sharpen { node_id, .. } => (node_id, "operation.sharpen"),
+            Self::MetadataStrip { node_id, .. } => (node_id, "operation.metadata-strip"),
+        }
+    }
+}
+
 impl GenerateMediaImagesRequest {
+    fn published_output_count(&self) -> usize {
+        self.output_count as usize * self.output_branches.len()
+    }
+
     fn validate(&mut self) -> MediaResult<()> {
         if self.schema_version != 1 {
             return Err("direct image generation requires schemaVersion 1".to_string());
@@ -1564,7 +1875,10 @@ impl GenerateMediaImagesRequest {
         self.flow_revision_id = required_text("flowRevisionId", &self.flow_revision_id, 128)?;
         self.flow_name = required_text("flowName", &self.flow_name, 256)?;
         self.plan_id = required_text("planId", &self.plan_id, 128)?;
-        self.prompt = required_text("prompt", &self.prompt, 8_000)?;
+        self.prompt = self.prompt.trim().to_string();
+        if self.prompt.chars().count() > 8_000 {
+            return Err("prompt exceeds 8000 characters".to_string());
+        }
         self.model_id = required_text("modelId", &self.model_id, 128)?;
         self.model_label = required_text("modelLabel", &self.model_label, 256)?;
         if self.model_addons.len() > 24 {
@@ -1583,11 +1897,51 @@ impl GenerateMediaImagesRequest {
                     .to_string(),
             );
         }
+        if self
+            .seed
+            .is_some_and(|seed| seed > MAX_IMAGE_GENERATION_SEED)
+        {
+            return Err("seed must be a JavaScript-safe non-negative integer".to_string());
+        }
+        if self.model_id == "openai:gpt-image-2" && self.seed.is_some() {
+            return Err("GPT Image 2 does not support deterministic seeds".to_string());
+        }
         if self.model_id != "openai:gpt-image-2" && !self.model_id.starts_with("local:") {
             return Err("selected model is not an executable raster image generator".to_string());
         }
         if !(1..=8).contains(&self.output_count) {
             return Err("outputCount must be between 1 and 8".to_string());
+        }
+        if self.output_branches.is_empty() || self.output_branches.len() > 8 {
+            return Err("outputBranches must contain between 1 and 8 branches".to_string());
+        }
+        if self.published_output_count() > 64 {
+            return Err("outputBranches cannot publish more than 64 assets".to_string());
+        }
+        let mut branch_ids = HashSet::new();
+        let mut output_node_ids = HashSet::new();
+        for branch in &mut self.output_branches {
+            branch.id = required_text("outputBranches[].id", &branch.id, 128)?;
+            branch.output_node_id =
+                required_text("outputBranches[].outputNodeId", &branch.output_node_id, 128)?;
+            if !branch_ids.insert(branch.id.clone())
+                || !output_node_ids.insert(branch.output_node_id.clone())
+            {
+                return Err("outputBranches must have unique ids and output nodes".to_string());
+            }
+            if !matches!(branch.format.as_str(), "png" | "jpeg" | "webp") {
+                return Err("outputBranches[].format must be png, jpeg, or webp".to_string());
+            }
+            if !(1..=100).contains(&branch.quality) {
+                return Err("outputBranches[].quality must be between 1 and 100".to_string());
+            }
+            validate_rgb_hex("outputBranches[].jpegBackground", &branch.jpeg_background)?;
+            if branch.operations.len() > 16 {
+                return Err("outputBranches cannot contain more than 16 operations".to_string());
+            }
+            for operation in &mut branch.operations {
+                operation.validate()?;
+            }
         }
         if self.diagnostic_count > 128 {
             return Err("diagnosticCount cannot exceed 128".to_string());
@@ -1597,6 +1951,15 @@ impl GenerateMediaImagesRequest {
         }
         if !matches!(self.output_format.as_str(), "png" | "jpeg" | "webp") {
             return Err("outputFormat must be png, jpeg, or webp".to_string());
+        }
+        if self.model_id == "openai:gpt-image-2"
+            && (self.output_branches.len() != 1
+                || !self.output_branches[0].operations.is_empty()
+                || self.output_branches[0].format != self.output_format)
+        {
+            return Err(
+                "GPT Image 2 requires one direct output branch matching outputFormat".to_string(),
+            );
         }
         if self.transparent_background && self.output_format == "jpeg" {
             return Err(
@@ -1635,37 +1998,150 @@ impl GenerateMediaImagesRequest {
                 "memoryProfile must be auto, memory-saver, balanced, or maximum-speed".to_string(),
             );
         }
-        if let Some(asset_id) = &mut self.reference_image_asset_id {
-            *asset_id = required_text("referenceImageAssetId", asset_id, 256)?;
+        if self.reference_images.len() > 8 {
+            return Err("referenceImages cannot contain more than 8 entries".to_string());
+        }
+        let mut reference_ids = HashSet::new();
+        for reference in &mut self.reference_images {
+            reference.asset_id =
+                required_text("referenceImages[].assetId", &reference.asset_id, 256)?;
+            if !reference_ids.insert(reference.asset_id.clone()) {
+                return Err("referenceImages must identify unique assets".to_string());
+            }
+            if !matches!(
+                reference.role.as_str(),
+                "subject" | "style" | "composition" | "palette" | "detail"
+            ) {
+                return Err("referenceImages[].role is not supported".to_string());
+            }
+            if !reference.influence.is_finite() || !(0.0..=2.0).contains(&reference.influence) {
+                return Err("referenceImages[].influence must be between 0 and 2".to_string());
+            }
+        }
+        if let Some(asset_id) = &mut self.base_image_asset_id {
+            *asset_id = required_text("baseImageAssetId", asset_id, 256)?;
+            if reference_ids.contains(asset_id) {
+                return Err("baseImageAssetId must be distinct from referenceImages".to_string());
+            }
+        }
+        if self.edit_mask.is_some() && self.base_image_asset_id.is_none() {
+            return Err("editMask requires baseImageAssetId".to_string());
+        }
+        if self.edit_mask.is_some() && self.output_format != "png" {
+            return Err("editMask requires lossless PNG output".to_string());
+        }
+        if self.edit_mask.is_some() && self.transparent_background {
+            return Err("editMask cannot be combined with subject cutout".to_string());
+        }
+        if let Some(mask) = &mut self.edit_mask {
+            normalize_media_image_mask(mask, self.base_image_asset_id.as_deref())?;
+            if mask.strokes.is_empty() {
+                return Err("editMask must contain a painted region".to_string());
+            }
+        }
+        if self.edit_mask.is_some() {
+            let mask_strength = self.mask_strength.get_or_insert(1.0);
+            if !mask_strength.is_finite() || !(0.0..=1.0).contains(mask_strength) {
+                return Err("maskStrength must be between 0 and 1".to_string());
+            }
+        } else if self.mask_strength.is_some() {
+            return Err("maskStrength requires editMask".to_string());
+        }
+        if let Some(asset_id) = &mut self.pose_image_asset_id {
+            *asset_id = required_text("poseImageAssetId", asset_id, 256)?;
+            if self.base_image_asset_id.as_deref() == Some(asset_id.as_str())
+                || reference_ids.contains(asset_id)
+            {
+                return Err("poseImageAssetId must identify a distinct asset".to_string());
+            }
+            let pose_strength = self.pose_strength.get_or_insert(1.0);
+            if !pose_strength.is_finite() || !(0.0..=2.0).contains(pose_strength) {
+                return Err("poseStrength must be between 0 and 2".to_string());
+            }
+            let pose_start = self.pose_start.get_or_insert(0.0);
+            let pose_end = self.pose_end.get_or_insert(1.0);
+            if !pose_start.is_finite()
+                || !pose_end.is_finite()
+                || *pose_start < 0.0
+                || *pose_start >= *pose_end
+                || *pose_end > 1.0
+            {
+                return Err("pose control range must satisfy 0 <= start < end <= 1".to_string());
+            }
+        } else if self.pose_strength.is_some()
+            || self.pose_start.is_some()
+            || self.pose_end.is_some()
+        {
+            return Err("pose controls require poseImageAssetId".to_string());
+        }
+        if self.reference_images.len()
+            + usize::from(self.base_image_asset_id.is_some())
+            + usize::from(self.pose_image_asset_id.is_some())
+            > 8
+        {
+            return Err("image conditioning cannot contain more than 8 assets".to_string());
+        }
+        let has_image_conditioning = !self.reference_images.is_empty()
+            || self.base_image_asset_id.is_some()
+            || self.pose_image_asset_id.is_some();
+        if has_image_conditioning {
             let edit_strength = self.edit_strength.get_or_insert(0.5);
             if !edit_strength.is_finite() || !(0.0..=1.0).contains(edit_strength) {
                 return Err("editStrength must be between 0 and 1".to_string());
             }
-            let reference_boost = self.reference_boost.get_or_insert(2.0);
-            if !reference_boost.is_finite() || !(0.25..=8.0).contains(reference_boost) {
-                return Err("referenceBoost must be between 0.25 and 8".to_string());
-            }
-            let grounding_pixels = self.grounding_pixels.get_or_insert(768);
-            if !(384..=1_024).contains(grounding_pixels) {
-                return Err("groundingPixels must be between 384 and 1024".to_string());
-            }
-            let reference_fit = self.reference_fit.get_or_insert_with(|| "fit".to_string());
-            *reference_fit = required_text("referenceFit", reference_fit, 16)?;
-            if !matches!(reference_fit.as_str(), "fit" | "crop") {
-                return Err("referenceFit must be fit or crop".to_string());
-            }
-        } else if self.edit_strength.is_some()
-            || self.reference_boost.is_some()
-            || self.require_chroma_background
-            || self.grounding_pixels.is_some()
-            || self.reference_fit.is_some()
-        {
+        } else if self.edit_strength.is_some() || self.require_chroma_background {
             return Err(
-                "edit controls require referenceImageAssetId to identify an immutable source"
+                "edit controls require image conditioning to identify an immutable source"
                     .to_string(),
             );
         }
-        self.plan_snapshot.validate(&self.plan_id, &self.flow_id)
+        if self.prompt.is_empty()
+            && (self.model_id == "openai:gpt-image-2" || !has_image_conditioning)
+        {
+            return Err("prompt or supported local image conditioning is required".to_string());
+        }
+        self.plan_snapshot.validate(&self.plan_id, &self.flow_id)?;
+        for branch in &self.output_branches {
+            if !self.plan_snapshot.nodes.iter().any(|node| {
+                node.id == branch.output_node_id
+                    && (node.r#type == "output.asset"
+                        || (branch.operations.is_empty()
+                            && matches!(
+                                node.r#type.as_str(),
+                                "task.generate-image" | "task.edit-image"
+                            )))
+            }) {
+                return Err(
+                    "outputBranches must reference image task or output nodes in planSnapshot"
+                        .to_string(),
+                );
+            }
+            for operation in &branch.operations {
+                let (node_id, node_type) = operation.node_identity();
+                if !self
+                    .plan_snapshot
+                    .nodes
+                    .iter()
+                    .any(|node| node.id == node_id && node.r#type == node_type)
+                {
+                    return Err(
+                        "outputBranches contain an operation outside planSnapshot".to_string()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_seed(&mut self) -> MediaResult<()> {
+        if self.seed.is_some() {
+            return Ok(());
+        }
+        let mut bytes = [0_u8; 8];
+        getrandom::fill(&mut bytes)
+            .map_err(|error| format!("failed to generate image seed: {error}"))?;
+        self.seed = Some(u64::from_le_bytes(bytes) & MAX_IMAGE_GENERATION_SEED);
+        Ok(())
     }
 }
 
@@ -2005,12 +2481,16 @@ impl MediaRunPlanSnapshot {
                 node.r#type.as_str(),
                 "source.prompt"
                     | "source.image"
+                    | "source.seed"
                     | "source.animated-background"
                     | "task.generate-image"
                     | "task.edit-image"
                     | "task.generate-video"
                     | "operation.crop"
                     | "operation.resize"
+                    | "operation.text-overlay"
+                    | "operation.color-adjust"
+                    | "operation.sharpen"
                     | "operation.format-convert"
                     | "operation.metadata-strip"
                     | "operation.auto-tag"
@@ -2053,6 +2533,7 @@ impl MediaRunPlanSnapshot {
                 step.kind.as_str(),
                 "normalize-prompt"
                     | "resolve-asset"
+                    | "resolve-seed"
                     | "resolve-animated-background"
                     | "resolve-model"
                     | "resolve-model-addons"
@@ -2067,6 +2548,9 @@ impl MediaRunPlanSnapshot {
                     | "edit-image"
                     | "crop-image"
                     | "resize-image"
+                    | "overlay-text"
+                    | "adjust-color"
+                    | "sharpen-image"
                     | "convert-image"
                     | "strip-metadata"
                     | "auto-tag"
@@ -2156,6 +2640,61 @@ mod run_plan_contract_tests {
         }
     }
 
+    fn image_request() -> GenerateMediaImagesRequest {
+        GenerateMediaImagesRequest {
+            schema_version: 1,
+            run_id: "run:image-contract".to_string(),
+            flow_id: "flow:plan-contract".to_string(),
+            flow_revision_id: "revision:image-contract".to_string(),
+            flow_name: "Image contract".to_string(),
+            plan_id: "plan:contract".to_string(),
+            prompt: "Replace the painted region".to_string(),
+            model_id: "local:flux-2-klein-4b".to_string(),
+            model_label: "FLUX.2 klein 4B".to_string(),
+            output_count: 1,
+            diagnostic_count: 0,
+            aspect_ratio: "1:1".to_string(),
+            output_format: "png".to_string(),
+            model_policy: "balanced".to_string(),
+            model_addons: Vec::new(),
+            transparent_background: false,
+            subject_cutout_model_priority: Vec::new(),
+            negative_prompt: String::new(),
+            reference_images: Vec::new(),
+            base_image_asset_id: None,
+            edit_mask: None,
+            pose_image_asset_id: None,
+            pose_strength: None,
+            pose_start: None,
+            pose_end: None,
+            seed: None,
+            edit_strength: None,
+            mask_strength: None,
+            require_chroma_background: false,
+            memory_profile: None,
+            output_branches: vec![MediaImageOutputBranch {
+                id: "generate".to_string(),
+                output_node_id: "generate".to_string(),
+                format: "png".to_string(),
+                quality: 95,
+                jpeg_background: "#ffffff".to_string(),
+                operations: Vec::new(),
+            }],
+            plan_snapshot: image_snapshot(),
+        }
+    }
+
+    fn image_snapshot() -> MediaRunPlanSnapshot {
+        let mut result = snapshot("node:prompt");
+        result.nodes.push(semantic_node(
+            "generate",
+            "task.generate-image",
+            "Generate image",
+            "task",
+        ));
+        result
+    }
+
     fn snapshot(source_node_id: &str) -> MediaRunPlanSnapshot {
         MediaRunPlanSnapshot {
             schema_version: 1,
@@ -2212,6 +2751,153 @@ mod run_plan_contract_tests {
     #[test]
     fn accepts_bounded_plan_snapshot_with_valid_node_lineage() {
         assert!(request(snapshot("node:prompt")).validate().is_ok());
+    }
+
+    #[test]
+    fn accepts_a_normalized_masked_image_request() {
+        let mut request = image_request();
+        request.base_image_asset_id = Some("asset:base".to_string());
+        request.edit_mask = Some(MediaImageMask {
+            schema_version: 2,
+            source_asset_id: "asset:base".to_string(),
+            inverted: false,
+            strokes: vec![MediaImageMaskStroke {
+                mode: "paint".to_string(),
+                size: 0.08,
+                opacity: 0.75,
+                softness: 0.4,
+                points: vec![MediaImageMaskPoint { x: 0.4, y: 0.6 }],
+            }],
+        });
+
+        assert!(request.validate().is_ok());
+        assert_eq!(request.edit_strength, Some(0.5));
+        assert_eq!(request.mask_strength, Some(1.0));
+    }
+
+    #[test]
+    fn preserves_connected_image_seeds_and_randomizes_unconnected_runs() {
+        let mut fixed = image_request();
+        fixed.seed = Some(123_456);
+        fixed.validate().unwrap();
+        fixed.resolve_seed().unwrap();
+        assert_eq!(fixed.seed, Some(123_456));
+
+        let mut random = image_request();
+        random.validate().unwrap();
+        random.resolve_seed().unwrap();
+        assert!(matches!(random.seed, Some(0..=MAX_IMAGE_GENERATION_SEED)));
+    }
+
+    #[test]
+    fn rejects_mask_strength_without_a_mask() {
+        let mut request = image_request();
+        request.mask_strength = Some(0.5);
+
+        assert_eq!(
+            request.validate().unwrap_err(),
+            "maskStrength requires editMask"
+        );
+    }
+
+    #[test]
+    fn accepts_a_base_image_without_a_mask() {
+        let mut request = image_request();
+        request.base_image_asset_id = Some("asset:base".to_string());
+
+        assert!(request.validate().is_ok());
+        assert!(request.edit_mask.is_none());
+    }
+
+    #[test]
+    fn accepts_promptless_local_image_conditioning() {
+        let mut request = image_request();
+        request.prompt.clear();
+        request.reference_images.push(MediaImageReference {
+            asset_id: "asset:style".to_string(),
+            role: "style".to_string(),
+            influence: 0.4,
+        });
+
+        assert!(request.validate().is_ok());
+        assert!(request.prompt.is_empty());
+    }
+
+    #[test]
+    fn keeps_pose_conditioning_distinct_from_normal_references() {
+        let mut request = image_request();
+        request.reference_images.push(MediaImageReference {
+            asset_id: "asset:pose".to_string(),
+            role: "pose".to_string(),
+            influence: 1.0,
+        });
+        assert_eq!(
+            request.validate().unwrap_err(),
+            "referenceImages[].role is not supported"
+        );
+
+        let mut request = image_request();
+        request.pose_image_asset_id = Some("asset:pose".to_string());
+        assert!(request.validate().is_ok());
+        assert_eq!(request.pose_strength, Some(1.0));
+        assert_eq!(request.pose_start, Some(0.0));
+        assert_eq!(request.pose_end, Some(1.0));
+
+        let mut request = image_request();
+        request.pose_image_asset_id = Some("asset:pose".to_string());
+        request.pose_start = Some(0.8);
+        request.pose_end = Some(0.4);
+        assert_eq!(
+            request.validate().unwrap_err(),
+            "pose control range must satisfy 0 <= start < end <= 1"
+        );
+    }
+
+    #[test]
+    fn rejects_a_mask_that_does_not_match_its_base_image() {
+        let mut request = image_request();
+        request.base_image_asset_id = Some("asset:base".to_string());
+        request.edit_mask = Some(MediaImageMask {
+            schema_version: 2,
+            source_asset_id: "asset:other".to_string(),
+            inverted: false,
+            strokes: vec![MediaImageMaskStroke {
+                mode: "paint".to_string(),
+                size: 0.08,
+                opacity: 1.0,
+                softness: 0.35,
+                points: vec![MediaImageMaskPoint { x: 0.4, y: 0.6 }],
+            }],
+        });
+
+        assert_eq!(
+            request.validate().unwrap_err(),
+            "editMask must match baseImageAssetId"
+        );
+    }
+
+    #[test]
+    fn rejects_lossy_masked_image_output() {
+        let mut request = image_request();
+        request.output_format = "webp".to_string();
+        request.base_image_asset_id = Some("asset:base".to_string());
+        request.edit_mask = Some(MediaImageMask {
+            schema_version: 2,
+            source_asset_id: "asset:base".to_string(),
+            inverted: false,
+            strokes: vec![MediaImageMaskStroke {
+                mode: "paint".to_string(),
+                size: 0.08,
+                opacity: 1.0,
+                softness: 0.35,
+                points: vec![MediaImageMaskPoint { x: 0.4, y: 0.6 }],
+            }],
+        });
+
+        assert_eq!(
+            request.validate().unwrap_err(),
+            "editMask requires lossless PNG output"
+        );
     }
 
     #[test]
@@ -2534,6 +3220,8 @@ pub(crate) fn initialize_runtime(app: &AppHandle) -> MediaResult<MediaRuntimeSta
             &paths,
             &local_diffusers,
         )?,
+        direct_inpainting_model_ids: direct_inpainting_model_ids(&paths, &local_diffusers)?,
+        direct_pose_model_ids: direct_pose_model_ids(&paths, &local_diffusers)?,
         local_diffusers,
     })
 }
@@ -2678,6 +3366,8 @@ pub(crate) fn media_initialize_runtime(app: AppHandle) -> MediaCommandResult<Med
                     &paths,
                     &local_diffusers,
                 )?,
+                direct_inpainting_model_ids: direct_inpainting_model_ids(&paths, &local_diffusers)?,
+                direct_pose_model_ids: direct_pose_model_ids(&paths, &local_diffusers)?,
                 local_diffusers,
             })
         })(),
@@ -2816,10 +3506,12 @@ pub(crate) async fn media_inspect_local_model(
             if let Err(error) = database::ensure_initialized(&paths) {
                 Err(error)
             } else {
-                tauri::async_runtime::spawn_blocking(move || model_import::inspect(&source_path))
-                    .await
-                    .map_err(|error| format!("local model inspection worker failed: {error}"))
-                    .and_then(|result| result)
+                tauri::async_runtime::spawn_blocking(move || {
+                    model_import::inspect_for_import(&paths, &source_path)
+                })
+                .await
+                .map_err(|error| format!("local model inspection worker failed: {error}"))
+                .and_then(|result| result)
             }
         }
         Err(error) => Err(error),
@@ -2864,12 +3556,19 @@ pub(crate) async fn media_probe_local_model(
                     Ok(model_id) => model_id,
                     Err(error) => return command_result("media_probe_local_model", Err(error)),
                 };
-                tauri::async_runtime::spawn_blocking(move || {
-                    provider_local_diffusers::probe_model(&app, &paths, &model_id)
-                })
+                match tokio::time::timeout(
+                    LOCAL_MODEL_PROBE_COMMAND_TIMEOUT,
+                    tauri::async_runtime::spawn_blocking(move || {
+                        provider_local_diffusers::probe_model(&app, &paths, &model_id)
+                    }),
+                )
                 .await
-                .map_err(|error| format!("local model probe worker failed: {error}"))
-                .and_then(|result| result)
+                {
+                    Ok(result) => result
+                        .map_err(|error| format!("local model probe worker failed: {error}"))
+                        .and_then(|result| result),
+                    Err(_) => Err("local model verification exceeded its deadline".to_string()),
+                }
             }
         }
         Err(error) => Err(error),
@@ -2887,10 +3586,12 @@ pub(crate) async fn media_inspect_model_addon(
             if let Err(error) = database::ensure_initialized(&paths) {
                 Err(error)
             } else {
-                tauri::async_runtime::spawn_blocking(move || model_addon::inspect(&source_path))
-                    .await
-                    .map_err(|error| format!("model add-on inspection worker failed: {error}"))
-                    .and_then(|result| result)
+                tauri::async_runtime::spawn_blocking(move || {
+                    model_addon::inspect_for_import(&paths, &source_path)
+                })
+                .await
+                .map_err(|error| format!("model add-on inspection worker failed: {error}"))
+                .and_then(|result| result)
             }
         }
         Err(error) => Err(error),
@@ -3127,6 +3828,7 @@ pub(crate) async fn media_generate_images(
 ) -> MediaCommandResult<MediaRunDetail> {
     let result = async {
         request.validate()?;
+        request.resolve_seed()?;
         let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
@@ -3156,7 +3858,7 @@ pub(crate) async fn media_generate_images(
         database::transition_nodes_by_type(
             &paths,
             &request.run_id,
-            &["source.prompt", "source.image"],
+            &["source.prompt", "source.image", "source.seed"],
             "completed",
             Some("provider.resolve-inputs"),
             Some("Generation inputs resolved"),
@@ -3165,7 +3867,7 @@ pub(crate) async fn media_generate_images(
         database::transition_nodes_by_type(
             &paths,
             &request.run_id,
-            &["task.generate-image"],
+            IMAGE_TASK_NODE_TYPES,
             "running",
             Some("provider.generate"),
             Some("Generating images with OpenAI"),
@@ -3205,7 +3907,7 @@ pub(crate) async fn media_generate_images(
         database::transition_nodes_by_type(
             &paths,
             &request.run_id,
-            &["task.generate-image"],
+            IMAGE_TASK_NODE_TYPES,
             "completed",
             Some("provider.generate"),
             Some("OpenAI generation completed"),
@@ -3293,7 +3995,7 @@ async fn generate_local_diffusers(
     database::transition_nodes_by_type(
         &paths,
         &request.run_id,
-        &["source.prompt", "source.image"],
+        &["source.prompt", "source.image", "source.seed"],
         "completed",
         Some("local-diffusers.resolve-inputs"),
         Some("Local model and immutable add-on inputs resolved"),
@@ -3302,7 +4004,7 @@ async fn generate_local_diffusers(
     database::transition_nodes_by_type(
         &paths,
         &request.run_id,
-        &["task.generate-image"],
+        IMAGE_TASK_NODE_TYPES,
         "running",
         Some("local-diffusers.generate"),
         Some("Generating images with the local Diffusers worker"),
@@ -3330,7 +4032,7 @@ async fn generate_local_diffusers(
     database::transition_nodes_by_type(
         &paths,
         &request.run_id,
-        &["task.generate-image"],
+        IMAGE_TASK_NODE_TYPES,
         "completed",
         Some("local-diffusers.generate"),
         Some("Local diffusion generation completed"),
@@ -3339,10 +4041,19 @@ async fn generate_local_diffusers(
     database::transition_nodes_by_type(
         &paths,
         &request.run_id,
-        &["operation.subject-cutout"],
+        &[
+            "operation.subject-cutout",
+            "operation.crop",
+            "operation.resize",
+            "operation.text-overlay",
+            "operation.color-adjust",
+            "operation.sharpen",
+            "operation.format-convert",
+            "operation.metadata-strip",
+        ],
         "completed",
-        Some("local.subject-cutout"),
-        Some("Subject cutout completed with the configured model fallback policy"),
+        Some("local.post-process"),
+        Some("Independent image output branches completed"),
         Some(0.9),
     )?;
     database::transition_nodes_by_type(

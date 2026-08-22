@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use font8x8::{UnicodeFonts, BASIC_FONTS};
 use image::{
     codecs::{
         jpeg::JpegEncoder,
@@ -12,13 +13,15 @@ use image::{
     },
     imageops::FilterType as ResizeFilter,
     DynamicImage, ExtendedColorType, ImageDecoder as _, ImageEncoder as _, ImageReader, Limits,
-    Rgb, RgbImage,
+    Rgb, RgbImage, Rgba, RgbaImage,
 };
 use sha2::{Digest as _, Sha256};
+use webp::Encoder as LossyWebPEncoder;
 
 use super::{
-    database, svg, MediaImageTransformOperation, MediaImageTransformRequest, MediaResult,
-    MediaRunDetail, MediaRuntimePaths,
+    database, svg, MediaImageOutputBranch, MediaImagePostProcessingOperation,
+    MediaImageTransformOperation, MediaImageTransformRequest, MediaResult, MediaRunDetail,
+    MediaRuntimePaths,
 };
 
 const MAX_ENCODED_BYTES: u64 = 64 * 1024 * 1024;
@@ -31,6 +34,248 @@ const MAX_ICC_PROFILE_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) struct DecodedAssetImage {
     pub(crate) image: DynamicImage,
     pub(crate) icc_profile: Option<Vec<u8>>,
+}
+
+pub(crate) struct ProcessedImageBranch {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) mime_type: &'static str,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
+pub(crate) fn process_image_output_branch(
+    source_bytes: &[u8],
+    branch: &MediaImageOutputBranch,
+) -> MediaResult<ProcessedImageBranch> {
+    let mut decoded = decode_image_bytes_with_profile(source_bytes)?;
+    for operation in &branch.operations {
+        decoded.image = apply_post_processing_operation(decoded.image, operation)?;
+        if matches!(
+            operation,
+            MediaImagePostProcessingOperation::MetadataStrip {
+                preserve_color_profile: false,
+                ..
+            }
+        ) {
+            decoded.icc_profile = None;
+        }
+    }
+    validate_dimensions(
+        decoded.image.width(),
+        decoded.image.height(),
+        "Output branch",
+    )?;
+    let (format, mime_type) = match branch.format.as_str() {
+        "png" => (OutputFormat::Png, "image/png"),
+        "jpeg" => (OutputFormat::Jpeg, "image/jpeg"),
+        "webp" => (OutputFormat::WebP, "image/webp"),
+        _ => return Err("output branch format is invalid".to_string()),
+    };
+    let output = ValidatedOutput {
+        format,
+        mime_type,
+        quality: branch.quality,
+        jpeg_background: parse_hex_color(&branch.jpeg_background)?,
+    };
+    let bytes = encode_image_with_icc(&decoded.image, &output, decoded.icc_profile.as_deref())?;
+    if bytes.len() as u64 > MAX_ENCODED_BYTES {
+        return Err("Output branch exceeds the encoded-byte limit".to_string());
+    }
+    Ok(ProcessedImageBranch {
+        bytes,
+        mime_type,
+        width: decoded.image.width(),
+        height: decoded.image.height(),
+    })
+}
+
+pub(crate) fn apply_post_processing_operation(
+    source: DynamicImage,
+    operation: &MediaImagePostProcessingOperation,
+) -> MediaResult<DynamicImage> {
+    match operation {
+        MediaImagePostProcessingOperation::Crop {
+            x,
+            y,
+            width,
+            height,
+            ..
+        } => apply_operation(
+            source,
+            &MediaImageTransformOperation::Crop {
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+            },
+        ),
+        MediaImagePostProcessingOperation::Resize {
+            width, height, fit, ..
+        } => apply_operation(
+            source,
+            &MediaImageTransformOperation::Resize {
+                width: *width,
+                height: *height,
+                fit: fit.clone(),
+            },
+        ),
+        MediaImagePostProcessingOperation::TextOverlay {
+            text,
+            position,
+            margin,
+            font_size,
+            color,
+            background_color,
+            background_opacity,
+            ..
+        } => render_text_overlay(
+            source,
+            TextOverlay {
+                text,
+                position,
+                margin: *margin,
+                font_size: *font_size,
+                color: parse_hex_color(color)?,
+                background_color: parse_hex_color(background_color)?,
+                background_opacity: *background_opacity,
+            },
+        ),
+        MediaImagePostProcessingOperation::ColorAdjust {
+            brightness,
+            contrast,
+            saturation,
+            ..
+        } => {
+            let adjusted = source
+                .brighten(*brightness)
+                .adjust_contrast(*contrast as f32);
+            Ok(DynamicImage::ImageRgba8(adjust_saturation(
+                adjusted.to_rgba8(),
+                *saturation as f32 / 100.0,
+            )))
+        }
+        MediaImagePostProcessingOperation::Sharpen {
+            sigma, threshold, ..
+        } => Ok(DynamicImage::ImageRgba8(image::imageops::unsharpen(
+            &source.to_rgba8(),
+            *sigma as f32,
+            *threshold,
+        ))),
+        MediaImagePostProcessingOperation::MetadataStrip { .. } => Ok(source),
+    }
+}
+
+fn adjust_saturation(mut image: RgbaImage, saturation: f32) -> RgbaImage {
+    for pixel in image.pixels_mut() {
+        let luminance =
+            0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32;
+        for channel in 0..3 {
+            pixel[channel] = (luminance + (pixel[channel] as f32 - luminance) * saturation)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+        }
+    }
+    image
+}
+
+fn blend_pixel(destination: &mut Rgba<u8>, color: [u8; 3], alpha: u8) {
+    let alpha = u16::from(alpha);
+    let inverse = 255 - alpha;
+    for channel in 0..3 {
+        destination[channel] =
+            ((u16::from(color[channel]) * alpha + u16::from(destination[channel]) * inverse + 127)
+                / 255) as u8;
+    }
+    destination[3] = 255;
+}
+
+struct TextOverlay<'a> {
+    text: &'a str,
+    position: &'a str,
+    margin: u32,
+    font_size: u32,
+    color: [u8; 3],
+    background_color: [u8; 3],
+    background_opacity: f64,
+}
+
+fn render_text_overlay(
+    source: DynamicImage,
+    overlay: TextOverlay<'_>,
+) -> MediaResult<DynamicImage> {
+    let scale = overlay.font_size.div_ceil(8).max(1);
+    let lines = overlay.text.split('\n').collect::<Vec<_>>();
+    let text_width = lines
+        .iter()
+        .map(|line| line.chars().count() as u32 * 8 * scale)
+        .max()
+        .unwrap_or(0);
+    let line_height = 8 * scale;
+    let text_height = lines.len() as u32 * line_height;
+    let padding = scale * 2;
+    let box_width = text_width.saturating_add(padding * 2);
+    let box_height = text_height.saturating_add(padding * 2);
+    if box_width > source.width() || box_height > source.height() {
+        return Err("Text overlay does not fit inside the output image".to_string());
+    }
+    let (origin_x, origin_y) = match overlay.position {
+        "top-left" => (overlay.margin, overlay.margin),
+        "top-right" => (
+            source.width().saturating_sub(box_width + overlay.margin),
+            overlay.margin,
+        ),
+        "bottom-left" => (
+            overlay.margin,
+            source.height().saturating_sub(box_height + overlay.margin),
+        ),
+        "bottom-right" => (
+            source.width().saturating_sub(box_width + overlay.margin),
+            source.height().saturating_sub(box_height + overlay.margin),
+        ),
+        "center" => (
+            (source.width() - box_width) / 2,
+            (source.height() - box_height) / 2,
+        ),
+        _ => return Err("Text overlay position is invalid".to_string()),
+    };
+    if origin_x + box_width > source.width() || origin_y + box_height > source.height() {
+        return Err("Text overlay margin places it outside the output image".to_string());
+    }
+    let mut image = source.to_rgba8();
+    let background_alpha = (overlay.background_opacity * 255.0).round() as u8;
+    for y in origin_y..origin_y + box_height {
+        for x in origin_x..origin_x + box_width {
+            blend_pixel(
+                image.get_pixel_mut(x, y),
+                overlay.background_color,
+                background_alpha,
+            );
+        }
+    }
+    for (line_index, line) in lines.iter().enumerate() {
+        for (character_index, character) in line.chars().enumerate() {
+            let glyph = BASIC_FONTS
+                .get(character)
+                .ok_or_else(|| "Text overlay contains an unsupported glyph".to_string())?;
+            let glyph_x = origin_x + padding + character_index as u32 * 8 * scale;
+            let glyph_y = origin_y + padding + line_index as u32 * line_height;
+            for (row, bits) in glyph.iter().enumerate() {
+                for column in 0..8_u32 {
+                    if bits & (1 << column) == 0 {
+                        continue;
+                    }
+                    for offset_y in 0..scale {
+                        for offset_x in 0..scale {
+                            let x = glyph_x + column * scale + offset_x;
+                            let y = glyph_y + row as u32 * scale + offset_y;
+                            blend_pixel(image.get_pixel_mut(x, y), overlay.color, 255);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(DynamicImage::ImageRgba8(image))
 }
 
 pub(crate) fn read_asset_preview(
@@ -137,7 +382,7 @@ pub(crate) fn transform_image(
 pub(super) struct ValidatedOutput {
     pub(super) format: OutputFormat,
     pub(super) mime_type: &'static str,
-    jpeg_quality: u8,
+    quality: u8,
     jpeg_background: [u8; 3],
 }
 
@@ -157,21 +402,21 @@ pub(super) fn validate_output(
         "webp" => (OutputFormat::WebP, "image/webp"),
         _ => return Err("outputFormat must be png, jpeg, or webp".to_string()),
     };
-    if !matches!(format, OutputFormat::Jpeg) && request.quality.is_some() {
-        return Err("quality is only supported for JPEG output".to_string());
+    if matches!(format, OutputFormat::Png) && request.quality.is_some() {
+        return Err("quality is only supported for JPEG or WebP output".to_string());
     }
     if !matches!(format, OutputFormat::Jpeg) && request.jpeg_background.is_some() {
         return Err("jpegBackground is only supported for JPEG output".to_string());
     }
-    let jpeg_quality = request.quality.unwrap_or(90);
-    if !(1..=100).contains(&jpeg_quality) {
-        return Err("JPEG quality must be between 1 and 100".to_string());
+    let quality = request.quality.unwrap_or(90);
+    if !(1..=100).contains(&quality) {
+        return Err("quality must be between 1 and 100".to_string());
     }
     let jpeg_background = parse_hex_color(request.jpeg_background.as_deref().unwrap_or("#ffffff"))?;
     Ok(ValidatedOutput {
         format,
         mime_type,
-        jpeg_quality,
+        quality,
         jpeg_background,
     })
 }
@@ -400,7 +645,7 @@ pub(super) fn encode_image_with_icc(
         OutputFormat::Jpeg => {
             let rgb = flatten_to_rgb(image, output.jpeg_background);
             let mut encoded = Vec::new();
-            let mut encoder = JpegEncoder::new_with_quality(&mut encoded, output.jpeg_quality);
+            let mut encoder = JpegEncoder::new_with_quality(&mut encoded, output.quality);
             if let Some(profile) = icc_profile {
                 encoder
                     .set_icc_profile(profile.to_vec())
@@ -416,20 +661,25 @@ pub(super) fn encode_image_with_icc(
                 .map_err(|error| format!("failed to encode JPEG transform output: {error}"))?;
             Ok(encoded)
         }
-        OutputFormat::WebP => encode_webp_with_icc(image, icc_profile).map_err(|error| {
-            error.replace(
-                "failed to encode WebP image",
-                "failed to encode WebP transform output",
-            )
-        }),
+        OutputFormat::WebP => {
+            encode_webp_with_icc(image, output.quality, icc_profile).map_err(|error| {
+                error.replace(
+                    "failed to encode WebP image",
+                    "failed to encode WebP transform output",
+                )
+            })
+        }
     }
 }
 
 fn encode_webp(image: &DynamicImage) -> MediaResult<Vec<u8>> {
-    encode_webp_with_icc(image, None)
+    encode_lossless_webp_with_icc(image, None)
 }
 
-fn encode_webp_with_icc(image: &DynamicImage, icc_profile: Option<&[u8]>) -> MediaResult<Vec<u8>> {
+fn encode_lossless_webp_with_icc(
+    image: &DynamicImage,
+    icc_profile: Option<&[u8]>,
+) -> MediaResult<Vec<u8>> {
     let rgba = image.to_rgba8();
     let mut encoded = Vec::new();
     let mut encoder = WebPEncoder::new_lossless(&mut encoded);
@@ -447,6 +697,124 @@ fn encode_webp_with_icc(image: &DynamicImage, icc_profile: Option<&[u8]>) -> Med
         )
         .map_err(|error| format!("failed to encode WebP image: {error}"))?;
     Ok(encoded)
+}
+
+fn encode_webp_with_icc(
+    image: &DynamicImage,
+    quality: u8,
+    icc_profile: Option<&[u8]>,
+) -> MediaResult<Vec<u8>> {
+    let rgba = image.to_rgba8();
+    let encoded = LossyWebPEncoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
+        .encode_simple(false, f32::from(quality))
+        .map_err(|error| format!("failed to encode WebP image: {error:?}"))?;
+    match icc_profile {
+        Some(profile) => attach_webp_icc(&encoded, profile, rgba.width(), rgba.height()),
+        None => Ok(encoded.to_vec()),
+    }
+}
+
+fn webp_chunk(fourcc: &[u8; 4], payload: &[u8]) -> MediaResult<Vec<u8>> {
+    let payload_size = u32::try_from(payload.len())
+        .map_err(|_| "WebP metadata chunk exceeds its size limit".to_string())?;
+    let mut chunk = Vec::with_capacity(8 + payload.len() + payload.len() % 2);
+    chunk.extend_from_slice(fourcc);
+    chunk.extend_from_slice(&payload_size.to_le_bytes());
+    chunk.extend_from_slice(payload);
+    if !payload.len().is_multiple_of(2) {
+        chunk.push(0);
+    }
+    Ok(chunk)
+}
+
+fn attach_webp_icc(
+    encoded: &[u8],
+    icc_profile: &[u8],
+    width: u32,
+    height: u32,
+) -> MediaResult<Vec<u8>> {
+    if encoded.len() < 12 || &encoded[..4] != b"RIFF" || &encoded[8..12] != b"WEBP" {
+        return Err("failed to preserve WebP ICC profile: invalid WebP container".to_string());
+    }
+    if icc_profile.len() > MAX_ICC_PROFILE_BYTES {
+        return Err("failed to preserve WebP ICC profile: profile is too large".to_string());
+    }
+    let declared_size = u32::from_le_bytes([encoded[4], encoded[5], encoded[6], encoded[7]]);
+    if declared_size as usize + 8 != encoded.len() {
+        return Err("failed to preserve WebP ICC profile: invalid RIFF size".to_string());
+    }
+
+    let mut chunks = encoded[12..].to_vec();
+    let mut offset = 0usize;
+    let mut vp8x_end = None;
+    while offset < chunks.len() {
+        if chunks.len() - offset < 8 {
+            return Err("failed to preserve WebP ICC profile: truncated chunk".to_string());
+        }
+        let fourcc = &chunks[offset..offset + 4];
+        let payload_size = u32::from_le_bytes([
+            chunks[offset + 4],
+            chunks[offset + 5],
+            chunks[offset + 6],
+            chunks[offset + 7],
+        ]) as usize;
+        let padded_size = payload_size
+            .checked_add(payload_size % 2)
+            .ok_or_else(|| "failed to preserve WebP ICC profile: invalid chunk size".to_string())?;
+        let end = offset
+            .checked_add(8)
+            .and_then(|value| value.checked_add(padded_size))
+            .ok_or_else(|| "failed to preserve WebP ICC profile: invalid chunk size".to_string())?;
+        if end > chunks.len() {
+            return Err("failed to preserve WebP ICC profile: truncated chunk".to_string());
+        }
+        if fourcc == b"ICCP" {
+            return Err("failed to preserve WebP ICC profile: duplicate ICC chunk".to_string());
+        }
+        if fourcc == b"VP8X" {
+            if payload_size != 10 || vp8x_end.is_some() {
+                return Err("failed to preserve WebP ICC profile: invalid VP8X chunk".to_string());
+            }
+            chunks[offset + 8] |= 1 << 5;
+            vp8x_end = Some(end);
+        }
+        offset = end;
+    }
+
+    let icc_chunk = webp_chunk(b"ICCP", icc_profile)?;
+    let body = if let Some(insert_at) = vp8x_end {
+        let mut body = Vec::with_capacity(chunks.len() + icc_chunk.len());
+        body.extend_from_slice(&chunks[..insert_at]);
+        body.extend_from_slice(&icc_chunk);
+        body.extend_from_slice(&chunks[insert_at..]);
+        body
+    } else {
+        if width == 0 || height == 0 || width > (1 << 24) || height > (1 << 24) {
+            return Err("failed to preserve WebP ICC profile: invalid canvas size".to_string());
+        }
+        let mut vp8x = Vec::with_capacity(10);
+        vp8x.push(1 << 5);
+        vp8x.extend_from_slice(&[0; 3]);
+        vp8x.extend_from_slice(&(width - 1).to_le_bytes()[..3]);
+        vp8x.extend_from_slice(&(height - 1).to_le_bytes()[..3]);
+        let vp8x_chunk = webp_chunk(b"VP8X", &vp8x)?;
+        let mut body = Vec::with_capacity(vp8x_chunk.len() + icc_chunk.len() + chunks.len());
+        body.extend_from_slice(&vp8x_chunk);
+        body.extend_from_slice(&icc_chunk);
+        body.extend_from_slice(&chunks);
+        body
+    };
+    let riff_size = body
+        .len()
+        .checked_add(4)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| "failed to preserve WebP ICC profile: output is too large".to_string())?;
+    let mut output = Vec::with_capacity(body.len() + 12);
+    output.extend_from_slice(b"RIFF");
+    output.extend_from_slice(&riff_size.to_le_bytes());
+    output.extend_from_slice(b"WEBP");
+    output.extend_from_slice(&body);
+    Ok(output)
 }
 
 fn encode_png_with_icc(
@@ -645,6 +1013,111 @@ mod tests {
         assert_eq!(&preview[8..12], b"WEBP");
         assert_eq!(preview, cached_preview);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn output_branches_apply_crop_and_disclaimer_independently() {
+        let source =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(256, 128, Rgba([255, 255, 255, 255])));
+        let mut encoded = Cursor::new(Vec::new());
+        source.write_to(&mut encoded, ImageFormat::Png).unwrap();
+        let source_bytes = encoded.into_inner();
+        let png_branch = MediaImageOutputBranch {
+            id: "png-output".to_string(),
+            output_node_id: "png-output".to_string(),
+            format: "png".to_string(),
+            quality: 95,
+            jpeg_background: "#ffffff".to_string(),
+            operations: vec![MediaImagePostProcessingOperation::Crop {
+                node_id: "crop-png".to_string(),
+                x: 16,
+                y: 8,
+                width: 120,
+                height: 80,
+            }],
+        };
+        let webp_branch = MediaImageOutputBranch {
+            id: "webp-output".to_string(),
+            output_node_id: "webp-output".to_string(),
+            format: "webp".to_string(),
+            quality: 90,
+            jpeg_background: "#ffffff".to_string(),
+            operations: vec![MediaImagePostProcessingOperation::TextOverlay {
+                node_id: "disclaimer-overlay".to_string(),
+                text: "AI Image Disclaimer".to_string(),
+                position: "bottom-right".to_string(),
+                margin: 8,
+                font_size: 8,
+                color: "#ffffff".to_string(),
+                background_color: "#000000".to_string(),
+                background_opacity: 0.55,
+            }],
+        };
+
+        let png = process_image_output_branch(&source_bytes, &png_branch).unwrap();
+        let webp = process_image_output_branch(&source_bytes, &webp_branch).unwrap();
+        let png_pixels = image::load_from_memory(&png.bytes).unwrap().to_rgba8();
+        let webp_pixels = image::load_from_memory(&webp.bytes).unwrap().to_rgba8();
+
+        assert_eq!(
+            (png.width, png.height, png.mime_type),
+            (120, 80, "image/png")
+        );
+        assert_eq!(
+            (webp.width, webp.height, webp.mime_type),
+            (256, 128, "image/webp")
+        );
+        assert!(png_pixels
+            .pixels()
+            .all(|pixel| *pixel == Rgba([255, 255, 255, 255])));
+        assert_eq!(*webp_pixels.get_pixel(0, 0), Rgba([255, 255, 255, 255]));
+        assert!(webp_pixels
+            .enumerate_pixels()
+            .any(|(x, y, pixel)| x > 80 && y > 100 && *pixel != Rgba([255, 255, 255, 255])));
+    }
+
+    #[test]
+    fn webp_output_branch_applies_quality() {
+        let source = RgbaImage::from_fn(192, 128, |x, y| {
+            Rgba([
+                ((x * 37 + y * 17) % 256) as u8,
+                ((x * 11 + y * 53) % 256) as u8,
+                ((x * 71 + y * 29) % 256) as u8,
+                255,
+            ])
+        });
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(source.clone())
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        let source_bytes = encoded.into_inner();
+        let branch = |quality| MediaImageOutputBranch {
+            id: format!("webp-{quality}"),
+            output_node_id: format!("webp-{quality}"),
+            format: "webp".to_string(),
+            quality,
+            jpeg_background: "#ffffff".to_string(),
+            operations: Vec::new(),
+        };
+
+        let low = process_image_output_branch(&source_bytes, &branch(15)).unwrap();
+        let high = process_image_output_branch(&source_bytes, &branch(95)).unwrap();
+        let low_pixels = image::load_from_memory(&low.bytes).unwrap().to_rgba8();
+        let high_pixels = image::load_from_memory(&high.bytes).unwrap().to_rgba8();
+        let error = |actual: &RgbaImage| {
+            source
+                .pixels()
+                .zip(actual.pixels())
+                .map(|(expected, actual)| {
+                    (0..3)
+                        .map(|channel| expected[channel].abs_diff(actual[channel]) as u64)
+                        .sum::<u64>()
+                })
+                .sum::<u64>()
+        };
+
+        assert_ne!(low.bytes, high.bytes);
+        assert!(error(&high_pixels) < error(&low_pixels));
     }
 
     #[test]

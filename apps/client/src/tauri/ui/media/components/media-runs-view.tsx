@@ -1,5 +1,6 @@
 import {
   Ban,
+  CircleX,
   Clock3,
   CloudCog,
   Cpu,
@@ -36,13 +37,18 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { SearchField } from "../../components/ui/search-field";
 import { cn } from "../../lib/utils";
 import { readMediaAssetReferencePreview } from "../media-runtime";
+import type { MediaGenerationRecipeSnapshot } from "../media-generation-queue";
+import { formatMediaImageRecipeOutput } from "../media-generation-recipe";
 import { MediaPagination } from "./media-pagination";
+import { MediaAssetPreview } from "./media-visual-preview";
 
 const RUN_HISTORY_PAGE_SIZE = 30;
 
 interface MediaRunsViewProps {
   runs: readonly MediaRunRecord[];
+  assets: readonly MediaAssetRecord[];
   selectedRun: MediaRunDetail | null;
+  selectedRecipe: MediaGenerationRecipeSnapshot | null;
   onCreate: () => void;
   onSelect: (runId: string) => void;
   onCancel: (runId: string) => void;
@@ -55,6 +61,7 @@ interface MediaRunsViewProps {
   onResolveHumanReview: (request: MediaHumanReviewDecisionRequest) => void;
   humanReviewPending: boolean;
   onInspectInFlow: (run: MediaRunDetail) => void;
+  onReuseSettings: (runId: string) => void;
   onRefresh: () => void;
 }
 
@@ -72,9 +79,27 @@ const STATUS_STYLES: Record<MediaRunRecord["status"], string> = {
   canceled: "border-slate-500/50 text-slate-400",
 };
 
+const EXECUTOR_LABELS: Record<MediaRunDetail["executor"], string> = {
+  "deterministic-fixture": "Fixture",
+  "openai-image-api": "OpenAI image generation",
+  "local-import": "Local import",
+  "local-transform": "Local transform",
+  "local-image-flow": "Local image generation",
+  "local-analysis": "Local analysis",
+  "local-video": "Local video generation",
+  "local-wan-video": "Local WAN video generation",
+  "mock-remote-provider": "Remote adapter",
+  "svg-ai-pipeline": "SVG generation",
+};
+
 const isRuntimeRun = (run: MediaRunRecord): run is MediaRuntimeRunRecord => {
   return "executor" in run;
 };
+
+const canCancelRun = (run: MediaRunDetail): boolean =>
+  run.status === "queued" ||
+  (run.executor !== "openai-image-api" &&
+    ["running", "waiting-for-review"].includes(run.status));
 
 const formatCreatedAt = (createdAt: string): string => {
   const timestamp = Date.parse(createdAt);
@@ -153,6 +178,74 @@ const ReviewAssetPreview = ({
   );
 };
 
+export const MediaActivityPreview = ({
+  run,
+  assets,
+}: {
+  run: MediaRunRecord;
+  assets: readonly MediaAssetRecord[];
+}): JSX.Element => {
+  const asset = assets.find(
+    (candidate) => candidate.runId === run.id && candidate.kind !== "report",
+  );
+  if (asset) {
+    return (
+      <MediaAssetPreview
+        asset={asset}
+        className="h-full w-full"
+        fit="contain"
+      />
+    );
+  }
+  const hasReport = assets.some(
+    (candidate) => candidate.runId === run.id && candidate.kind === "report",
+  );
+  if (["queued", "running", "canceling"].includes(run.status)) {
+    return (
+      <div
+        role="status"
+        aria-label={`Generation ${run.status}`}
+        className="flex h-full items-center justify-center bg-slate-900"
+      >
+        <LoaderCircle className="h-6 w-6 animate-spin text-cyan-300" />
+      </div>
+    );
+  }
+  if (run.status === "completed" && hasReport) {
+    return (
+      <div
+        role="img"
+        aria-label="Report generated"
+        className="flex h-full items-center justify-center bg-slate-900"
+      >
+        <FileClock className="h-7 w-7 text-cyan-300" />
+      </div>
+    );
+  }
+  if (run.status === "failed" || run.status === "completed") {
+    return (
+      <div
+        role="img"
+        aria-label={
+          run.status === "failed" ? "Generation failed" : "Output unavailable"
+        }
+        className="flex h-full items-center justify-center bg-rose-950/35"
+      >
+        <CircleX className="h-8 w-8 text-rose-300" />
+      </div>
+    );
+  }
+  return (
+    <div
+      role="img"
+      aria-label="Generation canceled"
+      className="flex h-full items-center justify-center bg-slate-900"
+    >
+      <Ban className="h-7 w-7 text-slate-500" />
+    </div>
+  );
+};
+
 const RunInspector = ({
   run,
   onCancel,
@@ -162,6 +255,8 @@ const RunInspector = ({
   onResolveHumanReview,
   humanReviewPending,
   onInspectInFlow,
+  recipe,
+  onReuseSettings,
 }: {
   run: MediaRunDetail;
   onCancel: (runId: string) => void;
@@ -171,6 +266,8 @@ const RunInspector = ({
   onResolveHumanReview: MediaRunsViewProps["onResolveHumanReview"];
   humanReviewPending: boolean;
   onInspectInFlow: MediaRunsViewProps["onInspectInFlow"];
+  recipe: MediaGenerationRecipeSnapshot | null;
+  onReuseSettings: MediaRunsViewProps["onReuseSettings"];
 }): JSX.Element => {
   const pendingReview = run.humanReviews.find(
     (review) => review.status === "pending",
@@ -185,27 +282,14 @@ const RunInspector = ({
     setDecisionId(createReviewDecisionId());
     setRejectArmed(false);
   }, [pendingReview?.id, run.id]);
-  const canCancel =
-    run.executor !== "openai-image-api" &&
-    ["queued", "running", "waiting-for-review"].includes(run.status);
+  const canCancel = canCancelRun(run);
   const canRetry =
     run.executor === "deterministic-fixture" &&
     ["failed", "canceled"].includes(run.status) &&
     run.humanReviews.length === 0;
   const providerJob = run.providerJobs.at(-1);
   const planSnapshot = run.planSnapshot;
-  const executorLabel =
-    run.executor === "deterministic-fixture"
-      ? "Fixture"
-      : run.executor === "openai-image-api"
-        ? "OpenAI image generation"
-        : run.executor === "mock-remote-provider"
-          ? "Remote adapter"
-          : run.executor === "local-transform"
-            ? "Local transform"
-            : run.executor === "local-analysis"
-              ? "Local analysis"
-              : "Local import";
+  const executorLabel = EXECUTOR_LABELS[run.executor];
   const reviewAssets = pendingReview
     ? pendingReview.candidateAssetIds
         .map((assetId) => run.assets.find((asset) => asset.id === assetId))
@@ -311,16 +395,86 @@ const RunInspector = ({
         </div>
       </div>
 
-      {planSnapshot ? (
+      {run.flowRevisionId ? (
         <Button
           type="button"
           variant="outline"
           onClick={() => onInspectInFlow(run)}
           className="mt-3 w-full border-cyan-400/20 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10"
         >
-          <Workflow className="h-4 w-4" /> Inspect run on Flow canvas
+          <Workflow className="h-4 w-4" /> Inspect flow
         </Button>
       ) : null}
+
+      <section className="mt-4 rounded-xl border border-slate-800 bg-slate-950/35 p-3">
+        <h3 className="text-[11px] font-semibold text-slate-200">Settings</h3>
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">
+          <div>
+            <dt className="text-slate-600">Mode</dt>
+            <dd className="capitalize text-slate-300">
+              {recipe?.mode ?? "Saved flow"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-600">Type</dt>
+            <dd className="uppercase text-slate-300">
+              {recipe?.target ?? "media"}
+            </dd>
+          </div>
+          <div className="col-span-2">
+            <dt className="text-slate-600">Flow</dt>
+            <dd className="truncate text-slate-300">
+              {recipe
+                ? `${recipe.flowName} · revision ${recipe.flowRevisionNumber}`
+                : run.flowName}
+            </dd>
+          </div>
+          <div className="col-span-2">
+            <dt className="text-slate-600">Model</dt>
+            <dd className="truncate text-slate-300">
+              {recipe?.modelLabel ?? run.modelLabel}
+            </dd>
+          </div>
+          {recipe?.imageSettings ? (
+            <div className="col-span-2">
+              <dt className="text-slate-600">Output</dt>
+              <dd className="text-slate-300">
+                {formatMediaImageRecipeOutput(
+                  recipe.imageSettings,
+                  recipe.outputBranches,
+                )}
+              </dd>
+            </div>
+          ) : null}
+          {recipe?.videoSettings ? (
+            <div className="col-span-2">
+              <dt className="text-slate-600">Video</dt>
+              <dd className="text-slate-300">
+                {recipe.videoSettings.resolution} ·{" "}
+                {recipe.videoSettings.numFrames} frames ·{" "}
+                {recipe.videoSettings.fps} fps
+              </dd>
+            </div>
+          ) : null}
+          {recipe && recipe.modelAddons.length > 0 ? (
+            <div className="col-span-2">
+              <dt className="text-slate-600">Add-ons</dt>
+              <dd className="text-slate-300">
+                {recipe.modelAddons.map((addon) => addon.addonId).join(", ")}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onReuseSettings(run.id)}
+          className="mt-3 w-full"
+        >
+          Reuse settings
+        </Button>
+      </section>
 
       {run.failure ? (
         <section
@@ -882,7 +1036,9 @@ const RunInspector = ({
 
 export const MediaRunsView = ({
   runs,
+  assets,
   selectedRun,
+  selectedRecipe,
   onCreate,
   onSelect,
   onCancel,
@@ -892,6 +1048,7 @@ export const MediaRunsView = ({
   onResolveHumanReview,
   humanReviewPending,
   onInspectInFlow,
+  onReuseSettings,
   onRefresh,
 }: MediaRunsViewProps): JSX.Element => {
   const [query, setQuery] = useState("");
@@ -1026,9 +1183,7 @@ export const MediaRunsView = ({
         palette: "visible",
         availability: () => {
           const run = runsCommandStateRef.current.selectedRun;
-          return run &&
-            run.executor !== "openai-image-api" &&
-            ["queued", "running", "waiting-for-review"].includes(run.status)
+          return run && canCancelRun(run)
             ? { state: "enabled" }
             : {
                 state: "disabled",
@@ -1154,6 +1309,9 @@ export const MediaRunsView = ({
                   const selected = selectedRun?.id === run.id;
                   const content = (
                     <>
+                      <div className="mb-4 aspect-[3/1] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+                        <MediaActivityPreview run={run} assets={assets} />
+                      </div>
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1256,6 +1414,8 @@ export const MediaRunsView = ({
                 onResolveHumanReview={onResolveHumanReview}
                 humanReviewPending={humanReviewPending}
                 onInspectInFlow={onInspectInFlow}
+                recipe={selectedRecipe}
+                onReuseSettings={onReuseSettings}
               />
             ) : null}
           </div>

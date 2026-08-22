@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { MediaModelAddonDescriptor } from "./contracts.js";
 import {
   createMediaModelAddonSelection,
+  inspectMediaModelAddonCompatibility,
+  mediaModelAddonSelectionsEqual,
   matchesMediaModelAddonQuery,
   promptContainsMediaModelAddonTrigger,
+  reconcileMediaModelAddonSelections,
 } from "./model-addons.js";
+import { createMediaModelCatalogSnapshot } from "./catalog.js";
 
 const addon: MediaModelAddonDescriptor = {
   id: "addon:flux-character-style",
@@ -81,6 +85,113 @@ describe("media model add-on selection", () => {
     ).toBe(true);
     expect(
       promptContainsMediaModelAddonTrigger("A landscape at sunset", addon),
+    ).toBe(false);
+  });
+});
+
+describe("media model add-on compatibility", () => {
+  const fluxModel = createMediaModelCatalogSnapshot({
+    isOpenAiConfigured: false,
+    isLocalFluxInstalled: true,
+  }).models.find((model) => model.id === "local:flux-2-klein-4b")!;
+
+  it("accepts only a high-confidence tensor match for the selected architecture", () => {
+    expect(inspectMediaModelAddonCompatibility(fluxModel, addon).status).toBe(
+      "compatible",
+    );
+    expect(
+      inspectMediaModelAddonCompatibility(fluxModel, {
+        ...addon,
+        architectureConfidence: "medium",
+      }).status,
+    ).toBe("incompatible");
+    expect(
+      inspectMediaModelAddonCompatibility(fluxModel, {
+        ...addon,
+        architecture: "krea-2",
+        baseModelHint: "FLUX.2 Klein",
+      }).status,
+    ).toBe("incompatible");
+  });
+
+  it("uses tensor evidence instead of a stale publisher hint", () => {
+    expect(
+      inspectMediaModelAddonCompatibility(fluxModel, {
+        ...addon,
+        baseModelHint: "Stable Diffusion XL",
+      }).status,
+    ).toBe("compatible");
+  });
+
+  it("removes stale, duplicate, and over-capacity selections", () => {
+    const singleLoraModel = {
+      ...fluxModel,
+      addonCapabilities: fluxModel.addonCapabilities.map((capability) =>
+        capability.kind === "lora"
+          ? { ...capability, maxActive: 1 }
+          : capability,
+      ),
+    };
+    const dualAddonModel = {
+      ...singleLoraModel,
+      addonCapabilities: [
+        ...singleLoraModel.addonCapabilities.filter(
+          (capability) => capability.kind !== "textual-inversion",
+        ),
+        {
+          kind: "textual-inversion" as const,
+          targetComponents: ["text-encoder"] as const,
+          maxActive: 1,
+          supportsSeparateComponentStrengths: false,
+          supportsDenoisingSchedules: false,
+        },
+      ],
+    };
+    const secondAddon = {
+      ...addon,
+      id: "addon:flux-character-detail",
+      displayName: "Character Detail",
+      digest: "c".repeat(64),
+    };
+    const invalidAddon = {
+      ...addon,
+      id: "addon:unknown",
+      architectureConfidence: "unknown" as const,
+      digest: "d".repeat(64),
+    };
+    const firstSelection = createMediaModelAddonSelection(addon);
+
+    const reconciled = reconcileMediaModelAddonSelections(
+      dualAddonModel,
+      [addon, secondAddon, invalidAddon],
+      [
+        {
+          kind: "textual-inversion",
+          addonId: addon.id,
+          enabled: true,
+          token: "<invalid>",
+          placement: "positive",
+        },
+        firstSelection,
+        firstSelection,
+        createMediaModelAddonSelection(secondAddon),
+        createMediaModelAddonSelection(invalidAddon),
+      ],
+    );
+
+    expect(reconciled).toEqual([firstSelection]);
+    expect(mediaModelAddonSelectionsEqual(reconciled, [firstSelection])).toBe(
+      true,
+    );
+    expect(
+      mediaModelAddonSelectionsEqual(
+        reconciled,
+        reconciled.map((selection) =>
+          selection.kind === "lora"
+            ? { ...selection, modelStrength: 0.5 }
+            : selection,
+        ),
+      ),
     ).toBe(false);
   });
 });

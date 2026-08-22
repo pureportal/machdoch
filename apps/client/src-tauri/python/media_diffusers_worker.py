@@ -27,17 +27,15 @@ import traceback
 import types
 from typing import Any
 
-from PIL import Image
+import numpy as np
+from PIL import Image, ImageOps
 
-WORKER_VERSION = "media-diffusers-worker/1.50.0"
+WORKER_VERSION = "media-diffusers-worker/1.56.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
-KREA_IDENTITY_EDIT_V1_2_R64_DIGEST = (
-    "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423"
-)
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
 LTX_13B_MIN_MEMORY_BYTES = 15 * 1024**3
 FRAMEPACK_MIN_MEMORY_BYTES = 6 * 1024**3
@@ -54,6 +52,9 @@ MAX_DECODED_LOOP_NORMALIZED_JERK = 0.30
 LOOP_LOW_TRANSITION_MEDIAN_RATIO = 0.35
 MAX_PING_PONG_ENDPOINT_FEATHER_MAE = 6.0
 MAX_PING_PONG_ENDPOINT_FEATHER_PASSES = 3
+REFERENCE_EDIT_PIXEL_DELTA_THRESHOLD = 8.0
+REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO = 0.01
+REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE = 3.0
 LTX_DISTILLED_TIMESTEPS = (1000, 993, 987, 981, 975, 909, 725, 0.03)
 LTX_REFINEMENT_TIMESTEPS = (1000, 909, 725, 421, 0)
 LORA_TENSOR_PAIRS = (
@@ -82,6 +83,22 @@ SUPPORTED_ARCHITECTURES = (
     "ltx-video",
     "wan-2.2-ti2v",
 )
+NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
+    {
+        "flux-2",
+        "stable-diffusion-1",
+        "stable-diffusion-2",
+        "stable-diffusion-xl",
+        "flux-1",
+    }
+)
+NATIVE_REFERENCE_ROLES = {
+    "flux-2": frozenset({"subject", "style", "composition", "palette", "detail"}),
+    "stable-diffusion-1": frozenset({"composition"}),
+    "stable-diffusion-2": frozenset({"composition"}),
+    "stable-diffusion-xl": frozenset({"composition"}),
+    "flux-1": frozenset({"composition"}),
+}
 REQUIRED_PACKAGES = (
     "torch",
     "diffusers",
@@ -95,6 +112,7 @@ REQUIRED_PACKAGES = (
     "imageio-ffmpeg",
     "opencv-python-headless",
 )
+PROBED_PACKAGES = (*REQUIRED_PACKAGES, "torchvision")
 ACCEPTED_PACKAGE_VERSIONS = {
     # Torch is selected with the accelerator bundle. AMD's current supported
     # Windows wheel deliberately trails the generic runtime contract.
@@ -110,6 +128,26 @@ ACCEPTED_PACKAGE_VERSIONS = {
     "imageio-ffmpeg": ("0.6.0",),
     "opencv-python-headless": ("4.13.0.92",),
 }
+BASE_CAPABILITIES = (
+    "lora",
+    "textual-inversion",
+    "multi-lora",
+    "local-image-edit",
+    "masked-region-inpainting",
+    "openpose-controlnet",
+    "image-to-video",
+    "start-end-to-video",
+    "vp9-alpha",
+    "alpha-video",
+    "temporal-chroma-matte",
+    "video-quality-presets",
+    "non-looping-video",
+    "seamless-video-loop",
+    "video-composite",
+    "source-anchored-articulated-loop",
+    "source-anchored-wind-fabric",
+    "periodic-wind-streaks",
+)
 
 # Never resolve model components or custom Python code over the network.
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -124,12 +162,16 @@ class WorkerError(Exception):
 
 def _package_versions() -> dict[str, str | None]:
     versions: dict[str, str | None] = {}
-    for name in REQUIRED_PACKAGES:
+    for name in PROBED_PACKAGES:
         try:
             versions[name.lower()] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             versions[name.lower()] = None
     return versions
+
+
+def _runtime_capabilities(_versions: dict[str, str | None]) -> list[str]:
+    return list(BASE_CAPABILITIES)
 
 
 def _runtime() -> tuple[Any, Any]:
@@ -182,14 +224,39 @@ def _device(torch: Any) -> tuple[str, str, int | None]:
     return "cpu", platform.processor() or platform.machine(), None
 
 
+def _configure_amd_convolution_backend(torch: Any, device: str) -> str:
+    if device != "cuda" or getattr(torch.version, "hip", None) is None:
+        return "default"
+    properties = torch.cuda.get_device_properties(torch.cuda.current_device())
+    architecture = str(getattr(properties, "gcnArchName", "")).split(":", 1)[0]
+    if architecture.startswith("gfx120"):
+        torch.backends.cudnn.enabled = False
+        return "native"
+    return "miopen"
+
+
+def _pipeline_dtype(torch: Any, device: str) -> Any:
+    if device == "cpu":
+        return torch.float32
+    if (
+        device == "cuda"
+        and getattr(torch.version, "hip", None) is None
+        and torch.cuda.is_bf16_supported()
+    ):
+        return torch.bfloat16
+    return torch.float16
+
+
 def probe() -> dict[str, Any]:
     versions = _package_versions()
+    capabilities = _runtime_capabilities(versions)
     physical_memory = _physical_memory_bytes()
-    missing = [name for name, version in versions.items() if version is None]
+    missing = [name for name in REQUIRED_PACKAGES if versions[name.lower()] is None]
     mismatched = [
-        f"{name}={version} (expected one of {', '.join(ACCEPTED_PACKAGE_VERSIONS[name])})"
-        for name, version in versions.items()
-        if version is not None and version not in ACCEPTED_PACKAGE_VERSIONS[name]
+        f"{name}={versions[name.lower()]} (expected one of {', '.join(ACCEPTED_PACKAGE_VERSIONS[name.lower()])})"
+        for name in REQUIRED_PACKAGES
+        if versions[name.lower()] is not None
+        and versions[name.lower()] not in ACCEPTED_PACKAGE_VERSIONS[name.lower()]
     ]
     if missing or mismatched:
         problems = []
@@ -208,25 +275,7 @@ def probe() -> dict[str, Any]:
             "deviceMemoryBytes": None,
             "physicalMemoryBytes": physical_memory,
             "architectures": list(SUPPORTED_ARCHITECTURES),
-            "capabilities": [
-                "lora",
-                "textual-inversion",
-                "multi-lora",
-                "local-image-edit",
-                "krea2-grounded-reference-edit",
-                "image-to-video",
-                "start-end-to-video",
-                "vp9-alpha",
-                "alpha-video",
-                "temporal-chroma-matte",
-                "video-quality-presets",
-                "non-looping-video",
-                "seamless-video-loop",
-                "video-composite",
-                "source-anchored-articulated-loop",
-                "source-anchored-wind-fabric",
-                "periodic-wind-streaks",
-            ],
+            "capabilities": capabilities,
             "diagnostic": "Pinned Python runtime is not ready: " + "; ".join(problems),
         }
     try:
@@ -244,25 +293,7 @@ def probe() -> dict[str, Any]:
             "deviceMemoryBytes": None,
             "physicalMemoryBytes": physical_memory,
             "architectures": list(SUPPORTED_ARCHITECTURES),
-            "capabilities": [
-                "lora",
-                "textual-inversion",
-                "multi-lora",
-                "local-image-edit",
-                "krea2-grounded-reference-edit",
-                "image-to-video",
-                "start-end-to-video",
-                "vp9-alpha",
-                "alpha-video",
-                "temporal-chroma-matte",
-                "video-quality-presets",
-                "non-looping-video",
-                "seamless-video-loop",
-                "video-composite",
-                "source-anchored-articulated-loop",
-                "source-anchored-wind-fabric",
-                "periodic-wind-streaks",
-            ],
+            "capabilities": capabilities,
             "diagnostic": str(error),
         }
     return {
@@ -276,25 +307,7 @@ def probe() -> dict[str, Any]:
         "deviceMemoryBytes": memory,
         "physicalMemoryBytes": physical_memory,
         "architectures": list(SUPPORTED_ARCHITECTURES),
-        "capabilities": [
-            "lora",
-            "textual-inversion",
-            "multi-lora",
-            "local-image-edit",
-            "krea2-grounded-reference-edit",
-            "image-to-video",
-            "start-end-to-video",
-            "vp9-alpha",
-            "alpha-video",
-            "temporal-chroma-matte",
-            "video-quality-presets",
-            "non-looping-video",
-            "seamless-video-loop",
-            "video-composite",
-            "source-anchored-articulated-loop",
-            "source-anchored-wind-fabric",
-            "periodic-wind-streaks",
-        ],
+        "capabilities": capabilities,
         "diagnostic": "Pinned local Diffusers imports succeeded.",
     }
 
@@ -329,6 +342,24 @@ def _fresh_output_directory(value: Any) -> Path:
     if any(path.iterdir()):
         raise WorkerError("outputDirectory must be empty")
     return path.resolve(strict=True)
+
+
+def _validate_edit_mask_request(
+    edit_mask: Any,
+    base_image: Any,
+    output_format: str,
+    architecture: str,
+) -> None:
+    if edit_mask is None:
+        return
+    if base_image is None:
+        raise WorkerError("editMask requires baseImagePath")
+    if output_format != "png":
+        raise WorkerError("editMask requires lossless PNG output")
+    if architecture not in NATIVE_MASKED_EDIT_ARCHITECTURES:
+        raise WorkerError(
+            f"{architecture} does not implement native masked image editing"
+        )
 
 
 def _krea_runtime_paths(config_path: Path) -> tuple[Path, Path]:
@@ -931,181 +962,20 @@ def _encode_krea_prompt(torch: Any, text_root: Path, prompt: str) -> tuple[Any, 
     return hidden, mask
 
 
-def _encode_krea_grounded_prompt(
+def _load_pipeline(
+    diffusers: Any,
     torch: Any,
-    text_root: Path,
-    prompt: str,
-    reference_path: Path,
-    grounding_pixels: int,
-) -> tuple[Any, Any, dict[str, Any]]:
-    """Run KREA Edit's training-matched image-plus-instruction Qwen path."""
-    from PIL import Image
-    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
-
-    if not 384 <= grounding_pixels <= 1_024:
-        raise WorkerError("groundingPixels must be between 384 and 1024")
-    source_digest = _sha256_file(reference_path)
-    cache_key = hashlib.sha256(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "engine": "qwen3-vl-grounded-krea-edit-v1",
-                "textRevision": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
-                "sourceDigest": source_digest,
-                "prompt": prompt,
-                "groundingPixels": grounding_pixels,
-            },
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-    cache_directory = text_root.parent / "grounding-cache"
-    cache_path = cache_directory / f"{cache_key}.safetensors"
-    if cache_path.is_file() and not cache_path.is_symlink():
-        from safetensors.torch import load_file
-
-        cached = load_file(str(cache_path), device="cpu")
-        hidden = cached.get("hidden")
-        mask_tensor = cached.get("mask")
-        if (
-            hidden is not None
-            and mask_tensor is not None
-            and tuple(hidden.shape) == (1, 512, 12, 2560)
-            and tuple(mask_tensor.shape) == (1, 512)
-        ):
-            with Image.open(reference_path) as opened:
-                original_size = opened.size
-            return hidden, mask_tensor.bool(), {
-                "engine": "qwen3-vl-grounded-krea-edit-v1",
-                "sourceDigest": source_digest,
-                "originalWidth": original_size[0],
-                "originalHeight": original_size[1],
-                "groundingPixels": grounding_pixels,
-                "device": "persistent-safe-tensor-cache",
-                "cacheHit": True,
-                "cacheKey": cache_key,
-                "sequenceLength": 512,
-                "selectedHiddenLayers": [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35],
-            }
-    processor = AutoProcessor.from_pretrained(
-        str(text_root),
-        local_files_only=True,
-        trust_remote_code=False,
-    )
-    encoder = Qwen3VLForConditionalGeneration.from_pretrained(
-        str(text_root),
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        use_safetensors=True,
-        trust_remote_code=False,
-        low_cpu_mem_usage=True,
-    )
-    with Image.open(reference_path) as opened:
-        grounded_image = opened.convert("RGB")
-    original_size = grounded_image.size
-    grounded_image.thumbnail(
-        (grounding_pixels, grounding_pixels),
-        Image.Resampling.LANCZOS,
-    )
-    grounded_size = grounded_image.size
-    prefix = (
-        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, "
-        "texture, quantity, text, spatial relationships of the objects and background:"
-        "<|im_end|>\n<|im_start|>user\n"
-    )
-    template = (
-        prefix
-        + "<|vision_start|><|image_pad|><|vision_end|>"
-        + prompt
-        + "<|im_end|>\n<|im_start|>assistant\n"
-    )
-    # The system and opening user turn are 34 tokens for this pinned tokenizer.
-    # Padding to 546 leaves the exact 512-token KREA transformer contract after
-    # the prefix is removed, while retaining image tokens inside that sequence.
-    prefix_tokens = 34
-    inputs = processor(
-        text=[template],
-        images=[grounded_image],
-        truncation=True,
-        padding="max_length",
-        max_length=512 + prefix_tokens,
-        return_tensors="pt",
-    )
-    # Qwen3-VL's multimodal RoPE path reaches a HIP gather kernel that can
-    # access-violate (rather than raise) in the pinned Windows ROCm 7.14 build.
-    # Text-only Qwen is unaffected. Run only this sequential grounding pass on
-    # the host on HIP; it is released before the FP8 KREA denoiser is loaded.
-    grounded_on_cpu = getattr(torch.version, "hip", None) is not None
-    device = (
-        torch.device("cpu")
-        if grounded_on_cpu
-        else torch.device(f"cuda:{torch.cuda.current_device()}")
-    )
-    encoder.to(device).eval().requires_grad_(False)
-    inputs = inputs.to(device)
-    with torch.inference_mode():
-        states = encoder(
-            **inputs,
-            output_hidden_states=True,
-        )
-        selected = [
-            states.hidden_states[index][:, prefix_tokens:].to(
-                device="cpu",
-                dtype=torch.bfloat16,
-            )
-            for index in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
-        ]
-    hidden = torch.stack(selected, dim=2)
-    mask = inputs.attention_mask[:, prefix_tokens:].to(device="cpu").bool()
-    if hidden.shape[1] != 512 or mask.shape[1] != 512:
-        raise WorkerError("KREA grounded encoder did not preserve its 512-token contract")
-    del states, encoder, processor, inputs, selected
-    gc.collect()
-    torch.cuda.empty_cache()
-    evidence = {
-        "engine": "qwen3-vl-grounded-krea-edit-v1",
-        "sourceDigest": source_digest,
-        "originalWidth": original_size[0],
-        "originalHeight": original_size[1],
-        "groundedWidth": grounded_size[0],
-        "groundedHeight": grounded_size[1],
-        "groundingPixels": grounding_pixels,
-        "device": "cpu-windows-rocm-safety-fallback" if grounded_on_cpu else "cuda",
-        "cacheHit": False,
-        "cacheKey": cache_key,
-        "sequenceLength": 512,
-        "selectedHiddenLayers": [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35],
-    }
-    from safetensors.torch import save_file
-
-    cache_directory.mkdir(parents=True, exist_ok=True)
-    temporary_cache = cache_directory / f".{cache_key}.{os.getpid()}.tmp"
-    save_file(
-        {
-            "hidden": hidden.contiguous(),
-            "mask": mask.to(dtype=torch.uint8).contiguous(),
-        },
-        str(temporary_cache),
-        metadata={
-            "schemaVersion": "1",
-            "engine": "qwen3-vl-grounded-krea-edit-v1",
-            "sourceDigest": source_digest,
-        },
-    )
-    os.replace(temporary_cache, cache_path)
-    return hidden, mask, evidence
-
-
-def _load_pipeline(diffusers: Any, torch: Any, model: dict[str, Any]) -> Any:
+    model: dict[str, Any],
+    *,
+    flux2_inpainting: bool = False,
+) -> Any:
     architecture = _required_text(model, "architecture", 64)
     if architecture not in SUPPORTED_ARCHITECTURES:
         raise WorkerError(f"Unsupported model architecture: {architecture}")
     package_kind = _required_text(model, "packageKind", 64)
     model_path = _absolute_existing_path(model.get("path"), file=package_kind == "single-file")
     device, _, _ = _device(torch)
-    dtype = torch.float32 if device == "cpu" else torch.float16
-    if device == "cuda" and torch.cuda.is_bf16_supported():
-        dtype = torch.bfloat16
+    dtype = _pipeline_dtype(torch, device)
     common = {
         "torch_dtype": dtype,
         "local_files_only": True,
@@ -1138,6 +1008,15 @@ def _load_pipeline(diffusers: Any, torch: Any, model: dict[str, Any]) -> Any:
         pipeline = pipeline_class.from_single_file(str(model_path), **common)
     else:
         raise WorkerError(f"Unsupported model package kind: {package_kind}")
+
+    if architecture == "flux-2" and flux2_inpainting:
+        pipeline_class = getattr(diffusers, "Flux2KleinInpaintPipeline", None)
+        if pipeline_class is None or not hasattr(pipeline_class, "from_pipe"):
+            raise WorkerError(
+                "The pinned Diffusers runtime does not expose Flux2KleinInpaintPipeline"
+            )
+        pipeline = pipeline_class.from_pipe(pipeline, torch_dtype=dtype)
+        pipeline.mask_processor.register_to_config(do_binarize=False)
 
     if architecture == "krea-2":
         pass
@@ -1967,6 +1846,26 @@ def _scheduled_lora_callback(
     return on_step_end
 
 
+def _chain_step_callbacks(callbacks: list[Any]) -> Any:
+    def on_step_end(
+        callback_pipeline: Any,
+        step_index: int,
+        timestep: Any,
+        callback_kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = callback_kwargs
+        for callback in callbacks:
+            current = callback(
+                callback_pipeline,
+                step_index,
+                timestep,
+                current,
+            )
+        return current
+
+    return on_step_end
+
+
 def _dimensions(
     architecture: str, aspect_ratio: str, policy: str
 ) -> tuple[int, int]:
@@ -2160,339 +2059,369 @@ def _validate_generated_pixels(
             )
 
 
-def _krea_edit_source_pixels(
-    source: Any,
-    target_width: int,
-    target_height: int,
-    fit_mode: str,
-) -> tuple[Any, dict[str, Any]]:
-    from PIL import Image, ImageOps
+def _conditioning_image(value: Any, field: str) -> tuple[Path, Image.Image]:
+    path = _absolute_existing_path(value, file=True)
+    if path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise WorkerError(f"{field} must be a supported image")
+    try:
+        image = Image.open(path).convert("RGB")
+        image.load()
+    except Exception as error:
+        raise WorkerError(f"{field} could not be decoded: {error}") from error
+    return path, image
 
-    if fit_mode not in ("fit", "crop"):
-        raise WorkerError("referenceFit must be fit or crop")
-    source = source.convert("RGB")
-    input_width, input_height = source.size
-    if fit_mode == "crop":
-        prepared = ImageOps.fit(
-            source,
-            (target_width, target_height),
-            method=Image.Resampling.BICUBIC,
-            centering=(0.5, 0.5),
+
+def _fit_conditioning_image(image: Image.Image, width: int, height: int) -> Image.Image:
+    fitted = ImageOps.fit(
+        image,
+        (width, height),
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, 0.5),
+    )
+    return fitted.convert("RGB")
+
+
+def _flux2_reference_prompt(
+    prompt: str,
+    *,
+    has_base_image: bool,
+    references: list[dict[str, Any]],
+    require_visible_change: bool,
+) -> tuple[str, list[dict[str, Any]]]:
+    sections = [prompt] if prompt else []
+    assignments: list[str] = []
+    bindings: list[dict[str, Any]] = []
+    image_index = 1
+    if has_base_image:
+        bindings.append({"imageIndex": image_index, "role": "base"})
+        assignments.append(
+            "Image 1 is the source image. Preserve its subject, pose, framing, "
+            "and every area outside the requested edit."
         )
-    else:
-        scale = min(target_height / input_height, target_width / input_width)
-        scaled_height = input_height * scale
-        scaled_width = input_width * scale
-        near_match = (
-            scaled_height >= target_height * 0.92
-            and scaled_width >= target_width * 0.92
-        )
-        if near_match:
-            prepared = ImageOps.fit(
-                source,
-                (target_width, target_height),
-                method=Image.Resampling.BICUBIC,
-                centering=(0.5, 0.5),
-            )
-        else:
-            # v1.2 was trained with a fit-inside source whose dimensions are
-            # floored to /16, then positioned at a centered integer token offset.
-            prepared_width = min(
-                max(16, int(scaled_width) // 16 * 16),
-                max(16, target_width // 16 * 16),
-            )
-            prepared_height = min(
-                max(16, int(scaled_height) // 16 * 16),
-                max(16, target_height // 16 * 16),
-            )
-            prepared = source.resize(
-                (prepared_width, prepared_height),
-                Image.Resampling.BICUBIC,
-            )
-    return prepared, {
-        "fitMode": fit_mode,
-        "sourceWidth": input_width,
-        "sourceHeight": input_height,
-        "encodedWidth": prepared.width,
-        "encodedHeight": prepared.height,
-        "targetWidth": target_width,
-        "targetHeight": target_height,
+        image_index += 1
+    role_assignments = {
+        "subject": "Use image {index} as the subject or identity reference for the requested edit.",
+        "style": "Use image {index} as the style reference: transfer its visual language, materials, and silhouette into the requested edit.",
+        "composition": "Use image {index} as the composition reference for the requested edit.",
+        "palette": "Use image {index} as the palette and material-color reference for the requested edit.",
+        "detail": "Use image {index} as the ornamental-detail reference: incorporate its accessories, textures, and fine motifs into the requested edit.",
     }
-
-
-def _patch_krea_transformer_for_edit(
-    pipeline: Any,
-    torch: Any,
-    source_tokens: Any,
-    source_grid: tuple[int, int],
-    target_grid: tuple[int, int],
-    reference_boost: float,
-) -> None:
-    """Prepend clean source tokens to Diffusers KREA's [text|target] stream."""
-    import torch.nn.functional as functional
-    from diffusers.models.modeling_outputs import Transformer2DModelOutput
-
-    transformer = pipeline.transformer
-    transformer._machdoch_edit_source_tokens = source_tokens
-    transformer._machdoch_edit_source_grid = source_grid
-    transformer._machdoch_edit_target_grid = target_grid
-    transformer._machdoch_edit_reference_boost = reference_boost
-
-    def edit_forward(
-        self: Any,
-        hidden_states: Any,
-        encoder_hidden_states: Any,
-        timestep: Any,
-        position_ids: Any,
-        encoder_attention_mask: Any = None,
-        attention_kwargs: dict[str, Any] | None = None,
-        return_dict: bool = True,
-    ) -> Any:
-        del position_ids, attention_kwargs
-        batch_size, target_sequence_length, _ = hidden_states.shape
-        text_sequence_length = encoder_hidden_states.shape[1]
-        source = self._machdoch_edit_source_tokens.to(
-            device=hidden_states.device,
-            dtype=hidden_states.dtype,
+    for reference in references:
+        role = reference["role"]
+        bindings.append({"imageIndex": image_index, "role": role})
+        assignments.append(role_assignments[role].format(index=image_index))
+        image_index += 1
+    if assignments:
+        sections.append("Input image assignments:\n" + "\n".join(assignments))
+    if require_visible_change:
+        sections.append(
+            "Make a visible, intentional change inside the requested edit region by "
+            "applying every assigned reference. Do not return an unchanged copy of image 1."
         )
-        if source.shape[0] != batch_size:
-            source = source[:1].expand(batch_size, -1, -1)
-        source_sequence_length = source.shape[1]
+    return "\n\n".join(sections), bindings
 
-        temporal_embedding = self.time_embed(
-            timestep,
-            dtype=hidden_states.dtype,
-        )
-        temporal_modulation = self.time_mod_proj(
-            functional.gelu(temporal_embedding, approximate="tanh")
-        )
-        text_attention_mask = None
-        attention_mask = None
-        if encoder_attention_mask is not None:
-            text_attention_mask = encoder_attention_mask[:, None, None, :]
-            image_mask = encoder_attention_mask.new_ones(
-                (batch_size, source_sequence_length + target_sequence_length)
+
+def _rasterize_edit_mask(document: Any, width: int, height: int) -> Image.Image:
+    if not isinstance(document, dict) or document.get("schemaVersion") != 2:
+        raise WorkerError("editMask is invalid")
+    strokes = document.get("strokes")
+    if not isinstance(strokes, list) or not 1 <= len(strokes) <= 256:
+        raise WorkerError("editMask strokes are invalid")
+    mask = np.zeros((height, width), dtype=np.float32)
+    for stroke in strokes:
+        if not isinstance(stroke, dict):
+            raise WorkerError("editMask contains an invalid stroke")
+        mode = stroke.get("mode")
+        size = stroke.get("size")
+        opacity = stroke.get("opacity")
+        softness = stroke.get("softness")
+        points = stroke.get("points")
+        if (
+            mode not in ("paint", "erase")
+            or not isinstance(size, (int, float))
+            or isinstance(size, bool)
+            or not math.isfinite(float(size))
+            or not 0.0025 <= float(size) <= 0.5
+            or not isinstance(opacity, (int, float))
+            or isinstance(opacity, bool)
+            or not math.isfinite(float(opacity))
+            or not 0.01 <= float(opacity) <= 1
+            or not isinstance(softness, (int, float))
+            or isinstance(softness, bool)
+            or not math.isfinite(float(softness))
+            or not 0 <= float(softness) <= 1
+            or not isinstance(points, list)
+            or not points
+        ):
+            raise WorkerError("editMask contains an invalid stroke")
+        coordinates: list[tuple[int, int]] = []
+        for point in points:
+            if not isinstance(point, dict):
+                raise WorkerError("editMask contains an invalid point")
+            x = point.get("x")
+            y = point.get("y")
+            if (
+                not isinstance(x, (int, float))
+                or isinstance(x, bool)
+                or not isinstance(y, (int, float))
+                or isinstance(y, bool)
+                or not 0 <= float(x) <= 1
+                or not 0 <= float(y) <= 1
+            ):
+                raise WorkerError("editMask contains an invalid point")
+            coordinates.append(
+                (round(float(x) * (width - 1)), round(float(y) * (height - 1)))
             )
-            attention_mask = torch.cat(
-                [encoder_attention_mask, image_mask],
-                dim=1,
-            )[:, None, None, :]
-
-        encoder_hidden_states = self.text_fusion(
-            encoder_hidden_states,
-            attention_mask=text_attention_mask,
-        )
-        encoder_hidden_states = self.txt_in(encoder_hidden_states)
-        source_hidden_states = self.img_in(source)
-        target_hidden_states = self.img_in(hidden_states)
-        combined = torch.cat(
-            [
-                encoder_hidden_states,
-                source_hidden_states,
-                target_hidden_states,
-            ],
-            dim=1,
-        )
-
-        source_height, source_width = self._machdoch_edit_source_grid
-        target_height, target_width = self._machdoch_edit_target_grid
-        source_ids = torch.zeros(
-            source_height,
-            source_width,
-            3,
-            device=combined.device,
-        )
-        source_ids[..., 0] = 1.0
-        source_ids[..., 1] = (
-            torch.arange(source_height, device=combined.device)[:, None]
-            + max(0, (target_height - source_height) // 2)
-        )
-        source_ids[..., 2] = (
-            torch.arange(source_width, device=combined.device)[None, :]
-            + max(0, (target_width - source_width) // 2)
-        )
-        target_ids = torch.zeros(
-            target_height,
-            target_width,
-            3,
-            device=combined.device,
-        )
-        target_ids[..., 1] = torch.arange(
-            target_height,
-            device=combined.device,
-        )[:, None]
-        target_ids[..., 2] = torch.arange(
-            target_width,
-            device=combined.device,
-        )[None, :]
-        text_ids = torch.zeros(
-            text_sequence_length,
-            3,
-            device=combined.device,
-        )
-        edit_position_ids = torch.cat(
-            [
-                text_ids,
-                source_ids.reshape(-1, 3),
-                target_ids.reshape(-1, 3),
-            ],
-            dim=0,
-        )
-        if edit_position_ids.shape[0] != combined.shape[1]:
-            raise WorkerError(
-                "KREA edit source/target token geometry changed unexpectedly"
-            )
-        image_rotary_embedding = self.rotary_emb(edit_position_ids)
-
-        reference_boost_value = float(
-            self._machdoch_edit_reference_boost
-        )
-        if reference_boost_value != 1.0:
-            sequence_length = combined.shape[1]
-            additive_mask = torch.zeros(
-                (batch_size, 1, sequence_length, sequence_length),
-                device=combined.device,
-                dtype=combined.dtype,
-            )
-            if encoder_attention_mask is not None:
-                invalid_text = ~encoder_attention_mask.bool()
-                additive_mask[:, :, :, :text_sequence_length].masked_fill_(
-                    invalid_text[:, None, None, :],
-                    torch.finfo(combined.dtype).min,
+        radius = max(0.5, float(size) * min(width, height) / 2)
+        samples: list[tuple[float, float]] = []
+        previous_x, previous_y = coordinates[0]
+        samples.append((float(previous_x), float(previous_y)))
+        for next_x, next_y in coordinates[1:]:
+            distance = math.hypot(next_x - previous_x, next_y - previous_y)
+            sample_count = max(1, math.ceil(distance / max(1, radius / 4)))
+            samples.extend(
+                (
+                    previous_x + (next_x - previous_x) * step / sample_count,
+                    previous_y + (next_y - previous_y) * step / sample_count,
                 )
-            source_start = text_sequence_length
-            target_start = source_start + source_sequence_length
-            additive_mask[
-                :,
-                :,
-                target_start:,
-                source_start:target_start,
-            ] += math.log(max(reference_boost_value, 1e-4))
-            attention_mask = additive_mask
-
-        for block in self.transformer_blocks:
-            combined = block(
-                combined,
-                temporal_modulation,
-                image_rotary_embedding,
-                attention_mask,
+                for step in range(1, sample_count + 1)
             )
-        target_output = combined[
-            :,
-            text_sequence_length + source_sequence_length :,
-        ]
-        output = self.final_layer(target_output, temporal_embedding)
-        if not return_dict:
-            return (output,)
-        return Transformer2DModelOutput(sample=output)
+            previous_x, previous_y = next_x, next_y
+        stroke_layer = np.zeros_like(mask)
+        inner_ratio = 1 - float(softness)
+        for center_x, center_y in samples:
+            left = max(0, math.floor(center_x - radius))
+            top = max(0, math.floor(center_y - radius))
+            right = min(width, math.ceil(center_x + radius) + 1)
+            bottom = min(height, math.ceil(center_y + radius) + 1)
+            y_grid, x_grid = np.ogrid[top:bottom, left:right]
+            distance = np.sqrt((x_grid - center_x) ** 2 + (y_grid - center_y) ** 2) / radius
+            if float(softness) == 0:
+                stamp = (distance <= 1).astype(np.float32)
+            else:
+                stamp = np.clip(
+                    (1 - distance) / max(float(softness), 1e-6),
+                    0,
+                    1,
+                )
+                stamp[distance <= inner_ratio] = 1
+            stroke_layer[top:bottom, left:right] = np.maximum(
+                stroke_layer[top:bottom, left:right],
+                stamp,
+            )
+        stroke_layer *= float(opacity)
+        if mode == "paint":
+            mask = 1 - (1 - mask) * (1 - stroke_layer)
+        else:
+            mask *= 1 - stroke_layer
+    if document.get("inverted") is True:
+        mask = 1 - mask
+    rasterized = Image.fromarray(np.rint(mask * 255).astype(np.uint8))
+    if rasterized.getbbox() is None:
+        raise WorkerError("editMask does not contain a painted region")
+    return rasterized
 
-    patched_forward = types.MethodType(edit_forward, transformer)
-    hook_registry = getattr(transformer, "_diffusers_hook", None)
-    hook_references = getattr(hook_registry, "_fn_refs", None)
-    if hook_references:
-        # Diffusers' native HookRegistry wraps Module.forward and stores the
-        # original callable in the first reference. Replacing the public wrapper
-        # bypasses its group-onload pre-hook; replacing this leaf preserves the
-        # complete device-alignment chain.
-        hook_references[0].forward = patched_forward
-    elif hasattr(transformer, "_old_forward"):
-        transformer._old_forward = patched_forward
-    else:
-        transformer.forward = patched_forward
+
+def _apply_mask_strength(mask: Image.Image, strength: Any) -> Image.Image:
+    if (
+        not isinstance(strength, (int, float))
+        or isinstance(strength, bool)
+        or not math.isfinite(float(strength))
+        or not 0 <= float(strength) <= 1
+    ):
+        raise WorkerError("maskStrength must be between 0 and 1")
+    if float(strength) == 1:
+        return mask
+    pixels = np.asarray(mask, dtype=np.float32) * float(strength)
+    return Image.fromarray(np.rint(pixels).astype(np.uint8))
 
 
-def _prepare_krea_edit_source(
-    pipeline: Any,
-    torch: Any,
-    reference_path: Path,
-    width: int,
-    height: int,
-    fit_mode: str,
-    reference_boost: float,
+def _fit_mask_image(mask: Image.Image, width: int, height: int) -> Image.Image:
+    return ImageOps.fit(
+        mask,
+        (width, height),
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, 0.5),
+    ).convert("L")
+
+
+def _reference_edit_change_map(
+    base_image: Image.Image,
+    generated_image: Image.Image,
+    mask_image: Image.Image | None,
 ) -> dict[str, Any]:
-    from PIL import Image
-
-    with Image.open(reference_path) as opened:
-        source_image = opened.convert("RGB")
-    prepared, evidence = _krea_edit_source_pixels(
-        source_image,
-        width,
-        height,
-        fit_mode,
+    generated = generated_image.convert("RGB")
+    baseline = _fit_conditioning_image(base_image, generated.width, generated.height)
+    base_pixels = np.asarray(baseline, dtype=np.int16)
+    generated_pixels = np.asarray(generated, dtype=np.int16)
+    if mask_image is None:
+        active_pixels = np.ones(base_pixels.shape[:2], dtype=bool)
+        scope = "image"
+    else:
+        fitted_mask = _fit_mask_image(mask_image, generated.width, generated.height)
+        active_pixels = np.asarray(fitted_mask, dtype=np.uint8) >= 16
+        scope = "mask"
+    active_pixel_count = int(np.count_nonzero(active_pixels))
+    if active_pixel_count == 0:
+        raise WorkerError("Reference edit validation has no editable pixels")
+    pixel_delta = np.mean(
+        np.abs(generated_pixels - base_pixels),
+        axis=2,
+        dtype=np.float64,
     )
-    device = torch.device(f"cuda:{torch.cuda.current_device()}")
-    pixels = pipeline.image_processor.preprocess(
-        prepared,
-        height=prepared.height,
-        width=prepared.width,
-    ).to(device=device, dtype=pipeline.vae.dtype)
-    if getattr(torch.version, "hip", None) is not None:
-        # Match the native HIP Conv3D fallback used by WAN. MIOpen's gfx1201
-        # tiled Qwen VAE encode path currently reports invalid-device-function.
-        torch.backends.cudnn.enabled = False
-    with torch.inference_mode():
-        posterior = pipeline.vae.encode(pixels.unsqueeze(2)).latent_dist
-        source_latent = posterior.mode()
-    latent_mean = torch.tensor(
-        pipeline.vae.config.latents_mean,
-        device=device,
-        dtype=source_latent.dtype,
-    ).view(1, pipeline.vae.config.z_dim, 1, 1, 1)
-    latent_std = torch.tensor(
-        pipeline.vae.config.latents_std,
-        device=device,
-        dtype=source_latent.dtype,
-    ).view(1, pipeline.vae.config.z_dim, 1, 1, 1)
-    source_latent = (source_latent - latent_mean) / latent_std
-    source_latent = source_latent[:, :, 0]
-    latent_height, latent_width = source_latent.shape[-2:]
-    source_tokens = pipeline._pack_latents(  # noqa: SLF001
-        source_latent,
-        source_latent.shape[0],
-        source_latent.shape[1],
-        latent_height,
-        latent_width,
-    )
-    target_grid = (
-        height // (pipeline.vae_scale_factor * pipeline.patch_size),
-        width // (pipeline.vae_scale_factor * pipeline.patch_size),
-    )
-    source_grid = (
-        latent_height // pipeline.patch_size,
-        latent_width // pipeline.patch_size,
-    )
-    _patch_krea_transformer_for_edit(
-        pipeline,
-        torch,
-        source_tokens,
-        source_grid,
-        target_grid,
-        reference_boost,
+    scoped_delta = pixel_delta[active_pixels]
+    changed_pixel_count = int(
+        np.count_nonzero(scoped_delta >= REFERENCE_EDIT_PIXEL_DELTA_THRESHOLD)
     )
     return {
-        "engine": "clean-vae-source-tokens-v1",
-        "sourceDigest": _sha256_file(reference_path),
-        **evidence,
-        "sourceGridHeight": source_grid[0],
-        "sourceGridWidth": source_grid[1],
-        "targetGridHeight": target_grid[0],
-        "targetGridWidth": target_grid[1],
-        "sourceTokenCount": int(source_tokens.shape[1]),
-        "targetTokenCount": target_grid[0] * target_grid[1],
-        "referenceBoost": reference_boost,
-        "sourceRopeFrame": 1,
-        "targetRopeFrame": 0,
+        "scope": scope,
+        "activePixels": active_pixel_count,
+        "changedPixels": changed_pixel_count,
+        "changedPixelRatio": changed_pixel_count / active_pixel_count,
+        "meanAbsoluteDifference": float(np.mean(scoped_delta)),
+        "pixelDeltaThreshold": REFERENCE_EDIT_PIXEL_DELTA_THRESHOLD,
+        "minimumChangedPixelRatio": REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO,
+        "minimumMeanAbsoluteDifference": REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE,
     }
+
+
+def _validate_reference_edit_change(change_map: dict[str, Any]) -> None:
+    changed_ratio = change_map["changedPixelRatio"]
+    mean_difference = change_map["meanAbsoluteDifference"]
+    if (
+        changed_ratio < REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO
+        or mean_difference < REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE
+    ):
+        raise WorkerError(
+            "The reference-conditioned edit produced no material change to the source image; "
+            "increase the editable region or revise the references and prompt."
+        )
+
+
+def _masked_generation_context(
+    base: Image.Image,
+    document: Any,
+    maximum_width: int,
+    maximum_height: int,
+    generation_alignment: int = 8,
+    mask: Image.Image | None = None,
+) -> dict[str, Any]:
+    if mask is None:
+        mask = _rasterize_edit_mask(document, base.width, base.height)
+    bounds = mask.getbbox()
+    if bounds is None:
+        raise WorkerError("editMask does not contain a painted region")
+    left, top, right, bottom = bounds
+    padding = max(32, round(max(right - left, bottom - top) * 0.2))
+    left = max(0, (left - padding) // 8 * 8)
+    top = max(0, (top - padding) // 8 * 8)
+    right = min(base.width, math.ceil((right + padding) / 8) * 8)
+    bottom = min(base.height, math.ceil((bottom + padding) / 8) * 8)
+    crop_width = right - left
+    crop_height = bottom - top
+    scale = min(1.0, maximum_width / crop_width, maximum_height / crop_height)
+    generation_width = max(
+        64,
+        round(crop_width * scale / generation_alignment) * generation_alignment,
+    )
+    generation_height = max(
+        64,
+        round(crop_height * scale / generation_alignment) * generation_alignment,
+    )
+    source = base.crop((left, top, right, bottom)).resize(
+        (generation_width, generation_height), Image.Resampling.LANCZOS
+    )
+    generation_mask = mask.crop((left, top, right, bottom)).resize(
+        (generation_width, generation_height), Image.Resampling.LANCZOS
+    )
+    return {
+        "base": base,
+        "mask": mask,
+        "bounds": (left, top, right, bottom),
+        "source": source,
+        "generationMask": generation_mask,
+        "width": generation_width,
+        "height": generation_height,
+    }
+
+
+def _composite_masked_result(context: dict[str, Any], generated: Image.Image) -> Image.Image:
+    left, top, right, bottom = context["bounds"]
+    size = (right - left, bottom - top)
+    replacement = generated.convert("RGB").resize(size, Image.Resampling.LANCZOS)
+    result = context["base"].copy()
+    result.paste(replacement, (left, top), context["mask"].crop(context["bounds"]))
+    return result
+
+
+def _composite_flux2_inpaint_result(
+    base: Image.Image,
+    mask: Image.Image,
+    generated: Image.Image,
+) -> Image.Image:
+    source = _fit_conditioning_image(base, generated.width, generated.height)
+    output_mask = _fit_mask_image(mask, generated.width, generated.height)
+    result = source.copy()
+    result.paste(generated.convert("RGB"), (0, 0), output_mask)
+    return result
+
+
+def _controlnet_pipeline(
+    diffusers: Any,
+    torch: Any,
+    pipeline: Any,
+    architecture: str,
+    controlnet_path: Path,
+    image_to_image: bool,
+) -> Any:
+    dtype = torch.float32
+    for component in getattr(pipeline, "components", {}).values():
+        if not hasattr(component, "parameters"):
+            continue
+        parameter = next(
+            (
+                candidate
+                for candidate in component.parameters()
+                if candidate.is_floating_point()
+            ),
+            None,
+        )
+        if parameter is not None:
+            dtype = parameter.dtype
+            break
+    controlnet = diffusers.ControlNetModel.from_pretrained(
+        str(controlnet_path),
+        torch_dtype=dtype,
+        local_files_only=True,
+        use_safetensors=True,
+    )
+    class_name = {
+        ("stable-diffusion-1", False): "StableDiffusionControlNetPipeline",
+        ("stable-diffusion-2", False): "StableDiffusionControlNetPipeline",
+        ("stable-diffusion-xl", False): "StableDiffusionXLControlNetPipeline",
+        ("stable-diffusion-1", True): "StableDiffusionControlNetImg2ImgPipeline",
+        ("stable-diffusion-2", True): "StableDiffusionControlNetImg2ImgPipeline",
+        ("stable-diffusion-xl", True): "StableDiffusionXLControlNetImg2ImgPipeline",
+    }.get((architecture, image_to_image))
+    pipeline_class = getattr(diffusers, class_name or "", None)
+    if pipeline_class is None or not hasattr(pipeline_class, "from_pipe"):
+        raise WorkerError("The pinned Diffusers runtime cannot construct this OpenPose pipeline")
+    return pipeline_class.from_pipe(pipeline, controlnet=controlnet)
 
 
 def generate(request: dict[str, Any]) -> dict[str, Any]:
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
     torch, diffusers = _runtime()
+    runtime_device, _, _ = _device(torch)
+    convolution_backend = _configure_amd_convolution_backend(torch, runtime_device)
     model = request.get("model")
     if not isinstance(model, dict):
         raise WorkerError("model is required")
-    prompt = _required_text(request, "prompt", 8_000)
+    prompt = request.get("prompt")
+    if not isinstance(prompt, str) or len(prompt) > 8_000:
+        raise WorkerError("prompt is invalid")
+    prompt = prompt.strip()
     negative_prompt = request.get("negativePrompt", "")
     if not isinstance(negative_prompt, str) or len(negative_prompt) > 8_000:
         raise WorkerError("negativePrompt is invalid")
@@ -2520,50 +2449,192 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
 
     krea_prompt_embeds = None
     krea_prompt_mask = None
-    krea_grounding_evidence = None
-    krea_source_evidence = None
     krea_performance_evidence = None
-    reference_path = None
-    reference_value = request.get("referenceImagePath")
-    if reference_value is not None:
-        reference_path = _absolute_existing_path(reference_value, file=True)
-        if reference_path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
-            raise WorkerError("referenceImagePath must be a supported image")
-        if architecture != "krea-2":
+    reference_values = request.get("referenceImages", [])
+    if not isinstance(reference_values, list) or len(reference_values) > 8:
+        raise WorkerError("referenceImages is invalid")
+    references: list[dict[str, Any]] = []
+    for index, reference in enumerate(reference_values):
+        if not isinstance(reference, dict):
+            raise WorkerError("referenceImages contains an invalid entry")
+        path, image = _conditioning_image(reference.get("path"), f"referenceImages[{index}]")
+        role = reference.get("role")
+        influence = reference.get("influence")
+        if role not in ("subject", "style", "composition", "palette", "detail"):
+            raise WorkerError("referenceImages contains an invalid role")
+        if (
+            not isinstance(influence, (int, float))
+            or isinstance(influence, bool)
+            or not math.isfinite(float(influence))
+            or not 0 <= float(influence) <= 2
+        ):
+            raise WorkerError("referenceImages contains an invalid influence")
+        references.append(
+            {
+                "path": path,
+                "image": image,
+                "role": role,
+                "influence": float(influence),
+            }
+        )
+    supported_reference_roles = NATIVE_REFERENCE_ROLES.get(architecture, frozenset())
+    unsupported_roles = sorted(
+        {reference["role"] for reference in references}
+        - supported_reference_roles
+    )
+    if unsupported_roles:
+        raise WorkerError(
+            f"{architecture} does not implement {', '.join(unsupported_roles)} reference conditioning"
+        )
+    base_path = None
+    base_image = None
+    if request.get("baseImagePath") is not None:
+        base_path, base_image = _conditioning_image(
+            request.get("baseImagePath"), "baseImagePath"
+        )
+    pose_path = None
+    pose_image = None
+    controlnet_path = None
+    pose_strength = None
+    pose_start = None
+    pose_end = None
+    if request.get("poseImagePath") is not None:
+        pose_path, pose_image = _conditioning_image(
+            request.get("poseImagePath"), "poseImagePath"
+        )
+        controlnet_path = _absolute_existing_path(
+            request.get("poseControlnetPath"), file=False
+        )
+        pose_strength = request.get("poseStrength", 1.0)
+        if (
+            not isinstance(pose_strength, (int, float))
+            or isinstance(pose_strength, bool)
+            or not math.isfinite(float(pose_strength))
+            or not 0 <= float(pose_strength) <= 2
+        ):
+            raise WorkerError("poseStrength must be between 0 and 2")
+        pose_strength = float(pose_strength)
+        pose_start = request.get("poseStart", 0.0)
+        pose_end = request.get("poseEnd", 1.0)
+        if (
+            not isinstance(pose_start, (int, float))
+            or isinstance(pose_start, bool)
+            or not math.isfinite(float(pose_start))
+            or not isinstance(pose_end, (int, float))
+            or isinstance(pose_end, bool)
+            or not math.isfinite(float(pose_end))
+            or not 0 <= float(pose_start) < float(pose_end) <= 1
+        ):
             raise WorkerError(
-                "Local reference editing currently requires a KREA 2 model"
+                "pose control range must satisfy 0 <= start < end <= 1"
             )
+        pose_start = float(pose_start)
+        pose_end = float(pose_end)
+        if architecture not in (
+            "stable-diffusion-1",
+            "stable-diffusion-2",
+            "stable-diffusion-xl",
+        ):
+            raise WorkerError("OpenPose control requires a Stable Diffusion ControlNet family")
+    conditioned_images = ([base_image] if base_image is not None else []) + [
+        reference["image"] for reference in references
+    ]
+    if any(
+        reference["influence"] != 1.0 for reference in references
+    ):
+        raise WorkerError("This local runtime requires reference influence 1")
+    if architecture != "flux-2" and len(conditioned_images) > 1:
+        raise WorkerError(f"{architecture} accepts one reference or base image")
+    if architecture == "krea-2" and (conditioned_images or pose_image is not None):
+        raise WorkerError(
+            "KREA 2 supports text-to-image only; choose FLUX.2 klein for image conditioning"
+        )
+    if not prompt and not conditioned_images and pose_image is None:
+        raise WorkerError("prompt or image conditioning is required")
+    edit_mask = request.get("editMask")
+    _validate_edit_mask_request(
+        edit_mask,
+        base_image,
+        output_format,
+        architecture,
+    )
+    mask_strength = None
+    mask_image = None
+    if edit_mask is not None and base_image is not None:
+        mask_strength = request.get("maskStrength", 1.0)
+        mask_image = _apply_mask_strength(
+            _rasterize_edit_mask(edit_mask, base_image.width, base_image.height),
+            mask_strength,
+        )
+        mask_strength = float(mask_strength)
+    flux2_inpainting = architecture == "flux-2" and mask_image is not None
+    masked_context = (
+        _masked_generation_context(
+            base_image,
+            edit_mask,
+            width,
+            height,
+            8,
+            mask_image,
+        )
+        if edit_mask is not None
+        and base_image is not None
+        and not flux2_inpainting
+        else None
+    )
+    primary_reference_image = base_image or (
+        references[0]["image"] if references else None
+    )
+    if masked_context is not None:
+        primary_reference_image = masked_context["source"]
+        width = masked_context["width"]
+        height = masked_context["height"]
     if architecture == "krea-2":
         config_path = _absolute_existing_path(model.get("configPath"), file=False)
         krea_text_root, _ = _krea_runtime_paths(config_path)
-        # Qwen3-VL and the 12B KREA transformer do not overlap in the graph.
-        # Encode first and release Qwen before materializing the FP8 denoiser,
-        # avoiding a 22+ GB host working set on 32 GB systems.
-        if reference_path is None:
-            krea_prompt_embeds, krea_prompt_mask = _encode_krea_prompt(
-                torch,
-                krea_text_root,
-                prompt,
-            )
-        else:
-            grounding_pixels = request.get("groundingPixels", 768)
-            if (
-                not isinstance(grounding_pixels, int)
-                or isinstance(grounding_pixels, bool)
-            ):
-                raise WorkerError("groundingPixels must be an integer")
-            (
-                krea_prompt_embeds,
-                krea_prompt_mask,
-                krea_grounding_evidence,
-            ) = _encode_krea_grounded_prompt(
-                torch,
-                krea_text_root,
-                prompt,
-                reference_path,
-                grounding_pixels,
-            )
-    pipeline = _load_pipeline(diffusers, torch, model)
+        krea_prompt_embeds, krea_prompt_mask = _encode_krea_prompt(
+            torch,
+            krea_text_root,
+            prompt,
+        )
+    pipeline = _load_pipeline(
+        diffusers,
+        torch,
+        model,
+        flux2_inpainting=flux2_inpainting,
+    )
+    if pose_image is not None and controlnet_path is not None:
+        pipeline = _controlnet_pipeline(
+            diffusers,
+            torch,
+            pipeline,
+            architecture,
+            controlnet_path,
+            primary_reference_image is not None,
+        )
+    if (
+        masked_context is not None
+        and architecture
+        in (
+            "stable-diffusion-1",
+            "stable-diffusion-2",
+            "stable-diffusion-xl",
+            "flux-1",
+        )
+    ):
+        pipeline = diffusers.AutoPipelineForInpainting.from_pipe(pipeline)
+        pipeline.mask_processor.register_to_config(do_binarize=False)
+    elif (
+        primary_reference_image is not None
+        and architecture
+        in (
+            "stable-diffusion-1",
+            "stable-diffusion-2",
+            "stable-diffusion-xl",
+            "flux-1",
+        )
+    ):
+        pipeline = diffusers.AutoPipelineForImage2Image.from_pipe(pipeline)
     vae_decode_evidence = _configure_large_image_vae_decode(
         pipeline,
         architecture,
@@ -2571,6 +2642,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         width,
         height,
     )
+    vae_decode_evidence["convolutionBackend"] = convolution_backend
     (
         prompt,
         negative_prompt,
@@ -2581,25 +2653,8 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     ) = _apply_addons(
         pipeline, addons, prompt, negative_prompt
     )
-    if reference_path is not None:
-        edit_addons = [
-            addon
-            for addon in addons
-            if addon.get("enabled", True)
-            and addon.get("kind") == "lora"
-            and (
-                addon.get("digest") == KREA_IDENTITY_EDIT_V1_2_R64_DIGEST
-                or Path(str(addon.get("path", ""))).name.startswith(
-                    "krea2_identity_edit_v1_2"
-                )
-            )
-        ]
-        if len(edit_addons) != 1:
-            raise WorkerError(
-                "KREA local editing requires exactly one reviewed "
-                "krea2_identity_edit_v1_2 adapter"
-            )
-        edit_strength = request.get("editStrength", 0.5)
+    edit_strength = request.get("editStrength", 0.5)
+    if primary_reference_image is not None:
         if (
             not isinstance(edit_strength, (int, float))
             or isinstance(edit_strength, bool)
@@ -2607,31 +2662,19 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             or not 0.0 <= float(edit_strength) <= 1.0
         ):
             raise WorkerError("editStrength must be between 0 and 1")
-        default_reference_boost = 1.0 + (1.0 - float(edit_strength)) * 3.0
-        reference_boost = request.get(
-            "referenceBoost",
-            default_reference_boost,
+        edit_strength = float(edit_strength)
+    requires_visible_reference_change = (
+        architecture == "flux-2" and base_image is not None and bool(references)
+    )
+    effective_prompt = prompt
+    reference_prompt_bindings: list[dict[str, Any]] = []
+    if architecture == "flux-2" and references:
+        effective_prompt, reference_prompt_bindings = _flux2_reference_prompt(
+            prompt,
+            has_base_image=base_image is not None,
+            references=references,
+            require_visible_change=requires_visible_reference_change,
         )
-        if (
-            not isinstance(reference_boost, (int, float))
-            or isinstance(reference_boost, bool)
-            or not math.isfinite(float(reference_boost))
-            or not 0.25 <= float(reference_boost) <= 8.0
-        ):
-            raise WorkerError("referenceBoost must be between 0.25 and 8")
-        reference_fit = request.get("referenceFit", "fit")
-        if not isinstance(reference_fit, str):
-            raise WorkerError("referenceFit must be a string")
-        krea_source_evidence = _prepare_krea_edit_source(
-            pipeline,
-            torch,
-            reference_path,
-            width,
-            height,
-            reference_fit,
-            float(reference_boost),
-        )
-        krea_source_evidence["editStrength"] = float(edit_strength)
     if architecture == "krea-2":
         krea_performance_evidence = _configure_krea_offload(
             pipeline,
@@ -2647,8 +2690,9 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     if has_lora_schedule and "callback_on_step_end" not in call_parameters:
         raise WorkerError(
             "The selected pipeline cannot change LoRA strength during denoising"
-        )
+    )
     outputs: list[dict[str, Any]] = []
+    source_change_maps: list[dict[str, Any]] = []
     pending_cpu_decodes: list[tuple[int, int, Any]] = []
 
     def publish_image(index: int, image_seed: int, generated_image: Any) -> None:
@@ -2657,7 +2701,23 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         destination = output_directory / filename
         save_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}[output_format]
         image = generated_image.convert("RGB")
+        if masked_context is not None:
+            image = _composite_masked_result(masked_context, image)
+        elif flux2_inpainting:
+            if base_image is None or mask_image is None:
+                raise WorkerError("FLUX.2 inpainting requires a base image and mask")
+            image = _composite_flux2_inpaint_result(base_image, mask_image, image)
         _validate_generated_pixels(image, applied, require_chroma_background)
+        if requires_visible_reference_change:
+            if base_image is None:
+                raise WorkerError("Reference edit validation requires a source image")
+            change_map = _reference_edit_change_map(
+                base_image,
+                image,
+                mask_image if flux2_inpainting else None,
+            )
+            _validate_reference_edit_change(change_map)
+            source_change_maps.append(change_map)
         image.save(destination, format=save_format, quality=95, exif=b"")
         outputs.append(
             {
@@ -2683,13 +2743,14 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         )
         generator = torch.Generator(device=generator_device).manual_seed(image_seed)
         arguments: dict[str, Any] = {
-            "prompt": prompt,
+            "prompt": effective_prompt,
             "width": width,
             "height": height,
             "num_inference_steps": step_count,
             "generator": generator,
             "num_images_per_prompt": 1,
         }
+        step_callbacks: list[Any] = []
         if architecture == "krea-2":
             cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
             arguments["prompt"] = None
@@ -2702,6 +2763,51 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             # FLUX.2 Klein is distilled for guidance 1.0. Larger classifier-free
             # guidance values cost memory and diverge from the model card recipe.
             arguments["guidance_scale"] = 1.0
+        if architecture == "flux-2":
+            if flux2_inpainting:
+                if base_image is None or mask_image is None:
+                    raise WorkerError("FLUX.2 inpainting requires a base image and mask")
+                arguments["image"] = _fit_conditioning_image(base_image, width, height)
+                arguments["mask_image"] = _fit_mask_image(mask_image, width, height)
+                arguments["strength"] = edit_strength
+                if references:
+                    reference_images = [reference["image"] for reference in references]
+                    arguments["image_reference"] = (
+                        reference_images[0]
+                        if len(reference_images) == 1
+                        else reference_images
+                    )
+            elif conditioned_images:
+                flux_images = [reference["image"] for reference in references]
+                if base_image is not None and primary_reference_image is not None:
+                    flux_images.insert(0, primary_reference_image)
+                arguments["image"] = (
+                    flux_images[0] if len(flux_images) == 1 else flux_images
+                )
+        elif primary_reference_image is not None:
+            arguments["image"] = _fit_conditioning_image(
+                primary_reference_image, width, height
+            )
+            if "strength" in call_parameters:
+                arguments["strength"] = edit_strength
+            if masked_context is not None:
+                if "mask_image" not in call_parameters:
+                    raise WorkerError(
+                        f"{architecture} does not expose latent mask conditioning"
+                    )
+                arguments["mask_image"] = masked_context["generationMask"]
+        if pose_image is not None:
+            fitted_pose = _fit_conditioning_image(pose_image, width, height)
+            if primary_reference_image is None:
+                arguments["image"] = fitted_pose
+            else:
+                arguments["control_image"] = fitted_pose
+            if "controlnet_conditioning_scale" in call_parameters:
+                arguments["controlnet_conditioning_scale"] = pose_strength
+            if "control_guidance_start" in call_parameters:
+                arguments["control_guidance_start"] = pose_start
+            if "control_guidance_end" in call_parameters:
+                arguments["control_guidance_end"] = pose_end
         if "negative_prompt" in call_parameters and negative_prompt.strip():
             arguments["negative_prompt"] = negative_prompt
         elif negative_prompt.strip():
@@ -2709,8 +2815,17 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                 f"{architecture} does not expose negative-prompt conditioning in this pipeline"
             )
         if has_lora_schedule:
-            arguments["callback_on_step_end"] = _scheduled_lora_callback(
-                lora_names, lora_weights, lora_schedules, step_count
+            step_callbacks.append(
+                _scheduled_lora_callback(
+                    lora_names,
+                    lora_weights,
+                    lora_schedules,
+                    step_count,
+                )
+            )
+        if step_callbacks:
+            arguments["callback_on_step_end"] = _chain_step_callbacks(
+                step_callbacks
             )
         cpu_vae_decode = vae_decode_evidence["device"] == "cpu"
         if cpu_vae_decode:
@@ -2759,11 +2874,49 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         "requireChromaBackground": require_chroma_background,
         "editConditioning": (
             {
-                "mode": "krea2-identity-edit-v1.2",
-                "grounding": krea_grounding_evidence,
-                "sourceTokens": krea_source_evidence,
+                "mode": (
+                    "controlnet-openpose-soft-inpaint-v1"
+                    if pose_image is not None and masked_context is not None
+                    else "controlnet-openpose"
+                    if pose_image is not None
+                    else "flux2-klein-inpaint-v1"
+                    if flux2_inpainting
+                    else "diffusers-soft-inpaint-v1"
+                    if masked_context is not None
+                    else "flux2-native-reference"
+                    if architecture == "flux-2"
+                    else "diffusers-image-to-image"
+                ),
+                "referenceSources": [
+                    {
+                        "digest": _sha256_file(reference["path"]),
+                        "role": reference["role"],
+                        "influence": reference["influence"],
+                    }
+                    for reference in references
+                ],
+                "baseDigest": _sha256_file(base_path) if base_path is not None else None,
+                "poseDigest": _sha256_file(pose_path) if pose_path is not None else None,
+                "poseStrength": pose_strength,
+                "poseStart": pose_start,
+                "poseEnd": pose_end,
+                "globalEditStrength": edit_strength if flux2_inpainting else None,
+                "maskStrength": mask_strength,
+                "maskBounds": list(mask_image.getbbox())
+                if mask_image is not None and mask_image.getbbox() is not None
+                else None,
+                "referenceBinding": {
+                    "mode": "indexed-role-prompt-v1",
+                    "inputs": reference_prompt_bindings,
+                    "requiresVisibleChange": requires_visible_reference_change,
+                }
+                if reference_prompt_bindings
+                else None,
+                "changeMap": {"outputs": source_change_maps}
+                if requires_visible_reference_change
+                else None,
             }
-            if reference_path is not None
+            if conditioned_images or pose_image is not None
             else None
         ),
         "outputs": outputs,

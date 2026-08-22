@@ -16,6 +16,7 @@ interface MediaAssetMetadataEditorProps {
   metadata: MediaGenerationAssetMetadata;
   categories: readonly MediaAssetCategory[];
   showTriggerWords: boolean;
+  showSourceUrl?: boolean;
   tagLoading?: boolean;
   onChange: (metadata: MediaGenerationAssetMetadata) => void;
   onTagsChange?: (tags: string[]) => void;
@@ -41,6 +42,7 @@ export const MediaAssetMetadataEditor = ({
   metadata,
   categories,
   showTriggerWords,
+  showSourceUrl = true,
   tagLoading = false,
   onChange,
   onTagsChange,
@@ -144,37 +146,39 @@ export const MediaAssetMetadataEditor = ({
           />
         </label>
       ) : null}
-      <div className="block space-y-1 text-xs text-slate-400">
-        <label htmlFor={sourceInputId}>Source URL</label>
-        <div className="flex gap-2">
-          <input
-            id={sourceInputId}
-            type="url"
-            value={sourceUrl}
-            onChange={(event) => {
-              setSourceUrl(event.target.value);
-              setSourceUrlError(null);
-            }}
-            onBlur={saveSourceUrl}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
-          />
-          <button
-            type="button"
-            aria-label="Open source URL"
-            disabled={!sourceUrl.trim()}
-            onClick={() => void openSourceUrl()}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </button>
+      {showSourceUrl ? (
+        <div className="block space-y-1 text-xs text-slate-400">
+          <label htmlFor={sourceInputId}>Source URL</label>
+          <div className="flex gap-2">
+            <input
+              id={sourceInputId}
+              type="url"
+              value={sourceUrl}
+              onChange={(event) => {
+                setSourceUrl(event.target.value);
+                setSourceUrlError(null);
+              }}
+              onBlur={saveSourceUrl}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
+            />
+            <button
+              type="button"
+              aria-label="Open source URL"
+              disabled={!sourceUrl.trim()}
+              onClick={() => void openSourceUrl()}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </div>
+          {sourceUrlError ? (
+            <span className="text-rose-300">{sourceUrlError}</span>
+          ) : null}
         </div>
-        {sourceUrlError ? (
-          <span className="text-rose-300">{sourceUrlError}</span>
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 };

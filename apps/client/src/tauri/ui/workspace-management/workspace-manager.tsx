@@ -173,6 +173,7 @@ export const WorkspaceManager = ({
   const displayNameErrorId = useId();
   const pendingTagMessageId = useId();
   const selectedRootRef = useRef<string | null>(null);
+  const previousActiveWorkspaceKeyRef = useRef<string | null>(null);
   const selectedGitRepositoryRootRef = useRef<string | null>(null);
   const gitOverviewWorkspaceRootRef = useRef<string | null>(null);
   const gitRepositoriesRequestRef = useRef(0);
@@ -187,17 +188,27 @@ export const WorkspaceManager = ({
   }, [setup.onRefresh]);
 
   useEffect(() => {
+    const activeWorkspaceKey = activeWorkspaceRoot
+      ? createWorkspaceRootKey(activeWorkspaceRoot)
+      : null;
+    const activeWorkspaceChanged =
+      previousActiveWorkspaceKeyRef.current !== activeWorkspaceKey;
+    previousActiveWorkspaceKeyRef.current = activeWorkspaceKey;
+    const active = workspaces.find(
+      (workspace) => workspace.key === activeWorkspaceKey,
+    );
+
+    if (activeWorkspaceChanged && active) {
+      setSelectedWorkspaceKey(active.key);
+      return;
+    }
+
     if (
       selectedWorkspaceKey &&
       workspaces.some((workspace) => workspace.key === selectedWorkspaceKey)
     ) {
       return;
     }
-    const active = workspaces.find(
-      (workspace) =>
-        activeWorkspaceRoot &&
-        workspace.key === createWorkspaceRootKey(activeWorkspaceRoot),
-    );
     setSelectedWorkspaceKey(active?.key ?? workspaces[0]?.key ?? null);
   }, [activeWorkspaceRoot, selectedWorkspaceKey, workspaces]);
 

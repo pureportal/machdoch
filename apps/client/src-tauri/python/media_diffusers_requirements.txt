@@ -1,7 +1,8 @@
-# Runtime contract: media-diffusers-worker/1.50.0 (Python >=3.10)
-# Torch wheels are platform/accelerator specific. The generic tested runtime is
-# torch 2.13.0; AMD Windows uses the official torch 2.12.0+rocm7.14.0 wheel.
-# Runtime assembly must install the matching official wheel before this file.
+# Runtime contract: media-diffusers-worker/1.53.0 (Python >=3.10)
+# Torch and torchvision wheels are platform/accelerator specific. The generic
+# tested pair is torch 2.13.0 with torchvision 0.28.0; AMD Windows uses the
+# official torch 2.12.0+rocm7.14.0 and torchvision 0.27.0+rocm7.14.0 wheels.
+# Runtime assembly must install the matching official wheel pair before this file.
 diffusers==0.39.0
 transformers==5.13.0
 sentencepiece==0.2.2
@@ -9,6 +10,7 @@ protobuf==7.35.1
 accelerate==1.14.0
 peft==0.19.1
 safetensors==0.8.0
+numpy==2.5.2
 Pillow==12.3.0
 imageio-ffmpeg==0.6.0
 opencv-python-headless==4.13.0.92

@@ -1,4 +1,5 @@
 import type {
+  MediaAssetRecord,
   MediaCompiledPlan,
   MediaFlow,
   MediaHumanReviewRecord,
@@ -322,14 +323,49 @@ export const projectMediaRunOverlay = ({
     missingSnapshotNodeCount,
     currentOnlyNodeCount,
     activeNodeIds: Array.from(observations.values())
-      .filter((observation) =>
-        ["running", "retrying", "waiting", "blocked"].includes(observation.state),
-      )
+      .filter((observation) => observation.state === "running")
       .map((observation) => observation.nodeId),
     observations,
     stateCounts,
   };
 };
+
+const readOutputNodeId = (asset: MediaAssetRecord): string | null => {
+  switch (asset.operation?.kind) {
+    case "local-diffusion-generation":
+    case "remote-image-generation":
+    case "remote-image-edit":
+      return asset.operation.output?.outputNodeId ?? null;
+    default:
+      return null;
+  }
+};
+
+export const selectMediaRunOutputAssetForNode = (
+  run: MediaRunDetail | null,
+  projection: MediaRunOverlayProjection | null,
+  outputNodeId: string,
+): MediaAssetRecord | null => {
+  if (run?.status !== "completed" || !projection?.exactFlowMatch) {
+    return null;
+  }
+  return run.assets
+    .filter(
+      (asset) =>
+        (asset.kind === "image" || asset.kind === "vector") &&
+        readOutputNodeId(asset) === outputNodeId,
+    )
+    .reduce<MediaAssetRecord | null>(
+      (first, asset) =>
+        first === null || asset.outputIndex < first.outputIndex ? asset : first,
+      null,
+    );
+};
+
+export const selectMediaRunOverlayForCurrentFlow = (
+  projection: MediaRunOverlayProjection | null,
+): MediaRunOverlayProjection | null =>
+  projection?.exactFlowMatch ? projection : null;
 
 const matchesTerminalRun = (status: MediaRunDetail["status"]): boolean =>
   status === "completed" || status === "failed" || status === "canceled";

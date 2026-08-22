@@ -1,11 +1,5 @@
 import {
-  Background,
-  Controls,
-  Handle,
-  MiniMap,
   Position,
-  ReactFlow,
-  ReactFlowProvider,
   type Connection,
   type Node,
   type NodeChange,
@@ -16,7 +10,6 @@ import {
   type ReactFlowInstance,
   useNodesState,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import {
   Box,
   Braces,
@@ -60,6 +53,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -78,6 +72,7 @@ import type {
   MediaFlowLayout,
   MediaFlowLayoutComment,
   MediaGenerationAssetMetadata,
+  MediaImageReferenceRole,
   MediaModelAddonDescriptor,
   MediaModelAddonSelection,
   MediaModelDescriptor,
@@ -92,9 +87,15 @@ import {
   createMediaModelAddonSelection,
   getMediaModelAddonTriggerWords,
   inspectMediaModelAddonCompatibility,
+  mediaModelAddonSelectionsEqual,
   promptContainsMediaModelAddonTrigger,
+  reconcileMediaModelAddonSelections,
 } from "../../../../core/media/model-addons.js";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
+import {
+  getMediaReferenceConditioningCapabilities,
+  mediaModelSupportsReferenceRole,
+} from "../../../../core/media/reference-conditioning.js";
 import {
   addMediaFlowLayoutComment,
   addMediaFlowLayoutGroup,
@@ -104,6 +105,7 @@ import {
   updateMediaFlowLayoutComment,
   updateMediaFlowLayoutGroup,
 } from "../../../../core/media/compiler.js";
+import { createMediaFlowLayoutDigest } from "../../../../core/media/canonicalize.js";
 import {
   getMediaNodeDefinition,
   inspectMediaFlowConnection,
@@ -138,8 +140,11 @@ import {
 } from "../../../../core/media/video-quality.js";
 import { MediaFlowVariablesPanel } from "./media-flow-variables-panel";
 import { MediaFlowTemplatesPanel } from "./media-flow-templates-panel";
+import { MediaLoraStrengthControl } from "./media-lora-strength-control";
 import {
   projectMediaRunOverlay,
+  selectMediaRunOutputAssetForNode,
+  selectMediaRunOverlayForCurrentFlow,
   type MediaRunOverlayNodeObservation,
   type MediaRunOverlayNodeState,
 } from "../media-run-overlay";
@@ -180,9 +185,25 @@ import {
 import { getDefaultCommandShortcut } from "../../commands/command-defaults";
 import type { CommandDefinition } from "../../commands/command-types";
 import { createMediaNodeCommandPage } from "../media-node-command-page";
+import { normalizeMediaSubmissionText } from "../media-generation-recipe";
 import { MediaResourcePreview } from "./media-visual-preview";
 import { MediaModelPicker } from "./media-model-picker";
 import { MediaImageMaskEditor } from "./media-image-mask-editor";
+import { FlowCanvas } from "../../flow/flow-canvas";
+import { reconcileFlowElements } from "../../flow/flow-element-reconciliation";
+import {
+  FlowNodeHeader,
+  FlowNodeShell,
+  FlowPort,
+  FlowPortDot,
+} from "../../flow/flow-primitives";
+import {
+  FLOW_CANVAS_FIT_MAX_ZOOM,
+  FLOW_CANVAS_FIT_PADDING,
+  FLOW_EDGE_TYPE,
+  createFlowCanvasEdge,
+  type FlowPortTone,
+} from "../../flow/flow-theme";
 
 interface MediaFlowViewProps {
   flow: MediaFlow;
@@ -200,6 +221,7 @@ interface MediaFlowViewProps {
     nodeId: string,
     values: Readonly<Record<string, unknown>>,
   ) => void;
+  onNodeLabelChange: (nodeId: string, label: string) => void;
   onNodeAdd: (nodeType: MediaNodeType) => string | null;
   onNodeRemove: (nodeId: string) => void;
   onConnectPorts: (request: MediaFlowConnectionRequest) => void;
@@ -292,6 +314,121 @@ type MediaCanvasNode =
   | MediaSemanticCanvasNode
   | MediaGroupCanvasNode
   | MediaCommentCanvasNode;
+type MediaCanvasEdge = Edge<Record<string, unknown>, typeof FLOW_EDGE_TYPE>;
+
+const mediaCanvasPortSignature = (
+  ports: readonly MediaNodePortDefinition[],
+): string =>
+  ports
+    .map(
+      (port) =>
+        `${port.id}\u001f${port.label}\u001f${port.dataType}\u001f${port.cardinality}\u001f${port.required}`,
+    )
+    .join("\u001e");
+
+const mediaRunObservationSignature = (
+  observation: MediaRunOverlayNodeObservation | null,
+): string =>
+  observation
+    ? [
+        observation.state,
+        observation.label,
+        observation.detail,
+        observation.stepCount,
+        observation.observedEventCount,
+      ].join("\u001f")
+    : "";
+
+const mediaCanvasNodeDisplaySignature = (node: MediaCanvasNode): string => {
+  const base = [node.type, node.hidden ?? false];
+  if (node.type === "mediaNode") {
+    return [
+      ...base,
+      node.data.label,
+      node.data.nodeType,
+      node.data.layer,
+      node.data.detail,
+      node.data.asset?.id ?? "",
+      node.data.assetId ?? "",
+      node.data.assetLabel ?? "",
+      mediaCanvasPortSignature(node.data.inputs),
+      mediaCanvasPortSignature(node.data.outputs),
+      mediaRunObservationSignature(node.data.runOverlay),
+    ].join("\u001f");
+  }
+  if (node.type === "mediaGroup") {
+    return [
+      ...base,
+      node.data.label,
+      node.data.color,
+      node.data.collapsed,
+      node.data.memberCount,
+      node.data.width,
+      node.data.height,
+    ].join("\u001f");
+  }
+  return [
+    ...base,
+    node.data.body,
+    node.data.color,
+    node.data.width,
+    node.data.height,
+  ].join("\u001f");
+};
+
+const reconcileMediaCanvasNodes = (
+  current: MediaCanvasNode[],
+  projected: readonly MediaCanvasNode[],
+  preservePositions: boolean,
+): MediaCanvasNode[] =>
+  reconcileFlowElements({
+    current,
+    projected,
+    equals: (previous, next) =>
+      mediaCanvasNodeDisplaySignature(previous) ===
+        mediaCanvasNodeDisplaySignature(next) &&
+      (preservePositions ||
+        (previous.position.x === next.position.x &&
+          previous.position.y === next.position.y)),
+    merge: (previous, next) => ({
+      ...next,
+      selected: previous.selected,
+      dragging: previous.dragging,
+      measured: previous.measured,
+      ...(preservePositions
+        ? {
+            position: previous.position,
+          }
+        : {}),
+    }),
+  });
+
+const mediaCanvasEdgeDisplaySignature = (edge: MediaCanvasEdge): string =>
+  [
+    edge.type ?? "",
+    edge.source,
+    edge.target,
+    edge.sourceHandle ?? "",
+    edge.targetHandle ?? "",
+    edge.hidden ?? false,
+    edge.animated ?? false,
+    edge.style?.stroke ?? "",
+    edge.style?.strokeWidth ?? "",
+    edge.style?.opacity ?? "",
+  ].join("\u001f");
+
+const reconcileMediaCanvasEdges = (
+  current: MediaCanvasEdge[],
+  projected: readonly MediaCanvasEdge[],
+): MediaCanvasEdge[] =>
+  reconcileFlowElements({
+    current,
+    projected,
+    equals: (previous, next) =>
+      mediaCanvasEdgeDisplaySignature(previous) ===
+      mediaCanvasEdgeDisplaySignature(next),
+    merge: (previous, next) => ({ ...next, selected: previous.selected }),
+  });
 
 const LAYER_STYLES: Record<MediaNodeLayer, string> = {
   source: "border-sky-400/35 bg-sky-950/80 text-sky-100",
@@ -302,17 +439,19 @@ const LAYER_STYLES: Record<MediaNodeLayer, string> = {
   runtime: "border-slate-500/40 bg-slate-900/90 text-slate-100",
 };
 
-const PORT_STYLES: Record<MediaPortDataType, string> = {
-  prompt: "!bg-sky-300",
-  image: "!bg-fuchsia-300",
-  video: "!bg-emerald-300",
-  audio: "!bg-orange-300",
-  "quality-report": "!bg-amber-300",
+const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
+  prompt: "sky",
+  image: "fuchsia",
+  seed: "amber",
+  video: "emerald",
+  audio: "orange",
+  "quality-report": "amber",
 };
 
 const PORT_LABELS: Record<MediaPortDataType, string> = {
   prompt: "Text",
   image: "Image",
+  seed: "Seed",
   video: "Video",
   audio: "Audio",
   "quality-report": "Quality",
@@ -329,7 +468,8 @@ const GROUP_STYLES: Record<MediaFlowGroupColor, string> = {
 const RUN_OVERLAY_NODE_STYLES: Record<MediaRunOverlayNodeState, string> = {
   pending: "ring-1 ring-slate-500/40 ring-offset-2 ring-offset-slate-950",
   queued: "ring-2 ring-amber-300/50 ring-offset-2 ring-offset-slate-950",
-  running: "ring-2 ring-cyan-300/65 ring-offset-2 ring-offset-slate-950",
+  running:
+    "ring-2 ring-cyan-200 ring-offset-2 ring-offset-slate-950 shadow-[0_0_0_4px_rgba(34,211,238,0.18),0_0_28px_rgba(34,211,238,0.42)] animate-[pulse_1.2s_ease-in-out_infinite]",
   waiting: "ring-2 ring-fuchsia-300/75 ring-offset-2 ring-offset-slate-950",
   retrying: "ring-2 ring-amber-300/70 ring-offset-2 ring-offset-slate-950",
   completed: "ring-2 ring-emerald-300/65 ring-offset-2 ring-offset-slate-950",
@@ -473,44 +613,38 @@ const MediaFlowNodeCard = ({
   selected,
 }: NodeProps<MediaSemanticCanvasNode>): JSX.Element => {
   return (
-    <div
+    <FlowNodeShell
       role="group"
       aria-label={
         data.runOverlay
           ? `${data.label}, run state ${data.runOverlay.label}`
           : data.label
       }
+      selected={selected}
       className={cn(
-        "w-52 rounded-2xl border px-4 py-3 shadow-2xl shadow-black/30 outline-none backdrop-blur transition-[border-color,box-shadow]",
         LAYER_STYLES[data.layer],
         data.runOverlay && RUN_OVERLAY_NODE_STYLES[data.runOverlay.state],
-        selected &&
-          "ring-2 ring-sky-300/80 ring-offset-2 ring-offset-slate-950",
       )}
     >
       {data.inputs.map((port, index) => (
-        <Handle
+        <FlowPort
           key={port.id}
           id={port.id}
           type="target"
           position={Position.Left}
+          tone={PORT_TONES[port.dataType]}
           title={`${port.label}: ${port.dataType}`}
           aria-label={`${port.label} ${port.dataType} input`}
           style={{ top: `${((index + 1) / (data.inputs.length + 1)) * 100}%` }}
-          className={cn(
-            "!h-2.5 !w-2.5 !border-slate-950",
-            PORT_STYLES[port.dataType],
-          )}
         />
       ))}
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold tracking-[0.13em] uppercase opacity-60">
-          {data.layer}
-        </span>
-        <Box className="h-3.5 w-3.5 opacity-70" />
-      </div>
+      <FlowNodeHeader
+        category={data.layer}
+        label={data.label}
+        icon={<Box className="h-3.5 w-3.5 opacity-70" />}
+      />
       {data.asset ? (
-        <div className="mb-3 aspect-[4/3] overflow-hidden rounded-xl border border-white/10 bg-black/20">
+        <div className="mt-3 aspect-[4/3] overflow-hidden rounded-xl border border-white/10 bg-black/20">
           <MediaAssetThumbnail
             asset={data.asset}
             alt={`${data.assetLabel ?? data.label} preview`}
@@ -518,15 +652,14 @@ const MediaFlowNodeCard = ({
           />
         </div>
       ) : data.assetId ? (
-        <div className="mb-3 flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/15 text-center text-[9px] opacity-60">
+        <div className="mt-3 flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/15 text-center text-[9px] opacity-60">
           <span>
             <ImageIcon aria-hidden="true" className="mx-auto mb-1.5 h-5 w-5" />
             Asset unavailable
           </span>
         </div>
       ) : null}
-      <div className="text-sm font-semibold">{data.label}</div>
-      <div className="mt-1 line-clamp-2 text-[11px] leading-4 opacity-65">
+      <div className="mt-2 line-clamp-2 text-[11px] leading-4 opacity-65">
         {data.detail}
       </div>
       {data.inputs.length > 0 || data.outputs.length > 0 ? (
@@ -538,12 +671,9 @@ const MediaFlowNodeCard = ({
                 className="flex min-w-0 items-center gap-1.5"
                 title={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
               >
-                <span
+                <FlowPortDot
                   aria-hidden="true"
-                  className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
-                    PORT_STYLES[port.dataType],
-                  )}
+                  tone={PORT_TONES[port.dataType]}
                 />
                 <span className="truncate opacity-70">
                   {port.label}
@@ -560,12 +690,9 @@ const MediaFlowNodeCard = ({
                 title={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
               >
                 <span className="truncate opacity-70">{port.label}</span>
-                <span
+                <FlowPortDot
                   aria-hidden="true"
-                  className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
-                    PORT_STYLES[port.dataType],
-                  )}
+                  tone={PORT_TONES[port.dataType]}
                 />
               </div>
             ))}
@@ -597,21 +724,18 @@ const MediaFlowNodeCard = ({
         </div>
       ) : null}
       {data.outputs.map((port, index) => (
-        <Handle
+        <FlowPort
           key={port.id}
           id={port.id}
           type="source"
           position={Position.Right}
+          tone={PORT_TONES[port.dataType]}
           title={`${port.label}: ${port.dataType}`}
           aria-label={`${port.label} ${port.dataType} output`}
           style={{ top: `${((index + 1) / (data.outputs.length + 1)) * 100}%` }}
-          className={cn(
-            "!h-2.5 !w-2.5 !border-slate-950",
-            PORT_STYLES[port.dataType],
-          )}
         />
       ))}
-    </div>
+    </FlowNodeShell>
   );
 };
 
@@ -1023,7 +1147,16 @@ const ModelAddonPicker = ({
   onPromptChange: ((prompt: string) => void) | null;
 }): JSX.Element => {
   const [query, setQuery] = useState("");
-  const selections = readModelAddonSelections(value);
+  const [openControlsId, setOpenControlsId] = useState<string | null>(null);
+  const rawSelections = useMemo(() => readModelAddonSelections(value), [value]);
+  const selections = useMemo(
+    () => reconcileMediaModelAddonSelections(model, addons, rawSelections),
+    [addons, model, rawSelections],
+  );
+  useEffect(() => {
+    if (mediaModelAddonSelectionsEqual(rawSelections, selections)) return;
+    onChange(selections);
+  }, [onChange, rawSelections, selections]);
   const selectedById = new Map(
     selections.map((selection) => [selection.addonId, selection]),
   );
@@ -1031,8 +1164,8 @@ const ModelAddonPicker = ({
   const modelCompatibleAddons = model
     ? addons.filter(
         (addon) =>
-          inspectMediaModelAddonCompatibility(model, addon).status !==
-          "incompatible",
+          inspectMediaModelAddonCompatibility(model, addon).status ===
+          "compatible",
       )
     : [];
   const compatibleAddons = model
@@ -1082,23 +1215,37 @@ const ModelAddonPicker = ({
       {model ? (
         <>
           {modelCompatibleAddons.length > 0 ? (
-            <Input
-              value={query}
-              aria-label="Search compatible assets"
-              placeholder="Search assets"
-              disabled={disabled}
-              onChange={(event) => setQuery(event.target.value)}
-              className={FIELD_CONTROL_CLASS}
-            />
+            <div className="relative">
+              <Input
+                value={query}
+                aria-label="Search compatible assets"
+                placeholder="Search assets"
+                disabled={disabled}
+                onChange={(event) => setQuery(event.target.value)}
+                className={cn(
+                  FIELD_CONTROL_CLASS,
+                  selections.length > 0 && "pr-24",
+                )}
+              />
+              {selections.length > 0 ? (
+                <div className="absolute inset-y-0 right-2 flex items-center gap-1.5 text-[9px] text-slate-400">
+                  <span>{selections.length} selected</span>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange([])}
+                    className="rounded px-1 py-0.5 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {compatibleAddons.length > 0 ? (
             <div className="grid grid-cols-2 gap-2">
               {compatibleAddons.map((addon) => {
                 const selection = selectedById.get(addon.id);
-                const compatibility = inspectMediaModelAddonCompatibility(
-                  model,
-                  addon,
-                );
                 const capability = model.addonCapabilities.find(
                   (candidate) => candidate.kind === addon.kind,
                 );
@@ -1111,49 +1258,285 @@ const ModelAddonPicker = ({
                   capability !== undefined &&
                   activeKindCount >= capability.maxActive;
                 return (
-                  <button
+                  <article
                     key={addon.id}
-                    type="button"
-                    aria-pressed={selection !== undefined}
-                    disabled={disabled || atCapacity}
-                    onClick={() =>
-                      onChange(
-                        selection
-                          ? selections.filter(
-                              (candidate) => candidate.addonId !== addon.id,
-                            )
-                          : [
-                              ...selections,
-                              createMediaModelAddonSelection(addon),
-                            ],
-                      )
-                    }
                     className={cn(
-                      "overflow-hidden rounded-xl border text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+                      "relative isolate overflow-hidden rounded-xl border transition-colors",
                       selection
                         ? "border-sky-400 bg-sky-400/10"
                         : "border-slate-800 bg-slate-900/60 hover:border-slate-600",
+                      (disabled || atCapacity) && "opacity-45",
                     )}
                   >
-                    <MediaResourcePreview
-                      resourceId={addon.id}
-                      metadata={metadata}
-                      assets={assets}
-                      className="aspect-[4/3] w-full"
-                    />
-                    <span className="flex items-center gap-2 p-2">
-                      <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-slate-200">
-                        {addon.displayName}
-                      </span>
-                      {selection ? (
-                        <Check className="h-3.5 w-3.5 text-sky-300" />
-                      ) : compatibility.status === "unverified" ? (
-                        <span className="text-[8px] text-amber-300">
-                          Check base
+                    <button
+                      type="button"
+                      aria-label={addon.displayName}
+                      aria-pressed={selection !== undefined}
+                      disabled={disabled || atCapacity}
+                      onClick={() =>
+                        onChange(
+                          selection
+                            ? selections.filter(
+                                (candidate) => candidate.addonId !== addon.id,
+                              )
+                            : [
+                                ...selections,
+                                createMediaModelAddonSelection(addon),
+                              ],
+                        )
+                      }
+                      className="block w-full overflow-hidden rounded-xl text-left disabled:cursor-not-allowed"
+                    >
+                      <MediaResourcePreview
+                        resourceId={addon.id}
+                        metadata={metadata}
+                        assets={assets}
+                        className="aspect-[4/3] w-full"
+                      />
+                      <span className="flex items-center gap-2 p-2">
+                        <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-slate-200">
+                          {addon.displayName}
                         </span>
-                      ) : null}
-                    </span>
-                  </button>
+                        {selection ? (
+                          <Check className="h-3.5 w-3.5 text-sky-300" />
+                        ) : null}
+                      </span>
+                    </button>
+                    {selection ? (
+                      <div className="absolute inset-x-2 top-2 z-10 max-h-[calc(100%-1rem)] overflow-y-auto rounded-lg border border-sky-300/30 bg-slate-950/92 p-2 shadow-xl backdrop-blur">
+                        <div className="flex items-center gap-1.5">
+                          {selection.kind === "lora" ? (
+                            <MediaLoraStrengthControl
+                              label={addon.displayName}
+                              value={selection.modelStrength}
+                              disabled={disabled}
+                              onChange={(modelStrength) =>
+                                updateSelection(selection.addonId, (current) =>
+                                  current.kind === "lora"
+                                    ? { ...current, modelStrength }
+                                    : current,
+                                )
+                              }
+                            />
+                          ) : (
+                            <select
+                              aria-label={`${addon.displayName} placement`}
+                              value={selection.placement}
+                              disabled={disabled}
+                              onChange={(event) =>
+                                updateSelection(selection.addonId, (current) =>
+                                  current.kind === "textual-inversion"
+                                    ? {
+                                        ...current,
+                                        placement: event.target.value as
+                                          | "positive"
+                                          | "negative"
+                                          | "both",
+                                      }
+                                    : current,
+                                )
+                              }
+                              className="h-7 min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-slate-200"
+                            >
+                              <option value="positive">Positive</option>
+                              <option value="negative">Negative</option>
+                              <option value="both">Both</option>
+                            </select>
+                          )}
+                          {selection.kind === "lora" &&
+                          (capability?.supportsSeparateComponentStrengths ||
+                            capability?.supportsDenoisingSchedules) ? (
+                            <button
+                              type="button"
+                              aria-label={`Adjust ${addon.displayName}`}
+                              aria-expanded={openControlsId === addon.id}
+                              disabled={disabled}
+                              onClick={() =>
+                                setOpenControlsId((current) =>
+                                  current === addon.id ? null : addon.id,
+                                )
+                              }
+                              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                            >
+                              <ChevronDown
+                                className={cn(
+                                  "h-3.5 w-3.5 transition-transform",
+                                  openControlsId === addon.id && "rotate-180",
+                                )}
+                              />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${addon.displayName}`}
+                            disabled={disabled}
+                            onClick={() =>
+                              onChange(
+                                selections.filter(
+                                  (candidate) =>
+                                    candidate.addonId !== selection.addonId,
+                                ),
+                              )
+                            }
+                            className="rounded p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {selection.kind === "textual-inversion" ? (
+                          <Input
+                            value={selection.token}
+                            aria-label={`${addon.displayName} token`}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              updateSelection(selection.addonId, (current) =>
+                                current.kind === "textual-inversion"
+                                  ? { ...current, token: event.target.value }
+                                  : current,
+                              )
+                            }
+                            className="mt-2 h-7 text-[9px]"
+                          />
+                        ) : null}
+                        {selection.kind === "lora" &&
+                        openControlsId === addon.id ? (
+                          <div className="mt-2 space-y-2 border-t border-slate-800 pt-2 text-[9px] text-slate-300">
+                            {capability?.supportsSeparateComponentStrengths ? (
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    selection.textEncoderStrength !== null
+                                  }
+                                  disabled={disabled}
+                                  onChange={(event) =>
+                                    updateSelection(
+                                      selection.addonId,
+                                      (current) =>
+                                        current.kind === "lora"
+                                          ? {
+                                              ...current,
+                                              textEncoderStrength: event.target
+                                                .checked
+                                                ? current.modelStrength
+                                                : null,
+                                            }
+                                          : current,
+                                    )
+                                  }
+                                />
+                                Text strength
+                              </label>
+                            ) : null}
+                            {selection.textEncoderStrength !== null ? (
+                              <label className="block">
+                                <span className="mb-1 flex justify-between">
+                                  <span>Text</span>
+                                  <span>
+                                    {selection.textEncoderStrength.toFixed(2)}
+                                  </span>
+                                </span>
+                                <input
+                                  type="range"
+                                  min={-2}
+                                  max={2}
+                                  step={0.05}
+                                  value={selection.textEncoderStrength}
+                                  disabled={disabled}
+                                  onChange={(event) =>
+                                    updateSelection(
+                                      selection.addonId,
+                                      (current) =>
+                                        current.kind === "lora"
+                                          ? {
+                                              ...current,
+                                              textEncoderStrength: Number(
+                                                event.target.value,
+                                              ),
+                                            }
+                                          : current,
+                                    )
+                                  }
+                                  className="block w-full accent-sky-400"
+                                />
+                              </label>
+                            ) : null}
+                            {capability?.supportsDenoisingSchedules ? (
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selection.denoisingSchedule !== null}
+                                  disabled={disabled}
+                                  onChange={(event) =>
+                                    updateSelection(
+                                      selection.addonId,
+                                      (current) =>
+                                        current.kind === "lora"
+                                          ? {
+                                              ...current,
+                                              denoisingSchedule: event.target
+                                                .checked
+                                                ? { start: 0, end: 1 }
+                                                : null,
+                                            }
+                                          : current,
+                                    )
+                                  }
+                                />
+                                Denoising window
+                              </label>
+                            ) : null}
+                            {selection.denoisingSchedule ? (
+                              <div className="grid grid-cols-2 gap-2">
+                                {(["start", "end"] as const).map((key) => (
+                                  <label key={key}>
+                                    <span className="capitalize">{key}</span>
+                                    <input
+                                      type="number"
+                                      min={
+                                        key === "start"
+                                          ? 0
+                                          : selection.denoisingSchedule!.start +
+                                            0.05
+                                      }
+                                      max={
+                                        key === "start"
+                                          ? selection.denoisingSchedule!.end -
+                                            0.05
+                                          : 1
+                                      }
+                                      step={0.05}
+                                      value={selection.denoisingSchedule![key]}
+                                      disabled={disabled}
+                                      onChange={(event) =>
+                                        updateSelection(
+                                          selection.addonId,
+                                          (current) =>
+                                            current.kind === "lora" &&
+                                            current.denoisingSchedule
+                                              ? {
+                                                  ...current,
+                                                  denoisingSchedule: {
+                                                    ...current.denoisingSchedule,
+                                                    [key]: Number(
+                                                      event.target.value,
+                                                    ),
+                                                  },
+                                                }
+                                              : current,
+                                        )
+                                      }
+                                      className="mt-1 h-7 w-full rounded border border-slate-700 bg-slate-950 px-1.5"
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </article>
                 );
               })}
             </div>
@@ -1168,106 +1551,6 @@ const ModelAddonPicker = ({
           Choose a model first
         </div>
       )}
-
-      {selections.map((selection) => {
-        const addon = addons.find(
-          (candidate) => candidate.id === selection.addonId,
-        );
-        if (!addon) return null;
-        return (
-          <div
-            key={selection.addonId}
-            className="rounded-lg border border-slate-800 bg-slate-900/50 p-2.5"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate text-[10px] font-medium text-slate-200">
-                {addon.displayName}
-              </span>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() =>
-                  onChange(
-                    selections.filter(
-                      (candidate) => candidate.addonId !== selection.addonId,
-                    ),
-                  )
-                }
-                className="text-[9px] text-slate-500 hover:text-rose-300 disabled:opacity-50"
-              >
-                Remove
-              </button>
-            </div>
-            {selection.kind === "lora" ? (
-              <label className="mt-2 flex items-center gap-2 text-[9px] text-slate-500">
-                Strength
-                <Input
-                  type="number"
-                  min={-4}
-                  max={4}
-                  step={0.05}
-                  disabled={disabled}
-                  value={
-                    typeof selection.modelStrength === "number"
-                      ? selection.modelStrength
-                      : 1
-                  }
-                  onChange={(event) =>
-                    updateSelection(selection.addonId, (current) =>
-                      current.kind === "lora"
-                        ? {
-                            ...current,
-                            modelStrength: event.target.valueAsNumber,
-                          }
-                        : current,
-                    )
-                  }
-                  className="h-7 flex-1 text-[9px]"
-                />
-              </label>
-            ) : (
-              <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                <Input
-                  value={selection.token}
-                  aria-label={`${addon.displayName} token`}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    updateSelection(selection.addonId, (current) =>
-                      current.kind === "textual-inversion"
-                        ? { ...current, token: event.target.value }
-                        : current,
-                    )
-                  }
-                  className="h-7 text-[9px]"
-                />
-                <select
-                  value={selection.placement}
-                  aria-label={`${addon.displayName} placement`}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    updateSelection(selection.addonId, (current) =>
-                      current.kind === "textual-inversion"
-                        ? {
-                            ...current,
-                            placement: event.target.value as
-                              | "positive"
-                              | "negative"
-                              | "both",
-                          }
-                        : current,
-                    )
-                  }
-                  className="h-7 rounded-md border border-slate-700 bg-slate-950 px-2 text-[9px] text-slate-200"
-                >
-                  <option value="positive">Positive</option>
-                  <option value="negative">Negative</option>
-                  <option value="both">Both</option>
-                </select>
-              </div>
-            )}
-          </div>
-        );
-      })}
 
       {missingTriggers.map(({ addon, trigger }) => (
         <div
@@ -1308,7 +1591,9 @@ const NodeFieldEditor = ({
   maskAsset,
   resolvedModel,
   requiredModelCapabilities,
+  requiredReferenceRoles,
   generationPrompt,
+  referenceRoleValues,
   onGenerationPromptChange,
   variables,
   issue,
@@ -1324,7 +1609,9 @@ const NodeFieldEditor = ({
   maskAsset: MediaAssetRecord | null;
   resolvedModel: MediaModelDescriptor | null;
   requiredModelCapabilities: readonly MediaCapability[];
+  requiredReferenceRoles: readonly MediaImageReferenceRole[];
   generationPrompt: string;
+  referenceRoleValues: readonly string[] | null;
   onGenerationPromptChange: ((prompt: string) => void) | null;
   variables: MediaFlow["variables"];
   issue: MediaNodeValidationIssue | null;
@@ -1360,7 +1647,11 @@ const NodeFieldEditor = ({
   );
   const compatibleModels = listSelectableMediaModels(models, {
     requiredCapabilities: requiredModelCapabilities,
-  });
+  }).filter((model) =>
+    requiredReferenceRoles.every((role) =>
+      mediaModelSupportsReferenceRole(model, role),
+    ),
+  );
   const subjectCutoutModels = listSelectableMediaModels(models, {
     requiredCapabilities: ["background-remove"],
   });
@@ -1394,6 +1685,22 @@ const NodeFieldEditor = ({
           aria-invalid={issue !== null}
           aria-describedby={describedBy}
           onChange={(event) => onChange(field.id, event.target.value)}
+          onBlur={(event) => {
+            if (
+              field.id !== "prompt" &&
+              field.id !== "negativePrompt" &&
+              field.id !== "instructions"
+            ) {
+              return;
+            }
+            const normalizedValue = normalizeMediaSubmissionText(
+              event.target.value,
+              field.maxLength ?? 8_000,
+            );
+            if (normalizedValue !== event.target.value) {
+              onChange(field.id, normalizedValue);
+            }
+          }}
           className={cn(FIELD_CONTROL_CLASS, "min-h-24 resize-y leading-5")}
         />
       );
@@ -1676,6 +1983,12 @@ const NodeFieldEditor = ({
       );
       break;
     case "select":
+      const options =
+        field.id === "referenceRole" && referenceRoleValues
+          ? field.options?.filter((candidate) =>
+              referenceRoleValues.includes(candidate.value),
+            )
+          : field.options;
       control = (
         <select
           id={controlId}
@@ -1689,7 +2002,7 @@ const NodeFieldEditor = ({
             "h-9 w-full rounded-md border px-3",
           )}
         >
-          {field.options?.map((candidate) => (
+          {options?.map((candidate) => (
             <option key={candidate.value} value={candidate.value}>
               {candidate.label}
             </option>
@@ -1917,12 +2230,10 @@ const NodePalettePanel = ({
                               key={`${direction}-${port.id}-${port.dataType}`}
                               className="flex items-center gap-1 rounded border border-slate-800 bg-slate-950/60 px-1.5 py-0.5 text-[8px] text-slate-500"
                             >
-                              <span
+                              <FlowPortDot
                                 aria-hidden="true"
-                                className={cn(
-                                  "h-1.5 w-1.5 rounded-full",
-                                  PORT_STYLES[port.dataType],
-                                )}
+                                tone={PORT_TONES[port.dataType]}
+                                className="h-1.5 w-1.5"
                               />
                               {direction === "input" ? "In" : "Out"} ·{" "}
                               {PORT_LABELS[port.dataType]}
@@ -2730,6 +3041,7 @@ const NodeInspector = ({
   assetMetadata,
   onNodeConfigChange,
   onNodeConfigPatch,
+  onNodeLabelChange,
   onConnectPorts,
   onDisconnectInput,
   onDisconnectConnection,
@@ -2749,6 +3061,7 @@ const NodeInspector = ({
     nodeId: string,
     values: Readonly<Record<string, unknown>>,
   ) => void;
+  onNodeLabelChange: (nodeId: string, label: string) => void;
   onConnectPorts: (request: MediaFlowConnectionRequest) => void;
   onDisconnectInput: (nodeId: string, portId: string) => void;
   onDisconnectConnection: (request: MediaFlowConnectionRequest) => void;
@@ -2765,11 +3078,15 @@ const NodeInspector = ({
   const [activeGroup, setActiveGroup] = useState<MediaNodeInspectorGroup>(
     groups[0] ?? "Basic",
   );
+  const [nodeLabelDraft, setNodeLabelDraft] = useState(node.label);
   const [removeReviewOpen, setRemoveReviewOpen] = useState(false);
   useEffect(() => {
     setActiveGroup(groups[0] ?? "Basic");
     setRemoveReviewOpen(false);
   }, [groupKey, node.id]);
+  useEffect(() => {
+    setNodeLabelDraft(node.label);
+  }, [node.id, node.label]);
 
   const incoming = flow.edges.filter((edge) => edge.toNodeId === node.id);
   const outgoing = flow.edges.filter((edge) => edge.fromNodeId === node.id);
@@ -2788,6 +3105,28 @@ const NodeInspector = ({
   const resolvedGenerationModel =
     plan.runtimeBindings.find((binding) => binding.nodeId === node.id)?.model ??
     null;
+  const imageTaskBinding = plan.runtimeBindings.find(
+    (binding) => binding.modality === "image",
+  );
+  const referenceRoleModel =
+    node.type === "source.image"
+      ? (imageTaskBinding?.model ?? null)
+      : resolvedGenerationModel;
+  const referenceRoleValues = referenceRoleModel
+    ? [
+        ...(referenceRoleModel.capabilities.includes("image-to-image")
+          ? ["base"]
+          : []),
+        ...getMediaReferenceConditioningCapabilities(referenceRoleModel).roles,
+        ...([
+          "stable-diffusion-1",
+          "stable-diffusion-2",
+          "stable-diffusion-xl",
+        ].includes(referenceRoleModel.architecture ?? "")
+          ? ["pose"]
+          : []),
+      ]
+    : null;
   const promptEdge = incoming.find((edge) => edge.toPortId === "prompt");
   const promptSource = promptEdge
     ? (resolvedFlow.nodes.find((entry) => entry.id === promptEdge.fromNodeId) ??
@@ -2815,6 +3154,18 @@ const NodeInspector = ({
     typeof baseImageSource?.config.assetId === "string"
       ? baseImageSource.config.assetId
       : null;
+  const requiredReferenceRoles = imageInputSources.flatMap((source) => {
+    const role = source.config.referenceRole;
+    return typeof role === "string" && role !== "base" && role !== "pose"
+      ? [role as MediaImageReferenceRole]
+      : [];
+  });
+  const hasPoseInput = imageInputSources.some(
+    (source) => source.config.referenceRole === "pose",
+  );
+  const conditionedImageCount = imageInputSources.filter(
+    (source) => source.config.referenceRole !== "pose",
+  ).length;
   const maskBaseAsset = baseImageAssetId
     ? (assets.find(
         (asset) => asset.id === baseImageAssetId && asset.kind === "image",
@@ -2837,11 +3188,16 @@ const NodeInspector = ({
         : ["image-to-video"]
       : node.type === "task.edit-image"
         ? [
-            hasMediaImageMaskContent(editMask)
-              ? "masked-image-edit"
-              : imageInputEdges.length > 1
-                ? "multi-reference-edit"
-                : "image-to-image",
+            ...(hasPoseInput ? (["pose-control"] as const) : []),
+            ...(hasMediaImageMaskContent(editMask)
+              ? (["masked-image-edit"] as const)
+              : []),
+            ...(conditionedImageCount > 1
+              ? (["multi-reference-edit"] as const)
+              : conditionedImageCount === 1 &&
+                  !hasMediaImageMaskContent(editMask)
+                ? (["image-to-image"] as const)
+                : []),
           ]
         : node.type === "task.generate-image" &&
             node.config.outputFormat === "svg"
@@ -2884,24 +3240,51 @@ const NodeInspector = ({
   const visibleFields = definition
     ? listVisibleMediaNodeFields(definition, node.config, activeGroup).filter(
         (field) =>
-          field.kind !== "mask" ||
-          (maskBaseAsset !== null &&
-            (hasMediaImageMaskContent(editMask) ||
-              resolvedGenerationModel?.capabilities.includes(
-                "masked-image-edit",
-              ) === true)),
+          (field.kind !== "mask" ||
+            (maskBaseAsset !== null &&
+              (hasMediaImageMaskContent(editMask) ||
+                resolvedGenerationModel?.capabilities.includes(
+                  "masked-image-edit",
+                ) === true))) &&
+          (field.id !== "influence" ||
+            (referenceRoleModel !== null &&
+              getMediaReferenceConditioningCapabilities(referenceRoleModel)
+                .adjustableInfluence)),
       )
     : [];
+  const commitNodeLabel = (): void => {
+    const nextLabel = nodeLabelDraft.trim();
+    if (!nextLabel || nextLabel === node.label) {
+      setNodeLabelDraft(node.label);
+      return;
+    }
+    onNodeLabelChange(node.id, nextLabel);
+  };
   return (
     <aside
       aria-label="Node inspector"
       className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
-        <h2 className="pt-1 text-sm font-semibold text-slate-100">
-          {node.label}
-        </h2>
-        <div className="flex items-center gap-1.5">
+        <label className="min-w-0 flex-1">
+          <span className="text-[10px] font-medium text-slate-300">Name</span>
+          <Input
+            value={nodeLabelDraft}
+            aria-label="Node name"
+            maxLength={256}
+            onChange={(event) => setNodeLabelDraft(event.target.value)}
+            onBlur={commitNodeLabel}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                setNodeLabelDraft(node.label);
+                event.currentTarget.blur();
+              }
+            }}
+            className="mt-1 h-8 text-xs font-semibold"
+          />
+        </label>
+        <div className="mt-5 flex shrink-0 items-center gap-1.5">
           <Button
             type="button"
             variant="ghost"
@@ -3043,7 +3426,9 @@ const NodeInspector = ({
                   maskAsset={maskBaseAsset}
                   resolvedModel={resolvedGenerationModel}
                   requiredModelCapabilities={requiredModelCapabilities}
+                  requiredReferenceRoles={requiredReferenceRoles}
                   generationPrompt={generationPrompt}
+                  referenceRoleValues={referenceRoleValues}
                   onGenerationPromptChange={
                     promptSource?.type === "source.prompt"
                       ? (prompt) =>
@@ -3054,7 +3439,19 @@ const NodeInspector = ({
                   issue={
                     validationIssues.find(
                       (issue) => issue.fieldId === field.id,
-                    ) ?? null
+                    ) ??
+                    (field.id === "prompt" &&
+                    diagnostics.some(
+                      (diagnostic) => diagnostic.code === "PROMPT_REQUIRED",
+                    )
+                      ? {
+                          code: "INVALID_CONFIG_VALUE",
+                          severity: "error",
+                          nodeId: node.id,
+                          fieldId: "prompt",
+                          message: "Prompt is required.",
+                        }
+                      : null)
                   }
                   onChange={(fieldId, value) =>
                     onNodeConfigChange(node.id, fieldId, value)
@@ -3797,6 +4194,7 @@ export const MediaFlowView = ({
   onTemplateApply = () => undefined,
   onNodeConfigChange,
   onNodeConfigPatch,
+  onNodeLabelChange,
   onNodeAdd,
   onNodeRemove,
   onConnectPorts,
@@ -3865,14 +4263,20 @@ export const MediaFlowView = ({
   const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
   const undoStack = useRef<MediaFlowLayout[]>([]);
   const redoStack = useRef<MediaFlowLayout[]>([]);
-  const flowInstance = useRef<ReactFlowInstance<MediaCanvasNode, Edge> | null>(
-    null,
-  );
+  const previousCanvasLayoutKey = useRef<string | null>(null);
+  const flowInstance = useRef<ReactFlowInstance<
+    MediaCanvasNode,
+    MediaCanvasEdge
+  > | null>(null);
   const lastFollowedActiveNodes = useRef("");
   const [, setHistoryRevision] = useState(0);
   const layoutByNodeId = useMemo(
     () => new Map(layout.nodes.map((entry) => [entry.nodeId, entry])),
     [layout.nodes],
+  );
+  const flowNodesById = useMemo(
+    () => new Map(flow.nodes.map((node) => [node.id, node])),
+    [flow.nodes],
   );
   const collapsedNodeIds = useMemo(
     () =>
@@ -3904,23 +4308,14 @@ export const MediaFlowView = ({
         : null,
     [flow, plan, runOverlay],
   );
-  const completedRunOutputAsset = useMemo(() => {
-    if (
-      runOverlay?.status !== "completed" ||
-      !runOverlayProjection?.exactFlowMatch
-    ) {
-      return null;
-    }
-    return runOverlay.assets
-      .filter((asset) => asset.kind === "image" || asset.kind === "vector")
-      .reduce<MediaAssetRecord | null>(
-        (first, asset) =>
-          first === null || asset.outputIndex < first.outputIndex
-            ? asset
-            : first,
-        null,
-      );
-  }, [runOverlay, runOverlayProjection]);
+  const visualRunOverlayProjection = useMemo(
+    () => selectMediaRunOverlayForCurrentFlow(runOverlayProjection),
+    [runOverlayProjection],
+  );
+  const canvasLayoutKey = useMemo(
+    () => `${flow.id}\u001f${createMediaFlowLayoutDigest(layout)}`,
+    [flow.id, layout],
+  );
   const projectedCanvasNodes = useMemo<MediaCanvasNode[]>(() => {
     const groupNodes = layout.groups.flatMap((group) => {
       const positions = group.nodeIds.flatMap((nodeId) => {
@@ -3997,7 +4392,13 @@ export const MediaFlowView = ({
       const configuredAsset =
         assetIndex >= 0 ? (flowImageAssets[assetIndex] ?? null) : null;
       const runOutputAsset =
-        node.type === "output.asset" ? completedRunOutputAsset : null;
+        node.type === "output.asset"
+          ? selectMediaRunOutputAssetForNode(
+              runOverlay,
+              runOverlayProjection,
+              node.id,
+            )
+          : null;
       const asset = configuredAsset ?? runOutputAsset;
       return {
         id: node.id,
@@ -4019,7 +4420,8 @@ export const MediaFlowView = ({
               : null,
           inputs: definition?.inputs ?? [],
           outputs: definition?.outputs ?? [],
-          runOverlay: runOverlayProjection?.observations.get(node.id) ?? null,
+          runOverlay:
+            visualRunOverlayProjection?.observations.get(node.id) ?? null,
         },
         hidden: collapsedNodeIds.has(node.id),
       } satisfies MediaSemanticCanvasNode;
@@ -4027,7 +4429,6 @@ export const MediaFlowView = ({
     return [...groupNodes, ...commentNodes, ...semanticNodes];
   }, [
     collapsedNodeIds,
-    completedRunOutputAsset,
     flow.nodes,
     flowImageAssets,
     layout.comments,
@@ -4035,20 +4436,22 @@ export const MediaFlowView = ({
     layoutByNodeId,
     models,
     resolvedNodesById,
+    runOverlay,
     runOverlayProjection,
+    visualRunOverlayProjection,
   ]);
   const [canvasNodes, setCanvasNodes, applyCanvasNodeChanges] =
     useNodesState<MediaCanvasNode>(projectedCanvasNodes);
-  const canvasEdges = useMemo<Edge[]>(
+  const projectedCanvasEdges = useMemo<MediaCanvasEdge[]>(
     () =>
       flow.edges.map((edge) => {
-        const sourceState = runOverlayProjection?.observations.get(
+        const sourceState = visualRunOverlayProjection?.observations.get(
           edge.fromNodeId,
         )?.state;
-        const targetState = runOverlayProjection?.observations.get(
+        const targetState = visualRunOverlayProjection?.observations.get(
           edge.toNodeId,
         )?.state;
-        const active = targetState === "running" || targetState === "retrying";
+        const active = targetState === "running";
         const paused = targetState === "waiting" || targetState === "blocked";
         const traversed =
           ["completed", "cached", "skipped"].includes(sourceState ?? "") &&
@@ -4061,46 +4464,66 @@ export const MediaFlowView = ({
             "waiting",
             "blocked",
           ].includes(targetState ?? "");
-        return {
+        const sourceNode = flowNodesById.get(edge.fromNodeId);
+        const sourcePort = sourceNode
+          ? getMediaNodeDefinition(sourceNode.type)?.outputs.find(
+              (port) => port.id === edge.fromPortId,
+            )
+          : undefined;
+        const sourceTone = sourcePort
+          ? PORT_TONES[sourcePort.dataType]
+          : "slate";
+        const tone = active
+          ? "cyan"
+          : paused
+            ? "fuchsia"
+            : traversed
+              ? "emerald"
+              : sourceTone;
+        return createFlowCanvasEdge({
           id: edge.id,
           source: edge.fromNodeId,
           target: edge.toNodeId,
           sourceHandle: edge.fromPortId,
           targetHandle: edge.toPortId,
+          tone,
           hidden:
             collapsedNodeIds.has(edge.fromNodeId) ||
             collapsedNodeIds.has(edge.toNodeId),
           animated: active,
-          style: {
-            stroke: active
-              ? "rgb(103 232 249)"
-              : paused
-                ? "rgb(232 121 249)"
-                : traversed
-                  ? "rgb(52 211 153)"
-                  : "rgb(71 85 105)",
-            strokeWidth: active || paused ? 2.75 : traversed ? 2 : 1.5,
-            opacity:
-              runOverlayProjection && !active && !paused && !traversed
-                ? 0.45
-                : 1,
-          },
-        };
+          emphasis:
+            active || paused ? "strong" : traversed ? "medium" : "default",
+          muted: Boolean(
+            visualRunOverlayProjection && !active && !paused && !traversed,
+          ),
+        });
       }),
-    [collapsedNodeIds, flow.edges, runOverlayProjection],
+    [
+      collapsedNodeIds,
+      flow.edges,
+      flowNodesById,
+      visualRunOverlayProjection,
+    ],
+  );
+  const [canvasEdges, setCanvasEdges] = useState<MediaCanvasEdge[]>(
+    projectedCanvasEdges,
   );
   const activeNodeSignature = useMemo(
     () =>
-      [...(runOverlayProjection?.activeNodeIds ?? [])].sort().join("\u001f"),
-    [runOverlayProjection],
+      [...(visualRunOverlayProjection?.activeNodeIds ?? [])]
+        .sort()
+        .join("\u001f"),
+    [visualRunOverlayProjection],
   );
   const activeNodeSummary = useMemo(() => {
-    const activeNodeIds = new Set(runOverlayProjection?.activeNodeIds ?? []);
+    const activeNodeIds = new Set(
+      visualRunOverlayProjection?.activeNodeIds ?? [],
+    );
     return flow.nodes
       .filter((node) => activeNodeIds.has(node.id))
       .map((node) => node.label)
       .join(", ");
-  }, [flow.nodes, runOverlayProjection]);
+  }, [flow.nodes, visualRunOverlayProjection]);
   const selectedNode = useMemo(
     () => flow.nodes.find((node) => node.id === selectedNodeId),
     [flow.nodes, selectedNodeId],
@@ -4765,9 +5188,23 @@ export const MediaFlowView = ({
     [onConnectPorts],
   );
 
-  useEffect(() => {
-    setCanvasNodes(projectedCanvasNodes);
-  }, [projectedCanvasNodes, setCanvasNodes]);
+  useLayoutEffect(() => {
+    const preservePositions =
+      previousCanvasLayoutKey.current === canvasLayoutKey;
+    setCanvasNodes((nodes) =>
+      reconcileMediaCanvasNodes(nodes, projectedCanvasNodes, preservePositions),
+    );
+    setCanvasEdges((edges) =>
+      reconcileMediaCanvasEdges(edges, projectedCanvasEdges),
+    );
+    previousCanvasLayoutKey.current = canvasLayoutKey;
+  }, [
+    canvasLayoutKey,
+    projectedCanvasEdges,
+    projectedCanvasNodes,
+    setCanvasEdges,
+    setCanvasNodes,
+  ]);
 
   useEffect(() => {
     setFollowRun(runOverlay !== null);
@@ -4783,7 +5220,9 @@ export const MediaFlowView = ({
       return;
     }
     lastFollowedActiveNodes.current = activeNodeSignature;
-    const activeNodeIds = new Set(runOverlayProjection?.activeNodeIds ?? []);
+    const activeNodeIds = new Set(
+      visualRunOverlayProjection?.activeNodeIds ?? [],
+    );
     const activeNodes = canvasNodes.filter((node) =>
       activeNodeIds.has(node.id),
     );
@@ -4797,11 +5236,20 @@ export const MediaFlowView = ({
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeNodeSignature, canvasNodes, followRun, runOverlayProjection]);
+  }, [
+    activeNodeSignature,
+    canvasNodes,
+    followRun,
+    visualRunOverlayProjection,
+  ]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      void flowInstance.current?.fitView({ padding: 0.25, duration: 180 });
+      void flowInstance.current?.fitView({
+        padding: FLOW_CANVAS_FIT_PADDING,
+        duration: 180,
+        maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [panelOpen, topologyKey]);
@@ -5221,14 +5669,30 @@ export const MediaFlowView = ({
   const planErrors = plan.diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
   );
+  const firstPlanError = planErrors[0] ?? null;
+  const fixFirstPlanError = (): void => {
+    if (!firstPlanError?.nodeId) {
+      setPlanPanelOpen(true);
+      return;
+    }
+    setPlanPanelOpen(false);
+    setHistoryPanelOpen(false);
+    setPortabilityPanelOpen(false);
+    setPalettePanelOpen(false);
+    setGroupsPanelOpen(false);
+    setSelectionPanelOpen(false);
+    setVariablesPanelOpen(false);
+    setTemplatesPanelOpen(false);
+    setSelectedNodeId(firstPlanError.nodeId);
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 px-6 py-3">
+      <header className="grid shrink-0 gap-3 border-b border-slate-800/80 px-3 py-3 sm:px-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
             <GitBranch className="h-4 w-4 text-cyan-300" />
-            Semantic flow
+            <span className="max-w-72 truncate">{flow.name}</span>
             {hasUnsavedChanges ? (
               <span className="text-[10px] font-medium text-amber-300">
                 Unsaved changes
@@ -5242,7 +5706,7 @@ export const MediaFlowView = ({
               <button
                 type="button"
                 aria-expanded={planPanelOpen}
-                onClick={() => toggleFlowPanel("plan")}
+                onClick={fixFirstPlanError}
                 className="rounded text-[10px] font-medium text-rose-300 outline-none hover:text-rose-200 focus-visible:ring-2 focus-visible:ring-rose-300/40"
               >
                 Review {planErrors.length || "preflight"} issue
@@ -5269,7 +5733,7 @@ export const MediaFlowView = ({
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 xl:justify-end xl:pb-0">
           <div
             className="flex items-center"
             aria-label="Semantic editing controls"
@@ -5675,6 +6139,28 @@ export const MediaFlowView = ({
         </div>
       </header>
 
+      {firstPlanError ? (
+        <section
+          role="alert"
+          className="flex shrink-0 items-center justify-between gap-3 border-b border-rose-400/20 bg-rose-400/5 px-3 py-2 sm:px-6"
+        >
+          <p className="min-w-0 text-xs text-rose-100">
+            {firstPlanError.code === "PROMPT_REQUIRED"
+              ? "Prompt is required."
+              : firstPlanError.message}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={fixFirstPlanError}
+            className="h-8 shrink-0 border-rose-300/30 bg-rose-300/5 text-rose-100 hover:bg-rose-300/10"
+          >
+            Fix
+          </Button>
+        </section>
+      ) : null}
+
       {runOverlay && runOverlayProjection ? (
         <section
           aria-label="Run status"
@@ -5769,72 +6255,71 @@ export const MediaFlowView = ({
             : "grid-cols-1",
         )}
       >
-        <div
-          data-command-focus="document"
-          className="relative min-h-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.06),transparent_32%)]"
-        >
-          <ReactFlowProvider>
-            <ReactFlow
-              nodes={canvasNodes}
-              edges={canvasEdges}
-              nodeTypes={NODE_TYPES}
-              onInit={(instance) => {
-                flowInstance.current = instance;
-              }}
-              onNodesChange={handleNodesChange}
-              onSelectionChange={handleSelectionChange}
-              onConnect={handleConnect}
-              isValidConnection={isValidConnection}
-              onNodeClick={(_event, node) => {
-                if (node.type === "mediaComment") {
-                  setSelectedNodeId(null);
-                  setPlanPanelOpen(false);
-                  setHistoryPanelOpen(false);
-                  setPortabilityPanelOpen(false);
-                  setPalettePanelOpen(false);
-                  setSelectionPanelOpen(false);
-                  setVariablesPanelOpen(false);
-                  setGroupsPanelOpen(true);
-                  return;
-                }
-                if (node.type !== "mediaNode") return;
+        <div data-command-focus="document" className="relative min-h-0">
+          <FlowCanvas<MediaCanvasNode, MediaCanvasEdge>
+            providerKey={flow.id}
+            nodes={canvasNodes}
+            edges={canvasEdges}
+            nodeTypes={NODE_TYPES}
+            onInit={(instance) => {
+              flowInstance.current = instance;
+              window.requestAnimationFrame(() => {
+                void instance.fitView({
+                  padding: FLOW_CANVAS_FIT_PADDING,
+                  maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
+                });
+              });
+            }}
+            onNodesChange={handleNodesChange}
+            onSelectionChange={handleSelectionChange}
+            onConnect={handleConnect}
+            isValidConnection={isValidConnection}
+            onNodeClick={(_event, node) => {
+              if (node.type === "mediaComment") {
+                setSelectedNodeId(null);
                 setPlanPanelOpen(false);
                 setHistoryPanelOpen(false);
                 setPortabilityPanelOpen(false);
-                setGroupsPanelOpen(false);
                 setPalettePanelOpen(false);
                 setSelectionPanelOpen(false);
                 setVariablesPanelOpen(false);
-                setSelectedNodeId(node.id);
-              }}
-              onPaneClick={() => setSelectedNodeId(null)}
-              onMoveStart={(event) => {
-                if (event) setFollowRun(false);
-              }}
-              deleteKeyCode={[]}
-              nodesDraggable
-              nodesConnectable
-              elementsSelectable
-              selectionOnDrag
-              multiSelectionKeyCode={["Control", "Meta"]}
-              fitView
-              fitViewOptions={{ padding: 0.25 }}
-              minZoom={0.35}
-              maxZoom={1.5}
-              proOptions={{ hideAttribution: true }}
-              aria-label="Editable semantic media workflow"
-            >
-              <Background color="rgb(30 41 59)" gap={24} size={1} />
-              <MiniMap
-                pannable
-                zoomable
-                maskColor="rgba(2, 6, 23, 0.76)"
-                nodeColor="rgb(51 65 85)"
-                className="!border !border-slate-800 !bg-slate-950"
-              />
-              <Controls className="!border-slate-800 !bg-slate-950 !shadow-xl [&_button]:!border-slate-800 [&_button]:!bg-slate-950 [&_button]:!fill-slate-300" />
-            </ReactFlow>
-          </ReactFlowProvider>
+                setGroupsPanelOpen(true);
+                return;
+              }
+              if (node.type !== "mediaNode") return;
+              setPlanPanelOpen(false);
+              setHistoryPanelOpen(false);
+              setPortabilityPanelOpen(false);
+              setGroupsPanelOpen(false);
+              setPalettePanelOpen(false);
+              setSelectionPanelOpen(false);
+              setVariablesPanelOpen(false);
+              setSelectedNodeId(node.id);
+            }}
+            onPaneClick={() => setSelectedNodeId(null)}
+            onMoveStart={(event) => {
+              if (event) setFollowRun(false);
+            }}
+            deleteKeyCode={[]}
+            nodesDraggable
+            nodesConnectable
+            elementsSelectable
+            selectionOnDrag
+            multiSelectionKeyCode={["Control", "Meta"]}
+            miniMapNodeColor={(node) =>
+              node.type === "mediaNode"
+                ? {
+                    source: "#38bdf8",
+                    task: "#a78bfa",
+                    operation: "#22d3ee",
+                    control: "#fbbf24",
+                    output: "#34d399",
+                    runtime: "#64748b",
+                  }[(node.data as MediaCanvasNodeData).layer]
+                : "#475569"
+            }
+            aria-label="Editable semantic media workflow"
+          />
         </div>
 
         {variablesPanelOpen ? (
@@ -5869,6 +6354,7 @@ export const MediaFlowView = ({
             assetMetadata={assetMetadata}
             onNodeConfigChange={onNodeConfigChange}
             onNodeConfigPatch={onNodeConfigPatch}
+            onNodeLabelChange={onNodeLabelChange}
             onConnectPorts={onConnectPorts}
             onDisconnectInput={onDisconnectInput}
             onDisconnectConnection={disconnectConnection}

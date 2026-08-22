@@ -20,9 +20,11 @@ axum = "0.8"
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 enigo = "0.6.1"
+font8x8 = "0.3"
 getrandom = "0.3"
 github-copilot-sdk = { version = "=1.0.7-preview.2", default-features = false }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+webp = { version = "0.3.1", default-features = false }
 mdns-sd = "=0.20.1"
 network-interface = "=2.0.5"
 ort = "=2.0.0-rc.12"

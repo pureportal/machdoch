@@ -36,6 +36,7 @@ import {
   type CommandPageItem,
 } from "../../commands/command-types";
 import {
+  isPromptEnhancementPlaceholderMessage,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
 } from "../../chat-session.model";
@@ -68,12 +69,6 @@ import { PromptEnhancementPending } from "./prompt-enhancement-pending";
 
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
-  promptEnhancementPending?: {
-    id: string;
-    content: string;
-    contextAttachments: ChatSessionContextAttachment[];
-    modeLabel: string;
-  } | null;
   promptEnhancementPreview?: {
     id: string;
     content: string;
@@ -89,6 +84,10 @@ export interface ConversationFeedProps {
   onEditMessage?: (message: ChatSessionMessage, content: string) => boolean;
   onStartEditMessage?: (message: ChatSessionMessage) => void;
   activeEditingMessageId?: string | null;
+  editingPromptEnhancement?: {
+    messageId: string;
+  } | null;
+  onCancelPromptEnhancement?: () => void;
   onContinueTask: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
@@ -281,6 +280,9 @@ interface ConversationMessageRowProps {
   canRetryMessage: boolean;
   editContent: string;
   isEditing: boolean;
+  isActiveEditing: boolean;
+  isDimmedForEditing: boolean;
+  isPromptEnhancing: boolean;
   isAiContextStart: boolean;
   isNavigationHighlighted: boolean;
   isNavigationTarget: boolean;
@@ -289,6 +291,7 @@ interface ConversationMessageRowProps {
   message: ChatSessionMessage;
   onContinueTask: (message: ChatSessionMessage) => void;
   onCancelEditing: () => void;
+  onCancelPromptEnhancement?: () => void;
   onEditContentChange: (content: string) => void;
   onEditMessage?: (message: ChatSessionMessage) => void;
   onOpenAttachment?: (attachment: ChatSessionContextAttachment) => void;
@@ -318,14 +321,18 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   canContinueMessage,
   canRetryMessage,
   editContent,
+  isActiveEditing,
+  isDimmedForEditing,
   isEditing,
   isAiContextStart,
   isNavigationHighlighted,
   isNavigationTarget,
   isOriginalPromptExpanded,
+  isPromptEnhancing,
   isSpeakingMessage,
   message,
   onCancelEditing,
+  onCancelPromptEnhancement,
   onContinueTask,
   onEditContentChange,
   onEditMessage,
@@ -343,6 +350,17 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   workspaceRoot,
 }: ConversationMessageRowProps): JSX.Element | null {
   if (message.role === "agent" && message.source?.kind === "preview") {
+    return null;
+  }
+
+  const isPromptEnhancementPlaceholder =
+    isPromptEnhancementPlaceholderMessage(message);
+  const isPromptEnhancementMarker =
+    message.lifecycle?.kind === "transient" &&
+    message.lifecycle.owner === "prompt-enhancement" &&
+    message.role === "agent";
+
+  if (isPromptEnhancementMarker) {
     return null;
   }
 
@@ -394,6 +412,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
         "app-message-container grid w-full gap-6 [contain-intrinsic-size:auto_180px] [content-visibility:auto]",
         isNavigationHighlighted &&
           "app-message-container--navigation-highlight",
+        isDimmedForEditing && "opacity-40 transition-opacity",
       )}
     >
       {isAiContextStart ? (
@@ -454,6 +473,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
                 message.role === "user" && originalPromptContent && "pr-14",
                 isEditing && "w-full pr-5",
+                isActiveEditing &&
+                  "border border-sky-400/60 bg-sky-500/10 shadow-sky-950/35 ring-2 ring-sky-400/20",
               )}
               onContextMenu={
                 isEditing
@@ -535,6 +556,12 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 </Button>
               ) : null}
 
+              {isActiveEditing && !isEditing ? (
+                <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sky-100">
+                  Editing
+                </span>
+              ) : null}
+
               {isEditing ? (
                 <form
                   className="grid gap-3"
@@ -601,6 +628,13 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   }
                 />
               )}
+
+              {isPromptEnhancementPlaceholder || isPromptEnhancing ? (
+                <PromptEnhancementPending
+                  onCancel={onCancelPromptEnhancement}
+                  className="mt-3"
+                />
+              ) : null}
             </div>
           ) : null}
 
@@ -706,7 +740,6 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 
 export const ConversationFeed = ({
   visibleMessages,
-  promptEnhancementPending = null,
   promptEnhancementPreview = null,
   workspaceRoot,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
@@ -717,6 +750,8 @@ export const ConversationFeed = ({
   onEditMessage,
   onStartEditMessage,
   activeEditingMessageId = null,
+  editingPromptEnhancement = null,
+  onCancelPromptEnhancement,
   onContinueTask,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
@@ -1572,11 +1607,7 @@ export const ConversationFeed = ({
   }, []);
   useOptionalRegisterCommands(conversationCommands);
 
-  if (
-    visibleMessages.length === 0 &&
-    !promptEnhancementPending &&
-    !promptEnhancementPreview
-  ) {
+  if (visibleMessages.length === 0 && !promptEnhancementPreview) {
     return (
       <div className="app-conversation-empty mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center py-16">
         <div className="flex flex-col items-center gap-6 text-center">
@@ -1613,6 +1644,8 @@ export const ConversationFeed = ({
     ? `original-prompt-${promptEnhancementPreview.id}`
     : "";
   const renderedMessages = visibleMessages.slice(-renderedMessageLimit);
+  const activeEditingId = activeEditingMessageId ?? editingMessageId;
+  const hasActiveMessageEdit = activeEditingId !== null;
   const hiddenMessageCount = visibleMessages.length - renderedMessages.length;
   const retryableAgentMessageIds = getRetryableAgentMessageIds(visibleMessages);
   const latestRetryableAgentMessageId =
@@ -1700,6 +1733,11 @@ export const ConversationFeed = ({
           }
           editContent={editingMessageId === message.id ? editContent : ""}
           isEditing={editingMessageId === message.id}
+          isActiveEditing={activeEditingId === message.id}
+          isDimmedForEditing={
+            hasActiveMessageEdit && activeEditingId !== message.id
+          }
+          isPromptEnhancing={editingPromptEnhancement?.messageId === message.id}
           isAiContextStart={cutoffMessageId === message.id}
           isNavigationHighlighted={
             highlightedNavigationMessageId === message.id
@@ -1714,14 +1752,17 @@ export const ConversationFeed = ({
           onEditMessage={
             (onEditMessage || onStartEditMessage) &&
             !isSessionRunning &&
-            activeEditingMessageId !== message.id
+            !activeEditingMessageId
               ? editingMessageId === message.id
                 ? submitEditedMessage
-                : startEditing
+                : !editingMessageId
+                  ? startEditing
+                  : undefined
               : undefined
           }
           onEditContentChange={setEditContent}
           onCancelEditing={cancelEditing}
+          onCancelPromptEnhancement={onCancelPromptEnhancement}
           onContinueTask={onContinueTask}
           onSaveMessageAsContextPack={onSaveMessageAsContextPack}
           onOpenWorkspaceFile={onOpenWorkspaceFile}
@@ -1811,44 +1852,6 @@ export const ConversationFeed = ({
                   align="end"
                 />
               ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {promptEnhancementPending ? (
-        <div
-          key={promptEnhancementPending.id}
-          className="app-prompt-enhancement-pending-row contents"
-        >
-          <div className="app-message-row flex min-w-0 flex-row-reverse gap-4">
-            <Avatar className="app-message-avatar mt-1 h-10 w-10 shrink-0 border border-emerald-500/20 bg-emerald-500/20">
-              <div className="flex h-full w-full items-center justify-center">
-                <User className="h-5 w-5 text-emerald-100" />
-              </div>
-            </Avatar>
-
-            <div className="app-message-stack flex min-w-0 flex-1 flex-col items-end gap-3">
-              <div className="app-message-bubble app-user-message-bubble relative max-w-[90%] min-w-0 overflow-hidden rounded-[1.75rem] rounded-tr-md bg-slate-800 px-5 py-4 text-sm leading-7 text-slate-100 shadow-lg shadow-slate-950/20 wrap-break-word">
-                <MarkdownContent
-                  content={promptEnhancementPending.content}
-                  workspaceRoot={workspaceRoot}
-                  onOpenWorkspaceFile={onOpenWorkspaceFile}
-                  className="app-user-message-text"
-                />
-              </div>
-
-              {promptEnhancementPending.contextAttachments.length > 0 ? (
-                <MessageAttachmentsList
-                  attachments={promptEnhancementPending.contextAttachments}
-                  onOpen={onOpenAttachment}
-                  align="end"
-                />
-              ) : null}
-
-              <PromptEnhancementPending
-                variant="bubble"
-                modeLabel={promptEnhancementPending.modeLabel}
-              />
             </div>
           </div>
         </div>

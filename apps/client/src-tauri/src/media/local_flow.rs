@@ -7,8 +7,9 @@ use sha2::{Digest as _, Sha256};
 use super::{
     database,
     flow::{LocalImageFlowOperation, LocalImageFlowPlan},
-    subject_cutout, transform, ExecuteLocalImageFlowRequest, MediaImageTransformOperation,
-    MediaImageTransformRequest, MediaResult, MediaRunDetail, MediaRuntimePaths,
+    subject_cutout, transform, ExecuteLocalImageFlowRequest, MediaImagePostProcessingOperation,
+    MediaImageTransformOperation, MediaImageTransformRequest, MediaResult, MediaRunDetail,
+    MediaRuntimePaths,
 };
 
 const MAX_ENCODED_BYTES: u64 = 64 * 1024 * 1024;
@@ -236,6 +237,81 @@ fn execute_started(
                     "width": width,
                     "height": height,
                     "fit": fit,
+                }));
+                input
+            }
+            LocalImageFlowOperation::TextOverlay {
+                text,
+                position,
+                margin,
+                font_size,
+                color,
+                background_color,
+                background_opacity,
+            } => {
+                let mut input = require_single_input(&node.id, inputs, "image")?;
+                input.image = transform::apply_post_processing_operation(
+                    input.image,
+                    &MediaImagePostProcessingOperation::TextOverlay {
+                        node_id: node.id.clone(),
+                        text: text.clone(),
+                        position: position.clone(),
+                        margin: *margin,
+                        font_size: *font_size,
+                        color: color.clone(),
+                        background_color: background_color.clone(),
+                        background_opacity: *background_opacity,
+                    },
+                )?;
+                trace.push(json!({
+                    "nodeId": node.id,
+                    "kind": "text-overlay",
+                    "text": text,
+                    "position": position,
+                    "margin": margin,
+                    "fontSize": font_size,
+                }));
+                input
+            }
+            LocalImageFlowOperation::ColorAdjust {
+                brightness,
+                contrast,
+                saturation,
+            } => {
+                let mut input = require_single_input(&node.id, inputs, "image")?;
+                input.image = transform::apply_post_processing_operation(
+                    input.image,
+                    &MediaImagePostProcessingOperation::ColorAdjust {
+                        node_id: node.id.clone(),
+                        brightness: *brightness,
+                        contrast: *contrast,
+                        saturation: *saturation,
+                    },
+                )?;
+                trace.push(json!({
+                    "nodeId": node.id,
+                    "kind": "color-adjust",
+                    "brightness": brightness,
+                    "contrast": contrast,
+                    "saturation": saturation,
+                }));
+                input
+            }
+            LocalImageFlowOperation::Sharpen { sigma, threshold } => {
+                let mut input = require_single_input(&node.id, inputs, "image")?;
+                input.image = transform::apply_post_processing_operation(
+                    input.image,
+                    &MediaImagePostProcessingOperation::Sharpen {
+                        node_id: node.id.clone(),
+                        sigma: *sigma,
+                        threshold: *threshold,
+                    },
+                )?;
+                trace.push(json!({
+                    "nodeId": node.id,
+                    "kind": "sharpen",
+                    "sigma": sigma,
+                    "threshold": threshold,
                 }));
                 input
             }

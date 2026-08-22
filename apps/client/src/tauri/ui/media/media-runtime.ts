@@ -1517,6 +1517,8 @@ export const initializeMediaRuntime = async (): Promise<MediaRuntimeStatus> => {
     mode: "browser-preview",
     directGenerationModelIds: ["openai:gpt-image-2"],
     directReferenceImageModelIds: ["openai:gpt-image-2"],
+    directInpaintingModelIds: [],
+    directPoseModelIds: [],
     localDiffusers: {
       status: "unavailable",
       ready: false,
@@ -2800,7 +2802,7 @@ export const importMediaAsset = async (
       "Media import is available in the native desktop app only.",
     );
   }
-  return invoke<MediaAssetImportResult>("media_import_asset", { path });
+  return invoke<MediaAssetImportResult>("media_import_image", { path });
 };
 
 export const readMediaAssetPreview = async (

@@ -29,7 +29,7 @@ describe("image recipe normalization", () => {
     });
   });
 
-  it("normalizes reference images into one base and bounded provider-neutral roles", () => {
+  it("normalizes reference images into bounded provider-neutral roles", () => {
     const recipe = normalizeImageRecipeSettings({
       referenceImages: [
         { assetId: "", role: "base", influence: 1 },
@@ -41,7 +41,7 @@ describe("image recipe normalization", () => {
     });
 
     expect(recipe.referenceImages).toEqual([
-      { assetId: "asset:base", role: "base", influence: 1 },
+      { assetId: "asset:base", role: "style", influence: 2 },
       { assetId: "asset:style", role: "palette", influence: 0.45 },
       { assetId: "asset:unknown", role: "subject", influence: 0 },
     ]);
@@ -88,39 +88,27 @@ describe("image recipe normalization", () => {
     ]);
   });
 
-  it("preserves bounded KREA reference and memory controls across persistence", () => {
+  it("preserves bounded image and memory controls across persistence", () => {
     expect(
       normalizeImageRecipeSettings({
         editStrength: 2,
-        referenceBoost: 0,
         requireChromaBackground: true,
-        referenceFit: "crop",
-        groundingPixels: 9_999,
         memoryProfile: "memory-saver",
       }),
     ).toMatchObject({
       editStrength: 1,
-      referenceBoost: 0.25,
       requireChromaBackground: true,
-      referenceFit: "crop",
-      groundingPixels: 1_024,
       memoryProfile: "memory-saver",
     });
 
     expect(
       normalizeImageRecipeSettings({
         editStrength: Number.NaN,
-        referenceBoost: Number.POSITIVE_INFINITY,
-        referenceFit: "stretch",
-        groundingPixels: 64,
         memoryProfile: "unsafe",
       }),
     ).toMatchObject({
       editStrength: 0.65,
-      referenceBoost: 2,
       requireChromaBackground: false,
-      referenceFit: "fit",
-      groundingPixels: 384,
       memoryProfile: "auto",
     });
   });
@@ -162,6 +150,52 @@ describe("media asset metadata normalization", () => {
           height: null,
         },
       ],
+    });
+  });
+});
+
+describe("stored flow normalization", () => {
+  it("drops fields removed from the current node schema", () => {
+    const state = normalizeMediaStudioState({
+      version: 5,
+      flow: {
+        schemaVersion: 1,
+        id: "flow:stale-conditioned-edit",
+        name: "Conditioned edit",
+        description: "",
+        createdAt: "2026-08-21T00:00:00.000Z",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+        variables: [],
+        variableBindings: {},
+        presets: [],
+        activePresetId: null,
+        nodes: [
+          {
+            id: "edit",
+            type: "task.edit-image",
+            version: 1,
+            label: "Generate",
+            layer: "task",
+            config: {
+              providerPolicy: "local",
+              aspectRatio: "1:1",
+              outputCount: 1,
+              outputFormat: "png",
+              groundingPixels: 768,
+              referenceBoost: 2,
+              referenceFit: "fit",
+            },
+          },
+        ],
+        edges: [],
+      },
+    });
+
+    expect(state.flow?.nodes[0]?.config).toEqual({
+      providerPolicy: "local",
+      aspectRatio: "1:1",
+      outputCount: 1,
+      outputFormat: "png",
     });
   });
 });

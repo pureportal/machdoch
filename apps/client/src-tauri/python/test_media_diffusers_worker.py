@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -56,6 +57,89 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         self.assertEqual(WORKER._steps("flux-2", "balanced"), 4)
         self.assertEqual(WORKER._steps("flux-2", "quality"), 4)
 
+    def test_flux2_accepts_generic_reference_images(self) -> None:
+        self.assertEqual(
+            WORKER.NATIVE_REFERENCE_ROLES["flux-2"],
+            frozenset({"subject", "style", "composition", "palette", "detail"}),
+        )
+
+    def test_rdna4_uses_native_convolution_and_fp16_pipeline_weights(self) -> None:
+        class FakeCuda:
+            @staticmethod
+            def current_device() -> int:
+                return 0
+
+            @staticmethod
+            def get_device_properties(_index: int) -> SimpleNamespace:
+                return SimpleNamespace(gcnArchName="gfx1201:sramecc-")
+
+            @staticmethod
+            def is_bf16_supported() -> bool:
+                return True
+
+        fake_torch = SimpleNamespace(
+            version=SimpleNamespace(hip="7.14"),
+            cuda=FakeCuda(),
+            backends=SimpleNamespace(cudnn=SimpleNamespace(enabled=True)),
+            float16="float16",
+            bfloat16="bfloat16",
+            float32="float32",
+        )
+
+        backend = WORKER._configure_amd_convolution_backend(fake_torch, "cuda")
+
+        self.assertEqual(backend, "native")
+        self.assertFalse(fake_torch.backends.cudnn.enabled)
+        self.assertEqual(WORKER._pipeline_dtype(fake_torch, "cuda"), "float16")
+
+    def test_flux2_reference_prompt_binds_source_style_and_detail_by_index(self) -> None:
+        prompt, bindings = WORKER._flux2_reference_prompt(
+            "Replace the painted clothing.",
+            has_base_image=True,
+            references=[
+                {"role": "style"},
+                {"role": "detail"},
+            ],
+            require_visible_change=True,
+        )
+
+        self.assertEqual(
+            bindings,
+            [
+                {"imageIndex": 1, "role": "base"},
+                {"imageIndex": 2, "role": "style"},
+                {"imageIndex": 3, "role": "detail"},
+            ],
+        )
+        self.assertIn("Image 1 is the source image", prompt)
+        self.assertIn("Use image 2 as the style reference", prompt)
+        self.assertIn("Use image 3 as the ornamental-detail reference", prompt)
+        self.assertIn("Do not return an unchanged copy of image 1", prompt)
+
+    def test_reference_edit_change_map_rejects_an_unchanged_source(self) -> None:
+        base = Image.new("RGB", (100, 100), (20, 30, 40))
+        mask_pixels = np.zeros((100, 100), dtype=np.uint8)
+        mask_pixels[20:80, 20:80] = 255
+        mask = Image.fromarray(mask_pixels)
+
+        unchanged = WORKER._reference_edit_change_map(base, base, mask)
+
+        with self.assertRaisesRegex(WORKER.WorkerError, "no material change"):
+            WORKER._validate_reference_edit_change(unchanged)
+
+        generated_pixels = np.asarray(base).copy()
+        generated_pixels[30:70, 30:70] = (220, 140, 25)
+        changed = WORKER._reference_edit_change_map(
+            base,
+            Image.fromarray(generated_pixels),
+            mask,
+        )
+
+        self.assertEqual(changed["scope"], "mask")
+        self.assertGreater(changed["changedPixelRatio"], 0.4)
+        self.assertGreater(changed["meanAbsoluteDifference"], 20)
+        WORKER._validate_reference_edit_change(changed)
+
     def test_krea_reference_quality_uses_the_verified_attention_bound(self) -> None:
         self.assertEqual(WORKER._dimensions("krea-2", "16:9", "fast"), (704, 384))
         self.assertEqual(
@@ -66,6 +150,115 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             WORKER._dimensions("flux-2", "16:9", "quality"),
             (1_408, 768),
         )
+
+    def test_krea_remains_text_only(self) -> None:
+        without_torchvision = WORKER._runtime_capabilities({"torchvision": None})
+        with_torchvision = WORKER._runtime_capabilities({"torchvision": "0.27.0"})
+
+        self.assertNotIn("krea-2", WORKER.NATIVE_REFERENCE_ROLES)
+        self.assertEqual(without_torchvision, list(WORKER.BASE_CAPABILITIES))
+        self.assertEqual(with_torchvision, list(WORKER.BASE_CAPABILITIES))
+
+    def test_masks_require_a_native_masked_edit_architecture(self) -> None:
+        mask = {"schemaVersion": 2, "strokes": []}
+
+        WORKER._validate_edit_mask_request(
+            mask,
+            Image.new("RGB", (32, 32)),
+            "png",
+            "flux-2",
+        )
+
+    def test_mask_strength_scales_only_mask_alpha(self) -> None:
+        mask = Image.fromarray(np.array([[0, 128, 255]], dtype=np.uint8))
+
+        scaled = WORKER._apply_mask_strength(mask, 0.5)
+
+        self.assertEqual(list(scaled.getdata()), [0, 64, 128])
+        self.assertEqual(list(mask.getdata()), [0, 128, 255])
+
+    def test_edit_mask_uses_normalized_source_coordinates(self) -> None:
+        document = {
+            "schemaVersion": 2,
+            "sourceAssetId": "asset:base",
+            "inverted": False,
+            "strokes": [
+                {
+                    "mode": "paint",
+                    "size": 0.05,
+                    "opacity": 0.6,
+                    "softness": 0.5,
+                    "points": [{"x": 0.75, "y": 0.25}],
+                }
+            ],
+        }
+
+        mask = WORKER._rasterize_edit_mask(document, 400, 200)
+
+        self.assertEqual(mask.getpixel((299, 50)), 153)
+        self.assertEqual(mask.getpixel((100, 150)), 0)
+        self.assertGreater(mask.getpixel((302, 50)), 0)
+        self.assertLess(mask.getpixel((302, 50)), 153)
+
+    def test_masked_composite_preserves_every_unmasked_pixel(self) -> None:
+        y, x = np.indices((96, 160))
+        pixels = np.stack(
+            ((x * 3) % 256, (y * 5) % 256, (x + y) % 256),
+            axis=-1,
+        ).astype(np.uint8)
+        base = Image.fromarray(pixels)
+        document = {
+            "schemaVersion": 2,
+            "sourceAssetId": "asset:base",
+            "inverted": False,
+            "strokes": [
+                {
+                    "mode": "paint",
+                    "size": 0.18,
+                    "opacity": 1,
+                    "softness": 0.45,
+                    "points": [
+                        {"x": 0.35, "y": 0.4},
+                        {"x": 0.65, "y": 0.6},
+                    ],
+                },
+                {
+                    "mode": "erase",
+                    "size": 0.04,
+                    "opacity": 0.8,
+                    "softness": 0.25,
+                    "points": [{"x": 0.5, "y": 0.5}],
+                },
+            ],
+        }
+        context = WORKER._masked_generation_context(base, document, 128, 128)
+        generated = Image.new(
+            "RGB",
+            (context["width"], context["height"]),
+            (245, 35, 70),
+        )
+
+        result = WORKER._composite_masked_result(context, generated)
+        mask = np.asarray(context["mask"])
+        result_pixels = np.asarray(result)
+
+        np.testing.assert_array_equal(result_pixels[mask == 0], pixels[mask == 0])
+        self.assertTrue(np.any(result_pixels[mask > 0] != pixels[mask > 0]))
+
+    def test_flux2_inpaint_composite_preserves_the_fitted_source_outside_the_mask(self) -> None:
+        base = Image.new("RGB", (64, 64), (18, 42, 78))
+        mask_pixels = np.zeros((64, 64), dtype=np.uint8)
+        mask_pixels[16:48, 16:48] = 255
+        mask = Image.fromarray(mask_pixels)
+        generated = Image.new("RGB", (96, 96), (230, 180, 35))
+
+        result = WORKER._composite_flux2_inpaint_result(base, mask, generated)
+        result_pixels = np.asarray(result)
+        output_mask = np.asarray(WORKER._fit_mask_image(mask, 96, 96))
+        fitted_base = np.asarray(WORKER._fit_conditioning_image(base, 96, 96))
+
+        np.testing.assert_array_equal(result_pixels[output_mask == 0], fitted_base[output_mask == 0])
+        self.assertTrue(np.all(result_pixels[output_mask == 255] == (230, 180, 35)))
 
     def test_wan_endpoint_conditioning_uses_one_full_temporal_vae_encode(self) -> None:
         try:

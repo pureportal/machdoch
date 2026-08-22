@@ -108,14 +108,16 @@ const splitValues = (value: string): string[] =>
 
 const fileName = (path: string): string => path.split(/[\\/]/u).at(-1) ?? path;
 
-const IMPORT_PROGRESS_LABELS: Record<MediaAssetImportProgress["stage"], string> =
-  {
-    inspect: "Inspecting file",
-    hash: "Calculating SHA-256",
-    "duplicate-check": "Checking library",
-    copy: "Importing file",
-    register: "Adding to library",
-  };
+const IMPORT_PROGRESS_LABELS: Record<
+  MediaAssetImportProgress["stage"],
+  string
+> = {
+  inspect: "Inspecting file",
+  hash: "Calculating SHA-256",
+  "duplicate-check": "Checking library",
+  copy: "Importing file",
+  register: "Adding to library",
+};
 
 export const MediaAssetImportDialog = ({
   assets,
@@ -137,8 +139,9 @@ export const MediaAssetImportDialog = ({
   onClose,
 }: MediaAssetImportDialogProps): JSX.Element => {
   const [path, setPath] = useState("");
-  const [importType, setImportType] =
-    useState<MediaAssetImportType | null>(null);
+  const [importType, setImportType] = useState<MediaAssetImportType | null>(
+    null,
+  );
   const [displayName, setDisplayName] = useState("");
   const [architecture, setArchitecture] =
     useState<MediaLocalModelArchitecture>("flux-1");
@@ -146,6 +149,11 @@ export const MediaAssetImportDialog = ({
   const [tags, setTags] = useState("");
   const [triggerWords, setTriggerWords] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [licenseName, setLicenseName] = useState("");
+  const [commercialUse, setCommercialUse] = useState<
+    "allowed" | "review-required"
+  >("review-required");
+  const [confirmRights, setConfirmRights] = useState(false);
   const [sampleAssetIds, setSampleAssetIds] = useState<string[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const dirtyEnrichmentFields = useRef(
@@ -197,6 +205,9 @@ export const MediaAssetImportDialog = ({
     setTags("");
     setTriggerWords("");
     setSourceUrl("");
+    setLicenseName("");
+    setCommercialUse("review-required");
+    setConfirmRights(false);
     setSampleAssetIds([]);
     dirtyEnrichmentFields.current.clear();
     onDismissInspection();
@@ -349,6 +360,9 @@ export const MediaAssetImportDialog = ({
           architecture,
           sourceUrl: normalizedSourceUrl,
           contentDigest: inspection.contentDigest,
+          licenseName: licenseName.trim(),
+          commercialUse,
+          confirmRights,
         },
         generationMetadata(),
       );
@@ -371,6 +385,9 @@ export const MediaAssetImportDialog = ({
             : null,
         sourceUrl: normalizedSourceUrl,
         contentDigest: addonImportInspection.contentDigest,
+        licenseName: licenseName.trim(),
+        commercialUse,
+        confirmRights,
       },
       generationMetadata(),
     );
@@ -523,6 +540,40 @@ export const MediaAssetImportDialog = ({
                       ))}
                     </select>
                   </label>
+                  <label className="space-y-1 text-xs text-slate-400">
+                    <span>License</span>
+                    <input
+                      value={licenseName}
+                      onChange={(event) => setLicenseName(event.target.value)}
+                      className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-400">
+                    <span>Commercial use</span>
+                    <select
+                      value={commercialUse}
+                      onChange={(event) =>
+                        setCommercialUse(
+                          event.target.value as "allowed" | "review-required",
+                        )
+                      }
+                      className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                    >
+                      <option value="review-required">Review required</option>
+                      <option value="allowed">Allowed</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={confirmRights}
+                      onChange={(event) =>
+                        setConfirmRights(event.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-900"
+                    />
+                    I have the right to use these weights.
+                  </label>
                 </>
               ) : null}
               <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
@@ -662,6 +713,8 @@ export const MediaAssetImportDialog = ({
               (importIsGenerationAsset &&
                 (!inspection ||
                   !displayName.trim() ||
+                  !licenseName.trim() ||
+                  !confirmRights ||
                   inspection.duplicate !== null))
             }
           >

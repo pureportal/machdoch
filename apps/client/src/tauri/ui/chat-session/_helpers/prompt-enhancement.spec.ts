@@ -1,8 +1,8 @@
 import {
   PromptEnhancementCancellationError,
+  createQueuedMessageDispatchPrompt,
   isPromptEnhancementCancellation,
   resolveImmediatePromptEnhancementPlacement,
-  resolveStagedPromptEnhancementSubmission,
 } from "./prompt-enhancement";
 
 describe("prompt enhancement presentation", () => {
@@ -39,49 +39,33 @@ describe("prompt enhancement presentation", () => {
     ).toBe(false);
   });
 
-  it("uses the hidden-marker placement for edited-message enhancement", () => {
+  it("uses the edited-message marker only for edited-message enhancement", () => {
     const placement = resolveImmediatePromptEnhancementPlacement({
       conversationCutoffMessageId: "message-1",
-      interviewEnabled: false,
-      runningAction: null,
     });
 
     expect(placement).toBe("edit-composer");
   });
 
-  it("retains the existing placements for normal enhancement flows", () => {
-    expect(
-      resolveImmediatePromptEnhancementPlacement({
-        interviewEnabled: false,
-        runningAction: null,
-      }),
-    ).toBe("message");
-    expect(
-      resolveImmediatePromptEnhancementPlacement({
-        interviewEnabled: true,
-        runningAction: null,
-      }),
-    ).toBe("composer-blocker");
+  it("uses a message bubble for every non-edit enhancement flow", () => {
+    expect(resolveImmediatePromptEnhancementPlacement({})).toBe("message");
   });
 
-  it("submits a staged edit without enhancing it a second time", () => {
+  it("executes an enhanced queued prompt while retaining its original prompt", () => {
     expect(
-      resolveStagedPromptEnhancementSubmission("simple", {
-        mode: "simple",
-        originalContent: "  Original request  ",
-      }),
+      createQueuedMessageDispatchPrompt(
+        {
+          task: "Draft a release note",
+          visibleMessageContent: "Draft a release note",
+          promptHistoryContent: "Draft a release note",
+        },
+        "Draft a concise customer release note",
+      ),
     ).toEqual({
-      mode: "off",
-      originalContent: "Original request",
+      task: "Draft a concise customer release note",
+      visibleMessageContent: "Draft a concise customer release note",
+      promptHistoryContent: "Draft a release note",
+      promptEnhancement: { originalContent: "Draft a release note" },
     });
-  });
-
-  it("runs the newly selected mode after the staged mode changes", () => {
-    expect(
-      resolveStagedPromptEnhancementSubmission("web-search", {
-        mode: "simple",
-        originalContent: "Original request",
-      }),
-    ).toEqual({ mode: "web-search" });
   });
 });

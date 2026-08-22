@@ -11,6 +11,7 @@ import {
   isPromptEnhancementPlaceholderMessage,
   isSessionWorkspaceLocked,
   normalizeTaskExecutionFileChange,
+  normalizeRecentWorkspaces,
   normalizeShellState,
   recoverInactiveRunningTasks,
   recoverInterruptedTasksForLaunch,
@@ -237,6 +238,18 @@ describe("normalizeShellState", () => {
     expect(normalizeShellState(legacyState).recentWorkspaces).toEqual([
       "C:\\Projects\\machdoch",
     ]);
+  });
+
+  it("deduplicates Windows workspace formatting without merging POSIX case variants", () => {
+    expect(
+      normalizeRecentWorkspaces([
+        "C:\\Projects\\machdoch\\",
+        "c:/projects/machdoch",
+      ]),
+    ).toEqual(["C:\\Projects\\machdoch\\"]);
+    expect(normalizeRecentWorkspaces(["/work/Client", "/work/client"])).toEqual(
+      ["/work/Client", "/work/client"],
+    );
   });
 
   it("preserves the active timeout state across session restoration", () => {

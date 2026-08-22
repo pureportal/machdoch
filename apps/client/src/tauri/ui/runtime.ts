@@ -157,6 +157,8 @@ export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
 export const ASSISTANT_SURFACE_READY_EVENT =
   "machdoch://assistant-surface-ready";
 export const QUICK_CHAT_DROP_EVENT = "machdoch://quick-chat-drop";
+export const FILE_MANAGER_INVOCATION_EVENT =
+  "machdoch://file-manager-invocation";
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...USER_API_PROVIDERS,
@@ -593,6 +595,16 @@ export interface DroppedPathEntry {
 export interface DroppedPathsResolution {
   entries: DroppedPathEntry[];
   workspaceRoot: string | null;
+}
+
+export type FileManagerInvocation =
+  | { kind: "folder"; path: string }
+  | { kind: "files"; paths: string[] };
+
+export interface FileManagerInvocationRoute {
+  destination: "chat" | "workspace-management";
+  workspaceRoot: string | null;
+  attachmentPaths: string[];
 }
 
 export interface ClipboardImageAttachmentInput {
@@ -7160,9 +7172,7 @@ export const saveClipboardImageAttachment = async (
 export const resolveDroppedPaths = async (
   paths: string[],
 ): Promise<DroppedPathsResolution> => {
-  const normalizedPaths = paths
-    .map((path) => path.trim())
-    .filter((path) => path.length > 0);
+  const normalizedPaths = paths.filter((path) => path.trim().length > 0);
 
   if (normalizedPaths.length === 0) {
     return {
@@ -7185,4 +7195,45 @@ export const resolveDroppedPaths = async (
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
+};
+
+export const takeFileManagerInvocations = async (): Promise<
+  FileManagerInvocation[]
+> => {
+  if (!canInvokeTauriCommands()) {
+    return [];
+  }
+
+  return tauriCore.invoke<FileManagerInvocation[]>(
+    "take_file_manager_invocations",
+  );
+};
+
+export const resolveFileManagerInvocation = async (
+  invocation: FileManagerInvocation,
+  knownWorkspaceRoots: string[],
+): Promise<FileManagerInvocationRoute> => {
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "File-manager actions are only available in the desktop app.",
+    );
+  }
+
+  return tauriCore.invoke<FileManagerInvocationRoute>(
+    "resolve_file_manager_invocation",
+    {
+      invocation,
+      knownWorkspaceRoots,
+    },
+  );
+};
+
+export const subscribeToFileManagerInvocations = async (
+  onInvocation: () => void,
+): Promise<() => void> => {
+  if (!canInvokeTauriCommands()) {
+    return () => {};
+  }
+
+  return listen<void>(FILE_MANAGER_INVOCATION_EVENT, onInvocation);
 };

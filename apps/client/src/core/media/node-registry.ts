@@ -93,6 +93,7 @@ export interface MediaNodeValidationIssue {
     | "UNKNOWN_CONFIG_FIELD"
     | "MISSING_CONFIG_FIELD"
     | "INVALID_CONFIG_VALUE"
+    | "INVALID_NODE_LABEL"
     | "DUPLICATE_NODE_ID"
     | "NODE_TYPE_CARDINALITY_EXCEEDED"
     | "DUPLICATE_EDGE_ID"
@@ -102,7 +103,8 @@ export interface MediaNodeValidationIssue {
     | "INPUT_CARDINALITY_EXCEEDED"
     | "REQUIRED_INPUT_MISSING"
     | "REQUIRED_OUTPUT_MISSING"
-    | "GRAPH_CYCLE";
+    | "GRAPH_CYCLE"
+    | "INVALID_IMAGE_REFERENCE_TOPOLOGY";
   severity: "error";
   nodeId: string;
   fieldId: string | null;
@@ -141,6 +143,20 @@ const imageReferenceInput: MediaNodePortDefinition = {
   maxConnections: 8,
   description:
     "One to eight explicitly labeled immutable image references in stable flow order.",
+};
+
+const seedInput: MediaNodePortDefinition = {
+  id: "seed",
+  label: "Seed",
+  dataType: "seed",
+  required: false,
+  cardinality: "single",
+  description: "",
+};
+
+const seedOutput: MediaNodePortDefinition = {
+  ...seedInput,
+  required: false,
 };
 
 const optionalImageReferenceInput: MediaNodePortDefinition = {
@@ -323,6 +339,11 @@ export const MEDIA_NODE_DEFINITIONS = [
             "Detail",
             "Use the reference for material or localized detail.",
           ),
+          option(
+            "pose",
+            "Pose map",
+            "Use an OpenPose skeleton map for structural control.",
+          ),
         ],
       },
       {
@@ -336,13 +357,43 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: 1,
         examples: [0.5, 1],
         min: 0,
-        max: 1,
+        max: 2,
         step: 0.05,
       },
     ],
     privacyEffects: [
       "The source remains local unless a downstream task explicitly resolves a remote provider.",
     ],
+    costEffects: [],
+  },
+  {
+    type: "source.seed",
+    version: 1,
+    displayName: "Seed",
+    summary: "",
+    layer: "source",
+    category: "Input",
+    paletteVisibility: "default",
+    maxInstances: 1,
+    inputs: [],
+    outputs: [seedOutput],
+    fields: [
+      {
+        id: "seed",
+        label: "Seed",
+        description: "",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 0,
+        examples: [0, 42],
+        min: 0,
+        max: Number.MAX_SAFE_INTEGER,
+        step: 1,
+        integer: true,
+      },
+    ],
+    privacyEffects: [],
     costEffects: [],
   },
   {
@@ -355,7 +406,7 @@ export const MEDIA_NODE_DEFINITIONS = [
     category: "Generation",
     paletteVisibility: "default",
     maxInstances: 1,
-    inputs: [promptPort, optionalImageReferenceInput],
+    inputs: [promptPort, optionalImageReferenceInput, seedInput],
     outputs: [imageOutput],
     fields: [
       {
@@ -655,14 +706,14 @@ export const MEDIA_NODE_DEFINITIONS = [
   {
     type: "task.edit-image",
     version: 1,
-    displayName: "Edit image",
+    displayName: "Generate",
     summary:
       "Applies provider-neutral text-guided changes to one or more labeled immutable references.",
     layer: "task",
     category: "Generation",
     paletteVisibility: "default",
     maxInstances: 1,
-    inputs: [promptPort, imageReferenceInput],
+    inputs: [promptPort, imageReferenceInput, seedInput],
     outputs: [imageOutput],
     fields: [
       {
@@ -770,18 +821,56 @@ export const MEDIA_NODE_DEFINITIONS = [
         examples: [null],
       },
       {
-        id: "referenceBoost",
-        label: "Identity/reference strength",
-        description:
-          "KREA Edit source-token emphasis. Higher values preserve identity and costume more strongly but reduce pose freedom.",
+        id: "maskStrength",
+        label: "Mask strength",
+        description: "",
         group: "Creative",
         kind: "number",
         required: true,
-        defaultValue: 2,
-        examples: [1, 2, 4],
-        min: 0.25,
-        max: 8,
-        step: 0.25,
+        defaultValue: 1,
+        examples: [0.5, 1],
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
+      {
+        id: "poseStrength",
+        label: "Pose strength",
+        description: "Controls pose-map adherence.",
+        group: "Creative",
+        kind: "number",
+        required: false,
+        defaultValue: 1,
+        examples: [0.75, 1],
+        min: 0,
+        max: 2,
+        step: 0.05,
+      },
+      {
+        id: "poseStart",
+        label: "Pose start",
+        description: "Denoising progress where pose control begins.",
+        group: "Creative",
+        kind: "number",
+        required: false,
+        defaultValue: 0,
+        examples: [0, 0.15],
+        min: 0,
+        max: 0.95,
+        step: 0.05,
+      },
+      {
+        id: "poseEnd",
+        label: "Pose end",
+        description: "Denoising progress where pose control stops.",
+        group: "Creative",
+        kind: "number",
+        required: false,
+        defaultValue: 1,
+        examples: [0.8, 1],
+        min: 0.05,
+        max: 1,
+        step: 0.05,
       },
       {
         id: "requireChromaBackground",
@@ -793,40 +882,6 @@ export const MEDIA_NODE_DEFINITIONS = [
         required: false,
         defaultValue: false,
         examples: [true],
-      },
-      {
-        id: "referenceFit",
-        label: "Reference framing",
-        description:
-          "Fit preserves the complete reference with padding; Crop fills the target composition from its center.",
-        group: "Creative",
-        kind: "select",
-        required: true,
-        defaultValue: "fit",
-        examples: ["fit", "crop"],
-        options: [
-          option(
-            "fit",
-            "Fit",
-            "Preserve the full reference and pad to the target ratio.",
-          ),
-          option("crop", "Crop", "Fill the target ratio with a centered crop."),
-        ],
-      },
-      {
-        id: "groundingPixels",
-        label: "Grounding detail",
-        description:
-          "Longest-edge resolution used by KREA's Qwen3-VL image-grounded instruction encoder.",
-        group: "Expert",
-        kind: "number",
-        required: true,
-        defaultValue: 768,
-        examples: [384, 768, 1024],
-        min: 384,
-        max: 1024,
-        step: 64,
-        integer: true,
       },
       {
         id: "modelPolicy",
@@ -1535,6 +1590,209 @@ export const MEDIA_NODE_DEFINITIONS = [
     costEffects: [],
   },
   {
+    type: "operation.text-overlay",
+    version: 1,
+    displayName: "Text overlay",
+    summary: "Renders text into the image pixels.",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "default",
+    inputs: [imageInput],
+    outputs: [imageOutput],
+    fields: [
+      {
+        id: "text",
+        label: "Text",
+        description: "Text to render.",
+        group: "Basic",
+        kind: "text",
+        required: true,
+        defaultValue: "AI Image Disclaimer",
+        examples: ["AI Image Disclaimer"],
+        maxLength: 256,
+      },
+      {
+        id: "position",
+        label: "Position",
+        description: "Placement within the image.",
+        group: "Basic",
+        kind: "select",
+        required: true,
+        defaultValue: "bottom-right",
+        examples: ["bottom-right"],
+        options: [
+          option("top-left", "Top left", ""),
+          option("top-right", "Top right", ""),
+          option("bottom-left", "Bottom left", ""),
+          option("bottom-right", "Bottom right", ""),
+          option("center", "Center", ""),
+        ],
+      },
+      {
+        id: "margin",
+        label: "Margin",
+        description: "Distance from the selected edge in pixels.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 24,
+        examples: [16, 24],
+        min: 0,
+        max: 1024,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "fontSize",
+        label: "Size",
+        description: "Text height in pixels.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 24,
+        examples: [16, 24],
+        min: 8,
+        max: 256,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "color",
+        label: "Text color",
+        description: "Six-digit sRGB color.",
+        group: "Creative",
+        kind: "text",
+        required: true,
+        defaultValue: "#ffffff",
+        examples: ["#ffffff"],
+        maxLength: 7,
+      },
+      {
+        id: "backgroundColor",
+        label: "Background",
+        description: "Six-digit sRGB color.",
+        group: "Creative",
+        kind: "text",
+        required: true,
+        defaultValue: "#000000",
+        examples: ["#000000"],
+        maxLength: 7,
+      },
+      {
+        id: "backgroundOpacity",
+        label: "Background opacity",
+        description: "Opacity behind the text.",
+        group: "Creative",
+        kind: "number",
+        required: true,
+        defaultValue: 0.55,
+        examples: [0.55],
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
+    ],
+    privacyEffects: [],
+    costEffects: [],
+  },
+  {
+    type: "operation.color-adjust",
+    version: 1,
+    displayName: "Color adjustment",
+    summary: "Adjusts brightness, contrast, and saturation.",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [imageInput],
+    outputs: [imageOutput],
+    fields: [
+      {
+        id: "brightness",
+        label: "Brightness",
+        description: "Brightness adjustment.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 0,
+        examples: [-10, 10],
+        min: -100,
+        max: 100,
+        step: 1,
+        integer: true,
+      },
+      {
+        id: "contrast",
+        label: "Contrast",
+        description: "Contrast adjustment.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 0,
+        examples: [-10, 10],
+        min: -100,
+        max: 100,
+        step: 1,
+      },
+      {
+        id: "saturation",
+        label: "Saturation",
+        description: "Saturation percentage.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 100,
+        examples: [80, 120],
+        min: 0,
+        max: 200,
+        step: 1,
+      },
+    ],
+    privacyEffects: [],
+    costEffects: [],
+  },
+  {
+    type: "operation.sharpen",
+    version: 1,
+    displayName: "Sharpen",
+    summary: "Applies bounded unsharp masking.",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [imageInput],
+    outputs: [imageOutput],
+    fields: [
+      {
+        id: "sigma",
+        label: "Radius",
+        description: "Blur radius used by the sharpening mask.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 1,
+        examples: [1, 1.5],
+        min: 0.1,
+        max: 10,
+        step: 0.1,
+      },
+      {
+        id: "threshold",
+        label: "Threshold",
+        description: "Minimum channel difference to sharpen.",
+        group: "Basic",
+        kind: "number",
+        required: true,
+        defaultValue: 2,
+        examples: [2, 5],
+        min: 0,
+        max: 255,
+        step: 1,
+        integer: true,
+      },
+    ],
+    privacyEffects: [],
+    costEffects: [],
+  },
+  {
     type: "operation.format-convert",
     version: 1,
     displayName: "Convert image format",
@@ -2092,7 +2350,7 @@ export const MEDIA_NODE_DEFINITIONS = [
     layer: "output",
     category: "Output",
     paletteVisibility: "output",
-    maxInstances: 1,
+    maxInstances: 8,
     inputs: [imageInput],
     outputs: [],
     fields: [
@@ -2423,6 +2681,20 @@ export const validateMediaFlowNode = (
     ];
   }
   const issues: MediaNodeValidationIssue[] = [];
+  if (
+    node.label !== node.label.trim() ||
+    node.label.length === 0 ||
+    Array.from(node.label).length > 256 ||
+    /\p{Cc}/u.test(node.label)
+  ) {
+    issues.push({
+      code: "INVALID_NODE_LABEL",
+      severity: "error",
+      nodeId: node.id,
+      fieldId: null,
+      message: "Node names must be trimmed, non-empty, and at most 256 characters.",
+    });
+  }
   if (node.version !== definition.version) {
     issues.push({
       code: "UNSUPPORTED_NODE_VERSION",
@@ -2504,6 +2776,87 @@ export const validateMediaFlowNodes = (
   flow: MediaFlow,
 ): readonly MediaNodeValidationIssue[] =>
   flow.nodes.flatMap((node) => validateMediaFlowNode(node));
+
+const isMediaImageTask = (node: MediaFlowNode): boolean =>
+  node.type === "task.generate-image" || node.type === "task.edit-image";
+
+const sourceImageRole = (node: MediaFlowNode): string =>
+  typeof node.config.referenceRole === "string"
+    ? node.config.referenceRole
+    : "base";
+
+const imageTaskSourceNodes = (
+  flow: MediaFlow,
+  taskNodeId: string,
+): readonly MediaFlowNode[] => {
+  const nodesById = new Map(flow.nodes.map((node) => [node.id, node]));
+  const sourceNodeIds = new Set(
+    flow.edges
+      .filter(
+        (edge) => edge.toNodeId === taskNodeId && edge.toPortId === "image",
+      )
+      .flatMap((edge) => {
+        const source = nodesById.get(edge.fromNodeId);
+        return source?.type === "source.image" ? [source.id] : [];
+      }),
+  );
+  return flow.nodes.filter((node) => sourceNodeIds.has(node.id));
+};
+
+export const validateMediaImageReferenceTopology = (
+  flow: MediaFlow,
+): readonly MediaNodeValidationIssue[] => {
+  const issues: MediaNodeValidationIssue[] = [];
+  for (const taskNode of flow.nodes.filter(isMediaImageTask)) {
+    const sourceNodes = imageTaskSourceNodes(flow, taskNode.id);
+    const baseNodes = sourceNodes.filter(
+      (source) => sourceImageRole(source) === "base",
+    );
+    if (baseNodes.length > 1) {
+      issues.push({
+        code: "INVALID_IMAGE_REFERENCE_TOPOLOGY",
+        severity: "error",
+        nodeId: baseNodes[1]?.id ?? taskNode.id,
+        fieldId: "referenceRole",
+        message: "An image run accepts one base image. Run each base image separately.",
+      });
+    }
+    const poseNodes = sourceNodes.filter(
+      (source) => sourceImageRole(source) === "pose",
+    );
+    if (poseNodes.length > 1) {
+      issues.push({
+        code: "INVALID_IMAGE_REFERENCE_TOPOLOGY",
+        severity: "error",
+        nodeId: poseNodes[1]?.id ?? taskNode.id,
+        fieldId: "referenceRole",
+        message: "An image run accepts one pose image.",
+      });
+    }
+    const sourceByAssetId = new Map<string, MediaFlowNode>();
+    for (const source of sourceNodes) {
+      const assetId =
+        typeof source.config.assetId === "string"
+          ? source.config.assetId.trim()
+          : "";
+      if (!assetId) continue;
+      const firstSource = sourceByAssetId.get(assetId);
+      if (!firstSource) {
+        sourceByAssetId.set(assetId, source);
+        continue;
+      }
+      issues.push({
+        code: "INVALID_IMAGE_REFERENCE_TOPOLOGY",
+        severity: "error",
+        nodeId: source.id,
+        fieldId: "assetId",
+        message:
+          "An image asset can be connected only once to the same image task.",
+      });
+    }
+  }
+  return issues;
+};
 
 export const validateMediaFlowGraph = (
   flow: MediaFlow,
@@ -2721,10 +3074,14 @@ export const validateMediaFlowGraph = (
 
 export const validateMediaFlowDocument = (
   flow: MediaFlow,
-): readonly MediaNodeValidationIssue[] => [
-  ...validateMediaFlowNodes(resolveMediaFlowVariables(flow).flow),
-  ...validateMediaFlowGraph(flow),
-];
+): readonly MediaNodeValidationIssue[] => {
+  const resolvedFlow = resolveMediaFlowVariables(flow).flow;
+  return [
+    ...validateMediaFlowNodes(resolvedFlow),
+    ...validateMediaFlowGraph(resolvedFlow),
+    ...validateMediaImageReferenceTopology(resolvedFlow),
+  ];
+};
 
 export interface MediaFlowConnectionRequest {
   fromNodeId: string;
@@ -3213,6 +3570,30 @@ export const inspectMediaFlowConnection = (
       reason: `${targetPort.label} accepts at most ${targetPort.maxConnections} incoming connections.`,
     };
   }
+  if (
+    !exactConnectionExists &&
+    sourceNode.type === "source.image" &&
+    isMediaImageTask(targetNode) &&
+    targetPort.id === "image"
+  ) {
+    const candidateFlow: MediaFlow = {
+      ...flow,
+      edges: [
+        ...flow.edges,
+        {
+          id: "connection-inspection",
+          fromNodeId: request.fromNodeId,
+          fromPortId: request.fromPortId,
+          toNodeId: request.toNodeId,
+          toPortId: request.toPortId,
+        },
+      ],
+    };
+    const topologyIssue = validateMediaImageReferenceTopology(candidateFlow)[0];
+    if (topologyIssue) {
+      return { valid: false, reason: topologyIssue.message };
+    }
+  }
 
   const retainedEdges =
     targetPort.cardinality === "single"
@@ -3586,7 +3967,15 @@ export const updateMediaFlowNodeConfig = ({
     return node;
   });
 
-  return synchronizeMediaFlowAssetCounts({ ...flow, updatedAt, nodes });
+  const nextFlow = synchronizeMediaFlowAssetCounts({ ...flow, updatedAt, nodes });
+  if (
+    sourceNode.type === "source.image" &&
+    (fieldId === "assetId" || fieldId === "referenceRole")
+  ) {
+    const topologyIssue = validateMediaImageReferenceTopology(nextFlow)[0];
+    if (topologyIssue) throw new Error(topologyIssue.message);
+  }
+  return nextFlow;
 };
 
 export const updateMediaFlowNodeConfigs = ({
@@ -3611,3 +4000,36 @@ export const updateMediaFlowNodeConfigs = ({
       }),
     flow,
   );
+
+export const updateMediaFlowNodeLabel = ({
+  flow,
+  nodeId,
+  label,
+  updatedAt,
+}: {
+  flow: MediaFlow;
+  nodeId: string;
+  label: string;
+  updatedAt: string;
+}): MediaFlow => {
+  const sourceNode = flow.nodes.find((node) => node.id === nodeId);
+  if (!sourceNode) throw new Error(`Media node ${nodeId} was not found.`);
+  if (
+    label !== label.trim() ||
+    label.length === 0 ||
+    Array.from(label).length > 256 ||
+    /\p{Cc}/u.test(label)
+  ) {
+    throw new Error(
+      "Node names must be trimmed, non-empty, and at most 256 characters.",
+    );
+  }
+  if (sourceNode.label === label) return flow;
+  return {
+    ...flow,
+    updatedAt,
+    nodes: flow.nodes.map((node) =>
+      node.id === nodeId ? { ...node, label } : node,
+    ),
+  };
+};

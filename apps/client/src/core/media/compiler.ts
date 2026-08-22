@@ -7,6 +7,11 @@ import {
 import { resolveMediaFlowVariables } from "./variables.js";
 import { inspectMediaModelAddonCompatibility } from "./model-addons.js";
 import {
+  getMediaReferenceConditioningCapabilities,
+  mediaModelSupportsPromptlessConditioning,
+  mediaModelSupportsReferenceRole,
+} from "./reference-conditioning.js";
+import {
   hasMediaImageMaskContent,
   normalizeMediaImageMask,
 } from "./image-mask.js";
@@ -33,6 +38,8 @@ import type {
   MediaFlowLayoutComment,
   MediaFlowLayoutGroup,
   MediaFlowNode,
+  MediaImageOutputBranch,
+  MediaImagePostProcessingOperation,
   MediaModelDescriptor,
   MediaModelAddonDescriptor,
   MediaModelAddonSelection,
@@ -58,6 +65,7 @@ interface CreateImageRecipeFlowInput extends CreateImageFlowInputBase {
 
 interface CreateImageEditFlowInput extends CreateImageFlowInputBase {
   sourceAssetId: string;
+  sourceRole?: MediaImageReferenceRole;
   editStrength?: number;
   referenceAssets?: readonly {
     assetId: string;
@@ -154,11 +162,19 @@ export const createImageRecipeFlow = ({
       memoryProfile: settings.memoryProfile ?? "auto",
     },
   );
+  const seed =
+    typeof settings.seed === "number"
+      ? createNode("seed", "source.seed", "Seed", "source", {
+          seed: settings.seed,
+        })
+      : null;
   const nodes: MediaFlowNode[] = isSvgVectorization
-    ? [generate]
-    : [prompt, generate];
+    ? [...(seed ? [seed] : []), generate]
+    : [prompt, ...(seed ? [seed] : []), generate];
   const edges: MediaFlowEdge[] = isSvgVectorization
-    ? []
+    ? seed
+      ? [createEdge("seed-to-generate", seed.id, "seed", generate.id, "seed")]
+      : []
     : [
         createEdge(
           "prompt-to-generate",
@@ -167,6 +183,17 @@ export const createImageRecipeFlow = ({
           "generate",
           "prompt",
         ),
+        ...(seed
+          ? [
+              createEdge(
+                "seed-to-generate",
+                seed.id,
+                "seed",
+                generate.id,
+                "seed",
+              ),
+            ]
+          : []),
       ];
   const generationReferences =
     settings.outputFormat === "svg" ? settings.referenceImages : [];
@@ -325,6 +352,7 @@ export const createImageEditFlow = ({
   createdAt,
   settings,
   sourceAssetId,
+  sourceRole = "base",
   editStrength = 0.65,
   referenceAssets = [],
 }: CreateImageEditFlowInput): MediaFlow => {
@@ -349,7 +377,7 @@ export const createImageEditFlow = ({
     "source",
     {
       assetId: sourceAssetId,
-      referenceRole: "base",
+      referenceRole: sourceRole,
       influence: 1,
     },
   );
@@ -366,7 +394,7 @@ export const createImageEditFlow = ({
       },
     ),
   );
-  const edit = createNode("edit", "task.edit-image", "Edit image", "task", {
+  const edit = createNode("edit", "task.edit-image", "Generate", "task", {
     providerPolicy: settings.providerPolicy,
     modelPolicy: settings.modelPolicy,
     modelId: settings.modelId,
@@ -376,13 +404,34 @@ export const createImageEditFlow = ({
     outputFormat: settings.outputFormat,
     editStrength: settings.editStrength ?? editStrength,
     editMask: settings.editMask ?? null,
-    referenceBoost: settings.referenceBoost ?? 2,
+    maskStrength: settings.maskStrength ?? 1,
+    poseStrength: settings.poseStrength,
+    poseStart: settings.poseStart ?? 0,
+    poseEnd: settings.poseEnd ?? 1,
     requireChromaBackground: settings.requireChromaBackground === true,
-    referenceFit: settings.referenceFit ?? "fit",
-    groundingPixels: settings.groundingPixels ?? 768,
     memoryProfile: settings.memoryProfile ?? "auto",
   });
-  const nodes: MediaFlowNode[] = [prompt, source, ...additionalSources, edit];
+  const poseSource = settings.poseImageAssetId
+    ? createNode("pose-image", "source.image", "Pose", "source", {
+        assetId: settings.poseImageAssetId,
+        referenceRole: "pose",
+        influence: settings.poseStrength,
+      })
+    : null;
+  const seed =
+    typeof settings.seed === "number"
+      ? createNode("seed", "source.seed", "Seed", "source", {
+          seed: settings.seed,
+        })
+      : null;
+  const nodes: MediaFlowNode[] = [
+    prompt,
+    source,
+    ...additionalSources,
+    ...(poseSource ? [poseSource] : []),
+    ...(seed ? [seed] : []),
+    edit,
+  ];
   const edges: MediaFlowEdge[] = [
     createEdge("prompt-to-edit", "prompt", "prompt", "edit", "prompt"),
     createEdge("source-to-edit", "source-image", "image", "edit", "image"),
@@ -395,6 +444,12 @@ export const createImageEditFlow = ({
         "image",
       ),
     ),
+    ...(poseSource
+      ? [createEdge("pose-to-edit", poseSource.id, "image", edit.id, "image")]
+      : []),
+    ...(seed
+      ? [createEdge("seed-to-edit", seed.id, "seed", edit.id, "seed")]
+      : []),
   ];
   let previousNodeId = edit.id;
 
@@ -1637,11 +1692,15 @@ const scoreModel = (
 const selectImageModel = (
   settings: ImageRecipeSettings,
   models: readonly MediaModelDescriptor[],
-  requiredCapability: MediaCapability = "text-to-image",
+  requiredCapabilities: readonly MediaCapability[] = ["text-to-image"],
 ): MediaModelDescriptor | null => {
   const candidates = models
     .filter((model) => isMediaModelReady(model))
-    .filter((model) => model.capabilities.includes(requiredCapability))
+    .filter((model) =>
+      requiredCapabilities.every((capability) =>
+        model.capabilities.includes(capability),
+      ),
+    )
     .filter((model) => matchesProviderPolicy(model, settings.providerPolicy));
 
   if (settings.modelId) {
@@ -1658,19 +1717,13 @@ const selectImageModel = (
 interface MediaImageTaskSettings {
   settings: ImageRecipeSettings;
   taskType: "generate" | "edit";
-  requiredCapability:
-    | "text-to-image"
-    | "text-to-svg"
-    | "image-to-svg"
-    | "guided-svg-generation"
-    | "image-to-image"
-    | "masked-image-edit"
-    | "multi-reference-edit";
+  requiredCapabilities: readonly MediaCapability[];
   taskNode: MediaFlowNode;
   sourceAssets: readonly {
     nodeId: string;
     assetId: string;
     role: string;
+    influence: number;
   }[];
 }
 
@@ -1697,6 +1750,31 @@ const listUpstreamImageSources = (
   return flow.nodes.filter(
     (node) => node.type === "source.image" && upstreamNodeIds.has(node.id),
   );
+};
+
+const readTaskSeed = (
+  flow: MediaFlow,
+  taskNode: MediaFlowNode,
+): number | null | undefined => {
+  const seedEdges = flow.edges.filter(
+    (edge) => edge.toNodeId === taskNode.id && edge.toPortId === "seed",
+  );
+  if (seedEdges.length === 0) return null;
+  if (seedEdges.length !== 1) return undefined;
+
+  const seedEdge = seedEdges[0]!;
+  const sourceNode = flow.nodes.find((node) => node.id === seedEdge.fromNodeId);
+  const seed = sourceNode?.config.seed;
+  if (
+    sourceNode?.type !== "source.seed" ||
+    seedEdge.fromPortId !== "seed" ||
+    typeof seed !== "number" ||
+    !Number.isSafeInteger(seed) ||
+    seed < 0
+  ) {
+    return undefined;
+  }
+  return seed;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1811,6 +1889,7 @@ const readImageTaskNodeSettings = (
     taskNode.config.modelAddons === undefined
       ? []
       : readModelAddonSelections(taskNode.config.modelAddons);
+  const seed = readTaskSeed(flow, taskNode);
 
   if (
     (typeof prompt !== "string" && !isSvgVectorization) ||
@@ -1819,7 +1898,8 @@ const readImageTaskNodeSettings = (
     !["1:1", "4:5", "16:9", "9:16"].includes(String(aspectRatio)) ||
     typeof outputCount !== "number" ||
     !["png", "jpeg", "webp", "svg"].includes(String(outputFormat)) ||
-    modelAddons === null
+    modelAddons === null ||
+    seed === undefined
   ) {
     return null;
   }
@@ -1841,21 +1921,29 @@ const readImageTaskNodeSettings = (
       (node) => node.type === "control.quality-gate",
     ),
     referenceImages: [],
+    baseImageAssetId: null,
+    poseImageAssetId: null,
+    poseStrength:
+      typeof taskNode.config.poseStrength === "number"
+        ? taskNode.config.poseStrength
+        : 1,
+    poseStart:
+      typeof taskNode.config.poseStart === "number"
+        ? taskNode.config.poseStart
+        : 0,
+    poseEnd:
+      typeof taskNode.config.poseEnd === "number" ? taskNode.config.poseEnd : 1,
     editMask: normalizeMediaImageMask(taskNode.config.editMask),
     editStrength:
       typeof taskNode.config.editStrength === "number"
         ? taskNode.config.editStrength
         : 0.65,
-    referenceBoost:
-      typeof taskNode.config.referenceBoost === "number"
-        ? taskNode.config.referenceBoost
-        : 2,
+    maskStrength:
+      typeof taskNode.config.maskStrength === "number"
+        ? taskNode.config.maskStrength
+        : 1,
+    seed,
     requireChromaBackground: taskNode.config.requireChromaBackground === true,
-    referenceFit: taskNode.config.referenceFit === "crop" ? "crop" : "fit",
-    groundingPixels:
-      typeof taskNode.config.groundingPixels === "number"
-        ? taskNode.config.groundingPixels
-        : 768,
     memoryProfile: [
       "auto",
       "memory-saver",
@@ -1917,25 +2005,45 @@ const readMediaImageTaskSettings = (
         typeof node.config.referenceRole === "string"
           ? node.config.referenceRole
           : "base",
+      influence:
+        typeof node.config.influence === "number"
+          ? node.config.influence
+          : 1,
     }),
   );
+  const poseConditioned = sourceAssets.some((source) => source.role === "pose");
+  const imageSourceCount = sourceAssets.filter(
+    (source) => source.role !== "pose",
+  ).length;
+  const requiredCapabilities: MediaCapability[] = [];
+  if (settings.outputFormat === "svg") {
+    requiredCapabilities.push(
+      settings.svgMode === "vectorize"
+        ? "image-to-svg"
+        : sourceAssets.length > 0
+          ? "guided-svg-generation"
+          : "text-to-svg",
+    );
+  } else if (sourceAssets.length === 0) {
+    requiredCapabilities.push("text-to-image");
+  } else {
+    if (poseConditioned) requiredCapabilities.push("pose-control");
+    if (hasMediaImageMaskContent(settings.editMask)) {
+      requiredCapabilities.push("masked-image-edit");
+    }
+    if (imageSourceCount > 1) {
+      requiredCapabilities.push("multi-reference-edit");
+    } else if (
+      imageSourceCount === 1 &&
+      !hasMediaImageMaskContent(settings.editMask)
+    ) {
+      requiredCapabilities.push("image-to-image");
+    }
+  }
   return {
     settings,
     taskType,
-    requiredCapability:
-      taskType === "generate"
-        ? settings.outputFormat === "svg"
-          ? settings.svgMode === "vectorize"
-            ? "image-to-svg"
-            : sourceAssets.length > 0
-              ? "guided-svg-generation"
-              : "text-to-svg"
-          : "text-to-image"
-        : hasMediaImageMaskContent(settings.editMask)
-          ? "masked-image-edit"
-          : sourceAssets.length > 1
-            ? "multi-reference-edit"
-            : "image-to-image",
+    requiredCapabilities,
     taskNode,
     sourceAssets,
   };
@@ -1965,6 +2073,7 @@ export const readImageRecipeSettings = (
           "composition",
           "palette",
           "detail",
+          "pose",
         ].includes(String(role))
       ) {
         return [];
@@ -1983,7 +2092,31 @@ export const readImageRecipeSettings = (
     .sort((left, right) =>
       left.role === "base" ? -1 : right.role === "base" ? 1 : 0,
     );
-  return { ...settings, referenceImages: references };
+  const baseReferences = references.filter(
+    (reference) => reference.role === "base",
+  );
+  const poseReferences = references.filter(
+    (reference) => reference.role === "pose",
+  );
+  if (
+    baseReferences.length > 1 ||
+    poseReferences.length > 1 ||
+    new Set(references.map((reference) => reference.assetId)).size !==
+      references.length
+  ) {
+    return null;
+  }
+  const base = references.find((reference) => reference.role === "base");
+  const pose = references.find((reference) => reference.role === "pose");
+  return {
+    ...settings,
+    referenceImages: references.filter(
+      (reference) => reference.role !== "base" && reference.role !== "pose",
+    ),
+    baseImageAssetId: base?.assetId ?? null,
+    poseImageAssetId: pose?.assetId ?? null,
+    poseStrength: pose?.influence ?? settings.poseStrength,
+  };
 };
 
 export interface MediaFlowCardinalityStage {
@@ -2072,11 +2205,179 @@ export const analyzeMediaFlowCardinality = (
     generatedCandidates,
     maxPublishedOutputs:
       publishedBounds.length > 0
-        ? Math.max(...publishedBounds)
+        ? publishedBounds.reduce((total, bound) => total + bound, 0)
         : generatedCandidates,
     requiresHumanReview,
     stages,
   };
+};
+
+export const compileMediaImageOutputBranches = (
+  flow: MediaFlow,
+): MediaImageOutputBranch[] => {
+  const effectiveFlow = resolveMediaFlowVariables(flow).flow;
+  const tasks = effectiveFlow.nodes.filter(
+    (node) =>
+      node.type === "task.generate-image" || node.type === "task.edit-image",
+  );
+  if (tasks.length !== 1) {
+    throw new Error("Image output branches require exactly one image task.");
+  }
+  const task = tasks[0]!;
+  const taskOutputCount = task.config.outputCount;
+  if (
+    typeof taskOutputCount !== "number" ||
+    !Number.isInteger(taskOutputCount) ||
+    taskOutputCount < 1 ||
+    taskOutputCount > 8
+  ) {
+    throw new Error("The image task has an invalid output count.");
+  }
+  const outputs = effectiveFlow.nodes.filter(
+    (node) => node.type === "output.asset",
+  );
+  if (outputs.length === 0 || outputs.length > 8) {
+    throw new Error(
+      "Image generation requires between one and eight output branches.",
+    );
+  }
+  const nodesById = new Map(effectiveFlow.nodes.map((node) => [node.id, node]));
+  return outputs.map((output) => {
+    if (output.config.outputCount !== taskOutputCount) {
+      throw new Error(
+        `${output.label} must publish the image task output count.`,
+      );
+    }
+    const branchNodes: MediaFlowNode[] = [];
+    const visited = new Set<string>([output.id]);
+    let current = output;
+    while (current.id !== task.id) {
+      const incoming = effectiveFlow.edges.filter(
+        (edge) => edge.toNodeId === current.id && edge.toPortId === "image",
+      );
+      if (incoming.length !== 1) {
+        throw new Error(`${current.label} requires exactly one image input.`);
+      }
+      const source = nodesById.get(incoming[0]!.fromNodeId);
+      if (!source || visited.has(source.id)) {
+        throw new Error(
+          `${output.label} contains an invalid or cyclic image branch.`,
+        );
+      }
+      visited.add(source.id);
+      if (source.id !== task.id) branchNodes.push(source);
+      current = source;
+    }
+    branchNodes.reverse();
+    const outputFormat = output.config.format;
+    let quality = 95;
+    let jpegBackground = "#ffffff";
+    if (
+      outputFormat !== "png" &&
+      outputFormat !== "jpeg" &&
+      outputFormat !== "webp"
+    ) {
+      throw new Error(`${output.label} has an unsupported raster format.`);
+    }
+    let format: MediaImageOutputBranch["format"] = outputFormat;
+    const operations: MediaImagePostProcessingOperation[] = [];
+    for (const node of branchNodes) {
+      switch (node.type) {
+        case "operation.crop":
+          operations.push({
+            kind: "crop",
+            nodeId: node.id,
+            x: Number(node.config.x),
+            y: Number(node.config.y),
+            width: Number(node.config.width),
+            height: Number(node.config.height),
+          });
+          break;
+        case "operation.resize":
+          operations.push({
+            kind: "resize",
+            nodeId: node.id,
+            width: Number(node.config.width),
+            height: Number(node.config.height),
+            fit: node.config.fit as "contain" | "cover" | "stretch",
+          });
+          break;
+        case "operation.text-overlay":
+          operations.push({
+            kind: "text-overlay",
+            nodeId: node.id,
+            text: String(node.config.text),
+            position: node.config.position as
+              | "top-left"
+              | "top-right"
+              | "bottom-left"
+              | "bottom-right"
+              | "center",
+            margin: Number(node.config.margin),
+            fontSize: Number(node.config.fontSize),
+            color: String(node.config.color),
+            backgroundColor: String(node.config.backgroundColor),
+            backgroundOpacity: Number(node.config.backgroundOpacity),
+          });
+          break;
+        case "operation.color-adjust":
+          operations.push({
+            kind: "color-adjust",
+            nodeId: node.id,
+            brightness: Number(node.config.brightness),
+            contrast: Number(node.config.contrast),
+            saturation: Number(node.config.saturation),
+          });
+          break;
+        case "operation.sharpen":
+          operations.push({
+            kind: "sharpen",
+            nodeId: node.id,
+            sigma: Number(node.config.sigma),
+            threshold: Number(node.config.threshold),
+          });
+          break;
+        case "operation.metadata-strip":
+          operations.push({
+            kind: "metadata-strip",
+            nodeId: node.id,
+            preserveColorProfile: node.config.preserveColorProfile === true,
+          });
+          break;
+        case "operation.format-convert": {
+          const configuredFormat = node.config.outputFormat;
+          if (
+            configuredFormat !== "png" &&
+            configuredFormat !== "jpeg" &&
+            configuredFormat !== "webp"
+          ) {
+            throw new Error(`${node.label} has an unsupported raster format.`);
+          }
+          format = configuredFormat;
+          quality = Number(node.config.quality);
+          jpegBackground = String(node.config.jpegBackground ?? "#ffffff");
+          break;
+        }
+        default:
+          throw new Error(
+            `${node.label} cannot run inside a diffusion output branch.`,
+          );
+      }
+    }
+    if (output.config.format !== format) {
+      throw new Error(
+        `${output.label} must match its branch format conversion.`,
+      );
+    }
+    return {
+      id: output.id,
+      outputNodeId: output.id,
+      format,
+      quality,
+      jpegBackground,
+      operations,
+    };
+  });
 };
 
 const createModelDiagnostics = (
@@ -2084,14 +2385,7 @@ const createModelDiagnostics = (
   settings: ImageRecipeSettings,
   compiledAt: string,
   nodeId: string,
-  requiredCapability:
-    | "text-to-image"
-    | "text-to-svg"
-    | "image-to-svg"
-    | "guided-svg-generation"
-    | "image-to-image"
-    | "masked-image-edit"
-    | "multi-reference-edit",
+  requiredCapabilities: readonly MediaCapability[],
 ): MediaCompilerDiagnostic[] => {
   if (!model) {
     return [
@@ -2122,7 +2416,9 @@ const createModelDiagnostics = (
   }
 
   const diagnostics: MediaCompilerDiagnostic[] = [];
-  if (!model.capabilities.includes(requiredCapability)) {
+  for (const requiredCapability of requiredCapabilities.filter(
+    (capability) => !model.capabilities.includes(capability),
+  )) {
     diagnostics.push({
       code: "MODEL_CAPABILITY_UNSUPPORTED",
       severity: "error",
@@ -2370,11 +2666,12 @@ const resolveModelAddons = (
     if (compatibility.status === "unverified") {
       diagnostics.push({
         code: "ADDON_BASE_MODEL_UNVERIFIED",
-        severity: "warning",
+        severity: "error",
         message: compatibility.reason,
         nodeId,
-        action: "Review the publisher's base-model declaration before running.",
+        action: "Choose an add-on whose tensors match the selected model.",
       });
+      continue;
     }
     resolved.push({
       descriptor,
@@ -2423,6 +2720,16 @@ const createExecutionSteps = (
         });
         break;
       }
+      case "source.seed":
+        steps.push({
+          id: stepId(node, "resolve-seed"),
+          sourceNodeId: node.id,
+          kind: "resolve-seed",
+          label: "Resolve generation seed",
+          target: "orchestrator",
+          cacheable: true,
+        });
+        break;
       case "source.animated-background":
         steps.push({
           id: `${node.id}:resolve-animated-background`,
@@ -2605,6 +2912,36 @@ const createExecutionSteps = (
           sourceNodeId: node.id,
           kind: "resize-image",
           label: "Resize with the explicit target box and fit policy",
+          target: "local",
+          cacheable: true,
+        });
+        break;
+      case "operation.text-overlay":
+        steps.push({
+          id: stepId(node, "overlay-text"),
+          sourceNodeId: node.id,
+          kind: "overlay-text",
+          label: "Render text into image pixels",
+          target: "local",
+          cacheable: true,
+        });
+        break;
+      case "operation.color-adjust":
+        steps.push({
+          id: stepId(node, "adjust-color"),
+          sourceNodeId: node.id,
+          kind: "adjust-color",
+          label: "Apply color adjustment",
+          target: "local",
+          cacheable: true,
+        });
+        break;
+      case "operation.sharpen":
+        steps.push({
+          id: stepId(node, "sharpen-image"),
+          sourceNodeId: node.id,
+          kind: "sharpen-image",
+          label: "Apply unsharp mask",
           target: "local",
           cacheable: true,
         });
@@ -2870,22 +3207,6 @@ export const compileMediaFlow = ({
   }
 
   if (
-    settings &&
-    settings.prompt.trim().length === 0 &&
-    !(settings.outputFormat === "svg" && settings.svgMode === "vectorize")
-  ) {
-    diagnostics.push({
-      code: "PROMPT_REQUIRED",
-      severity: "error",
-      message:
-        imageTask?.taskType === "edit"
-          ? "Describe the requested image edit before compiling this flow."
-          : "Describe the image before compiling this flow.",
-      nodeId: promptNode?.id ?? "prompt",
-      action: "Add a concrete subject, setting, or visual direction.",
-    });
-  }
-  if (
     videoTaskNode &&
     (typeof promptNode?.config.prompt !== "string" ||
       promptNode.config.prompt.trim().length === 0)
@@ -2915,6 +3236,10 @@ export const compileMediaFlow = ({
               typeof node.config.referenceRole === "string"
                 ? node.config.referenceRole
                 : "source",
+            influence:
+              typeof node.config.influence === "number"
+                ? node.config.influence
+                : 1,
           }))
       : []);
   const normalizedSourceAssetIds = connectedSourceAssets
@@ -3014,6 +3339,38 @@ export const compileMediaFlow = ({
         action: "Clear the mask or paint it again on the current base image.",
       });
     }
+    if (settings.outputFormat !== "png") {
+      diagnostics.push({
+        code: "NODE_SCHEMA_INVALID",
+        severity: "error",
+        message: "Masked image edits require lossless PNG output.",
+        nodeId: imageTaskNode?.id ?? "edit",
+        action: "Set the output format to PNG.",
+      });
+    }
+    if (settings.transparentBackground) {
+      diagnostics.push({
+        code: "NODE_SCHEMA_INVALID",
+        severity: "error",
+        message: "Masked image edits cannot also remove the background.",
+        nodeId: imageTaskNode?.id ?? "edit",
+        action: "Remove the subject cutout step.",
+      });
+    }
+  }
+  if (
+    imageTask?.taskType === "edit" &&
+    settings?.editMask !== null &&
+    settings?.editMask !== undefined &&
+    !hasMediaImageMaskContent(settings.editMask)
+  ) {
+    diagnostics.push({
+      code: "NODE_SCHEMA_INVALID",
+      severity: "error",
+      message: "The mask has no painted area.",
+      nodeId: imageTaskNode?.id ?? "edit",
+      action: "Paint the area to change or remove the mask.",
+    });
   }
   for (const source of videoFrameSources.filter(
     (entry) => !entry.generated && entry.assetId.trim().length === 0,
@@ -3132,8 +3489,79 @@ export const compileMediaFlow = ({
       })()
     : null;
   const imageModel = imageTask
-    ? selectImageModel(imageTask.settings, models, imageTask.requiredCapability)
+    ? selectImageModel(
+        imageTask.settings,
+        models,
+        imageTask.requiredCapabilities,
+      )
     : null;
+  const promptlessImageConditioning =
+    connectedSourceAssets.length > 0 &&
+    mediaModelSupportsPromptlessConditioning(imageModel, true);
+  if (
+    settings &&
+    settings.prompt.trim().length === 0 &&
+    !(settings.outputFormat === "svg" && settings.svgMode === "vectorize") &&
+    !promptlessImageConditioning
+  ) {
+    diagnostics.push({
+      code: "PROMPT_REQUIRED",
+      severity: "error",
+      message:
+        imageTask?.taskType === "edit"
+          ? "Describe the requested image edit before compiling this flow."
+          : "Describe the image before compiling this flow.",
+      nodeId: promptNode?.id ?? "prompt",
+      action: "Add a prompt or connect supported local image conditioning.",
+    });
+  }
+  if (imageModel && imageTask?.taskType === "edit") {
+    const referenceCapabilities =
+      getMediaReferenceConditioningCapabilities(imageModel);
+    const supplementalSources = connectedSourceAssets.filter(
+      (source) => source.role !== "base" && source.role !== "pose",
+    );
+    if (
+      supplementalSources.length > referenceCapabilities.maximumReferenceImages
+    ) {
+      diagnostics.push({
+        code: "MODEL_CAPABILITY_UNSUPPORTED",
+        severity: "error",
+        message: `${imageModel.displayName} accepts at most ${referenceCapabilities.maximumReferenceImages} reference image${referenceCapabilities.maximumReferenceImages === 1 ? "" : "s"}.`,
+        nodeId: imageTask.taskNode.id,
+        action:
+          "Remove references or choose a model with multi-reference conditioning.",
+      });
+    }
+    for (const source of supplementalSources) {
+      if (
+        !mediaModelSupportsReferenceRole(
+          imageModel,
+          source.role as MediaImageReferenceRole,
+        )
+      ) {
+        diagnostics.push({
+          code: "MODEL_CAPABILITY_UNSUPPORTED",
+          severity: "error",
+          message: `${imageModel.displayName} does not implement ${source.role} reference conditioning.`,
+          nodeId: source.nodeId,
+          action: "Choose a supported reference role or model.",
+        });
+      }
+      if (
+        !referenceCapabilities.adjustableInfluence &&
+        source.influence !== 1
+      ) {
+        diagnostics.push({
+          code: "MODEL_CAPABILITY_UNSUPPORTED",
+          severity: "error",
+          message: `${imageModel.displayName} does not support per-reference influence values.`,
+          nodeId: source.nodeId,
+          action: "Set the reference influence to 1.",
+        });
+      }
+    }
+  }
   const model = imageModel ?? videoModel ?? subjectCutoutModel;
   const svgCriticRequested = Boolean(
     settings?.outputFormat === "svg" && settings.svgCriticEnabled === true,
@@ -3154,33 +3582,6 @@ export const compileMediaFlow = ({
     imageTaskNode?.id ?? "generate",
   );
   diagnostics.push(...resolvedAddons.diagnostics);
-  if (
-    imageTask?.taskType === "edit" &&
-    imageModel?.target === "local" &&
-    imageModel.architecture === "krea-2"
-  ) {
-    const identityAdapters = resolvedAddons.addons.filter((resolved) => {
-      return (
-        resolved.selection.kind === "lora" &&
-        (resolved.descriptor.digest ===
-          "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423" ||
-          resolved.descriptor.relativePath
-            .toLowerCase()
-            .includes("krea2_identity_edit_v1_2") === true)
-      );
-    });
-    if (identityAdapters.length !== 1) {
-      diagnostics.push({
-        code: "ADDON_CONFIG_INVALID",
-        severity: "error",
-        message:
-          "Local KREA reference editing requires exactly one reviewed KREA 2 Identity Edit v1.2 adapter.",
-        nodeId: imageTask.taskNode.id,
-        action:
-          "Import krea2_identity_edit_v1_2_r64.safetensors as a KREA 2 LoRA, enable it, and disable any duplicate identity-edit adapter.",
-      });
-    }
-  }
 
   if (videoTaskNode) {
     const firstFrames = videoFrameSources.filter(
@@ -3399,7 +3800,7 @@ export const compileMediaFlow = ({
         settings,
         compiledAt,
         imageTaskNode?.id ?? "generate",
-        imageTask?.requiredCapability ?? "text-to-image",
+        imageTask?.requiredCapabilities ?? ["text-to-image"],
       ),
     );
 
@@ -3511,8 +3912,9 @@ export const compileMediaFlow = ({
           {
             nodeId: imageTaskNode.id,
             modality: "image" as const,
-            requiredCapability:
-              imageTask?.requiredCapability ?? "text-to-image",
+            requiredCapabilities: imageTask?.requiredCapabilities ?? [
+              "text-to-image" as const,
+            ],
             model: imageModel,
           },
         ]
@@ -3522,9 +3924,11 @@ export const compileMediaFlow = ({
           {
             nodeId: videoTaskNode.id,
             modality: "video" as const,
-            requiredCapability: videoRequiresTerminalConditioning
-              ? ("start-end-to-video" as const)
-              : ("image-to-video" as const),
+            requiredCapabilities: [
+              videoRequiresTerminalConditioning
+                ? ("start-end-to-video" as const)
+                : ("image-to-video" as const),
+            ],
             model: videoModel,
           },
         ]

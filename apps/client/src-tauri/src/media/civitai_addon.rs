@@ -916,10 +916,12 @@ pub(crate) async fn download_reviewed(
         .ok_or_else(|| "The reviewed Civitai file is no longer available".to_string())?;
     let source_path = download_selected(paths, &selected).await?;
     let inspection_path = source_path.clone();
-    let inspection =
-        tauri::async_runtime::spawn_blocking(move || model_addon::inspect(&inspection_path))
-            .await
-            .map_err(|error| format!("downloaded add-on inspection worker failed: {error}"))??;
+    let inspection_paths = paths.clone();
+    let inspection = tauri::async_runtime::spawn_blocking(move || {
+        model_addon::inspect_for_import(&inspection_paths, &inspection_path)
+    })
+    .await
+    .map_err(|error| format!("downloaded add-on inspection worker failed: {error}"))??;
     if inspection.detected_kind.as_deref() != resolved.public.kind.as_deref() {
         return Err(
             "The downloaded tensor structure does not match Civitai's reported add-on type"

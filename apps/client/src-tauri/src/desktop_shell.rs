@@ -10,11 +10,16 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+pub(crate) mod file_manager;
 mod shortcut;
 mod startup;
 mod tray;
 mod window;
 
+pub(crate) use file_manager::{
+    handle_secondary_instance, parse_invocation_args, FileManagerInvocation,
+    FileManagerInvocationState,
+};
 pub(crate) use shortcut::{sync_quick_voice_shortcut, validate_quick_voice_shortcut};
 pub(crate) use startup::{
     apply_startup_mode, current_process_has_administrator_rights,
@@ -46,9 +51,10 @@ pub(crate) struct QuickVoiceShortcutState(pub(crate) Mutex<Option<String>>);
 #[derive(Debug, Clone)]
 pub(crate) struct DesktopLaunchId(pub(crate) String);
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct LaunchContext {
     pub(crate) launched_from_autostart: bool,
+    pub(crate) file_manager_invocation: Option<FileManagerInvocation>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

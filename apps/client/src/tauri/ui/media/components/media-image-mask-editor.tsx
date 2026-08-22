@@ -36,7 +36,7 @@ const createMask = (
   inverted: boolean,
   strokes: MediaImageMaskStroke[],
 ): MediaImageMask => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   sourceAssetId: assetId,
   inverted,
   strokes,
@@ -50,31 +50,63 @@ const drawStroke = (
 ): void => {
   const first = stroke.points[0];
   if (!first) return;
+  const strokeCanvas = document.createElement("canvas");
+  strokeCanvas.width = width;
+  strokeCanvas.height = height;
+  const strokeContext = strokeCanvas.getContext("2d");
+  if (!strokeContext) return;
+  const radius = Math.max(0.5, (stroke.size * Math.min(width, height)) / 2);
+  const innerRadius = radius * (1 - stroke.softness);
+  const stamp = (x: number, y: number): void => {
+    strokeContext.save();
+    strokeContext.globalCompositeOperation = "lighten";
+    if (stroke.softness === 0) {
+      strokeContext.fillStyle = "#ffffff";
+    } else {
+      const gradient = strokeContext.createRadialGradient(
+        x,
+        y,
+        innerRadius,
+        x,
+        y,
+        radius,
+      );
+      gradient.addColorStop(0, "rgba(255,255,255,1)");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+      strokeContext.fillStyle = gradient;
+    }
+    strokeContext.beginPath();
+    strokeContext.arc(x, y, radius, 0, Math.PI * 2);
+    strokeContext.fill();
+    strokeContext.restore();
+  };
+  let previousX = first.x * (width - 1);
+  let previousY = first.y * (height - 1);
+  stamp(previousX, previousY);
+  for (const point of stroke.points.slice(1)) {
+    const nextX = point.x * (width - 1);
+    const nextY = point.y * (height - 1);
+    const distance = Math.hypot(nextX - previousX, nextY - previousY);
+    const sampleCount = Math.max(
+      1,
+      Math.ceil(distance / Math.max(1, radius / 4)),
+    );
+    for (let sample = 1; sample <= sampleCount; sample += 1) {
+      const progress = sample / sampleCount;
+      stamp(
+        previousX + (nextX - previousX) * progress,
+        previousY + (nextY - previousY) * progress,
+      );
+    }
+    previousX = nextX;
+    previousY = nextY;
+  }
+  context.save();
   context.globalCompositeOperation =
     stroke.mode === "paint" ? "source-over" : "destination-out";
-  context.strokeStyle = "#ffffff";
-  context.fillStyle = "#ffffff";
-  context.lineCap = "round";
-  context.lineJoin = "round";
-  context.lineWidth = Math.max(1, stroke.size * Math.min(width, height));
-  if (stroke.points.length === 1) {
-    context.beginPath();
-    context.arc(
-      first.x * width,
-      first.y * height,
-      context.lineWidth / 2,
-      0,
-      Math.PI * 2,
-    );
-    context.fill();
-    return;
-  }
-  context.beginPath();
-  context.moveTo(first.x * width, first.y * height);
-  for (const point of stroke.points.slice(1)) {
-    context.lineTo(point.x * width, point.y * height);
-  }
-  context.stroke();
+  context.globalAlpha = stroke.opacity;
+  context.drawImage(strokeCanvas, 0, 0);
+  context.restore();
 };
 
 const createSelectionCanvas = (
@@ -127,6 +159,8 @@ export const MediaImageMaskEditor = ({
   const [tool, setTool] = useState<MaskTool>("paint");
   const [preview, setPreview] = useState<MaskPreview>("overlay");
   const [brushSize, setBrushSize] = useState(0.075);
+  const [brushOpacity, setBrushOpacity] = useState(1);
+  const [brushSoftness, setBrushSoftness] = useState(0.35);
   const [draftStroke, setDraftStroke] = useState<MediaImageMaskStroke | null>(
     null,
   );
@@ -190,8 +224,9 @@ export const MediaImageMaskEditor = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     const image = imageRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !image || !context) return;
+    if (!canvas || !image) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
     canvas.width = imageSize.width;
     canvas.height = imageSize.height;
     context.clearRect(0, 0, canvas.width, canvas.height);
@@ -215,17 +250,15 @@ export const MediaImageMaskEditor = ({
       context.drawImage(selection, 0, 0);
       context.restore();
     } else {
-      context.fillStyle = "#ffffff";
+      context.fillStyle = "#000000";
       context.fillRect(0, 0, canvas.width, canvas.height);
-      context.globalCompositeOperation = "destination-out";
       context.drawImage(selection, 0, 0);
-      context.globalCompositeOperation = "source-over";
     }
     if (hoverPoint && !draftStroke) {
       context.beginPath();
       context.arc(
-        hoverPoint.x * canvas.width,
-        hoverPoint.y * canvas.height,
+        hoverPoint.x * (canvas.width - 1),
+        hoverPoint.y * (canvas.height - 1),
         (brushSize * Math.min(canvas.width, canvas.height)) / 2,
         0,
         Math.PI * 2,
@@ -245,9 +278,7 @@ export const MediaImageMaskEditor = ({
   ]);
 
   const updateStrokes = (next: MediaImageMaskStroke[]): void => {
-    onChange(
-      next.length > 0 || inverted ? createMask(asset.id, inverted, next) : null,
-    );
+    onChange(createMask(asset.id, inverted, next));
   };
 
   const beginStroke = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
@@ -262,6 +293,8 @@ export const MediaImageMaskEditor = ({
     setDraftStroke({
       mode: tool,
       size: brushSize,
+      opacity: brushOpacity,
+      softness: brushSoftness,
       points: [pointFromPointer(event.currentTarget, event)],
     });
   };
@@ -365,7 +398,7 @@ export const MediaImageMaskEditor = ({
           onClick={() => {
             setUndoStack((current) => [...current.slice(-49), [...strokes]]);
             setRedoStack([]);
-            onChange(null);
+            onChange(createMask(asset.id, false, []));
           }}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -380,11 +413,11 @@ export const MediaImageMaskEditor = ({
         onPointerUp={finishStroke}
         onPointerCancel={finishStroke}
         onPointerLeave={() => setHoverPoint(null)}
-        className="block w-full touch-none rounded-xl border border-slate-700 bg-[linear-gradient(45deg,#1e293b_25%,transparent_25%),linear-gradient(-45deg,#1e293b_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1e293b_75%),linear-gradient(-45deg,transparent_75%,#1e293b_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0]"
+        className="block w-full touch-none rounded-xl bg-[linear-gradient(45deg,#1e293b_25%,transparent_25%),linear-gradient(-45deg,#1e293b_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1e293b_75%),linear-gradient(-45deg,transparent_75%,#1e293b_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0] ring-1 ring-inset ring-slate-700"
         style={{ aspectRatio: `${imageSize.width} / ${imageSize.height}` }}
       />
 
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+      <div className="grid gap-3 sm:grid-cols-3">
         <label className="space-y-1 text-xs text-slate-400">
           <span>Brush {Math.round(brushSize * 100)}%</span>
           <input
@@ -397,7 +430,35 @@ export const MediaImageMaskEditor = ({
             className="block w-full accent-cyan-400"
           />
         </label>
-        <div className="flex items-end gap-1.5">
+        <label className="space-y-1 text-xs text-slate-400">
+          <span>Strength {Math.round(brushOpacity * 100)}%</span>
+          <input
+            type="range"
+            min="1"
+            max="100"
+            step="1"
+            value={brushOpacity * 100}
+            onChange={(event) =>
+              setBrushOpacity(Number(event.target.value) / 100)
+            }
+            className="block w-full accent-cyan-400"
+          />
+        </label>
+        <label className="space-y-1 text-xs text-slate-400">
+          <span>Soft edge {Math.round(brushSoftness * 100)}%</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={brushSoftness * 100}
+            onChange={(event) =>
+              setBrushSoftness(Number(event.target.value) / 100)
+            }
+            className="block w-full accent-cyan-400"
+          />
+        </label>
+        <div className="flex items-end gap-1.5 sm:col-span-3 sm:justify-end">
           <button
             type="button"
             aria-pressed={preview === "overlay"}
@@ -429,6 +490,7 @@ export const MediaImageMaskEditor = ({
             size="sm"
             variant={inverted ? "default" : "outline"}
             aria-pressed={inverted}
+            disabled={strokes.length === 0}
             onClick={() =>
               onChange(createMask(asset.id, !inverted, [...strokes]))
             }

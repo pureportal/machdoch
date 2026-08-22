@@ -7,13 +7,15 @@ import {
 } from "./image-mask.js";
 
 const mask: MediaImageMask = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   sourceAssetId: "asset:base",
   inverted: false,
   strokes: [
     {
       mode: "paint",
       size: 0.1,
+      opacity: 0.7,
+      softness: 0.4,
       points: [
         { x: 0.2, y: 0.3 },
         { x: 0.7, y: 0.8 },
@@ -40,6 +42,18 @@ describe("media image masks", () => {
       }),
     ).toBe(false);
     expect(isMediaImageMask({ ...mask, internalPreview: true })).toBe(false);
+    expect(
+      isMediaImageMask({
+        ...mask,
+        strokes: [{ ...mask.strokes[0]!, opacity: 0 }],
+      }),
+    ).toBe(false);
+    expect(
+      isMediaImageMask({
+        ...mask,
+        strokes: [{ ...mask.strokes[0]!, softness: 1.1 }],
+      }),
+    ).toBe(false);
   });
 
   it("distinguishes a valid empty mask from an active one", () => {

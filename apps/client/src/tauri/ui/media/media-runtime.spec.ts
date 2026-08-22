@@ -1,5 +1,41 @@
-import { describe, expect, it } from "vitest";
-import { MediaRuntimeError, normalizeMediaError } from "./media-runtime";
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const tauri = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  isTauri: vi.fn(() => true),
+}));
+
+vi.mock("@tauri-apps/api/core", () => tauri);
+
+import {
+  importMediaAsset,
+  MediaRuntimeError,
+  normalizeMediaError,
+} from "./media-runtime";
+
+beforeEach(() => {
+  tauri.invoke.mockReset();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+});
+
+describe("media asset importing", () => {
+  it("invokes the registered native image import command", async () => {
+    const result = { deduplicated: false };
+    tauri.invoke.mockResolvedValue(result);
+
+    await expect(importMediaAsset("C:\\images\\reference.png")).resolves.toBe(
+      result,
+    );
+    expect(tauri.invoke).toHaveBeenCalledWith("media_import_image", {
+      path: "C:\\images\\reference.png",
+    });
+  });
+});
 
 describe("media runtime error normalization", () => {
   it("preserves validated structured native errors and safely contains unstructured failures", () => {

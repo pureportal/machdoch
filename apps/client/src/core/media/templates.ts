@@ -1,5 +1,6 @@
 import {
   createGeneratedLoopVideoFlow,
+  createImageEditFlow,
   createImageRecipeFlow,
   createMediaFlowLayout,
 } from "./compiler.js";
@@ -23,9 +24,11 @@ const replaceNodeConfig = (
   config: Record<string, unknown>,
 ): MediaFlow => ({
   ...flow,
-  nodes: flow.nodes.map((node) => node.id === nodeId
-    ? { ...node, config: { ...node.config, ...config } }
-    : node),
+  nodes: flow.nodes.map((node) =>
+    node.id === nodeId
+      ? { ...node, config: { ...node.config, ...config } }
+      : node,
+  ),
 });
 
 interface TemplateHumanReview {
@@ -41,26 +44,32 @@ const insertHumanReviewBeforeOutput = (
   const outputEdge = flow.edges.find(
     (edge) => edge.toNodeId === "asset-output" && edge.toPortId === "image",
   );
-  if (!outputEdge) throw new Error("Template flow requires an asset publication edge.");
+  if (!outputEdge)
+    throw new Error("Template flow requires an asset publication edge.");
   return {
     ...flow,
-    nodes: flow.nodes.flatMap((node) => node.id === "asset-output"
-      ? [
-          {
-            id: "human-review",
-            type: "control.human-review" as const,
-            version: 1 as const,
-            label: "Human review",
-            layer: "control" as const,
-            config: {
-              instructions: review.instructions,
-              maxSelections: review.maxSelections,
-              requireComment: review.requireComment,
+    nodes: flow.nodes.flatMap((node) =>
+      node.id === "asset-output"
+        ? [
+            {
+              id: "human-review",
+              type: "control.human-review" as const,
+              version: 1 as const,
+              label: "Human review",
+              layer: "control" as const,
+              config: {
+                instructions: review.instructions,
+                maxSelections: review.maxSelections,
+                requireComment: review.requireComment,
+              },
             },
-          },
-          { ...node, config: { ...node.config, outputCount: review.maxSelections } },
-        ]
-      : [node]),
+            {
+              ...node,
+              config: { ...node.config, outputCount: review.maxSelections },
+            },
+          ]
+        : [node],
+    ),
     edges: [
       ...flow.edges.filter((edge) => edge.id !== outputEdge.id),
       {
@@ -92,7 +101,10 @@ const createTemplate = ({
   presets,
   prompt,
   humanReview,
-}: Omit<MediaFlowTemplateDescriptor, "schemaVersion" | "flow" | "layout" | "remoteCapable"> & {
+}: Omit<
+  MediaFlowTemplateDescriptor,
+  "schemaVersion" | "flow" | "layout" | "remoteCapable"
+> & {
   settings: ImageRecipeSettings;
   variables: MediaFlowVariable[];
   presets: MediaFlowPreset[];
@@ -105,11 +117,17 @@ const createTemplate = ({
     settings,
   });
   flow = replaceNodeConfig(flow, "prompt", { prompt });
-  const outputCountVariable = variables.find((variable) => variable.id === "variant-count");
+  const outputCountVariable = variables.find(
+    (variable) => variable.id === "variant-count",
+  );
   if (outputCountVariable) {
-    flow = replaceNodeConfig(flow, "generate", { outputCount: "{{variant-count}}" });
+    flow = replaceNodeConfig(flow, "generate", {
+      outputCount: "{{variant-count}}",
+    });
     if (!humanReview) {
-      flow = replaceNodeConfig(flow, "asset-output", { outputCount: "{{variant-count}}" });
+      flow = replaceNodeConfig(flow, "asset-output", {
+        outputCount: "{{variant-count}}",
+      });
     }
   }
   if (humanReview) flow = insertHumanReviewBeforeOutput(flow, humanReview);
@@ -140,7 +158,8 @@ const createTemplate = ({
 const creativeBriefVariable = (defaultValue: string): MediaFlowVariable => ({
   id: "creative-brief",
   name: "Creative brief",
-  description: "The reusable subject, scene, and composition requested from the image model.",
+  description:
+    "The reusable subject, scene, and composition requested from the image model.",
   type: "text",
   required: true,
   defaultValue,
@@ -150,7 +169,8 @@ const creativeBriefVariable = (defaultValue: string): MediaFlowVariable => ({
 const variantCountVariable = (defaultValue: number): MediaFlowVariable => ({
   id: "variant-count",
   name: "Variant count",
-  description: "A bounded number of generated candidates. Remote providers may bill per output.",
+  description:
+    "A bounded number of generated candidates. Remote providers may bill per output.",
   type: "number",
   required: true,
   defaultValue,
@@ -235,15 +255,172 @@ const createCharacterLoopTemplate = (): MediaFlowTemplateDescriptor => {
   };
 };
 
+const createConditionedImageBranchesTemplate =
+  (): MediaFlowTemplateDescriptor => {
+    const flow = createImageEditFlow({
+      id: "template:conditioned-image-branches",
+      createdAt: TEMPLATE_CREATED_AT,
+      sourceAssetId: "",
+      sourceRole: "base",
+      referenceAssets: [
+        { assetId: "", role: "style", influence: 1 },
+        { assetId: "", role: "detail", influence: 1 },
+      ],
+      settings: {
+        prompt: "",
+        providerPolicy: "local",
+        modelPolicy: "balanced",
+        modelId: "local:flux-2-klein-4b",
+        aspectRatio: "1:1",
+        outputCount: 1,
+        outputFormat: "png",
+        transparentBackground: false,
+        qualityGateEnabled: false,
+        referenceImages: [],
+        baseImageAssetId: null,
+        poseImageAssetId: null,
+        poseStrength: 1,
+        modelAddons: [],
+        editMask: null,
+        editStrength: 0.65,
+        maskStrength: 1,
+        memoryProfile: "auto",
+      },
+    });
+    flow.name = "Conditioned image branches";
+    flow.description =
+      "Conditioned edit with independent PNG and WebP outputs.";
+    flow.nodes = [
+      ...flow.nodes
+        .filter((node) => node.id !== "asset-output")
+        .map((node) => {
+          if (node.id === "source-image")
+            return { ...node, label: "Base image" };
+          if (node.id === "reference-image-1")
+            return { ...node, label: "Style reference" };
+          if (node.id === "reference-image-2")
+            return { ...node, label: "Detail reference" };
+          return node;
+        }),
+      {
+        id: "crop-png",
+        type: "operation.crop",
+        version: 1,
+        label: "Crop PNG",
+        layer: "operation",
+        config: { x: 0, y: 0, width: 384, height: 384 },
+      },
+      {
+        id: "png-output",
+        type: "output.asset",
+        version: 1,
+        label: "Cropped PNG",
+        layer: "output",
+        config: { format: "png", outputCount: 1 },
+      },
+      {
+        id: "disclaimer-overlay",
+        type: "operation.text-overlay",
+        version: 1,
+        label: "Image disclaimer",
+        layer: "operation",
+        config: {
+          text: "AI Image Disclaimer",
+          position: "bottom-right",
+          margin: 24,
+          fontSize: 24,
+          color: "#ffffff",
+          backgroundColor: "#000000",
+          backgroundOpacity: 0.55,
+        },
+      },
+      {
+        id: "convert-webp",
+        type: "operation.format-convert",
+        version: 1,
+        label: "Encode WebP",
+        layer: "operation",
+        config: {
+          outputFormat: "webp",
+          quality: 90,
+          jpegBackground: "#ffffff",
+        },
+      },
+      {
+        id: "webp-output",
+        type: "output.asset",
+        version: 1,
+        label: "Disclaimer WebP",
+        layer: "output",
+        config: { format: "webp", outputCount: 1 },
+      },
+    ];
+    flow.edges = [
+      ...flow.edges.filter((edge) => edge.id !== "result-to-output"),
+      {
+        id: "edit-to-crop-png",
+        fromNodeId: "edit",
+        fromPortId: "image",
+        toNodeId: "crop-png",
+        toPortId: "image",
+      },
+      {
+        id: "crop-png-to-output",
+        fromNodeId: "crop-png",
+        fromPortId: "image",
+        toNodeId: "png-output",
+        toPortId: "image",
+      },
+      {
+        id: "edit-to-disclaimer",
+        fromNodeId: "edit",
+        fromPortId: "image",
+        toNodeId: "disclaimer-overlay",
+        toPortId: "image",
+      },
+      {
+        id: "disclaimer-to-webp",
+        fromNodeId: "disclaimer-overlay",
+        fromPortId: "image",
+        toNodeId: "convert-webp",
+        toPortId: "image",
+      },
+      {
+        id: "webp-to-output",
+        fromNodeId: "convert-webp",
+        fromPortId: "image",
+        toNodeId: "webp-output",
+        toPortId: "image",
+      },
+    ];
+    return {
+      schemaVersion: 1,
+      id: "conditioned-image-branches",
+      name: flow.name,
+      description: flow.description,
+      category: "Advanced",
+      tags: ["conditioning", "mask", "post-processing"],
+      workflowSummary:
+        "Base, references, and mask to independent PNG and WebP branches",
+      privacySummary: "Generation and post-processing run locally.",
+      remoteCapable: false,
+      flow,
+      layout: createMediaFlowLayout(flow),
+    };
+  };
+
 const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
   createTemplate({
     id: "text-to-image-variants",
     name: "Text to image variants",
-    description: "Create a small, bounded image set from one reusable brief and art direction preset.",
+    description:
+      "Create a small, bounded image set from one reusable brief and art direction preset.",
     category: "Generation",
     tags: ["text-to-image", "variants", "starter"],
-    workflowSummary: "Creative brief → image generation → bounded human selection → immutable asset publication",
-    privacySummary: "The execution boundary remains explicit. Choosing a remote model uploads prompt text; local execution keeps it on-device.",
+    workflowSummary:
+      "Creative brief → image generation → bounded human selection → immutable asset publication",
+    privacySummary:
+      "The execution boundary remains explicit. Choosing a remote model uploads prompt text; local execution keeps it on-device.",
     settings: {
       prompt: "",
       providerPolicy: "auto",
@@ -255,18 +432,26 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       transparentBackground: false,
       qualityGateEnabled: false,
       referenceImages: [],
+      baseImageAssetId: null,
+      poseImageAssetId: null,
+      poseStrength: 1,
       modelAddons: [],
     },
     variables: [
-      creativeBriefVariable("A sculptural table lamp in a calm editorial studio"),
+      creativeBriefVariable(
+        "A sculptural table lamp in a calm editorial studio",
+      ),
       {
         id: "art-direction",
         name: "Art direction",
-        description: "A controlled visual direction appended to the creative brief.",
+        description:
+          "A controlled visual direction appended to the creative brief.",
         type: "choice",
         required: true,
         defaultValue: "Editorial",
-        constraints: { options: ["Editorial", "Cinematic", "Minimal", "Playful"] },
+        constraints: {
+          options: ["Editorial", "Cinematic", "Minimal", "Playful"],
+        },
       },
       variantCountVariable(4),
     ],
@@ -276,7 +461,8 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
         name: "Editorial set",
         description: "Balanced editorial defaults for a first review round.",
         values: {
-          "creative-brief": "A sculptural table lamp in a calm editorial studio",
+          "creative-brief":
+            "A sculptural table lamp in a calm editorial studio",
           "art-direction": "Editorial",
           "variant-count": 4,
         },
@@ -284,9 +470,11 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       {
         id: "preset-cinematic",
         name: "Cinematic set",
-        description: "A more dramatic lighting direction with fewer review candidates.",
+        description:
+          "A more dramatic lighting direction with fewer review candidates.",
         values: {
-          "creative-brief": "A sculptural table lamp in a dark architectural interior",
+          "creative-brief":
+            "A sculptural table lamp in a dark architectural interior",
           "art-direction": "Cinematic",
           "variant-count": 3,
         },
@@ -294,7 +482,8 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
     ],
     prompt: "{{creative-brief}}, {{art-direction}} art direction",
     humanReview: {
-      instructions: "Approve up to two compositionally distinct candidates with clean subject detail.",
+      instructions:
+        "Approve up to two compositionally distinct candidates with clean subject detail.",
       maxSelections: 2,
       requireComment: false,
     },
@@ -302,11 +491,14 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
   createTemplate({
     id: "product-cutout-quality",
     name: "Product cutout with quality gate",
-    description: "Generate product candidates, extract clean transparency, analyze technical quality, and publish only gated assets.",
+    description:
+      "Generate product candidates, extract clean transparency, analyze technical quality, and publish only gated assets.",
     category: "Product",
     tags: ["product", "transparency", "quality-gate"],
-    workflowSummary: "Product brief → generation → background removal → quality analysis → tri-state gate → human selection → assets",
-    privacySummary: "Matting and technical analysis run locally. Prompt upload occurs only if the resolved generation model is remote.",
+    workflowSummary:
+      "Product brief → generation → background removal → quality analysis → tri-state gate → human selection → assets",
+    privacySummary:
+      "Matting and technical analysis run locally. Prompt upload occurs only if the resolved generation model is remote.",
     settings: {
       prompt: "",
       providerPolicy: "auto",
@@ -318,18 +510,31 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       transparentBackground: true,
       qualityGateEnabled: true,
       referenceImages: [],
+      baseImageAssetId: null,
+      poseImageAssetId: null,
+      poseStrength: 1,
       modelAddons: [],
     },
     variables: [
-      creativeBriefVariable("A premium reusable water bottle, centered three-quarter view"),
+      creativeBriefVariable(
+        "A premium reusable water bottle, centered three-quarter view",
+      ),
       {
         id: "surface",
         name: "Surface treatment",
-        description: "Material and finish used to steer highlights and edge detail.",
+        description:
+          "Material and finish used to steer highlights and edge detail.",
         type: "choice",
         required: true,
         defaultValue: "Brushed metal",
-        constraints: { options: ["Brushed metal", "Matte ceramic", "Clear glass", "Soft-touch polymer"] },
+        constraints: {
+          options: [
+            "Brushed metal",
+            "Matte ceramic",
+            "Clear glass",
+            "Soft-touch polymer",
+          ],
+        },
       },
       variantCountVariable(3),
     ],
@@ -337,17 +542,21 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       {
         id: "preset-catalog",
         name: "Catalog cutout",
-        description: "Neutral catalog framing with a conservative candidate count.",
+        description:
+          "Neutral catalog framing with a conservative candidate count.",
         values: {
-          "creative-brief": "A premium reusable water bottle, centered three-quarter view",
+          "creative-brief":
+            "A premium reusable water bottle, centered three-quarter view",
           surface: "Brushed metal",
           "variant-count": 3,
         },
       },
     ],
-    prompt: "{{creative-brief}}, {{surface}}, isolated product photography, clean silhouette and soft edge lighting",
+    prompt:
+      "{{creative-brief}}, {{surface}}, isolated product photography, clean silhouette and soft edge lighting",
     humanReview: {
-      instructions: "Approve only cutouts with faithful material detail, a clean silhouette, and no visible alpha halo.",
+      instructions:
+        "Approve only cutouts with faithful material detail, a clean silhouette, and no visible alpha halo.",
       maxSelections: 2,
       requireComment: true,
     },
@@ -355,11 +564,14 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
   createTemplate({
     id: "quality-gated-campaign",
     name: "Quality-gated campaign image",
-    description: "Create one review-ready campaign image with explicit technical analysis and a conservative unknown-result policy.",
+    description:
+      "Create one review-ready campaign image with explicit technical analysis and a conservative unknown-result policy.",
     category: "Quality",
     tags: ["campaign", "quality", "review"],
-    workflowSummary: "Campaign brief → quality-biased generation → technical analysis → human-review gate → asset",
-    privacySummary: "Technical checks are local. The selected generation policy determines whether prompt text leaves the device.",
+    workflowSummary:
+      "Campaign brief → quality-biased generation → technical analysis → human-review gate → asset",
+    privacySummary:
+      "Technical checks are local. The selected generation policy determines whether prompt text leaves the device.",
     settings: {
       prompt: "",
       providerPolicy: "auto",
@@ -371,18 +583,26 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       transparentBackground: false,
       qualityGateEnabled: true,
       referenceImages: [],
+      baseImageAssetId: null,
+      poseImageAssetId: null,
+      poseStrength: 1,
       modelAddons: [],
     },
     variables: [
-      creativeBriefVariable("A sustainable travel campaign hero image at golden hour"),
+      creativeBriefVariable(
+        "A sustainable travel campaign hero image at golden hour",
+      ),
       {
         id: "tone",
         name: "Campaign tone",
-        description: "The emotional direction applied consistently to the campaign brief.",
+        description:
+          "The emotional direction applied consistently to the campaign brief.",
         type: "choice",
         required: true,
         defaultValue: "Aspirational",
-        constraints: { options: ["Aspirational", "Documentary", "Energetic", "Serene"] },
+        constraints: {
+          options: ["Aspirational", "Documentary", "Energetic", "Serene"],
+        },
       },
       variantCountVariable(2),
     ],
@@ -390,26 +610,32 @@ const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
       {
         id: "preset-aspirational",
         name: "Aspirational launch",
-        description: "Warm launch imagery with two candidates for human comparison.",
+        description:
+          "Warm launch imagery with two candidates for human comparison.",
         values: {
-          "creative-brief": "A sustainable travel campaign hero image at golden hour",
+          "creative-brief":
+            "A sustainable travel campaign hero image at golden hour",
           tone: "Aspirational",
           "variant-count": 2,
         },
       },
     ],
-    prompt: "{{creative-brief}}, {{tone}} campaign tone, authentic environmental detail",
+    prompt:
+      "{{creative-brief}}, {{tone}} campaign tone, authentic environmental detail",
     humanReview: {
-      instructions: "Select the single campaign image that best satisfies the brief and technical quality report.",
+      instructions:
+        "Select the single campaign image that best satisfies the brief and technical quality report.",
       maxSelections: 1,
       requireComment: true,
     },
   }),
+  createConditionedImageBranchesTemplate(),
   createCharacterLoopTemplate(),
 ];
 
-export const listBuiltInMediaFlowTemplates = (): readonly MediaFlowTemplateDescriptor[] =>
-  createBuiltInTemplates().map(cloneJsonDocument);
+export const listBuiltInMediaFlowTemplates =
+  (): readonly MediaFlowTemplateDescriptor[] =>
+    createBuiltInTemplates().map(cloneJsonDocument);
 
 export const instantiateMediaFlowTemplate = ({
   templateId,
@@ -420,9 +646,13 @@ export const instantiateMediaFlowTemplate = ({
   flowId: string;
   createdAt: string;
 }): InstantiateMediaFlowTemplateResult => {
-  const template = createBuiltInTemplates().find((candidate) => candidate.id === templateId);
-  if (!template) throw new Error(`Media flow template ${templateId} was not found.`);
-  if (!flowId.trim()) throw new Error("Template forks require a stable flow id.");
+  const template = createBuiltInTemplates().find(
+    (candidate) => candidate.id === templateId,
+  );
+  if (!template)
+    throw new Error(`Media flow template ${templateId} was not found.`);
+  if (!flowId.trim())
+    throw new Error("Template forks require a stable flow id.");
   const flow = cloneJsonDocument(template.flow);
   flow.id = flowId.trim().slice(0, 256);
   flow.name = template.name;

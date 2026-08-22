@@ -42,7 +42,6 @@ const createProps = (
   promptEnhancementMode: "simple",
   promptEnhancementWebSearchAvailable: true,
   promptEnhancementWebSearchUnavailableReason: "",
-  promptEnhancementPending: { modeLabel: "Simple enhance" },
   contextAttachments: [],
   contextPacks: [],
   matchedContextPackIds: [],
@@ -92,6 +91,7 @@ const createProps = (
   onQueuedMessageMove: noop,
   onQueuedMessageReorder: noop,
   onQueuedMessageRemove: noop,
+  onQueuedMessageRetry: noop,
   onQueuedMessageSend: noop,
   onQueuedMessageSelectContextAttachments: noopAsync,
   onQueuedMessageRemoveContextAttachment: noop,
@@ -102,19 +102,28 @@ const createProps = (
   ...overrides,
 });
 
-describe("SessionComposer edit enhancement", () => {
-  it("replaces the duplicate edit draft with the compact pending state", () => {
+describe("SessionComposer enhancement", () => {
+  it("keeps the normal composer available while enhancement is shown in the conversation", () => {
     const markup = renderToStaticMarkup(
-      createElement(SessionComposer, createProps()),
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          canSendMessage: true,
+          sendDisabledReason: null,
+          runningTaskMessageAction: "queue",
+          isExecuting: false,
+          isPromptEnhancementActive: true,
+        }),
+      ),
     );
 
-    expect(markup.match(/Enhance ongoing/gu)).toHaveLength(1);
-    expect(markup).toContain('aria-label="Cancel edit"');
-    expect(markup).not.toContain(EDIT_DRAFT);
-    expect(markup).not.toContain("Editing a sent message");
+    expect(markup).toContain("<textarea");
+    expect(markup).toContain(EDIT_DRAFT);
+    expect(markup).toContain("What should machdoch do next?");
+    expect(markup).toContain('aria-label="Queue message"');
     expect(markup).not.toContain("Enhancing prompt");
-    expect(markup).not.toContain("Execution timeline");
-    expect(markup).not.toContain("<textarea");
+    expect(markup).not.toContain("Running");
   });
 
   it("keeps the normal composer available outside edit enhancement", () => {
@@ -131,7 +140,6 @@ describe("SessionComposer edit enhancement", () => {
           }),
           editingMessageId: null,
           promptEnhancementMode: "off",
-          promptEnhancementPending: null,
           canSendMessage: true,
           sendDisabledReason: null,
           isExecuting: false,

@@ -14,13 +14,11 @@ import type {
 
 const workspaceRoot = "C:\\Development\\machdoch";
 const witchFlowId = "flow:anime-witch-production-spellcast-v2";
-const generalVideoFlowId =
-  "media-video-c69a40a7-5e08-4910-bac7-aed99905a81c";
+const generalVideoFlowId = "media-video-c69a40a7-5e08-4910-bac7-aed99905a81c";
 const dogLoraImageFlowId = "flow:e2e-final-flux-dog-lora";
 const dogLoraImageAssetId = "asset:run:e2e-final-flux-dog-lora-v1:0";
 const framePackModelId = "local:framepack-i2v-hy-13b";
-const hunyuanVideoModelId =
-  "local:hunyuan-video-1.5-i2v-step-distilled";
+const hunyuanVideoModelId = "local:hunyuan-video-1.5-i2v-step-distilled";
 
 const startVideoQualityRun = async ({
   flowId,
@@ -58,8 +56,7 @@ const startVideoQualityRun = async ({
   fps?: number;
   loopMode?: "none" | "seamless";
   negativePrompt?: string | null;
-},
-): Promise<{
+}): Promise<{
   runId: string;
   revisionId: string;
   planId: string;
@@ -80,7 +77,9 @@ const startVideoQualityRun = async ({
     discovery,
     runtime: runtimeStatus.localDiffusers,
   });
-  const model = activeCatalog.models.find((candidate) => candidate.id === modelId);
+  const model = activeCatalog.models.find(
+    (candidate) => candidate.id === modelId,
+  );
   if (!model?.configured || model.runtimeReadiness !== "ready") {
     throw new Error(
       model?.runtimeReadinessDiagnostic ??
@@ -92,17 +91,17 @@ const startVideoQualityRun = async ({
     throw new Error("The witch comparison flow has no saved head revision.");
   }
   const flow = structuredClone(head.flow);
-  const videoNode = flow.nodes.find((node) => node.type === "task.generate-video");
+  const videoNode = flow.nodes.find(
+    (node) => node.type === "task.generate-video",
+  );
   if (!videoNode) {
     throw new Error("The comparison flow has no video generation node.");
   }
   const firstFrameEdge = flow.edges.find(
-    (edge) =>
-      edge.toNodeId === videoNode.id && edge.toPortId === "first-frame",
+    (edge) => edge.toNodeId === videoNode.id && edge.toPortId === "first-frame",
   );
   const lastFrameEdge = flow.edges.find(
-    (edge) =>
-      edge.toNodeId === videoNode.id && edge.toPortId === "last-frame",
+    (edge) => edge.toNodeId === videoNode.id && edge.toPortId === "last-frame",
   );
   const firstFrame = flow.nodes.find(
     (node) =>
@@ -131,16 +130,12 @@ const startVideoQualityRun = async ({
       assetId: firstFrame.config.assetId,
     };
   }
-  const promptNode = flow.nodes.find(
-    (node) => node.type === "source.prompt",
-  );
+  const promptNode = flow.nodes.find((node) => node.type === "source.prompt");
   if (prompt && promptNode) {
     promptNode.config = { ...promptNode.config, prompt };
   }
-  const {
-    durationSeconds: _legacyDurationSeconds,
-    ...videoConfig
-  } = videoNode.config;
+  const { durationSeconds: _legacyDurationSeconds, ...videoConfig } =
+    videoNode.config;
   videoNode.config = {
     ...videoConfig,
     modelId,
@@ -247,15 +242,16 @@ const startVideoQualityRun = async ({
     encodingQuality: "lossless",
     memoryProfile: "auto",
     experimentalLowMemory: true,
-    animatedBackground: transparentBackground && animatedBackgroundNode
-      ? {
-          style: String(animatedBackgroundNode.config.style),
-          direction: String(animatedBackgroundNode.config.direction),
-          colorStart: String(animatedBackgroundNode.config.colorStart),
-          colorEnd: String(animatedBackgroundNode.config.colorEnd),
-          cycles: Number(animatedBackgroundNode.config.cycles),
-        }
-      : null,
+    animatedBackground:
+      transparentBackground && animatedBackgroundNode
+        ? {
+            style: String(animatedBackgroundNode.config.style),
+            direction: String(animatedBackgroundNode.config.direction),
+            colorStart: String(animatedBackgroundNode.config.colorStart),
+            colorEnd: String(animatedBackgroundNode.config.colorEnd),
+            cycles: Number(animatedBackgroundNode.config.cycles),
+          }
+        : null,
     planSnapshot,
   };
   const run = invoke<MediaRunDetail>("media_generate_video", { request });
@@ -315,15 +311,13 @@ export const startAnimationIterationRun = async ({
   seed: number;
   loopMode: "none" | "seamless";
 }) => {
-  const imported = await invoke<MediaAssetImportResult>(
-    "media_import_asset",
-    { path: sourcePath },
-  );
+  const imported = await invoke<MediaAssetImportResult>("media_import_image", {
+    path: sourcePath,
+  });
   const importedLast = lastSourcePath
-    ? await invoke<MediaAssetImportResult>(
-        "media_import_asset",
-        { path: lastSourcePath },
-      )
+    ? await invoke<MediaAssetImportResult>("media_import_image", {
+        path: lastSourcePath,
+      })
     : null;
   const run = await startVideoQualityRun({
     flowId: generalVideoFlowId,
@@ -349,8 +343,7 @@ export const startAnimationIterationRun = async ({
     sourceAssetId: imported.asset.id,
     sourceDeduplicated: imported.deduplicated,
     lastSourceAssetId: importedLast?.asset.id ?? imported.asset.id,
-    lastSourceDeduplicated:
-      importedLast?.deduplicated ?? imported.deduplicated,
+    lastSourceDeduplicated: importedLast?.deduplicated ?? imported.deduplicated,
   };
 };
 
@@ -461,9 +454,7 @@ export const startDogLoraImageQualityRun = async (): Promise<{
     throw new Error("The dog LoRA comparison flow has no saved head revision.");
   }
   const flow = structuredClone(head.flow);
-  const promptNode = flow.nodes.find(
-    (node) => node.type === "source.prompt",
-  );
+  const promptNode = flow.nodes.find((node) => node.type === "source.prompt");
   const imageNode = flow.nodes.find(
     (node) => node.type === "task.generate-image",
   );
@@ -471,7 +462,9 @@ export const startDogLoraImageQualityRun = async (): Promise<{
     throw new Error("The dog LoRA comparison flow is incomplete.");
   }
   const modelId = String(imageNode.config.modelId ?? "");
-  const model = activeCatalog.models.find((candidate) => candidate.id === modelId);
+  const model = activeCatalog.models.find(
+    (candidate) => candidate.id === modelId,
+  );
   if (!model?.configured || model.runtimeReadiness !== "ready") {
     throw new Error(
       model?.runtimeReadinessDiagnostic ??
@@ -538,12 +531,28 @@ export const startDogLoraImageQualityRun = async (): Promise<{
       modelAddons: Array.isArray(imageNode.config.modelAddons)
         ? imageNode.config.modelAddons
         : [],
-      transparentBackground: Boolean(
-        imageNode.config.transparentBackground,
-      ),
+      transparentBackground: Boolean(imageNode.config.transparentBackground),
       subjectCutoutModelPriority: [],
       negativePrompt: String(imageNode.config.negativePrompt ?? ""),
+      referenceImages: [],
+      baseImageAssetId: null,
+      editMask: null,
+      poseImageAssetId: null,
+      poseStrength: null,
+      poseStart: null,
+      poseEnd: null,
+      seed: null,
       memoryProfile: "auto",
+      outputBranches: [
+        {
+          id: imageNode.id,
+          outputNodeId: imageNode.id,
+          format: String(imageNode.config.outputFormat ?? "png"),
+          quality: 95,
+          jpegBackground: "#ffffff",
+          operations: [],
+        },
+      ],
       planSnapshot,
     },
   });

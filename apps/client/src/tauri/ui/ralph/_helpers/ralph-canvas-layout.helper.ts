@@ -12,6 +12,8 @@ import {
   getBlockOutputs,
   isVisualRalphCanvasBlock,
 } from "./get-block-outputs.helper";
+import { getRalphOutputTone } from "./get-ralph-block-visual.helper";
+import { createFlowCanvasEdge } from "../../flow/flow-theme";
 
 export type RalphNodeResizeEndHandler = (
   blockId: string,
@@ -37,7 +39,7 @@ export type RalphEdgeData = Record<string, unknown> & {
   output: RalphExecutionOutput;
 };
 
-export type RalphCanvasEdge = Edge<RalphEdgeData, "ralphRoute">;
+export type RalphCanvasEdge = Edge<RalphEdgeData, "flow">;
 
 export interface RalphCanvasBlockBounds {
   left: number;
@@ -68,7 +70,9 @@ export const getDefaultCanvasPosition = (
   index: number,
 ): { x: number; y: number } => ({
   x: RALPH_CANVAS_X_START + (index % RALPH_CANVAS_COLUMNS) * RALPH_CANVAS_X_GAP,
-  y: RALPH_CANVAS_Y_START + Math.floor(index / RALPH_CANVAS_COLUMNS) * RALPH_CANVAS_Y_GAP,
+  y:
+    RALPH_CANVAS_Y_START +
+    Math.floor(index / RALPH_CANVAS_COLUMNS) * RALPH_CANVAS_Y_GAP,
 });
 
 export const getBlockFallbackWidth = (block: RalphFlowBlock): number => {
@@ -137,7 +141,9 @@ export const getDisplacedCanvasPosition = (
       continue;
     }
 
-    occupiedPositions.add(getCanvasPositionKey(getCanvasBlockPosition(block, index)));
+    occupiedPositions.add(
+      getCanvasPositionKey(getCanvasBlockPosition(block, index)),
+    );
   }
 
   for (const reservedPosition of options.reservedPositions ?? []) {
@@ -146,7 +152,11 @@ export const getDisplacedCanvasPosition = (
 
   let candidate = getRoundedCanvasPosition(position);
 
-  for (let attempt = 0; attempt < RALPH_CANVAS_MAX_STACK_ATTEMPTS; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < RALPH_CANVAS_MAX_STACK_ATTEMPTS;
+    attempt += 1
+  ) {
     if (!occupiedPositions.has(getCanvasPositionKey(candidate))) {
       return candidate;
     }
@@ -183,7 +193,11 @@ export const isPointInsideBounds = (
   x: number,
   y: number,
   bounds: RalphCanvasBlockBounds,
-): boolean => x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
+): boolean =>
+  x >= bounds.left &&
+  x <= bounds.right &&
+  y >= bounds.top &&
+  y <= bounds.bottom;
 
 export const doCanvasBoundsOverlap = (
   left: RalphCanvasBlockBounds,
@@ -265,7 +279,11 @@ export const avoidReservedCleanLayoutBounds = (
     let nextDeltaX = deltaX;
 
     for (const layoutBound of layoutBounds) {
-      const shiftedBounds = translateCanvasBounds(layoutBound.bounds, deltaX, 0);
+      const shiftedBounds = translateCanvasBounds(
+        layoutBound.bounds,
+        deltaX,
+        0,
+      );
 
       for (const reservedBound of reservedBounds) {
         if (!doCanvasBoundsOverlap(shiftedBounds, reservedBound)) {
@@ -274,7 +292,9 @@ export const avoidReservedCleanLayoutBounds = (
 
         nextDeltaX = Math.max(
           nextDeltaX,
-          reservedBound.right + RALPH_CLEAN_LAYOUT_RESERVED_GAP - layoutBound.bounds.left,
+          reservedBound.right +
+            RALPH_CLEAN_LAYOUT_RESERVED_GAP -
+            layoutBound.bounds.left,
         );
       }
     }
@@ -601,18 +621,6 @@ export const flowToNodes = (
   });
 };
 
-const getRouteEdgeClassName = (
-  connectedToSelectedBlock: boolean,
-  selected: boolean,
-): string => {
-  return [
-    connectedToSelectedBlock && "ralph-route-edge--connected",
-    selected && "ralph-route-edge--selected",
-  ]
-    .filter(Boolean)
-    .join(" ");
-};
-
 export const flowToEdges = (
   flow: RalphFlow,
   selectedEdgeId: string | null,
@@ -629,31 +637,30 @@ export const flowToEdges = (
     const connectedToSelectedBlock =
       selectedBlockId !== null &&
       (edge.from === selectedBlockId || edge.to === selectedBlockId);
+    const tone = getRalphOutputTone(edge.fromOutput);
 
-    return {
+    return createFlowCanvasEdge<RalphEdgeData>({
       id: edge.id,
       source: edge.from,
       sourceHandle: edge.fromOutput,
       target: edge.to,
-      type: "ralphRoute",
       data: {
         output: edge.fromOutput,
       },
-      markerEnd: {
-        type: "arrowclosed",
-        color: "#94a3b8",
-      },
-      style: {
-        stroke: edge.fromOutput === "ERROR" ? "#f87171" : "#94a3b8",
-        strokeWidth: selected ? 2.8 : connectedToSelectedBlock ? 2.4 : 1.6,
-      },
-      className: getRouteEdgeClassName(connectedToSelectedBlock, selected),
+      tone,
+      emphasis: selected
+        ? "strong"
+        : connectedToSelectedBlock
+          ? "medium"
+          : "default",
       selected,
       hidden: hiddenBlockIds.has(edge.from) || hiddenBlockIds.has(edge.to),
-    };
+    });
   });
 };
 
-export const getSelectableRouteTargets = (flow: RalphFlow): RalphFlowBlock[] => {
+export const getSelectableRouteTargets = (
+  flow: RalphFlow,
+): RalphFlowBlock[] => {
   return flow.blocks.filter((block) => !isVisualRalphCanvasBlock(block));
 };

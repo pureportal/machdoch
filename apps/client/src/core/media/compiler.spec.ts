@@ -45,6 +45,9 @@ const DEFAULT_SETTINGS = {
   transparentBackground: false,
   qualityGateEnabled: true,
   referenceImages: [],
+  baseImageAssetId: null,
+  poseImageAssetId: null,
+  poseStrength: 1,
   modelAddons: [],
 } as const satisfies ImageRecipeSettings;
 
@@ -225,7 +228,7 @@ describe("media flow compiler", () => {
     });
     expect(plan.runtimeBindings).toContainEqual(
       expect.objectContaining({
-        requiredCapability: "image-to-video",
+        requiredCapabilities: ["image-to-video"],
       }),
     );
   });
@@ -277,7 +280,7 @@ describe("media flow compiler", () => {
       ).toBe("ready");
       expect(plan.runtimeBindings).toContainEqual(
         expect.objectContaining({
-          requiredCapability: "start-end-to-video",
+          requiredCapabilities: ["start-end-to-video"],
         }),
       );
     }
@@ -745,7 +748,22 @@ describe("media flow compiler", () => {
         ...kreaLora,
         baseModelHint: "different-krea-fork",
       }),
-    ).toMatchObject({ status: "unverified" });
+    ).toMatchObject({ status: "compatible" });
+    expect(
+      inspectMediaModelAddonCompatibility(kreaModel, {
+        ...kreaLora,
+        architectureConfidence: "unknown",
+      }),
+    ).toMatchObject({ status: "incompatible" });
+    expect(
+      inspectMediaModelAddonCompatibility(kreaModel, {
+        ...kreaLora,
+        loraProfile: {
+          ...kreaLora.loraProfile!,
+          convolutionTargetCount: 4,
+        },
+      }),
+    ).toMatchObject({ status: "incompatible" });
   });
 
   it("rejects denoising schedules for LoRAs that also target text encoders", () => {
@@ -1052,15 +1070,73 @@ describe("media flow compiler", () => {
     );
   });
 
+  it("does not compile an ambiguous pair of base images into one recipe", () => {
+    const flow = createImageEditFlow({
+      id: "flow:ambiguous-base-images",
+      createdAt: "2026-08-21T00:00:00.000Z",
+      sourceAssetId: "asset:first-base",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        qualityGateEnabled: false,
+      },
+    });
+    const secondBase = {
+      id: "second-base",
+      type: "source.image" as const,
+      version: 1 as const,
+      label: "Second base",
+      layer: "source" as const,
+      config: {
+        assetId: "asset:second-base",
+        referenceRole: "base",
+        influence: 1,
+      },
+    };
+    const ambiguous: MediaFlow = {
+      ...flow,
+      nodes: [...flow.nodes, secondBase],
+      edges: [
+        ...flow.edges,
+        {
+          id: "second-base-to-edit",
+          fromNodeId: secondBase.id,
+          fromPortId: "image",
+          toNodeId: "edit",
+          toPortId: "image",
+        },
+      ],
+    };
+    const plan = compileMediaFlow({
+      flow: ambiguous,
+      models: createMediaModelCatalog({
+        isOpenAiConfigured: true,
+        isLocalBiRefNetInstalled: true,
+      }),
+      compiledAt: "2026-08-21T00:01:00.000Z",
+    });
+
+    expect(readImageRecipeSettings(ambiguous)).toBeNull();
+    expect(plan.status).toBe("blocked");
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "NODE_SCHEMA_INVALID",
+        message:
+          "An image run accepts one base image. Run each base image separately.",
+      }),
+    );
+  });
+
   it("requires a mask-capable model and binds the mask to the base image", () => {
     const editMask: MediaImageMask = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       sourceAssetId: "asset:approved-product-shot",
       inverted: false,
       strokes: [
         {
           mode: "paint",
           size: 0.12,
+          opacity: 1,
+          softness: 0.35,
           points: [{ x: 0.5, y: 0.5 }],
         },
       ],
@@ -1071,12 +1147,18 @@ describe("media flow compiler", () => {
       sourceAssetId: "asset:approved-product-shot",
       settings: {
         ...DEFAULT_SETTINGS,
-        prompt: "Remove the painted object.",
+        prompt: "",
+        modelId: "local:flux-2-klein-4b",
         qualityGateEnabled: false,
         editMask,
+        editStrength: 0.7,
+        maskStrength: 0.45,
       },
     });
-    const models = createMediaModelCatalog({ isOpenAiConfigured: true });
+    const models = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    });
     const plan = compileMediaFlow({
       flow,
       models,
@@ -1084,11 +1166,18 @@ describe("media flow compiler", () => {
     });
 
     expect(plan.status).toBe("ready");
-    expect(plan.model?.id).toBe("openai:gpt-image-2");
-    expect(plan.runtimeBindings[0]?.requiredCapability).toBe(
+    expect(plan.model?.id).toBe("local:flux-2-klein-4b");
+    expect(plan.runtimeBindings[0]?.requiredCapabilities).toEqual([
       "masked-image-edit",
-    );
+    ]);
     expect(readImageRecipeSettings(flow)?.editMask).toEqual(editMask);
+    expect(readImageRecipeSettings(flow)).toMatchObject({
+      editStrength: 0.7,
+      maskStrength: 0.45,
+    });
+    expect(plan.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "PROMPT_REQUIRED" }),
+    );
 
     const mismatched = createImageEditFlow({
       id: "flow:mismatched-mask",
@@ -1097,6 +1186,7 @@ describe("media flow compiler", () => {
       settings: {
         ...DEFAULT_SETTINGS,
         prompt: "Remove the painted object.",
+        modelId: "local:flux-2-klein-4b",
         qualityGateEnabled: false,
         editMask: { ...editMask, sourceAssetId: "asset:other" },
       },
@@ -1113,6 +1203,146 @@ describe("media flow compiler", () => {
         message: "The mask does not match the connected base image.",
       }),
     );
+
+    const empty = createImageEditFlow({
+      id: "flow:empty-mask",
+      createdAt: "2026-08-20T00:00:00.000Z",
+      sourceAssetId: "asset:approved-product-shot",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        prompt: "Remove the painted object.",
+        modelId: "local:flux-2-klein-4b",
+        qualityGateEnabled: false,
+        editMask: { ...editMask, strokes: [] },
+      },
+    });
+    expect(
+      compileMediaFlow({
+        flow: empty,
+        models,
+        compiledAt: "2026-08-20T00:01:00.000Z",
+      }).diagnostics,
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "NODE_SCHEMA_INVALID",
+        message: "The mask has no painted area.",
+      }),
+    );
+
+    const lossy = createImageEditFlow({
+      id: "flow:lossy-mask",
+      createdAt: "2026-08-20T00:00:00.000Z",
+      sourceAssetId: "asset:approved-product-shot",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        prompt: "Remove the painted object.",
+        modelId: "local:flux-2-klein-4b",
+        outputFormat: "webp",
+        qualityGateEnabled: false,
+        editMask,
+      },
+    });
+    expect(
+      compileMediaFlow({
+        flow: lossy,
+        models,
+        compiledAt: "2026-08-20T00:01:00.000Z",
+      }).diagnostics,
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "NODE_SCHEMA_INVALID",
+        message: "Masked image edits require lossless PNG output.",
+      }),
+    );
+  });
+
+  it("reads a connected seed and leaves unseeded flows random at execution time", () => {
+    const seeded = createImageEditFlow({
+      id: "flow:seeded-edit",
+      createdAt: "2026-08-21T00:00:00.000Z",
+      sourceAssetId: "asset:base",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        qualityGateEnabled: false,
+        seed: 123_456,
+      },
+    });
+    const unseeded = createImageEditFlow({
+      id: "flow:unseeded-edit",
+      createdAt: "2026-08-21T00:00:00.000Z",
+      sourceAssetId: "asset:base",
+      settings: { ...DEFAULT_SETTINGS, qualityGateEnabled: false },
+    });
+
+    expect(readImageRecipeSettings(seeded)?.seed).toBe(123_456);
+    expect(
+      seeded.edges.some(
+        (edge) => edge.fromPortId === "seed" && edge.toPortId === "seed",
+      ),
+    ).toBe(true);
+    expect(
+      compileMediaFlow({
+        flow: seeded,
+        models: createMediaModelCatalog({
+          isOpenAiConfigured: false,
+          isLocalFluxInstalled: true,
+        }),
+        compiledAt: "2026-08-21T00:01:00.000Z",
+      }).steps,
+    ).toContainEqual(expect.objectContaining({ kind: "resolve-seed" }));
+    expect(readImageRecipeSettings(unseeded)?.seed).toBeNull();
+  });
+
+  it("requires both pose control and masked editing for a combined flow", () => {
+    const editMask: MediaImageMask = {
+      schemaVersion: 2,
+      sourceAssetId: "asset:base",
+      inverted: false,
+      strokes: [
+        {
+          mode: "paint",
+          size: 0.08,
+          opacity: 1,
+          softness: 0.35,
+          points: [{ x: 0.5, y: 0.5 }],
+        },
+      ],
+    };
+    const models = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).map((model) =>
+      model.id === "local:flux-2-klein-4b"
+        ? {
+            ...model,
+            capabilities: [...model.capabilities, "pose-control" as const],
+          }
+        : model,
+    );
+    const flow = createImageEditFlow({
+      id: "flow:pose-mask",
+      createdAt: "2026-08-20T00:00:00.000Z",
+      sourceAssetId: "asset:base",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        modelId: "local:flux-2-klein-4b",
+        qualityGateEnabled: false,
+        poseImageAssetId: "asset:pose",
+        editMask,
+      },
+    });
+
+    const plan = compileMediaFlow({
+      flow,
+      models,
+      compiledAt: "2026-08-20T00:01:00.000Z",
+    });
+
+    expect(plan.status).toBe("ready");
+    expect(plan.runtimeBindings[0]?.requiredCapabilities).toEqual([
+      "pose-control",
+      "masked-image-edit",
+    ]);
   });
 
   it("preserves explicit quality analysis and gating for image edits", () => {
@@ -1148,99 +1378,109 @@ describe("media flow compiler", () => {
     ]);
   });
 
-  it("accepts only the reviewed KREA identity adapter for local reference edits", () => {
+  it("blocks unsupported KREA image conditioning", () => {
     const localFlux = createMediaModelCatalog({
       isOpenAiConfigured: false,
       isLocalFluxInstalled: true,
     }).find((model) => model.id === "local:flux-2-klein-4b")!;
     const kreaModel = {
       ...localFlux,
-      id: "local:user:krea-2",
-      providerId: "local-diffusers",
-      displayName: "KREA 2",
+      id: "local:user:krea-2-promptless",
+      displayName: "KREA 2 promptless",
       family: "KREA 2",
       architecture: "krea-2",
-      capabilities: ["text-to-image", "image-to-image"],
       addonCapabilities: getMediaModelAddonCapabilities(
         "local-diffusers",
         "krea-2",
       ),
     } as const satisfies MediaModelDescriptor;
-    const identityAdapter = {
-      ...FLUX_LORA,
-      id: "addon:lora:krea2-identity-edit-v1-2",
-      displayName: "KREA 2 Identity Edit v1.2 r64",
-      architecture: "krea-2",
-      baseModelHint: "krea2",
-      digest:
-        "f794b47142555c929cf536a2f1e4f335174b9aedbb08572b07d45814d4242423",
-      relativePath: "addons/sha256/f7/krea2_identity_edit_v1_2_r64.safetensors",
-    } as const satisfies MediaModelAddonDescriptor;
-    const createFlow = (adapter: MediaModelAddonDescriptor) =>
-      createImageEditFlow({
-        id: "flow:local-krea-reference-edit",
-        createdAt: "2026-07-26T00:00:00.000Z",
-        sourceAssetId: "asset:witch-key",
-        settings: {
-          ...DEFAULT_SETTINGS,
-          providerPolicy: "local",
-          modelPolicy: "quality",
-          modelId: kreaModel.id,
-          modelAddons: [
-            {
-              kind: "lora",
-              addonId: adapter.id,
-              enabled: true,
-              modelStrength: 1,
-              textEncoderStrength: null,
-              denoisingSchedule: null,
-            },
-          ],
-          outputCount: 1,
-          qualityGateEnabled: false,
-          editStrength: 0.72,
-          referenceBoost: 2,
-          requireChromaBackground: true,
-          referenceFit: "fit",
-          groundingPixels: 768,
-          memoryProfile: "memory-saver",
-        },
-      });
-    const createPlan = (adapter: MediaModelAddonDescriptor) =>
-      compileMediaFlow({
-        flow: createFlow(adapter),
-        models: [kreaModel],
-        addons: [adapter],
-        compiledAt: "2026-07-26T00:01:00.000Z",
-      });
-
-    expect(
-      readImageRecipeSettings(createFlow(identityAdapter))
-        ?.requireChromaBackground,
-    ).toBe(true);
-    const reviewedPlan = createPlan(identityAdapter);
-    expect(reviewedPlan.status).toBe("ready");
-    expect(reviewedPlan.model?.id).toBe(kreaModel.id);
-    expect(reviewedPlan.preflight.requiresRemoteRequest).toBe(false);
-    expect(reviewedPlan.steps.map((step) => step.kind)).toContain(
-      "resolve-model-addons",
-    );
-    expect(reviewedPlan.diagnostics).not.toContainEqual(
-      expect.objectContaining({ code: "ADDON_CONFIG_INVALID" }),
-    );
-
-    const unreviewedPlan = createPlan({
-      ...identityAdapter,
-      digest: "c".repeat(64),
-      relativePath: "addons/sha256/cc/unrelated-krea-style.safetensors",
+    const flow = createImageEditFlow({
+      id: "flow:krea-unsupported-conditioning",
+      createdAt: "2026-08-21T00:00:00.000Z",
+      sourceAssetId: "asset:subject",
+      sourceRole: "subject",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        providerPolicy: "local",
+        modelId: kreaModel.id,
+        outputCount: 1,
+        qualityGateEnabled: false,
+      },
     });
-    expect(unreviewedPlan.status).toBe("blocked");
-    expect(unreviewedPlan.diagnostics).toContainEqual(
+    const plan = compileMediaFlow({
+      flow,
+      models: [kreaModel],
+      compiledAt: "2026-08-21T00:01:00.000Z",
+    });
+
+    expect(plan.status).toBe("blocked");
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "MODEL_CAPABILITY_UNSUPPORTED" }),
+    );
+  });
+
+  it("accepts promptless FLUX.2 reference conditioning", () => {
+    const fluxModel = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).find((model) => model.id === "local:flux-2-klein-4b")!;
+    const compileRole = (role: "subject" | "style") =>
+      compileMediaFlow({
+        flow: createImageEditFlow({
+          id: `flow:flux-promptless-${role}`,
+          createdAt: "2026-08-21T00:00:00.000Z",
+          sourceAssetId: "asset:base",
+          referenceAssets: [
+            { assetId: `asset:${role}`, role, influence: 1 },
+          ],
+          settings: {
+            ...DEFAULT_SETTINGS,
+            prompt: "",
+            providerPolicy: "local",
+            modelId: fluxModel.id,
+            outputCount: 1,
+            qualityGateEnabled: false,
+          },
+        }),
+        models: [fluxModel],
+        compiledAt: "2026-08-21T00:01:00.000Z",
+    });
+
+    expect(compileRole("subject").status).toBe("ready");
+    expect(compileRole("style").status).toBe("ready");
+  });
+
+  it("requires unit reference influence for FLUX.2", () => {
+    const fluxModel = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).find((model) => model.id === "local:flux-2-klein-4b")!;
+    const flow = createImageEditFlow({
+      id: "flow:flux-reference-strength",
+      createdAt: "2026-08-21T00:00:00.000Z",
+      sourceAssetId: "asset:base",
+      referenceAssets: [
+        { assetId: "asset:style", role: "style", influence: 0.5 },
+      ],
+      settings: {
+        ...DEFAULT_SETTINGS,
+        providerPolicy: "local",
+        modelId: fluxModel.id,
+        outputCount: 1,
+        qualityGateEnabled: false,
+      },
+    });
+    const plan = compileMediaFlow({
+      flow,
+      models: [fluxModel],
+      compiledAt: "2026-08-21T00:01:00.000Z",
+    });
+
+    expect(plan.status).toBe("blocked");
+    expect(plan.diagnostics).toContainEqual(
       expect.objectContaining({
-        code: "ADDON_CONFIG_INVALID",
-        message: expect.stringContaining(
-          "exactly one reviewed KREA 2 Identity Edit",
-        ),
+        code: "MODEL_CAPABILITY_UNSUPPORTED",
+        message: expect.stringContaining("per-reference influence"),
       }),
     );
   });
@@ -1251,8 +1491,8 @@ describe("media flow compiler", () => {
       createdAt: "2026-07-14T00:00:00.000Z",
       sourceAssetId: "asset:base",
       referenceAssets: [
-        { assetId: "asset:subject", role: "subject", influence: 0.9 },
-        { assetId: "asset:style", role: "style", influence: 0.45 },
+        { assetId: "asset:subject", role: "subject", influence: 1 },
+        { assetId: "asset:style", role: "style", influence: 1 },
       ],
       settings: {
         ...DEFAULT_SETTINGS,
@@ -1283,11 +1523,13 @@ describe("media flow compiler", () => {
         message: expect.stringContaining("3 disclosed source assets"),
       }),
     );
-    expect(readImageRecipeSettings(flow)?.referenceImages).toEqual([
-      { assetId: "asset:base", role: "base", influence: 1 },
-      { assetId: "asset:subject", role: "subject", influence: 0.9 },
-      { assetId: "asset:style", role: "style", influence: 0.45 },
-    ]);
+    expect(readImageRecipeSettings(flow)).toMatchObject({
+      baseImageAssetId: "asset:base",
+      referenceImages: [
+        { assetId: "asset:subject", role: "subject", influence: 1 },
+        { assetId: "asset:style", role: "style", influence: 1 },
+      ],
+    });
   });
 
   it("excludes disconnected image sources from the provider upload manifest", () => {

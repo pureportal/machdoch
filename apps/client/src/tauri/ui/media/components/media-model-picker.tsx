@@ -74,7 +74,7 @@ export const MediaModelPicker = ({
           aria-describedby={describedBy}
           disabled={pickerDisabled}
           className={cn(
-            "flex min-w-0 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-2 text-left text-slate-100 outline-none transition-colors hover:border-slate-600 focus-visible:border-sky-500 disabled:cursor-not-allowed disabled:opacity-55",
+            "flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-2 text-left text-slate-100 outline-none transition-colors hover:border-slate-600 focus-visible:border-sky-500 disabled:cursor-not-allowed disabled:opacity-55",
             compact ? "h-8" : "h-11",
             className,
           )}
@@ -116,7 +116,7 @@ export const MediaModelPicker = ({
                     onChange(null);
                     setOpen(false);
                   }}
-                  className="min-h-11 rounded-xl"
+                  className="min-h-11 cursor-pointer rounded-xl data-[disabled=true]:cursor-not-allowed"
                 >
                   <span className="min-w-0 flex-1 truncate">
                     {automaticLabel}
@@ -134,7 +134,7 @@ export const MediaModelPicker = ({
                     onChange(model.id);
                     setOpen(false);
                   }}
-                  className="min-h-14 rounded-xl"
+                  className="min-h-14 cursor-pointer rounded-xl data-[disabled=true]:cursor-not-allowed"
                 >
                   <MediaResourcePreview
                     resourceId={model.id}

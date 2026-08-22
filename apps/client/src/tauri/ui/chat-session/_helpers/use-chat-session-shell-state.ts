@@ -1771,6 +1771,10 @@ const mergeQueuedMessageVersionForPersistence = (
     localMessage.blockerUpdatedAt >= latestMessage.blockerUpdatedAt
       ? localMessage
       : latestMessage;
+  const statusMessage =
+    localMessage.statusUpdatedAt >= latestMessage.statusUpdatedAt
+      ? localMessage
+      : latestMessage;
   const attachmentTombstones = Object.fromEntries(
     Object.entries({
       ...latestMessage.attachmentTombstones,
@@ -1807,12 +1811,19 @@ const mergeQueuedMessageVersionForPersistence = (
     blockerUpdatedAt: blockerMessage.blockerUpdatedAt,
     orderRank: orderMessage.orderRank,
     orderUpdatedAt: orderMessage.orderUpdatedAt,
+    status: statusMessage.status,
+    statusUpdatedAt: statusMessage.statusUpdatedAt,
     updatedAt: Math.max(localMessage.updatedAt, latestMessage.updatedAt),
   };
 
   delete mergedMessage.blockedByTaskId;
   if (blockerMessage.blockedByTaskId) {
     mergedMessage.blockedByTaskId = blockerMessage.blockedByTaskId;
+  }
+
+  delete mergedMessage.failureMessage;
+  if (statusMessage.status === "failed" && statusMessage.failureMessage) {
+    mergedMessage.failureMessage = statusMessage.failureMessage;
   }
 
   return mergedMessage;

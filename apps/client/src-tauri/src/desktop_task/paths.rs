@@ -57,7 +57,7 @@ fn format_path_string_for_ui(path: &str) -> String {
     path.to_string()
 }
 
-pub(super) fn format_path_for_ui(path: &Path) -> String {
+pub(crate) fn format_path_for_ui(path: &Path) -> String {
     format_path_string_for_ui(&path.display().to_string())
 }
 

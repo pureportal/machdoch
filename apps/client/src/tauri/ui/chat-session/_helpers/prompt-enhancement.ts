@@ -17,15 +17,9 @@ export type PromptEnhancementMode = (typeof PROMPT_ENHANCEMENT_MODES)[number];
 export type ActivePromptEnhancementMode = Exclude<PromptEnhancementMode, "off">;
 
 export type PromptEnhancementPendingPlacement =
-  | "composer-blocker"
   | "edit-composer"
   | "message"
   | "queued-message";
-
-export interface StagedPromptEnhancement {
-  mode: ActivePromptEnhancementMode;
-  originalContent: string;
-}
 
 export class PromptEnhancementCancellationError extends Error {
   readonly taskId: string;
@@ -93,35 +87,12 @@ export const shouldDeferPromptEnhancementUntilQueuedDispatch = (
 
 export const resolveImmediatePromptEnhancementPlacement = (input: {
   conversationCutoffMessageId?: string;
-  interviewEnabled: boolean;
-  runningAction: "steer" | "stop-and-send" | "queue" | null;
 }): PromptEnhancementPendingPlacement => {
   if (input.conversationCutoffMessageId?.trim()) {
     return "edit-composer";
   }
 
-  return input.interviewEnabled && !input.runningAction
-    ? "composer-blocker"
-    : "message";
-};
-
-export const resolveStagedPromptEnhancementSubmission = (
-  selectedMode: PromptEnhancementMode,
-  staged: StagedPromptEnhancement | undefined,
-): {
-  mode: PromptEnhancementMode;
-  originalContent?: string;
-} => {
-  const originalContent = staged?.originalContent.trim();
-
-  if (staged?.mode !== selectedMode || !originalContent) {
-    return { mode: selectedMode };
-  }
-
-  return {
-    mode: "off",
-    originalContent,
-  };
+  return "message";
 };
 
 export interface QueuedMessageDispatchPrompt {

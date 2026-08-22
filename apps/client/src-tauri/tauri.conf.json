@@ -53,6 +53,33 @@
       "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
     },
     "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
+    "windows": {
+      "wix": {
+        "fragmentPaths": ["windows/file-manager-context-menu.wxs"],
+        "componentRefs": ["MachdochFileManagerContextMenu"]
+      },
+      "nsis": {
+        "installerHooks": "windows/nsis-hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "recommends": ["python3-nautilus"],
+        "files": {
+          "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
+          "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
+          "/usr/share/nautilus-python/extensions/machdoch.py": "linux/machdoch_nautilus.py"
+        }
+      },
+      "rpm": {
+        "recommends": ["nautilus-python"],
+        "files": {
+          "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
+          "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
+          "/usr/share/nautilus-python/extensions/machdoch.py": "linux/machdoch_nautilus.py"
+        }
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

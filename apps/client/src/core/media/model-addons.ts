@@ -194,6 +194,12 @@ export const inspectMediaModelAddonCompatibility = (
       reason: `${addon.displayName} targets ${addon.architecture}, but ${model.displayName} uses ${model.architecture ?? "an unknown architecture"}.`,
     };
   }
+  if (addon.architectureConfidence !== "high") {
+    return {
+      status: "incompatible",
+      reason: `${addon.displayName} does not have a tensor-verified model architecture.`,
+    };
+  }
   if (
     addon.targetComponents.some(
       (component) => !capabilityEntry.targetComponents.includes(component),
@@ -202,6 +208,34 @@ export const inspectMediaModelAddonCompatibility = (
     return {
       status: "incompatible",
       reason: `${addon.displayName} targets components that ${model.displayName} does not expose.`,
+    };
+  }
+  if (addon.kind === "lora" && addon.loraProfile === null) {
+    return {
+      status: "incompatible",
+      reason: `${addon.displayName} does not have a loadable LoRA tensor profile.`,
+    };
+  }
+  if (
+    addon.kind === "lora" &&
+    addon.loraProfile !== null &&
+    ["stable-diffusion-3", "flux-2", "krea-2"].includes(
+      model.architecture ?? "",
+    ) &&
+    addon.loraProfile.convolutionTargetCount > 0
+  ) {
+    return {
+      status: "incompatible",
+      reason: `${addon.displayName} contains convolutional LoCon weights that this transformer pipeline cannot load.`,
+    };
+  }
+  if (
+    addon.kind === "textual-inversion" &&
+    addon.embeddingVectors.length === 0
+  ) {
+    return {
+      status: "incompatible",
+      reason: `${addon.displayName} does not have a loadable embedding tensor profile.`,
     };
   }
   if (addon.baseModelHint) {
@@ -213,8 +247,8 @@ export const inspectMediaModelAddonCompatibility = (
       };
     }
     return {
-      status: "unverified",
-      reason: `Architecture matches; publisher base-model hint “${addon.baseModelHint}” still needs runtime validation.`,
+      status: "compatible",
+      reason: `Tensor-inspected architecture and target components match despite publisher hint “${addon.baseModelHint}”.`,
     };
   }
   return {
@@ -222,3 +256,82 @@ export const inspectMediaModelAddonCompatibility = (
     reason: "Provider, architecture, and target components match.",
   };
 };
+
+export const isMediaModelAddonSelectable = (
+  model: MediaModelDescriptor,
+  addon: MediaModelAddonDescriptor,
+): boolean =>
+  inspectMediaModelAddonCompatibility(model, addon).status === "compatible";
+
+export const reconcileMediaModelAddonSelections = (
+  model: MediaModelDescriptor | null,
+  addons: readonly MediaModelAddonDescriptor[],
+  selections: readonly MediaModelAddonSelection[],
+): MediaModelAddonSelection[] => {
+  if (!model) return [...selections];
+
+  const addonsById = new Map(addons.map((addon) => [addon.id, addon]));
+  const selectedIds = new Set<string>();
+  const activeByKind = new Map<MediaModelAddonKind, number>();
+  const reconciled: MediaModelAddonSelection[] = [];
+
+  for (const selection of selections) {
+    if (selectedIds.has(selection.addonId)) continue;
+
+    const addon = addonsById.get(selection.addonId);
+    if (
+      !addon ||
+      addon.kind !== selection.kind ||
+      !isMediaModelAddonSelectable(model, addon)
+    ) {
+      continue;
+    }
+
+    const capability = model.addonCapabilities.find(
+      (candidate) => candidate.kind === selection.kind,
+    );
+    if (!capability) continue;
+
+    const activeCount = activeByKind.get(selection.kind) ?? 0;
+    if (selection.enabled && activeCount >= capability.maxActive) continue;
+
+    selectedIds.add(selection.addonId);
+    if (selection.enabled) {
+      activeByKind.set(selection.kind, activeCount + 1);
+    }
+    reconciled.push(selection);
+  }
+
+  return reconciled;
+};
+
+export const mediaModelAddonSelectionsEqual = (
+  left: readonly MediaModelAddonSelection[],
+  right: readonly MediaModelAddonSelection[],
+): boolean =>
+  left.length === right.length &&
+  left.every((selection, index) => {
+    const candidate = right[index];
+    if (!candidate || selection.kind !== candidate.kind) return false;
+    if (
+      selection.addonId !== candidate.addonId ||
+      selection.enabled !== candidate.enabled
+    ) {
+      return false;
+    }
+    if (selection.kind === "textual-inversion") {
+      return (
+        candidate.kind === "textual-inversion" &&
+        selection.token === candidate.token &&
+        selection.placement === candidate.placement
+      );
+    }
+    return (
+      candidate.kind === "lora" &&
+      selection.modelStrength === candidate.modelStrength &&
+      selection.textEncoderStrength === candidate.textEncoderStrength &&
+      selection.denoisingSchedule?.start ===
+        candidate.denoisingSchedule?.start &&
+      selection.denoisingSchedule?.end === candidate.denoisingSchedule?.end
+    );
+  });

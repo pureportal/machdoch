@@ -1,13 +1,14 @@
-import {
-  createImageRecipeFlow,
-  createMediaFlowLayout,
-} from "./compiler.js";
+import { createImageRecipeFlow, createMediaFlowLayout } from "./compiler.js";
 import {
   createMediaFlowDocumentDigest,
   createMediaFlowFingerprint,
   createMediaFlowLayoutDigest,
 } from "./canonicalize.js";
-import type { MediaFlow, MediaFlowLayout, MediaFlowRevision } from "./contracts.js";
+import type {
+  MediaFlow,
+  MediaFlowLayout,
+  MediaFlowRevision,
+} from "./contracts.js";
 import { createMediaFlowRevisionDiff } from "./revision-diff.js";
 
 const createRevision = ({
@@ -54,23 +55,35 @@ describe("createMediaFlowRevisionDiff", () => {
         transparentBackground: false,
         qualityGateEnabled: false,
         referenceImages: [],
+        baseImageAssetId: null,
+        poseImageAssetId: null,
+        poseStrength: 1,
         modelAddons: [],
       },
     });
     const targetFlow: MediaFlow = {
       ...structuredClone(baseFlow),
       name: "Renamed flow",
-      variables: [{
-        id: "style",
-        name: "Style",
-        description: "Reusable art direction",
-        type: "text",
-        required: true,
-        defaultValue: "editorial",
-        constraints: { maxLength: 80 },
-      }],
+      variables: [
+        {
+          id: "style",
+          name: "Style",
+          description: "Reusable art direction",
+          type: "text",
+          required: true,
+          defaultValue: "editorial",
+          constraints: { maxLength: 80 },
+        },
+      ],
       variableBindings: { style: "cinematic" },
-      presets: [{ id: "preset-1", name: "Cinema", description: "", values: { style: "cinematic" } }],
+      presets: [
+        {
+          id: "preset-1",
+          name: "Cinema",
+          description: "",
+          values: { style: "cinematic" },
+        },
+      ],
       activePresetId: "preset-1",
       nodes: baseFlow.nodes.map((node) =>
         node.id === "prompt"
@@ -112,19 +125,23 @@ describe("createMediaFlowRevisionDiff", () => {
       },
     ]);
     expect(diff.edgeChanges).toEqual([]);
-    expect(diff.variableChanges).toEqual([{
-      variableId: "style",
-      variableName: "Style",
-      kind: "added",
-      changedFields: ["variable"],
-      executionAffecting: true,
-    }]);
-    expect(diff.presetChanges).toEqual([{
-      presetId: "preset-1",
-      presetName: "Cinema",
-      kind: "added",
-      changedFields: ["preset"],
-    }]);
+    expect(diff.variableChanges).toEqual([
+      {
+        variableId: "style",
+        variableName: "Style",
+        kind: "added",
+        changedFields: ["variable"],
+        executionAffecting: true,
+      },
+    ]);
+    expect(diff.presetChanges).toEqual([
+      {
+        presetId: "preset-1",
+        presetName: "Cinema",
+        kind: "added",
+        changedFields: ["preset"],
+      },
+    ]);
     expect(diff.layoutChanges).toEqual([]);
   });
 
@@ -143,6 +160,9 @@ describe("createMediaFlowRevisionDiff", () => {
         transparentBackground: false,
         qualityGateEnabled: false,
         referenceImages: [],
+        baseImageAssetId: null,
+        poseImageAssetId: null,
+        poseStrength: 1,
         modelAddons: [],
       },
     });

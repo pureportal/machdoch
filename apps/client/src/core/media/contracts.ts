@@ -35,6 +35,7 @@ export type MediaCapability =
   | "image-to-image"
   | "masked-image-edit"
   | "multi-reference-edit"
+  | "pose-control"
   | "text-to-video"
   | "image-to-video"
   | "start-end-to-video"
@@ -188,12 +189,16 @@ export type MediaNodeLayer =
 export type MediaNodeType =
   | "source.prompt"
   | "source.image"
+  | "source.seed"
   | "source.animated-background"
   | "task.generate-image"
   | "task.edit-image"
   | "task.generate-video"
   | "operation.crop"
   | "operation.resize"
+  | "operation.text-overlay"
+  | "operation.color-adjust"
+  | "operation.sharpen"
   | "operation.format-convert"
   | "operation.metadata-strip"
   | "operation.auto-tag"
@@ -211,6 +216,7 @@ export type MediaNodeType =
 export type MediaPortDataType =
   | "prompt"
   | "image"
+  | "seed"
   | "video"
   | "audio"
   | "quality-report";
@@ -345,6 +351,7 @@ export type MediaFlowTemplateCategory =
   | "Generation"
   | "Product"
   | "Quality"
+  | "Advanced"
   | "Animation";
 
 export interface MediaFlowTemplateDescriptor {
@@ -703,6 +710,9 @@ export interface ImportMediaLocalModelRequest {
   architecture: MediaLocalModelArchitecture;
   sourceUrl: string | null;
   contentDigest: string;
+  licenseName: string;
+  commercialUse: "allowed" | "review-required";
+  confirmRights: boolean;
 }
 
 export interface MediaLocalModelImportResult {
@@ -715,6 +725,7 @@ export interface MediaLocalModelImportResult {
   byteSize: number;
   targetLabel: string;
   importedAt: string;
+  alreadyInstalled: boolean;
 }
 
 export interface MediaAssetImportDuplicate {
@@ -759,6 +770,9 @@ export interface ImportMediaModelAddonRequest {
   token: string | null;
   sourceUrl: string | null;
   contentDigest: string;
+  licenseName: string;
+  commercialUse: "allowed" | "review-required";
+  confirmRights: boolean;
 }
 
 export interface MediaModelAddonImportResult {
@@ -771,6 +785,7 @@ export interface MediaModelAddonImportResult {
   byteSize: number;
   targetLabel: string;
   importedAt: string;
+  alreadyInstalled: boolean;
 }
 
 export interface MediaModelAddonRemovalPlan {
@@ -958,7 +973,8 @@ export type MediaImageReferenceRole =
   | "style"
   | "composition"
   | "palette"
-  | "detail";
+  | "detail"
+  | "pose";
 
 export interface MediaImageReference {
   assetId: string;
@@ -1000,11 +1016,13 @@ export interface MediaImageMaskPoint {
 export interface MediaImageMaskStroke {
   mode: "paint" | "erase";
   size: number;
+  opacity: number;
+  softness: number;
   points: MediaImageMaskPoint[];
 }
 
 export interface MediaImageMask {
-  schemaVersion: 1;
+  schemaVersion: 2;
   sourceAssetId: string;
   inverted: boolean;
   strokes: MediaImageMaskStroke[];
@@ -1021,12 +1039,16 @@ export interface ImageRecipeSettings {
   transparentBackground: boolean;
   qualityGateEnabled: boolean;
   referenceImages: MediaImageReference[];
+  baseImageAssetId: string | null;
+  poseImageAssetId: string | null;
+  poseStrength: number;
+  poseStart?: number;
+  poseEnd?: number;
   editMask?: MediaImageMask | null;
   editStrength?: number;
-  referenceBoost?: number;
+  maskStrength?: number;
+  seed?: number | null;
   requireChromaBackground?: boolean;
-  referenceFit?: "fit" | "crop";
-  groundingPixels?: number;
   memoryProfile?: "auto" | "memory-saver" | "balanced" | "maximum-speed";
   svgMode?: "generate" | "vectorize";
   svgAutoCrop?: boolean;
@@ -1228,6 +1250,7 @@ export interface MediaExecutionStep {
   kind:
     | "normalize-prompt"
     | "resolve-asset"
+    | "resolve-seed"
     | "resolve-animated-background"
     | "resolve-model"
     | "resolve-model-addons"
@@ -1242,6 +1265,9 @@ export interface MediaExecutionStep {
     | "edit-image"
     | "crop-image"
     | "resize-image"
+    | "overlay-text"
+    | "adjust-color"
+    | "sharpen-image"
     | "convert-image"
     | "strip-metadata"
     | "auto-tag"
@@ -1305,7 +1331,7 @@ export interface MediaCompiledPlan {
 export interface MediaRuntimeBinding {
   nodeId: string;
   modality: MediaModality;
-  requiredCapability: MediaCapability;
+  requiredCapabilities: readonly MediaCapability[];
   model: MediaModelDescriptor;
 }
 
@@ -1669,6 +1695,10 @@ export interface MediaRemoteImageGenerationOperation {
   modelId: string;
   providerRequestId: string | null;
   flowRevisionId: string;
+  output: {
+    index: number;
+    outputNodeId: string;
+  } | null;
   subjectCutout?: MediaSubjectCutoutSummary | null;
 }
 
@@ -1693,9 +1723,22 @@ export interface MediaLocalDiffusionGenerationOperation {
   performance: Record<string, unknown> | null;
   requireChromaBackground?: boolean;
   editConditioning: Record<string, unknown> | null;
+  conditioningSources?: Array<{
+    assetId: string;
+    digest: string;
+    role: MediaImageReferenceRole;
+    influence: number;
+  }>;
   referenceImageAssetId: string | null;
   referenceImageDigest: string | null;
-  output: { index: number; seed: number } | null;
+  output: {
+    index: number;
+    sourceIndex: number;
+    seed: number;
+    branchId: string;
+    outputNodeId: string;
+    postProcessing: MediaImagePostProcessingOperation[];
+  } | null;
   subjectCutout?: MediaSubjectCutoutSummary | null;
 }
 
@@ -1866,6 +1909,10 @@ export interface MediaRemoteImageEditOperation {
   providerRequestId: string | null;
   flowRevisionId: string;
   taskNodeId: string;
+  output: {
+    index: number;
+    outputNodeId: string;
+  } | null;
   editStrength: number;
   metadataStrippedBeforeUpload: boolean;
   orientationAppliedBeforeUpload: boolean;
@@ -2202,6 +2249,8 @@ export interface MediaRuntimeStatus {
   mode: "native" | "browser-preview";
   directGenerationModelIds: string[];
   directReferenceImageModelIds: string[];
+  directInpaintingModelIds: string[];
+  directPoseModelIds: string[];
   localDiffusers: MediaLocalDiffusersRuntimeStatus;
 }
 
@@ -2291,14 +2340,80 @@ export interface GenerateMediaImagesRequest {
   transparentBackground: boolean;
   subjectCutoutModelPriority: string[];
   negativePrompt?: string;
-  referenceImageAssetId?: string | null;
+  referenceImages: MediaImageReference[];
+  baseImageAssetId: string | null;
+  editMask: MediaImageMask | null;
+  poseImageAssetId: string | null;
+  poseStrength: number | null;
+  poseStart: number | null;
+  poseEnd: number | null;
+  seed: number | null;
   editStrength?: number;
-  referenceBoost?: number;
+  maskStrength?: number;
   requireChromaBackground?: boolean;
-  groundingPixels?: number;
-  referenceFit?: "fit" | "crop";
   memoryProfile?: "auto" | "memory-saver" | "balanced" | "maximum-speed";
+  outputBranches: MediaImageOutputBranch[];
   planSnapshot: MediaRunPlanSnapshot;
+}
+
+export type MediaImagePostProcessingOperation =
+  | {
+      kind: "crop";
+      nodeId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+  | {
+      kind: "resize";
+      nodeId: string;
+      width: number;
+      height: number;
+      fit: "contain" | "cover" | "stretch";
+    }
+  | {
+      kind: "text-overlay";
+      nodeId: string;
+      text: string;
+      position:
+        | "top-left"
+        | "top-right"
+        | "bottom-left"
+        | "bottom-right"
+        | "center";
+      margin: number;
+      fontSize: number;
+      color: string;
+      backgroundColor: string;
+      backgroundOpacity: number;
+    }
+  | {
+      kind: "color-adjust";
+      nodeId: string;
+      brightness: number;
+      contrast: number;
+      saturation: number;
+    }
+  | {
+      kind: "sharpen";
+      nodeId: string;
+      sigma: number;
+      threshold: number;
+    }
+  | {
+      kind: "metadata-strip";
+      nodeId: string;
+      preserveColorProfile: boolean;
+    };
+
+export interface MediaImageOutputBranch {
+  id: string;
+  outputNodeId: string;
+  format: MediaImageOutputFormat;
+  quality: number;
+  jpegBackground: string;
+  operations: MediaImagePostProcessingOperation[];
 }
 
 export interface GenerateMediaSvgRequest {

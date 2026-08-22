@@ -44,12 +44,16 @@ export const DEFAULT_IMAGE_RECIPE_SETTINGS = {
   transparentBackground: false,
   qualityGateEnabled: false,
   referenceImages: [],
+  baseImageAssetId: null,
+  poseImageAssetId: null,
+  poseStrength: 1,
+  poseStart: 0,
+  poseEnd: 1,
   editMask: null,
   editStrength: 0.65,
-  referenceBoost: 2,
+  maskStrength: 1,
+  seed: null,
   requireChromaBackground: false,
-  referenceFit: "fit",
-  groundingPixels: 768,
   memoryProfile: "auto",
   modelAddons: [],
   svgMode: "generate",
@@ -134,22 +138,19 @@ const normalizeReferenceImages = (
     const assetId = entry.assetId.trim();
     if (!assetId || seenAssetIds.has(assetId)) continue;
     seenAssetIds.add(assetId);
-    const role: ImageRecipeSettings["referenceImages"][number]["role"] =
-      references.length === 0
-        ? "base"
-        : normalizeOneOf<
-            Exclude<
-              ImageRecipeSettings["referenceImages"][number]["role"],
-              "base"
-            >
-          >(
-            entry.role,
-            ["subject", "style", "composition", "palette", "detail"] as const,
-            "subject",
-          );
+    const role = normalizeOneOf<
+      Exclude<
+        ImageRecipeSettings["referenceImages"][number]["role"],
+        "base" | "pose"
+      >
+    >(
+      entry.role,
+      ["subject", "style", "composition", "palette", "detail"] as const,
+      "subject",
+    );
     const influence =
       typeof entry.influence === "number" && Number.isFinite(entry.influence)
-        ? Math.min(1, Math.max(0, entry.influence))
+        ? Math.min(2, Math.max(0, entry.influence))
         : 1;
     references.push({ assetId, role, influence });
   }
@@ -370,6 +371,31 @@ export const normalizeImageRecipeSettings = (
     return { ...DEFAULT_IMAGE_RECIPE_SETTINGS };
   }
 
+  const baseImageAssetId =
+    typeof value.baseImageAssetId === "string" &&
+    value.baseImageAssetId.trim().length > 0
+      ? value.baseImageAssetId.trim().slice(0, 256)
+      : null;
+  const poseImageAssetId =
+    typeof value.poseImageAssetId === "string" &&
+    value.poseImageAssetId.trim().length > 0 &&
+    value.poseImageAssetId.trim() !== baseImageAssetId
+      ? value.poseImageAssetId.trim().slice(0, 256)
+      : null;
+  const editMask = normalizeMediaImageMask(value.editMask);
+  const poseStart = normalizeBoundedNumber(
+    value.poseStart,
+    DEFAULT_IMAGE_RECIPE_SETTINGS.poseStart,
+    0,
+    0.95,
+  );
+  const poseEnd = normalizeBoundedNumber(
+    value.poseEnd,
+    DEFAULT_IMAGE_RECIPE_SETTINGS.poseEnd,
+    0.05,
+    1,
+  );
+
   return {
     prompt:
       typeof value.prompt === "string" ? value.prompt.slice(0, 8_000) : "",
@@ -401,32 +427,36 @@ export const normalizeImageRecipeSettings = (
     transparentBackground: value.transparentBackground === true,
     qualityGateEnabled: value.qualityGateEnabled !== false,
     referenceImages: normalizeReferenceImages(value.referenceImages),
-    editMask: normalizeMediaImageMask(value.editMask),
+    baseImageAssetId,
+    poseImageAssetId,
+    poseStrength: normalizeBoundedNumber(
+      value.poseStrength,
+      DEFAULT_IMAGE_RECIPE_SETTINGS.poseStrength,
+      0,
+      2,
+    ),
+    poseStart: Math.min(poseStart, poseEnd - 0.05),
+    poseEnd: Math.max(poseEnd, poseStart + 0.05),
+    editMask: editMask?.sourceAssetId === baseImageAssetId ? editMask : null,
     editStrength: normalizeBoundedNumber(
       value.editStrength,
       DEFAULT_IMAGE_RECIPE_SETTINGS.editStrength,
       0,
       1,
     ),
-    referenceBoost: normalizeBoundedNumber(
-      value.referenceBoost,
-      DEFAULT_IMAGE_RECIPE_SETTINGS.referenceBoost,
-      0.25,
-      8,
+    maskStrength: normalizeBoundedNumber(
+      value.maskStrength,
+      DEFAULT_IMAGE_RECIPE_SETTINGS.maskStrength,
+      0,
+      1,
     ),
+    seed:
+      typeof value.seed === "number" &&
+      Number.isSafeInteger(value.seed) &&
+      value.seed >= 0
+        ? value.seed
+        : null,
     requireChromaBackground: value.requireChromaBackground === true,
-    referenceFit: normalizeOneOf<
-      NonNullable<ImageRecipeSettings["referenceFit"]>
-    >(
-      value.referenceFit,
-      ["fit", "crop"] as const,
-      DEFAULT_IMAGE_RECIPE_SETTINGS.referenceFit,
-    ),
-    groundingPixels:
-      typeof value.groundingPixels === "number" &&
-      Number.isFinite(value.groundingPixels)
-        ? Math.min(1_024, Math.max(384, Math.round(value.groundingPixels)))
-        : DEFAULT_IMAGE_RECIPE_SETTINGS.groundingPixels,
     memoryProfile: normalizeOneOf<
       NonNullable<ImageRecipeSettings["memoryProfile"]>
     >(
@@ -585,6 +615,10 @@ const normalizeStoredFlow = (value: unknown): MediaFlow | null => {
 
     const nodeIds = new Set<string>();
     for (const node of candidate.nodes) {
+      const definition =
+        isRecord(node) && typeof node.type === "string"
+          ? getMediaNodeDefinition(node.type)
+          : undefined;
       if (
         !isRecord(node) ||
         typeof node.id !== "string" ||
@@ -592,7 +626,7 @@ const normalizeStoredFlow = (value: unknown): MediaFlow | null => {
         node.id.length > 128 ||
         nodeIds.has(node.id) ||
         typeof node.type !== "string" ||
-        !getMediaNodeDefinition(node.type) ||
+        !definition ||
         typeof node.version !== "number" ||
         !Number.isInteger(node.version) ||
         typeof node.label !== "string" ||
@@ -605,6 +639,11 @@ const normalizeStoredFlow = (value: unknown): MediaFlow | null => {
       ) {
         return null;
       }
+      node.config = Object.fromEntries(
+        Object.entries(node.config).filter(([fieldId]) =>
+          definition.fields.some((field) => field.id === fieldId),
+        ),
+      );
       nodeIds.add(node.id);
     }
 

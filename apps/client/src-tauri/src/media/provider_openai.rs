@@ -597,7 +597,8 @@ mod tests {
     use super::*;
     use crate::media::{
         flow::{RemoteImageEditFlowPlan, RemoteImageEditSource},
-        MediaRunPlanNodeSnapshot, MediaRunPlanSnapshot, MediaRunPlanStepSnapshot,
+        MediaImageOutputBranch, MediaRunPlanNodeSnapshot, MediaRunPlanSnapshot,
+        MediaRunPlanStepSnapshot,
     };
 
     fn request() -> GenerateMediaImagesRequest {
@@ -620,13 +621,26 @@ mod tests {
             transparent_background: false,
             subject_cutout_model_priority: Vec::new(),
             negative_prompt: String::new(),
-            reference_image_asset_id: None,
+            reference_images: Vec::new(),
+            base_image_asset_id: None,
+            edit_mask: None,
+            pose_image_asset_id: None,
+            pose_strength: None,
+            pose_start: None,
+            pose_end: None,
+            seed: None,
             edit_strength: None,
-            reference_boost: None,
+            mask_strength: None,
             require_chroma_background: false,
-            grounding_pixels: None,
-            reference_fit: None,
             memory_profile: Some("auto".to_string()),
+            output_branches: vec![MediaImageOutputBranch {
+                id: "generate".to_string(),
+                output_node_id: "generate".to_string(),
+                format: "webp".to_string(),
+                quality: 95,
+                jpeg_background: "#ffffff".to_string(),
+                operations: Vec::new(),
+            }],
             plan_snapshot: MediaRunPlanSnapshot {
                 schema_version: 1,
                 plan_id: "plan:test".to_string(),
@@ -735,6 +749,7 @@ mod tests {
             provider_prompt: "Place the subject in the base scene\n\nMachdoch reference guidance"
                 .to_string(),
             task_node_id: "edit".to_string(),
+            output_node_id: "output".to_string(),
             model_id: "openai:gpt-image-2".to_string(),
             model_label: "GPT Image 2".to_string(),
             output_count: 2,

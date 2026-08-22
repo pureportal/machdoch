@@ -232,6 +232,7 @@ export interface ContextAttachmentsListProps {
   onClearAll: () => void;
   clearAllLabel?: string;
   compact?: boolean;
+  disabled?: boolean;
 }
 
 export const ContextAttachmentsList = ({
@@ -241,6 +242,7 @@ export const ContextAttachmentsList = ({
   onClearAll,
   clearAllLabel = "Remove all attached context",
   compact = false,
+  disabled = false,
 }: ContextAttachmentsListProps): JSX.Element | null => {
   if (attachments.length === 0) {
     return null;
@@ -308,9 +310,10 @@ export const ContextAttachmentsList = ({
               <button
                 type="button"
                 aria-label={`Remove ${attachment.name}`}
+                disabled={disabled}
                 onClick={() => onRemove(attachment.id)}
                 className={cn(
-                  "ml-0.5 flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+                  "ml-0.5 flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500",
                   "h-6 w-6",
                 )}
               >
@@ -325,9 +328,10 @@ export const ContextAttachmentsList = ({
         type="button"
         aria-label={clearAllLabel}
         title={clearAllLabel}
+        disabled={disabled}
         onClick={onClearAll}
         className={cn(
-          "app-context-attachments-clear inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30",
+          "app-context-attachments-clear inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-800 disabled:hover:bg-slate-950/70 disabled:hover:text-slate-500",
           compact ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
         )}
       >

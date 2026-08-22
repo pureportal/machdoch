@@ -14,6 +14,7 @@ use sha2::{Digest as _, Sha256};
 use super::{
     catalog,
     error::MediaError,
+    model_addon,
     provider_local_diffusers::{LocalGeneratedImageBatch, LocalGeneratedVideo},
     provider_openai::{self, GeneratedImageBatch},
     provider_svg::{self, GeneratedSvgBatch, SvgReferencePlan},
@@ -96,7 +97,9 @@ pub(crate) fn open(paths: &MediaRuntimePaths) -> MediaResult<Connection> {
 
 pub(crate) fn initialize(paths: &MediaRuntimePaths) -> MediaResult<RecoverySummary> {
     ensure_initialized(paths)?;
-    catalog::synchronize(&mut open(paths)?)?;
+    let mut catalog_connection = open(paths)?;
+    catalog::synchronize(&mut catalog_connection)?;
+    model_addon::reconcile_managed_addon_profiles(paths, &mut catalog_connection)?;
     let summary = recover_interrupted_runs(&mut open(paths)?)?;
     recover_pending_blob_gc(paths)?;
     Ok(summary)
@@ -104,9 +107,6 @@ pub(crate) fn initialize(paths: &MediaRuntimePaths) -> MediaResult<RecoverySumma
 
 pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
     let mut connection = open(paths)?;
-    connection
-        .execute_batch("PRAGMA journal_mode = WAL;")
-        .map_err(|error| format!("failed to enable Media Studio WAL mode: {error}"))?;
     connection
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -132,6 +132,10 @@ pub(crate) fn ensure_initialized(paths: &MediaRuntimePaths) -> MediaResult<()> {
         ));
     }
 
+    connection
+        .execute_batch("PRAGMA journal_mode = WAL;")
+        .map_err(|error| format!("failed to enable Media Studio WAL mode: {error}"))?;
+
     let transaction = connection
         .transaction()
         .map_err(|error| format!("failed to begin Media Studio schema initialization: {error}"))?;
@@ -155,6 +159,7 @@ pub(crate) fn get_model_catalog(
 ) -> MediaResult<MediaModelCatalogSnapshot> {
     let mut connection = open(paths)?;
     catalog::synchronize(&mut connection)?;
+    model_addon::reconcile_managed_addon_profiles(paths, &mut connection)?;
     catalog::snapshot(&connection, configured_provider_ids)
 }
 
@@ -1889,7 +1894,7 @@ pub(crate) fn begin_local_diffusers_generation(
                 timestamp,
                 request.prompt,
                 request.model_label,
-                request.output_count,
+                request.published_output_count() as u32,
                 request.diagnostic_count,
                 request.aspect_ratio,
                 plan_snapshot_json,
@@ -1943,7 +1948,7 @@ pub(crate) fn complete_local_diffusers_generation(
     request: &GenerateMediaImagesRequest,
     batch: &LocalGeneratedImageBatch,
 ) -> MediaResult<MediaRunDetail> {
-    if batch.assets.len() != request.output_count as usize {
+    if batch.assets.len() != request.published_output_count() {
         return Err("local diffusion generation produced an unexpected output count".to_string());
     }
     let mut connection = open(paths)?;
@@ -2021,8 +2026,7 @@ pub(crate) fn complete_local_diffusers_generation(
             "performance": batch.provenance.performance,
             "requireChromaBackground": batch.provenance.require_chroma_background,
             "editConditioning": batch.provenance.edit_conditioning,
-            "referenceImageAssetId": batch.provenance.reference_image_asset_id,
-            "referenceImageDigest": batch.provenance.reference_image_digest,
+            "conditioningSources": batch.provenance.conditioning_sources,
             "output": batch.provenance.outputs.iter().find(|output| output.index == asset.output_index),
             "subjectCutout": asset.subject_cutout,
         })
@@ -2047,16 +2051,35 @@ pub(crate) fn complete_local_diffusers_generation(
                 ],
             )
             .map_err(|error| format!("failed to register locally generated image asset: {error}"))?;
-        if let Some(reference_asset_id) = request.reference_image_asset_id.as_deref() {
+        for reference in &request.reference_images {
             transaction
                 .execute(
                     "INSERT INTO asset_inputs(asset_id, input_asset_id, role)
-                     VALUES (?1, ?2, 'edit-reference')",
-                    params![asset_id, reference_asset_id],
+                     VALUES (?1, ?2, ?3)",
+                    params![
+                        asset_id,
+                        reference.asset_id,
+                        format!("reference:{}", reference.role)
+                    ],
                 )
                 .map_err(|error| {
                     format!("failed to register local edit reference lineage: {error}")
                 })?;
+        }
+        for (input_asset_id, role) in [
+            (request.base_image_asset_id.as_deref(), "base-image"),
+            (request.pose_image_asset_id.as_deref(), "pose"),
+        ] {
+            if let Some(input_asset_id) = input_asset_id {
+                transaction
+                    .execute(
+                        "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, ?3)",
+                        params![asset_id, input_asset_id, role],
+                    )
+                    .map_err(|error| {
+                        format!("failed to register local conditioning lineage: {error}")
+                    })?;
+            }
         }
         append_event(
             &transaction,
@@ -2066,7 +2089,10 @@ pub(crate) fn complete_local_diffusers_generation(
                 "Local image {} was validated and ingested into immutable CAS.",
                 asset.output_index + 1
             ),
-            Some(0.84 + 0.12 * (f64::from(asset.output_index + 1) / request.output_count as f64)),
+            Some(
+                0.84 + 0.12
+                    * (f64::from(asset.output_index + 1) / request.published_output_count() as f64),
+            ),
             Some("asset.publish"),
         )?;
     }
@@ -2625,6 +2651,11 @@ pub(crate) fn complete_remote_image_generation(
     if batch.assets.len() != request.output_count as usize {
         return Err("direct image generation produced an unexpected output count".to_string());
     }
+    let output_node_id = request
+        .output_branches
+        .first()
+        .map(|branch| branch.output_node_id.as_str())
+        .ok_or_else(|| "direct image generation is missing an output branch".to_string())?;
     let mut connection = open(paths)?;
     let transaction = connection
         .transaction()
@@ -2715,6 +2746,7 @@ pub(crate) fn complete_remote_image_generation(
             "modelId": request.model_id,
             "providerRequestId": batch.provider_request_id,
             "flowRevisionId": request.flow_revision_id,
+            "output": {"index": asset.output_index, "outputNodeId": output_node_id},
             "subjectCutout": asset.subject_cutout,
         })
         .to_string();
@@ -3101,6 +3133,7 @@ pub(crate) fn complete_remote_image_edit(
             "providerRequestId": batch.provider_request_id,
             "flowRevisionId": request.flow_revision_id,
             "taskNodeId": plan.task_node_id,
+            "output": {"index": asset.output_index, "outputNodeId": plan.output_node_id},
             "editStrength": plan.edit_strength,
             "metadataStrippedBeforeUpload": true,
             "orientationAppliedBeforeUpload": true,
@@ -6342,6 +6375,13 @@ mod tests {
     }
 
     fn openai_request(run_id: &str) -> GenerateMediaImagesRequest {
+        let mut snapshot = plan_snapshot();
+        snapshot.nodes.push(crate::media::MediaRunPlanNodeSnapshot {
+            id: "asset-output".to_string(),
+            r#type: "output.asset".to_string(),
+            label: "Save image".to_string(),
+            layer: "output".to_string(),
+        });
         GenerateMediaImagesRequest {
             schema_version: 1,
             run_id: run_id.to_string(),
@@ -6361,14 +6401,27 @@ mod tests {
             transparent_background: false,
             subject_cutout_model_priority: Vec::new(),
             negative_prompt: String::new(),
-            reference_image_asset_id: None,
+            reference_images: Vec::new(),
+            base_image_asset_id: None,
+            edit_mask: None,
+            pose_image_asset_id: None,
+            pose_strength: None,
+            pose_start: None,
+            pose_end: None,
+            seed: None,
             edit_strength: None,
-            reference_boost: None,
+            mask_strength: None,
             require_chroma_background: false,
-            grounding_pixels: None,
-            reference_fit: None,
             memory_profile: Some("auto".to_string()),
-            plan_snapshot: plan_snapshot(),
+            output_branches: vec![crate::media::MediaImageOutputBranch {
+                id: "asset-output".to_string(),
+                output_node_id: "asset-output".to_string(),
+                format: "png".to_string(),
+                quality: 95,
+                jpeg_background: "#ffffff".to_string(),
+                operations: Vec::new(),
+            }],
+            plan_snapshot: snapshot,
         }
     }
 
@@ -6422,6 +6475,7 @@ mod tests {
             provider_prompt:
                 "Preserve the base and apply the style reference\n\nOrdered references".to_string(),
             task_node_id: "edit".to_string(),
+            output_node_id: "asset-output".to_string(),
             model_id: "openai:gpt-image-2".to_string(),
             model_label: "GPT Image 2".to_string(),
             output_count: 1,
@@ -7139,6 +7193,46 @@ mod tests {
     }
 
     #[test]
+    fn local_diffusers_run_counts_each_published_output_branch() {
+        let paths = test_paths("local-diffusers-output-branches");
+        initialize(&paths).unwrap();
+        insert_openai_test_revision(&paths);
+
+        let mut request = openai_request("run:local-diffusers-branches");
+        request.model_id = "local:user:model-digest".to_string();
+        request.model_label = "Community XL".to_string();
+        request
+            .plan_snapshot
+            .nodes
+            .push(crate::media::MediaRunPlanNodeSnapshot {
+                id: "webp-output".to_string(),
+                r#type: "output.asset".to_string(),
+                label: "Save WebP".to_string(),
+                layer: "output".to_string(),
+            });
+        request
+            .output_branches
+            .push(crate::media::MediaImageOutputBranch {
+                id: "webp-output".to_string(),
+                output_node_id: "webp-output".to_string(),
+                format: "webp".to_string(),
+                quality: 90,
+                jpeg_background: "#ffffff".to_string(),
+                operations: Vec::new(),
+            });
+
+        assert!(begin_local_diffusers_generation(&paths, &request).unwrap());
+        assert_eq!(
+            get_run_detail(&paths, &request.run_id)
+                .unwrap()
+                .run
+                .output_count,
+            2
+        );
+        cleanup(&paths);
+    }
+
+    #[test]
     fn local_diffusers_completion_persists_reproducible_addon_provenance() {
         let paths = test_paths("local-diffusers-provenance");
         initialize(&paths).unwrap();
@@ -7216,12 +7310,18 @@ mod tests {
                 performance: None,
                 require_chroma_background: false,
                 edit_conditioning: None,
-                reference_image_asset_id: None,
-                reference_image_digest: None,
+                conditioning_sources: Vec::new(),
                 outputs: vec![
                     crate::media::provider_local_diffusers::LocalDiffusersOutputProvenance {
                         index: 0,
+                        source_index: 0,
                         seed: 42,
+                        branch_id: "asset-output".to_string(),
+                        output_node_id: "asset-output".to_string(),
+                        format: "png".to_string(),
+                        quality: 95,
+                        jpeg_background: "#ffffff".to_string(),
+                        post_processing: Vec::new(),
                     },
                 ],
             },
@@ -7241,6 +7341,13 @@ mod tests {
             "machdoch_aaaaaaaaaaaaaaaa"
         );
         assert_eq!(operation["output"]["seed"], 42);
+        assert_eq!(operation["output"]["sourceIndex"], 0);
+        assert_eq!(operation["output"]["branchId"], "asset-output");
+        assert_eq!(operation["output"]["outputNodeId"], "asset-output");
+        assert_eq!(operation["output"]["format"], "png");
+        assert_eq!(operation["output"]["quality"], 95);
+        assert_eq!(operation["output"]["jpegBackground"], "#ffffff");
+        assert_eq!(operation["output"]["postProcessing"], serde_json::json!([]));
         let deferred = detail
             .node_executions
             .iter()

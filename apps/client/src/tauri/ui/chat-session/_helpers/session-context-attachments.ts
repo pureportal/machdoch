@@ -1,6 +1,4 @@
-import {
-  getImageInputMediaTypeForPath,
-} from "../../../../core/model-capabilities.js";
+import { getImageInputMediaTypeForPath } from "../../../../core/model-capabilities.js";
 import {
   isMediaAssetContextAttachment,
   isPathContextAttachment,
@@ -10,6 +8,7 @@ import {
 } from "../../chat-session.model";
 import type { MediaAssetReference } from "../../../../core/media/contracts.js";
 import type { DroppedPathEntry } from "../../runtime";
+import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 
 export type FileDropTarget = "active-session" | "quick-task";
 
@@ -60,7 +59,9 @@ export const appendDraftBlock = (draft: string, block: string): string => {
 
   const normalizedDraft = draft.trimEnd();
 
-  return normalizedDraft ? `${normalizedDraft}\n\n${normalizedBlock}` : normalizedBlock;
+  return normalizedDraft
+    ? `${normalizedDraft}\n\n${normalizedBlock}`
+    : normalizedBlock;
 };
 
 const normalizeDroppedPathKind = (
@@ -170,16 +171,14 @@ export const getContextAttachmentIdentity = (
   attachment: ChatSessionContextAttachment,
 ): string =>
   isMediaAssetContextAttachment(attachment)
-    ? `media:${attachment.workspaceRoot.toLowerCase()}:${attachment.assetId}`
-    : `path:${attachment.path.toLowerCase()}`;
+    ? `media:${createWorkspaceRootKey(attachment.workspaceRoot)}:${attachment.assetId}`
+    : `path:${createWorkspaceRootKey(attachment.path)}`;
 
 export const mergeContextAttachments = (
   existing: ChatSessionContextAttachment[],
   incoming: ChatSessionContextAttachment[],
 ): ChatSessionContextAttachment[] => {
-  const seenAttachments = new Set(
-    existing.map(getContextAttachmentIdentity),
-  );
+  const seenAttachments = new Set(existing.map(getContextAttachmentIdentity));
   const merged = [...existing];
 
   for (const attachment of incoming) {
@@ -218,8 +217,8 @@ const createContextAttachmentsTaskBlock = (
   const containsMediaAsset = attachments.some(isMediaAssetContextAttachment);
   return [
     containsMediaAsset ? "Use these attachments:" : "Use these paths:",
-    ...attachments.map(
-      (attachment) => isMediaAssetContextAttachment(attachment)
+    ...attachments.map((attachment) =>
+      isMediaAssetContextAttachment(attachment)
         ? `- Media Studio ${attachment.kind} asset: "${attachment.assetId}"`
         : `- ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`,
     ),
@@ -340,10 +339,9 @@ export const createPromptHistoryUpdate = (
 
   return {
     promptHistory: [...session.promptHistory, task].slice(-40),
-    promptContextHistory: [
-      ...alignedPromptContextHistory,
-      attachments,
-    ].slice(-40),
+    promptContextHistory: [...alignedPromptContextHistory, attachments].slice(
+      -40,
+    ),
   };
 };
 

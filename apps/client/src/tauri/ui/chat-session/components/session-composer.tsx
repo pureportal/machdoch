@@ -1,7 +1,6 @@
 import {
   Brain,
   BrainCircuit,
-  Info,
   LoaderCircle,
   MessageSquare,
   Mic,
@@ -37,7 +36,6 @@ import {
   type AgentComposerQueuedMessage,
   type AgentComposerToggle,
 } from "./agent-composer";
-import { PromptEnhancementPending } from "./prompt-enhancement-pending";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionPromptEnhancementPicker } from "./session-prompt-enhancement-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
@@ -71,9 +69,6 @@ export interface SessionComposerProps {
   promptEnhancementMode: PromptEnhancementMode;
   promptEnhancementWebSearchAvailable: boolean;
   promptEnhancementWebSearchUnavailableReason: string;
-  promptEnhancementPending?: {
-    modeLabel: string;
-  } | null;
   statusMessage?: {
     text: string;
     tone: "success" | "error" | "info" | null;
@@ -136,6 +131,7 @@ export interface SessionComposerProps {
   onQueuedMessageMove: (messageId: string, direction: -1 | 1) => void;
   onQueuedMessageReorder: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove: (messageId: string) => void;
+  onQueuedMessageRetry: (messageId: string) => void;
   onQueuedMessageSend: (messageId: string) => void;
   onQueuedMessageSelectContextAttachments: (
     messageId: string,
@@ -149,6 +145,7 @@ export interface SessionComposerProps {
   onSend: (draft: string) => void;
   onCancel: () => void;
   isExecuting: boolean;
+  isPromptEnhancementActive?: boolean;
 }
 
 export const SessionComposer = ({
@@ -178,7 +175,6 @@ export const SessionComposer = ({
   promptEnhancementMode,
   promptEnhancementWebSearchAvailable,
   promptEnhancementWebSearchUnavailableReason,
-  promptEnhancementPending = null,
   statusMessage,
   onStatusMessageDismiss,
   contextAttachments,
@@ -223,6 +219,7 @@ export const SessionComposer = ({
   onQueuedMessageMove,
   onQueuedMessageReorder,
   onQueuedMessageRemove,
+  onQueuedMessageRetry,
   onQueuedMessageSend,
   onQueuedMessageSelectContextAttachments,
   onQueuedMessageRemoveContextAttachment,
@@ -230,12 +227,9 @@ export const SessionComposer = ({
   onSend,
   onCancel,
   isExecuting,
+  isPromptEnhancementActive = false,
 }: SessionComposerProps): JSX.Element => {
   const showSessionMemoryButton = !isQuickVoiceSession(activeSession);
-  const promptEnhancementBlocked = Boolean(promptEnhancementPending);
-  const editEnhancementPending = Boolean(
-    editingMessageId && promptEnhancementPending,
-  );
   const notification =
     statusMessage ??
     (speechInput.statusText
@@ -452,106 +446,75 @@ export const SessionComposer = ({
         </div>
       ) : null}
 
-      {promptEnhancementPending && !editingMessageId ? (
-        <PromptEnhancementPending
-          modeLabel={promptEnhancementPending.modeLabel}
-          className="app-prompt-enhancement-blocker"
-        />
-      ) : null}
-
-      {editingMessageId && !promptEnhancementPending ? (
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-sky-100"
-        >
-          <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Editing a sent message. Saving replaces this point in the
-            conversation and reruns the task with the selected options.
-          </span>
-        </div>
-      ) : null}
-
-      <div className="relative">
-        {editEnhancementPending && promptEnhancementPending ? (
-          <PromptEnhancementPending
-            variant="editor"
-            modeLabel={promptEnhancementPending.modeLabel}
-            onCancel={onCancel}
-          />
-        ) : (
-          <AgentComposer
-            variant="session"
-            draftIdentity={
-              editingMessageId
-                ? `${activeSession.id}:message-edit:${editingMessageId}`
-                : activeSession.id
-            }
-            draft={activeSession.draft}
-            draftRevision={activeSession.draftUpdatedAt}
-            textareaLabel={editingMessageId ? "Edit message" : "Task composer"}
-            placeholder={
-              editingMessageId
-                ? "Update the message and its options"
-                : "What should machdoch do next?"
-            }
-            chooserProviders={chooserProviders}
-            activeProvider={activeSession.provider}
-            activeModel={activeSession.model}
-            contextAttachments={contextAttachments}
-            imageInputSupported={imageInputSupported}
-            imageInputDisabledReason={imageInputDisabledReason}
-            canSend={canSendMessage}
-            sendDisabledReason={sendDisabledReason}
-            isExecuting={editingMessageId ? false : isExecuting}
-            inputBlocked={promptEnhancementBlocked}
-            autoFocus={Boolean(editingMessageId)}
-            submissionLabel={editingMessageId ? "Save and submit" : undefined}
-            showCancelAlongsideSend={Boolean(editingMessageId)}
-            toolbarControls={toolbarControls}
-            toggles={toggles}
-            actions={actions}
-            runningTaskMessageAction={runningTaskMessageAction}
-            queuedMessages={editingMessageId ? [] : queuedMessages}
-            onModelSelection={onSessionModelSelection}
-            onSelectContextFiles={onSelectContextFiles}
-            onSelectContextFolders={onSelectContextFolders}
-            onSelectContextImages={onSelectContextImages}
-            onBrowseMediaAssets={onBrowseMediaAssets}
-            onCreateMediaAsset={onCreateMediaAsset}
-            onPasteContextImages={onPasteContextImages}
-            onOpenContextAttachment={onOpenContextAttachment}
-            onRemoveContextAttachment={onRemoveContextAttachment}
-            onClearContextAttachments={onClearContextAttachments}
-            onDraftChange={onDraftChange}
-            onAdditionalTextareaKeyDown={onComposerHistoryNavigation}
-            onRunningTaskMessageActionChange={onRunningTaskMessageActionChange}
-            onQueuedMessageChange={onQueuedMessageChange}
-            onQueuedMessageMove={onQueuedMessageMove}
-            onQueuedMessageReorder={onQueuedMessageReorder}
-            onQueuedMessageRemove={onQueuedMessageRemove}
-            onQueuedMessageSend={onQueuedMessageSend}
-            onQueuedMessageSelectContextAttachments={
-              onQueuedMessageSelectContextAttachments
-            }
-            onQueuedMessageRemoveContextAttachment={
-              onQueuedMessageRemoveContextAttachment
-            }
-            onQueuedMessageClearContextAttachments={
-              onQueuedMessageClearContextAttachments
-            }
-            onSend={onSend}
-            onCancel={onCancel}
-          />
-        )}
-
-        {promptEnhancementBlocked && !editEnhancementPending ? (
-          <div
-            className="absolute inset-0 z-20 cursor-wait rounded-[1.75rem] bg-slate-950/35 backdrop-blur-[1px]"
-            aria-hidden="true"
-          />
-        ) : null}
-      </div>
+      <AgentComposer
+        variant="session"
+        draftIdentity={
+          editingMessageId
+            ? `${activeSession.id}:message-edit:${editingMessageId}`
+            : activeSession.id
+        }
+        draft={activeSession.draft}
+        draftRevision={activeSession.draftUpdatedAt}
+        textareaLabel={editingMessageId ? "Edit message" : "Task composer"}
+        placeholder={
+          editingMessageId
+            ? "Update the message and its options"
+            : "What should machdoch do next?"
+        }
+        chooserProviders={chooserProviders}
+        activeProvider={activeSession.provider}
+        activeModel={activeSession.model}
+        contextAttachments={contextAttachments}
+        imageInputSupported={imageInputSupported}
+        imageInputDisabledReason={imageInputDisabledReason}
+        canSend={canSendMessage}
+        sendDisabledReason={sendDisabledReason}
+        isExecuting={editingMessageId ? false : isExecuting}
+        autoFocus={Boolean(editingMessageId)}
+        submissionLabel={
+          editingMessageId
+            ? "Save and submit"
+            : isPromptEnhancementActive
+              ? "Queue message"
+              : undefined
+        }
+        showCancelAlongsideSend={Boolean(editingMessageId)}
+        toolbarControls={toolbarControls}
+        toggles={toggles}
+        actions={actions}
+        runningTaskMessageAction={runningTaskMessageAction}
+        queuedMessages={editingMessageId ? [] : queuedMessages}
+        onModelSelection={onSessionModelSelection}
+        onSelectContextFiles={onSelectContextFiles}
+        onSelectContextFolders={onSelectContextFolders}
+        onSelectContextImages={onSelectContextImages}
+        onBrowseMediaAssets={onBrowseMediaAssets}
+        onCreateMediaAsset={onCreateMediaAsset}
+        onPasteContextImages={onPasteContextImages}
+        onOpenContextAttachment={onOpenContextAttachment}
+        onRemoveContextAttachment={onRemoveContextAttachment}
+        onClearContextAttachments={onClearContextAttachments}
+        onDraftChange={onDraftChange}
+        onAdditionalTextareaKeyDown={onComposerHistoryNavigation}
+        onRunningTaskMessageActionChange={onRunningTaskMessageActionChange}
+        onQueuedMessageChange={onQueuedMessageChange}
+        onQueuedMessageMove={onQueuedMessageMove}
+        onQueuedMessageReorder={onQueuedMessageReorder}
+        onQueuedMessageRemove={onQueuedMessageRemove}
+        onQueuedMessageRetry={onQueuedMessageRetry}
+        onQueuedMessageSend={onQueuedMessageSend}
+        onQueuedMessageSelectContextAttachments={
+          onQueuedMessageSelectContextAttachments
+        }
+        onQueuedMessageRemoveContextAttachment={
+          onQueuedMessageRemoveContextAttachment
+        }
+        onQueuedMessageClearContextAttachments={
+          onQueuedMessageClearContextAttachments
+        }
+        onSend={onSend}
+        onCancel={onCancel}
+      />
     </div>
   );
 };

@@ -1,17 +1,11 @@
 import {
   applyNodeChanges,
-  Background,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
   type Connection,
   type NodeChange,
   type OnNodeDrag,
   type ReactFlowInstance,
   type XYPosition,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { isTauri } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -372,7 +366,6 @@ import {
   RALPH_EDITOR_SHORTCUTS,
   RALPH_LAYOUT_FIT_DURATION_MS,
   RALPH_NEW_BLOCK_CENTER_DURATION_MS,
-  RALPH_REACT_FLOW_PRO_OPTIONS,
   RALPH_VALIDATION_JUMP_DURATION_MS,
   RALPH_VARIABLE_SNIPPETS,
   UTILITY_TYPE_OPTIONS,
@@ -386,10 +379,12 @@ import {
   type RalphInspectorSectionId,
   type RalphRunPanelTab,
 } from "./_helpers/ralph-flow-editor-options.helper";
+import { RALPH_NODE_TYPES } from "./components/ralph-flow-canvas-elements";
+import { FlowCanvas } from "../flow/flow-canvas";
 import {
-  RALPH_EDGE_TYPES,
-  RALPH_NODE_TYPES,
-} from "./components/ralph-flow-canvas-elements";
+  FLOW_CANVAS_FIT_MAX_ZOOM,
+  FLOW_CANVAS_FIT_PADDING,
+} from "../flow/flow-theme";
 import {
   RalphInspectorDetails,
   RalphInspectorField,
@@ -6004,8 +5999,8 @@ export const RalphFlowEditor = ({
 
       void instance.fitView({
         duration: RALPH_LAYOUT_FIT_DURATION_MS,
-        maxZoom: 1,
-        padding: 0.16,
+        maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
+        padding: FLOW_CANVAS_FIT_PADDING,
       });
     };
 
@@ -9570,77 +9565,50 @@ export const RalphFlowEditor = ({
             data-command-focus="document"
             className="relative min-h-0"
           >
-            <ReactFlowProvider key={canvasIdentityKey}>
-              <ReactFlow<RalphCanvasNode, RalphCanvasEdge>
-                nodes={canvasNodes}
-                edges={edges}
-                nodeTypes={RALPH_NODE_TYPES}
-                edgeTypes={RALPH_EDGE_TYPES}
-                onInit={(instance) => {
-                  reactFlowInstanceRef.current = instance;
-                }}
-                onNodesChange={handleNodesChange}
-                onNodeDragStop={handleNodeDragStop}
-                onConnect={handleConnect}
-                onReconnect={handleReconnect}
-                edgesReconnectable
-                deleteKeyCode={[]}
-                onNodeClick={(_, node) => {
-                  setSelectedBlockId(node.id);
-                  setSelectedEdgeId(null);
-                  closeCanvasMenu();
-                  closeFlowListMenu();
-                }}
-                onEdgeClick={(_, edge) => {
-                  setSelectedEdgeId(edge.id);
-                  setSelectedBlockId(null);
-                  closeCanvasMenu();
-                  closeFlowListMenu();
-                }}
-                onPaneClick={() => {
-                  setSelectedBlockId(null);
-                  setSelectedEdgeId(null);
-                  closeCanvasMenu();
-                  closeFlowListMenu();
-                }}
-                onPaneContextMenu={openPaneMenu}
-                onNodeContextMenu={openNodeMenu}
-                onEdgeContextMenu={openEdgeMenu}
-                onEdgesDelete={(deletedEdges) => {
-                  removeEdges(deletedEdges.map((edge) => edge.id));
-                }}
-                fitView
-                minZoom={0.25}
-                maxZoom={1.8}
-                colorMode="dark"
-                proOptions={RALPH_REACT_FLOW_PRO_OPTIONS}
-                className="bg-slate-950"
-              >
-                <Background gap={22} size={1} color="#1e293b" />
-                {showMiniMap ? (
-                  <MiniMap
-                    pannable
-                    zoomable
-                    position="bottom-right"
-                    nodeColor={(node) =>
-                      getBlockVisual((node.data as RalphNodeData).block)
-                        .miniMapColor
-                    }
-                    maskColor="rgba(2, 6, 23, 0.72)"
-                    className="!border !border-slate-800 !bg-slate-950"
-                    style={{
-                      width: 132,
-                      height: 88,
-                      backgroundColor: "#020617",
-                    }}
-                  />
-                ) : null}
-                <Controls
-                  position="bottom-left"
-                  className="[&_.react-flow__controls-button]:!border-slate-800 [&_.react-flow__controls-button]:!bg-slate-900 [&_.react-flow__controls-button]:!text-slate-200 [&_.react-flow__controls-button:hover]:!bg-slate-800"
-                />
-              </ReactFlow>
-            </ReactFlowProvider>
+            <FlowCanvas<RalphCanvasNode, RalphCanvasEdge>
+              providerKey={canvasIdentityKey}
+              nodes={canvasNodes}
+              edges={edges}
+              nodeTypes={RALPH_NODE_TYPES}
+              onInit={(instance) => {
+                reactFlowInstanceRef.current = instance;
+              }}
+              onNodesChange={handleNodesChange}
+              onNodeDragStop={handleNodeDragStop}
+              onConnect={handleConnect}
+              onReconnect={handleReconnect}
+              edgesReconnectable
+              deleteKeyCode={[]}
+              onNodeClick={(_, node) => {
+                setSelectedBlockId(node.id);
+                setSelectedEdgeId(null);
+                closeCanvasMenu();
+                closeFlowListMenu();
+              }}
+              onEdgeClick={(_, edge) => {
+                setSelectedEdgeId(edge.id);
+                setSelectedBlockId(null);
+                closeCanvasMenu();
+                closeFlowListMenu();
+              }}
+              onPaneClick={() => {
+                setSelectedBlockId(null);
+                setSelectedEdgeId(null);
+                closeCanvasMenu();
+                closeFlowListMenu();
+              }}
+              onPaneContextMenu={openPaneMenu}
+              onNodeContextMenu={openNodeMenu}
+              onEdgeContextMenu={openEdgeMenu}
+              onEdgesDelete={(deletedEdges) => {
+                removeEdges(deletedEdges.map((edge) => edge.id));
+              }}
+              fitView
+              showMiniMap={showMiniMap}
+              miniMapNodeColor={(node) =>
+                getBlockVisual((node.data as RalphNodeData).block).miniMapColor
+              }
+            />
             {renderCanvasContextMenu()}
             {renderFlowListContextMenu()}
             {!draftFlow ? (

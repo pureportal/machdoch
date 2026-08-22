@@ -37,13 +37,11 @@ pub(super) fn resolve_attached_path(
 }
 
 fn normalize_attached_path_input(path: &str) -> Result<&str, String> {
-    let normalized_path = path.trim();
-
-    if normalized_path.is_empty() {
+    if path.trim().is_empty() {
         return Err("Expected an attached file path to open.".to_string());
     }
 
-    Ok(normalized_path)
+    Ok(path)
 }
 
 fn canonicalize_attached_path(normalized_path: &str) -> Result<PathBuf, String> {
@@ -100,6 +98,16 @@ mod tests {
         ClipboardImageAttachmentRequest,
     };
     use super::*;
+
+    #[test]
+    fn attached_path_input_preserves_significant_whitespace() {
+        assert_eq!(
+            normalize_attached_path_input(" /tmp/project file.txt ")
+                .expect("non-empty path should normalize"),
+            " /tmp/project file.txt "
+        );
+        assert!(normalize_attached_path_input("   ").is_err());
+    }
 
     fn create_test_directory(label: &str) -> PathBuf {
         let timestamp = SystemTime::now()

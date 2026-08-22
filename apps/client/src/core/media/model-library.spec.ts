@@ -75,7 +75,7 @@ describe("matchesMediaModelQuery", () => {
     expect(selectable.every((model) => model.configured)).toBe(true);
   });
 
-  it("shows only ready generation models in the model library", () => {
+  it("keeps installed generation models manageable while excluding unused entries", () => {
     const configuredCatalog = createMediaModelCatalogSnapshot({
       isOpenAiConfigured: true,
       isLocalFluxInstalled: true,
@@ -102,7 +102,7 @@ describe("matchesMediaModelQuery", () => {
     ]);
 
     expect(manageable.some((model) => model.id === brokenInstalled.id)).toBe(
-      false,
+      true,
     );
     expect(manageable.some((model) => model.id === unusedCatalogEntry.id)).toBe(
       false,

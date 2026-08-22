@@ -7,13 +7,12 @@ import {
   createSession,
   isQuickVoiceSession,
   normalizeSessionTags,
+  rememberRecentWorkspace,
   sortSessionsByUpdatedAt,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
-import {
-  getDefaultModelForProvider,
-} from "../../model-catalog";
+import { getDefaultModelForProvider } from "../../model-catalog";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   createSessionExportPayload,
@@ -24,7 +23,7 @@ import type { ProviderChooserState } from "./session-shell-view-model";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
 
 export interface SessionLifecycleActions {
-  createNewSession: () => void;
+  createNewSession: (options?: CreateNewSessionOptions) => string;
   deleteSession: (sessionId: string) => void;
   archiveSession: (sessionId: string) => void;
   togglePinnedSession: (sessionId: string) => void;
@@ -33,6 +32,10 @@ export interface SessionLifecycleActions {
   toggleSessionTagFilter: (tag: string) => void;
   exportSessions: () => void;
   importSessions: (file: File) => void;
+}
+
+export interface CreateNewSessionOptions {
+  workspace?: string | null;
 }
 
 const isReusableNewSession = (session: ChatSessionRecord): boolean => {
@@ -51,16 +54,15 @@ const isReusableNewSession = (session: ChatSessionRecord): boolean => {
   );
 };
 
-interface NewSessionDefaults
-  extends Pick<
-    ChatSessionRecord,
-    | "provider"
-    | "model"
-    | "workspace"
-    | "sessionMemoryEnabled"
-    | "useGlobalMemory"
-    | "uiControlEnabled"
-  > {
+interface NewSessionDefaults extends Pick<
+  ChatSessionRecord,
+  | "provider"
+  | "model"
+  | "workspace"
+  | "sessionMemoryEnabled"
+  | "useGlobalMemory"
+  | "uiControlEnabled"
+> {
   mode?: NonNullable<ChatSessionRecord["mode"]>;
   reasoning?: NonNullable<ChatSessionRecord["reasoning"]>;
 }
@@ -107,27 +109,40 @@ export const useSessionLifecycle = (options: {
 
   return useMemo(
     () => ({
-      createNewSession: (): void => {
+      createNewSession: (options: CreateNewSessionOptions = {}): string => {
         let nextActiveSessionId = state.activeSessionId;
+        const hasWorkspaceOverride = "workspace" in options;
 
         state.applyShellState((prev) => {
           const currentActiveSession =
-            prev.sessions.find((session) => session.id === state.activeSessionId) ??
-            prev.sessions.find((session) => session.id === prev.activeSessionId);
+            prev.sessions.find(
+              (session) => session.id === state.activeSessionId,
+            ) ??
+            prev.sessions.find(
+              (session) => session.id === prev.activeSessionId,
+            );
           const reusableSession =
             (currentActiveSession && isReusableNewSession(currentActiveSession)
               ? currentActiveSession
               : undefined) ??
             sortSessionsByUpdatedAt(prev.sessions).find(isReusableNewSession);
-          const newSessionWorkspace =
-            prev.recentWorkspaces[0] ??
-            currentActiveSession?.workspace ??
-            defaultNewSessionWorkspace;
+          const newSessionWorkspace = hasWorkspaceOverride
+            ? options.workspace
+            : (prev.recentWorkspaces[0] ??
+              currentActiveSession?.workspace ??
+              defaultNewSessionWorkspace);
           const newSessionDefaults = createNewSessionDefaults(
             prev,
             providerChooserState,
             newSessionWorkspace,
           );
+          const recentWorkspaces =
+            hasWorkspaceOverride && options.workspace
+              ? rememberRecentWorkspace(
+                  prev.recentWorkspaces,
+                  options.workspace,
+                )
+              : prev.recentWorkspaces;
 
           if (reusableSession) {
             const replacement = createSession(newSessionDefaults);
@@ -135,6 +150,7 @@ export const useSessionLifecycle = (options: {
 
             return {
               ...prev,
+              recentWorkspaces,
               activeSessionId: replacement.id,
               sessions: [
                 replacement,
@@ -151,11 +167,13 @@ export const useSessionLifecycle = (options: {
 
           return {
             ...prev,
+            recentWorkspaces,
             activeSessionId: session.id,
             sessions: [session, ...prev.sessions],
           };
         });
         state.setActiveSessionId(nextActiveSessionId);
+        return nextActiveSessionId;
       },
       deleteSession: (sessionId: string): void => {
         let nextActiveSessionId = state.activeSessionId;
@@ -191,7 +209,8 @@ export const useSessionLifecycle = (options: {
           }
 
           if (state.activeSessionId === sessionId) {
-            nextActiveSessionId = sortSessionsByUpdatedAt(remainingSessions)[0].id;
+            nextActiveSessionId =
+              sortSessionsByUpdatedAt(remainingSessions)[0].id;
           }
 
           return {
@@ -237,10 +256,7 @@ export const useSessionLifecycle = (options: {
           return nextSession;
         });
       },
-      cloneSession: (
-        sessionId: string,
-        mode: "duplicate" | "branch",
-      ): void => {
+      cloneSession: (sessionId: string, mode: "duplicate" | "branch"): void => {
         let nextSessionId: string | null = null;
 
         state.applyShellState((prev) => {

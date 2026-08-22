@@ -106,6 +106,7 @@ import {
   type InstructionMutationResult,
   type InstructionRegistryResult,
   type DesktopTaskRunResponse,
+  type FileManagerInvocationRoute,
   type RecentDesktopTaskResult,
   type TaskInterviewResult,
 } from "../../runtime";
@@ -157,12 +158,10 @@ import {
   PROMPT_ENHANCEMENT_LABELS,
   PromptEnhancementCancellationError,
   resolveImmediatePromptEnhancementPlacement,
-  resolveStagedPromptEnhancementSubmission,
   shouldDeferPromptEnhancementUntilQueuedDispatch,
   type ActivePromptEnhancementMode,
   type PromptEnhancementPendingPlacement,
   type PromptEnhancementMode,
-  type StagedPromptEnhancement,
 } from "./prompt-enhancement";
 import {
   appendContextAttachmentsToTask,
@@ -254,6 +253,7 @@ type ChatInputNeededSubmission =
       promptEnhancementOriginalContent?: string;
       interviewEnabled: boolean;
       conversationCutoffMessageId?: string;
+      preserveQueuedMessagesCreatedAfter?: number;
     }
   | {
       kind: "quick-task";
@@ -277,13 +277,14 @@ interface ComposerStatusMessage {
 interface MessageEditState {
   messageId: string;
   sourceSessionId: string;
+  startedAt: number;
   session: ChatSessionRecord;
   promptEnhancementMode: PromptEnhancementMode;
-  stagedPromptEnhancement?: StagedPromptEnhancement;
   interviewEnabled: boolean;
 }
 
 const COMPOSER_STATUS_TIMEOUT_MS = 6_000;
+const PROMPT_ENHANCEMENT_TASK_ID_PREFIX = "prompt-enhancement-";
 
 interface PromptEnhancementPendingState {
   taskId: string;
@@ -297,6 +298,11 @@ interface PromptEnhancementPendingState {
   ownerWindowId: string;
   ownerInstanceId: string;
   composerClearGuard?: ComposerClearGuard;
+}
+
+interface PromptEnhancementResult {
+  task: string;
+  taskId: string | null;
 }
 
 interface PromptEnhancementPreviewState {
@@ -485,6 +491,51 @@ const hasUserMessageForTask = (
   );
 };
 
+const compareQueuedMessages = (
+  left: ChatSessionQueuedMessage,
+  right: ChatSessionQueuedMessage,
+): number =>
+  left.sessionId.localeCompare(right.sessionId) ||
+  left.orderRank - right.orderRank ||
+  left.createdAt - right.createdAt ||
+  left.id.localeCompare(right.id);
+
+const sortQueuedMessages = (
+  messages: ChatSessionQueuedMessage[],
+): ChatSessionQueuedMessage[] => [...messages].sort(compareQueuedMessages);
+
+const areQueuedMessageListsIdentical = (
+  left: readonly ChatSessionQueuedMessage[],
+  right: readonly ChatSessionQueuedMessage[],
+): boolean =>
+  left.length === right.length &&
+  left.every((message, index) => message === right[index]);
+
+const isQueuedMessageInProgress = (
+  message: ChatSessionQueuedMessage,
+): boolean =>
+  message.status === "enhancing" || message.status === "dispatching";
+
+const setQueuedMessageStatus = (
+  message: ChatSessionQueuedMessage,
+  status: ChatSessionQueuedMessage["status"],
+  updatedAt: number,
+  failureMessage?: string,
+): ChatSessionQueuedMessage => {
+  const nextMessage = {
+    ...message,
+    status,
+    statusUpdatedAt: updatedAt,
+    updatedAt,
+  };
+
+  delete nextMessage.failureMessage;
+
+  return status === "failed" && failureMessage?.trim()
+    ? { ...nextMessage, failureMessage: failureMessage.trim() }
+    : nextMessage;
+};
+
 const reorderQueuedMessagesWithinSession = (
   messages: ChatSessionQueuedMessage[],
   messageId: string,
@@ -496,8 +547,8 @@ const reorderQueuedMessagesWithinSession = (
     return messages;
   }
 
-  const sessionMessages = messages.filter(
-    (message) => message.sessionId === movingMessage.sessionId,
+  const sessionMessages = sortQueuedMessages(
+    messages.filter((message) => message.sessionId === movingMessage.sessionId),
   );
   const sourceIndex = sessionMessages.findIndex(
     (message) => message.id === messageId,
@@ -698,6 +749,9 @@ export const useChatSessionController = (
   const [chatOperationWindowId] = useState(getOrCreateChatOperationWindowId);
   const [chatOperationInstanceId] = useState(() => crypto.randomUUID());
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
+  const activePromptEnhancementInputsRef = useRef<Map<string, string>>(
+    new Map(),
+  );
   const interviewComposerClearGuardsRef = useRef(
     new WeakMap<ChatInterviewStartContext, ComposerClearGuard>(),
   );
@@ -771,6 +825,19 @@ export const useChatSessionController = (
     useState<PromptEnhancementPreviewState | null>(null);
   const [chatInterview, setChatInterview] =
     useState<ChatInterviewDialogState | null>(null);
+  const isMessageEditPromptEnhancementPending = Boolean(
+    messageEdit &&
+    promptEnhancementPendingTasks.some(
+      (pending) =>
+        pending.sessionId === messageEdit.sourceSessionId &&
+        pending.placement === "edit-composer",
+    ),
+  );
+  const activeMessageEdit = isMessageEditPromptEnhancementPending
+    ? null
+    : messageEdit;
+  const activeMessageEditRef = useRef<MessageEditState | null>(null);
+  activeMessageEditRef.current = activeMessageEdit;
 
   useEffect(() => {
     if (!promptEnhancementStatus) {
@@ -817,9 +884,16 @@ export const useChatSessionController = (
       ) => ChatSessionQueuedMessage[],
     ): void => {
       state.applyShellState((prev) => {
-        const nextQueuedMessages = updater(prev.queuedSessionMessages);
+        const nextQueuedMessages = sortQueuedMessages(
+          updater(prev.queuedSessionMessages),
+        );
 
-        if (nextQueuedMessages === prev.queuedSessionMessages) {
+        if (
+          areQueuedMessageListsIdentical(
+            nextQueuedMessages,
+            prev.queuedSessionMessages,
+          )
+        ) {
           return prev;
         }
 
@@ -867,15 +941,15 @@ export const useChatSessionController = (
   );
   const activeComposerSession = useMemo<ChatSessionRecord>(
     () =>
-      messageEdit?.session ?? {
+      activeMessageEdit?.session ?? {
         ...state.activeSession,
         draft: composerState.activeDraft,
         draftContextAttachments: composerState.activeContextAttachments,
       },
     [
+      activeMessageEdit,
       composerState.activeContextAttachments,
       composerState.activeDraft,
-      messageEdit,
       state.activeSession,
     ],
   );
@@ -904,7 +978,7 @@ export const useChatSessionController = (
         return;
       }
 
-      const currentEdit = messageEditRef.current;
+      const currentEdit = activeMessageEditRef.current;
 
       if (currentEdit?.sourceSessionId === sessionId) {
         updateMessageEditSession((session) => ({
@@ -1213,9 +1287,9 @@ export const useChatSessionController = (
         )
       : null;
   const activePromptEnhancementMode =
-    messageEdit?.promptEnhancementMode ?? promptEnhancementMode;
+    activeMessageEdit?.promptEnhancementMode ?? promptEnhancementMode;
   const activeChatInterviewEnabled =
-    messageEdit?.interviewEnabled ?? chatInterviewEnabled;
+    activeMessageEdit?.interviewEnabled ?? chatInterviewEnabled;
   const chatInterviewBusy =
     chatInterview?.status === "loading" || chatInterview?.status === "starting";
   const promptEnhancementBusy = promptEnhancementPendingTasks.length > 0;
@@ -1256,16 +1330,21 @@ export const useChatSessionController = (
     promptEnhancementPendingTasks.find(
       (pending) => pending.sessionId === state.activeSession.id,
     ) ?? null;
+  const activeSessionHasPromptEnhancementPlaceholder =
+    state.activeSession.messages.some(
+      (message) =>
+        isTransientChatOperationMessage(message) &&
+        message.lifecycle?.owner === "prompt-enhancement",
+    );
   const activeSessionPromptEnhancementBusy =
-    activePromptEnhancementPending !== null;
-  const activeSessionSendDisabledReason = activeSessionPromptEnhancementBusy
-    ? "Prompt enhancement is still running."
-    : (promptEnhancementUnavailableReason ?? activeSessionImageInputError);
+    activePromptEnhancementPending !== null ||
+    activeSessionHasPromptEnhancementPlaceholder;
+  const activeSessionSendDisabledReason =
+    promptEnhancementUnavailableReason ?? activeSessionImageInputError;
   const canComposeMessage =
     !speechInput.recording &&
     !speechInput.transcribing &&
     !chatInterviewBusy &&
-    !activeSessionPromptEnhancementBusy &&
     !promptEnhancementUnavailableReason &&
     !activeSessionImageInputError;
   const canSendMessage =
@@ -1319,7 +1398,7 @@ export const useChatSessionController = (
   );
   const handlePromptEnhancementModeChange = useCallback(
     (mode: PromptEnhancementMode): void => {
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         setMessageEdit((current) => {
           if (!current) {
             return current;
@@ -1328,10 +1407,6 @@ export const useChatSessionController = (
           return {
             ...current,
             promptEnhancementMode: mode,
-            stagedPromptEnhancement:
-              current.stagedPromptEnhancement?.mode === mode
-                ? current.stagedPromptEnhancement
-                : undefined,
           };
         });
         setPromptEnhancementStatus(null);
@@ -1344,7 +1419,7 @@ export const useChatSessionController = (
     [],
   );
   const handleInterviewEnabledChange = useCallback((enabled: boolean): void => {
-    if (messageEditRef.current) {
+    if (activeMessageEditRef.current) {
       setMessageEdit((current) =>
         current ? { ...current, interviewEnabled: enabled } : current,
       );
@@ -1355,7 +1430,7 @@ export const useChatSessionController = (
   }, []);
   const handleSessionMemoryEnabledChange = useCallback(
     (enabled: boolean): void => {
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         updateMessageEditSession((session) => ({
           ...session,
           sessionMemoryEnabled: enabled,
@@ -1370,7 +1445,7 @@ export const useChatSessionController = (
   );
   const handleUseGlobalMemoryChange = useCallback(
     (enabled: boolean): void => {
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         updateMessageEditSession((session) => ({
           ...session,
           useGlobalMemory: enabled,
@@ -1385,7 +1460,7 @@ export const useChatSessionController = (
   );
   const handleUiControlEnabledChange = useCallback(
     (enabled: boolean): void => {
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         updateMessageEditSession((session) => ({
           ...session,
           uiControlEnabled: enabled,
@@ -2583,7 +2658,7 @@ export const useChatSessionController = (
     (workspace: string | null): void => {
       const normalizedWorkspace = workspace?.trim() || null;
 
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         updateMessageEditSession((session) =>
           isSessionWorkspaceLocked(session)
             ? session
@@ -2721,7 +2796,7 @@ export const useChatSessionController = (
     provider: RuntimeProvider,
     model: string,
   ): void => {
-    if (messageEditRef.current) {
+    if (activeMessageEditRef.current) {
       updateMessageEditSession((session) => {
         const nextSession: ChatSessionRecord = {
           ...session,
@@ -2797,7 +2872,7 @@ export const useChatSessionController = (
   };
 
   const handleSessionModeSelection = (mode: RunMode | null): void => {
-    if (messageEditRef.current) {
+    if (activeMessageEditRef.current) {
       updateMessageEditSession((session) => {
         const nextSession: ChatSessionRecord = {
           ...session,
@@ -2853,7 +2928,7 @@ export const useChatSessionController = (
   const handleSessionReasoningSelection = (
     reasoning: ReasoningMode | null,
   ): void => {
-    const currentEdit = messageEditRef.current;
+    const currentEdit = activeMessageEditRef.current;
 
     if (currentEdit) {
       updateMessageEditSession((session) => {
@@ -3289,17 +3364,28 @@ export const useChatSessionController = (
         promptEnhancementPendingTasks.find(
           (pending) => pending.sessionId === session.id,
         ) ?? null;
-      const targetTaskIds = pendingPromptEnhancement
-        ? [pendingPromptEnhancement.taskId]
-        : [...activeDesktopTasksRef.current.entries()].flatMap(
-            ([taskId, sessionId]) => (sessionId === session.id ? [taskId] : []),
-          );
+      const targetTaskIds = new Set(
+        pendingPromptEnhancement
+          ? [pendingPromptEnhancement.taskId]
+          : [
+              ...[...activeDesktopTasksRef.current.entries()].flatMap(
+                ([taskId, activeSessionId]) =>
+                  activeSessionId === session.id ? [taskId] : [],
+              ),
+              ...session.messages.flatMap((message) =>
+                isTransientChatOperationMessage(message) &&
+                message.lifecycle?.owner === "prompt-enhancement"
+                  ? [getMessageTaskId(message)]
+                  : [],
+              ),
+            ],
+      );
       const latestRunningTaskId = getLatestRunningTaskId(session);
-      if (latestRunningTaskId && !targetTaskIds.includes(latestRunningTaskId)) {
-        targetTaskIds.push(latestRunningTaskId);
+      if (latestRunningTaskId) {
+        targetTaskIds.add(latestRunningTaskId);
       }
 
-      if (targetTaskIds.length === 0) {
+      if (targetTaskIds.size === 0) {
         return;
       }
 
@@ -3307,9 +3393,6 @@ export const useChatSessionController = (
         const targetTaskId = pendingPromptEnhancement.taskId;
         ignoredDesktopTaskIdsRef.current.add(targetTaskId);
         setPromptEnhancementStatus(null);
-        setPromptEnhancementPendingTasks((current) =>
-          current.filter((pending) => pending.taskId !== targetTaskId),
-        );
       } else {
         for (const targetTaskId of targetTaskIds) {
           updateThinkingTrace(session.id, targetTaskId, (trace) => {
@@ -3597,7 +3680,7 @@ export const useChatSessionController = (
       } = {},
     ): Promise<void> => {
       const currentMessageEdit =
-        target === "active-session" ? messageEditRef.current : null;
+        target === "active-session" ? activeMessageEditRef.current : null;
       const targetMessageEdit =
         options.messageEditId === undefined ||
         currentMessageEdit?.messageId === options.messageEditId
@@ -3730,6 +3813,32 @@ export const useChatSessionController = (
     ],
   );
 
+  const applyFileManagerInvocationRoute = useCallback(
+    async (route: FileManagerInvocationRoute): Promise<void> => {
+      const previousSessionId = activeSessionIdRef.current;
+      closeMessageEdit();
+      composerState.resetDraftHistoryState();
+      invalidateAttachmentMutation(`session:${previousSessionId}`);
+      const sessionId = lifecycleActions.createNewSession({
+        workspace: route.workspaceRoot,
+      });
+
+      if (route.attachmentPaths.length > 0) {
+        await handleAttachPaths(route.attachmentPaths, "active-session", {
+          targetSessionId: sessionId,
+          updateWorkspaceRoot: false,
+        });
+      }
+    },
+    [
+      closeMessageEdit,
+      composerState.resetDraftHistoryState,
+      handleAttachPaths,
+      invalidateAttachmentMutation,
+      lifecycleActions,
+    ],
+  );
+
   const handleAttachReferences = useCallback(
     (references: string[], target: FileDropTarget): void => {
       const attachments = references.flatMap((reference) => {
@@ -3749,7 +3858,7 @@ export const useChatSessionController = (
         return;
       }
 
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         updateMessageEditSession((session) => ({
           ...session,
           draftContextAttachments: mergeContextAttachments(
@@ -3785,7 +3894,7 @@ export const useChatSessionController = (
 
   const attachMediaAssetToChat = useCallback(
     (reference: MediaAssetReference): boolean => {
-      const currentEdit = messageEditRef.current;
+      const currentEdit = activeMessageEditRef.current;
       const activeWorkspace =
         (
           currentEdit?.session.workspace ?? state.activeSession.workspace
@@ -3849,7 +3958,7 @@ export const useChatSessionController = (
         return;
       }
 
-      if (messageEditRef.current) {
+      if (activeMessageEditRef.current) {
         updateMessageEditSession((session) => ({
           ...session,
           draft: appendDraftBlock(session.draft, normalizedText),
@@ -3876,7 +3985,7 @@ export const useChatSessionController = (
       selectionKind: AttachmentSelectionKind,
     ): Promise<void> => {
       const targetMessageEdit =
-        target === "active-session" ? messageEditRef.current : null;
+        target === "active-session" ? activeMessageEditRef.current : null;
 
       if (target === "active-session" && !targetMessageEdit) {
         composerState.commitHistoryPreview();
@@ -3985,7 +4094,7 @@ export const useChatSessionController = (
   const handlePasteContextImages = useCallback(
     async (files: File[], target: FileDropTarget): Promise<void> => {
       const targetMessageEdit =
-        target === "active-session" ? messageEditRef.current : null;
+        target === "active-session" ? activeMessageEditRef.current : null;
 
       if (target === "active-session" && !targetMessageEdit) {
         composerState.commitHistoryPreview();
@@ -4185,7 +4294,7 @@ export const useChatSessionController = (
         return;
       }
 
-      const targetMessageEdit = messageEditRef.current;
+      const targetMessageEdit = activeMessageEditRef.current;
 
       if (!targetMessageEdit) {
         composerState.commitHistoryPreview();
@@ -4556,7 +4665,7 @@ export const useChatSessionController = (
         sourceSession,
         settings,
       );
-      const currentEdit = messageEditRef.current;
+      const currentEdit = activeMessageEditRef.current;
 
       if (currentEdit) {
         invalidateAttachmentMutation(`message-edit:${currentEdit.messageId}`);
@@ -4565,6 +4674,7 @@ export const useChatSessionController = (
       setMessageEdit({
         messageId: message.id,
         sourceSessionId: sourceSession.id,
+        startedAt: Date.now(),
         session: {
           ...sessionWithSettings,
           draft: content,
@@ -4615,7 +4725,7 @@ export const useChatSessionController = (
         return;
       }
 
-      const currentEdit = messageEditRef.current;
+      const currentEdit = activeMessageEditRef.current;
 
       if (currentEdit) {
         const mutationKey = `message-edit:${currentEdit.messageId}`;
@@ -4672,7 +4782,7 @@ export const useChatSessionController = (
         return;
       }
 
-      const currentEdit = messageEditRef.current;
+      const currentEdit = activeMessageEditRef.current;
 
       if (currentEdit) {
         const mutationKey = `message-edit:${currentEdit.messageId}`;
@@ -4861,53 +4971,106 @@ export const useChatSessionController = (
     [applySessionMessageLimit, state.updateSessionById],
   );
 
-  const restoreQueuedMessageAfterPromptEnhancementFailure = useCallback(
-    (queuedMessage: ChatSessionQueuedMessage): void => {
+  const updateQueuedMessageStatus = useCallback(
+    (
+      messageId: string,
+      status: ChatSessionQueuedMessage["status"],
+      failureMessage?: string,
+    ): void => {
+      const normalizedFailureMessage = failureMessage?.trim();
+
       updateQueuedSessionMessages((current) =>
-        current.filter((message) => message.id !== queuedMessage.id),
+        current.map((message) => {
+          if (
+            message.id !== messageId ||
+            (message.status === status &&
+              message.failureMessage === normalizedFailureMessage)
+          ) {
+            return message;
+          }
+
+          const updatedAt = Date.now();
+          return setQueuedMessageStatus(
+            message,
+            status,
+            updatedAt,
+            normalizedFailureMessage,
+          );
+        }),
       );
-      state.updateSessionById(queuedMessage.sessionId, (session) => {
-        const prompt = queuedMessage.task.trim();
-        const normalizedDraft = session.draft.trim();
-        const draft =
-          normalizedDraft === prompt
-            ? session.draft
-            : appendDraftBlock(session.draft, prompt);
-        const draftContextAttachments = mergeContextAttachments(
-          session.draftContextAttachments,
-          queuedMessage.contextAttachments.map((attachment) => ({
-            ...attachment,
-          })),
-        );
-
-        if (
-          draft === session.draft &&
-          areComposerAttachmentsEqual(
-            draftContextAttachments,
-            session.draftContextAttachments,
-          )
-        ) {
-          return session;
-        }
-
-        const updatedAt = Date.now();
-
-        return {
-          ...session,
-          draft,
-          draftContextAttachments,
-          draftUpdatedAt: updatedAt,
-          draftAttachmentsUpdatedAt: updatedAt,
-          updatedAt,
-        };
-      });
-      invalidateAttachmentMutation(`session:${queuedMessage.sessionId}`);
     },
-    [
-      invalidateAttachmentMutation,
-      state.updateSessionById,
-      updateQueuedSessionMessages,
-    ],
+    [updateQueuedSessionMessages],
+  );
+
+  const markQueuedMessagePromptEnhancementFailed = useCallback(
+    (messageId: string, cancelled: boolean): void => {
+      updateQueuedMessageStatus(
+        messageId,
+        "failed",
+        cancelled ? "Enhancement cancelled." : "Enhancement failed.",
+      );
+    },
+    [updateQueuedMessageStatus],
+  );
+
+  const rebindQueuedPromptEnhancementFollowers = useCallback(
+    (
+      sessionId: string,
+      promptEnhancementTaskId: string,
+      taskId: string,
+    ): void => {
+      updateQueuedSessionMessages((current) =>
+        current.map((message) => {
+          if (
+            message.sessionId !== sessionId ||
+            message.blockedByTaskId !== promptEnhancementTaskId
+          ) {
+            return message;
+          }
+
+          const updatedAt = Date.now();
+
+          return {
+            ...message,
+            blockedByTaskId: taskId,
+            blockerUpdatedAt: updatedAt,
+            updatedAt,
+          };
+        }),
+      );
+    },
+    [updateQueuedSessionMessages],
+  );
+
+  const failQueuedPromptEnhancementFollowers = useCallback(
+    (sessionId: string, promptEnhancementTaskId: string): void => {
+      updateQueuedSessionMessages((current) =>
+        current.map((message) => {
+          if (
+            message.sessionId !== sessionId ||
+            message.blockedByTaskId !== promptEnhancementTaskId
+          ) {
+            return message;
+          }
+
+          const updatedAt = Date.now();
+          const nextMessage = {
+            ...message,
+            blockerUpdatedAt: updatedAt,
+          };
+
+          delete nextMessage.blockedByTaskId;
+
+          return setQueuedMessageStatus(
+            nextMessage,
+            "failed",
+            updatedAt,
+            "The request ahead of this one did not start.",
+          );
+        }),
+      );
+    },
+    [updateQueuedSessionMessages],
   );
 
   const showPromptEnhancementSessionPlaceholder = useCallback(
@@ -4980,12 +5143,12 @@ export const useChatSessionController = (
       >,
       prompt: string,
       placement: PromptEnhancementPendingPlacement,
-    ): Promise<string> => {
+    ): Promise<PromptEnhancementResult> => {
       const normalizedPrompt = prompt.trim();
       const enhancementMode = submission.promptEnhancementMode;
 
       if (!normalizedPrompt || enhancementMode === "off") {
-        return normalizedPrompt;
+        return { task: normalizedPrompt, taskId: null };
       }
 
       if (
@@ -5002,7 +5165,7 @@ export const useChatSessionController = (
       }
 
       const activeMode = enhancementMode as ActivePromptEnhancementMode;
-      const taskId = `prompt-enhancement-${Date.now()}-${Math.random()
+      const taskId = `${PROMPT_ENHANCEMENT_TASK_ID_PREFIX}${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}`;
       const sessionSnapshot = submission.sessionSnapshot;
@@ -5030,6 +5193,7 @@ export const useChatSessionController = (
       setPromptEnhancementPendingTasks((current) => [...current, pending]);
       desktopTaskProgressRoutesRef.current.set(taskId, {});
       activeDesktopTasksRef.current.set(taskId, sessionSnapshot.id);
+      activePromptEnhancementInputsRef.current.set(taskId, normalizedPrompt);
       showPromptEnhancementSessionPlaceholder(pending);
 
       try {
@@ -5111,7 +5275,7 @@ export const useChatSessionController = (
 
         setPromptEnhancementStatus(null);
 
-        return enhancedPrompt;
+        return { task: enhancedPrompt, taskId };
       } catch (error) {
         const message = getPromptEnhancementErrorMessage(error);
         const wasCancelled = isPromptEnhancementCancellation(
@@ -5125,6 +5289,8 @@ export const useChatSessionController = (
           restorePromptEnhancementComposer(pending);
         }
 
+        failQueuedPromptEnhancementFollowers(pending.sessionId, pending.taskId);
+
         setPromptEnhancementStatus(
           wasCancelled
             ? null
@@ -5137,6 +5303,7 @@ export const useChatSessionController = (
         throw error instanceof Error ? error : new Error(message);
       } finally {
         activeDesktopTasksRef.current.delete(taskId);
+        activePromptEnhancementInputsRef.current.delete(taskId);
         desktopTaskProgressRoutesRef.current.delete(taskId);
         ignoredDesktopTaskIdsRef.current.delete(taskId);
         removePromptEnhancementSessionPlaceholder(pending);
@@ -5150,6 +5317,7 @@ export const useChatSessionController = (
       chatOperationInstanceId,
       chatOperationWindowId,
       clearSessionComposerInput,
+      failQueuedPromptEnhancementFollowers,
       promptEnhancementWebSearchAvailable,
       removePromptEnhancementSessionPlaceholder,
       restorePromptEnhancementComposer,
@@ -5251,6 +5419,8 @@ export const useChatSessionController = (
         blockerUpdatedAt: now,
         orderRank,
         orderUpdatedAt: now,
+        status: "queued",
+        statusUpdatedAt: now,
         createdAt: now,
         updatedAt: now,
       };
@@ -5279,7 +5449,33 @@ export const useChatSessionController = (
 
   const handleSessionOperationConflict = useCallback(
     (submission: SessionOperationConflictSubmission): boolean => {
-      const { activeTaskId, ...queuedSubmission } = submission;
+      const { activeTaskId, queuedMessageRecovery, ...queuedSubmission } =
+        submission;
+
+      if (queuedMessageRecovery) {
+        const updatedAt = Date.now();
+        const recoveredQueuedMessage = setQueuedMessageStatus(
+          {
+            ...queuedMessageRecovery,
+            id: crypto.randomUUID(),
+            blockedByTaskId: activeTaskId,
+            blockerUpdatedAt: updatedAt,
+            contextAttachments: queuedSubmission.contextAttachments.map(
+              (attachment) => ({ ...attachment }),
+            ),
+          },
+          "queued",
+          updatedAt,
+        );
+
+        updateQueuedSessionMessages((current) => [
+          ...current,
+          recoveredQueuedMessage,
+        ]);
+        activeDesktopTasksRef.current.set(activeTaskId, submission.sessionId);
+        return true;
+      }
+
       const queuedMessage = queueActiveSessionMessage("back", {
         ...queuedSubmission,
         blockedByTaskId: activeTaskId,
@@ -5293,7 +5489,7 @@ export const useChatSessionController = (
       activeDesktopTasksRef.current.set(activeTaskId, submission.sessionId);
       return true;
     },
-    [queueActiveSessionMessage],
+    [queueActiveSessionMessage, updateQueuedSessionMessages],
   );
   sessionOperationConflictHandlerRef.current = handleSessionOperationConflict;
 
@@ -5405,12 +5601,12 @@ export const useChatSessionController = (
 
       const now = Date.now();
       const orderRank =
-        Math.max(
-          -1,
+        Math.min(
+          0,
           ...shellStateRef.current.queuedSessionMessages
             .filter((message) => message.sessionId === sessionSnapshot.id)
             .map((message) => message.orderRank),
-        ) + 1;
+        ) - 1;
       const queuedMessage: ChatSessionQueuedMessage = {
         id: crypto.randomUUID(),
         sessionId: sessionSnapshot.id,
@@ -5426,6 +5622,8 @@ export const useChatSessionController = (
         blockerUpdatedAt: now,
         orderRank,
         orderUpdatedAt: now,
+        status: "queued",
+        statusUpdatedAt: now,
         createdAt: now,
         updatedAt: now,
       };
@@ -5475,6 +5673,7 @@ export const useChatSessionController = (
 
       if (
         !nextQueuedMessage ||
+        nextQueuedMessage.status === "failed" ||
         !canDispatchQueuedMessage(nextQueuedMessage, session) ||
         dispatchingQueuedMessageIds.has(nextQueuedMessage.id)
       ) {
@@ -5487,6 +5686,8 @@ export const useChatSessionController = (
           if (!lease) {
             return;
           }
+
+          let promptEnhancementTaskId: string | null = null;
 
           try {
             const queuedMessageAtDispatch =
@@ -5507,6 +5708,7 @@ export const useChatSessionController = (
               !queuedMessageAtDispatch ||
               !latestSession ||
               queuedHeadAtDispatch?.id !== queuedMessageAtDispatch.id ||
+              queuedMessageAtDispatch.status === "failed" ||
               !canDispatchQueuedMessage(
                 queuedMessageAtDispatch,
                 latestSession,
@@ -5525,10 +5727,14 @@ export const useChatSessionController = (
               queuedMessageAtDispatch.promptEnhancementRequest;
 
             if (promptEnhancementRequest) {
+              updateQueuedMessageStatus(
+                queuedMessageAtDispatch.id,
+                "enhancing",
+              );
               let enhancedPrompt: string;
 
               try {
-                enhancedPrompt = await enhancePromptForSubmission(
+                const enhancement = await enhancePromptForSubmission(
                   {
                     kind: "active-session",
                     sessionSnapshot: latestSession,
@@ -5550,7 +5756,9 @@ export const useChatSessionController = (
                   queuedMessageAtDispatch.task,
                   "queued-message",
                 );
-              } catch {
+                enhancedPrompt = enhancement.task;
+                promptEnhancementTaskId = enhancement.taskId;
+              } catch (error) {
                 const failedQueuedMessage =
                   shellStateRef.current.queuedSessionMessages.find(
                     (message) => message.id === queuedMessageAtDispatch.id,
@@ -5563,8 +5771,9 @@ export const useChatSessionController = (
                     failedQueuedMessage,
                   )
                 ) {
-                  restoreQueuedMessageAfterPromptEnhancementFailure(
-                    failedQueuedMessage,
+                  markQueuedMessagePromptEnhancementFailed(
+                    failedQueuedMessage.id,
+                    error instanceof PromptEnhancementCancellationError,
                   );
                   await completeCrossWindowOperation(lease);
                 } else {
@@ -5601,6 +5810,18 @@ export const useChatSessionController = (
                   refreshedQueuedMessage,
                 )
               ) {
+                if (refreshedQueuedMessage) {
+                  updateQueuedMessageStatus(
+                    refreshedQueuedMessage.id,
+                    "queued",
+                  );
+                }
+                if (promptEnhancementTaskId) {
+                  failQueuedPromptEnhancementFollowers(
+                    latestSession.id,
+                    promptEnhancementTaskId,
+                  );
+                }
                 await releaseCrossWindowOperation(lease);
                 return;
               }
@@ -5613,6 +5834,10 @@ export const useChatSessionController = (
               );
             }
 
+            updateQueuedMessageStatus(queuedMessageToSubmit.id, "dispatching");
+            const promptEnhancementTaskIdForStartedTask =
+              promptEnhancementTaskId;
+
             const didSubmit = taskSubmission.submitTaskToSession({
               sessionSnapshot: latestSession,
               task: dispatchPrompt.task,
@@ -5621,6 +5846,8 @@ export const useChatSessionController = (
               activateSession: shouldActivateSubmittedSession(latestSession.id),
               visibleMessageContent: dispatchPrompt.visibleMessageContent,
               promptHistoryContent: dispatchPrompt.promptHistoryContent,
+              consumedQueuedMessageId: queuedMessageToSubmit.id,
+              queuedMessageRecovery: queuedMessageToSubmit,
               ...(dispatchPrompt.promptEnhancement
                 ? { promptEnhancement: dispatchPrompt.promptEnhancement }
                 : {}),
@@ -5635,25 +5862,56 @@ export const useChatSessionController = (
                       promptEnhancementRequest,
                   }
                 : {}),
+              ...(promptEnhancementTaskIdForStartedTask
+                ? {
+                    onTaskStarted: (taskId: string) =>
+                      rebindQueuedPromptEnhancementFollowers(
+                        latestSession.id,
+                        promptEnhancementTaskIdForStartedTask,
+                        taskId,
+                      ),
+                  }
+                : {}),
             });
 
             if (!didSubmit) {
-              await releaseCrossWindowOperation(lease);
+              if (promptEnhancementTaskId) {
+                failQueuedPromptEnhancementFollowers(
+                  latestSession.id,
+                  promptEnhancementTaskId,
+                );
+              }
+              const currentSession = shellStateRef.current.sessions.find(
+                (entry) => entry.id === latestSession.id,
+              );
+              updateQueuedMessageStatus(
+                queuedMessageToSubmit.id,
+                currentSession &&
+                  getSessionOverviewStatus(currentSession) === "running"
+                  ? "queued"
+                  : "failed",
+                currentSession &&
+                  getSessionOverviewStatus(currentSession) === "running"
+                  ? undefined
+                  : "Task could not start.",
+              );
+              await completeCrossWindowOperation(lease);
               return;
             }
 
-            updateQueuedSessionMessages((current) =>
-              current.filter(
-                (message) =>
-                  message.id !== queuedMessageToSubmit.id &&
-                  !(
-                    message.sessionId === latestSession.id &&
-                    message.task.trim().length === 0
-                  ),
-              ),
-            );
             await completeCrossWindowOperation(lease);
           } catch (error) {
+            updateQueuedMessageStatus(
+              nextQueuedMessage.id,
+              "failed",
+              "Queue dispatch failed.",
+            );
+            if (promptEnhancementTaskId) {
+              failQueuedPromptEnhancementFollowers(
+                session.id,
+                promptEnhancementTaskId,
+              );
+            }
             await releaseCrossWindowOperation(lease);
             throw error;
           }
@@ -5667,10 +5925,13 @@ export const useChatSessionController = (
     },
     [
       enhancePromptForSubmission,
+      failQueuedPromptEnhancementFollowers,
+      markQueuedMessagePromptEnhancementFailed,
       queuedSessionMessages,
-      restoreQueuedMessageAfterPromptEnhancementFailure,
+      rebindQueuedPromptEnhancementFollowers,
       shouldActivateSubmittedSession,
       taskSubmission,
+      updateQueuedMessageStatus,
       updateQueuedSessionMessages,
     ],
   );
@@ -5697,22 +5958,29 @@ export const useChatSessionController = (
     (messageId: string, content: string): void => {
       updateQueuedSessionMessages((current) =>
         current.map((message) => {
-          if (message.id !== messageId) {
+          if (message.id !== messageId || isQueuedMessageInProgress(message)) {
             return message;
           }
 
           const updatedAt = Date.now();
           const currentMessage = { ...message };
           delete currentMessage.promptEnhancement;
+          delete currentMessage.failureMessage;
 
-          return {
-            ...currentMessage,
-            task: content,
-            visibleMessageContent: content,
-            promptHistoryContent: content,
-            contentUpdatedAt: updatedAt,
+          const hasContent = Boolean(content.trim());
+
+          return setQueuedMessageStatus(
+            {
+              ...currentMessage,
+              task: content,
+              visibleMessageContent: content,
+              promptHistoryContent: content,
+              contentUpdatedAt: updatedAt,
+            },
+            hasContent ? "queued" : "failed",
             updatedAt,
-          };
+            hasContent ? undefined : "Enter a message or remove this item.",
+          );
         }),
       );
     },
@@ -5726,13 +5994,23 @@ export const useChatSessionController = (
           (message) => message.id === messageId,
         );
 
-        if (!movingMessage) {
+        if (
+          !movingMessage ||
+          isQueuedMessageInProgress(movingMessage) ||
+          current.some(
+            (message) =>
+              message.sessionId === movingMessage.sessionId &&
+              isQueuedMessageInProgress(message),
+          )
+        ) {
           return current;
         }
 
-        const sessionIndex = current
-          .filter((message) => message.sessionId === movingMessage.sessionId)
-          .findIndex((message) => message.id === messageId);
+        const sessionIndex = sortQueuedMessages(
+          current.filter(
+            (message) => message.sessionId === movingMessage.sessionId,
+          ),
+        ).findIndex((message) => message.id === messageId);
 
         return reorderQueuedMessagesWithinSession(
           current,
@@ -5746,9 +6024,27 @@ export const useChatSessionController = (
 
   const handleQueuedMessageReorder = useCallback(
     (messageId: string, targetIndex: number): void => {
-      updateQueuedSessionMessages((current) =>
-        reorderQueuedMessagesWithinSession(current, messageId, targetIndex),
-      );
+      updateQueuedSessionMessages((current) => {
+        const message = current.find((entry) => entry.id === messageId);
+
+        if (
+          !message ||
+          isQueuedMessageInProgress(message) ||
+          current.some(
+            (entry) =>
+              entry.sessionId === message.sessionId &&
+              isQueuedMessageInProgress(entry),
+          )
+        ) {
+          return current;
+        }
+
+        return reorderQueuedMessagesWithinSession(
+          current,
+          messageId,
+          targetIndex,
+        );
+      });
     },
     [updateQueuedSessionMessages],
   );
@@ -5760,9 +6056,13 @@ export const useChatSessionController = (
         mutationKey,
         (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
       );
-      updateQueuedSessionMessages((current) =>
-        current.filter((message) => message.id !== messageId),
-      );
+      updateQueuedSessionMessages((current) => {
+        const message = current.find((entry) => entry.id === messageId);
+
+        return message && !isQueuedMessageInProgress(message)
+          ? current.filter((entry) => entry.id !== messageId)
+          : current;
+      });
     },
     [updateQueuedSessionMessages],
   );
@@ -5771,13 +6071,28 @@ export const useChatSessionController = (
     (messageId: string): void => {
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
-          message.id === messageId
-            ? {
-                ...message,
-                dispatchPolicy: "after-terminal",
-                blockerUpdatedAt: Date.now(),
-                updatedAt: Date.now(),
-              }
+          message.id === messageId && message.status === "queued"
+            ? (() => {
+                const updatedAt = Date.now();
+                return {
+                  ...setQueuedMessageStatus(message, "queued", updatedAt),
+                  dispatchPolicy: "after-terminal",
+                  blockerUpdatedAt: updatedAt,
+                };
+              })()
+            : message,
+        ),
+      );
+    },
+    [updateQueuedSessionMessages],
+  );
+
+  const handleQueuedMessageRetry = useCallback(
+    (messageId: string): void => {
+      updateQueuedSessionMessages((current) =>
+        current.map((message) =>
+          message.id === messageId && message.status === "failed"
+            ? setQueuedMessageStatus(message, "queued", Date.now())
             : message,
         ),
       );
@@ -5809,18 +6124,21 @@ export const useChatSessionController = (
 
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
-          message.id === messageId
+          message.id === messageId && !isQueuedMessageInProgress(message)
             ? (() => {
                 const updatedAt = Date.now();
-                return {
-                  ...message,
-                  contextAttachments: mergeContextAttachments(
-                    message.contextAttachments,
-                    attachments,
-                  ),
-                  attachmentsUpdatedAt: updatedAt,
+                return setQueuedMessageStatus(
+                  {
+                    ...message,
+                    contextAttachments: mergeContextAttachments(
+                      message.contextAttachments,
+                      attachments,
+                    ),
+                    attachmentsUpdatedAt: updatedAt,
+                  },
+                  "queued",
                   updatedAt,
-                };
+                );
               })()
             : message,
         ),
@@ -5839,6 +6157,10 @@ export const useChatSessionController = (
       );
 
       if (!queuedMessage) {
+        return;
+      }
+
+      if (isQueuedMessageInProgress(queuedMessage)) {
         return;
       }
 
@@ -5931,21 +6253,24 @@ export const useChatSessionController = (
       );
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
-          message.id === messageId
+          message.id === messageId && !isQueuedMessageInProgress(message)
             ? (() => {
                 const updatedAt = Date.now();
-                return {
-                  ...message,
-                  contextAttachments: message.contextAttachments.filter(
-                    (attachment) => attachment.id !== attachmentId,
-                  ),
-                  attachmentTombstones: {
-                    ...message.attachmentTombstones,
-                    [attachmentId]: updatedAt,
+                return setQueuedMessageStatus(
+                  {
+                    ...message,
+                    contextAttachments: message.contextAttachments.filter(
+                      (attachment) => attachment.id !== attachmentId,
+                    ),
+                    attachmentTombstones: {
+                      ...message.attachmentTombstones,
+                      [attachmentId]: updatedAt,
+                    },
+                    attachmentsUpdatedAt: updatedAt,
                   },
-                  attachmentsUpdatedAt: updatedAt,
+                  "queued",
                   updatedAt,
-                };
+                );
               })()
             : message,
         ),
@@ -5963,24 +6288,29 @@ export const useChatSessionController = (
       );
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
-          message.id === messageId && message.contextAttachments.length > 0
+          message.id === messageId &&
+          !isQueuedMessageInProgress(message) &&
+          message.contextAttachments.length > 0
             ? (() => {
                 const updatedAt = Date.now();
-                return {
-                  ...message,
-                  contextAttachments: [],
-                  attachmentTombstones: {
-                    ...message.attachmentTombstones,
-                    ...Object.fromEntries(
-                      message.contextAttachments.map((attachment) => [
-                        attachment.id,
-                        updatedAt,
-                      ]),
-                    ),
+                return setQueuedMessageStatus(
+                  {
+                    ...message,
+                    contextAttachments: [],
+                    attachmentTombstones: {
+                      ...message.attachmentTombstones,
+                      ...Object.fromEntries(
+                        message.contextAttachments.map((attachment) => [
+                          attachment.id,
+                          updatedAt,
+                        ]),
+                      ),
+                    },
+                    attachmentsUpdatedAt: updatedAt,
                   },
-                  attachmentsUpdatedAt: updatedAt,
+                  "queued",
                   updatedAt,
-                };
+                );
               })()
             : message,
         ),
@@ -6751,6 +7081,8 @@ export const useChatSessionController = (
       ...(context.conversationCutoffMessageId
         ? {
             conversationCutoffMessageId: context.conversationCutoffMessageId,
+            preserveQueuedMessagesCreatedAfter:
+              context.preserveQueuedMessagesCreatedAfter,
           }
         : {}),
     });
@@ -7071,6 +7403,7 @@ export const useChatSessionController = (
     composerClearGuard?: ComposerClearGuard,
     messageSettings?: ChatSessionMessageSettings,
     conversationCutoffMessageId?: string,
+    preserveQueuedMessagesCreatedAfter?: number,
   ): void => {
     const reasoning = normalizeSessionReasoningOverride(
       sessionSnapshot.reasoning,
@@ -7092,6 +7425,9 @@ export const useChatSessionController = (
       ...(reasoning ? { reasoning } : {}),
       ...(messageSettings ? { messageSettings } : {}),
       ...(conversationCutoffMessageId ? { conversationCutoffMessageId } : {}),
+      ...(preserveQueuedMessagesCreatedAfter !== undefined
+        ? { preserveQueuedMessagesCreatedAfter }
+        : {}),
     };
 
     if (composerClearGuard) {
@@ -7265,42 +7601,6 @@ export const useChatSessionController = (
     setPromptEnhancementPreview(null);
   }, [chatInterview]);
 
-  const stageEnhancedMessageEdit = useCallback(
-    (input: {
-      messageId: string;
-      sessionId: string;
-      mode: ActivePromptEnhancementMode;
-      originalContent: string;
-      enhancedContent: string;
-    }): void => {
-      setMessageEdit((current) => {
-        if (
-          !current ||
-          current.messageId !== input.messageId ||
-          current.sourceSessionId !== input.sessionId
-        ) {
-          return current;
-        }
-
-        const updatedAt = Date.now();
-
-        return {
-          ...current,
-          session: {
-            ...current.session,
-            draft: input.enhancedContent,
-            updatedAt,
-          },
-          stagedPromptEnhancement: {
-            mode: input.mode,
-            originalContent: input.originalContent,
-          },
-        };
-      });
-    },
-    [],
-  );
-
   const submitResolvedChatInputNeededSubmission = useCallback(
     (submission: ChatInputNeededSubmission, resolvedTask: string): void => {
       if (submission.kind === "quick-task") {
@@ -7317,6 +7617,7 @@ export const useChatSessionController = (
       const submitActiveSessionTask = (
         task: string,
         originalTask = submission.promptEnhancementOriginalContent,
+        promptEnhancementTaskId: string | null = null,
       ): void => {
         const promptEnhancement = createMessagePromptEnhancement(
           task,
@@ -7340,10 +7641,25 @@ export const useChatSessionController = (
         const promptHistoryContent = promptEnhancement?.originalContent ?? task;
 
         const restoreFailedTaskHandoff = (message: string): void => {
-          if (!submission.conversationCutoffMessageId) {
+          if (submission.conversationCutoffMessageId) {
+            setMessageEdit((current) =>
+              current &&
+              current.messageId === submission.conversationCutoffMessageId &&
+              current.sourceSessionId === submission.sessionSnapshot.id
+                ? {
+                    ...current,
+                    session: {
+                      ...current.session,
+                      draft: task,
+                      updatedAt: Date.now(),
+                    },
+                  }
+                : current,
+            );
+          } else {
             restoreSessionComposerInput({
               sessionId: submission.sessionSnapshot.id,
-              prompt: originalTask ?? resolvedTask,
+              prompt: task,
               contextAttachments: submission.contextAttachments,
               composerClearGuard: submission.composerClearGuard,
             });
@@ -7403,6 +7719,12 @@ export const useChatSessionController = (
         }
 
         if (submission.interviewEnabled) {
+          if (promptEnhancementTaskId) {
+            failQueuedPromptEnhancementFollowers(
+              submission.sessionSnapshot.id,
+              promptEnhancementTaskId,
+            );
+          }
           if (promptEnhancement) {
             setPromptEnhancementPreview({
               id: `prompt-enhancement-preview-${Date.now()}-${Math.random()
@@ -7424,6 +7746,7 @@ export const useChatSessionController = (
                 submission.composerClearGuard,
                 submission.messageSettings,
                 submission.conversationCutoffMessageId,
+                submission.preserveQueuedMessagesCreatedAfter,
               );
             });
             return;
@@ -7437,6 +7760,7 @@ export const useChatSessionController = (
             submission.composerClearGuard,
             submission.messageSettings,
             submission.conversationCutoffMessageId,
+            submission.preserveQueuedMessagesCreatedAfter,
           );
           return;
         }
@@ -7461,11 +7785,29 @@ export const useChatSessionController = (
             ? {
                 conversationCutoffMessageId:
                   submission.conversationCutoffMessageId,
+                preserveQueuedMessagesCreatedAfter:
+                  submission.preserveQueuedMessagesCreatedAfter,
+              }
+            : {}),
+          ...(promptEnhancementTaskId
+            ? {
+                onTaskStarted: (taskId: string) =>
+                  rebindQueuedPromptEnhancementFollowers(
+                    submission.sessionSnapshot.id,
+                    promptEnhancementTaskId,
+                    taskId,
+                  ),
               }
             : {}),
         });
 
         if (!didSubmit) {
+          if (promptEnhancementTaskId) {
+            failQueuedPromptEnhancementFollowers(
+              submission.sessionSnapshot.id,
+              promptEnhancementTaskId,
+            );
+          }
           restoreFailedTaskHandoff(
             "The request could not start because the session is already running.",
           );
@@ -7490,47 +7832,36 @@ export const useChatSessionController = (
       }
 
       void (async (): Promise<void> => {
-        let task: string;
         const enhancementPlacement =
           resolveImmediatePromptEnhancementPlacement(submission);
 
         try {
-          task = await enhancePromptForSubmission(
+          const enhancement = await enhancePromptForSubmission(
             submission,
             resolvedTask,
             enhancementPlacement,
           );
+          submitActiveSessionTask(
+            enhancement.task,
+            resolvedTask,
+            enhancement.taskId,
+          );
         } catch {
           return;
         }
-
-        if (
-          enhancementPlacement === "edit-composer" &&
-          submission.conversationCutoffMessageId
-        ) {
-          stageEnhancedMessageEdit({
-            messageId: submission.conversationCutoffMessageId,
-            sessionId: submission.sessionSnapshot.id,
-            mode: submission.promptEnhancementMode as ActivePromptEnhancementMode,
-            originalContent: resolvedTask,
-            enhancedContent: task,
-          });
-          return;
-        }
-
-        submitActiveSessionTask(task, resolvedTask);
       })();
     },
     [
       appendSteeringMessageToRunningTask,
       closeMessageEdit,
       enhancePromptForSubmission,
+      failQueuedPromptEnhancementFollowers,
       queueActiveSessionMessage,
+      rebindQueuedPromptEnhancementFollowers,
       requestTaskCancellation,
       invalidateAttachmentMutation,
       restoreSessionComposerInput,
       shouldActivateSubmittedSession,
-      stageEnhancedMessageEdit,
       startChatInterview,
       submitQuickVoiceCommand,
       taskSubmission,
@@ -7586,17 +7917,25 @@ export const useChatSessionController = (
 
   const handleSend = (draft = activeComposerSession.draft): void => {
     const task = draft.trim();
+    const currentEdit = activeMessageEditRef.current;
+    const activeComposerTaskId = getActiveDesktopTaskIdForSession(
+      activeComposerSession.id,
+    );
+    const activePromptEnhancementInput = activeComposerTaskId
+      ? activePromptEnhancementInputsRef.current.get(activeComposerTaskId)
+      : undefined;
 
     if (
       !task ||
       activeSessionImageInputError ||
-      activeSessionPromptEnhancementBusy ||
+      (currentEdit &&
+        (activeSessionPromptEnhancementBusy || activeComposerTaskId)) ||
+      (!currentEdit && activePromptEnhancementInput === task) ||
       promptEnhancementUnavailableReason
     ) {
       return;
     }
 
-    const currentEdit = messageEditRef.current;
     const committedHistorySession =
       !currentEdit && composerState.isHistoryPreviewActive
         ? composerState.commitHistoryPreview()
@@ -7626,11 +7965,6 @@ export const useChatSessionController = (
     );
     const selectedPromptEnhancementMode =
       currentEdit?.promptEnhancementMode ?? promptEnhancementMode;
-    const promptEnhancementSubmission =
-      resolveStagedPromptEnhancementSubmission(
-        selectedPromptEnhancementMode,
-        currentEdit?.stagedPromptEnhancement,
-      );
     const submission: ChatInputNeededSubmission = {
       kind: "active-session",
       sessionSnapshot,
@@ -7642,20 +7976,22 @@ export const useChatSessionController = (
         selectedPromptEnhancementMode,
         currentEdit?.interviewEnabled ?? chatInterviewEnabled,
       ),
-      promptEnhancementMode: promptEnhancementSubmission.mode,
-      ...(promptEnhancementSubmission.originalContent
-        ? {
-            promptEnhancementOriginalContent:
-              promptEnhancementSubmission.originalContent,
-          }
-        : {}),
+      promptEnhancementMode: selectedPromptEnhancementMode,
       interviewEnabled: currentEdit?.interviewEnabled ?? chatInterviewEnabled,
       runningAction:
-        !currentEdit && getSessionOverviewStatus(sessionSnapshot) === "running"
-          ? runningTaskMessageAction
+        !currentEdit &&
+        (getSessionOverviewStatus(sessionSnapshot) === "running" ||
+          Boolean(activeComposerTaskId))
+          ? activeSessionPromptEnhancementBusy ||
+            Boolean(activePromptEnhancementInput)
+            ? "queue"
+            : runningTaskMessageAction
           : null,
       ...(currentEdit
-        ? { conversationCutoffMessageId: currentEdit.messageId }
+        ? {
+            conversationCutoffMessageId: currentEdit.messageId,
+            preserveQueuedMessagesCreatedAfter: currentEdit.startedAt,
+          }
         : {}),
     };
 
@@ -7668,7 +8004,6 @@ export const useChatSessionController = (
 
   const currentChatInputNeededPlaceholder =
     chatInputNeeded?.placeholders[chatInputNeeded.currentIndex] ?? null;
-  const conversationPromptEnhancementPending = null;
   const conversationPromptEnhancementPreview =
     promptEnhancementPreview?.sessionId === state.activeSession.id
       ? {
@@ -7678,25 +8013,22 @@ export const useChatSessionController = (
           contextAttachments: promptEnhancementPreview.contextAttachments,
         }
       : null;
-  const composerPromptEnhancementPending =
-    activePromptEnhancementPending?.placement === "composer-blocker" ||
-    activePromptEnhancementPending?.placement === "edit-composer"
-      ? {
-          modeLabel:
-            PROMPT_ENHANCEMENT_LABELS[activePromptEnhancementPending.mode],
-        }
+  const editingPromptEnhancement =
+    messageEdit && activePromptEnhancementPending?.placement === "edit-composer"
+      ? { messageId: messageEdit.messageId }
       : null;
   const activeSessionExecuting =
-    getSessionOverviewStatus(state.activeSession) === "running";
-  const activeSessionPromptEnhancementCancellable =
-    activePromptEnhancementPending?.placement === "message" ||
-    activePromptEnhancementPending?.placement === "queued-message" ||
-    activePromptEnhancementPending?.placement === "edit-composer";
+    getSessionOverviewStatus(state.activeSession) === "running" &&
+    !activeSessionPromptEnhancementBusy;
 
   return {
     isDesktop,
     hasHydrated: state.hasHydrated,
     flushPersistence: state.flushPersistence,
+    fileManager: {
+      knownWorkspaceRoots: state.shellState.recentWorkspaces,
+      onRoute: applyFileManagerInvocationRoute,
+    },
     quickVoiceSettingsLoaded:
       runtime.userDesktopSettingsLoaded &&
       runtime.userSpeechToTextSettingsLoaded,
@@ -7817,7 +8149,6 @@ export const useChatSessionController = (
     },
     conversation: {
       visibleMessages: state.visibleMessages,
-      promptEnhancementPending: conversationPromptEnhancementPending,
       promptEnhancementPreview: conversationPromptEnhancementPreview,
       workspaceRoot: state.activeSession.workspace,
       aiContextMessageLimit,
@@ -7831,6 +8162,10 @@ export const useChatSessionController = (
       onEditMessage: taskSubmission.handleEditMessage,
       onStartEditMessage: handleStartMessageEdit,
       activeEditingMessageId: messageEdit?.messageId ?? null,
+      editingPromptEnhancement,
+      onCancelPromptEnhancement: activeSessionPromptEnhancementBusy
+        ? handleCancel
+        : undefined,
       onContinueTask: taskSubmission.handleContinueTask,
       onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
@@ -7883,7 +8218,7 @@ export const useChatSessionController = (
     },
     composer: {
       activeSession: activeComposerSession,
-      editingMessageId: messageEdit?.messageId ?? null,
+      editingMessageId: activeMessageEdit?.messageId ?? null,
       chooserProviders: providerChooserState.chooserProviders,
       activeRunMode,
       activeRunModeMeta,
@@ -7911,7 +8246,6 @@ export const useChatSessionController = (
       promptEnhancementWebSearchAvailable,
       promptEnhancementWebSearchUnavailableReason:
         PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON,
-      promptEnhancementPending: composerPromptEnhancementPending,
       statusMessage:
         promptEnhancementStatus?.sessionId === activeComposerSession.id
           ? promptEnhancementStatus
@@ -7939,7 +8273,9 @@ export const useChatSessionController = (
       },
       canSendMessage: canComposeMessage,
       sendDisabledReason: activeSessionSendDisabledReason,
-      runningTaskMessageAction,
+      runningTaskMessageAction: activeSessionPromptEnhancementBusy
+        ? "queue"
+        : runningTaskMessageAction,
       queuedMessages: activeSessionQueuedMessages.map((message) => {
         const blockerOutcome = message.blockedByTaskId
           ? getSessionTaskOutcome(state.activeSession, message.blockedByTaskId)
@@ -7956,6 +8292,10 @@ export const useChatSessionController = (
             ? {
                 promptEnhancementMode: message.promptEnhancementRequest.mode,
               }
+            : {}),
+          status: message.status,
+          ...(message.failureMessage
+            ? { failureMessage: message.failureMessage }
             : {}),
           canSendNow:
             message.dispatchPolicy === "after-success" &&
@@ -7994,7 +8334,7 @@ export const useChatSessionController = (
       onDeleteContextPack: handleDeleteContextPack,
       onExportContextPacks: handleExportContextPacks,
       onImportContextPacks: handleImportContextPacks,
-      onDraftChange: messageEdit
+      onDraftChange: activeMessageEdit
         ? (value: string) =>
             updateMessageEditSession((session) => ({
               ...session,
@@ -8002,7 +8342,7 @@ export const useChatSessionController = (
               updatedAt: Date.now(),
             }))
         : composerState.handleDraftChange,
-      onComposerHistoryNavigation: messageEdit
+      onComposerHistoryNavigation: activeMessageEdit
         ? () => {}
         : composerState.handleComposerHistoryNavigation,
       onRunningTaskMessageActionChange: setRunningTaskMessageAction,
@@ -8010,6 +8350,7 @@ export const useChatSessionController = (
       onQueuedMessageMove: handleQueuedMessageMove,
       onQueuedMessageReorder: handleQueuedMessageReorder,
       onQueuedMessageRemove: handleQueuedMessageRemove,
+      onQueuedMessageRetry: handleQueuedMessageRetry,
       onQueuedMessageSend: handleQueuedMessageSend,
       onQueuedMessageSelectContextAttachments:
         handleSelectQueuedMessageAttachments,
@@ -8018,11 +8359,11 @@ export const useChatSessionController = (
       onQueuedMessageClearContextAttachments:
         handleQueuedMessageClearContextAttachments,
       onSend: handleSend,
-      onCancel: messageEdit
-        ? () => handleCancelMessageEdit(messageEdit.messageId)
+      onCancel: activeMessageEdit
+        ? () => handleCancelMessageEdit(activeMessageEdit.messageId)
         : handleCancel,
-      isExecuting:
-        activeSessionExecuting || activeSessionPromptEnhancementCancellable,
+      isExecuting: activeSessionExecuting,
+      isPromptEnhancementActive: activeSessionPromptEnhancementBusy,
     },
     quickTaskComposer: {
       draft: quickTaskDraft,

@@ -53,7 +53,11 @@ import {
   ensurePersistentSchedulerService,
   listSchedulerJobs,
   pollAllSchedulerWorkspaces,
+  resolveFileManagerInvocation,
+  subscribeToFileManagerInvocations,
   syncScheduledPrompts,
+  takeFileManagerInvocations,
+  type FileManagerInvocation,
 } from "./runtime";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { CommandProvider } from "./commands/command-context";
@@ -183,6 +187,7 @@ export const ChatSession = (): JSX.Element => {
   const previousChatOperationIdsRef = useRef<Set<string>>(new Set());
   const appShellInteractionRevisionRef = useRef(0);
   const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const fileManagerDrainRef = useRef<Promise<void>>(Promise.resolve());
   const appShellStateRef = useRef(appShellState);
   appShellStateRef.current = appShellState;
   const activeApp = appShellState.activeApp;
@@ -305,6 +310,82 @@ export const ChatSession = (): JSX.Element => {
     },
     [activeApp, unsavedChangesMessage],
   );
+
+  const fileManagerStateRef = useRef({
+    controller: controller.fileManager,
+    selectApp,
+  });
+  fileManagerStateRef.current = {
+    controller: controller.fileManager,
+    selectApp,
+  };
+
+  useEffect(() => {
+    if (!appShellLoaded || !controller.hasHydrated || !controller.isDesktop) {
+      return;
+    }
+
+    let disposed = false;
+    let unsubscribe: (() => void) | null = null;
+
+    const routeInvocation = async (
+      invocation: FileManagerInvocation,
+    ): Promise<void> => {
+      const fileManager = fileManagerStateRef.current.controller;
+      const route = await resolveFileManagerInvocation(
+        invocation,
+        fileManager.knownWorkspaceRoots,
+      );
+
+      if (disposed) {
+        return;
+      }
+
+      await fileManager.onRoute(route);
+
+      if (!disposed) {
+        fileManagerStateRef.current.selectApp(
+          route.destination === "chat" ? "chat" : "workspaces",
+        );
+      }
+    };
+
+    const drainInvocations = (): void => {
+      fileManagerDrainRef.current = fileManagerDrainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const invocations = await takeFileManagerInvocations();
+
+          for (const invocation of invocations) {
+            if (disposed) {
+              return;
+            }
+            await routeInvocation(invocation);
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to open the file-manager selection", error);
+        });
+    };
+
+    void subscribeToFileManagerInvocations(drainInvocations)
+      .then((stopListening) => {
+        if (disposed) {
+          stopListening();
+          return;
+        }
+        unsubscribe = stopListening;
+        drainInvocations();
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to listen for file-manager selections", error);
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [appShellLoaded, controller.hasHydrated, controller.isDesktop]);
 
   const shellCommandStateRef = useRef({ activeApp, controller, selectApp });
   shellCommandStateRef.current = { activeApp, controller, selectApp };

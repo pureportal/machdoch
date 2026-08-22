@@ -2,8 +2,10 @@ import {
   FileImage,
   FileType,
   Import,
+  MoreVertical,
   Play,
   Search,
+  Trash2,
   Video,
   X,
 } from "lucide-react";
@@ -28,6 +30,7 @@ import type {
   ImportMediaModelAddonRequest,
   MediaAssetImportResult,
   MediaAssetCategory,
+  MediaAssetDeletionImpact,
   MediaAssetRecord,
   MediaAssetTagUpdate,
   MediaCivitaiModelAddonInspection,
@@ -38,6 +41,19 @@ import type {
   MediaModelDescriptor,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
 import { cn } from "../../lib/utils";
 import { MediaAssetImportDialog } from "./media-asset-import-dialog";
 import { MediaAssetMetadataEditor } from "./media-asset-metadata-editor";
@@ -89,9 +105,17 @@ interface MediaAssetsViewProps {
   ) => Promise<boolean>;
   onDismissImport: () => void;
   onUseModel: (model: MediaModelDescriptor) => void;
+  onRefreshLocalRuntime: () => void;
+  onVerifyModel: (model: MediaModelDescriptor) => void;
+  localRuntimeRefreshing: boolean;
+  verifyingModelId: string | null;
   onUseAddon: (addonId: string) => void;
   onUseAsReference: (asset: MediaAssetRecord) => void;
   onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
+  onInspectSettings: (runId: string) => void;
+  onReuseSettings: (runId: string) => void;
+  onPlanAssetDeletion: (assetId: string) => Promise<MediaAssetDeletionImpact>;
+  onDeleteAsset: (impact: MediaAssetDeletionImpact) => Promise<void>;
   onUpdateTags: (update: MediaAssetTagUpdate) => void;
   onUpdateMetadata: (
     resourceId: string,
@@ -146,9 +170,17 @@ export const MediaAssetsView = ({
   onImportAddon,
   onDismissImport,
   onUseModel,
+  onRefreshLocalRuntime,
+  onVerifyModel,
+  localRuntimeRefreshing,
+  verifyingModelId,
   onUseAddon,
   onUseAsReference,
   onOpenVideoAsFlow,
+  onInspectSettings,
+  onReuseSettings,
+  onPlanAssetDeletion,
+  onDeleteAsset,
   onUpdateTags,
   onUpdateMetadata,
   onCategoryStateChange,
@@ -165,6 +197,11 @@ export const MediaAssetsView = ({
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(
     null,
   );
+  const [contextAssetId, setContextAssetId] = useState<string | null>(null);
+  const [deletionImpact, setDeletionImpact] =
+    useState<MediaAssetDeletionImpact | null>(null);
+  const [deletionPending, setDeletionPending] = useState(false);
+  const [deletionError, setDeletionError] = useState<string | null>(null);
   const selectedModel =
     catalog.models.find((model) => model.id === selectedModelId) ?? null;
   const selectedAsset =
@@ -299,6 +336,38 @@ export const MediaAssetsView = ({
       ? inspectMediaModelAddonCompatibility(selectedModel, addon).status !==
           "incompatible"
       : false;
+  };
+
+  const requestAssetDeletion = async (assetId: string): Promise<void> => {
+    setContextAssetId(null);
+    setDeletionError(null);
+    setDeletionPending(true);
+    try {
+      setDeletionImpact(await onPlanAssetDeletion(assetId));
+    } catch (error: unknown) {
+      setDeletionError(
+        error instanceof Error ? error.message : "Could not inspect the asset.",
+      );
+    } finally {
+      setDeletionPending(false);
+    }
+  };
+
+  const confirmAssetDeletion = async (): Promise<void> => {
+    if (!deletionImpact || deletionPending) return;
+    setDeletionError(null);
+    setDeletionPending(true);
+    try {
+      await onDeleteAsset(deletionImpact);
+      if (selectedAssetId === deletionImpact.assetId) setSelectedAssetId(null);
+      setDeletionImpact(null);
+    } catch (error: unknown) {
+      setDeletionError(
+        error instanceof Error ? error.message : "Could not delete the asset.",
+      );
+    } finally {
+      setDeletionPending(false);
+    }
   };
 
   return (
@@ -468,14 +537,72 @@ export const MediaAssetsView = ({
                   cardRefs.current[asset.id] = element;
                 }}
                 className={cn(
-                  "overflow-hidden rounded-2xl border bg-slate-900/55",
+                  "relative overflow-hidden rounded-2xl border bg-slate-900/55",
                   selectedAssetId === asset.id
                     ? "border-sky-400"
                     : "border-slate-800",
                 )}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setContextAssetId(asset.id);
+                }}
               >
+                <DropdownMenu
+                  open={contextAssetId === asset.id}
+                  onOpenChange={(open) =>
+                    setContextAssetId(open ? asset.id : null)
+                  }
+                >
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Asset actions"
+                      className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {asset.kind === "image" ? (
+                      <DropdownMenuItem
+                        onSelect={() => onUseAsReference(asset)}
+                      >
+                        Use as reference
+                      </DropdownMenuItem>
+                    ) : null}
+                    {asset.kind === "image" ? (
+                      <DropdownMenuItem
+                        onSelect={() => onOpenVideoAsFlow(asset)}
+                      >
+                        Animate image
+                      </DropdownMenuItem>
+                    ) : null}
+                    {asset.operation?.kind !== "local-import" ? (
+                      <>
+                        <DropdownMenuItem
+                          onSelect={() => onInspectSettings(asset.runId)}
+                        >
+                          View settings
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => onReuseSettings(asset.runId)}
+                        >
+                          Reuse settings
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => void requestAssetDeletion(asset.id)}
+                    >
+                      <Trash2 /> Delete asset
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <button
                   type="button"
+                  aria-label={`View ${asset.kind === "vector" ? "SVG" : asset.kind} output ${asset.outputIndex + 1}`}
                   onClick={() => {
                     setSelectedResourceId(null);
                     setSelectedAssetId(asset.id);
@@ -506,7 +633,7 @@ export const MediaAssetsView = ({
                     </p>
                   ) : null}
                   <div className="flex gap-2">
-                    {asset.kind === "image" || asset.kind === "vector" ? (
+                    {asset.kind === "image" ? (
                       <Button
                         type="button"
                         variant="outline"
@@ -584,14 +711,39 @@ export const MediaAssetsView = ({
                 Use model
               </Button>
             ) : selectedResourceModel && selectedModelReadiness ? (
-              <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100">
-                <p>
-                  {selectedResourceModel.runtimeReadinessDiagnostic ??
-                    selectedModelReadiness.message}
-                </p>
-                <p className="mt-1 text-amber-300">
-                  {selectedModelReadiness.action}
-                </p>
+              <div className="space-y-2">
+                <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100">
+                  <p>
+                    {selectedResourceModel.runtimeReadinessDiagnostic ??
+                      selectedModelReadiness.message}
+                  </p>
+                </div>
+                {selectedResourceModel.runtimeReadiness ===
+                "runtime-unavailable" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={onRefreshLocalRuntime}
+                    disabled={localRuntimeRefreshing}
+                    className="w-full"
+                  >
+                    {localRuntimeRefreshing ? "Refreshing…" : "Refresh runtime"}
+                  </Button>
+                ) : selectedResourceModel.management.verification !== "none" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onVerifyModel(selectedResourceModel)}
+                    disabled={verifyingModelId === selectedResourceModel.id}
+                    className="w-full"
+                  >
+                    {verifyingModelId === selectedResourceModel.id
+                      ? "Verifying…"
+                      : "Verify model"}
+                  </Button>
+                ) : null}
               </div>
             ) : selectedResourceAddon &&
               addonCompatible(selectedResourceAddon.id) ? (
@@ -633,6 +785,26 @@ export const MediaAssetsView = ({
             controls={selectedAsset.kind === "video"}
             fit="contain"
           />
+          {selectedAsset.operation?.kind !== "local-import" ? (
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onInspectSettings(selectedAsset.runId)}
+              >
+                View settings
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onReuseSettings(selectedAsset.runId)}
+              >
+                Reuse settings
+              </Button>
+            </div>
+          ) : null}
           <MediaAssetMetadataEditor
             key={selectedAsset.id}
             resourceId={selectedAsset.id}
@@ -647,6 +819,7 @@ export const MediaAssetsView = ({
             }}
             categories={categories}
             showTriggerWords={false}
+            showSourceUrl={false}
             tagLoading={tagLoadingAssetId === selectedAsset.id}
             onChange={(nextMetadata) =>
               onUpdateMetadata(selectedAsset.id, nextMetadata)
@@ -691,6 +864,63 @@ export const MediaAssetsView = ({
           onClose={() => setCategoryManagerOpen(false)}
         />
       ) : null}
+      <Dialog
+        open={deletionImpact !== null || deletionError !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletionPending) {
+            setDeletionImpact(null);
+            setDeletionError(null);
+          }
+        }}
+      >
+        <DialogContent className="border-slate-700 bg-slate-950 text-slate-100 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete asset?</DialogTitle>
+          </DialogHeader>
+          {deletionImpact ? (
+            <p className="text-sm text-slate-300">
+              This removes the asset from Media Studio.
+              {deletionImpact.dependentAssetIds.length > 0
+                ? ` ${deletionImpact.dependentAssetIds.length} dependent ${deletionImpact.dependentAssetIds.length === 1 ? "asset will" : "assets will"} show a missing source.`
+                : ""}
+              {deletionImpact.exportCount > 0 ? " Exported copies remain." : ""}
+            </p>
+          ) : null}
+          {deletionImpact?.activeExportCount ? (
+            <p className="text-sm text-rose-300">
+              Deletion is blocked until the active export finishes.
+            </p>
+          ) : null}
+          {deletionError ? (
+            <p className="text-sm text-rose-300">{deletionError}</p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDeletionImpact(null);
+                setDeletionError(null);
+              }}
+              disabled={deletionPending}
+            >
+              Cancel
+            </Button>
+            {deletionImpact ? (
+              <Button
+                type="button"
+                onClick={() => void confirmAssetDeletion()}
+                disabled={
+                  deletionPending || deletionImpact.activeExportCount > 0
+                }
+                className="bg-rose-600 text-white hover:bg-rose-500"
+              >
+                Delete asset
+              </Button>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

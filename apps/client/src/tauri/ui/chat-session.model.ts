@@ -46,6 +46,7 @@ import {
   type TaskThinkingTrace,
 } from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
+import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -115,11 +116,7 @@ export interface ChatSessionMessageLifecycle {
   ownerLaunchId: string;
   ownerWindowId: string;
   ownerInstanceId: string;
-  placement?:
-    | "composer-blocker"
-    | "edit-composer"
-    | "message"
-    | "queued-message";
+  placement?: "edit-composer" | "message" | "queued-message";
 }
 
 export type ChatSessionTaskOutcomeStatus =
@@ -297,6 +294,9 @@ export interface ChatSessionQueuedMessage {
   blockerUpdatedAt: number;
   orderRank: number;
   orderUpdatedAt: number;
+  status: "queued" | "enhancing" | "dispatching" | "failed";
+  statusUpdatedAt: number;
+  failureMessage?: string;
   contextAttachments: ChatSessionContextAttachment[];
   createdAt: number;
   updatedAt: number;
@@ -590,7 +590,7 @@ const normalizeStringArray = (value: unknown): string[] => {
 };
 
 const createWorkspaceHistoryKey = (workspace: string): string => {
-  return workspace.trim().replace(/\\/gu, "/").toLowerCase();
+  return createWorkspaceRootKey(workspace);
 };
 
 export const normalizeRecentWorkspaces = (value: unknown): string[] => {
@@ -2192,7 +2192,6 @@ const normalizeMessageLifecycle = (
   source: ChatSessionMessageSource | undefined,
 ): ChatSessionMessageLifecycle | undefined => {
   const promptEnhancementPlacements = [
-    "composer-blocker",
     "edit-composer",
     "message",
     "queued-message",
@@ -2696,6 +2695,17 @@ const normalizeQueuedSessionMessages = (
     );
     const orderRank = normalizeOptionalFiniteNumber(entry.orderRank);
     const orderUpdatedAt = normalizeOptionalFiniteNumber(entry.orderUpdatedAt);
+    const status =
+      entry.status === "enhancing" ||
+      entry.status === "dispatching" ||
+      entry.status === "failed"
+        ? entry.status
+        : "queued";
+    const statusUpdatedAt =
+      normalizeOptionalFiniteNumber(entry.statusUpdatedAt) ?? updatedAt;
+    const failureMessage = truncatePersistedText(
+      normalizeString(entry.failureMessage),
+    ).trim();
     const contentUpdatedAt = normalizeOptionalFiniteNumber(
       entry.contentUpdatedAt,
     );
@@ -2745,6 +2755,9 @@ const normalizeQueuedSessionMessages = (
       blockerUpdatedAt,
       orderRank,
       orderUpdatedAt,
+      status,
+      statusUpdatedAt,
+      ...(status === "failed" && failureMessage ? { failureMessage } : {}),
       contextAttachments: normalizeContextAttachments(
         entry.contextAttachments,
         `queued-context-${id}`,
@@ -2754,7 +2767,13 @@ const normalizeQueuedSessionMessages = (
     });
   }
 
-  return queuedMessages;
+  return queuedMessages.sort(
+    (left, right) =>
+      left.sessionId.localeCompare(right.sessionId) ||
+      left.orderRank - right.orderRank ||
+      left.createdAt - right.createdAt ||
+      left.id.localeCompare(right.id),
+  );
 };
 
 export const normalizeShellState = (value: unknown): ShellPersistedState => {

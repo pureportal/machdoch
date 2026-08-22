@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createImageEditFlow,
   createImageRecipeFlow,
   createImageToVideoFlow,
 } from "./compiler.js";
@@ -22,7 +23,10 @@ import {
   removeMediaFlowNode,
   updateMediaFlowNodeConfig,
   updateMediaFlowNodeConfigs,
+  updateMediaFlowNodeLabel,
+  validateMediaFlowDocument,
   validateMediaFlowGraph,
+  validateMediaImageReferenceTopology,
   validateMediaFlowNode,
   validateMediaFlowNodes,
 } from "./node-registry.js";
@@ -39,6 +43,9 @@ const SETTINGS = {
   transparentBackground: true,
   qualityGateEnabled: true,
   referenceImages: [],
+  baseImageAssetId: null,
+  poseImageAssetId: null,
+  poseStrength: 1,
   modelAddons: [],
 } as const satisfies ImageRecipeSettings;
 
@@ -65,14 +72,20 @@ describe("media node registry", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(21);
+    expect(listMediaNodeDefinitions()).toHaveLength(25);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
-      expect(definition.fields.every((field) => "defaultValue" in field)).toBe(true);
-      expect(definition.fields.every((field) => field.examples.length > 0)).toBe(true);
-      expect([...definition.inputs, ...definition.outputs].every((port) => port.dataType)).toBe(
+      expect(definition.fields.every((field) => "defaultValue" in field)).toBe(
         true,
       );
+      expect(
+        definition.fields.every((field) => field.examples.length > 0),
+      ).toBe(true);
+      expect(
+        [...definition.inputs, ...definition.outputs].every(
+          (port) => port.dataType,
+        ),
+      ).toBe(true);
     }
   });
 
@@ -83,7 +96,7 @@ describe("media node registry", () => {
     });
     expect(getMediaNodeDefinition("task.edit-image")).toMatchObject({
       layer: "task",
-      inputs: [
+      inputs: expect.arrayContaining([
         expect.objectContaining({ id: "prompt", dataType: "prompt" }),
         expect.objectContaining({
           id: "image",
@@ -91,8 +104,22 @@ describe("media node registry", () => {
           cardinality: "collection",
           maxConnections: 8,
         }),
-      ],
+        expect.objectContaining({ id: "seed", dataType: "seed" }),
+      ]),
       outputs: [expect.objectContaining({ id: "image", dataType: "image" })],
+    });
+  });
+
+  it("allows an unconnected seed source for runtime-random image generation", () => {
+    const withSeed = addMediaFlowNode({
+      flow: createSimpleFlow(),
+      type: "source.seed",
+      updatedAt: "2026-07-14T10:00:01.000Z",
+    });
+
+    expect(validateMediaFlowGraph(withSeed.flow)).toEqual([]);
+    expect(getMediaNodeDefinition("source.seed")).toMatchObject({
+      outputs: [expect.objectContaining({ id: "seed", required: false })],
     });
   });
 
@@ -179,8 +206,7 @@ describe("media node registry", () => {
     expect(
       withoutFirstFrame.edges.some(
         (edge) =>
-          edge.toNodeId === "generate-video" &&
-          edge.toPortId === "last-frame",
+          edge.toNodeId === "generate-video" && edge.toPortId === "last-frame",
       ),
     ).toBe(false);
   });
@@ -195,7 +221,7 @@ describe("media node registry", () => {
     expect(stepMediaGalleryAssetId([], null, 1)).toBeNull();
   });
 
-  it("keeps multiple labeled image references connected to an edit collection", () => {
+  it("keeps distinct image roles connected to an edit collection", () => {
     const source = createSimpleFlow();
     const withoutGenerate = removeMediaFlowNode({
       flow: source,
@@ -217,8 +243,29 @@ describe("media node registry", () => {
       type: "source.image",
       updatedAt: "2026-07-14T10:01:03.000Z",
     });
-    const withFirst = connectMediaFlowPorts({
+    const configuredFirst = updateMediaFlowNodeConfig({
       flow: secondSource.flow,
+      nodeId: firstSource.nodeId,
+      fieldId: "assetId",
+      value: "asset:base",
+      updatedAt: "2026-07-14T10:01:03.100Z",
+    });
+    const configuredSecond = updateMediaFlowNodeConfig({
+      flow: configuredFirst,
+      nodeId: secondSource.nodeId,
+      fieldId: "referenceRole",
+      value: "detail",
+      updatedAt: "2026-07-14T10:01:03.200Z",
+    });
+    const configuredSources = updateMediaFlowNodeConfig({
+      flow: configuredSecond,
+      nodeId: secondSource.nodeId,
+      fieldId: "assetId",
+      value: "asset:detail",
+      updatedAt: "2026-07-14T10:01:03.300Z",
+    });
+    const withFirst = connectMediaFlowPorts({
+      flow: configuredSources,
       request: {
         fromNodeId: firstSource.nodeId,
         fromPortId: "image",
@@ -240,7 +287,8 @@ describe("media node registry", () => {
 
     expect(
       withBoth.edges.filter(
-        (edge) => edge.toNodeId === editResult.nodeId && edge.toPortId === "image",
+        (edge) =>
+          edge.toNodeId === editResult.nodeId && edge.toPortId === "image",
       ),
     ).toHaveLength(2);
   });
@@ -289,7 +337,7 @@ describe("media node registry", () => {
     const node = {
       id: "convert",
       type: "operation.format-convert",
-      version: 1,
+      version: 1 as const,
       label: "Convert",
       layer: "operation",
       config: {
@@ -345,14 +393,28 @@ describe("media node registry", () => {
     expect(generate).toBeDefined();
     const invalid = {
       ...generate!,
-      config: { ...generate!.config, outputCount: 9, providerPolicy: "offline", extra: true },
+      config: {
+        ...generate!.config,
+        outputCount: 9,
+        providerPolicy: "offline",
+        extra: true,
+      },
     };
 
     expect(validateMediaFlowNode(invalid)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: "UNKNOWN_CONFIG_FIELD", fieldId: "extra" }),
-        expect.objectContaining({ code: "INVALID_CONFIG_VALUE", fieldId: "outputCount" }),
-        expect.objectContaining({ code: "INVALID_CONFIG_VALUE", fieldId: "providerPolicy" }),
+        expect.objectContaining({
+          code: "UNKNOWN_CONFIG_FIELD",
+          fieldId: "extra",
+        }),
+        expect.objectContaining({
+          code: "INVALID_CONFIG_VALUE",
+          fieldId: "outputCount",
+        }),
+        expect.objectContaining({
+          code: "INVALID_CONFIG_VALUE",
+          fieldId: "providerPolicy",
+        }),
       ]),
     );
   });
@@ -365,7 +427,9 @@ describe("media node registry", () => {
       value: 5,
       updatedAt: "2026-07-14T10:01:00.000Z",
     });
-    expect(countUpdated.nodes.find((node) => node.id === "asset-output")?.config).toMatchObject({
+    expect(
+      countUpdated.nodes.find((node) => node.id === "asset-output")?.config,
+    ).toMatchObject({
       outputCount: 5,
     });
 
@@ -376,7 +440,9 @@ describe("media node registry", () => {
       value: "webp",
       updatedAt: "2026-07-14T10:02:00.000Z",
     });
-    expect(formatUpdated.nodes.find((node) => node.id === "asset-output")?.config).toMatchObject({
+    expect(
+      formatUpdated.nodes.find((node) => node.id === "asset-output")?.config,
+    ).toMatchObject({
       format: "webp",
     });
 
@@ -387,7 +453,9 @@ describe("media node registry", () => {
       value: "quality.product.v2",
       updatedAt: "2026-07-14T10:03:00.000Z",
     });
-    expect(profileUpdated.nodes.find((node) => node.id === "quality-gate")?.config).toMatchObject({
+    expect(
+      profileUpdated.nodes.find((node) => node.id === "quality-gate")?.config,
+    ).toMatchObject({
       profile: "quality.product.v2",
     });
   });
@@ -464,7 +532,10 @@ describe("media node registry", () => {
     };
     expect(validateMediaFlowGraph(typeMismatch)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: "PORT_TYPE_MISMATCH", nodeId: "quality-gate" }),
+        expect.objectContaining({
+          code: "PORT_TYPE_MISMATCH",
+          nodeId: "quality-gate",
+        }),
         expect.objectContaining({
           code: "INPUT_CARDINALITY_EXCEEDED",
           nodeId: "quality-gate",
@@ -504,18 +575,18 @@ describe("media node registry", () => {
 
     const definition = getMediaNodeDefinition("task.generate-image");
     expect(definition).not.toBeNull();
-    const config = flow.nodes.find((node) => node.id === "generate")?.config ?? {};
-    expect(listVisibleMediaNodeFields(definition!, config, "Basic").map((field) => field.id)).toEqual([
-      "providerPolicy",
-      "aspectRatio",
-      "outputCount",
-      "outputFormat",
-    ]);
-    expect(listVisibleMediaNodeFields(definition!, config, "Expert").map((field) => field.id)).toEqual([
-      "modelId",
-      "modelAddons",
-      "memoryProfile",
-    ]);
+    const config =
+      flow.nodes.find((node) => node.id === "generate")?.config ?? {};
+    expect(
+      listVisibleMediaNodeFields(definition!, config, "Basic").map(
+        (field) => field.id,
+      ),
+    ).toEqual(["providerPolicy", "aspectRatio", "outputCount", "outputFormat"]);
+    expect(
+      listVisibleMediaNodeFields(definition!, config, "Expert").map(
+        (field) => field.id,
+      ),
+    ).toEqual(["modelId", "modelAddons", "memoryProfile"]);
   });
 
   it("defines human review as a bounded typed pass-through gate", () => {
@@ -533,15 +604,21 @@ describe("media node registry", () => {
     });
     const review = added.flow.nodes.find((node) => node.id === added.nodeId);
     expect(review?.config).toEqual({
-      instructions: "Select the strongest candidate and reject outputs with visible technical defects.",
+      instructions:
+        "Select the strongest candidate and reject outputs with visible technical defects.",
       maxSelections: 1,
       requireComment: false,
     });
-    expect(validateMediaFlowNode({
-      ...review!,
-      config: { ...review!.config, maxSelections: 9 },
-    })).toContainEqual(
-      expect.objectContaining({ code: "INVALID_CONFIG_VALUE", fieldId: "maxSelections" }),
+    expect(
+      validateMediaFlowNode({
+        ...review!,
+        config: { ...review!.config, maxSelections: 9 },
+      }),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "INVALID_CONFIG_VALUE",
+        fieldId: "maxSelections",
+      }),
     );
 
     const reviewInput = connectMediaFlowPorts({
@@ -566,7 +643,8 @@ describe("media node registry", () => {
     });
     expect(validateMediaFlowGraph(reviewedOutput)).toEqual([]);
     expect(
-      reviewedOutput.nodes.find((node) => node.id === "asset-output")?.config.outputCount,
+      reviewedOutput.nodes.find((node) => node.id === "asset-output")?.config
+        .outputCount,
     ).toBe(1);
     const expandedReview = updateMediaFlowNodeConfig({
       flow: reviewedOutput,
@@ -576,7 +654,8 @@ describe("media node registry", () => {
       updatedAt: "2026-07-14T10:04:33.000Z",
     });
     expect(
-      expandedReview.nodes.find((node) => node.id === "asset-output")?.config.outputCount,
+      expandedReview.nodes.find((node) => node.id === "asset-output")?.config
+        .outputCount,
     ).toBe(2);
   });
 
@@ -601,7 +680,10 @@ describe("media node registry", () => {
         config: { prompt: "Unsafe\u0000prompt" },
       }),
     ).toContainEqual(
-      expect.objectContaining({ code: "INVALID_CONFIG_VALUE", fieldId: "prompt" }),
+      expect.objectContaining({
+        code: "INVALID_CONFIG_VALUE",
+        fieldId: "prompt",
+      }),
     );
   });
 
@@ -613,7 +695,9 @@ describe("media node registry", () => {
     });
 
     expect(added.nodeId).toBe("subject-cutout");
-    expect(added.flow.nodes.find((node) => node.id === added.nodeId)).toMatchObject({
+    expect(
+      added.flow.nodes.find((node) => node.id === added.nodeId),
+    ).toMatchObject({
       label: "Cut out subject",
       layer: "operation",
       config: {
@@ -643,21 +727,24 @@ describe("media node registry", () => {
     expect(removed.nodes.some((node) => node.id === "generate")).toBe(false);
     expect(
       removed.edges.some(
-        (edge) => edge.fromNodeId === "generate" || edge.toNodeId === "generate",
+        (edge) =>
+          edge.fromNodeId === "generate" || edge.toNodeId === "generate",
       ),
     ).toBe(false);
   });
 
   it("validates an ordered, unique subject-cutout model fallback policy", () => {
     const definition = getMediaNodeDefinition("operation.subject-cutout");
-    expect(definition?.fields.find((field) => field.id === "modelPriority")).toMatchObject({
+    expect(
+      definition?.fields.find((field) => field.id === "modelPriority"),
+    ).toMatchObject({
       kind: "model-priority",
       defaultValue: [...DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY],
     });
     const baseNode = {
       id: "subject-cutout",
       type: "operation.subject-cutout",
-      version: 1,
+      version: 1 as const,
       label: "Cut out subject",
       layer: "operation",
       config: { outputMatte: true },
@@ -668,7 +755,10 @@ describe("media node registry", () => {
         config: { modelPriority: [], outputMatte: true },
       }),
     ).toContainEqual(
-      expect.objectContaining({ code: "INVALID_CONFIG_VALUE", fieldId: "modelPriority" }),
+      expect.objectContaining({
+        code: "INVALID_CONFIG_VALUE",
+        fieldId: "modelPriority",
+      }),
     );
     expect(
       validateMediaFlowNode({
@@ -679,7 +769,10 @@ describe("media node registry", () => {
         },
       }),
     ).toContainEqual(
-      expect.objectContaining({ code: "INVALID_CONFIG_VALUE", fieldId: "modelPriority" }),
+      expect.objectContaining({
+        code: "INVALID_CONFIG_VALUE",
+        fieldId: "modelPriority",
+      }),
     );
   });
 
@@ -744,7 +837,10 @@ describe("media node registry", () => {
         toNodeId: firstAdded.nodeId,
         toPortId: "image",
       }),
-    ).toEqual({ valid: false, reason: "This connection would create a cycle." });
+    ).toEqual({
+      valid: false,
+      reason: "This connection would create a cycle.",
+    });
     expect(
       inspectMediaFlowConnection(chain, {
         fromNodeId: "prompt",
@@ -753,7 +849,10 @@ describe("media node registry", () => {
         toPortId: "image",
       }),
     ).toEqual(
-      expect.objectContaining({ valid: false, reason: expect.stringContaining("prompt") }),
+      expect.objectContaining({
+        valid: false,
+        reason: expect.stringContaining("prompt"),
+      }),
     );
 
     const disconnected = disconnectMediaFlowInput({
@@ -780,10 +879,13 @@ describe("media node registry", () => {
     });
 
     expect(pasted.nodeId).toBe("quality-analyze-2");
-    expect(pasted.flow.nodes.find((node) => node.id === pasted.nodeId)).toMatchObject({
+    expect(
+      pasted.flow.nodes.find((node) => node.id === pasted.nodeId),
+    ).toMatchObject({
       type: "operation.quality-analyze",
       label: "Analyze quality copy",
-      config: source.nodes.find((node) => node.id === "quality-analyze")?.config,
+      config: source.nodes.find((node) => node.id === "quality-analyze")
+        ?.config,
     });
     expect(
       pasted.flow.edges.filter((edge) => edge.toNodeId === pasted.nodeId),
@@ -856,7 +958,8 @@ describe("media node registry", () => {
       }),
     ).toEqual({
       valid: false,
-      reason: "Every clipboard node must have a unique bounded source identity.",
+      reason:
+        "Every clipboard node must have a unique bounded source identity.",
     });
     expect(
       inspectMediaFlowNodePaste(
@@ -887,5 +990,183 @@ describe("media node registry", () => {
       "quality-gate",
       "asset-output",
     ]);
+  });
+
+  it("persists an edited node name without changing its execution topology", () => {
+    const flow = createFlow();
+    const renamed = updateMediaFlowNodeLabel({
+      flow,
+      nodeId: "generate",
+      label: "Strong detail",
+      updatedAt: "2026-07-14T11:13:00.000Z",
+    });
+
+    expect(renamed.updatedAt).toBe("2026-07-14T11:13:00.000Z");
+    expect(renamed.nodes.find((node) => node.id === "generate")?.label).toBe(
+      "Strong detail",
+    );
+    expect(validateMediaFlowDocument(renamed)).toEqual([]);
+    expect(() =>
+      updateMediaFlowNodeLabel({
+        flow: renamed,
+        nodeId: "generate",
+        label: " Strong detail ",
+        updatedAt: "2026-07-14T11:14:00.000Z",
+      }),
+    ).toThrow("trimmed");
+  });
+
+  it("rejects ambiguous image-source topology while allowing each base image in a separate run", () => {
+    const settings = {
+      ...SETTINGS,
+      transparentBackground: false,
+      qualityGateEnabled: false,
+    };
+    const firstRun = createImageEditFlow({
+      id: "flow:first-base",
+      createdAt: "2026-07-14T11:14:00.000Z",
+      settings,
+      sourceAssetId: "asset:first",
+    });
+    const secondRun = createImageEditFlow({
+      id: "flow:second-base",
+      createdAt: "2026-07-14T11:14:00.000Z",
+      settings,
+      sourceAssetId: "asset:second",
+    });
+    const secondSource = {
+      id: "second-source",
+      type: "source.image" as const,
+      version: 1 as const,
+      label: "Second base",
+      layer: "source" as const,
+      config: {
+        assetId: "asset:second",
+        referenceRole: "base",
+        influence: 1,
+      },
+    };
+    const ambiguous: MediaFlow = {
+      ...firstRun,
+      nodes: [...firstRun.nodes, secondSource],
+      edges: [
+        ...firstRun.edges,
+        {
+          id: "second-source-to-edit",
+          fromNodeId: secondSource.id,
+          fromPortId: "image",
+          toNodeId: "edit",
+          toPortId: "image",
+        },
+      ],
+    };
+
+    expect(validateMediaImageReferenceTopology(firstRun)).toEqual([]);
+    expect(validateMediaImageReferenceTopology(secondRun)).toEqual([]);
+    expect(validateMediaFlowDocument(ambiguous)).toContainEqual(
+      expect.objectContaining({
+        code: "INVALID_IMAGE_REFERENCE_TOPOLOGY",
+        message:
+          "An image run accepts one base image. Run each base image separately.",
+      }),
+    );
+    expect(
+      inspectMediaFlowConnection(
+        {
+          ...firstRun,
+          nodes: [...firstRun.nodes, secondSource],
+        },
+        {
+          fromNodeId: secondSource.id,
+          fromPortId: "image",
+          toNodeId: "edit",
+          toPortId: "image",
+        },
+      ),
+    ).toEqual({
+      valid: false,
+      reason:
+        "An image run accepts one base image. Run each base image separately.",
+    });
+
+    const validReference = {
+      ...ambiguous,
+      nodes: ambiguous.nodes.map((node) =>
+        node.id === secondSource.id
+          ? {
+              ...node,
+              config: { ...node.config, referenceRole: "subject" },
+            }
+          : node,
+      ),
+    };
+    expect(() =>
+      updateMediaFlowNodeConfig({
+        flow: validReference,
+        nodeId: secondSource.id,
+        fieldId: "referenceRole",
+        value: "base",
+        updatedAt: "2026-07-14T11:15:00.000Z",
+      }),
+    ).toThrow("one base image");
+  });
+
+  it("rejects repeated image assets and pose sources for one image task", () => {
+    const flow = createImageEditFlow({
+      id: "flow:repeated-image",
+      createdAt: "2026-07-14T11:16:00.000Z",
+      settings: {
+        ...SETTINGS,
+        transparentBackground: false,
+        qualityGateEnabled: false,
+      },
+      sourceAssetId: "asset:shared",
+    });
+    const repeated = {
+      id: "repeated-source",
+      type: "source.image" as const,
+      version: 1 as const,
+      label: "Repeated asset",
+      layer: "source" as const,
+      config: {
+        assetId: "asset:shared",
+        referenceRole: "pose",
+        influence: 1,
+      },
+    };
+    const secondPose = {
+      ...repeated,
+      id: "second-pose",
+      label: "Second pose",
+      config: { assetId: "asset:pose", referenceRole: "pose", influence: 1 },
+    };
+    const invalid: MediaFlow = {
+      ...flow,
+      nodes: [...flow.nodes, repeated, secondPose],
+      edges: [
+        ...flow.edges,
+        {
+          id: "repeated-to-edit",
+          fromNodeId: repeated.id,
+          fromPortId: "image",
+          toNodeId: "edit",
+          toPortId: "image",
+        },
+        {
+          id: "pose-to-edit",
+          fromNodeId: secondPose.id,
+          fromPortId: "image",
+          toNodeId: "edit",
+          toPortId: "image",
+        },
+      ],
+    };
+
+    expect(validateMediaImageReferenceTopology(invalid).map((issue) => issue.message)).toEqual(
+      expect.arrayContaining([
+        "An image run accepts one pose image.",
+        "An image asset can be connected only once to the same image task.",
+      ]),
+    );
   });
 });

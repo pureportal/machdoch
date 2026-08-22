@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { CircleX, Sparkles } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
 import type {
   MediaAssetRecord,
@@ -21,23 +21,42 @@ export const MediaAssetPreview = ({
   fit = "cover",
 }: MediaAssetPreviewProps): JSX.Element => {
   const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
     let objectUrl: string | null = null;
     setUrl(null);
+    setFailed(false);
     void readMediaAssetReferencePreview(asset.id, 768)
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setFailed(true);
+      });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [asset.id]);
+
+  if (failed) {
+    return (
+      <div
+        role="img"
+        aria-label="Preview unavailable"
+        className={cn(
+          "flex items-center justify-center bg-rose-950/35 text-rose-300",
+          className,
+        )}
+      >
+        <CircleX className="h-8 w-8" />
+      </div>
+    );
+  }
 
   if (!url) {
     return <div className={cn("animate-pulse bg-slate-900", className)} />;
@@ -52,10 +71,16 @@ export const MediaAssetPreview = ({
       loop
       playsInline
       preload="metadata"
+      onError={() => setFailed(true)}
       className={cn(objectFit, className)}
     />
   ) : (
-    <img src={url} alt="" className={cn(objectFit, className)} />
+    <img
+      src={url}
+      alt=""
+      onError={() => setFailed(true)}
+      className={cn(objectFit, className)}
+    />
   );
 };
 

@@ -34,6 +34,9 @@ const createFlow = (): MediaFlow =>
       transparentBackground: false,
       qualityGateEnabled: false,
       referenceImages: [],
+      baseImageAssetId: null,
+      poseImageAssetId: null,
+      poseStrength: 1,
       modelAddons: [],
     },
   });
@@ -63,13 +66,18 @@ describe("media flow variables", () => {
       defaultValue: "ceramic",
     } as MediaFlowVariable;
     const templated = updatePrompt(
-      replaceMediaFlowVariable({ flow: added.flow, variable, updatedAt: CREATED_AT }),
+      replaceMediaFlowVariable({
+        flow: added.flow,
+        variable,
+        updatedAt: CREATED_AT,
+      }),
       "Editorial {{variable-1}} lamp",
     );
 
     expect(
-      resolveMediaFlowVariables(templated).flow.nodes.find((node) => node.id === "prompt")
-        ?.config.prompt,
+      resolveMediaFlowVariables(templated).flow.nodes.find(
+        (node) => node.id === "prompt",
+      )?.config.prompt,
     ).toBe("Editorial ceramic lamp");
     const bound = setMediaFlowVariableBinding({
       flow: templated,
@@ -125,7 +133,10 @@ describe("media flow variables", () => {
       ...bound,
       nodes: bound.nodes.map((node) =>
         node.id === "generate"
-          ? { ...node, config: { ...node.config, outputCount: "{{variable-1}}" } }
+          ? {
+              ...node,
+              config: { ...node.config, outputCount: "{{variable-1}}" },
+            }
           : node,
       ),
     };
@@ -140,7 +151,9 @@ describe("media flow variables", () => {
 
     expect(plan.preflight.estimatedOutputs).toBe(3);
     expect(
-      plan.diagnostics.some((diagnostic) => diagnostic.code === "NODE_SCHEMA_INVALID"),
+      plan.diagnostics.some(
+        (diagnostic) => diagnostic.code === "NODE_SCHEMA_INVALID",
+      ),
     ).toBe(false);
 
     const unknownPlan = compileMediaFlow({
@@ -152,7 +165,10 @@ describe("media flow variables", () => {
       compiledAt: CREATED_AT,
     });
     expect(unknownPlan.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "VARIABLE_REFERENCE_UNKNOWN", nodeId: "prompt" }),
+      expect.objectContaining({
+        code: "VARIABLE_REFERENCE_UNKNOWN",
+        nodeId: "prompt",
+      }),
     );
     expect(unknownPlan.status).toBe("blocked");
   });
@@ -206,18 +222,24 @@ describe("media flow variables", () => {
       updatedAt: CREATED_AT,
     });
     expect(resolveMediaFlowVariables(optional).issues).toEqual([]);
-    expect(createMediaFlowPreset({
-      flow: optional,
-      name: "Optional input",
-      updatedAt: CREATED_AT,
-    }).flow.presets[0]?.values).toEqual({});
+    expect(
+      createMediaFlowPreset({
+        flow: optional,
+        name: "Optional input",
+        updatedAt: CREATED_AT,
+      }).flow.presets[0]?.values,
+    ).toEqual({});
 
-    expect(resolveMediaFlowVariables(
-      updatePrompt(optional, "Portrait {{variable-1}}"),
-    ).issues).toContainEqual(expect.objectContaining({
-      code: "VARIABLE_REQUIRED",
-      nodeId: "prompt",
-      variableId: "variable-1",
-    }));
+    expect(
+      resolveMediaFlowVariables(
+        updatePrompt(optional, "Portrait {{variable-1}}"),
+      ).issues,
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "VARIABLE_REQUIRED",
+        nodeId: "prompt",
+        variableId: "variable-1",
+      }),
+    );
   });
 });

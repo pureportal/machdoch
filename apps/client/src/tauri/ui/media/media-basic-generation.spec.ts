@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
 import type { MediaAssetRecord } from "../../../core/media/contracts.js";
-import { createBasicVideoDraftFromImage } from "./media-basic-generation";
+import {
+  createBasicMediaRecipeFlow,
+  createBasicVideoDraftFromImage,
+} from "./media-basic-generation";
 import {
   DEFAULT_MEDIA_STUDIO_STATE,
   normalizeMediaStudioState,
@@ -46,7 +50,7 @@ describe("createBasicVideoDraftFromImage", () => {
           { assetId: "old-reference", role: "base" as const, influence: 1 },
         ],
         editMask: {
-          schemaVersion: 1 as const,
+          schemaVersion: 2 as const,
           sourceAssetId: "old-reference",
           inverted: false,
           strokes: [],
@@ -68,5 +72,65 @@ describe("createBasicVideoDraftFromImage", () => {
     expect(next.videoRecipe.transparentBackground).toBe(true);
     expect(next.flow).toBe(state.flow);
     expect(next.flowLayout).toBe(state.flowLayout);
+  });
+});
+
+describe("createBasicMediaRecipeFlow", () => {
+  it("marks the primary remote reference as the required base image", () => {
+    const remoteModel = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: true,
+      isLocalFluxInstalled: false,
+    }).models.find((model) => model.id === "openai:gpt-image-2")!;
+    const state = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
+
+    const flow = createBasicMediaRecipeFlow({
+      id: "media-basic-remote-reference",
+      createdAt: "2026-08-21T15:00:00.000Z",
+      target: "image",
+      models: [remoteModel],
+      settings: {
+        ...state.recipe,
+        prompt: "Refine the product photograph",
+        providerPolicy: "remote",
+        modelId: remoteModel.id,
+        referenceImages: [
+          { assetId: portraitImage.id, role: "subject", influence: 1 },
+        ],
+      },
+    });
+
+    expect(
+      flow.nodes.find((node) => node.type === "source.image")?.config
+        .referenceRole,
+    ).toBe("base");
+  });
+
+  it("preserves semantic local reference roles", () => {
+    const localModel = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).models.find((model) => model.id === "local:flux-2-klein-4b")!;
+    const state = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
+
+    const flow = createBasicMediaRecipeFlow({
+      id: "media-basic-local-reference",
+      createdAt: "2026-08-21T15:00:00.000Z",
+      target: "image",
+      models: [localModel],
+      settings: {
+        ...state.recipe,
+        prompt: "Preserve this subject",
+        providerPolicy: "local",
+        modelId: localModel.id,
+        referenceImages: [
+          { assetId: portraitImage.id, role: "subject", influence: 1 },
+        ],
+      },
+    });
+
+    expect(
+      flow.nodes.find((node) => node.type === "source.image")?.config
+        .referenceRole,
+    ).toBe("subject");
   });
 });

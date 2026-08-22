@@ -13,6 +13,7 @@ import {
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
   type ChatSessionMessageSettings,
+  type ChatSessionQueuedMessage,
   type ChatSessionQueuedPromptEnhancementRequest,
   type ChatSessionRecord,
   type ChatSessionTaskAction,
@@ -144,6 +145,64 @@ const hasUserMessageForTask = (
   );
 };
 
+export const reconcileQueuedMessagesForTaskSubmission = (input: {
+  queuedSessionMessages: ChatSessionQueuedMessage[];
+  queuedMessageTombstones: Record<string, number>;
+  sessionId: string;
+  conversationCutoffMessageId?: string;
+  preserveQueuedMessagesCreatedAfter?: number;
+  consumedQueuedMessageId?: string;
+  timestamp: number;
+}): {
+  queuedSessionMessages: ChatSessionQueuedMessage[];
+  queuedMessageTombstones: Record<string, number>;
+} | null => {
+  if (!input.conversationCutoffMessageId && !input.consumedQueuedMessageId) {
+    return null;
+  }
+
+  const queuedSessionMessages = input.queuedSessionMessages.filter(
+    (message) => {
+      if (message.id === input.consumedQueuedMessageId) {
+        return false;
+      }
+
+      if (
+        !input.conversationCutoffMessageId ||
+        message.sessionId !== input.sessionId
+      ) {
+        return true;
+      }
+
+      return (
+        input.preserveQueuedMessagesCreatedAfter !== undefined &&
+        message.createdAt >= input.preserveQueuedMessagesCreatedAfter
+      );
+    },
+  );
+  const queuedMessageIds = new Set(
+    queuedSessionMessages.map((message) => message.id),
+  );
+  const queuedMessageTombstones = {
+    ...input.queuedMessageTombstones,
+  };
+
+  for (const message of input.queuedSessionMessages) {
+    if (!queuedMessageIds.has(message.id)) {
+      queuedMessageTombstones[message.id] = input.timestamp;
+    }
+  }
+
+  return {
+    queuedSessionMessages,
+    queuedMessageTombstones: Object.fromEntries(
+      Object.entries(queuedMessageTombstones)
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 2_048),
+    ),
+  };
+};
+
 const createTerminalThinkingProgress = (
   execution: TaskExecutionResult,
 ): TaskExecutionProgress => {
@@ -175,6 +234,10 @@ export interface SubmitTaskToSessionOptions {
   messageSettings?: ChatSessionMessageSettings;
   messageTaskAction?: ChatSessionTaskAction;
   conversationCutoffMessageId?: string;
+  preserveQueuedMessagesCreatedAfter?: number;
+  consumedQueuedMessageId?: string;
+  queuedMessageRecovery?: ChatSessionQueuedMessage;
+  onTaskStarted?: (taskId: string) => void;
 }
 
 export interface SessionOperationConflictSubmission {
@@ -186,6 +249,7 @@ export interface SessionOperationConflictSubmission {
   promptHistoryContent: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
+  queuedMessageRecovery?: ChatSessionQueuedMessage;
 }
 
 const getMessageTaskId = (message: ChatSessionMessage): string =>
@@ -852,6 +916,17 @@ export const useSessionTaskSubmission = (options: {
               ...attachment,
             })),
             ...queuedPrompt,
+            ...(submitOptions.queuedMessageRecovery
+              ? {
+                  queuedMessageRecovery: {
+                    ...submitOptions.queuedMessageRecovery,
+                    contextAttachments:
+                      submitOptions.queuedMessageRecovery.contextAttachments.map(
+                        (attachment) => ({ ...attachment }),
+                      ),
+                  },
+                }
+              : {}),
           });
 
           if (!queued) {
@@ -1103,19 +1178,26 @@ export const useSessionTaskSubmission = (options: {
           };
         }
 
+        const queuedMessageReconciliation =
+          reconcileQueuedMessagesForTaskSubmission({
+            queuedSessionMessages: prev.queuedSessionMessages,
+            queuedMessageTombstones: prev.queuedMessageTombstones,
+            sessionId,
+            conversationCutoffMessageId:
+              submitOptions.conversationCutoffMessageId,
+            preserveQueuedMessagesCreatedAfter:
+              submitOptions.preserveQueuedMessagesCreatedAfter,
+            consumedQueuedMessageId: submitOptions.consumedQueuedMessageId,
+            timestamp: nextUpdatedAt,
+          });
+
         return {
           ...prev,
           ...(submitOptions.activateSession
             ? { activeSessionId: sessionId }
             : {}),
           sessions: nextSessions,
-          ...(submitOptions.conversationCutoffMessageId
-            ? {
-                queuedSessionMessages: prev.queuedSessionMessages.filter(
-                  (message) => message.sessionId !== sessionId,
-                ),
-              }
-            : {}),
+          ...(queuedMessageReconciliation ?? {}),
         };
       });
 
@@ -1133,6 +1215,7 @@ export const useSessionTaskSubmission = (options: {
       }
 
       currentOptions.activeDesktopTasksRef.current.set(taskId, sessionId);
+      submitOptions.onTaskStarted?.(taskId);
 
       const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
         conversationContext: taskConversationContext,

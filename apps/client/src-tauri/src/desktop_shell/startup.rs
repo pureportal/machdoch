@@ -24,7 +24,10 @@ use windows::{
 
 use crate::runtime_snapshot;
 
-use super::{window, LaunchContext, ADMIN_RELAUNCH_ARG, AUTOSTART_LAUNCH_ARG, MAIN_WINDOW_LABEL};
+use super::{
+    window, FileManagerInvocation, LaunchContext, ADMIN_RELAUNCH_ARG, AUTOSTART_LAUNCH_ARG,
+    MAIN_WINDOW_LABEL,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StartupWindowMode {
@@ -32,9 +35,12 @@ enum StartupWindowMode {
     StartMinimized,
     StartInTray,
 }
-pub(crate) fn resolve_launch_context() -> LaunchContext {
+pub(crate) fn resolve_launch_context(
+    file_manager_invocation: Option<FileManagerInvocation>,
+) -> LaunchContext {
     LaunchContext {
         launched_from_autostart: env::args().skip(1).any(|arg| arg == AUTOSTART_LAUNCH_ARG),
+        file_manager_invocation,
     }
 }
 
@@ -304,7 +310,11 @@ pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context:
         return;
     };
 
-    let preferences = runtime_snapshot::load_user_desktop_launch_preferences().unwrap_or_default();
+    let preferences = if launch_context.file_manager_invocation.is_some() {
+        runtime_snapshot::UserDesktopLaunchPreferences::default()
+    } else {
+        runtime_snapshot::load_user_desktop_launch_preferences().unwrap_or_default()
+    };
 
     match resolve_startup_window_mode(preferences) {
         StartupWindowMode::StartInTray => {

@@ -86,10 +86,9 @@ pub fn run() {
     let builder = tauri::Builder::default();
 
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        if let Some(window) = app.get_webview_window(desktop_shell::MAIN_WINDOW_LABEL) {
-            let _ = window.show();
-            let _ = window.set_focus();
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if let Err(error) = desktop_shell::handle_secondary_instance(app, args) {
+            eprintln!("Failed to handle file-manager invocation: {error}");
         }
     }));
 
@@ -144,6 +143,9 @@ pub fn run() {
     builder
         .manage(desktop_task::AttachmentPathGrantMap::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
+        .manage(desktop_shell::FileManagerInvocationState::with_initial(
+            launch_context.file_manager_invocation.clone(),
+        ))
         .manage(desktop_shell::DesktopLaunchId(
             desktop_shell::create_desktop_launch_id(),
         ))
@@ -213,7 +215,9 @@ pub fn run() {
             desktop_shell::hide_main_window_to_tray,
             desktop_shell::quit_machdoch,
             desktop_shell::reveal_main_window,
+            desktop_shell::file_manager::resolve_file_manager_invocation,
             desktop_shell::sync_chat_completion_indicator,
+            desktop_shell::file_manager::take_file_manager_invocations,
             desktop_task::cancel_desktop_task,
             desktop_task::acknowledge_recent_desktop_task_results,
             desktop_task::get_active_desktop_task_ids,

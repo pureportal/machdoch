@@ -13,9 +13,9 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    database, subject_cutout, transform, EnqueueFixtureRunRequest, MediaHumanReviewContract,
-    MediaResult, MediaRunPlanNodeSnapshot, MediaRunPlanSnapshot, MediaRunPlanStepSnapshot,
-    MediaRuntimePaths, RalphMediaFlowRunRequest,
+    database, normalize_media_image_mask, subject_cutout, transform, EnqueueFixtureRunRequest,
+    MediaHumanReviewContract, MediaImageMask, MediaResult, MediaRunPlanNodeSnapshot,
+    MediaRunPlanSnapshot, MediaRunPlanStepSnapshot, MediaRuntimePaths, RalphMediaFlowRunRequest,
 };
 
 const MAX_FLOW_NODES: usize = 64;
@@ -141,6 +141,24 @@ pub(crate) enum LocalImageFlowOperation {
         height: u32,
         fit: String,
     },
+    TextOverlay {
+        text: String,
+        position: String,
+        margin: u32,
+        font_size: u32,
+        color: String,
+        background_color: String,
+        background_opacity: f64,
+    },
+    ColorAdjust {
+        brightness: i32,
+        contrast: f64,
+        saturation: f64,
+    },
+    Sharpen {
+        sigma: f64,
+        threshold: i32,
+    },
     Convert {
         output_format: String,
         quality: u8,
@@ -185,6 +203,7 @@ pub(crate) struct RemoteImageEditFlowPlan {
     pub(crate) prompt: String,
     pub(crate) provider_prompt: String,
     pub(crate) task_node_id: String,
+    pub(crate) output_node_id: String,
     pub(crate) model_id: String,
     pub(crate) model_label: String,
     pub(crate) output_count: u32,
@@ -564,6 +583,9 @@ pub(crate) fn compile_local_image_flow(
         "source.image",
         "operation.crop",
         "operation.resize",
+        "operation.text-overlay",
+        "operation.color-adjust",
+        "operation.sharpen",
         "operation.format-convert",
         "operation.metadata-strip",
         "operation.auto-tag",
@@ -709,6 +731,24 @@ pub(crate) fn compile_local_image_flow(
                     height: local_u32_config(&node, "height")?,
                     fit: local_string_config(&node, "fit")?,
                 },
+                "operation.text-overlay" => LocalImageFlowOperation::TextOverlay {
+                    text: local_string_config(&node, "text")?,
+                    position: local_string_config(&node, "position")?,
+                    margin: local_u32_config(&node, "margin")?,
+                    font_size: local_u32_config(&node, "fontSize")?,
+                    color: local_string_config(&node, "color")?,
+                    background_color: local_string_config(&node, "backgroundColor")?,
+                    background_opacity: local_f64_config(&node, "backgroundOpacity")?,
+                },
+                "operation.color-adjust" => LocalImageFlowOperation::ColorAdjust {
+                    brightness: local_i32_config(&node, "brightness")?,
+                    contrast: local_f64_config(&node, "contrast")?,
+                    saturation: local_f64_config(&node, "saturation")?,
+                },
+                "operation.sharpen" => LocalImageFlowOperation::Sharpen {
+                    sigma: local_f64_config(&node, "sigma")?,
+                    threshold: local_i32_config(&node, "threshold")?,
+                },
                 "operation.format-convert" => LocalImageFlowOperation::Convert {
                     output_format: local_string_config(&node, "outputFormat")?,
                     quality: u8::try_from(local_u32_config(&node, "quality")?)
@@ -796,6 +836,7 @@ pub(crate) fn compile_remote_image_edit_flow(
     let supported = [
         "source.prompt",
         "source.image",
+        "source.seed",
         "task.edit-image",
         "operation.subject-cutout",
         "output.asset",
@@ -853,6 +894,19 @@ pub(crate) fn compile_remote_image_edit_flow(
     let task_node = tasks[0];
     let output_node = outputs[0];
     let subject_cutout_node = subject_cutout_nodes.first().copied();
+    let seed_nodes = resolved_nodes
+        .iter()
+        .filter(|node| node.r#type == "source.seed")
+        .collect::<Vec<_>>();
+    if seed_nodes.len() > 1 {
+        return Err("remote image edits accept at most one seed source".to_string());
+    }
+    if seed_nodes
+        .first()
+        .is_some_and(|seed| has_exact_edge(&revision.flow, &seed.id, "seed", &task_node.id, "seed"))
+    {
+        return Err("GPT Image 2 does not support deterministic seeds".to_string());
+    }
     let expected_edge_count = source_nodes.len() + 2 + usize::from(subject_cutout_node.is_some());
     let has_valid_output_path = subject_cutout_node.map_or_else(
         || {
@@ -1028,6 +1082,7 @@ pub(crate) fn compile_remote_image_edit_flow(
         prompt,
         provider_prompt,
         task_node_id: task_node.id.clone(),
+        output_node_id: output_node.id.clone(),
         model_id,
         model_label: "GPT Image 2".to_string(),
         output_count,
@@ -1122,7 +1177,7 @@ fn validate_remote_edit_snapshot(
             return Err("compiled plan steps do not match the pinned remote edit flow".to_string());
         }
         let (target, cacheable, side_effect) = match actual.kind.as_str() {
-            "normalize-prompt" | "resolve-asset" => ("orchestrator", true, None),
+            "normalize-prompt" | "resolve-asset" | "resolve-seed" => ("orchestrator", true, None),
             "resolve-model" => ("orchestrator", false, None),
             "edit-image" => ("remote", false, Some("paid-request")),
             "ingest-asset" => ("orchestrator", false, Some("asset-write")),
@@ -1202,6 +1257,21 @@ fn local_bool_config(node: &MediaFlowNode, key: &str) -> MediaResult<bool> {
         .get(key)
         .and_then(Value::as_bool)
         .ok_or_else(|| format!("flow node {} requires boolean config {key}", node.id))
+}
+
+fn local_f64_config(node: &MediaFlowNode, key: &str) -> MediaResult<f64> {
+    node.config
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| format!("flow node {} requires numeric config {key}", node.id))
+}
+
+fn local_i32_config(node: &MediaFlowNode, key: &str) -> MediaResult<i32> {
+    node.config
+        .get(key)
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(|| format!("flow node {} requires integer config {key}", node.id))
 }
 
 fn local_subject_cutout_model_priority(node: &MediaFlowNode) -> MediaResult<Vec<String>> {
@@ -1319,6 +1389,15 @@ fn create_ralph_plan_steps(nodes: &[MediaFlowNode]) -> MediaResult<Vec<MediaRunP
                 None,
                 None,
             )),
+            "source.seed" => steps.push(create_step(
+                "resolve-seed",
+                "resolve-seed",
+                "Resolve the deterministic generation seed".to_string(),
+                "orchestrator",
+                true,
+                None,
+                None,
+            )),
             "task.generate-image" => {
                 steps.push(create_step(
                     "resolve-model",
@@ -1394,6 +1473,33 @@ fn create_ralph_plan_steps(nodes: &[MediaFlowNode]) -> MediaResult<Vec<MediaRunP
                 "resize-image",
                 "resize-image",
                 "Resize with the explicit target box and fit policy".to_string(),
+                "local",
+                true,
+                None,
+                None,
+            )),
+            "operation.text-overlay" => steps.push(create_step(
+                "overlay-text",
+                "overlay-text",
+                "Render text into image pixels".to_string(),
+                "local",
+                true,
+                None,
+                None,
+            )),
+            "operation.color-adjust" => steps.push(create_step(
+                "adjust-color",
+                "adjust-color",
+                "Apply color adjustment".to_string(),
+                "local",
+                true,
+                None,
+                None,
+            )),
+            "operation.sharpen" => steps.push(create_step(
+                "sharpen-image",
+                "sharpen-image",
+                "Apply unsharp mask".to_string(),
                 "local",
                 true,
                 None,
@@ -2651,12 +2757,16 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
             node_type,
             "source.prompt"
                 | "source.image"
+                | "source.seed"
                 | "source.animated-background"
                 | "task.generate-image"
                 | "task.edit-image"
                 | "task.generate-video"
                 | "operation.crop"
                 | "operation.resize"
+                | "operation.text-overlay"
+                | "operation.color-adjust"
+                | "operation.sharpen"
                 | "operation.format-convert"
                 | "operation.metadata-strip"
                 | "operation.auto-tag"
@@ -3055,6 +3165,7 @@ impl MediaFlowDocument {
                 .or_default()
                 .push(edge.to_node_id.as_str());
         }
+        self.validate_image_reference_topology()?;
         for node in &self.nodes {
             if node.r#type == "task.generate-video"
                 && incoming_ports.contains_key(&(node.id.as_str(), "last-frame"))
@@ -3092,6 +3203,72 @@ impl MediaFlowDocument {
             }
         }
         validate_acyclic(&self.nodes, &incoming, &adjacency)
+    }
+
+    fn validate_image_reference_topology(&self) -> MediaResult<()> {
+        let nodes_by_id = self
+            .nodes
+            .iter()
+            .map(|node| (node.id.as_str(), node))
+            .collect::<HashMap<_, _>>();
+        for task in self.nodes.iter().filter(|node| {
+            matches!(
+                node.r#type.as_str(),
+                "task.generate-image" | "task.edit-image"
+            )
+        }) {
+            let mut source_node_ids = HashSet::new();
+            let mut base_count = 0_usize;
+            let mut pose_count = 0_usize;
+            let mut asset_ids = HashSet::new();
+            for edge in self
+                .edges
+                .iter()
+                .filter(|edge| edge.to_node_id == task.id && edge.to_port_id == "image")
+            {
+                if !source_node_ids.insert(edge.from_node_id.as_str()) {
+                    continue;
+                }
+                let Some(source) = nodes_by_id.get(edge.from_node_id.as_str()) else {
+                    continue;
+                };
+                if source.r#type != "source.image" {
+                    continue;
+                }
+                let config = self.resolve_node_config(&source.config)?;
+                let role = config
+                    .get("referenceRole")
+                    .and_then(Value::as_str)
+                    .unwrap_or("base");
+                if role == "base" {
+                    base_count += 1;
+                }
+                if role == "pose" {
+                    pose_count += 1;
+                }
+                let asset_id = config
+                    .get("assetId")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default();
+                if !asset_id.is_empty() && !asset_ids.insert(asset_id.to_string()) {
+                    return Err(format!(
+                        "flow node {} connects image asset {asset_id} more than once",
+                        task.id
+                    ));
+                }
+            }
+            if base_count > 1 {
+                return Err(format!(
+                    "flow node {} accepts one base image; run each base image separately",
+                    task.id
+                ));
+            }
+            if pose_count > 1 {
+                return Err(format!("flow node {} accepts one pose image", task.id));
+            }
+        }
+        Ok(())
     }
 
     fn resolve_node_config(&self, config: &Map<String, Value>) -> MediaResult<Map<String, Value>> {
@@ -3384,10 +3561,15 @@ impl MediaFlowNode {
             ));
         }
         let expected_layer = match self.r#type.as_str() {
-            "source.prompt" | "source.image" | "source.animated-background" => "source",
+            "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => {
+                "source"
+            }
             "task.generate-image" | "task.edit-image" | "task.generate-video" => "task",
             "operation.crop"
             | "operation.resize"
+            | "operation.text-overlay"
+            | "operation.color-adjust"
+            | "operation.sharpen"
             | "operation.format-convert"
             | "operation.metadata-strip"
             | "operation.auto-tag"
@@ -3695,6 +3877,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "composition",
                         "palette",
                         "detail",
+                        "pose",
                     ],
                 )?;
             }
@@ -3702,12 +3885,27 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 let influence = influence
                     .as_f64()
                     .ok_or_else(|| format!("flow node {} influence must be numeric", node.id))?;
-                if !influence.is_finite() || !(0.0..=1.0).contains(&influence) {
+                if !influence.is_finite() || !(0.0..=2.0).contains(&influence) {
                     return Err(format!(
-                        "flow node {} influence must be between 0 and 1",
+                        "flow node {} influence must be between 0 and 2",
                         node.id
                     ));
                 }
+            }
+            Ok(())
+        }
+        "source.seed" => {
+            validate_config_keys(node, &["seed"])?;
+            let seed = node
+                .config
+                .get("seed")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("flow node {} requires an integer seed", node.id))?;
+            if seed > 9_007_199_254_740_991 {
+                return Err(format!(
+                    "flow node {} seed must be a JavaScript-safe non-negative integer",
+                    node.id
+                ));
             }
             Ok(())
         }
@@ -3723,10 +3921,12 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "outputCount",
                         "outputFormat",
                         "editStrength",
-                        "referenceBoost",
+                        "editMask",
+                        "maskStrength",
+                        "poseStrength",
+                        "poseStart",
+                        "poseEnd",
                         "requireChromaBackground",
-                        "referenceFit",
-                        "groundingPixels",
                         "modelAddons",
                         "memoryProfile",
                     ]
@@ -3859,33 +4059,62 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         node.id
                     ));
                 }
-                if let Some(reference_boost) = node.config.get("referenceBoost") {
-                    let reference_boost = reference_boost.as_f64().ok_or_else(|| {
-                        format!("flow node {} referenceBoost must be numeric", node.id)
+                if let Some(edit_mask) = node.config.get("editMask") {
+                    if !edit_mask.is_null() {
+                        let mut edit_mask = serde_json::from_value::<MediaImageMask>(
+                            edit_mask.clone(),
+                        )
+                        .map_err(|error| {
+                            format!("flow node {} editMask is invalid: {error}", node.id)
+                        })?;
+                        normalize_media_image_mask(&mut edit_mask, None)?;
+                    }
+                }
+                if let Some(mask_strength) = node.config.get("maskStrength") {
+                    let mask_strength = mask_strength.as_f64().ok_or_else(|| {
+                        format!("flow node {} maskStrength must be numeric", node.id)
                     })?;
-                    if !reference_boost.is_finite() || !(0.25..=8.0).contains(&reference_boost) {
+                    if !mask_strength.is_finite() || !(0.0..=1.0).contains(&mask_strength) {
                         return Err(format!(
-                            "flow node {} referenceBoost must be between 0.25 and 8",
+                            "flow node {} maskStrength must be between 0 and 1",
                             node.id
                         ));
                     }
+                }
+                if let Some(pose_strength) = node.config.get("poseStrength") {
+                    let pose_strength = pose_strength.as_f64().ok_or_else(|| {
+                        format!("flow node {} poseStrength must be numeric", node.id)
+                    })?;
+                    if !pose_strength.is_finite() || !(0.0..=2.0).contains(&pose_strength) {
+                        return Err(format!(
+                            "flow node {} poseStrength must be between 0 and 2",
+                            node.id
+                        ));
+                    }
+                }
+                let pose_start = node
+                    .config
+                    .get("poseStart")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0);
+                let pose_end = node
+                    .config
+                    .get("poseEnd")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(1.0);
+                if !pose_start.is_finite()
+                    || !pose_end.is_finite()
+                    || pose_start < 0.0
+                    || pose_start >= pose_end
+                    || pose_end > 1.0
+                {
+                    return Err(format!(
+                        "flow node {} pose control range must satisfy 0 <= start < end <= 1",
+                        node.id
+                    ));
                 }
                 if node.config.contains_key("requireChromaBackground") {
                     config_bool(node, "requireChromaBackground")?;
-                }
-                if node.config.contains_key("referenceFit") {
-                    config_enum(node, "referenceFit", &["fit", "crop"])?;
-                }
-                if let Some(grounding_pixels) = node.config.get("groundingPixels") {
-                    let grounding_pixels = grounding_pixels.as_u64().ok_or_else(|| {
-                        format!("flow node {} groundingPixels must be an integer", node.id)
-                    })?;
-                    if !(384..=1_024).contains(&grounding_pixels) {
-                        return Err(format!(
-                            "flow node {} groundingPixels must be between 384 and 1024",
-                            node.id
-                        ));
-                    }
                 }
             }
             if node.config.contains_key("memoryProfile") {
@@ -4133,6 +4362,127 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 }
             }
             config_enum(node, "fit", &["contain", "cover", "stretch"])
+        }
+        "operation.text-overlay" => {
+            validate_config_keys(
+                node,
+                &[
+                    "text",
+                    "position",
+                    "margin",
+                    "fontSize",
+                    "color",
+                    "backgroundColor",
+                    "backgroundOpacity",
+                ],
+            )?;
+            let text = config_string(node, "text", 256, false)?;
+            if !text
+                .chars()
+                .all(|character| character == '\n' || (' '..='~').contains(&character))
+            {
+                return Err(format!(
+                    "flow node {} overlay text must be printable ASCII",
+                    node.id
+                ));
+            }
+            config_enum(
+                node,
+                "position",
+                &[
+                    "top-left",
+                    "top-right",
+                    "bottom-left",
+                    "bottom-right",
+                    "center",
+                ],
+            )?;
+            let margin = node
+                .config
+                .get("margin")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("flow node {} requires integer margin", node.id))?;
+            let font_size = node
+                .config
+                .get("fontSize")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("flow node {} requires integer fontSize", node.id))?;
+            if margin > 1_024 || !(8..=256).contains(&font_size) {
+                return Err(format!("flow node {} overlay size is invalid", node.id));
+            }
+            for key in ["color", "backgroundColor"] {
+                let value = config_string(node, key, 7, false)?;
+                if value.len() != 7
+                    || !value.starts_with('#')
+                    || !value[1..]
+                        .chars()
+                        .all(|character| character.is_ascii_hexdigit())
+                {
+                    return Err(format!(
+                        "flow node {} {key} must be a six-digit hex color",
+                        node.id
+                    ));
+                }
+            }
+            let opacity = node
+                .config
+                .get("backgroundOpacity")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| format!("flow node {} requires backgroundOpacity", node.id))?;
+            if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+                return Err(format!(
+                    "flow node {} backgroundOpacity must be between 0 and 1",
+                    node.id
+                ));
+            }
+            Ok(())
+        }
+        "operation.color-adjust" => {
+            validate_config_keys(node, &["brightness", "contrast", "saturation"])?;
+            let brightness = node
+                .config
+                .get("brightness")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| format!("flow node {} requires brightness", node.id))?;
+            let contrast = node
+                .config
+                .get("contrast")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| format!("flow node {} requires contrast", node.id))?;
+            let saturation = node
+                .config
+                .get("saturation")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| format!("flow node {} requires saturation", node.id))?;
+            if !(-100..=100).contains(&brightness)
+                || !contrast.is_finite()
+                || !(-100.0..=100.0).contains(&contrast)
+                || !saturation.is_finite()
+                || !(0.0..=200.0).contains(&saturation)
+            {
+                return Err(format!("flow node {} color adjustment is invalid", node.id));
+            }
+            Ok(())
+        }
+        "operation.sharpen" => {
+            validate_config_keys(node, &["sigma", "threshold"])?;
+            let sigma = node
+                .config
+                .get("sigma")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| format!("flow node {} requires sigma", node.id))?;
+            let threshold = node
+                .config
+                .get("threshold")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| format!("flow node {} requires threshold", node.id))?;
+            if !sigma.is_finite()
+                || !(0.1..=10.0).contains(&sigma)
+                || !(0..=255).contains(&threshold)
+            {
+                return Err(format!("flow node {} sharpen values are invalid", node.id));
+            }
+            Ok(())
         }
         "operation.format-convert" => {
             validate_config_keys(node, &["outputFormat", "quality", "jpegBackground"])?;
@@ -4383,17 +4733,23 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
     match (node_type, output, port_id) {
         ("source.prompt", true, "prompt") => Some("prompt"),
         ("source.image", true, "image") => Some("image"),
+        ("source.seed", true, "seed") => Some("seed"),
         ("source.animated-background", true, "video") => Some("video"),
         ("task.generate-image", false, "prompt") => Some("prompt"),
         ("task.generate-image", false, "image") => Some("image"),
+        ("task.generate-image", false, "seed") => Some("seed"),
         ("task.generate-image", true, "image") => Some("image"),
         ("task.edit-image", false, "prompt") => Some("prompt"),
         ("task.edit-image", false | true, "image") => Some("image"),
+        ("task.edit-image", false, "seed") => Some("seed"),
         ("task.generate-video", false, "prompt") => Some("prompt"),
         ("task.generate-video", false, "first-frame" | "last-frame") => Some("image"),
         ("task.generate-video", true, "video") => Some("video"),
         ("operation.crop", false | true, "image") => Some("image"),
         ("operation.resize", false | true, "image") => Some("image"),
+        ("operation.text-overlay", false | true, "image") => Some("image"),
+        ("operation.color-adjust", false | true, "image") => Some("image"),
+        ("operation.sharpen", false | true, "image") => Some("image"),
         ("operation.format-convert", false | true, "image") => Some("image"),
         ("operation.metadata-strip", false | true, "image") => Some("image"),
         ("operation.auto-tag", false | true, "image") => Some("image"),
@@ -4444,11 +4800,14 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         return &["image"];
     }
     match node_type {
-        "source.prompt" | "source.image" | "source.animated-background" => &[],
+        "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => &[],
         "task.generate-image" | "task.generate-video" => &["prompt"],
         "task.edit-image" => &["prompt", "image"],
         "operation.crop"
         | "operation.resize"
+        | "operation.text-overlay"
+        | "operation.color-adjust"
+        | "operation.sharpen"
         | "operation.format-convert"
         | "operation.metadata-strip"
         | "operation.auto-tag"
@@ -4470,11 +4829,15 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
     match node_type {
         "source.prompt" => &["prompt"],
         "source.image" => &["image"],
+        "source.seed" => &[],
         "source.animated-background" => &["video"],
         "task.generate-image"
         | "task.edit-image"
         | "operation.crop"
         | "operation.resize"
+        | "operation.text-overlay"
+        | "operation.color-adjust"
+        | "operation.sharpen"
         | "operation.format-convert"
         | "operation.metadata-strip"
         | "operation.auto-tag"
@@ -5354,10 +5717,62 @@ mod tests {
                 "ingest-asset",
             ]
         );
+
+        let mut second_base = flow.clone();
+        second_base.nodes.push(MediaFlowNode {
+            id: "second-base".to_string(),
+            r#type: "source.image".to_string(),
+            version: 1,
+            label: "Second base".to_string(),
+            layer: "source".to_string(),
+            config: serde_json::from_value(json!({
+                "assetId": "asset:second-base",
+                "referenceRole": "base",
+                "influence": 1.0,
+            }))
+            .unwrap(),
+        });
+        second_base.edges.push(MediaFlowEdge {
+            id: "second-base-edit".to_string(),
+            from_node_id: "second-base".to_string(),
+            from_port_id: "image".to_string(),
+            to_node_id: "edit".to_string(),
+            to_port_id: "image".to_string(),
+        });
+        assert!(second_base
+            .validate()
+            .unwrap_err()
+            .contains("accepts one base image"));
+
+        let mut duplicate_asset = flow.clone();
+        duplicate_asset.nodes.push(MediaFlowNode {
+            id: "duplicate-source".to_string(),
+            r#type: "source.image".to_string(),
+            version: 1,
+            label: "Duplicate source".to_string(),
+            layer: "source".to_string(),
+            config: serde_json::from_value(json!({
+                "assetId": "asset:approved-product-shot",
+                "referenceRole": "subject",
+                "influence": 1.0,
+            }))
+            .unwrap(),
+        });
+        duplicate_asset.edges.push(MediaFlowEdge {
+            id: "duplicate-source-edit".to_string(),
+            from_node_id: "duplicate-source".to_string(),
+            from_port_id: "image".to_string(),
+            to_node_id: "edit".to_string(),
+            to_port_id: "image".to_string(),
+        });
+        assert!(duplicate_asset
+            .validate()
+            .unwrap_err()
+            .contains("connects image asset asset:approved-product-shot more than once"));
     }
 
     #[test]
-    fn validates_bounded_multi_reference_image_edit_inputs() {
+    fn validates_masked_multi_reference_and_pose_image_edit_inputs() {
         let flow = serde_json::from_value::<MediaFlowDocument>(json!({
             "schemaVersion": 1,
             "id": "flow:multi-reference-edit",
@@ -5369,19 +5784,22 @@ mod tests {
                 {"id":"prompt","type":"source.prompt","version":1,"label":"Instructions","layer":"source","config":{"prompt":"Preserve the subject and apply the style reference"}},
                 {"id":"base","type":"source.image","version":1,"label":"Base","layer":"source","config":{"assetId":"asset:base","referenceRole":"base","influence":1.0}},
                 {"id":"style","type":"source.image","version":1,"label":"Style","layer":"source","config":{"assetId":"asset:style","referenceRole":"style","influence":0.45}},
-                {"id":"edit","type":"task.edit-image","version":1,"label":"Edit","layer":"task","config":{"providerPolicy":"auto","modelPolicy":"balanced","modelId":null,"aspectRatio":"1:1","outputCount":1,"outputFormat":"png","editStrength":0.65,"referenceBoost":2.0,"requireChromaBackground":false,"referenceFit":"fit","groundingPixels":768,"memoryProfile":"auto"}},
+                {"id":"pose","type":"source.image","version":1,"label":"Pose map","layer":"source","config":{"assetId":"asset:pose","referenceRole":"pose","influence":1.1}},
+                {"id":"edit","type":"task.edit-image","version":1,"label":"Edit","layer":"task","config":{"providerPolicy":"auto","modelPolicy":"balanced","modelId":null,"aspectRatio":"1:1","outputCount":1,"outputFormat":"png","editStrength":0.65,"editMask":{"schemaVersion":2,"sourceAssetId":"asset:base","inverted":false,"strokes":[{"mode":"paint","size":0.08,"opacity":0.8,"softness":0.4,"points":[{"x":0.5,"y":0.5}]}]},"poseStrength":1.1}},
                 {"id":"output","type":"output.asset","version":1,"label":"Output","layer":"output","config":{"format":"png","outputCount":1}}
             ],
             "edges": [
                 {"id":"prompt-edit","fromNodeId":"prompt","fromPortId":"prompt","toNodeId":"edit","toPortId":"prompt"},
                 {"id":"base-edit","fromNodeId":"base","fromPortId":"image","toNodeId":"edit","toPortId":"image"},
                 {"id":"style-edit","fromNodeId":"style","fromPortId":"image","toNodeId":"edit","toPortId":"image"},
+                {"id":"pose-edit","fromNodeId":"pose","fromPortId":"image","toNodeId":"edit","toPortId":"image"},
                 {"id":"edit-output","fromNodeId":"edit","fromPortId":"image","toNodeId":"output","toPortId":"image"}
             ]
         }))
         .unwrap();
 
-        assert!(flow.validate().is_ok());
+        flow.validate()
+            .expect("masked multi-reference pose flow should be valid");
         assert_eq!(
             create_ralph_plan_steps(&flow.nodes)
                 .unwrap()
@@ -5390,6 +5808,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "normalize-prompt",
+                "resolve-asset",
                 "resolve-asset",
                 "resolve-asset",
                 "resolve-model",
@@ -5487,12 +5906,18 @@ mod tests {
             "updatedAt": "2026-07-14T00:00:00.000Z",
             "nodes": [
                 {"id":"source","type":"source.image","version":1,"label":"Source","layer":"source","config":{"assetId":"asset:source","referenceRole":"base","influence":1.0}},
+                {"id":"overlay","type":"operation.text-overlay","version":1,"label":"Overlay","layer":"operation","config":{"text":"AI Image Disclaimer","position":"bottom-right","margin":24,"fontSize":24,"color":"#ffffff","backgroundColor":"#000000","backgroundOpacity":0.55}},
+                {"id":"color","type":"operation.color-adjust","version":1,"label":"Color","layer":"operation","config":{"brightness":4,"contrast":8,"saturation":110}},
+                {"id":"sharpen","type":"operation.sharpen","version":1,"label":"Sharpen","layer":"operation","config":{"sigma":1.2,"threshold":3}},
                 {"id":"resize","type":"operation.resize","version":1,"label":"Resize","layer":"operation","config":{"width":1600,"height":900,"fit":"cover"}},
                 {"id":"convert","type":"operation.format-convert","version":1,"label":"Convert","layer":"operation","config":{"outputFormat":"jpeg","quality":86,"jpegBackground":"#111827"}},
                 {"id":"output","type":"output.asset","version":1,"label":"Output","layer":"output","config":{"format":"jpeg","outputCount":1}}
             ],
             "edges": [
-                {"id":"source-resize","fromNodeId":"source","fromPortId":"image","toNodeId":"resize","toPortId":"image"},
+                {"id":"source-overlay","fromNodeId":"source","fromPortId":"image","toNodeId":"overlay","toPortId":"image"},
+                {"id":"overlay-color","fromNodeId":"overlay","fromPortId":"image","toNodeId":"color","toPortId":"image"},
+                {"id":"color-sharpen","fromNodeId":"color","fromPortId":"image","toNodeId":"sharpen","toPortId":"image"},
+                {"id":"sharpen-resize","fromNodeId":"sharpen","fromPortId":"image","toNodeId":"resize","toPortId":"image"},
                 {"id":"resize-convert","fromNodeId":"resize","fromPortId":"image","toNodeId":"convert","toPortId":"image"},
                 {"id":"convert-output","fromNodeId":"convert","fromPortId":"image","toNodeId":"output","toPortId":"image"}
             ]
@@ -5508,6 +5933,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "resolve-asset",
+                "overlay-text",
+                "adjust-color",
+                "sharpen-image",
                 "resize-image",
                 "convert-image",
                 "ingest-asset",
@@ -5667,6 +6095,25 @@ mod tests {
     }
 
     #[test]
+    fn permits_an_unconnected_seed_source_for_random_generation() {
+        let mut flow = request("unconnected-seed", None, "Random seed").flow;
+        flow.nodes.push(
+            serde_json::from_value(json!({
+                "id": "seed",
+                "type": "source.seed",
+                "version": 1,
+                "label": "Seed",
+                "layer": "source",
+                "config": {"seed": 4261984}
+            }))
+            .unwrap(),
+        );
+
+        flow.validate()
+            .expect("an unconnected seed source must allow a runtime-random seed");
+    }
+
+    #[test]
     fn exports_reviews_and_imports_an_isolated_immutable_copy() {
         let paths = test_paths("portable-roundtrip");
         let saved = save(&paths, &request("portable-save", None, "Portable")).unwrap();
@@ -5795,6 +6242,21 @@ mod tests {
     #[test]
     fn strict_bundle_parser_rejects_duplicate_object_keys() {
         assert!(parse_strict_json(br#"{"a":1,"a":2}"#).is_err());
+    }
+
+    #[test]
+    fn multiline_prompt_validation_accepts_terminal_punctuation() {
+        for prompt in ["trailing:", "question?", "emphasis!", "ellipsis..."] {
+            assert!(validate_multiline_text("prompt", prompt, 8_000, false).is_ok());
+        }
+    }
+
+    #[test]
+    fn multiline_prompt_validation_distinguishes_drafts_from_required_input() {
+        assert!(validate_multiline_text("prompt", "", 8_000, true).is_ok());
+        assert!(validate_multiline_text("prompt", "", 8_000, false).is_err());
+        assert!(validate_multiline_text("prompt", "  ", 8_000, true).is_err());
+        assert!(validate_multiline_text("prompt", "trailing: ", 8_000, false).is_err());
     }
 
     #[test]

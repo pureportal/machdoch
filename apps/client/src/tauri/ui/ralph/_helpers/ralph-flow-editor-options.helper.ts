@@ -1,5 +1,3 @@
-import type { ProOptions } from "@xyflow/react";
-
 import type {
   RalphAnnotationTone,
   RalphAskUserMode,
@@ -234,6 +232,3 @@ export const RALPH_CONTEXT_MENU_MARGIN = 8;
 export const RALPH_VALIDATION_JUMP_DURATION_MS = 220;
 export const RALPH_NEW_BLOCK_CENTER_DURATION_MS = 180;
 export const RALPH_LAYOUT_FIT_DURATION_MS = 240;
-export const RALPH_REACT_FLOW_PRO_OPTIONS = {
-  hideAttribution: true,
-} satisfies ProOptions;

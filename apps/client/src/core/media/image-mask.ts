@@ -8,6 +8,8 @@ export const MEDIA_IMAGE_MASK_MAX_STROKES = 256;
 export const MEDIA_IMAGE_MASK_MAX_POINTS = 8_192;
 export const MEDIA_IMAGE_MASK_MIN_BRUSH_SIZE = 0.0025;
 export const MEDIA_IMAGE_MASK_MAX_BRUSH_SIZE = 0.5;
+export const MEDIA_IMAGE_MASK_MIN_OPACITY = 0.01;
+export const MEDIA_IMAGE_MASK_MAX_OPACITY = 1;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -31,12 +33,20 @@ const isPoint = (value: unknown): value is MediaImageMaskPoint =>
 
 const isStroke = (value: unknown): value is MediaImageMaskStroke =>
   isRecord(value) &&
-  hasOnlyKeys(value, ["mode", "size", "points"]) &&
+  hasOnlyKeys(value, ["mode", "size", "opacity", "softness", "points"]) &&
   (value.mode === "paint" || value.mode === "erase") &&
   typeof value.size === "number" &&
   Number.isFinite(value.size) &&
   value.size >= MEDIA_IMAGE_MASK_MIN_BRUSH_SIZE &&
   value.size <= MEDIA_IMAGE_MASK_MAX_BRUSH_SIZE &&
+  typeof value.opacity === "number" &&
+  Number.isFinite(value.opacity) &&
+  value.opacity >= MEDIA_IMAGE_MASK_MIN_OPACITY &&
+  value.opacity <= MEDIA_IMAGE_MASK_MAX_OPACITY &&
+  typeof value.softness === "number" &&
+  Number.isFinite(value.softness) &&
+  value.softness >= 0 &&
+  value.softness <= 1 &&
   Array.isArray(value.points) &&
   value.points.length >= 1 &&
   value.points.length <= MEDIA_IMAGE_MASK_MAX_POINTS &&
@@ -51,7 +61,7 @@ export const isMediaImageMask = (value: unknown): value is MediaImageMask => {
       "inverted",
       "strokes",
     ]) ||
-    value.schemaVersion !== 1 ||
+    value.schemaVersion !== 2 ||
     typeof value.sourceAssetId !== "string" ||
     value.sourceAssetId.length < 1 ||
     value.sourceAssetId.length > 256 ||

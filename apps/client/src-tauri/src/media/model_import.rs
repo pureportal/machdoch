@@ -5,13 +5,14 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension as _};
 use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
 
 use super::{
     catalog, database, hardware, model_addon, ImportMediaLocalModelRequest,
-    MediaLocalModelImportInspection, MediaLocalModelImportResult, MediaResult, MediaRuntimePaths,
+    MediaAssetImportDuplicate, MediaLocalModelImportInspection, MediaLocalModelImportResult,
+    MediaResult, MediaRuntimePaths,
 };
 
 pub(crate) const USER_MODEL_ID_PREFIX: &str = "local:user:";
@@ -29,6 +30,14 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "flux-1",
     "flux-2",
     "krea-2",
+];
+const TEXT_TO_IMAGE_CAPABILITIES: &[&str] = &["text-to-image"];
+const IMAGE_EDIT_CAPABILITIES: &[&str] = &["text-to-image", "image-to-image", "masked-image-edit"];
+const FLUX_2_CAPABILITIES: &[&str] = &[
+    "text-to-image",
+    "image-to-image",
+    "masked-image-edit",
+    "multi-reference-edit",
 ];
 
 pub(super) struct ParsedSafetensorsHeader {
@@ -95,6 +104,17 @@ fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
             quality_score: 94,
         }),
         _ => None,
+    }
+}
+
+pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'static str] {
+    match architecture {
+        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1" => {
+            IMAGE_EDIT_CAPABILITIES
+        }
+        "flux-2" => FLUX_2_CAPABILITIES,
+        "krea-2" => TEXT_TO_IMAGE_CAPABILITIES,
+        _ => TEXT_TO_IMAGE_CAPABILITIES,
     }
 }
 
@@ -426,6 +446,10 @@ fn inspection_review_token(header: &ParsedSafetensorsHeader) -> String {
 
 pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportInspection> {
     let header = parse_header(source_path)?;
+    let (content_size, content_digest) = hash_file(&header.canonical_path)?;
+    if content_size != header.byte_size {
+        return Err("the model file changed while it was being inspected".to_string());
+    }
     let (detected_architecture, architecture_confidence) = detect_architecture(&header);
     let is_adapter = likely_adapter(&header);
     let mut warnings = vec![
@@ -461,6 +485,8 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportIns
         byte_size: header.byte_size,
         tensor_count: header.tensor_count,
         header_digest: header.header_digest.clone(),
+        content_digest,
+        duplicate: None,
         review_token: inspection_review_token(&header),
         suggested_display_name: suggested_display_name(&header),
         detected_architecture,
@@ -468,6 +494,40 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportIns
         metadata_summary: metadata_summary(&header),
         warnings,
     })
+}
+
+fn imported_duplicate(
+    paths: &MediaRuntimePaths,
+    digest: &str,
+) -> MediaResult<Option<MediaAssetImportDuplicate>> {
+    database::open(paths)?
+        .query_row(
+            "SELECT m.id, m.display_name
+             FROM media_models m
+             JOIN media_model_installations i ON i.model_id = m.id
+             WHERE m.provider_id = 'local-diffusers' AND m.lifecycle != 'removed'
+               AND i.status = 'installed' AND i.manifest_digest = ?1
+             ORDER BY m.updated_at DESC LIMIT 1",
+            [digest],
+            |row| {
+                Ok(MediaAssetImportDuplicate {
+                    resource_id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    kind: "model".to_string(),
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| format!("failed to inspect duplicate model state: {error}"))
+}
+
+pub(crate) fn inspect_for_import(
+    paths: &MediaRuntimePaths,
+    source_path: &str,
+) -> MediaResult<MediaLocalModelImportInspection> {
+    let mut inspection = inspect(source_path)?;
+    inspection.duplicate = imported_duplicate(paths, &inspection.content_digest)?;
+    Ok(inspection)
 }
 
 fn krea_runtime_descriptor(source_path: &str) -> MediaResult<Value> {
@@ -652,7 +712,7 @@ fn persist_import(
     let license_name = validated_text("licenseName", &request.license_name, 256)?;
     let display_name = validated_text("displayName", &request.display_name, 120)?;
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
-    let capabilities = serde_json::to_string(&["text-to-image", "image-to-image"])
+    let capabilities = serde_json::to_string(capabilities_for_architecture(&request.architecture))
         .map_err(|error| format!("failed to encode imported model capabilities: {error}"))?;
     let addon_capabilities = serde_json::to_string(&model_addon::capabilities_for_model(
         "local-diffusers",
@@ -765,6 +825,14 @@ pub(crate) fn import_reviewed(
     validated_text("displayName", &request.display_name, 120)?;
     validated_text("licenseName", &request.license_name, 256)?;
     validated_source_url(request.source_url.as_deref())?;
+    if request.content_digest.len() != 64
+        || !request
+            .content_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("contentDigest must be a lowercase SHA-256 digest".to_string());
+    }
 
     let inspection = inspect(&request.source_path)?;
     if !inspection.can_import {
@@ -810,6 +878,12 @@ pub(crate) fn import_reviewed(
             return Err(error);
         }
     };
+    if digest != request.content_digest {
+        let _ = fs::remove_dir_all(&stage_root);
+        return Err(
+            "the selected model file changed; inspect it again before importing".to_string(),
+        );
+    }
     if let Err(error) = parse_header(staged_checkpoint.to_string_lossy().as_ref()) {
         let quarantine_root = models_root.join("quarantine").join(&import_id);
         fs::create_dir_all(
@@ -955,6 +1029,24 @@ mod tests {
     }
 
     #[test]
+    fn imported_architectures_expose_only_supported_conditioning() {
+        assert_eq!(capabilities_for_architecture("krea-2"), ["text-to-image"]);
+        assert_eq!(
+            capabilities_for_architecture("flux-2"),
+            [
+                "text-to-image",
+                "image-to-image",
+                "masked-image-edit",
+                "multi-reference-edit",
+            ]
+        );
+        assert_eq!(
+            capabilities_for_architecture("stable-diffusion-3"),
+            ["text-to-image"]
+        );
+    }
+
+    #[test]
     fn inspects_sdxl_safetensors_without_reading_model_code() {
         let path = temp_path("sdxl");
         write_safetensors(
@@ -1057,6 +1149,7 @@ mod tests {
                 display_name: "Managed XL".to_string(),
                 architecture: "stable-diffusion-xl".to_string(),
                 source_url: Some("https://civitai.com/models/123".to_string()),
+                content_digest: inspection.content_digest.clone(),
                 license_name: "Publisher terms".to_string(),
                 commercial_use: "review-required".to_string(),
                 confirm_rights: true,
@@ -1066,8 +1159,33 @@ mod tests {
 
         assert!(result.model_id.starts_with(USER_MODEL_ID_PREFIX));
         assert!(!result.already_installed);
+        let duplicate = inspect_for_import(&paths, source.to_string_lossy().as_ref())
+            .expect("duplicate inspection should pass")
+            .duplicate
+            .expect("imported model should be detected");
+        assert_eq!(duplicate.resource_id, result.model_id);
+        assert_eq!(duplicate.display_name, "Managed XL");
+        assert_eq!(duplicate.kind, "model");
         let mut connection = database::open(&paths).expect("database should open");
+        connection
+            .execute(
+                "UPDATE media_models SET capabilities_json = '[\"text-to-image\"]' WHERE id = ?1",
+                [&result.model_id],
+            )
+            .expect("stored capabilities should be replaceable for reconciliation");
         catalog::synchronize(&mut connection).expect("catalog sync should preserve user models");
+        let stored_capabilities = connection
+            .query_row(
+                "SELECT capabilities_json FROM media_models WHERE id = ?1",
+                [&result.model_id],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("reconciled capabilities should be stored");
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(&stored_capabilities)
+                .expect("capabilities should decode"),
+            ["text-to-image", "image-to-image", "masked-image-edit"]
+        );
         let catalog =
             catalog::snapshot(&connection, &Default::default()).expect("catalog should load");
         let imported = catalog
@@ -1078,6 +1196,10 @@ mod tests {
         assert!(imported.user_imported);
         assert!(imported.installed);
         assert_eq!(imported.package_type, "safetensors");
+        assert_eq!(
+            imported.capabilities,
+            ["text-to-image", "image-to-image", "masked-image-edit"]
+        );
 
         let removal_plan = model_install::plan_removal(&paths, &result.model_id)
             .expect("imported model removal should be planned");

@@ -26,9 +26,11 @@ import {
 } from "lucide-react";
 import type {
   RalphBlockType,
+  RalphExecutionOutput,
   RalphFlowBlock,
   RalphUtilityType,
 } from "../../../../core/ralph.js";
+import type { FlowPortTone } from "../../flow/flow-theme";
 
 export interface RalphBlockVisual {
   icon: LucideIcon;
@@ -448,4 +450,71 @@ export const getBlockVisual = (block: RalphFlowBlock): RalphBlockVisual => {
   return block.type === "UTILITY"
     ? getUtilityTone(block.utility.type)
     : getBlockTone(block.type);
+};
+
+const RALPH_POSITIVE_OUTPUTS = new Set([
+  "SUCCESS",
+  "DONE",
+  "COMPLETE",
+  "READY",
+  "SELECTED",
+  "EXISTS",
+  "MATCH",
+  "IN_SCOPE",
+]);
+
+const RALPH_CAUTION_OUTPUTS = new Set([
+  "CONTINUE",
+  "RETRY",
+  "PARTIAL",
+  "REVIEW_REQUIRED",
+  "INCOMPLETE",
+  "INCONCLUSIVE",
+  "LIMIT_REACHED",
+]);
+
+const RALPH_NEUTRAL_OUTPUTS = new Set([
+  "EMPTY",
+  "MISSING",
+  "NOT_FOUND",
+  "NO_MATCH",
+  "UNAVAILABLE",
+]);
+
+const RALPH_FAILURE_OUTPUTS = new Set([
+  "ERROR",
+  "FAILED",
+  "INVALID",
+  "BLOCKED",
+  "OUT_OF_SCOPE",
+]);
+
+export const getRalphOutputTone = (
+  output: RalphExecutionOutput,
+): FlowPortTone => {
+  const normalizedOutput = output.trim().toUpperCase();
+
+  if (
+    RALPH_FAILURE_OUTPUTS.has(normalizedOutput) ||
+    normalizedOutput.endsWith("_ERROR")
+  ) {
+    return "rose";
+  }
+  if (RALPH_POSITIVE_OUTPUTS.has(normalizedOutput)) {
+    return "emerald";
+  }
+  if (normalizedOutput === "TIMEOUT") {
+    return "orange";
+  }
+  if (RALPH_CAUTION_OUTPUTS.has(normalizedOutput)) {
+    return "amber";
+  }
+  if (RALPH_NEUTRAL_OUTPUTS.has(normalizedOutput)) {
+    return "slate";
+  }
+  if (normalizedOutput === "CANCELLED") {
+    return "violet";
+  }
+
+  return "cyan";
 };

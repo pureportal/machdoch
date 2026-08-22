@@ -3,13 +3,11 @@ use std::{collections::HashSet, fs, path::PathBuf};
 use super::{paths::format_path_for_ui, DroppedPathEntry, DroppedPathsResolution};
 
 fn classify_dropped_path(raw_path: &str) -> Option<DroppedPathEntry> {
-    let normalized_path = raw_path.trim();
-
-    if normalized_path.is_empty() {
+    if raw_path.trim().is_empty() {
         return None;
     }
 
-    let candidate_path = PathBuf::from(normalized_path);
+    let candidate_path = PathBuf::from(raw_path);
     let display_path = candidate_path
         .canonicalize()
         .unwrap_or_else(|_| candidate_path.clone());

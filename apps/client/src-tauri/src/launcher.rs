@@ -23,6 +23,21 @@ pub(crate) fn resolve_launch_action() -> Result<LaunchAction, String> {
 
     let forwarded_args = strip_launcher_mode_flags(&args);
     let has_quick_flag = contains_exact_flag(&forwarded_args, QUICK_FLAG);
+    let file_manager_invocation = desktop_shell::parse_invocation_args(&forwarded_args)?;
+
+    if file_manager_invocation.is_some() {
+        if has_cli_flag || has_quick_flag {
+            return Err(
+                "File-manager actions open the desktop app and cannot be combined with CLI execution."
+                    .to_string(),
+            );
+        }
+
+        ensure_ui_supported()?;
+        return Ok(LaunchAction::Ui(desktop_shell::resolve_launch_context(
+            file_manager_invocation,
+        )));
+    }
 
     if has_ui_flag {
         if has_quick_flag {
@@ -37,7 +52,9 @@ pub(crate) fn resolve_launch_action() -> Result<LaunchAction, String> {
         }
 
         ensure_ui_supported()?;
-        return Ok(LaunchAction::Ui(desktop_shell::resolve_launch_context()));
+        return Ok(LaunchAction::Ui(desktop_shell::resolve_launch_context(
+            None,
+        )));
     }
 
     if has_cli_flag || has_quick_flag || has_non_ui_startup_args(&forwarded_args) {
@@ -47,7 +64,9 @@ pub(crate) fn resolve_launch_action() -> Result<LaunchAction, String> {
     }
 
     if is_ui_supported() {
-        return Ok(LaunchAction::Ui(desktop_shell::resolve_launch_context()));
+        return Ok(LaunchAction::Ui(desktop_shell::resolve_launch_context(
+            None,
+        )));
     }
 
     Ok(LaunchAction::Cli(args_with_current_working_directory(

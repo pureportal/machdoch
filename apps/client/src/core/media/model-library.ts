@@ -29,6 +29,7 @@ export const mediaModelSupportsGenerationTarget = (
       "image-to-image",
       "masked-image-edit",
       "multi-reference-edit",
+      "pose-control",
     ].includes(capability),
   );
 };
@@ -75,7 +76,9 @@ export const listManageableMediaGenerationModels = (
   models: readonly MediaModelDescriptor[],
 ): MediaModelDescriptor[] =>
   models.filter(
-    (model) => isMediaGenerationModel(model) && isMediaModelReady(model),
+    (model) =>
+      isMediaGenerationModel(model) &&
+      (model.installed || model.configured || model.userImported),
   );
 
 const normalizeSearchValue = (value: string): string =>
@@ -100,6 +103,7 @@ export const matchesMediaModelQuery = (
         "image-to-image",
         "masked-image-edit",
         "multi-reference-edit",
+        "pose-control",
       ].includes(capability),
     )
       ? "image generation"

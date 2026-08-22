@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Service
+MimeType=inode/directory;
+Actions=OpenInMachdoch;
+X-KDE-Priority=TopLevel
+
+[Desktop Action OpenInMachdoch]
+Name=Open in machdoch
+Icon=machdoch
+Exec=/usr/bin/machdoch --ui --machdoch-open-folder %f

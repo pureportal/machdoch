@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Service
+MimeType=all/allfiles;
+Actions=AttachToMachdoch;
+X-KDE-Priority=TopLevel
+
+[Desktop Action AttachToMachdoch]
+Name=Attach to machdoch
+Icon=machdoch
+Exec=/usr/bin/machdoch --ui --machdoch-attach-files %F

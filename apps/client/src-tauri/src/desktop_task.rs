@@ -46,7 +46,8 @@ use dropped_paths::resolve_dropped_paths_sync;
 use file_changes::{
     FileChangeHunkPage, FileChangeHunkPageRequest, FileChangePage, FileChangePageRequest,
 };
-use paths::{format_path_for_ui, resolve_workspace_relative_path};
+pub(crate) use paths::format_path_for_ui;
+use paths::resolve_workspace_relative_path;
 use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};

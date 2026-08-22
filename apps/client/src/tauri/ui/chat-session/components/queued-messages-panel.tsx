@@ -3,6 +3,8 @@ import {
   ArrowUp,
   GripVertical,
   ListOrdered,
+  LoaderCircle,
+  RotateCcw,
   SendHorizontal,
   X,
 } from "lucide-react";
@@ -24,6 +26,8 @@ export interface QueuedMessagePanelMessage {
   content: string;
   attachments: ChatSessionContextAttachment[];
   promptEnhancementMode?: "simple" | "web-search";
+  status: "queued" | "enhancing" | "dispatching" | "failed";
+  failureMessage?: string;
   canSendNow: boolean;
   createdAt: number;
 }
@@ -37,6 +41,7 @@ export interface QueuedMessagesPanelProps {
   onMessageMove?: (messageId: string, direction: -1 | 1) => void;
   onMessageReorder?: (messageId: string, targetIndex: number) => void;
   onMessageRemove?: (messageId: string) => void;
+  onMessageRetry?: (messageId: string) => void;
   onMessageSend?: (messageId: string) => void;
   onMessageSelectAttachments?: (
     messageId: string,
@@ -46,8 +51,42 @@ export interface QueuedMessagesPanelProps {
   onMessageClearAttachments?: (messageId: string) => void;
 }
 
-const getQueuePositionLabel = (index: number): string =>
-  index === 0 ? "Next" : "Later";
+const getQueueStateLabel = (
+  status: QueuedMessagePanelMessage["status"],
+  index: number,
+): string => {
+  const statusLabel =
+    status === "enhancing"
+      ? "Enhancing"
+      : status === "dispatching"
+        ? "Dispatching"
+        : status === "failed"
+          ? "Failed"
+          : "Queued";
+
+  if (index === 0) {
+    return status === "queued" ? "Next" : `Next · ${statusLabel}`;
+  }
+
+  return statusLabel;
+};
+
+const getQueueStateClassName = (
+  status: QueuedMessagePanelMessage["status"],
+  index: number,
+): string => {
+  if (status === "enhancing" || status === "dispatching") {
+    return "border-cyan-400/30 bg-cyan-400/10 text-cyan-100";
+  }
+
+  if (status === "failed") {
+    return "border-rose-400/30 bg-rose-400/10 text-rose-100";
+  }
+
+  return index === 0
+    ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
+    : "border-slate-800 bg-slate-950/70 text-slate-400";
+};
 
 const getDragMessageId = (
   event: DragEvent,
@@ -68,6 +107,7 @@ export const QueuedMessagesPanel = ({
   onMessageMove,
   onMessageReorder,
   onMessageRemove,
+  onMessageRetry,
   onMessageSend,
   onMessageSelectAttachments,
   onMessageRemoveAttachment,
@@ -82,30 +122,34 @@ export const QueuedMessagesPanel = ({
     return null;
   }
 
-  const canReorder = messages.length > 1;
+  const hasMessageInProgress = messages.some(
+    (message) =>
+      message.status === "enhancing" || message.status === "dispatching",
+  );
+  const canReorder = messages.length > 1 && !hasMessageInProgress;
 
   return (
     <section
       aria-label="Queued messages"
-      className="app-composer-queued-messages rounded-xl border border-slate-800/80 bg-slate-900/30 p-2"
+      className="app-composer-queued-messages rounded-xl border border-slate-800/80 bg-slate-900/30 p-2.5"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
+      <div className="flex items-center gap-2 px-1 pb-2">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-300">
           <ListOrdered className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-          <span>Execution queue</span>
+          <span>Queue</span>
           <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[11px] leading-none text-slate-400">
             {messages.length}
           </span>
         </div>
-        <span className="rounded-full border border-slate-800 bg-slate-950/60 px-2 py-0.5 text-[11px] text-slate-400">
-          Top to bottom
-        </span>
       </div>
 
       <ol className="max-h-64 space-y-1.5 overflow-y-auto pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]">
         {messages.map((message, index) => {
           const isDragging = draggingMessageId === message.id;
           const isDragTarget = dragOverIndex === index && !isDragging;
+          const isInProgress =
+            message.status === "enhancing" || message.status === "dispatching";
+          const stateLabel = getQueueStateLabel(message.status, index);
 
           return (
             <li
@@ -141,9 +185,12 @@ export const QueuedMessagesPanel = ({
                 onMessageReorder?.(droppedMessageId, index);
               }}
               className={cn(
-                "grid gap-2 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
+                "grid gap-2.5 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2.5 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
                 isDragging && "border-sky-400/40 bg-sky-400/10 opacity-70",
                 isDragTarget && "border-sky-300/60 bg-sky-400/10",
+                message.status === "failed" &&
+                  "border-rose-400/30 bg-rose-400/5",
+                isInProgress && "border-cyan-400/30 bg-cyan-400/5",
               )}
             >
               <div className="flex items-start gap-2 sm:block">
@@ -152,13 +199,14 @@ export const QueuedMessagesPanel = ({
                 </span>
                 <span
                   className={cn(
-                    "inline-flex h-7 items-center rounded-full border px-2 text-[11px] font-medium sm:mt-1",
-                    index === 0
-                      ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
-                      : "border-slate-800 bg-slate-950/70 text-slate-400",
+                    "inline-flex h-7 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium sm:mt-1",
+                    getQueueStateClassName(message.status, index),
                   )}
                 >
-                  {getQueuePositionLabel(index)}
+                  {isInProgress ? (
+                    <LoaderCircle className="h-3 w-3 animate-spin" />
+                  ) : null}
+                  {stateLabel}
                 </span>
               </div>
 
@@ -166,6 +214,7 @@ export const QueuedMessagesPanel = ({
                 <Textarea
                   aria-label={`Queued message ${index + 1}`}
                   value={message.content}
+                  disabled={isInProgress}
                   onChange={(event) =>
                     onMessageChange?.(message.id, event.target.value)
                   }
@@ -176,10 +225,16 @@ export const QueuedMessagesPanel = ({
                   <div className="flex">
                     <span className="rounded-full border border-violet-400/25 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-100">
                       {message.promptEnhancementMode === "web-search"
-                        ? "Enhance with web search before execution"
-                        : "Enhance before execution"}
+                        ? "Web enhance"
+                        : "Enhance"}
                     </span>
                   </div>
+                ) : null}
+
+                {message.status === "failed" && message.failureMessage ? (
+                  <p className="text-xs text-rose-200">
+                    {message.failureMessage}
+                  </p>
                 ) : null}
 
                 <div className="flex min-w-0 items-start gap-2 rounded-lg border border-slate-800/60 bg-slate-950/35 p-1.5">
@@ -198,6 +253,7 @@ export const QueuedMessagesPanel = ({
                     }
                     buttonLabel={`Add attachments to queued message ${index + 1}`}
                     buttonTitle="Add attachments"
+                    disabled={isInProgress}
                     imageInputDisabled={imageInputDisabled}
                     imageInputDisabledReason={imageInputDisabledReason}
                     className="h-7 w-7 rounded-md border-slate-800 bg-slate-950/70 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100"
@@ -220,6 +276,7 @@ export const QueuedMessagesPanel = ({
                           index + 1
                         }`}
                         compact
+                        disabled={isInProgress}
                       />
                     </div>
                   ) : (
@@ -238,6 +295,7 @@ export const QueuedMessagesPanel = ({
                     size="icon-xs"
                     aria-label={`Send queued message ${index + 1} now`}
                     title="Send now"
+                    disabled={isInProgress || message.status === "failed"}
                     onClick={() => onMessageSend?.(message.id)}
                     className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
                   >
@@ -246,11 +304,11 @@ export const QueuedMessagesPanel = ({
                 ) : null}
                 <button
                   type="button"
-                  draggable={canReorder}
+                  draggable={canReorder && !isInProgress}
                   aria-label={`Drag queued message ${index + 1} to reorder`}
                   title="Drag to reorder"
                   onDragStart={(event) => {
-                    if (!canReorder) {
+                    if (!canReorder || isInProgress) {
                       event.preventDefault();
                       return;
                     }
@@ -269,7 +327,7 @@ export const QueuedMessagesPanel = ({
                   }}
                   className={cn(
                     "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
-                    canReorder
+                    canReorder && !isInProgress
                       ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
                       : "cursor-not-allowed opacity-50",
                   )}
@@ -282,7 +340,7 @@ export const QueuedMessagesPanel = ({
                   size="icon-xs"
                   aria-label={`Move queued message ${index + 1} up`}
                   title="Move up"
-                  disabled={index === 0}
+                  disabled={!canReorder || index === 0}
                   onClick={() => onMessageMove?.(message.id, -1)}
                   className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
                 >
@@ -294,7 +352,7 @@ export const QueuedMessagesPanel = ({
                   size="icon-xs"
                   aria-label={`Move queued message ${index + 1} down`}
                   title="Move down"
-                  disabled={index === messages.length - 1}
+                  disabled={!canReorder || index === messages.length - 1}
                   onClick={() => onMessageMove?.(message.id, 1)}
                   className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
                 >
@@ -306,11 +364,25 @@ export const QueuedMessagesPanel = ({
                   size="icon-xs"
                   aria-label={`Remove queued message ${index + 1}`}
                   title="Remove"
+                  disabled={isInProgress}
                   onClick={() => onMessageRemove?.(message.id)}
                   className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
                 >
                   <X className="h-3 w-3" />
                 </Button>
+                {message.status === "failed" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label={`Retry queued message ${index + 1}`}
+                    title="Retry"
+                    onClick={() => onMessageRetry?.(message.id)}
+                    className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                  </Button>
+                ) : null}
               </div>
             </li>
           );

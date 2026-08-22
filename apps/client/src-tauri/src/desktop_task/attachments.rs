@@ -23,13 +23,11 @@ pub(super) fn remember_attachment_path_grant(
     grants: &AttachmentPathGrantMap,
     path: &str,
 ) -> Result<(), String> {
-    let normalized_path = path.trim();
-
-    if normalized_path.is_empty() {
+    if path.trim().is_empty() {
         return Ok(());
     }
 
-    let candidate_path = PathBuf::from(normalized_path);
+    let candidate_path = PathBuf::from(path);
 
     if !candidate_path.is_absolute() {
         return Ok(());

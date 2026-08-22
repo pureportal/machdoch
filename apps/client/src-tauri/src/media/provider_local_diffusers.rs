@@ -6,7 +6,7 @@ use std::{
     process::{Command, Output, Stdio},
     sync::{Mutex, OnceLock},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use rusqlite::{params, OptionalExtension as _};
@@ -23,12 +23,12 @@ use super::{
     database, model_addon, model_import,
     provider_openai::{self, GeneratedImageAsset},
     subject_cutout, transform, GenerateMediaImagesRequest, GenerateMediaVideoRequest,
-    MediaAnimatedBackgroundConfig, MediaEmbeddingVectorProfile, MediaLoraDenoisingSchedule,
-    MediaLoraTensorProfile, MediaModelAddonSelection, MediaModelDescriptor, MediaResult,
-    MediaRuntimePaths,
+    MediaAnimatedBackgroundConfig, MediaEmbeddingVectorProfile, MediaImageMask,
+    MediaImageReference, MediaLoraDenoisingSchedule, MediaLoraTensorProfile,
+    MediaModelAddonSelection, MediaModelDescriptor, MediaResult, MediaRuntimePaths,
 };
 
-const WORKER_SCHEMA_VERSION: u32 = 4;
+const WORKER_SCHEMA_VERSION: u32 = 5;
 // Importing the pinned ROCm stack takes roughly 45 seconds on the reference
 // machine and can take materially longer while a hot-reload build is linking
 // or Windows is reclaiming memory after generation.
@@ -43,6 +43,9 @@ const MAX_WORKER_DIAGNOSTIC_BYTES: usize = 256 * 1_024;
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
 const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
 const MAX_DECODED_LOOP_CONTINUITY_RATIO: f64 = 1.25;
+const REFERENCE_EDIT_PIXEL_DELTA_THRESHOLD: f64 = 8.0;
+const REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO: f64 = 0.01;
+const REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE: f64 = 3.0;
 // A nominal 16 GB adapter reports slightly less usable memory after the
 // display driver reserves VRAM. Keep the bounded CPU-offload profile honest
 // while accepting those adapters instead of requiring a full 16 GiB report.
@@ -51,6 +54,14 @@ const MIN_HUNYUAN_VIDEO_15_MEMORY_BYTES: u64 = 14 * 1_024 * 1_024 * 1_024;
 const MIN_FRAMEPACK_MEMORY_BYTES: u64 = 6 * 1_024 * 1_024 * 1_024;
 static RUNTIME_PROBE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PREFERRED_HIP_VISIBLE_DEVICE: OnceLock<String> = OnceLock::new();
+static VERIFIED_MODEL_FILES: OnceLock<Mutex<HashMap<PathBuf, VerifiedModelFile>>> = OnceLock::new();
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VerifiedModelFile {
+    expected_digest: String,
+    byte_size: u64,
+    modified_at: SystemTime,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -159,19 +170,36 @@ struct WorkerGenerationRequest<'a> {
     seed: u64,
     output_directory: &'a Path,
     addons: Vec<WorkerAddon<'a>>,
+    reference_images: Vec<WorkerReferenceImage<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reference_image_path: Option<&'a Path>,
+    base_image_path: Option<&'a Path>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit_mask: Option<&'a MediaImageMask>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pose_image_path: Option<&'a Path>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pose_controlnet_path: Option<&'a Path>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pose_strength: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pose_start: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pose_end: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     edit_strength: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reference_boost: Option<f64>,
+    mask_strength: Option<f64>,
     require_chroma_background: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    grounding_pixels: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reference_fit: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     memory_profile: Option<&'a str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerReferenceImage<'a> {
+    path: &'a Path,
+    role: &'a str,
+    influence: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -433,9 +461,17 @@ pub(crate) struct LocalDiffusersProvenance {
     pub(crate) performance: Option<serde_json::Value>,
     pub(crate) require_chroma_background: bool,
     pub(crate) edit_conditioning: Option<serde_json::Value>,
-    pub(crate) reference_image_asset_id: Option<String>,
-    pub(crate) reference_image_digest: Option<String>,
+    pub(crate) conditioning_sources: Vec<LocalConditioningSource>,
     pub(crate) outputs: Vec<LocalDiffusersOutputProvenance>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalConditioningSource {
+    pub(crate) asset_id: String,
+    pub(crate) digest: String,
+    pub(crate) role: String,
+    pub(crate) influence: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -458,7 +494,14 @@ pub(crate) struct LocalModelRuntimeProbeResult {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LocalDiffusersOutputProvenance {
     pub(crate) index: u32,
+    pub(crate) source_index: u32,
     pub(crate) seed: u64,
+    pub(crate) branch_id: String,
+    pub(crate) output_node_id: String,
+    pub(crate) format: String,
+    pub(crate) quality: u8,
+    pub(crate) jpeg_background: String,
+    pub(crate) post_processing: Vec<super::MediaImagePostProcessingOperation>,
 }
 
 #[derive(Debug)]
@@ -964,6 +1007,11 @@ fn safe_managed_path(root: &Path, relative_path: &str) -> MediaResult<PathBuf> {
     Ok(candidate)
 }
 
+fn resolve_managed_addon_file(models_root: &Path, relative_path: &str) -> MediaResult<PathBuf> {
+    let addon_root = safe_managed_path(models_root, relative_path)?;
+    safe_managed_path(&addon_root, "addon.safetensors")
+}
+
 fn validate_model_tree(root: &Path) -> MediaResult<()> {
     let canonical_root = fs::canonicalize(root)
         .map_err(|error| format!("failed to resolve local model package: {error}"))?;
@@ -997,6 +1045,44 @@ fn validate_model_tree(root: &Path) -> MediaResult<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn verify_model_file(path: &Path, expected_digest: &str) -> MediaResult<()> {
+    let mut verified_files = VERIFIED_MODEL_FILES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let initial_metadata = fs::metadata(path)
+        .map_err(|error| format!("failed to inspect installed model file: {error}"))?;
+    let initial_modified_at = initial_metadata
+        .modified()
+        .map_err(|error| format!("failed to inspect installed model timestamp: {error}"))?;
+    let current = VerifiedModelFile {
+        expected_digest: expected_digest.to_string(),
+        byte_size: initial_metadata.len(),
+        modified_at: initial_modified_at,
+    };
+    if verified_files.get(path) == Some(&current) {
+        return Ok(());
+    }
+
+    let (byte_size, observed_digest) = model_import::hash_file(path)?;
+    if byte_size == 0 || observed_digest != expected_digest {
+        return Err(
+            "the installed single-file model failed its content-addressed integrity check"
+                .to_string(),
+        );
+    }
+    let verified_metadata = fs::metadata(path)
+        .map_err(|error| format!("failed to reinspect installed model file: {error}"))?;
+    let verified_modified_at = verified_metadata
+        .modified()
+        .map_err(|error| format!("failed to reinspect installed model timestamp: {error}"))?;
+    if verified_metadata.len() != current.byte_size || verified_modified_at != current.modified_at {
+        return Err("the installed model changed during integrity verification".to_string());
+    }
+    verified_files.insert(path.to_path_buf(), current);
     Ok(())
 }
 
@@ -1058,13 +1144,7 @@ fn installed_model(paths: &MediaRuntimePaths, model_id: &str) -> MediaResult<Ins
         return Err("the installed model package has an unsafe shape".to_string());
     }
     if package_kind == "single-file" {
-        let (byte_size, observed_digest) = model_import::hash_file(&path)?;
-        if byte_size == 0 || observed_digest != row.4 {
-            return Err(
-                "the installed single-file model failed its content-addressed integrity check"
-                    .to_string(),
-            );
-        }
+        verify_model_file(&path, &row.4)?;
     } else {
         validate_model_tree(&path)?;
     }
@@ -1363,7 +1443,7 @@ fn resolve_addons(
         let row = connection
             .query_row(
                 "SELECT kind, architecture, target_components_json, embedding_vectors_json,
-                        lora_profile_json, digest, relative_path
+                        lora_profile_json, digest, header_digest, byte_size, relative_path
                  FROM media_model_addons WHERE id = ?1",
                 [addon_id],
                 |row| {
@@ -1375,6 +1455,8 @@ fn resolve_addons(
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, String>(5)?,
                         row.get::<_, String>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, String>(8)?,
                     ))
                 },
             )
@@ -1419,8 +1501,18 @@ fn resolve_addons(
                 "model add-on {addon_id} targets unsupported model components"
             ));
         }
-        let addon_root = safe_managed_path(&models_root, &row.6)?;
-        let path = safe_managed_path(&addon_root, "addon.safetensors")?;
+        let path = resolve_managed_addon_file(&models_root, &row.8)?;
+        let tensor_profile =
+            model_addon::verify_managed_addon_header(&path, &row.0, &row.6, row.7.max(0) as u64)?;
+        if tensor_profile.architecture != model.architecture
+            || tensor_profile.target_components != target_components
+            || tensor_profile.embedding_vectors != embedding_vectors
+            || tensor_profile.lora_profile != lora_profile
+        {
+            return Err(format!(
+                "model add-on {addon_id} does not match its tensor-verified catalog profile"
+            ));
+        }
         let (byte_size, observed_digest) = model_import::hash_file(&path)?;
         if byte_size == 0 || observed_digest != row.5 {
             return Err(format!(
@@ -1486,6 +1578,19 @@ fn resolve_addons(
         {
             return Err(format!(
                 "model add-on {addon_id} has an invalid LoRA tensor profile"
+            ));
+        }
+        if row.0 == "lora"
+            && matches!(
+                model.architecture.as_str(),
+                "stable-diffusion-3" | "flux-2" | "krea-2"
+            )
+            && lora_profile
+                .as_ref()
+                .is_some_and(|profile| profile.convolution_target_count > 0)
+        {
+            return Err(format!(
+                "model add-on {addon_id} contains convolutional weights that the selected transformer pipeline cannot load"
             ));
         }
         let (model_strength, text_encoder_strength, denoising_schedule, token, placement) =
@@ -1574,9 +1679,10 @@ fn resolve_addons(
     Ok(resolved)
 }
 
-pub(crate) fn runnable_model_ids(
+fn runnable_model_ids_for_architecture(
     paths: &MediaRuntimePaths,
     runtime: &LocalDiffusersRuntimeStatus,
+    required_architecture: Option<&str>,
 ) -> MediaResult<Vec<String>> {
     if !runtime.ready {
         return Ok(Vec::new());
@@ -1586,7 +1692,7 @@ pub(crate) fn runnable_model_ids(
     let connection = database::open(paths)?;
     let mut statement = connection
         .prepare(
-            "SELECT m.id FROM media_models m
+            "SELECT m.id, m.architecture FROM media_models m
              JOIN media_model_installations i ON i.model_id = m.id
              JOIN media_model_runtime_probes p ON p.model_id = m.id
              WHERE m.provider_id = 'local-diffusers' AND m.target = 'local'
@@ -1597,17 +1703,37 @@ pub(crate) fn runnable_model_ids(
         )
         .map_err(|error| format!("failed to prepare runnable model query: {error}"))?;
     let candidates = statement
-        .query_map([fingerprint], |row| row.get::<_, String>(0))
+        .query_map([fingerprint], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
         .map_err(|error| format!("failed to query runnable local models: {error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to decode runnable local models: {error}"))?;
-    Ok(candidates
-        .into_iter()
-        .filter(|model_id| {
-            installed_model(paths, model_id)
-                .is_ok_and(|model| runtime.architectures.contains(&model.architecture))
-        })
-        .collect())
+    let mut runnable = Vec::new();
+    for (model_id, architecture) in candidates {
+        let Some(architecture) = architecture else {
+            continue;
+        };
+        if !runtime.architectures.contains(&architecture)
+            || required_architecture.is_some_and(|required| required != architecture)
+        {
+            continue;
+        }
+        let Ok(model) = installed_model(paths, &model_id) else {
+            continue;
+        };
+        if model.architecture == architecture {
+            runnable.push(model_id);
+        }
+    }
+    Ok(runnable)
+}
+
+pub(crate) fn runnable_model_ids(
+    paths: &MediaRuntimePaths,
+    runtime: &LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    runnable_model_ids_for_architecture(paths, runtime, None)
 }
 
 pub(crate) fn runnable_reference_model_ids(
@@ -1616,16 +1742,115 @@ pub(crate) fn runnable_reference_model_ids(
 ) -> MediaResult<Vec<String>> {
     if !runtime
         .capabilities
-        .contains(&"krea2-grounded-reference-edit".to_string())
+        .contains(&"local-image-edit".to_string())
     {
         return Ok(Vec::new());
     }
     Ok(runnable_model_ids(paths, runtime)?
         .into_iter()
         .filter(|model_id| {
-            installed_model(paths, model_id).is_ok_and(|model| model.architecture == "krea-2")
+            installed_model(paths, model_id).is_ok_and(|model| {
+                matches!(
+                    model.architecture.as_str(),
+                    "stable-diffusion-1"
+                        | "stable-diffusion-2"
+                        | "stable-diffusion-xl"
+                        | "flux-1"
+                        | "flux-2"
+                )
+            })
         })
         .collect())
+}
+
+pub(crate) fn runnable_inpainting_model_ids(
+    paths: &MediaRuntimePaths,
+    runtime: &LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    if !runtime
+        .capabilities
+        .contains(&"masked-region-inpainting".to_string())
+    {
+        return Ok(Vec::new());
+    }
+    Ok(runnable_reference_model_ids(paths, runtime)?
+        .into_iter()
+        .filter(|model_id| {
+            installed_model(paths, model_id).is_ok_and(|model| {
+                matches!(
+                    model.architecture.as_str(),
+                    "stable-diffusion-1"
+                        | "stable-diffusion-2"
+                        | "stable-diffusion-xl"
+                        | "flux-1"
+                        | "flux-2"
+                )
+            })
+        })
+        .collect())
+}
+
+fn openpose_controlnet_path(
+    paths: &MediaRuntimePaths,
+    architecture: &str,
+) -> MediaResult<Option<PathBuf>> {
+    let profile = match architecture {
+        "stable-diffusion-1" => "sd15",
+        "stable-diffusion-2" => "sd2",
+        "stable-diffusion-xl" => "sdxl",
+        _ => return Ok(None),
+    };
+    let root = paths.models_root()?;
+    let relative = format!("controlnet/openpose/{profile}");
+    let unresolved_directory = root.join(&relative);
+    let Ok(metadata) = fs::symlink_metadata(&unresolved_directory) else {
+        return Ok(None);
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Ok(None);
+    }
+    let directory = safe_managed_path(&root, &relative)?;
+    let config = directory.join("config.json");
+    if !config.is_file() {
+        return Ok(None);
+    }
+    let has_weights = fs::read_dir(&directory)
+        .map_err(|error| format!("failed to inspect OpenPose ControlNet: {error}"))?
+        .filter_map(Result::ok)
+        .any(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_file())
+                && entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("diffusion_pytorch_model")
+                && entry
+                    .path()
+                    .extension()
+                    .is_some_and(|suffix| suffix == "safetensors")
+        });
+    Ok(has_weights.then_some(directory))
+}
+
+pub(crate) fn runnable_pose_model_ids(
+    paths: &MediaRuntimePaths,
+    runtime: &LocalDiffusersRuntimeStatus,
+) -> MediaResult<Vec<String>> {
+    if !runtime
+        .capabilities
+        .contains(&"openpose-controlnet".to_string())
+    {
+        return Ok(Vec::new());
+    }
+    let mut models = Vec::new();
+    for model_id in runnable_model_ids(paths, runtime)? {
+        let Ok(model) = installed_model(paths, &model_id) else {
+            continue;
+        };
+        if openpose_controlnet_path(paths, &model.architecture)?.is_some() {
+            models.push(model_id);
+        }
+    }
+    Ok(models)
 }
 
 fn create_staging_directory(paths: &MediaRuntimePaths) -> MediaResult<StagingDirectory> {
@@ -1648,29 +1873,6 @@ fn create_staging_directory(paths: &MediaRuntimePaths) -> MediaResult<StagingDir
     fs::create_dir(&path)
         .map_err(|error| format!("failed to create local generation staging: {error}"))?;
     Ok(StagingDirectory(path))
-}
-
-fn deterministic_seed(request: &GenerateMediaImagesRequest) -> MediaResult<u64> {
-    let addons = serde_json::to_vec(&request.model_addons)
-        .map_err(|error| format!("failed to encode model add-on stack: {error}"))?;
-    let mut hasher = Sha256::new();
-    hasher.update(b"machdoch-local-diffusers-seed-v1\0");
-    for value in [
-        request.run_id.as_bytes(),
-        request.flow_revision_id.as_bytes(),
-        request.model_id.as_bytes(),
-        request.prompt.as_bytes(),
-        &addons,
-    ] {
-        hasher.update(value);
-        hasher.update(b"\0");
-    }
-    let digest = hasher.finalize();
-    Ok(u64::from_le_bytes(
-        digest[..8]
-            .try_into()
-            .expect("SHA-256 prefix has eight bytes"),
-    ) & ((1_u64 << 53) - 16))
 }
 
 fn decode_generation_response(output: &Output) -> MediaResult<WorkerGenerationResponse> {
@@ -1889,10 +2091,319 @@ fn validate_generation_evidence(
     Ok(())
 }
 
-fn stage_reference_image(
+#[derive(Clone, Copy)]
+struct EditConditioningEvidenceExpectation<'a> {
+    architecture: &'a str,
+    references: &'a [MediaImageReference],
+    reference_digests: &'a [&'a str],
+    base_digest: Option<&'a str>,
+    pose_digest: Option<&'a str>,
+    has_mask: bool,
+    edit_strength: Option<f64>,
+    mask_strength: Option<f64>,
+    requires_reference_binding: bool,
+    requires_visible_reference_change: bool,
+}
+
+fn validate_flux2_reference_binding(
+    object: &serde_json::Map<String, serde_json::Value>,
+    expected: &EditConditioningEvidenceExpectation<'_>,
+) -> MediaResult<()> {
+    if !expected.requires_reference_binding {
+        if !matches!(
+            object.get("referenceBinding"),
+            None | Some(serde_json::Value::Null)
+        ) {
+            return Err(
+                "local Diffusers generation returned unexpected FLUX.2 reference-binding evidence"
+                    .to_string(),
+            );
+        }
+        return Ok(());
+    }
+    let binding = object
+        .get("referenceBinding")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            "local Diffusers generation did not confirm indexed FLUX.2 reference roles".to_string()
+        })?;
+    if binding.get("mode").and_then(serde_json::Value::as_str) != Some("indexed-role-prompt-v1")
+        || binding
+            .get("requiresVisibleChange")
+            .and_then(serde_json::Value::as_bool)
+            != Some(expected.requires_visible_reference_change)
+    {
+        return Err(
+            "local Diffusers generation returned invalid FLUX.2 reference-binding evidence"
+                .to_string(),
+        );
+    }
+    let inputs = binding
+        .get("inputs")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            "local Diffusers FLUX.2 reference-binding evidence has no input list".to_string()
+        })?;
+    let base_offset = usize::from(expected.base_digest.is_some());
+    if inputs.len() != expected.references.len() + base_offset {
+        return Err(
+            "local Diffusers FLUX.2 reference-binding evidence has an unexpected input count"
+                .to_string(),
+        );
+    }
+    for (index, input) in inputs.iter().enumerate() {
+        let input = input.as_object().ok_or_else(|| {
+            format!("local Diffusers FLUX.2 reference-binding input {index} is not an object")
+        })?;
+        let expected_role = if base_offset == 1 && index == 0 {
+            "base"
+        } else {
+            expected.references[index - base_offset].role.as_str()
+        };
+        if input.get("imageIndex").and_then(serde_json::Value::as_u64) != Some((index + 1) as u64)
+            || input.get("role").and_then(serde_json::Value::as_str) != Some(expected_role)
+        {
+            return Err(format!(
+                "local Diffusers FLUX.2 reference-binding input {index} does not match the staged role order"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_visible_reference_change(
+    object: &serde_json::Map<String, serde_json::Value>,
+    expected: &EditConditioningEvidenceExpectation<'_>,
+) -> MediaResult<()> {
+    if !expected.requires_visible_reference_change {
+        if !matches!(
+            object.get("changeMap"),
+            None | Some(serde_json::Value::Null)
+        ) {
+            return Err(
+                "local Diffusers generation returned unexpected source-change evidence".to_string(),
+            );
+        }
+        return Ok(());
+    }
+    let outputs = object
+        .get("changeMap")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|change_map| change_map.get("outputs"))
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            "local Diffusers generation did not confirm material source-image change".to_string()
+        })?;
+    if outputs.is_empty() {
+        return Err("local Diffusers source-change evidence has no generated outputs".to_string());
+    }
+    let expected_scope = if expected.has_mask { "mask" } else { "image" };
+    for (index, output) in outputs.iter().enumerate() {
+        let output = output.as_object().ok_or_else(|| {
+            format!("local Diffusers source-change output {index} is not an object")
+        })?;
+        let active_pixels = output
+            .get("activePixels")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                format!("local Diffusers source-change output {index} has no active pixels")
+            })?;
+        let changed_pixels = output
+            .get("changedPixels")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|value| *value <= active_pixels)
+            .ok_or_else(|| {
+                format!("local Diffusers source-change output {index} has invalid changed pixels")
+            })?;
+        let changed_ratio = output
+            .get("changedPixelRatio")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+            .ok_or_else(|| {
+                format!("local Diffusers source-change output {index} has invalid changed ratio")
+            })?;
+        let mean_difference = output
+            .get("meanAbsoluteDifference")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .ok_or_else(|| {
+                format!("local Diffusers source-change output {index} has invalid pixel difference")
+            })?;
+        let evidence_matches_algorithm = output.get("scope").and_then(serde_json::Value::as_str)
+            == Some(expected_scope)
+            && output
+                .get("pixelDeltaThreshold")
+                .and_then(serde_json::Value::as_f64)
+                .is_some_and(|value| {
+                    (value - REFERENCE_EDIT_PIXEL_DELTA_THRESHOLD).abs() <= f64::EPSILON
+                })
+            && output
+                .get("minimumChangedPixelRatio")
+                .and_then(serde_json::Value::as_f64)
+                .is_some_and(|value| {
+                    (value - REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO).abs() <= f64::EPSILON
+                })
+            && output
+                .get("minimumMeanAbsoluteDifference")
+                .and_then(serde_json::Value::as_f64)
+                .is_some_and(|value| {
+                    (value - REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE).abs() <= f64::EPSILON
+                });
+        if !evidence_matches_algorithm
+            || changed_ratio < REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO
+            || mean_difference < REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE
+            || changed_pixels == 0
+        {
+            return Err(format!(
+                "local Diffusers source-change output {index} did not materially change the source image"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_edit_conditioning_evidence(
+    response: &WorkerGenerationResponse,
+    expected: &EditConditioningEvidenceExpectation<'_>,
+) -> MediaResult<()> {
+    let evidence = response.edit_conditioning.as_ref().ok_or_else(|| {
+        "local Diffusers generation did not return reference conditioning evidence".to_string()
+    })?;
+    let object = evidence.as_object().ok_or_else(|| {
+        "local Diffusers reference conditioning evidence is not an object".to_string()
+    })?;
+    let expected_mode = if expected.pose_digest.is_some() && expected.has_mask {
+        "controlnet-openpose-soft-inpaint-v1"
+    } else if expected.pose_digest.is_some() {
+        "controlnet-openpose"
+    } else if expected.has_mask && expected.architecture == "flux-2" {
+        "flux2-klein-inpaint-v1"
+    } else if expected.has_mask {
+        "diffusers-soft-inpaint-v1"
+    } else if expected.architecture == "flux-2" {
+        "flux2-native-reference"
+    } else {
+        "diffusers-image-to-image"
+    };
+    if object.get("mode").and_then(serde_json::Value::as_str) != Some(expected_mode) {
+        return Err(
+            "local Diffusers generation did not confirm the requested native conditioning mode"
+                .to_string(),
+        );
+    }
+    let reference_sources = object
+        .get("referenceSources")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            "local Diffusers reference conditioning evidence has no source list".to_string()
+        })?;
+    if reference_sources.len() != expected.references.len()
+        || expected.reference_digests.len() != expected.references.len()
+    {
+        return Err(
+            "local Diffusers reference conditioning evidence has an unexpected source count"
+                .to_string(),
+        );
+    }
+    for (index, ((source, reference), digest)) in reference_sources
+        .iter()
+        .zip(expected.references)
+        .zip(expected.reference_digests)
+        .enumerate()
+    {
+        let source = source.as_object().ok_or_else(|| {
+            format!("local Diffusers reference conditioning source {index} is not an object")
+        })?;
+        if source.get("digest").and_then(serde_json::Value::as_str) != Some(*digest)
+            || source.get("role").and_then(serde_json::Value::as_str)
+                != Some(reference.role.as_str())
+            || source.get("influence").and_then(serde_json::Value::as_f64)
+                != Some(reference.influence)
+        {
+            return Err(format!(
+                "local Diffusers reference conditioning source {index} does not match the staged immutable input"
+            ));
+        }
+    }
+    let matches_optional_digest = |key: &str, expected: Option<&str>| match expected {
+        Some(digest) => object.get(key).and_then(serde_json::Value::as_str) == Some(digest),
+        None => matches!(object.get(key), None | Some(serde_json::Value::Null)),
+    };
+    if !matches_optional_digest("baseDigest", expected.base_digest)
+        || !matches_optional_digest("poseDigest", expected.pose_digest)
+    {
+        return Err(
+            "local Diffusers reference conditioning evidence does not match the staged base or pose input"
+                .to_string(),
+        );
+    }
+    let mask_bounds = object.get("maskBounds");
+    if expected.has_mask {
+        if !matches!(mask_bounds, Some(serde_json::Value::Array(bounds)) if bounds.len() == 4 && bounds.iter().all(serde_json::Value::is_number))
+        {
+            return Err(
+                "local Diffusers mask conditioning evidence has invalid bounds".to_string(),
+            );
+        }
+        let expected_mask_strength = expected.mask_strength.ok_or_else(|| {
+            "local Diffusers mask edit is missing the compiled mask strength".to_string()
+        })?;
+        let observed_mask_strength = object
+            .get("maskStrength")
+            .and_then(serde_json::Value::as_f64);
+        if observed_mask_strength
+            .is_none_or(|observed| (observed - expected_mask_strength).abs() > f64::EPSILON)
+        {
+            return Err(
+                "local Diffusers mask conditioning did not receive the compiled mask strength"
+                    .to_string(),
+            );
+        }
+    } else if !matches!(mask_bounds, None | Some(serde_json::Value::Null)) {
+        return Err(
+            "local Diffusers generation reported mask conditioning without a mask".to_string(),
+        );
+    }
+    if expected.has_mask && expected.architecture == "flux-2" {
+        let expected_edit_strength = expected.edit_strength.ok_or_else(|| {
+            "FLUX.2 inpainting is missing the compiled global edit strength".to_string()
+        })?;
+        let observed_edit_strength = object
+            .get("globalEditStrength")
+            .and_then(serde_json::Value::as_f64);
+        if observed_edit_strength
+            .is_none_or(|observed| (observed - expected_edit_strength).abs() > f64::EPSILON)
+        {
+            return Err(
+                "FLUX.2 inpainting did not receive the compiled global edit strength".to_string(),
+            );
+        }
+    } else if !matches!(
+        object.get("globalEditStrength"),
+        None | Some(serde_json::Value::Null)
+    ) {
+        return Err(
+            "local Diffusers generation reported an unexpected global edit strength".to_string(),
+        );
+    }
+    validate_flux2_reference_binding(object, expected)?;
+    validate_visible_reference_change(object, expected)?;
+    for key in ["grounding", "sourceTokens"] {
+        if !matches!(object.get(key), None | Some(serde_json::Value::Null)) {
+            return Err(format!(
+                "local Diffusers generation returned unsupported conditioning evidence: {key}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn stage_conditioning_image(
     paths: &MediaRuntimePaths,
     input_directory: &Path,
     asset_id: &str,
+    file_stem: &str,
 ) -> MediaResult<(database::AssetBlobSource, PathBuf)> {
     let source = database::get_published_image_blob_source(paths, asset_id)?;
     if source.byte_size == 0 || source.byte_size > MAX_IMAGE_BYTES as u64 {
@@ -1923,10 +2434,27 @@ fn stage_reference_image(
     if format!("{:x}", Sha256::digest(&bytes)) != source.digest {
         return Err("The local edit reference failed its immutable digest check".to_string());
     }
-    let staged_path = input_directory.join(format!("reference.{suffix}"));
+    let staged_path = input_directory.join(format!("{file_stem}.{suffix}"));
     fs::copy(&source_path, &staged_path)
         .map_err(|error| format!("failed to stage the local edit reference: {error}"))?;
     Ok((source, staged_path))
+}
+
+fn expected_image_inference_steps(architecture: &str, model_policy: &str) -> MediaResult<u32> {
+    match (architecture, model_policy) {
+        ("flux-2", "fast" | "balanced" | "quality") => Ok(4),
+        ("krea-2", "fast") => Ok(8),
+        ("krea-2", "balanced") => Ok(10),
+        ("krea-2", "quality") => Ok(12),
+        (_, "fast") => Ok(16),
+        (_, "balanced") => Ok(24),
+        (_, "quality") => Ok(32),
+        _ => Err("local Diffusers request has an invalid model policy".to_string()),
+    }
+}
+
+fn image_generation_timeout(_architecture: &str, _has_conditioning: bool) -> Duration {
+    GENERATION_TIMEOUT
 }
 
 pub(crate) fn generate(
@@ -1938,6 +2466,46 @@ pub(crate) fn generate(
     let (runtime, python) = ready_runtime(app, &script)?;
     let model = installed_model(paths, &request.model_id)?;
     ensure_model_is_probe_ready(paths, &model, &runtime)?;
+    let has_conditioning = !request.reference_images.is_empty()
+        || request.base_image_asset_id.is_some()
+        || request.pose_image_asset_id.is_some();
+    let supported_roles: &[&str] = match model.architecture.as_str() {
+        "flux-2" => &["subject", "style", "composition", "palette", "detail"],
+        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1" => {
+            &["composition"]
+        }
+        _ => &[],
+    };
+    if let Some(reference) = request
+        .reference_images
+        .iter()
+        .find(|reference| !supported_roles.contains(&reference.role.as_str()))
+    {
+        return Err(format!(
+            "{} does not implement {} reference conditioning",
+            model.architecture, reference.role
+        ));
+    }
+    let maximum_references = match model.architecture.as_str() {
+        "flux-2" => 7,
+        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1" => 1,
+        _ => 0,
+    };
+    if request.reference_images.len() > maximum_references {
+        return Err(format!(
+            "{} accepts at most {maximum_references} supplemental reference images",
+            model.architecture
+        ));
+    }
+    if request.prompt.is_empty() && !has_conditioning {
+        return Err("prompt or supported local image conditioning is required".to_string());
+    }
+    if model.architecture == "krea-2" && has_conditioning {
+        return Err(
+            "KREA 2 supports text-to-image only; choose FLUX.2 klein for image conditioning"
+                .to_string(),
+        );
+    }
     let addons = resolve_addons(paths, &model, &request.model_addons)?;
     let staging = create_staging_directory(paths)?;
     let input_directory = staging.0.join("input");
@@ -1946,13 +2514,44 @@ pub(crate) fn generate(
         .map_err(|error| format!("failed to prepare local image inputs: {error}"))?;
     fs::create_dir(&output_directory)
         .map_err(|error| format!("failed to prepare local image outputs: {error}"))?;
-    let (reference_source, reference_image_path) =
-        if let Some(asset_id) = request.reference_image_asset_id.as_deref() {
-            let (source, path) = stage_reference_image(paths, &input_directory, asset_id)?;
-            (Some(source), Some(path))
-        } else {
-            (None, None)
-        };
+    let mut staged_references = Vec::with_capacity(request.reference_images.len());
+    for (index, reference) in request.reference_images.iter().enumerate() {
+        let (source, path) = stage_conditioning_image(
+            paths,
+            &input_directory,
+            &reference.asset_id,
+            &format!("reference-{index:02}"),
+        )?;
+        staged_references.push((reference, source, path));
+    }
+    let (base_source, base_image_path) = if let Some(asset_id) =
+        request.base_image_asset_id.as_deref()
+    {
+        let (source, path) = stage_conditioning_image(paths, &input_directory, asset_id, "base")?;
+        (Some(source), Some(path))
+    } else {
+        (None, None)
+    };
+    let (pose_source, pose_image_path) = if let Some(asset_id) =
+        request.pose_image_asset_id.as_deref()
+    {
+        let (source, path) = stage_conditioning_image(paths, &input_directory, asset_id, "pose")?;
+        (Some(source), Some(path))
+    } else {
+        (None, None)
+    };
+    let pose_controlnet_path = if pose_image_path.is_some() {
+        Some(
+            openpose_controlnet_path(paths, &model.architecture)?.ok_or_else(|| {
+                format!(
+                    "No verified OpenPose ControlNet is installed for {}",
+                    model.architecture
+                )
+            })?,
+        )
+    } else {
+        None
+    };
     let worker_addons = addons
         .iter()
         .map(|addon| WorkerAddon {
@@ -1988,15 +2587,29 @@ pub(crate) fn generate(
         output_format: &request.output_format,
         model_policy: &request.model_policy,
         aspect_ratio: &request.aspect_ratio,
-        seed: deterministic_seed(request)?,
+        seed: request
+            .seed
+            .ok_or_else(|| "local Diffusers generation requires a resolved seed".to_string())?,
         output_directory: &output_directory,
         addons: worker_addons,
-        reference_image_path: reference_image_path.as_deref(),
+        reference_images: staged_references
+            .iter()
+            .map(|(reference, _, path)| WorkerReferenceImage {
+                path,
+                role: &reference.role,
+                influence: reference.influence,
+            })
+            .collect(),
+        base_image_path: base_image_path.as_deref(),
+        edit_mask: request.edit_mask.as_ref(),
+        pose_image_path: pose_image_path.as_deref(),
+        pose_controlnet_path: pose_controlnet_path.as_deref(),
+        pose_strength: request.pose_strength,
+        pose_start: request.pose_start,
+        pose_end: request.pose_end,
         edit_strength: request.edit_strength,
-        reference_boost: request.reference_boost,
+        mask_strength: request.mask_strength,
         require_chroma_background: request.require_chroma_background,
-        grounding_pixels: request.grounding_pixels,
-        reference_fit: request.reference_fit.as_deref(),
         memory_profile: request.memory_profile.as_deref(),
     };
     let encoded = serde_json::to_vec(&worker_request)
@@ -2006,7 +2619,7 @@ pub(crate) fn generate(
         &script,
         "generate",
         Some(&encoded),
-        GENERATION_TIMEOUT,
+        image_generation_timeout(&model.architecture, has_conditioning),
         Some((paths, &request.run_id)),
     )?;
     let response = decode_generation_response(&output)?;
@@ -2018,18 +2631,7 @@ pub(crate) fn generate(
         &addons,
     )?;
     let expected_inference_steps =
-        match (model.architecture.as_str(), request.model_policy.as_str()) {
-            ("flux-2", "fast") => 4,
-            ("flux-2", "balanced") => 6,
-            ("flux-2", "quality") => 8,
-            ("krea-2", "fast") => 8,
-            ("krea-2", "balanced") => 10,
-            ("krea-2", "quality") => 12,
-            (_, "fast") => 16,
-            (_, "balanced") => 24,
-            (_, "quality") => 32,
-            _ => return Err("local Diffusers request has an invalid model policy".to_string()),
-        };
+        expected_image_inference_steps(model.architecture.as_str(), request.model_policy.as_str())?;
     if response.model_policy != request.model_policy
         || response.aspect_ratio != request.aspect_ratio
         || response.num_inference_steps != expected_inference_steps
@@ -2038,10 +2640,32 @@ pub(crate) fn generate(
             "local Diffusers generation returned inconsistent sampling evidence".to_string(),
         );
     }
-    if response.edit_conditioning.is_some() != reference_source.is_some() {
+    if response.edit_conditioning.is_some() != has_conditioning {
         return Err(
             "local Diffusers generation returned inconsistent reference-edit evidence".to_string(),
         );
+    }
+    if has_conditioning {
+        let reference_digests = staged_references
+            .iter()
+            .map(|(_, source, _)| source.digest.as_str())
+            .collect::<Vec<_>>();
+        let expected_conditioning = EditConditioningEvidenceExpectation {
+            architecture: &model.architecture,
+            references: &request.reference_images,
+            reference_digests: &reference_digests,
+            base_digest: base_source.as_ref().map(|source| source.digest.as_str()),
+            pose_digest: pose_source.as_ref().map(|source| source.digest.as_str()),
+            has_mask: request.edit_mask.is_some(),
+            edit_strength: request.edit_strength,
+            mask_strength: request.mask_strength,
+            requires_reference_binding: model.architecture == "flux-2"
+                && !request.reference_images.is_empty(),
+            requires_visible_reference_change: model.architecture == "flux-2"
+                && base_source.is_some()
+                && !request.reference_images.is_empty(),
+        };
+        validate_edit_conditioning_evidence(&response, &expected_conditioning)?;
     }
     if response.require_chroma_background != request.require_chroma_background {
         return Err(
@@ -2051,8 +2675,9 @@ pub(crate) fn generate(
     if response.outputs.len() != request.output_count as usize {
         return Err("local Diffusers worker returned an unexpected output count".to_string());
     }
-    let mut assets = Vec::with_capacity(response.outputs.len());
-    let mut output_provenance = Vec::with_capacity(response.outputs.len());
+    let final_output_count = response.outputs.len() * request.output_branches.len();
+    let mut assets = Vec::with_capacity(final_output_count);
+    let mut output_provenance = Vec::with_capacity(final_output_count);
     for (expected_index, worker_output) in response.outputs.iter().enumerate() {
         let suffix = if request.output_format == "jpeg" {
             "jpg"
@@ -2094,25 +2719,44 @@ pub(crate) fn generate(
         } else {
             None
         };
-        let validated =
-            provider_openai::validate_image(&bytes, &request.output_format, expected_index)?;
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        let relative_path = transform::cas_relative_path(&digest);
-        transform::publish_cas_bytes(paths, &relative_path, &digest, &bytes)?;
-        assets.push(GeneratedImageAsset {
-            digest,
-            relative_path: relative_path.to_string_lossy().into_owned(),
-            byte_size: bytes.len() as u64,
-            mime_type: validated.mime_type,
-            width: validated.width,
-            height: validated.height,
-            output_index: expected_index as u32,
-            subject_cutout,
-        });
-        output_provenance.push(LocalDiffusersOutputProvenance {
-            index: worker_output.index,
-            seed: worker_output.seed,
-        });
+        for (branch_index, branch) in request.output_branches.iter().enumerate() {
+            let final_index = expected_index * request.output_branches.len() + branch_index;
+            let processed = transform::process_image_output_branch(&bytes, branch)?;
+            let validated =
+                provider_openai::validate_image(&processed.bytes, &branch.format, final_index)?;
+            if validated.mime_type != processed.mime_type
+                || validated.width != processed.width
+                || validated.height != processed.height
+            {
+                return Err(
+                    "local diffusion output branch failed its encoded image contract".to_string(),
+                );
+            }
+            let digest = format!("{:x}", Sha256::digest(&processed.bytes));
+            let relative_path = transform::cas_relative_path(&digest);
+            transform::publish_cas_bytes(paths, &relative_path, &digest, &processed.bytes)?;
+            assets.push(GeneratedImageAsset {
+                digest,
+                relative_path: relative_path.to_string_lossy().into_owned(),
+                byte_size: processed.bytes.len() as u64,
+                mime_type: processed.mime_type,
+                width: processed.width,
+                height: processed.height,
+                output_index: final_index as u32,
+                subject_cutout: subject_cutout.clone(),
+            });
+            output_provenance.push(LocalDiffusersOutputProvenance {
+                index: final_index as u32,
+                source_index: worker_output.index,
+                seed: worker_output.seed,
+                branch_id: branch.id.clone(),
+                output_node_id: branch.output_node_id.clone(),
+                format: branch.format.clone(),
+                quality: branch.quality,
+                jpeg_background: branch.jpeg_background.clone(),
+                post_processing: branch.operations.clone(),
+            });
+        }
     }
     Ok(LocalGeneratedImageBatch {
         assets,
@@ -2133,8 +2777,27 @@ pub(crate) fn generate(
             performance: response.performance,
             require_chroma_background: response.require_chroma_background,
             edit_conditioning: response.edit_conditioning,
-            reference_image_asset_id: request.reference_image_asset_id.clone(),
-            reference_image_digest: reference_source.map(|source| source.digest),
+            conditioning_sources: staged_references
+                .into_iter()
+                .map(|(reference, source, _)| LocalConditioningSource {
+                    asset_id: reference.asset_id.clone(),
+                    digest: source.digest,
+                    role: reference.role.clone(),
+                    influence: reference.influence,
+                })
+                .chain(base_source.map(|source| LocalConditioningSource {
+                    asset_id: request.base_image_asset_id.clone().unwrap_or_default(),
+                    digest: source.digest,
+                    role: "base".to_string(),
+                    influence: 1.0,
+                }))
+                .chain(pose_source.map(|source| LocalConditioningSource {
+                    asset_id: request.pose_image_asset_id.clone().unwrap_or_default(),
+                    digest: source.digest,
+                    role: "pose".to_string(),
+                    influence: request.pose_strength.unwrap_or(1.0),
+                }))
+                .collect(),
             outputs: output_provenance,
         },
     })
@@ -3539,6 +4202,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn uses_the_standard_generation_deadline_for_image_backends() {
+        assert_eq!(image_generation_timeout("krea-2", true), GENERATION_TIMEOUT);
+        assert_eq!(
+            image_generation_timeout("krea-2", false),
+            GENERATION_TIMEOUT
+        );
+        assert_eq!(image_generation_timeout("flux-2", true), GENERATION_TIMEOUT);
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn worker_timeout_terminates_descendant_processes() {
@@ -3610,6 +4283,72 @@ time.sleep(60)
         let root = std::env::temp_dir().join("machdoch-local-diffusers-safe-path");
         fs::create_dir_all(&root).expect("temporary root should exist");
         assert!(safe_managed_path(&root, "../outside").is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolves_the_canonical_content_addressed_addon_file() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be available")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-managed-addon-path-{}-{unique}",
+            std::process::id()
+        ));
+        let addon_root = root.join("addons/sha256/fixture");
+        fs::create_dir_all(&addon_root).expect("add-on directory should exist");
+        let addon_file = addon_root.join("addon.safetensors");
+        fs::write(&addon_file, b"fixture").expect("add-on fixture should be written");
+
+        assert_eq!(
+            resolve_managed_addon_file(&root, "addons/sha256/fixture").unwrap(),
+            fs::canonicalize(&addon_file).unwrap()
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn distilled_flux_uses_fixed_sampling_steps_for_every_policy() {
+        for policy in ["fast", "balanced", "quality"] {
+            assert_eq!(expected_image_inference_steps("flux-2", policy).unwrap(), 4);
+        }
+        assert!(expected_image_inference_steps("flux-2", "invalid").is_err());
+    }
+
+    #[test]
+    fn openpose_controlnet_must_match_the_model_family() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be available")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-openpose-controlnet-{}-{unique}",
+            std::process::id()
+        ));
+        let paths = MediaRuntimePaths {
+            database: root.join("media.sqlite3"),
+            blobs: root.join("blobs"),
+        };
+        let sd2 = root.join("models/controlnet/openpose/sd2");
+        fs::create_dir_all(&sd2).expect("controlnet directory should exist");
+        fs::write(sd2.join("config.json"), b"{}").expect("config should be written");
+        fs::write(sd2.join("diffusion_pytorch_model.safetensors"), b"weights")
+            .expect("weights should be written");
+        let expected_sd2 = fs::canonicalize(&sd2).expect("controlnet path should resolve");
+
+        assert_eq!(
+            openpose_controlnet_path(&paths, "stable-diffusion-2").unwrap(),
+            Some(expected_sd2)
+        );
+        assert!(openpose_controlnet_path(&paths, "stable-diffusion-1")
+            .unwrap()
+            .is_none());
+        assert!(openpose_controlnet_path(&paths, "stable-diffusion-xl")
+            .unwrap()
+            .is_none());
+
         let _ = fs::remove_dir_all(root);
     }
 
@@ -3707,24 +4446,34 @@ time.sleep(60)
                 token: None,
                 placement: None,
             }],
-            reference_image_path: Some(reference_path),
+            reference_images: vec![WorkerReferenceImage {
+                path: reference_path,
+                role: "subject",
+                influence: 1.0,
+            }],
+            base_image_path: None,
+            edit_mask: None,
+            pose_image_path: None,
+            pose_controlnet_path: None,
+            pose_strength: None,
+            pose_start: None,
+            pose_end: None,
             edit_strength: Some(0.5),
-            reference_boost: Some(2.0),
+            mask_strength: Some(0.75),
             require_chroma_background: true,
-            grounding_pixels: Some(768),
-            reference_fit: Some("fit"),
             memory_profile: Some("memory-saver"),
         };
         let value = serde_json::to_value(request).expect("request should encode");
         assert_eq!(value["model"]["path"], "C:/models/base");
         assert_eq!(value["addons"][0]["modelStrength"], 0.8);
         assert_eq!(value["addons"][0]["denoisingSchedule"]["end"], 0.8);
-        assert_eq!(value["referenceImagePath"], "C:/inputs/reference.png");
+        assert_eq!(
+            value["referenceImages"][0]["path"],
+            "C:/inputs/reference.png"
+        );
         assert_eq!(value["editStrength"], 0.5);
-        assert_eq!(value["referenceBoost"], 2.0);
+        assert_eq!(value["maskStrength"], 0.75);
         assert_eq!(value["requireChromaBackground"], true);
-        assert_eq!(value["groundingPixels"], 768);
-        assert_eq!(value["referenceFit"], "fit");
         assert_eq!(value["memoryProfile"], "memory-saver");
         assert_eq!(value["seed"], 42);
     }
@@ -3942,6 +4691,144 @@ time.sleep(60)
     }
 
     #[test]
+    fn conditioning_evidence_requires_exact_flux_strengths_and_modes() {
+        let runtime = ready_runtime();
+        let reference_digest = "a".repeat(64);
+        let base_digest = "b".repeat(64);
+        let references = vec![MediaImageReference {
+            asset_id: "asset:style".to_string(),
+            role: "style".to_string(),
+            influence: 1.0,
+        }];
+        let reference_digests = [reference_digest.as_str()];
+        let reference_expectation = EditConditioningEvidenceExpectation {
+            architecture: "flux-2",
+            references: &references,
+            reference_digests: &reference_digests,
+            base_digest: Some(base_digest.as_str()),
+            pose_digest: None,
+            has_mask: false,
+            edit_strength: None,
+            mask_strength: None,
+            requires_reference_binding: true,
+            requires_visible_reference_change: true,
+        };
+        let inpaint_expectation = EditConditioningEvidenceExpectation {
+            has_mask: true,
+            edit_strength: Some(0.7),
+            mask_strength: Some(0.45),
+            ..reference_expectation
+        };
+        let mut response = WorkerGenerationResponse {
+            schema_version: WORKER_SCHEMA_VERSION,
+            worker_version: runtime.worker_version.clone().unwrap(),
+            packages: runtime.packages.clone(),
+            device: runtime.device.clone().unwrap(),
+            device_label: runtime.device_label.clone().unwrap(),
+            device_memory_bytes: runtime.device_memory_bytes,
+            prompt: "replace the painted clothing".to_string(),
+            negative_prompt: "".to_string(),
+            model_policy: "balanced".to_string(),
+            aspect_ratio: "1:1".to_string(),
+            num_inference_steps: 4,
+            addons: Vec::new(),
+            performance: None,
+            require_chroma_background: false,
+            edit_conditioning: Some(serde_json::json!({
+                "mode": "flux2-native-reference",
+                "referenceSources": [
+                    {"digest": reference_digest, "role": "style", "influence": 1.0}
+                ],
+                "baseDigest": base_digest,
+                "poseDigest": null,
+                "maskBounds": null,
+                "globalEditStrength": null,
+                "maskStrength": null,
+                "referenceBinding": {
+                    "mode": "indexed-role-prompt-v1",
+                    "inputs": [
+                        {"imageIndex": 1, "role": "base"},
+                        {"imageIndex": 2, "role": "style"}
+                    ],
+                    "requiresVisibleChange": true
+                },
+                "changeMap": {
+                    "outputs": [{
+                        "scope": "image",
+                        "activePixels": 100,
+                        "changedPixels": 20,
+                        "changedPixelRatio": 0.2,
+                        "meanAbsoluteDifference": 4.0,
+                        "pixelDeltaThreshold": 8.0,
+                        "minimumChangedPixelRatio": 0.01,
+                        "minimumMeanAbsoluteDifference": 3.0
+                    }]
+                }
+            })),
+            outputs: Vec::new(),
+        };
+        validate_edit_conditioning_evidence(&response, &reference_expectation)
+            .expect("FLUX.2 evidence should confirm its native reference path");
+
+        response.edit_conditioning.as_mut().unwrap()["mode"] =
+            serde_json::json!("diffusers-image-to-image");
+        assert!(validate_edit_conditioning_evidence(&response, &reference_expectation).is_err());
+
+        response.edit_conditioning = Some(serde_json::json!({
+            "mode": "flux2-klein-inpaint-v1",
+            "referenceSources": [
+                {"digest": reference_digest, "role": "style", "influence": 1.0}
+            ],
+            "baseDigest": base_digest,
+            "poseDigest": null,
+            "maskBounds": [10, 12, 42, 48],
+            "globalEditStrength": 0.7,
+            "maskStrength": 0.45,
+            "referenceBinding": {
+                "mode": "indexed-role-prompt-v1",
+                "inputs": [
+                    {"imageIndex": 1, "role": "base"},
+                    {"imageIndex": 2, "role": "style"}
+                ],
+                "requiresVisibleChange": true
+            },
+            "changeMap": {
+                "outputs": [{
+                    "scope": "mask",
+                    "activePixels": 100,
+                    "changedPixels": 20,
+                    "changedPixelRatio": 0.2,
+                    "meanAbsoluteDifference": 4.0,
+                    "pixelDeltaThreshold": 8.0,
+                    "minimumChangedPixelRatio": 0.01,
+                    "minimumMeanAbsoluteDifference": 3.0
+                }]
+            }
+        }));
+        validate_edit_conditioning_evidence(&response, &inpaint_expectation)
+            .expect("FLUX.2 inpainting evidence should confirm both strength controls");
+
+        response.edit_conditioning.as_mut().unwrap()["maskStrength"] = serde_json::json!(0.2);
+        assert!(validate_edit_conditioning_evidence(&response, &inpaint_expectation).is_err());
+
+        response.edit_conditioning.as_mut().unwrap()["maskStrength"] = serde_json::json!(0.45);
+        response.edit_conditioning.as_mut().unwrap()["changeMap"]["outputs"][0]
+            ["changedPixelRatio"] = serde_json::json!(0.0);
+        assert!(validate_edit_conditioning_evidence(&response, &inpaint_expectation).is_err());
+
+        response.edit_conditioning.as_mut().unwrap()["changeMap"]["outputs"][0]
+            ["changedPixelRatio"] = serde_json::json!(0.2);
+        response.edit_conditioning.as_mut().unwrap()["referenceBinding"]["inputs"][1]["role"] =
+            serde_json::json!("detail");
+        assert!(validate_edit_conditioning_evidence(&response, &inpaint_expectation).is_err());
+
+        response.edit_conditioning.as_mut().unwrap()["referenceBinding"]["inputs"][1]["role"] =
+            serde_json::json!("style");
+        response.edit_conditioning.as_mut().unwrap()["sourceTokens"] = serde_json::json!({});
+        assert!(validate_edit_conditioning_evidence(&response, &inpaint_expectation).is_err());
+    }
+
+    #[test]
     fn runnable_models_require_matching_probe_and_immutable_checkpoint_bytes() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -4005,7 +4892,7 @@ time.sleep(60)
             vec![model_id]
         );
 
-        fs::write(&checkpoint, b"tampered checkpoint fixture").unwrap();
+        fs::write(&checkpoint, b"tampered checkpoint fixture!").unwrap();
         assert!(runnable_model_ids(&paths, &runtime).unwrap().is_empty());
         let _ = fs::remove_dir_all(root);
     }

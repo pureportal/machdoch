@@ -1,5 +1,10 @@
 import { createMediaModelCatalog } from "./catalog.js";
-import { analyzeMediaFlowCardinality, compileMediaFlow } from "./compiler.js";
+import {
+  analyzeMediaFlowCardinality,
+  compileMediaFlow,
+  compileMediaImageOutputBranches,
+  readImageRecipeSettings,
+} from "./compiler.js";
 import { validateMediaFlowDocument } from "./node-registry.js";
 import {
   instantiateMediaFlowTemplate,
@@ -21,10 +26,12 @@ describe("built-in media flow templates", () => {
       "text-to-image-variants",
       "product-cutout-quality",
       "quality-gated-campaign",
+      "conditioned-image-branches",
       "generated-character-idle-loop",
     ]);
     for (const template of templates.filter(
-      (candidate) => candidate.category !== "Animation",
+      (candidate) =>
+        candidate.category !== "Animation" && candidate.category !== "Advanced",
     )) {
       expect(template.flow.variables.length).toBeGreaterThanOrEqual(2);
       expect(template.flow.presets.length).toBeGreaterThan(0);
@@ -57,6 +64,118 @@ describe("built-in media flow templates", () => {
         }),
       );
     }
+  });
+
+  it("ships an editable conditioned image graph with independent output branches", () => {
+    const template = listBuiltInMediaFlowTemplates().find(
+      (candidate) => candidate.id === "conditioned-image-branches",
+    );
+    expect(template).toBeDefined();
+    expect(validateMediaFlowDocument(template!.flow)).toEqual([]);
+    expect(
+      template!.flow.nodes.find((node) => node.id === "source-image")?.config,
+    ).toMatchObject({ assetId: "", referenceRole: "base" });
+    expect(
+      template!.flow.nodes.find((node) => node.id === "reference-image-1")
+        ?.config,
+    ).toMatchObject({ assetId: "", referenceRole: "style", influence: 1 });
+    expect(
+      template!.flow.nodes.find((node) => node.id === "reference-image-2")
+        ?.config,
+    ).toMatchObject({ assetId: "", referenceRole: "detail", influence: 1 });
+    expect(
+      template!.flow.nodes.find((node) => node.id === "edit")?.config,
+    ).toMatchObject({ modelAddons: [], editMask: null });
+
+    expect(compileMediaImageOutputBranches(template!.flow)).toEqual([
+      expect.objectContaining({
+        id: "png-output",
+        format: "png",
+        operations: [
+          expect.objectContaining({ kind: "crop", width: 384, height: 384 }),
+        ],
+      }),
+      expect.objectContaining({
+        id: "webp-output",
+        format: "webp",
+        operations: [
+          expect.objectContaining({
+            kind: "text-overlay",
+            text: "AI Image Disclaimer",
+            position: "bottom-right",
+          }),
+        ],
+      }),
+    ]);
+    expect(analyzeMediaFlowCardinality(template!.flow)).toMatchObject({
+      generatedCandidates: 1,
+      maxPublishedOutputs: 2,
+    });
+  });
+
+  it("compiles the complete masked FLUX.2 recipe with both branches", () => {
+    const template = listBuiltInMediaFlowTemplates().find(
+      (candidate) => candidate.id === "conditioned-image-branches",
+    )!;
+    const flow = structuredClone(template.flow);
+    const fluxModel = createMediaModelCatalog({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    }).find((model) => model.id === "local:flux-2-klein-4b")!;
+    for (const [nodeId, assetId] of [
+      ["source-image", "asset:base"],
+      ["reference-image-1", "asset:style"],
+      ["reference-image-2", "asset:detail"],
+    ]) {
+      const node = flow.nodes.find((candidate) => candidate.id === nodeId)!;
+      node.config.assetId = assetId;
+    }
+    const edit = flow.nodes.find((node) => node.id === "edit")!;
+    edit.config.modelId = fluxModel.id;
+    edit.config.modelAddons = [];
+    edit.config.maskStrength = 1;
+    edit.config.editMask = {
+      schemaVersion: 2,
+      sourceAssetId: "asset:base",
+      inverted: false,
+      strokes: [
+        {
+          mode: "paint",
+          size: 0.12,
+          opacity: 0.8,
+          softness: 0.55,
+          points: [
+            { x: 0.35, y: 0.4 },
+            { x: 0.65, y: 0.6 },
+          ],
+        },
+      ],
+    };
+
+    expect(validateMediaFlowDocument(flow)).toEqual([]);
+    const settings = readImageRecipeSettings(flow);
+    expect(settings).toMatchObject({
+      prompt: "",
+      modelId: fluxModel.id,
+      baseImageAssetId: "asset:base",
+      referenceImages: [
+        { assetId: "asset:style", role: "style", influence: 1 },
+        { assetId: "asset:detail", role: "detail", influence: 1 },
+      ],
+      modelAddons: [],
+      editMask: expect.objectContaining({ sourceAssetId: "asset:base" }),
+    });
+    const plan = compileMediaFlow({
+      flow,
+      models: [fluxModel],
+      compiledAt: CREATED_AT,
+    });
+    expect(plan.status).toBe("ready");
+    expect(plan.preflight.estimatedOutputs).toBe(2);
+    expect(compileMediaImageOutputBranches(flow)).toMatchObject([
+      { id: "png-output", format: "png" },
+      { id: "webp-output", format: "webp" },
+    ]);
   });
 
   it("ships a connected generated-frame Wan loop with two publication paths", () => {

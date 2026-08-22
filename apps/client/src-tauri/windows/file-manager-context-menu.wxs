@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="MachdochFileManagerContextMenu" Guid="4D6018EB-20B6-497A-8539-1065D2DF6593">
+        <RegistryKey Root="HKCR" Key="Directory\shell\Machdoch" Action="createAndRemoveOnUninstall">
+          <RegistryValue Type="string" Value="Open in machdoch" KeyPath="yes" />
+          <RegistryValue Type="string" Name="Icon" Value="[INSTALLDIR]machdoch.exe" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLDIR]machdoch.exe&quot; --ui --machdoch-open-folder &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCR" Key="Directory\Background\shell\Machdoch" Action="createAndRemoveOnUninstall">
+          <RegistryValue Type="string" Value="Open in machdoch" />
+          <RegistryValue Type="string" Name="Icon" Value="[INSTALLDIR]machdoch.exe" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLDIR]machdoch.exe&quot; --ui --machdoch-open-folder &quot;%V&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCR" Key="Drive\shell\Machdoch" Action="createAndRemoveOnUninstall">
+          <RegistryValue Type="string" Value="Open in machdoch" />
+          <RegistryValue Type="string" Name="Icon" Value="[INSTALLDIR]machdoch.exe" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLDIR]machdoch.exe&quot; --ui --machdoch-open-folder &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCR" Key="*\shell\Machdoch" Action="createAndRemoveOnUninstall">
+          <RegistryValue Type="string" Value="Attach to machdoch" />
+          <RegistryValue Type="string" Name="Icon" Value="[INSTALLDIR]machdoch.exe" />
+          <RegistryValue Type="string" Name="MultiSelectModel" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLDIR]machdoch.exe&quot; --ui --machdoch-attach-files %*" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

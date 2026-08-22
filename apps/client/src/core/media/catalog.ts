@@ -22,13 +22,13 @@ const IMAGE_GENERATION_CAPABILITIES = [
   "multi-reference-edit",
 ] as const satisfies readonly MediaCapability[];
 
-const OPENAI_IMAGE_GENERATION_CAPABILITIES = [
+const LOCAL_IMAGE_GENERATION_CAPABILITIES = [
   ...IMAGE_GENERATION_CAPABILITIES,
   "masked-image-edit",
 ] as const satisfies readonly MediaCapability[];
 
 export const BUILTIN_MEDIA_CATALOG_REVISION =
-  "builtin-2026-08-20.7-masked-edit";
+  "builtin-2026-08-21.8-flux2-inpaint";
 export const BUILTIN_MEDIA_CATALOG_CHECKED_AT = "2026-07-14T00:00:00.000Z";
 
 const createProviders = (
@@ -53,7 +53,7 @@ const createProviders = (
     target: "remote",
     configured: isOpenAiConfigured,
     lifecycle: "active",
-    capabilities: OPENAI_IMAGE_GENERATION_CAPABILITIES,
+    capabilities: IMAGE_GENERATION_CAPABILITIES,
     privacySummary:
       "Prompts and explicitly attached reference assets are sent to OpenAI.",
     checkedAt: BUILTIN_MEDIA_CATALOG_CHECKED_AT,
@@ -67,7 +67,7 @@ const createProviders = (
     target: "local",
     configured: true,
     lifecycle: "active",
-    capabilities: IMAGE_GENERATION_CAPABILITIES,
+    capabilities: LOCAL_IMAGE_GENERATION_CAPABILITIES,
     privacySummary: "Prompts and pixels remain on this device.",
     checkedAt: BUILTIN_MEDIA_CATALOG_CHECKED_AT,
     staleAfterSeconds: 30 * 24 * 60 * 60,
@@ -116,7 +116,7 @@ export const createMediaModelCatalogSnapshot = ({
       lifecycleSourceUrl:
         "https://developers.openai.com/api/docs/models/gpt-image-2",
       catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
-      capabilities: OPENAI_IMAGE_GENERATION_CAPABILITIES,
+      capabilities: IMAGE_GENERATION_CAPABILITIES,
       configured: configuredProviders.has("openai"),
       installed: true,
       bundled: false,
@@ -157,7 +157,7 @@ export const createMediaModelCatalogSnapshot = ({
       lifecycleSourceUrl:
         "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
       catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
-      capabilities: IMAGE_GENERATION_CAPABILITIES,
+      capabilities: LOCAL_IMAGE_GENERATION_CAPABILITIES,
       configured: true,
       installed: isLocalFluxInstalled,
       bundled: false,

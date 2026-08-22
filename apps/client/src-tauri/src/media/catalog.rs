@@ -8,7 +8,7 @@ use super::{
     MediaModelManagement, MediaProviderCatalogEntry, MediaResult,
 };
 
-pub(crate) const CATALOG_REVISION: &str = "builtin-2026-07-15.6-cutout-policy";
+pub(crate) const CATALOG_REVISION: &str = "builtin-2026-08-21.8-flux2-inpaint";
 const CATALOG_CHECKED_AT: &str = "2026-07-15T00:00:00.000Z";
 const WEEK_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MONTH_SECONDS: u64 = 30 * 24 * 60 * 60;
@@ -54,6 +54,18 @@ struct BuiltinModel {
 
 const IMAGE_GENERATION_CAPABILITIES: &[&str] =
     &["text-to-image", "image-to-image", "multi-reference-edit"];
+const LOCAL_PROVIDER_IMAGE_GENERATION_CAPABILITIES: &[&str] = &[
+    "text-to-image",
+    "image-to-image",
+    "masked-image-edit",
+    "multi-reference-edit",
+];
+const FLUX_2_IMAGE_GENERATION_CAPABILITIES: &[&str] = &[
+    "text-to-image",
+    "image-to-image",
+    "masked-image-edit",
+    "multi-reference-edit",
+];
 const GUIDED_SVG_GENERATION_CAPABILITIES: &[&str] = &[
     "text-to-svg",
     "image-to-svg",
@@ -124,7 +136,7 @@ const PROVIDERS: &[BuiltinProvider] = &[
         display_name: "Managed local Diffusers",
         target: "local",
         lifecycle: "active",
-        capabilities: IMAGE_GENERATION_CAPABILITIES,
+        capabilities: LOCAL_PROVIDER_IMAGE_GENERATION_CAPABILITIES,
         privacy_summary: "Prompts and pixels remain on this device.",
         stale_after_seconds: MONTH_SECONDS,
         source_url: Some("https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"),
@@ -370,7 +382,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "FLUX.2 klein",
         target: "local",
         lifecycle: "active",
-        capabilities: IMAGE_GENERATION_CAPABILITIES,
+        capabilities: FLUX_2_IMAGE_GENERATION_CAPABILITIES,
         bundled: false,
         package_type: "diffusers",
         architecture: Some("flux-2"),
@@ -589,6 +601,50 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
                 ],
             )
             .map_err(|error| format!("failed to snapshot media model lifecycle: {error}"))?;
+    }
+    let imported_models = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id, architecture FROM media_models
+                 WHERE id LIKE ?1 AND architecture IS NOT NULL",
+            )
+            .map_err(|error| format!("failed to inspect imported media models: {error}"))?;
+        let rows = statement
+            .query_map(
+                [format!("{}%", model_import::USER_MODEL_ID_PREFIX)],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(|error| format!("failed to query imported media models: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode imported media models: {error}"))?;
+        rows
+    };
+    for (model_id, architecture) in imported_models {
+        let capabilities_json =
+            serde_json::to_string(model_import::capabilities_for_architecture(&architecture))
+                .map_err(|error| {
+                    format!("failed to encode imported model capabilities: {error}")
+                })?;
+        let addon_capabilities_json = serde_json::to_string(&model_addon::capabilities_for_model(
+            "local-diffusers",
+            Some(&architecture),
+        ))
+        .map_err(|error| format!("failed to encode imported add-on capabilities: {error}"))?;
+        transaction
+            .execute(
+                "UPDATE media_models
+                 SET capabilities_json = ?2, addon_capabilities_json = ?3,
+                     catalog_revision = ?4, updated_at = ?5
+                 WHERE id = ?1",
+                params![
+                    model_id,
+                    capabilities_json,
+                    addon_capabilities_json,
+                    CATALOG_REVISION,
+                    synced_at,
+                ],
+            )
+            .map_err(|error| format!("failed to reconcile imported media model: {error}"))?;
     }
     let known_model_ids = MODELS.iter().map(|model| model.id).collect::<HashSet<_>>();
     let stored_model_ids = {
