@@ -11,17 +11,33 @@ const SCROLL_TO_NEWEST_THRESHOLD_PX = 8;
 const getScrollDistanceToBottom = (
   scrollViewport: HTMLElement,
   scrollHeight = scrollViewport.scrollHeight,
+  clientHeight = scrollViewport.clientHeight,
 ): number => {
-  return scrollHeight - scrollViewport.scrollTop - scrollViewport.clientHeight;
+  return scrollHeight - scrollViewport.scrollTop - clientHeight;
 };
 
 const isScrollViewportNearBottom = (
   scrollViewport: HTMLElement,
   scrollHeight = scrollViewport.scrollHeight,
+  clientHeight = scrollViewport.clientHeight,
 ): boolean => {
-  return getScrollDistanceToBottom(scrollViewport, scrollHeight) <=
-    SCROLL_TO_NEWEST_THRESHOLD_PX;
+  return (
+    getScrollDistanceToBottom(scrollViewport, scrollHeight, clientHeight) <=
+    SCROLL_TO_NEWEST_THRESHOLD_PX
+  );
 };
+
+interface ScrollViewportMetrics {
+  scrollHeight: number;
+  clientHeight: number;
+}
+
+const getScrollViewportMetrics = (
+  scrollViewport: HTMLElement,
+): ScrollViewportMetrics => ({
+  scrollHeight: scrollViewport.scrollHeight,
+  clientHeight: scrollViewport.clientHeight,
+});
 
 const scrollViewportToBottom = (scrollViewport: HTMLElement): void => {
   scrollViewport.scrollTop = Math.max(
@@ -30,9 +46,7 @@ const scrollViewportToBottom = (scrollViewport: HTMLElement): void => {
   );
 };
 
-const findScrollViewport = (
-  bottomElement: HTMLElement,
-): HTMLElement | null => {
+const findScrollViewport = (bottomElement: HTMLElement): HTMLElement | null => {
   return bottomElement.closest<HTMLElement>(
     '[data-slot="scroll-area-viewport"]',
   );
@@ -56,7 +70,7 @@ export const useNewestMessageScroll = ({
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showScrollToNewestButton, setShowScrollToNewestButton] =
     useState(false);
-  const lastScrollHeightRef = useRef<number | null>(null);
+  const lastScrollMetricsRef = useRef<ScrollViewportMetrics | null>(null);
   const lastScrollResetKeyRef = useRef<string | null>(null);
   const isScrollPinnedToNewestRef = useRef(true);
 
@@ -77,7 +91,7 @@ export const useNewestMessageScroll = ({
     }
 
     scrollViewportToBottom(scrollViewport);
-    lastScrollHeightRef.current = scrollViewport.scrollHeight;
+    lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
     isScrollPinnedToNewestRef.current = true;
     setShowScrollToNewestButton(false);
   }, []);
@@ -88,7 +102,7 @@ export const useNewestMessageScroll = ({
     if (!bottomElement) {
       isScrollPinnedToNewestRef.current = true;
       lastScrollResetKeyRef.current = resetKey;
-      lastScrollHeightRef.current = null;
+      lastScrollMetricsRef.current = null;
       setShowScrollToNewestButton(false);
       return;
     }
@@ -99,27 +113,31 @@ export const useNewestMessageScroll = ({
       bottomElement.scrollIntoView({ block: "end" });
       isScrollPinnedToNewestRef.current = true;
       lastScrollResetKeyRef.current = resetKey;
-      lastScrollHeightRef.current = null;
+      lastScrollMetricsRef.current = null;
       setShowScrollToNewestButton(false);
       return;
     }
 
-    const previousScrollHeight =
+    const previousScrollMetrics =
       lastScrollResetKeyRef.current === resetKey
-        ? lastScrollHeightRef.current
+        ? lastScrollMetricsRef.current
         : null;
     const wasNearBottom =
-      previousScrollHeight === null ||
-      isScrollViewportNearBottom(scrollViewport, previousScrollHeight);
+      previousScrollMetrics === null ||
+      isScrollViewportNearBottom(
+        scrollViewport,
+        previousScrollMetrics.scrollHeight,
+        previousScrollMetrics.clientHeight,
+      );
 
     lastScrollResetKeyRef.current = resetKey;
-    lastScrollHeightRef.current = scrollViewport.scrollHeight;
+    lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
     isScrollPinnedToNewestRef.current = wasNearBottom;
     setShowScrollToNewestButton(!wasNearBottom);
 
     if (wasNearBottom) {
       scrollViewportToBottom(scrollViewport);
-      lastScrollHeightRef.current = scrollViewport.scrollHeight;
+      lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
       setShowScrollToNewestButton(false);
     }
 
@@ -127,14 +145,24 @@ export const useNewestMessageScroll = ({
       const isPinnedToNewest = isScrollViewportNearBottom(scrollViewport);
 
       isScrollPinnedToNewestRef.current = isPinnedToNewest;
-      lastScrollHeightRef.current = scrollViewport.scrollHeight;
+      lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
       setShowScrollToNewestButton(!isPinnedToNewest);
     };
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(() => {
-            if (isScrollPinnedToNewestRef.current) {
+            const previousScrollMetrics = lastScrollMetricsRef.current;
+            const wasPinnedToNewest =
+              isScrollPinnedToNewestRef.current &&
+              (previousScrollMetrics === null ||
+                isScrollViewportNearBottom(
+                  scrollViewport,
+                  previousScrollMetrics.scrollHeight,
+                  previousScrollMetrics.clientHeight,
+                ));
+
+            if (wasPinnedToNewest) {
               scrollViewportToBottom(scrollViewport);
             }
 
@@ -170,12 +198,10 @@ export const useNewestMessageScroll = ({
       scrollViewportToBottom(scrollViewport);
       setShowScrollToNewestButton(false);
     } else {
-      setShowScrollToNewestButton(
-        !isScrollViewportNearBottom(scrollViewport),
-      );
+      setShowScrollToNewestButton(!isScrollViewportNearBottom(scrollViewport));
     }
 
-    lastScrollHeightRef.current = scrollViewport.scrollHeight;
+    lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
   }, [contentKey, resetKey]);
 
   return {
