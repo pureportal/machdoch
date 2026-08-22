@@ -38,6 +38,7 @@ impl Default for DesktopTaskCancelMap {
 struct ActiveDesktopTask {
     cancel_flag: Arc<AtomicBool>,
     kind: String,
+    session_id: Option<String>,
     workspace_root: String,
     arguments: Vec<String>,
     started_at: u64,
@@ -48,6 +49,7 @@ pub(super) struct ActiveDesktopTaskRegistration {
     pub(super) task_id: String,
     pub(super) cancel_flag: Arc<AtomicBool>,
     pub(super) kind: String,
+    pub(super) session_id: Option<String>,
     pub(super) workspace_root: String,
     pub(super) arguments: Vec<String>,
     pub(super) started_at: u64,
@@ -66,6 +68,8 @@ pub(super) enum ActiveDesktopTaskClaim {
 pub struct ActiveDesktopTaskSummary {
     id: String,
     kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
     workspace_root: String,
     arguments: Vec<String>,
     started_at: u64,
@@ -83,6 +87,8 @@ pub enum RecentDesktopTaskOutcome {
 pub struct RecentDesktopTaskResult {
     id: String,
     kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
     workspace_root: String,
     arguments: Vec<String>,
     started_at: u64,
@@ -93,6 +99,8 @@ pub struct RecentDesktopTaskResult {
 impl RecentDesktopTaskResult {
     pub(super) fn desktop(
         id: String,
+        kind: String,
+        session_id: Option<String>,
         workspace_root: String,
         arguments: Vec<String>,
         started_at: u64,
@@ -101,7 +109,8 @@ impl RecentDesktopTaskResult {
     ) -> Self {
         Self {
             id,
-            kind: "desktop".to_string(),
+            kind,
+            session_id,
             workspace_root,
             arguments,
             started_at,
@@ -229,6 +238,7 @@ pub(super) fn active_task_summaries(
         .map(|(id, task)| ActiveDesktopTaskSummary {
             id: id.clone(),
             kind: task.kind.clone(),
+            session_id: task.session_id.clone(),
             workspace_root: task.workspace_root.clone(),
             arguments: task.arguments.clone(),
             started_at: task.started_at,
@@ -354,6 +364,7 @@ pub(super) fn register_active_task(
         ActiveDesktopTask {
             cancel_flag: registration.cancel_flag,
             kind: registration.kind,
+            session_id: registration.session_id,
             workspace_root: registration.workspace_root,
             arguments: registration.arguments,
             started_at: registration.started_at,
@@ -438,12 +449,13 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        completed_desktop_task_result, recent_completed_task_results, register_active_task,
-        remember_completed_task_result, remember_pending_cancel, trim_claimed_task_ids,
-        ActiveDesktopTask, ActiveDesktopTaskClaim, ActiveDesktopTaskRegistration,
-        DesktopTaskCancelMap, DesktopTaskCancelState, RecentDesktopTaskOutcome,
-        RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS, MAX_PENDING_CANCEL_IDS,
-        MAX_RECENT_COMPLETED_TASK_RESULTS, MAX_RECENT_COMPLETED_TASK_RESULT_BYTES,
+        active_task_summaries, completed_desktop_task_result, recent_completed_task_results,
+        register_active_task, remember_completed_task_result, remember_pending_cancel,
+        trim_claimed_task_ids, ActiveDesktopTask, ActiveDesktopTaskClaim,
+        ActiveDesktopTaskRegistration, DesktopTaskCancelMap, DesktopTaskCancelState,
+        RecentDesktopTaskOutcome, RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS,
+        MAX_PENDING_CANCEL_IDS, MAX_RECENT_COMPLETED_TASK_RESULTS,
+        MAX_RECENT_COMPLETED_TASK_RESULT_BYTES,
     };
     use crate::desktop_task::{DesktopTaskRunError, DesktopTaskRunResponse};
 
@@ -477,6 +489,8 @@ mod tests {
                 "completed-task".to_string(),
                 RecentDesktopTaskResult::desktop(
                     "completed-task".to_string(),
+                    "desktop".to_string(),
+                    None,
                     String::new(),
                     Vec::new(),
                     1,
@@ -504,6 +518,7 @@ mod tests {
             ActiveDesktopTask {
                 cancel_flag: Arc::new(AtomicBool::new(false)),
                 kind: "desktop".to_string(),
+                session_id: None,
                 workspace_root: "workspace".to_string(),
                 arguments: Vec::new(),
                 started_at: 1,
@@ -531,6 +546,7 @@ mod tests {
             task_id: "shared-task".to_string(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             kind: "desktop".to_string(),
+            session_id: None,
             workspace_root: "workspace".to_string(),
             arguments: Vec::new(),
             started_at: 1,
@@ -554,6 +570,7 @@ mod tests {
             task_id: task_id.to_string(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             kind: "desktop".to_string(),
+            session_id: Some("shared-session".to_string()),
             workspace_root: "workspace".to_string(),
             arguments: Vec::new(),
             started_at: 1,
@@ -579,6 +596,31 @@ mod tests {
     }
 
     #[test]
+    fn active_task_summaries_preserve_chat_operation_ownership() {
+        let state = DesktopTaskCancelMap::default();
+        register_active_task(
+            &state,
+            ActiveDesktopTaskRegistration {
+                task_id: "enhancement-1".to_string(),
+                cancel_flag: Arc::new(AtomicBool::new(false)),
+                kind: "prompt-enhancement".to_string(),
+                session_id: Some("session-1".to_string()),
+                workspace_root: "workspace".to_string(),
+                arguments: Vec::new(),
+                started_at: 1,
+                operation_key: Some("session:session-1".to_string()),
+            },
+        )
+        .expect("task registration should succeed");
+
+        let summaries = active_task_summaries(&state).expect("summary read should succeed");
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].kind, "prompt-enhancement");
+        assert_eq!(summaries[0].session_id.as_deref(), Some("session-1"));
+    }
+
+    #[test]
     fn recent_completed_task_results_are_bounded_and_queryable() {
         let state = DesktopTaskCancelMap::default();
 
@@ -592,6 +634,8 @@ mod tests {
                 &state,
                 RecentDesktopTaskResult::desktop(
                     format!("task-{index}"),
+                    "desktop".to_string(),
+                    None,
                     "workspace".to_string(),
                     Vec::new(),
                     index as u64,
@@ -630,6 +674,8 @@ mod tests {
             &state,
             RecentDesktopTaskResult::desktop(
                 "failed-task".to_string(),
+                "desktop".to_string(),
+                None,
                 "workspace".to_string(),
                 Vec::new(),
                 1,
@@ -659,6 +705,8 @@ mod tests {
                 &state,
                 RecentDesktopTaskResult::desktop(
                     task_id.to_string(),
+                    "desktop".to_string(),
+                    None,
                     "workspace".to_string(),
                     Vec::new(),
                     1,

@@ -1570,6 +1570,7 @@ export type RecentDesktopTaskOutcome =
 export interface RecentDesktopTaskResult {
   id: string;
   kind: string;
+  sessionId?: string;
   workspaceRoot: string;
   arguments: string[];
   startedAt: number;

@@ -201,6 +201,7 @@ pub(super) fn execute_desktop_task(
         media_asset_references,
         task_id,
         session_id: _,
+        operation_kind: _,
         deterministic_action,
     } = request;
     let file_change_detection_enabled = !workspace_root.trim().is_empty();

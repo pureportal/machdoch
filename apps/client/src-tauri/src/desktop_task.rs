@@ -103,7 +103,24 @@ pub struct DesktopTaskRunRequest {
     media_asset_references: Option<Vec<DesktopMediaAssetReference>>,
     task_id: Option<String>,
     session_id: Option<String>,
+    operation_kind: Option<DesktopTaskOperationKind>,
     deterministic_action: Option<DesktopTaskDeterministicAction>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum DesktopTaskOperationKind {
+    ChatRun,
+    PromptEnhancement,
+}
+
+impl DesktopTaskOperationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ChatRun => "chat-run",
+            Self::PromptEnhancement => "prompt-enhancement",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -340,6 +357,17 @@ pub async fn run_desktop_task(
     let task_id = normalize_task_id(request.task_id.as_deref());
     let task_started_at = create_progress_timestamp();
     let task_workspace_root = request.workspace_root.clone();
+    let task_kind = request
+        .operation_kind
+        .map(DesktopTaskOperationKind::as_str)
+        .unwrap_or("desktop")
+        .to_string();
+    let task_session_id = request
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|session_id| !session_id.is_empty())
+        .map(str::to_string);
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
@@ -348,15 +376,13 @@ pub async fn run_desktop_task(
             ActiveDesktopTaskRegistration {
                 task_id: id.clone(),
                 cancel_flag: cancel_flag.clone(),
-                kind: "desktop".to_string(),
+                kind: task_kind.clone(),
+                session_id: task_session_id.clone(),
                 workspace_root: request.workspace_root.clone(),
                 arguments: Vec::new(),
                 started_at: task_started_at,
-                operation_key: request
-                    .session_id
+                operation_key: task_session_id
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|session_id| !session_id.is_empty())
                     .map(|session_id| format!("session:{session_id}")),
             },
         )
@@ -420,6 +446,8 @@ pub async fn run_desktop_task(
             &state,
             RecentDesktopTaskResult::desktop(
                 id.clone(),
+                task_kind,
+                task_session_id,
                 task_workspace_root,
                 Vec::new(),
                 task_started_at,
@@ -695,6 +723,7 @@ pub async fn run_ralph_command(
                 task_id: id.clone(),
                 cancel_flag: cancel_flag.clone(),
                 kind: "ralph".to_string(),
+                session_id: None,
                 workspace_root: request.workspace_root.clone(),
                 arguments: request.arguments.clone(),
                 started_at: create_progress_timestamp(),
@@ -784,9 +813,28 @@ pub async fn run_task_interview_command(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_timeout_duration, DesktopTaskDeterministicAction, DesktopTaskRunError,
-        DesktopTaskTimeoutKind, AUXILIARY_CLI_COMMAND_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS,
+        format_timeout_duration, DesktopTaskDeterministicAction, DesktopTaskOperationKind,
+        DesktopTaskRunError, DesktopTaskRunRequest, DesktopTaskTimeoutKind,
+        AUXILIARY_CLI_COMMAND_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS,
     };
+
+    #[test]
+    fn desktop_task_requests_preserve_chat_operation_ownership() {
+        let request = serde_json::from_value::<DesktopTaskRunRequest>(serde_json::json!({
+            "workspaceRoot": "C:/workspace",
+            "task": "Improve this prompt",
+            "taskId": "enhancement-1",
+            "sessionId": "session-1",
+            "operationKind": "prompt-enhancement"
+        }))
+        .expect("desktop task request should deserialize");
+
+        assert_eq!(
+            request.operation_kind,
+            Some(DesktopTaskOperationKind::PromptEnhancement)
+        );
+        assert_eq!(request.session_id.as_deref(), Some("session-1"));
+    }
 
     #[test]
     fn ralph_command_timeout_allows_long_autonomous_runs() {
