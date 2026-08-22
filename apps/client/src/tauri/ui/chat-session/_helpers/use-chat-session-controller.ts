@@ -5194,6 +5194,19 @@ export const useChatSessionController = (
       desktopTaskProgressRoutesRef.current.set(taskId, {});
       activeDesktopTasksRef.current.set(taskId, sessionSnapshot.id);
       activePromptEnhancementInputsRef.current.set(taskId, normalizedPrompt);
+
+      if (placement === "message" && !submission.conversationCutoffMessageId) {
+        const clearedComposer = clearSessionComposerInput(
+          sessionSnapshot.id,
+          submission.composerClearGuard,
+        );
+
+        if (clearedComposer) {
+          pending.composerClearGuard = clearedComposer;
+          submission.composerClearGuard = clearedComposer;
+        }
+      }
+
       showPromptEnhancementSessionPlaceholder(pending);
 
       try {
@@ -5211,21 +5224,6 @@ export const useChatSessionController = (
           throw new Error(
             "The session was deleted before prompt enhancement started.",
           );
-        }
-
-        if (
-          placement === "message" &&
-          !submission.conversationCutoffMessageId
-        ) {
-          const clearedComposer = clearSessionComposerInput(
-            sessionSnapshot.id,
-            submission.composerClearGuard,
-          );
-
-          if (clearedComposer) {
-            pending.composerClearGuard = clearedComposer;
-            submission.composerClearGuard = clearedComposer;
-          }
         }
 
         const taskRun = await runInternalDesktopTask(
