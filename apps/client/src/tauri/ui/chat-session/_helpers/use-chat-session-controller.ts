@@ -151,7 +151,6 @@ import { shouldDispatchQueuedFollowUp } from "./queued-follow-up-policy";
 import {
   createMessagePromptEnhancement,
   createPromptEnhancementTask,
-  createQueuedMessageDispatchPrompt,
   createQueuedPromptEnhancementRequest,
   extractEnhancedPrompt,
   isPromptEnhancementCancellation,
@@ -164,10 +163,15 @@ import {
   type PromptEnhancementMode,
 } from "./prompt-enhancement";
 import {
+  createFailedQueuedMessageRecovery,
+  createQueuedMessageDispatchAttempt,
+  createQueuedMessageRetry,
+  isQueuedPromptEnhancementInputCurrent,
+} from "./queued-message-lifecycle";
+import {
   appendContextAttachmentsToTask,
   appendDraftBlock,
   appendTranscriptToDraft,
-  areContextAttachmentRecordsEqual,
   clampQuickVoiceMessageLimit,
   createContextAttachment,
   createContextAttachmentFromMediaAsset,
@@ -317,45 +321,15 @@ const getMessageTaskId = (message: ChatSessionMessage): string => {
   return message.taskId ?? message.id;
 };
 
-const areComposerAttachmentsEqual = (
-  left: readonly ChatSessionContextAttachment[],
-  right: readonly ChatSessionContextAttachment[],
-): boolean => {
-  return (
-    left.length === right.length &&
-    left.every((attachment, index) => {
-      const candidate = right[index];
-
-      return (
-        candidate !== undefined &&
-        areContextAttachmentRecordsEqual(attachment, candidate)
-      );
-    })
-  );
-};
-
-const isQueuedPromptEnhancementInputCurrent = (
-  baseline: ChatSessionQueuedMessage,
-  current: ChatSessionQueuedMessage,
-): boolean => {
-  return (
-    baseline.id === current.id &&
-    baseline.task === current.task &&
-    baseline.contentUpdatedAt === current.contentUpdatedAt &&
-    baseline.attachmentsUpdatedAt === current.attachmentsUpdatedAt &&
-    baseline.promptEnhancementRequest?.mode ===
-      current.promptEnhancementRequest?.mode &&
-    areComposerAttachmentsEqual(
-      baseline.contextAttachments,
-      current.contextAttachments,
-    )
-  );
-};
-
 const canDispatchQueuedMessage = (
   message: ChatSessionQueuedMessage,
   session: ChatSessionRecord,
+  unsettledDesktopTaskId: string | null,
 ): boolean => {
+  if (unsettledDesktopTaskId) {
+    return false;
+  }
+
   if (!message.blockedByTaskId) {
     return true;
   }
@@ -749,6 +723,7 @@ export const useChatSessionController = (
   const [chatOperationWindowId] = useState(getOrCreateChatOperationWindowId);
   const [chatOperationInstanceId] = useState(() => crypto.randomUUID());
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
+  const unsettledDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const activePromptEnhancementInputsRef = useRef<Map<string, string>>(
     new Map(),
   );
@@ -3358,6 +3333,22 @@ export const useChatSessionController = (
     [],
   );
 
+  const getUnsettledDesktopTaskIdForSession = useCallback(
+    (sessionId: string): string | null => {
+      for (const [
+        taskId,
+        activeSessionId,
+      ] of unsettledDesktopTasksRef.current.entries()) {
+        if (activeSessionId === sessionId) {
+          return taskId;
+        }
+      }
+
+      return null;
+    },
+    [],
+  );
+
   const requestTaskCancellation = useCallback(
     (session: ChatSessionRecord): void => {
       const pendingPromptEnhancement =
@@ -5125,6 +5116,7 @@ export const useChatSessionController = (
     uiControlAvailability,
     aiContextMessageLimit,
     activeDesktopTasksRef,
+    unsettledDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
     progressRoutesRef: desktopTaskProgressRoutesRef,
     applySessionMessageLimit,
@@ -5452,17 +5444,15 @@ export const useChatSessionController = (
 
       if (queuedMessageRecovery) {
         const updatedAt = Date.now();
-        const recoveredQueuedMessage = setQueuedMessageStatus(
+        const recoveredQueuedMessage = createFailedQueuedMessageRecovery(
           {
             ...queuedMessageRecovery,
-            id: crypto.randomUUID(),
-            blockedByTaskId: activeTaskId,
-            blockerUpdatedAt: updatedAt,
             contextAttachments: queuedSubmission.contextAttachments.map(
               (attachment) => ({ ...attachment }),
             ),
           },
-          "queued",
+          crypto.randomUUID(),
+          activeTaskId,
           updatedAt,
         );
 
@@ -5672,7 +5662,11 @@ export const useChatSessionController = (
       if (
         !nextQueuedMessage ||
         nextQueuedMessage.status === "failed" ||
-        !canDispatchQueuedMessage(nextQueuedMessage, session) ||
+        !canDispatchQueuedMessage(
+          nextQueuedMessage,
+          session,
+          getUnsettledDesktopTaskIdForSession(session.id),
+        ) ||
         dispatchingQueuedMessageIds.has(nextQueuedMessage.id)
       ) {
         return;
@@ -5710,6 +5704,7 @@ export const useChatSessionController = (
               !canDispatchQueuedMessage(
                 queuedMessageAtDispatch,
                 latestSession,
+                getUnsettledDesktopTaskIdForSession(latestSession.id),
               ) ||
               getSessionOverviewStatus(latestSession) === "running"
             ) {
@@ -5717,19 +5712,15 @@ export const useChatSessionController = (
               return;
             }
 
-            let queuedMessageToSubmit = queuedMessageAtDispatch;
-            let dispatchPrompt = createQueuedMessageDispatchPrompt(
-              queuedMessageToSubmit,
-            );
             const promptEnhancementRequest =
               queuedMessageAtDispatch.promptEnhancementRequest;
+            let enhancedPrompt: string | undefined;
 
             if (promptEnhancementRequest) {
               updateQueuedMessageStatus(
                 queuedMessageAtDispatch.id,
                 "enhancing",
               );
-              let enhancedPrompt: string;
 
               try {
                 const enhancement = await enhancePromptForSubmission(
@@ -5779,60 +5770,103 @@ export const useChatSessionController = (
                 }
                 return;
               }
-
-              const refreshedQueuedMessage =
-                shellStateRef.current.queuedSessionMessages.find(
-                  (message) => message.id === queuedMessageAtDispatch.id,
-                );
-              const refreshedSession = shellStateRef.current.sessions.find(
-                (entry) => entry.id === session.id,
-              );
-              const refreshedQueuedHead =
-                shellStateRef.current.queuedSessionMessages.find(
-                  (message) =>
-                    message.sessionId === session.id &&
-                    message.task.trim().length > 0,
-                );
-
-              if (
-                !refreshedQueuedMessage ||
-                !refreshedSession ||
-                refreshedQueuedHead?.id !== refreshedQueuedMessage.id ||
-                !canDispatchQueuedMessage(
-                  refreshedQueuedMessage,
-                  refreshedSession,
-                ) ||
-                getSessionOverviewStatus(refreshedSession) === "running" ||
-                !isQueuedPromptEnhancementInputCurrent(
-                  queuedMessageAtDispatch,
-                  refreshedQueuedMessage,
-                )
-              ) {
-                if (refreshedQueuedMessage) {
-                  updateQueuedMessageStatus(
-                    refreshedQueuedMessage.id,
-                    "queued",
-                  );
-                }
-                if (promptEnhancementTaskId) {
-                  failQueuedPromptEnhancementFollowers(
-                    latestSession.id,
-                    promptEnhancementTaskId,
-                  );
-                }
-                await releaseCrossWindowOperation(lease);
-                return;
-              }
-
-              queuedMessageToSubmit = refreshedQueuedMessage;
-              latestSession = refreshedSession;
-              dispatchPrompt = createQueuedMessageDispatchPrompt(
-                refreshedQueuedMessage,
-                enhancedPrompt,
-              );
             }
 
-            updateQueuedMessageStatus(queuedMessageToSubmit.id, "dispatching");
+            const refreshedQueuedMessage =
+              shellStateRef.current.queuedSessionMessages.find(
+                (message) => message.id === queuedMessageAtDispatch.id,
+              );
+            const refreshedSession = shellStateRef.current.sessions.find(
+              (entry) => entry.id === session.id,
+            );
+            const refreshedQueuedHead =
+              shellStateRef.current.queuedSessionMessages.find(
+                (message) =>
+                  message.sessionId === session.id &&
+                  message.task.trim().length > 0,
+              );
+
+            if (
+              !refreshedQueuedMessage ||
+              !refreshedSession ||
+              !isQueuedPromptEnhancementInputCurrent(
+                queuedMessageAtDispatch,
+                refreshedQueuedMessage,
+              )
+            ) {
+              if (promptEnhancementTaskId) {
+                failQueuedPromptEnhancementFollowers(
+                  latestSession.id,
+                  promptEnhancementTaskId,
+                );
+              }
+              await releaseCrossWindowOperation(lease);
+              return;
+            }
+
+            const dispatchAttempt = createQueuedMessageDispatchAttempt(
+              refreshedQueuedMessage,
+              enhancedPrompt,
+              Date.now(),
+            );
+            let dispatchAttemptStored = false;
+
+            updateQueuedSessionMessages((current) =>
+              current.map((message) => {
+                if (
+                  message.id !== refreshedQueuedMessage.id ||
+                  !isQueuedPromptEnhancementInputCurrent(
+                    refreshedQueuedMessage,
+                    message,
+                  )
+                ) {
+                  return message;
+                }
+
+                dispatchAttemptStored = true;
+                return dispatchAttempt.message;
+              }),
+            );
+
+            if (!dispatchAttemptStored) {
+              if (promptEnhancementTaskId) {
+                failQueuedPromptEnhancementFollowers(
+                  latestSession.id,
+                  promptEnhancementTaskId,
+                );
+              }
+              await releaseCrossWindowOperation(lease);
+              return;
+            }
+
+            const canStartDispatch =
+              refreshedQueuedHead?.id === refreshedQueuedMessage.id &&
+              canDispatchQueuedMessage(
+                dispatchAttempt.message,
+                refreshedSession,
+                getUnsettledDesktopTaskIdForSession(refreshedSession.id),
+              ) &&
+              getSessionOverviewStatus(refreshedSession) !== "running";
+
+            if (!canStartDispatch) {
+              updateQueuedMessageStatus(
+                dispatchAttempt.message.id,
+                "failed",
+                "Task could not start.",
+              );
+              if (promptEnhancementTaskId) {
+                failQueuedPromptEnhancementFollowers(
+                  refreshedSession.id,
+                  promptEnhancementTaskId,
+                );
+              }
+              await completeCrossWindowOperation(lease);
+              return;
+            }
+
+            const queuedMessageToSubmit = dispatchAttempt.message;
+            const dispatchPrompt = dispatchAttempt.prompt;
+            latestSession = refreshedSession;
             const promptEnhancementTaskIdForStartedTask =
               promptEnhancementTaskId;
 
@@ -5856,8 +5890,6 @@ export const useChatSessionController = (
                       promptEnhancementRequest.mode,
                       false,
                     ),
-                    promptEnhancementRequestOnConflict:
-                      promptEnhancementRequest,
                   }
                 : {}),
               ...(promptEnhancementTaskIdForStartedTask
@@ -5884,14 +5916,10 @@ export const useChatSessionController = (
               );
               updateQueuedMessageStatus(
                 queuedMessageToSubmit.id,
-                currentSession &&
-                  getSessionOverviewStatus(currentSession) === "running"
-                  ? "queued"
-                  : "failed",
-                currentSession &&
-                  getSessionOverviewStatus(currentSession) === "running"
-                  ? undefined
-                  : "Task could not start.",
+                "failed",
+                currentSession
+                  ? "Task could not start."
+                  : "The target session no longer exists.",
               );
               await completeCrossWindowOperation(lease);
               return;
@@ -5910,7 +5938,7 @@ export const useChatSessionController = (
                 promptEnhancementTaskId,
               );
             }
-            await releaseCrossWindowOperation(lease);
+            await completeCrossWindowOperation(lease);
             throw error;
           }
         })
@@ -5924,6 +5952,7 @@ export const useChatSessionController = (
     [
       enhancePromptForSubmission,
       failQueuedPromptEnhancementFollowers,
+      getUnsettledDesktopTaskIdForSession,
       markQueuedMessagePromptEnhancementFailed,
       queuedSessionMessages,
       rebindQueuedPromptEnhancementFollowers,
@@ -6090,7 +6119,7 @@ export const useChatSessionController = (
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId && message.status === "failed"
-            ? setQueuedMessageStatus(message, "queued", Date.now())
+            ? createQueuedMessageRetry(message, crypto.randomUUID(), Date.now())
             : message,
         ),
       );

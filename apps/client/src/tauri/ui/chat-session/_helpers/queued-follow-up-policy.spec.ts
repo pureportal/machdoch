@@ -25,6 +25,13 @@ describe("queued follow-up dispatch policy", () => {
     expect(shouldDispatchQueuedFollowUp("after-success", null, false)).toBe(
       false,
     );
+    expect(
+      shouldDispatchQueuedFollowUp(
+        "after-success",
+        { status: "succeeded" },
+        true,
+      ),
+    ).toBe(false);
   });
 
   it("dispatches stop-and-send work after every terminal outcome", () => {
@@ -36,6 +43,13 @@ describe("queued follow-up dispatch policy", () => {
     expect(shouldDispatchQueuedFollowUp("after-terminal", null, true)).toBe(
       false,
     );
+    expect(
+      shouldDispatchQueuedFollowUp(
+        "after-terminal",
+        { status: "succeeded" },
+        true,
+      ),
+    ).toBe(false);
     expect(shouldDispatchQueuedFollowUp("after-terminal", null, false)).toBe(
       true,
     );

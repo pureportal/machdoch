@@ -8,8 +8,12 @@ export const shouldDispatchQueuedFollowUp = (
   blockerOutcome: ChatSessionTaskOutcome | null,
   blockerActive: boolean,
 ): boolean => {
+  if (blockerActive) {
+    return false;
+  }
+
   if (!blockerOutcome) {
-    return policy === "after-terminal" && !blockerActive;
+    return policy === "after-terminal";
   }
 
   return policy === "after-terminal" || blockerOutcome.status === "succeeded";

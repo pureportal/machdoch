@@ -388,6 +388,7 @@ export const useSessionTaskSubmission = (options: {
   uiControlAvailability: RuntimeSnapshot["uiControl"] | undefined;
   aiContextMessageLimit: number;
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
+  unsettledDesktopTasksRef: MutableRefObject<Map<string, string>>;
   ignoredDesktopTaskIdsRef: MutableRefObject<Set<string>>;
   progressRoutesRef: MutableRefObject<Map<string, DesktopTaskProgressRoute>>;
   applySessionMessageLimit: (session: ChatSessionRecord) => ChatSessionRecord;
@@ -960,8 +961,8 @@ export const useSessionTaskSubmission = (options: {
         }
 
         if (taskFinalized) {
-          replaceTerminalFallbackWithFailure(error);
           cleanupTaskTracking();
+          replaceTerminalFallbackWithFailure(error);
           return;
         }
 
@@ -1215,6 +1216,7 @@ export const useSessionTaskSubmission = (options: {
       }
 
       currentOptions.activeDesktopTasksRef.current.set(taskId, sessionId);
+      currentOptions.unsettledDesktopTasksRef.current.set(taskId, sessionId);
       submitOptions.onTaskStarted?.(taskId);
 
       const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
@@ -1234,6 +1236,8 @@ export const useSessionTaskSubmission = (options: {
 
       void taskRunPromise
         .then((taskRun) => {
+          currentOptions.unsettledDesktopTasksRef.current.delete(taskId);
+
           if (currentOptions.ignoredDesktopTaskIdsRef.current.has(taskId)) {
             cleanupTaskTracking();
             currentOptions.ignoredDesktopTaskIdsRef.current.delete(taskId);
@@ -1274,17 +1278,15 @@ export const useSessionTaskSubmission = (options: {
           }
 
           if (taskFinalized) {
-            replaceWeakTerminalFallback(taskRun.execution);
             cleanupTaskTracking();
+            replaceWeakTerminalFallback(taskRun.execution);
             return;
           }
 
           taskFinalized = true;
-          clearTerminalFallbackTimeout();
-          currentOptions.progressRoutesRef.current.delete(taskId);
+          cleanupTaskTracking();
 
           if (currentOptions.ignoredDesktopTaskIdsRef.current.has(taskId)) {
-            cleanupTaskTracking();
             currentOptions.ignoredDesktopTaskIdsRef.current.delete(taskId);
             return;
           }
@@ -1369,9 +1371,11 @@ export const useSessionTaskSubmission = (options: {
               ],
             });
           });
-          currentOptions.activeDesktopTasksRef.current.delete(taskId);
         })
-        .catch(reportTaskFailure);
+        .catch((error) => {
+          currentOptions.unsettledDesktopTasksRef.current.delete(taskId);
+          reportTaskFailure(error);
+        });
 
       return true;
     },
