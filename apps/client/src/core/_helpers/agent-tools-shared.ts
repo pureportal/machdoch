@@ -37,6 +37,8 @@ export interface WorkspaceTarget {
 export interface ConversationMemoryRuntime {
   sessionEnabled: boolean;
   sessionEntries: ConversationMemoryEntry[];
+  workspaceEnabled?: boolean;
+  workspaceEntries?: ConversationMemoryEntry[];
   globalEnabled: boolean;
   globalEntries: ConversationMemoryEntry[];
 }

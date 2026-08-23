@@ -8,8 +8,10 @@ import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js"
 import { withoutObjectPath } from "./_helpers/without-object-path.helper.js";
 import {
   MAX_GLOBAL_MEMORY_ENTRIES,
+  forgetConversationMemoryEntry,
   normalizeConversationMemoryEntries,
   rememberConversationMemoryEntry,
+  type ConversationMemoryMetadata,
 } from "./memory.js";
 import {
   DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
@@ -803,6 +805,7 @@ export const saveUserGlobalMemoryEnabled = async (
  */
 export const rememberUserGlobalMemory = async (
   content: string,
+  metadata: ConversationMemoryMetadata = {},
 ): Promise<ConversationMemoryEntry> => {
   let rememberedEntry: ConversationMemoryEntry | undefined;
 
@@ -816,6 +819,8 @@ export const rememberUserGlobalMemory = async (
       "global",
       content,
       MAX_GLOBAL_MEMORY_ENTRIES,
+      Date.now(),
+      metadata,
     );
     rememberedEntry = remembered.entry;
 
@@ -834,6 +839,30 @@ export const rememberUserGlobalMemory = async (
   }
 
   return rememberedEntry;
+};
+
+export const forgetUserGlobalMemory = async (id: string): Promise<boolean> => {
+  let removed = false;
+
+  await updateUserConfigFile((config) => {
+    const normalizedEntries = normalizeConversationMemoryEntries(
+      config.memory?.entries,
+      "global",
+    );
+    const entries = forgetConversationMemoryEntry(normalizedEntries, id);
+    removed = entries.length !== normalizedEntries.length;
+
+    return {
+      ...config,
+      memory: {
+        ...(config.memory ?? {}),
+        globalEnabled: config.memory?.globalEnabled === true,
+        entries,
+      },
+    };
+  });
+
+  return removed;
 };
 
 /**

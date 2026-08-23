@@ -98,6 +98,7 @@ const userWebSearchProviders = getEnum("UserWebSearchProvider");
 const audioProviders = getEnum("AudioProvider");
 const voiceProviders = getEnum("VoiceAiProvider");
 const runtimeMemoryScopes = getEnum("RuntimeMemoryScope");
+const runtimeMemoryKinds = getEnum("RuntimeMemoryKind");
 const userReviewModelModes = getEnum("UserReviewModelMode");
 const defaultModelByProvider = metadata.defaultModelByProvider;
 const defaultModelProvider = metadata.defaultModelProvider;
@@ -171,6 +172,9 @@ export type SpeechToTextProvider = VoiceAiProvider;
 
 export const RUNTIME_MEMORY_SCOPES = ${tsReadonlyArray(runtimeMemoryScopes)} as const;
 export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
+
+export const RUNTIME_MEMORY_KINDS = ${tsReadonlyArray(runtimeMemoryKinds)} as const;
+export type RuntimeMemoryKind = (typeof RUNTIME_MEMORY_KINDS)[number];
 
 export const USER_REVIEW_MODEL_MODES = ${tsReadonlyArray(userReviewModelModes)} as const;
 export type UserReviewModelMode = (typeof USER_REVIEW_MODEL_MODES)[number];
@@ -364,7 +368,11 @@ export interface UserSpeechToTextConfigFile {
 export interface RuntimeMemoryEntry {
   id: string;
   scope: RuntimeMemoryScope;
+  key: string;
+  kind: RuntimeMemoryKind;
   content: string;
+  importance: number;
+  confidence: number;
   createdAt: number;
   updatedAt: number;
 }

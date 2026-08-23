@@ -1445,17 +1445,46 @@ fn validate_memory_value(value: &Value) -> Result<(), String> {
         let entry = entry
             .as_object()
             .ok_or_else(|| "A global memory entry is invalid.".to_string())?;
-        require_exact_keys(entry, &["id", "scope", "content", "createdAt", "updatedAt"])?;
+        require_exact_keys(
+            entry,
+            &[
+                "id",
+                "scope",
+                "key",
+                "kind",
+                "content",
+                "importance",
+                "confidence",
+                "createdAt",
+                "updatedAt",
+            ],
+        )?;
         let id =
             required_trimmed_string(entry.get("id"), "A global memory entry is missing its id.")?;
         if id.len() > 256
             || id.chars().any(char::is_control)
             || entry.get("scope").and_then(Value::as_str) != Some("global")
+            || required_trimmed_string(entry.get("key"), "A global memory entry has no key.")
+                .is_err()
+            || !entry
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    ["preference", "constraint", "decision", "fact", "workaround"].contains(&kind)
+                })
             || required_trimmed_string(
                 entry.get("content"),
                 "A global memory entry has no content.",
             )
             .is_err()
+            || !entry
+                .get("importance")
+                .and_then(Value::as_u64)
+                .is_some_and(|importance| (1..=5).contains(&importance))
+            || !entry
+                .get("confidence")
+                .and_then(Value::as_f64)
+                .is_some_and(|confidence| (0.0..=1.0).contains(&confidence))
             || entry.get("createdAt").and_then(Value::as_u64).is_none()
             || entry.get("updatedAt").and_then(Value::as_u64).is_none()
             || !ids.insert(id)
@@ -2199,6 +2228,35 @@ mod tests {
         let mut with_workspace = ralph;
         with_workspace["workspaceRoot"] = json!("C:/poison");
         assert!(validate_global_ralph_preferences_value(&with_workspace).is_err());
+    }
+
+    #[test]
+    fn global_memory_schema_requires_ranked_keyed_records() {
+        let memory = json!({
+            "globalEnabled": true,
+            "entries": [{
+                "id": "summary-style",
+                "scope": "global",
+                "key": "summary-style",
+                "kind": "preference",
+                "content": "The user prefers compact summaries",
+                "importance": 4,
+                "confidence": 0.9,
+                "createdAt": 1,
+                "updatedAt": 2
+            }]
+        });
+
+        assert!(validate_memory_value(&memory).is_ok());
+        let mut invalid_importance = memory.clone();
+        invalid_importance["entries"][0]["importance"] = json!(6);
+        assert!(validate_memory_value(&invalid_importance).is_err());
+        let mut missing_key = memory;
+        missing_key["entries"][0]
+            .as_object_mut()
+            .expect("memory entry should be an object")
+            .remove("key");
+        assert!(validate_memory_value(&missing_key).is_err());
     }
 
     #[test]

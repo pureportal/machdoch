@@ -1,8 +1,9 @@
 import { loadUserMemorySettings } from "../env.js";
+import { retrieveConversationMemory } from "../memory-retrieval.js";
 import { normalizeConversationMemoryEntries } from "../memory.js";
+import { loadWorkspaceMemory } from "../workspace-memory.js";
 import type {
   ConversationHistoryEntry,
-  ConversationMemoryEntry,
   TaskConversationContext,
   TaskExecutionSection,
   UiControlRuntimeInfo,
@@ -21,7 +22,6 @@ const MAX_RECENT_HISTORY_MESSAGES = 8;
 const MAX_RECENT_HISTORY_CHARS = 3_600;
 const MAX_CONVERSATION_SUMMARY_INPUT_CHARS = 10_000;
 const MAX_CONVERSATION_SUMMARY_SECTION_LINES = 12;
-const MAX_MEMORY_PROMPT_ENTRIES = 10;
 const MAX_WORKSPACE_RUN_CONTEXT_CHARS = 12_000;
 
 type WorkspaceRunContext = NonNullable<TaskConversationContext["workspaceRun"]>;
@@ -207,6 +207,11 @@ export interface PreparedConversationPromptContext {
   promptBlock?: string;
   sections: TaskExecutionSection[];
   memory: ConversationMemoryRuntime;
+  memoryRetrieval?: ReturnType<
+    typeof retrieveConversationMemory
+  >["diagnostics"] & {
+    workspaceLoadFailed: boolean;
+  };
   uiControlEnabled: boolean;
   uiControl?: UiControlRuntimeInfo;
 }
@@ -317,12 +322,6 @@ const createRecentHistoryWindow = (
   };
 };
 
-const createMemoryLines = (entries: ConversationMemoryEntry[]): string[] => {
-  return entries
-    .slice(0, MAX_MEMORY_PROMPT_ENTRIES)
-    .map((entry) => entry.content);
-};
-
 const normalizeWorkspaceContext = (
   conversationContext: TaskConversationContext | undefined,
 ): PreparedConversationPromptContext["workspace"] => {
@@ -411,6 +410,32 @@ export const prepareConversationPromptContext = async (
   const uiControlEnabled = conversationContext?.uiControlEnabled === true;
   const uiControl = conversationContext?.uiControl;
   const workspace = normalizeWorkspaceContext(conversationContext);
+  const workspaceEnabled = workspace.selection === "selected";
+  const workspaceRoot = config.workspaceRoot;
+  let workspaceLoadFailed = false;
+  const storedWorkspaceEntries = workspaceEnabled
+    ? await loadWorkspaceMemory(workspaceRoot).catch(() => {
+        workspaceLoadFailed = true;
+        return [];
+      })
+    : [];
+  const workspaceEntries = workspaceEnabled
+    ? normalizeConversationMemoryEntries(storedWorkspaceEntries, "workspace")
+    : [];
+  const retrieval = retrieveConversationMemory(task, [
+    ...sessionEntries,
+    ...workspaceEntries,
+    ...globalEntries,
+  ]);
+  const retrievedSessionEntries = retrieval.entries.filter(
+    (entry) => entry.scope === "session",
+  );
+  const retrievedWorkspaceEntries = retrieval.entries.filter(
+    (entry) => entry.scope === "workspace",
+  );
+  const retrievedGlobalEntries = retrieval.entries.filter(
+    (entry) => entry.scope === "global",
+  );
   const { omittedHistory, recentHistory } =
     createRecentHistoryWindow(normalizedHistory);
   const summary =
@@ -423,8 +448,15 @@ export const prepareConversationPromptContext = async (
         )) ?? createDeterministicConversationSummary(omittedHistory))
       : undefined;
   const recentHistoryLines = recentHistory.map(formatConversationHistoryEntry);
-  const sessionMemoryLines = createMemoryLines(sessionEntries);
-  const globalMemoryLines = createMemoryLines(globalEntries);
+  const sessionMemoryLines = retrievedSessionEntries.map(
+    (entry) => entry.content,
+  );
+  const workspaceMemoryLines = retrievedWorkspaceEntries.map(
+    (entry) => entry.content,
+  );
+  const globalMemoryLines = retrievedGlobalEntries.map(
+    (entry) => entry.content,
+  );
   const workspaceRunContext = conversationContext?.workspaceRun;
   const promptSections = [
     summary
@@ -446,6 +478,13 @@ export const prepareConversationPromptContext = async (
           "<session_memory>",
           ...sessionMemoryLines.map((line) => `- ${line}`),
           "</session_memory>",
+        ].join("\n")
+      : undefined,
+    workspaceMemoryLines.length > 0
+      ? [
+          "<workspace_memory>",
+          ...workspaceMemoryLines.map((line) => `- ${line}`),
+          "</workspace_memory>",
         ].join("\n")
       : undefined,
     globalMemoryLines.length > 0
@@ -522,19 +561,22 @@ export const prepareConversationPromptContext = async (
             },
           ]
         : []),
-      ...(sessionMemoryLines.length > 0
+      ...(retrieval.diagnostics.candidateCount > 0 || workspaceLoadFailed
         ? [
             {
-              title: "Session memory",
-              lines: sessionMemoryLines,
-            },
-          ]
-        : []),
-      ...(globalMemoryLines.length > 0
-        ? [
-            {
-              title: "Global memory",
-              lines: globalMemoryLines,
+              title: "Memory retrieval",
+              lines: [
+                `candidates: ${retrieval.diagnostics.candidateCount}`,
+                `selected: ${retrieval.diagnostics.selectedCount}`,
+                `session selected: ${retrieval.diagnostics.selectedByScope.session}`,
+                `workspace selected: ${retrieval.diagnostics.selectedByScope.workspace}`,
+                `global selected: ${retrieval.diagnostics.selectedByScope.global}`,
+                `context characters: ${retrieval.diagnostics.contextCharacters}`,
+                `selection signals: ${retrieval.diagnostics.selectionSignals.join(", ") || "none"}`,
+                ...(workspaceLoadFailed
+                  ? ["workspace store: unavailable"]
+                  : []),
+              ],
             },
           ]
         : []),
@@ -559,8 +601,14 @@ export const prepareConversationPromptContext = async (
     memory: {
       sessionEnabled,
       sessionEntries,
+      workspaceEnabled,
+      workspaceEntries,
       globalEnabled,
       globalEntries,
+    },
+    memoryRetrieval: {
+      ...retrieval.diagnostics,
+      workspaceLoadFailed,
     },
     uiControlEnabled,
     ...(uiControl ? { uiControl } : {}),

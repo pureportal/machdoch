@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InternalTaskModelSettingsPanel } from "./internal-task-model-settings-panel";
@@ -34,6 +41,11 @@ beforeEach(() => {
         available: true,
         models: [{ id: "gpt-5.5", label: "GPT 5.5" }],
       },
+      {
+        provider: "anthropic",
+        available: true,
+        models: [{ id: "claude-sonnet-5", label: "Claude Sonnet 5" }],
+      },
     ],
   });
   runtime.saveUserInternalTaskModelSettings.mockImplementation(
@@ -44,36 +56,38 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("InternalTaskModelSettingsPanel", () => {
-  it("selects models from configured API and CLI providers", async () => {
+  it("selects models only from configured API providers", async () => {
     render(
       createElement(InternalTaskModelSettingsPanel, {
         providerAvailability: [
           { provider: "openai", configured: true },
           { provider: "codex-cli", configured: true },
-          { provider: "anthropic", configured: false },
+          { provider: "anthropic", configured: true },
         ],
       }),
     );
 
     const provider = await screen.findByLabelText("Internal task provider");
-    expect(within(provider).getByRole("option", { name: "OpenAI" })).toBeTruthy();
     expect(
-      within(provider).getByRole("option", { name: "Codex CLI" }),
+      within(provider).getByRole("option", { name: "OpenAI" }),
     ).toBeTruthy();
     expect(
-      within(provider).queryByRole("option", { name: "Anthropic" }),
+      within(provider).getByRole("option", { name: "Anthropic" }),
+    ).toBeTruthy();
+    expect(
+      within(provider).queryByRole("option", { name: "Codex CLI" }),
     ).toBeNull();
 
-    fireEvent.change(provider, { target: { value: "codex-cli" } });
+    fireEvent.change(provider, { target: { value: "anthropic" } });
 
     await waitFor(() =>
       expect(runtime.saveUserInternalTaskModelSettings).toHaveBeenCalledWith({
-        provider: "codex-cli",
-        model: "gpt-5.5",
+        provider: "anthropic",
+        model: "claude-sonnet-5",
       }),
     );
     expect(
       (screen.getByLabelText("Internal task model") as HTMLSelectElement).value,
-    ).toBe("gpt-5.5");
+    ).toBe("claude-sonnet-5");
   });
 });

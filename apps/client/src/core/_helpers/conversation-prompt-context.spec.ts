@@ -1,9 +1,14 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type {
   WorkspaceRunConfigurationStatus,
   WorkspaceRunSnapshot,
 } from "../../shared/workspace-run.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import type { ConversationMemoryEntry } from "../types.js";
+import { rememberWorkspaceMemory } from "../workspace-memory.js";
 import {
   prepareConversationPromptContext,
   serializeWorkspaceRunContext,
@@ -12,14 +17,28 @@ import {
 const providerAdapters = vi.hoisted(() => ({
   createProviderAdapter: vi.fn(),
 }));
+const memorySettings = vi.hoisted(() => ({
+  globalEnabled: false,
+  entries: [] as ConversationMemoryEntry[],
+}));
 
 vi.mock("./provider-adapters.js", () => providerAdapters);
 vi.mock("../env.js", () => ({
-  loadUserMemorySettings: vi.fn(async () => ({
-    globalEnabled: false,
-    entries: [],
-  })),
+  loadUserMemorySettings: vi.fn(async () => memorySettings),
 }));
+
+const workspaceRoots: string[] = [];
+
+afterEach(async () => {
+  memorySettings.globalEnabled = false;
+  memorySettings.entries = [];
+  providerAdapters.createProviderAdapter.mockReset();
+  await Promise.all(
+    workspaceRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true })),
+  );
+});
 
 const runtimeConfig: RuntimeConfig = {
   workspaceRoot: "C:/workspace",
@@ -164,5 +183,105 @@ describe("conversation summary model", () => {
       expect.objectContaining({ model: "claude-internal" }),
     );
     expect(context.promptBlock).toContain("- Earlier requirement");
+  });
+});
+
+describe("conversation memory prompt context", () => {
+  it("injects only relevant facts while retaining the full stores for updates", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-prompt-memory-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    await rememberWorkspaceMemory(
+      workspaceRoot,
+      "The release build uses pnpm package",
+      { key: "release-build-command", kind: "constraint", importance: 4 },
+    );
+    await rememberWorkspaceMemory(
+      workspaceRoot,
+      "Gallery thumbnails use a 4:3 aspect ratio",
+      { key: "gallery-thumbnail-ratio", kind: "decision" },
+    );
+    memorySettings.globalEnabled = true;
+    memorySettings.entries = [
+      {
+        id: "global-1",
+        scope: "global",
+        key: "verification-output-style",
+        kind: "preference",
+        content: "The user prefers compact verification output",
+        importance: 4,
+        confidence: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
+
+    const context = await prepareConversationPromptContext(
+      "Create the release build and summarize verification",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        sessionMemory: [
+          {
+            id: "session-1",
+            scope: "session",
+            key: "unrelated-database",
+            kind: "fact",
+            content: "The test database is PostgreSQL",
+            importance: 3,
+            confidence: 1,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        ],
+        globalMemoryEnabled: true,
+      },
+    );
+
+    expect(context.promptBlock).toContain("<workspace_memory>");
+    expect(context.promptBlock).toContain(
+      "The release build uses pnpm package",
+    );
+    expect(context.promptBlock).toContain("<global_memory>");
+    expect(context.promptBlock).toContain(
+      "The user prefers compact verification output",
+    );
+    expect(context.promptBlock).not.toContain("Gallery thumbnails");
+    expect(context.promptBlock).not.toContain("PostgreSQL");
+    expect(context.memory.workspaceEntries).toHaveLength(2);
+    expect(context.memory.sessionEntries).toHaveLength(1);
+    expect(context.memory.globalEntries).toHaveLength(1);
+    expect(context.memoryRetrieval).toMatchObject({
+      candidateCount: 4,
+      selectedByScope: { session: 0, workspace: 1, global: 1 },
+      workspaceLoadFailed: false,
+    });
+  });
+
+  it("does not load workspace memory when no workspace is selected", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-prompt-memory-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    await rememberWorkspaceMemory(workspaceRoot, "Use pnpm package", {
+      key: "package-command",
+    });
+
+    const context = await prepareConversationPromptContext(
+      "Run the package command",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "not-set" },
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(context.promptBlock).toBeUndefined();
+    expect(context.memory.workspaceEnabled).toBe(false);
+    expect(context.memory.workspaceEntries).toEqual([]);
+    expect(context.memoryRetrieval?.candidateCount).toBe(0);
   });
 });

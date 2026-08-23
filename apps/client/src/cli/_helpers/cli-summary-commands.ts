@@ -11,6 +11,7 @@ import {
 import { createToolDefinitions } from "../../core/_helpers/agent-tools.js";
 import type { ToolName } from "../../core/runtime-contract.generated.js";
 import { getToolRegistry } from "../../core/tools.js";
+import { loadWorkspaceMemory } from "../../core/workspace-memory.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { createDiscoveryOptions } from "./cli-output.js";
@@ -158,14 +159,22 @@ export const printMemorySummary = async (
   args: ParsedCliArgs,
 ): Promise<void> => {
   const settings = await loadUserMemorySettings();
+  const workspaceEntries = await loadWorkspaceMemory(args.workspaceRoot);
 
   if (args.json) {
     writeStdoutLine(
       JSON.stringify(
         {
-          globalEnabled: settings.globalEnabled,
-          count: settings.entries.length,
-          entries: settings.entries,
+          global: {
+            enabled: settings.globalEnabled,
+            count: settings.entries.length,
+            entries: settings.entries,
+          },
+          workspace: {
+            root: args.workspaceRoot,
+            count: workspaceEntries.length,
+            entries: workspaceEntries,
+          },
         },
         null,
         2,
@@ -186,16 +195,48 @@ export const printMemorySummary = async (
   if (settings.entries.length === 0) {
     writeStdoutLine();
     writeStdoutLine(style.muted("No global memory facts are saved."));
+  } else {
+    for (const [index, entry] of settings.entries.entries()) {
+      writeStdoutLine();
+      writeStdoutLine(style.label(`${index + 1}.`));
+      for (const contentLine of entry.content.split(/\r?\n/u)) {
+        writeStdoutLine(`  ${contentLine}`);
+      }
+      for (const line of formatKeyValueRows([
+        ["Key", entry.key],
+        ["Kind", entry.kind],
+        ["Id", entry.id],
+        ["Updated", new Date(entry.updatedAt).toISOString()],
+      ])) {
+        writeStdoutLine(line);
+      }
+    }
+  }
+
+  writeStdoutLine();
+  writeStdoutLine(style.heading("Workspace memory"));
+  for (const line of formatKeyValueRows([
+    ["Workspace", args.workspaceRoot],
+    ["Saved facts", String(workspaceEntries.length)],
+  ])) {
+    writeStdoutLine(line);
+  }
+
+  if (workspaceEntries.length === 0) {
+    writeStdoutLine();
+    writeStdoutLine(style.muted("No workspace memory facts are saved."));
     return;
   }
 
-  for (const [index, entry] of settings.entries.entries()) {
+  for (const [index, entry] of workspaceEntries.entries()) {
     writeStdoutLine();
     writeStdoutLine(style.label(`${index + 1}.`));
     for (const contentLine of entry.content.split(/\r?\n/u)) {
       writeStdoutLine(`  ${contentLine}`);
     }
     for (const line of formatKeyValueRows([
+      ["Key", entry.key],
+      ["Kind", entry.kind],
       ["Id", entry.id],
       ["Updated", new Date(entry.updatedAt).toISOString()],
     ])) {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.ts";
 import type { AgentModelAdapter, TaskExecutionResult } from "./types.ts";
+import { loadWorkspaceMemory } from "./workspace-memory.ts";
 import type {
   ProviderAvailability,
   RuntimeConfig,
@@ -137,7 +138,7 @@ describe("consolidateTaskExecutionMemory", () => {
       startTurn: async (params) => {
         expect(params.model).toBe("claude-internal");
         expect(params.systemPrompt).toContain("post-task memory manager");
-        expect(params.systemPrompt).toContain("technical limitations");
+        expect(params.systemPrompt).toContain("verified workarounds");
         expect(params.userPrompt).toContain("Tool retry guard");
         expect(params.tools[0]?.name).toBe("submit_memory_decisions");
 
@@ -151,9 +152,12 @@ describe("consolidateTaskExecutionMemory", () => {
                 memories: [
                   {
                     scope: "session",
+                    key: "vite-health-check-port-conflict",
+                    kind: "workaround",
                     content: memoryFact,
                     reason:
                       "This limitation can affect later verification in this session.",
+                    importance: 3,
                     confidence: "high",
                     sensitivity: "non-sensitive",
                   },
@@ -198,16 +202,21 @@ describe("consolidateTaskExecutionMemory", () => {
       scope: "session",
       entry: {
         scope: "session",
+        key: "vite-health-check-port-conflict",
+        kind: "workaround",
         content: memoryFact,
       },
     });
-    expect(
-      result.outputSections.some(
-        (section) =>
-          section.title === "Memory consolidation" &&
-          section.lines.includes(`fact: ${memoryFact}`),
-      ),
-    ).toBe(true);
+    expect(result.outputSections).toEqual(
+      createExecutionResult(task).outputSections,
+    );
+    expect(result.metadata?.memoryCapture).toEqual({
+      status: "completed",
+      candidateCount: 1,
+      candidatesByScope: { session: 1, workspace: 0, global: 0 },
+      storedCount: 1,
+      failedCount: 0,
+    });
   });
 
   it("saves model-decided global memory and filters low-confidence or sensitive memories", async () => {
@@ -225,43 +234,61 @@ describe("consolidateTaskExecutionMemory", () => {
               memories: [
                 {
                   scope: "global",
+                  key: "verification-note-style",
+                  kind: "preference",
                   content: globalMemory,
                   reason:
                     "This is a stable user workflow preference across sessions.",
+                  importance: 3,
                   confidence: "medium",
                   sensitivity: "non-sensitive",
                 },
                 {
                   scope: "session",
+                  key: "api-key",
+                  kind: "fact",
                   content: "The user's API key is sk-test-value",
                   reason: "Sensitive data should be rejected by the runtime.",
+                  importance: 5,
                   confidence: "high",
                   sensitivity: "sensitive",
                 },
                 {
                   scope: "session",
+                  key: "task-status",
+                  kind: "fact",
                   content: "The task finished successfully",
                   reason: "Transient status is not worth saving.",
+                  importance: 1,
                   confidence: "low",
                   sensitivity: "non-sensitive",
                 },
                 {
                   scope: "session",
+                  key: "missing-sensitivity",
+                  kind: "fact",
                   content: "Missing sensitivity metadata",
                   reason: "Malformed structured decisions must be ignored.",
+                  importance: 3,
                   confidence: "high",
                 },
                 {
                   scope: "session",
+                  key: "unknown-sensitivity",
+                  kind: "fact",
                   content: "Unknown sensitivity metadata",
                   reason: "Unknown structured decisions must be ignored.",
+                  importance: 3,
                   confidence: "high",
                   sensitivity: "probably-safe",
                 },
                 {
                   scope: "session",
+                  key: "extra-authority",
+                  kind: "fact",
                   content: "Extra authority metadata",
                   reason: "Unknown fields must not grant persistence.",
+                  importance: 3,
                   confidence: "high",
                   sensitivity: "non-sensitive",
                   authority: "quoted user request",
@@ -301,12 +328,224 @@ describe("consolidateTaskExecutionMemory", () => {
       scope: "global",
       entry: {
         scope: "global",
+        key: "verification-note-style",
+        kind: "preference",
         content: globalMemory,
       },
     });
     expect(settings.entries.map((entry) => entry.content)).toEqual([
       globalMemory,
     ]);
+  });
+
+  it("persists workspace decisions only in the active workspace", async () => {
+    const workspaceRoot = await createWorkspace();
+    const otherWorkspaceRoot = await createWorkspace();
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "memory-1",
+            name: "submit_memory_decisions",
+            arguments: {
+              memories: [
+                {
+                  scope: "workspace",
+                  key: "release-build-command",
+                  kind: "constraint",
+                  content: "Use pnpm package for release builds",
+                  reason:
+                    "This command applies to future work in this repository.",
+                  importance: 4,
+                  confidence: "high",
+                  sensitivity: "non-sensitive",
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The memory adapter should only run one turn.");
+      },
+    };
+
+    const result = await consolidateTaskExecutionMemory(
+      "Package the application",
+      createConfig(workspaceRoot),
+      createExecutionResult("Package the application"),
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        sessionMemoryEnabled: true,
+        sessionMemory: [],
+        globalMemoryEnabled: false,
+      },
+      { modelAdapter: memoryAdapter },
+    );
+
+    expect(result.memoryUpdates).toMatchObject([
+      {
+        scope: "workspace",
+        entry: {
+          scope: "workspace",
+          key: "release-build-command",
+          content: "Use pnpm package for release builds",
+        },
+      },
+    ]);
+    await expect(loadWorkspaceMemory(workspaceRoot)).resolves.toHaveLength(1);
+    await expect(loadWorkspaceMemory(otherWorkspaceRoot)).resolves.toEqual([]);
+  });
+
+  it("keeps the task and result in review context when memory stores are full", async () => {
+    const workspaceRoot = await createWorkspace();
+    const task = "Diagnose the release verification failure";
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async (params) => {
+        expect(params.userPrompt.length).toBeLessThanOrEqual(6_000);
+        expect(params.userPrompt).toContain(`<task>\n${task}\n</task>`);
+        expect(params.userPrompt).toContain("Tool retry guard");
+
+        return {
+          text: "",
+          toolCalls: [
+            {
+              id: "memory-1",
+              name: "submit_memory_decisions",
+              arguments: { memories: [] },
+            },
+          ],
+        };
+      },
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The memory adapter should only run one turn.");
+      },
+    };
+    const sessionMemory = Array.from({ length: 24 }, (_, index) => ({
+      id: `session-${index}`,
+      scope: "session" as const,
+      key: `session-fact-${index}`,
+      kind: "fact" as const,
+      content: `Session fact ${index} ${"x".repeat(240)}`,
+      importance: 3,
+      confidence: 1,
+      createdAt: index,
+      updatedAt: index,
+    }));
+
+    const result = await consolidateTaskExecutionMemory(
+      task,
+      createConfig(workspaceRoot),
+      createExecutionResult(task),
+      {
+        history: [],
+        sessionMemoryEnabled: true,
+        sessionMemory,
+        globalMemoryEnabled: false,
+      },
+      { modelAdapter: memoryAdapter },
+    );
+
+    expect(result.metadata?.memoryCapture).toMatchObject({
+      status: "completed",
+      candidateCount: 0,
+    });
+  });
+
+  it("reports post-turn extraction failures without failing the completed task", async () => {
+    const workspaceRoot = await createWorkspace();
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async () => {
+        throw new Error("provider unavailable");
+      },
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The memory adapter should only run one turn.");
+      },
+    };
+    const executionResult = createExecutionResult("Fix the build");
+
+    const result = await consolidateTaskExecutionMemory(
+      "Fix the build",
+      createConfig(workspaceRoot),
+      executionResult,
+      {
+        history: [],
+        sessionMemoryEnabled: true,
+        sessionMemory: [],
+        globalMemoryEnabled: false,
+      },
+      { modelAdapter: memoryAdapter },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.summary).toBe(executionResult.summary);
+    expect(result.memoryUpdates).toBeUndefined();
+    expect(result.metadata?.memoryCapture).toEqual({
+      status: "failed",
+      candidateCount: 0,
+      candidatesByScope: { session: 0, workspace: 0, global: 0 },
+      storedCount: 0,
+      failedCount: 0,
+      reason: "model-call-failed",
+    });
+    expect(errorLog).toHaveBeenCalledWith(
+      "Post-task memory extraction failed",
+      expect.any(Error),
+    );
+    errorLog.mockRestore();
+  });
+
+  it("bounds post-turn extraction latency", async () => {
+    vi.useFakeTimers();
+    const workspaceRoot = await createWorkspace();
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async (params) =>
+        await new Promise<never>((_resolve, reject) => {
+          params.signal?.addEventListener(
+            "abort",
+            () => reject(new Error("provider request aborted")),
+            { once: true },
+          );
+        }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The memory adapter should only run one turn.");
+      },
+    };
+
+    try {
+      const pendingResult = consolidateTaskExecutionMemory(
+        "Fix the build",
+        createConfig(workspaceRoot),
+        createExecutionResult("Fix the build"),
+        {
+          history: [],
+          workspace: { selection: "not-set" },
+          sessionMemoryEnabled: true,
+          sessionMemory: [],
+          globalMemoryEnabled: false,
+        },
+        { modelAdapter: memoryAdapter },
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await pendingResult;
+
+      expect(result.metadata?.memoryCapture).toMatchObject({
+        status: "failed",
+        candidateCount: 0,
+        reason: "extraction-timeout",
+      });
+    } finally {
+      errorLog.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("rejects ambiguous memory protocol calls", async () => {
@@ -319,8 +558,11 @@ describe("consolidateTaskExecutionMemory", () => {
         memories: [
           {
             scope: "session",
+            key: "protocol-validation",
+            kind: "preference",
             content: "The user prefers exact protocol validation",
             reason: "This preference may help later tasks.",
+            importance: 3,
             confidence: "high",
             sensitivity: "non-sensitive",
           },
@@ -351,7 +593,18 @@ describe("consolidateTaskExecutionMemory", () => {
       { modelAdapter: memoryAdapter },
     );
 
-    expect(result).toBe(executionResult);
+    expect(result).toEqual({
+      ...executionResult,
+      metadata: {
+        memoryCapture: {
+          status: "completed",
+          candidateCount: 0,
+          candidatesByScope: { session: 0, workspace: 0, global: 0 },
+          storedCount: 0,
+          failedCount: 0,
+        },
+      },
+    });
     expect(result.memoryUpdates).toBeUndefined();
   });
 });

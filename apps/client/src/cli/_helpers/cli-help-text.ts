@@ -13,7 +13,7 @@ Core commands:
   chat           Start an interactive terminal session
   interview      Refine a task through structured questions
   config         Inspect or change user and workspace settings
-  memory         List durable global memory facts
+  memory         List durable workspace and global memory facts
   inspect        List discovered prompts and skills
   tools          List available tool areas and model-facing functions
 
@@ -139,12 +139,12 @@ Options:
   --max-rounds <n>          Limit interview rounds
   --json                    Print machine-readable output`;
 
-const MEMORY_HELP = `machdoch memory - inspect durable global memory
+const MEMORY_HELP = `machdoch memory - inspect durable memory
 
 Usage:
   machdoch memory [list] [--json]
 
-Lists every saved global memory fact, including its stable id and update time.
+Lists saved facts for the active workspace and global scope.
 Use \`machdoch config set memory.global on|off\` to change whether global memory
 is enabled for new sessions.`;
 

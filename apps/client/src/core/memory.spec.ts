@@ -15,7 +15,11 @@ const createEntry = (
 ): ConversationMemoryEntry => ({
   id,
   scope: "session",
+  key: content.toLowerCase().replaceAll(" ", "-"),
+  kind: "fact",
   content,
+  importance: 3,
+  confidence: 1,
   createdAt: updatedAt - 1,
   updatedAt,
 });
@@ -62,7 +66,9 @@ describe("normalizeConversationMemoryEntries", () => {
     const normalized = normalizeConversationMemoryEntries(entries, "session");
 
     expect(normalized).toHaveLength(MAX_SESSION_MEMORY_ENTRIES);
-    expect(normalized[0]?.content).toBe(`item ${MAX_SESSION_MEMORY_ENTRIES + 3}`);
+    expect(normalized[0]?.content).toBe(
+      `item ${MAX_SESSION_MEMORY_ENTRIES + 3}`,
+    );
     expect(normalized.some((entry) => entry.id === "old")).toBe(false);
     expect(normalized.some((entry) => entry.id === "blank")).toBe(false);
   });
@@ -84,6 +90,18 @@ describe("mergeConversationMemoryEntries", () => {
     expect(merged[0]?.content).toBe("same content");
   });
 
+  it("prefers an incoming replacement when timestamps are equal", () => {
+    const existing = createEntry("existing", "Use Node 20", 5);
+    existing.key = "node-version";
+    const incoming = createEntry("existing", "Use Node 22", 5);
+    incoming.key = "node-version";
+
+    const merged = mergeConversationMemoryEntries([existing], [incoming], 10);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.content).toBe("Use Node 22");
+  });
+
   it("keeps at least one entry when maxEntries is below one", () => {
     const merged = mergeConversationMemoryEntries(
       [createEntry("one", "One", 1), createEntry("two", "Two", 2)],
@@ -98,7 +116,13 @@ describe("mergeConversationMemoryEntries", () => {
 
 describe("rememberConversationMemoryEntry", () => {
   it("adds normalized new memory content", () => {
-    const result = rememberConversationMemoryEntry([], "global", "  New memory  ", 5, 10);
+    const result = rememberConversationMemoryEntry(
+      [],
+      "global",
+      "  New memory  ",
+      5,
+      10,
+    );
 
     expect(result.added).toBe(true);
     expect(result.entry).toMatchObject({
@@ -125,6 +149,37 @@ describe("rememberConversationMemoryEntry", () => {
     expect(result.entries).toHaveLength(1);
   });
 
+  it("supersedes a stale fact when the concept key is reused", () => {
+    const existing = createEntry("existing", "Use Node 20", 1);
+    existing.key = "node-version";
+    const result = rememberConversationMemoryEntry(
+      [existing],
+      "session",
+      "Use Node 22",
+      MAX_SESSION_MEMORY_ENTRIES,
+      50,
+      {
+        key: "node-version",
+        kind: "constraint",
+        importance: 4,
+        confidence: 0.9,
+      },
+    );
+
+    expect(result).toMatchObject({ added: false, replaced: true });
+    expect(result.entry).toMatchObject({
+      id: "existing",
+      key: "node-version",
+      kind: "constraint",
+      content: "Use Node 22",
+      importance: 4,
+      confidence: 0.9,
+      createdAt: 0,
+      updatedAt: 50,
+    });
+    expect(result.entries).toHaveLength(1);
+  });
+
   it("rejects blank memory content", () => {
     expect(() => rememberConversationMemoryEntry([], "global", "   ")).toThrow(
       /non-empty memory content/u,
@@ -132,8 +187,9 @@ describe("rememberConversationMemoryEntry", () => {
   });
 
   it("uses the global cap for global memories", () => {
-    const entries = Array.from({ length: MAX_GLOBAL_MEMORY_ENTRIES + 1 }, (_, index) =>
-      createEntry(`entry-${index}`, `memory ${index}`, index),
+    const entries = Array.from(
+      { length: MAX_GLOBAL_MEMORY_ENTRIES + 1 },
+      (_, index) => createEntry(`entry-${index}`, `memory ${index}`, index),
     );
 
     const result = rememberConversationMemoryEntry(

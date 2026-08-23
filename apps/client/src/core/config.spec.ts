@@ -379,6 +379,31 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
+  it("replaces a delegated CLI internal-task selection with an API provider", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await mkdir(join(workspaceRoot, ".user-config"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".user-config", "user-config.json"),
+      JSON.stringify({
+        internalTaskModel: {
+          provider: "codex-cli",
+          model: "gpt-5.6-sol",
+        },
+      }),
+    );
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      "OPENAI_API_KEY=sk-openai-internal-test\n",
+    );
+
+    expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+  });
+
   it("persists the workspace default model into .machdoch/config.json", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

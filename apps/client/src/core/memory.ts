@@ -1,21 +1,37 @@
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
+import {
+  RUNTIME_MEMORY_KINDS,
+  type RuntimeMemoryKind,
+} from "./runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
+  ConversationMemoryKind,
   ConversationMemoryScope,
 } from "./types.js";
 
 export const MAX_SESSION_MEMORY_ENTRIES = 24;
+export const MAX_WORKSPACE_MEMORY_ENTRIES = 64;
 export const MAX_GLOBAL_MEMORY_ENTRIES = 40;
 const MAX_MEMORY_CONTENT_LENGTH = 280;
+const MAX_MEMORY_KEY_LENGTH = 96;
+const DEFAULT_MEMORY_IMPORTANCE = 3;
+const DEFAULT_MEMORY_CONFIDENCE = 1;
 
-const createMemoryKey = (content: string): string => {
-  return content.replace(/\s+/g, " ").trim().toLowerCase();
+export interface ConversationMemoryMetadata {
+  key?: string;
+  kind?: ConversationMemoryKind;
+  importance?: number;
+  confidence?: number;
+}
+
+const createContentKey = (content: string): string => {
+  return content.replace(/\s+/gu, " ").trim().toLowerCase();
 };
 
 export const normalizeMemoryContent = (
   value: string | undefined,
 ): string | undefined => {
-  const normalized = normalizeOptionalString(value)?.replace(/\s+/g, " ");
+  const normalized = normalizeOptionalString(value)?.replace(/\s+/gu, " ");
 
   if (!normalized) {
     return undefined;
@@ -28,15 +44,67 @@ export const normalizeMemoryContent = (
   return `${normalized.slice(0, MAX_MEMORY_CONTENT_LENGTH - 1)}…`;
 };
 
+export const normalizeMemoryKey = (
+  value: string | undefined,
+  content: string,
+): string => {
+  const source = normalizeOptionalString(value) ?? content;
+  const normalized = source
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+
+  return (normalized || createContentKey(content)).slice(
+    0,
+    MAX_MEMORY_KEY_LENGTH,
+  );
+};
+
+const normalizeMemoryKind = (value: unknown): ConversationMemoryKind => {
+  return typeof value === "string" &&
+    (RUNTIME_MEMORY_KINDS as readonly string[]).includes(value)
+    ? (value as RuntimeMemoryKind)
+    : "fact";
+};
+
+const normalizeMemoryImportance = (value: unknown): number => {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(5, Math.max(1, Math.round(value)))
+    : DEFAULT_MEMORY_IMPORTANCE;
+};
+
+const normalizeMemoryConfidence = (value: unknown): number => {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(1, Math.max(0, value))
+    : DEFAULT_MEMORY_CONFIDENCE;
+};
+
+const getMaxEntriesForScope = (scope: ConversationMemoryScope): number => {
+  switch (scope) {
+    case "session":
+      return MAX_SESSION_MEMORY_ENTRIES;
+    case "workspace":
+      return MAX_WORKSPACE_MEMORY_ENTRIES;
+    case "global":
+      return MAX_GLOBAL_MEMORY_ENTRIES;
+  }
+};
+
 export const createConversationMemoryEntry = (
   scope: ConversationMemoryScope,
   content: string,
   timestamp = Date.now(),
+  metadata: ConversationMemoryMetadata = {},
 ): ConversationMemoryEntry => {
   return {
     id: crypto.randomUUID(),
     scope,
+    key: normalizeMemoryKey(metadata.key, content),
+    kind: normalizeMemoryKind(metadata.kind),
     content,
+    importance: normalizeMemoryImportance(metadata.importance),
+    confidence: normalizeMemoryConfidence(metadata.confidence),
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -63,11 +131,15 @@ export const normalizeConversationMemoryEntries = (
     }
 
     const createdAt =
-      typeof candidate.createdAt === "number"
+      typeof candidate.createdAt === "number" &&
+      Number.isFinite(candidate.createdAt)
         ? candidate.createdAt
         : Date.now();
     const updatedAt =
-      typeof candidate.updatedAt === "number" ? candidate.updatedAt : createdAt;
+      typeof candidate.updatedAt === "number" &&
+      Number.isFinite(candidate.updatedAt)
+        ? candidate.updatedAt
+        : createdAt;
 
     return [
       {
@@ -76,7 +148,11 @@ export const normalizeConversationMemoryEntries = (
             ? candidate.id
             : crypto.randomUUID(),
         scope,
+        key: normalizeMemoryKey(candidate.key, content),
+        kind: normalizeMemoryKind(candidate.kind),
         content,
+        importance: normalizeMemoryImportance(candidate.importance),
+        confidence: normalizeMemoryConfidence(candidate.confidence),
         createdAt,
         updatedAt,
       },
@@ -86,7 +162,7 @@ export const normalizeConversationMemoryEntries = (
   return mergeConversationMemoryEntries(
     [],
     normalizedEntries,
-    scope === "global" ? MAX_GLOBAL_MEMORY_ENTRIES : MAX_SESSION_MEMORY_ENTRIES,
+    getMaxEntriesForScope(scope),
   );
 };
 
@@ -95,29 +171,41 @@ export const mergeConversationMemoryEntries = (
   incomingEntries: ConversationMemoryEntry[],
   maxEntries: number,
 ): ConversationMemoryEntry[] => {
-  const merged = new Map<string, ConversationMemoryEntry>();
+  const seenKeys = new Set<string>();
+  const seenContent = new Set<string>();
 
-  for (const entry of [...existingEntries, ...incomingEntries]) {
-    const content = normalizeMemoryContent(entry.content);
+  return [...incomingEntries, ...existingEntries]
+    .flatMap((entry) => {
+      const content = normalizeMemoryContent(entry.content);
 
-    if (!content) {
-      continue;
-    }
+      if (!content) {
+        return [];
+      }
 
-    const key = createMemoryKey(content);
-    const normalizedEntry: ConversationMemoryEntry = {
-      ...entry,
-      content,
-    };
-    const existingEntry = merged.get(key);
-
-    if (!existingEntry || existingEntry.updatedAt < normalizedEntry.updatedAt) {
-      merged.set(key, normalizedEntry);
-    }
-  }
-
-  return Array.from(merged.values())
+      return [
+        {
+          ...entry,
+          key: normalizeMemoryKey(entry.key, content),
+          kind: normalizeMemoryKind(entry.kind),
+          content,
+          importance: normalizeMemoryImportance(entry.importance),
+          confidence: normalizeMemoryConfidence(entry.confidence),
+        },
+      ];
+    })
     .sort((left, right) => right.updatedAt - left.updatedAt)
+    .filter((entry) => {
+      const scopedKey = `${entry.scope}:${entry.key}`;
+      const scopedContent = `${entry.scope}:${createContentKey(entry.content)}`;
+
+      if (seenKeys.has(scopedKey) || seenContent.has(scopedContent)) {
+        return false;
+      }
+
+      seenKeys.add(scopedKey);
+      seenContent.add(scopedContent);
+      return true;
+    })
     .slice(0, Math.max(1, maxEntries));
 };
 
@@ -125,14 +213,14 @@ export const rememberConversationMemoryEntry = (
   existingEntries: ConversationMemoryEntry[],
   scope: ConversationMemoryScope,
   content: string,
-  maxEntries = scope === "global"
-    ? MAX_GLOBAL_MEMORY_ENTRIES
-    : MAX_SESSION_MEMORY_ENTRIES,
+  maxEntries = getMaxEntriesForScope(scope),
   timestamp = Date.now(),
+  metadata: ConversationMemoryMetadata = {},
 ): {
   entry: ConversationMemoryEntry;
   entries: ConversationMemoryEntry[];
   added: boolean;
+  replaced: boolean;
 } => {
   const normalizedContent = normalizeMemoryContent(content);
 
@@ -140,14 +228,27 @@ export const rememberConversationMemoryEntry = (
     throw new Error("Expected non-empty memory content.");
   }
 
-  const key = createMemoryKey(normalizedContent);
+  const memoryKey = normalizeMemoryKey(metadata.key, normalizedContent);
+  const contentKey = createContentKey(normalizedContent);
   const existingEntry = existingEntries.find(
-    (entry) => createMemoryKey(entry.content) === key,
+    (entry) =>
+      entry.scope === scope &&
+      (normalizeMemoryKey(entry.key, entry.content) === memoryKey ||
+        createContentKey(entry.content) === contentKey),
   );
 
   if (existingEntry) {
     const refreshedEntry: ConversationMemoryEntry = {
       ...existingEntry,
+      key: memoryKey,
+      kind: normalizeMemoryKind(metadata.kind ?? existingEntry.kind),
+      content: normalizedContent,
+      importance: normalizeMemoryImportance(
+        metadata.importance ?? existingEntry.importance,
+      ),
+      confidence: normalizeMemoryConfidence(
+        metadata.confidence ?? existingEntry.confidence,
+      ),
       updatedAt: timestamp,
     };
 
@@ -159,6 +260,7 @@ export const rememberConversationMemoryEntry = (
         maxEntries,
       ),
       added: false,
+      replaced: createContentKey(existingEntry.content) !== contentKey,
     };
   }
 
@@ -166,6 +268,7 @@ export const rememberConversationMemoryEntry = (
     scope,
     normalizedContent,
     timestamp,
+    metadata,
   );
 
   return {
@@ -176,5 +279,13 @@ export const rememberConversationMemoryEntry = (
       maxEntries,
     ),
     added: true,
+    replaced: false,
   };
+};
+
+export const forgetConversationMemoryEntry = (
+  existingEntries: ConversationMemoryEntry[],
+  id: string,
+): ConversationMemoryEntry[] => {
+  return existingEntries.filter((entry) => entry.id !== id);
 };

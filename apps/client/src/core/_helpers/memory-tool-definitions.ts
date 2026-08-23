@@ -2,25 +2,113 @@ import { rememberUserGlobalMemory } from "../env.js";
 import {
   MAX_GLOBAL_MEMORY_ENTRIES,
   MAX_SESSION_MEMORY_ENTRIES,
+  MAX_WORKSPACE_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
   rememberConversationMemoryEntry,
+  type ConversationMemoryMetadata,
 } from "../memory.js";
+import type { ConversationMemoryKind } from "../types.js";
+import { rememberWorkspaceMemory } from "../workspace-memory.js";
 import {
   coerceString,
   createToolErrorResult,
   type AgentToolDefinition,
   type ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
-import { compactTraceText } from "./runtime-text.js";
 
-const hasExactMemoryToolArguments = (
-  args: Record<string, unknown>,
-): boolean => {
-  const keys = Object.keys(args).sort();
+const MEMORY_ARGUMENT_KEYS = [
+  "fact",
+  "importance",
+  "kind",
+  "memory_key",
+  "sensitivity",
+] as const;
+
+const isMemoryKind = (value: unknown): value is ConversationMemoryKind => {
   return (
-    keys.length === 2 && keys[0] === "fact" && keys[1] === "sensitivity"
+    value === "preference" ||
+    value === "constraint" ||
+    value === "decision" ||
+    value === "fact" ||
+    value === "workaround"
   );
 };
+
+const parseMemoryMetadata = (
+  args: Record<string, unknown>,
+): ConversationMemoryMetadata | undefined => {
+  const keys = Object.keys(args).sort();
+  const fact = coerceString(args, "fact");
+  const memoryKey = coerceString(args, "memory_key");
+
+  if (
+    keys.length !== MEMORY_ARGUMENT_KEYS.length ||
+    !keys.every((key, index) => key === MEMORY_ARGUMENT_KEYS[index]) ||
+    !fact ||
+    !memoryKey ||
+    !isMemoryKind(args.kind) ||
+    typeof args.importance !== "number" ||
+    !Number.isInteger(args.importance) ||
+    args.importance < 1 ||
+    args.importance > 5 ||
+    args.sensitivity !== "non-sensitive"
+  ) {
+    return undefined;
+  }
+
+  return {
+    key: memoryKey,
+    kind: args.kind,
+    importance: args.importance,
+    confidence: 1,
+  };
+};
+
+const createMemoryInputSchema = (factDescription: string) => ({
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    fact: {
+      type: "string",
+      description: factDescription,
+    },
+    memory_key: {
+      type: "string",
+      description:
+        "A stable short concept key. Reuse the same key when correcting or superseding an earlier memory.",
+    },
+    kind: {
+      type: "string",
+      enum: ["preference", "constraint", "decision", "fact", "workaround"],
+    },
+    importance: {
+      type: "integer",
+      minimum: 1,
+      maximum: 5,
+    },
+    sensitivity: {
+      type: "string",
+      enum: ["non-sensitive", "sensitive", "unknown"],
+    },
+  },
+  required: [...MEMORY_ARGUMENT_KEYS],
+});
+
+const createInvalidMemoryResult = (name: string) => {
+  return createToolErrorResult(
+    crypto.randomUUID(),
+    name,
+    "Expected a non-sensitive memory with a fact, stable key, kind, and importance from 1 to 5.",
+  );
+};
+
+const createMemoryUpdateSection = (
+  scope: "session" | "workspace" | "global",
+  status: "saved" | "refreshed" | "replaced",
+) => ({
+  title: "Memory update",
+  lines: [`scope: ${scope}`, `status: ${status}`],
+});
 
 export const createMemoryToolDefinitions = (
   memory: ConversationMemoryRuntime,
@@ -32,39 +120,20 @@ export const createMemoryToolDefinitions = (
       spec: {
         name: "remember_session_memory",
         description:
-          "Save a durable note for the current chat session. Use this for preferences, decisions, or facts that should matter later in this same session.",
-        inputSchema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            fact: {
-              type: "string",
-              description: "The session-scoped fact or preference to remember.",
-            },
-            sensitivity: {
-              type: "string",
-              enum: ["non-sensitive", "sensitive", "unknown"],
-            },
-          },
-          required: ["fact", "sensitivity"],
-        },
+          "Save or replace information that will matter later in the current chat only.",
+        inputSchema: createMemoryInputSchema(
+          "A concise standalone session fact, constraint, decision, or workaround.",
+        ),
       },
       backingTool: "filesystem",
       riskLevel: "low",
       effect: "write",
       execute: async (args, context) => {
         const fact = coerceString(args, "fact");
+        const metadata = parseMemoryMetadata(args);
 
-        if (
-          !hasExactMemoryToolArguments(args) ||
-          !fact ||
-          args.sensitivity !== "non-sensitive"
-        ) {
-          return createToolErrorResult(
-            crypto.randomUUID(),
-            "remember_session_memory",
-            "Expected a non-empty `fact` explicitly classified as non-sensitive.",
-          );
+        if (!fact || !metadata) {
+          return createInvalidMemoryResult("remember_session_memory");
         }
 
         const remembered = rememberConversationMemoryEntry(
@@ -72,32 +141,80 @@ export const createMemoryToolDefinitions = (
           "session",
           fact,
           MAX_SESSION_MEMORY_ENTRIES,
+          Date.now(),
+          metadata,
         );
-
+        const status = remembered.added
+          ? "saved"
+          : remembered.replaced
+            ? "replaced"
+            : "refreshed";
         context.memory.sessionEntries = remembered.entries;
 
         return {
           toolResult: {
             callId: crypto.randomUUID(),
             name: "remember_session_memory",
-            output: `${remembered.added ? "Saved" : "Refreshed"} session memory: ${remembered.entry.content}`,
+            output: `${status} session memory ${remembered.entry.key}`,
           },
           memoryUpdate: {
             scope: "session",
             entry: remembered.entry,
           },
-          sections: [
-            {
-              title: "Memory update",
-              lines: [
-                "scope: session",
-                `status: ${remembered.added ? "saved" : "refreshed"}`,
-                `fact: ${remembered.entry.content}`,
-              ],
-            },
-          ],
+          sections: [createMemoryUpdateSection("session", status)],
           traceLines: [
-            `remember_session_memory(${compactTraceText(remembered.entry.content)}) -> ${remembered.added ? "saved" : "refreshed"}`,
+            `remember_session_memory(${remembered.entry.id}) -> ${status}`,
+          ],
+        };
+      },
+    });
+  }
+
+  if (memory.workspaceEnabled) {
+    toolDefinitions.push({
+      spec: {
+        name: "remember_workspace_memory",
+        description:
+          "Save or replace durable project information for the active workspace only.",
+        inputSchema: createMemoryInputSchema(
+          "A concise standalone project fact, constraint, decision, or verified workaround.",
+        ),
+      },
+      backingTool: "filesystem",
+      riskLevel: "low",
+      effect: "write",
+      execute: async (args, context) => {
+        const fact = coerceString(args, "fact");
+        const metadata = parseMemoryMetadata(args);
+
+        if (!fact || !metadata) {
+          return createInvalidMemoryResult("remember_workspace_memory");
+        }
+
+        const rememberedEntry = await rememberWorkspaceMemory(
+          context.workspaceRoot,
+          fact,
+          metadata,
+        );
+        context.memory.workspaceEntries = mergeConversationMemoryEntries(
+          context.memory.workspaceEntries ?? [],
+          [rememberedEntry],
+          MAX_WORKSPACE_MEMORY_ENTRIES,
+        );
+
+        return {
+          toolResult: {
+            callId: crypto.randomUUID(),
+            name: "remember_workspace_memory",
+            output: `saved workspace memory ${rememberedEntry.key}`,
+          },
+          memoryUpdate: {
+            scope: "workspace",
+            entry: rememberedEntry,
+          },
+          sections: [createMemoryUpdateSection("workspace", "saved")],
+          traceLines: [
+            `remember_workspace_memory(${rememberedEntry.id}) -> saved`,
           ],
         };
       },
@@ -109,43 +226,23 @@ export const createMemoryToolDefinitions = (
       spec: {
         name: "remember_global_memory",
         description:
-          "Save a durable note that should be available in later sessions. Use this sparingly for stable cross-session preferences or facts.",
-        inputSchema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            fact: {
-              type: "string",
-              description: "The cross-session fact or preference to remember.",
-            },
-            sensitivity: {
-              type: "string",
-              enum: ["non-sensitive", "sensitive", "unknown"],
-            },
-          },
-          required: ["fact", "sensitivity"],
-        },
+          "Save or replace a stable user preference or identity fact across all sessions.",
+        inputSchema: createMemoryInputSchema(
+          "A concise standalone stable cross-session user preference or identity fact.",
+        ),
       },
       backingTool: "filesystem",
       riskLevel: "low",
       effect: "write",
       execute: async (args, context) => {
         const fact = coerceString(args, "fact");
+        const metadata = parseMemoryMetadata(args);
 
-        if (
-          !hasExactMemoryToolArguments(args) ||
-          !fact ||
-          args.sensitivity !== "non-sensitive"
-        ) {
-          return createToolErrorResult(
-            crypto.randomUUID(),
-            "remember_global_memory",
-            "Expected a non-empty `fact` explicitly classified as non-sensitive.",
-          );
+        if (!fact || !metadata) {
+          return createInvalidMemoryResult("remember_global_memory");
         }
 
-        const rememberedEntry = await rememberUserGlobalMemory(fact);
-
+        const rememberedEntry = await rememberUserGlobalMemory(fact, metadata);
         context.memory.globalEntries = mergeConversationMemoryEntries(
           context.memory.globalEntries,
           [rememberedEntry],
@@ -156,24 +253,15 @@ export const createMemoryToolDefinitions = (
           toolResult: {
             callId: crypto.randomUUID(),
             name: "remember_global_memory",
-            output: `Saved global memory: ${rememberedEntry.content}`,
+            output: `saved global memory ${rememberedEntry.key}`,
           },
           memoryUpdate: {
             scope: "global",
             entry: rememberedEntry,
           },
-          sections: [
-            {
-              title: "Memory update",
-              lines: [
-                "scope: global",
-                "status: saved",
-                `fact: ${rememberedEntry.content}`,
-              ],
-            },
-          ],
+          sections: [createMemoryUpdateSection("global", "saved")],
           traceLines: [
-            `remember_global_memory(${compactTraceText(rememberedEntry.content)}) -> saved`,
+            `remember_global_memory(${rememberedEntry.id}) -> saved`,
           ],
         };
       },

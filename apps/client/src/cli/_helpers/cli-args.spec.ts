@@ -5,10 +5,12 @@ describe("cli args public parser", () => {
     expect(getHelpText()).toContain("machdoch config edit");
     expect(getHelpText("run")).toContain("--context <path>");
     expect(getHelpText("ralph")).toContain("machdoch ralph watches create");
-    expect(getHelpText("memory")).toContain("every saved global memory fact");
+    expect(getHelpText("memory")).toContain(
+      "active workspace and global scope",
+    );
   });
 
-  it("parses the global memory listing command", () => {
+  it("parses the memory listing command", () => {
     expect(
       parseCliArgs(["memory", "list", "--json"], {
         currentWorkingDirectory: "C:/workspace",

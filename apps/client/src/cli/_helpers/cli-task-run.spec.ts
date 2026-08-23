@@ -24,7 +24,11 @@ const createMemoryEntry = (
   return {
     id: `${scope}-${content}`,
     scope,
+    key: content.toLowerCase().replaceAll(" ", "-"),
+    kind: "fact",
     content,
+    importance: 3,
+    confidence: 1,
     createdAt: 1,
     updatedAt: 1,
   };

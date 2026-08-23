@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::HashSet,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -265,11 +265,36 @@ fn normalize_memory_content(value: &str) -> Option<String> {
     Some(format!("{}…", prefix))
 }
 
+fn normalize_memory_key(value: &str, content: &str) -> String {
+    let source = normalize_optional_string(Some(value)).unwrap_or_else(|| content.to_string());
+    let mut normalized = String::new();
+    let mut separated = false;
+
+    for character in source.to_lowercase().chars() {
+        if character.is_alphanumeric() {
+            normalized.push(character);
+            separated = false;
+        } else if !separated && !normalized.is_empty() {
+            normalized.push('-');
+            separated = true;
+        }
+    }
+
+    normalized.trim_matches('-').chars().take(96).collect()
+}
+
+fn normalize_memory_kind(value: &str) -> String {
+    match value {
+        "preference" | "constraint" | "decision" | "fact" | "workaround" => value.to_string(),
+        _ => "fact".to_string(),
+    }
+}
+
 pub(super) fn normalize_user_memory_entries(
     entries: &[UserMemoryEntry],
     scope: &str,
 ) -> Vec<UserMemoryEntry> {
-    let mut merged = HashMap::<String, UserMemoryEntry>::new();
+    let mut normalized = Vec::new();
 
     for (index, entry) in entries.iter().enumerate() {
         let Some(content) = normalize_memory_content(&entry.content) else {
@@ -290,22 +315,61 @@ pub(super) fn normalize_user_memory_entries(
             id: normalize_optional_string(Some(entry.id.as_str()))
                 .unwrap_or_else(|| format!("global-memory-{}-{}", updated_at, index)),
             scope: scope.to_string(),
+            key: normalize_memory_key(&entry.key, &content),
+            kind: normalize_memory_kind(&entry.kind),
             content: content.clone(),
+            importance: entry.importance.clamp(1, 5),
+            confidence: if entry.confidence.is_finite() {
+                entry.confidence.clamp(0.0, 1.0)
+            } else {
+                1.0
+            },
             created_at,
             updated_at,
         };
-        let key = content.to_lowercase();
+        normalized.push(normalized_entry);
+    }
 
-        match merged.get(&key) {
-            Some(existing) if existing.updated_at >= normalized_entry.updated_at => {}
-            _ => {
-                merged.insert(key, normalized_entry);
-            }
+    normalized.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
+    let mut keys = HashSet::new();
+    let mut contents = HashSet::new();
+    normalized.retain(|entry| {
+        keys.insert(entry.key.clone()) && contents.insert(entry.content.to_lowercase())
+    });
+    normalized.truncate(MAX_GLOBAL_MEMORY_ENTRIES);
+    normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn memory_entry(id: &str, key: &str, content: &str, updated_at: u64) -> UserMemoryEntry {
+        UserMemoryEntry {
+            id: id.to_string(),
+            scope: "global".to_string(),
+            key: key.to_string(),
+            kind: "preference".to_string(),
+            content: content.to_string(),
+            importance: 4,
+            confidence: 0.9,
+            created_at: 1,
+            updated_at,
         }
     }
 
-    let mut normalized = merged.into_values().collect::<Vec<_>>();
-    normalized.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
-    normalized.truncate(MAX_GLOBAL_MEMORY_ENTRIES);
-    normalized
+    #[test]
+    fn memory_normalization_keeps_the_newest_key_and_content() {
+        let entries = vec![
+            memory_entry("old", "summary-style", "Detailed summaries", 2),
+            memory_entry("new", "summary-style", "Compact summaries", 3),
+            memory_entry("duplicate", "different-key", "Compact summaries", 1),
+        ];
+
+        let normalized = normalize_user_memory_entries(&entries, "global");
+
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, "new");
+        assert_eq!(normalized[0].content, "Compact summaries");
+    }
 }

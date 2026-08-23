@@ -38,8 +38,11 @@ export const VALID_AUDIO_AI_PROVIDERS = ["none", "openai", "google"] as const;
 export type VoiceAiProvider = (typeof VALID_AUDIO_AI_PROVIDERS)[number];
 export type SpeechToTextProvider = VoiceAiProvider;
 
-export const RUNTIME_MEMORY_SCOPES = ["session", "global"] as const;
+export const RUNTIME_MEMORY_SCOPES = ["session", "workspace", "global"] as const;
 export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
+
+export const RUNTIME_MEMORY_KINDS = ["preference", "constraint", "decision", "fact", "workaround"] as const;
+export type RuntimeMemoryKind = (typeof RUNTIME_MEMORY_KINDS)[number];
 
 export const USER_REVIEW_MODEL_MODES = ["base", "dedicated"] as const;
 export type UserReviewModelMode = (typeof USER_REVIEW_MODEL_MODES)[number];
@@ -311,7 +314,11 @@ export interface UserSpeechToTextConfigFile {
 export interface RuntimeMemoryEntry {
   id: string;
   scope: RuntimeMemoryScope;
+  key: string;
+  kind: RuntimeMemoryKind;
   content: string;
+  importance: number;
+  confidence: number;
   createdAt: number;
   updatedAt: number;
 }

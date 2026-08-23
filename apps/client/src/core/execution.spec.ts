@@ -1254,6 +1254,9 @@ describe("executeTask", () => {
               name: "remember_session_memory",
               arguments: {
                 fact: memoryFact,
+                memory_key: "implementation-summary-style",
+                kind: "preference",
+                importance: 3,
                 sensitivity: "non-sensitive",
               },
             },
@@ -1263,7 +1266,9 @@ describe("executeTask", () => {
       continueTurn: async (params) => {
         expect(params.toolResults[0]?.name).toBe("remember_session_memory");
         expect(params.toolResults[0]?.isError).not.toBe(true);
-        expect(params.toolResults[0]?.output).toContain("Saved session memory");
+        expect(params.toolResults[0]?.output).toContain(
+          "saved session memory implementation-summary-style",
+        );
 
         return {
           text: "",
@@ -1298,6 +1303,8 @@ describe("executeTask", () => {
       scope: "session",
       entry: {
         scope: "session",
+        key: "implementation-summary-style",
+        kind: "preference",
         content: memoryFact,
       },
     });
@@ -1305,7 +1312,8 @@ describe("executeTask", () => {
       result.outputSections.some(
         (section) =>
           section.title === "Memory update" &&
-          section.lines.includes(`fact: ${memoryFact}`),
+          section.lines.includes("scope: session") &&
+          section.lines.includes("status: saved"),
       ),
     ).toBe(true);
   });

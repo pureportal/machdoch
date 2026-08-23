@@ -130,6 +130,10 @@ const createMemoryContract = (
   conversationContext: PreparedConversationPromptContext,
 ): string => {
   const canRememberSessionMemory = hasTool(tools, "remember_session_memory");
+  const canRememberWorkspaceMemory = hasTool(
+    tools,
+    "remember_workspace_memory",
+  );
   const canRememberGlobalMemory = hasTool(tools, "remember_global_memory");
 
   return [
@@ -139,6 +143,11 @@ const createMemoryContract = (
       : conversationContext.memory.sessionEnabled
         ? "Session memory is enabled in the conversation state, but the `remember_session_memory` tool is not available in this run. Do not claim to save session memory."
         : "Session memory is disabled for this run.",
+    conversationContext.memory.workspaceEnabled && canRememberWorkspaceMemory
+      ? "Workspace memory is enabled. Use `remember_workspace_memory` for durable project constraints, decisions, commands, integration details, and verified workarounds that should help later sessions in this workspace."
+      : conversationContext.memory.workspaceEnabled
+        ? "Workspace memory is enabled, but the `remember_workspace_memory` tool is not available in this run. Do not claim to save workspace memory."
+        : "Workspace memory is disabled for this run.",
     conversationContext.memory.globalEnabled && canRememberGlobalMemory
       ? "Global memory is enabled. Use `remember_global_memory` only for stable durable cross-session user preferences, identity, or workflow habits that will still matter in later sessions. During execution and before the final response, decide whether any high-confidence global information is worth saving."
       : conversationContext.memory.globalEnabled

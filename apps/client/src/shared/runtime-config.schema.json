@@ -107,7 +107,11 @@
     },
     "RuntimeMemoryScope": {
       "type": "string",
-      "enum": ["session", "global"]
+      "enum": ["session", "workspace", "global"]
+    },
+    "RuntimeMemoryKind": {
+      "type": "string",
+      "enum": ["preference", "constraint", "decision", "fact", "workaround"]
     },
     "UserReviewModelMode": {
       "type": "string",
@@ -264,7 +268,17 @@
     "RuntimeMemoryEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "scope", "content", "createdAt", "updatedAt"],
+      "required": [
+        "id",
+        "scope",
+        "key",
+        "kind",
+        "content",
+        "importance",
+        "confidence",
+        "createdAt",
+        "updatedAt"
+      ],
       "properties": {
         "id": {
           "type": "string"
@@ -272,8 +286,24 @@
         "scope": {
           "$ref": "#/$defs/RuntimeMemoryScope"
         },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RuntimeMemoryKind"
+        },
         "content": {
           "type": "string"
+        },
+        "importance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         },
         "createdAt": {
           "type": "integer",
@@ -622,7 +652,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "unmanagedNative": { "type": "string", "enum": ["adopt", "allow", "fail"] },
+        "unmanagedNative": {
+          "type": "string",
+          "enum": ["adopt", "allow", "fail"]
+        },
         "approvals": { "type": "string", "enum": ["never"] }
       }
     },
@@ -634,7 +667,11 @@
         "watch": { "type": "boolean" },
         "daemonAtLogin": { "type": "boolean" },
         "debounceMs": { "type": "integer", "minimum": 50, "maximum": 60000 },
-        "fullRescanIntervalMs": { "type": "integer", "minimum": 10000, "maximum": 86400000 }
+        "fullRescanIntervalMs": {
+          "type": "integer",
+          "minimum": 10000,
+          "maximum": 86400000
+        }
       }
     },
     "ProviderEnrollmentProviderConfig": {
@@ -661,7 +698,9 @@
         "schemaVersion": { "type": "integer", "const": 1 },
         "enabled": { "type": "boolean" },
         "mcp": { "$ref": "#/$defs/ProviderEnrollmentMcpConfig" },
-        "persistentSync": { "$ref": "#/$defs/ProviderEnrollmentPersistentSyncConfig" },
+        "persistentSync": {
+          "$ref": "#/$defs/ProviderEnrollmentPersistentSyncConfig"
+        },
         "providers": { "$ref": "#/$defs/ProviderEnrollmentProvidersConfig" }
       }
     },

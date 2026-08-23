@@ -5,6 +5,7 @@ import {
   getUserConfigPath,
   getUserProviderAvailability,
   getUserWebSearchProviderAvailability,
+  forgetUserGlobalMemory,
   hasConfiguredValue,
   loadProcessEnv,
   loadUserAgentCliPaths,
@@ -114,9 +115,7 @@ describe("user config transactions", () => {
       saveUserDesktopSettingsPatch({ quickVoiceEnabled: false }),
     ]);
 
-    const raw = JSON.parse(
-      await readFile(getUserConfigPath(), "utf8"),
-    ) as {
+    const raw = JSON.parse(await readFile(getUserConfigPath(), "utf8")) as {
       apiKeys?: Record<string, string>;
       webSearch?: { activeProvider?: string };
       desktop?: { quickVoiceEnabled?: boolean };
@@ -345,6 +344,31 @@ describe("user config API key helpers", () => {
     expect(settings.entries[0]?.content).toBe(
       "The user prefers compact summaries.",
     );
+  });
+
+  it("replaces and deletes global memory by stable identity", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+    const first = await rememberUserGlobalMemory(
+      "The user prefers detailed summaries.",
+      { key: "summary-style", kind: "preference" },
+    );
+    const replacement = await rememberUserGlobalMemory(
+      "The user prefers compact summaries.",
+      { key: "summary-style", kind: "preference" },
+    );
+
+    expect(replacement.id).toBe(first.id);
+    expect((await loadUserMemorySettings()).entries).toMatchObject([
+      {
+        key: "summary-style",
+        content: "The user prefers compact summaries.",
+      },
+    ]);
+    await expect(forgetUserGlobalMemory(first.id)).resolves.toBe(true);
+    await expect(forgetUserGlobalMemory(first.id)).resolves.toBe(false);
+    expect((await loadUserMemorySettings()).entries).toEqual([]);
   });
 
   it("persists review model settings for validator passes", async () => {

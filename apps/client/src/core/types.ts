@@ -2,6 +2,8 @@ import type {
   ModelProvider,
   ReasoningMode,
   RunMode,
+  RuntimeMemoryKind,
+  RuntimeMemoryScope,
   ToolName,
 } from "./runtime-contract.generated.js";
 import type { AgentToolDefinition } from "./_helpers/agent-tools-shared.js";
@@ -82,7 +84,8 @@ export interface TaskPlanStep {
 
 export type ConversationRole = "user" | "assistant";
 
-export type ConversationMemoryScope = "session" | "global";
+export type ConversationMemoryScope = RuntimeMemoryScope;
+export type ConversationMemoryKind = RuntimeMemoryKind;
 
 export type ReadOnlyInspectionTarget =
   | "workspace"
@@ -136,7 +139,11 @@ export interface ConversationHistoryEntry {
 export interface ConversationMemoryEntry {
   id: string;
   scope: ConversationMemoryScope;
+  key: string;
+  kind: ConversationMemoryKind;
   content: string;
+  importance: number;
+  confidence: number;
   createdAt: number;
   updatedAt: number;
 }

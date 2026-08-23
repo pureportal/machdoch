@@ -209,7 +209,23 @@ pub(super) struct UserInternalTaskModelConfigFile {
 pub struct UserMemoryEntry {
     pub(super) id: String,
     pub(super) scope: String,
+    #[serde(default)]
+    pub(super) key: String,
+    #[serde(default)]
+    pub(super) kind: String,
     pub(super) content: String,
+    #[serde(default = "default_memory_importance")]
+    pub(super) importance: u8,
+    #[serde(default = "default_memory_confidence")]
+    pub(super) confidence: f64,
     pub(super) created_at: u64,
     pub(super) updated_at: u64,
+}
+
+fn default_memory_importance() -> u8 {
+    3
+}
+
+fn default_memory_confidence() -> f64 {
+    1.0
 }

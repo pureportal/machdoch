@@ -132,6 +132,32 @@ describe("internal task model selection", () => {
     ).toBeNull();
   });
 
+  it("does not retain a delegated CLI as the internal task provider", () => {
+    const cliAvailability = [
+      ...availability,
+      { provider: "codex-cli" as const, configured: true },
+    ];
+    const cliCatalog = {
+      ...catalog,
+      providers: [
+        ...catalog.providers,
+        {
+          provider: "codex-cli" as const,
+          available: false,
+          models: [],
+        },
+      ],
+    };
+
+    expect(
+      resolveInternalTaskModelSelection(
+        { provider: "codex-cli", model: "gpt-5.6-sol" },
+        cliAvailability,
+        cliCatalog,
+      ),
+    ).toEqual({ provider: "openai", model: "gpt-5.5" });
+  });
+
   it("runs internal tasks with the resolved provider and model", async () => {
     runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
       provider: "anthropic",
