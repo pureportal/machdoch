@@ -333,13 +333,11 @@ describe("user config API key helpers", () => {
     );
     const settings = await loadUserMemorySettings();
 
-    expect(firstEntry.content).toBe("The user prefers compact summaries.");
-    expect(secondEntry.content).toBe("The user prefers compact summaries.");
+    expect(firstEntry.content).toBe("Prefers compact summaries.");
+    expect(secondEntry.content).toBe("Prefers compact summaries.");
     expect(settings.globalEnabled).toBe(true);
     expect(settings.entries).toHaveLength(1);
-    expect(settings.entries[0]?.content).toBe(
-      "The user prefers compact summaries.",
-    );
+    expect(settings.entries[0]?.content).toBe("Prefers compact summaries.");
   });
 
   it("replaces and deletes global memory by stable identity", async () => {
@@ -359,7 +357,7 @@ describe("user config API key helpers", () => {
     expect((await loadUserMemorySettings()).entries).toMatchObject([
       {
         key: "summary-style",
-        content: "The user prefers compact summaries.",
+        content: "Prefers compact summaries.",
       },
     ]);
     await expect(forgetUserGlobalMemory(first.id)).resolves.toBe(true);

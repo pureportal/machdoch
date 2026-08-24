@@ -232,6 +232,8 @@ pub struct UserMemoryEntry {
     #[serde(default)]
     pub(super) kind: String,
     pub(super) content: String,
+    #[serde(default)]
+    pub(super) search_terms: Vec<String>,
     #[serde(default = "default_memory_importance")]
     pub(super) importance: u8,
     #[serde(default = "default_memory_confidence")]

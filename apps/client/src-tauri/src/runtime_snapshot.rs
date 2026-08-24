@@ -20,6 +20,7 @@ mod settings_types;
 mod types;
 pub(crate) mod user_config;
 mod workspace;
+mod workspace_memory;
 
 use collect::{
     collect_runtime_snapshot, get_audio_provider_availability, get_provider_availability,
@@ -39,14 +40,14 @@ use mcp_config::{
 use model_catalog::{create_provider_model_http_client, fetch_provider_model_catalog};
 use settings::create_timestamp_millis;
 use settings_commands::{
-    load_user_agent_limits_settings, load_user_api_keys, load_user_internal_task_model_settings,
-    load_user_memory_settings, load_user_review_model_settings, load_user_speech_to_text_settings,
-    load_user_voice_settings, load_user_web_search_settings, save_user_agent_limits_settings_value,
-    save_user_api_key, save_user_global_memory_enabled_value,
-    save_user_internal_task_model_settings_value, save_user_review_model_settings_value,
-    save_user_speech_to_text_active_provider_value, save_user_speech_to_text_input_device_value,
-    save_user_voice_active_provider_value, save_user_web_search_active_provider_value,
-    save_user_web_search_api_key_value,
+    forget_user_global_memory_value, load_user_agent_limits_settings, load_user_api_keys,
+    load_user_internal_task_model_settings, load_user_memory_settings,
+    load_user_review_model_settings, load_user_speech_to_text_settings, load_user_voice_settings,
+    load_user_web_search_settings, save_user_agent_limits_settings_value, save_user_api_key,
+    save_user_global_memory_enabled_value, save_user_internal_task_model_settings_value,
+    save_user_review_model_settings_value, save_user_speech_to_text_active_provider_value,
+    save_user_speech_to_text_input_device_value, save_user_voice_active_provider_value,
+    save_user_web_search_active_provider_value, save_user_web_search_api_key_value,
 };
 pub(super) use settings_commands::{
     merge_user_agent_cli_paths_into_env, merge_user_api_keys_into_env,
@@ -56,8 +57,8 @@ pub(crate) use settings_types::UserDesktopLaunchPreferences;
 pub use settings_types::{ContextWindow, ReasoningExecutionMode};
 pub use settings_types::{
     McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserInternalTaskModelSettings,
-    UserMemorySettings, UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings,
-    UserWebSearchSettings,
+    UserMemoryEntry, UserMemorySettings, UserReviewModelSettings, UserSpeechToTextSettings,
+    UserVoiceSettings, UserWebSearchSettings,
 };
 pub use types::{
     AudioProviderAvailability, ProviderAvailability, ProviderModelCatalogProvider,
@@ -70,6 +71,7 @@ use workspace::{
     save_workspace_context_window_value, save_workspace_default_mode_value,
     save_workspace_reasoning_execution_mode_value, save_workspace_reasoning_mode_value,
 };
+use workspace_memory::{forget_workspace_memory_entry, load_workspace_memory_entries};
 
 const PROVIDER_MODEL_CATALOG_CACHE_TTL: Duration = Duration::from_secs(60);
 
@@ -193,6 +195,13 @@ pub async fn get_user_speech_to_text_settings() -> Result<UserSpeechToTextSettin
 #[tauri::command]
 pub async fn get_user_memory_settings() -> Result<UserMemorySettings, String> {
     load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn get_workspace_memory_entries(
+    workspace_root: String,
+) -> Result<Vec<UserMemoryEntry>, String> {
+    load_workspace_memory_entries(&workspace_root)
 }
 
 #[tauri::command]
@@ -339,6 +348,20 @@ pub async fn save_user_speech_to_text_input_device(
 pub async fn save_user_global_memory_enabled(enabled: bool) -> Result<UserMemorySettings, String> {
     save_user_global_memory_enabled_value(enabled)?;
     load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn forget_user_global_memory_entry(id: String) -> Result<UserMemorySettings, String> {
+    forget_user_global_memory_value(&id)?;
+    load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn forget_workspace_memory(
+    workspace_root: String,
+    id: String,
+) -> Result<Vec<UserMemoryEntry>, String> {
+    forget_workspace_memory_entry(&workspace_root, &id)
 }
 
 #[tauri::command]

@@ -3432,6 +3432,25 @@ export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
   );
 };
 
+export const loadWorkspaceMemoryEntries = async (
+  workspaceRoot?: string | null,
+): Promise<ConversationMemoryEntry[]> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot || !canInvokeTauriCommands()) {
+    return [];
+  }
+
+  try {
+    return await tauriCore.invoke<ConversationMemoryEntry[]>(
+      "get_workspace_memory_entries",
+      { workspaceRoot: normalizedWorkspaceRoot },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const loadMcpConfigDocument = async (
   scope: McpConfigScope,
   workspaceRoot?: string | null,
@@ -3610,6 +3629,49 @@ export const saveUserGlobalMemoryEnabled = async (
     );
     await emitUserSettingsChanged("memory");
     return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const forgetUserGlobalMemoryEntry = async (
+  id: string,
+): Promise<UserMemorySettings> => {
+  if (!canInvokeTauriCommands()) {
+    return createDefaultUserMemorySettings();
+  }
+
+  try {
+    const result = await tauriCore.invoke<UserMemorySettings>(
+      "forget_user_global_memory_entry",
+      { id },
+    );
+    await emitUserSettingsChanged("memory");
+    return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const forgetWorkspaceMemoryEntry = async (
+  workspaceRoot: string,
+  id: string,
+): Promise<ConversationMemoryEntry[]> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before removing workspace memory.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return [];
+  }
+
+  try {
+    return await tauriCore.invoke<ConversationMemoryEntry[]>(
+      "forget_workspace_memory",
+      { workspaceRoot: normalizedWorkspaceRoot, id },
+    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }

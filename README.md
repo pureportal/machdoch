@@ -295,14 +295,15 @@ Marketplace listings are third-party content, not an endorsement. An MCP server 
 
 These features help keep recurring work consistent:
 
-| Term             | Meaning                                                                                                                                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Session memory   | Facts saved for the current conversation.                                                                                                                                                                                                        |
-| Global memory    | Optional facts that can be reused in later sessions when both global and session memory are enabled. **Settings > Memory** shows every saved global fact and lets you disable global memory; `machdoch memory list` does the same in a terminal. |
-| Instruction file | Reusable Markdown guidance stored centrally and applied globally, by workspace tags, or by manual workspace selection. Repository instruction files are not Machdoch instruction sources.                                                        |
-| Context pack     | A reusable bundle of instructions, a prompt, attachments, variables, and optional matching rules. Packs can be workspace-specific or global.                                                                                                     |
+| Term             | Meaning                                                                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session memory   | Information needed later in the current conversation only.                                                                                                                                |
+| Workspace memory | Durable facts, constraints, decisions, commands, and workarounds for one project. Stored in `<workspace>/.machdoch/memory.json`.                                                          |
+| Global memory    | Stable facts and explicit preferences about the user that apply across unrelated workspaces.                                                                                              |
+| Instruction file | Reusable Markdown guidance stored centrally and applied globally, by workspace tags, or by manual workspace selection. Repository instruction files are not Machdoch instruction sources. |
+| Context pack     | A reusable bundle of instructions, a prompt, attachments, variables, and optional matching rules. Packs can be workspace-specific or global.                                              |
 
-Keep global memory limited to stable, non-sensitive facts. Instruction files, prompts, context packs, and imported flows can contain private information or unsafe directions. Review them before use.
+**Settings > Memory** shows workspace and global entries and lets you forget individual facts. `machdoch memory list` shows the same durable scopes in a terminal. Keep durable memory non-sensitive. Instruction files, prompts, context packs, and imported flows can contain private information or unsafe directions. Review them before use.
 
 ### Web search, Quick Chat, and voice
 
@@ -417,7 +418,7 @@ Run commands in a terminal where the packaged `machdoch` executable is available
 | `machdoch config`                      | Show the resolved runtime configuration.                          |
 | `machdoch config list`                 | Show every terminal-configurable setting and its source.          |
 | `machdoch config edit`                 | Open the arrow-key configuration editor with masked secret entry. |
-| `machdoch memory list`                 | Show every saved global-memory fact.                              |
+| `machdoch memory list`                 | Show workspace and global memory.                                 |
 | `machdoch inspect`                     | Show discovered prompts and skills.                               |
 | `machdoch tools`                       | Show available tool areas and function calls.                     |
 

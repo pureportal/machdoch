@@ -8559,9 +8559,13 @@ export const useChatSessionController = (
       },
       memorySetup: {
         settings: runtime.userMemorySettings,
+        workspaceRoot: state.activeSession.workspace,
+        workspaceEntries: runtime.workspaceMemoryEntries,
         saving: runtime.memorySetupSaving,
         message: runtime.memorySetupMessage,
         onGlobalEnabledChange: runtime.handleGlobalMemoryEnabledSave,
+        onForgetGlobal: runtime.handleGlobalMemoryForget,
+        onForgetWorkspace: runtime.handleWorkspaceMemoryForget,
       },
       desktopSetup: {
         settings: runtime.userDesktopSettings,

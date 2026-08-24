@@ -127,8 +127,16 @@ export const retrieveConversationMemory = (
   const queryCounts = countTokens(queryTokens);
   const queryBigrams = createBigrams(queryTokens);
   const documents = entries.map((entry) => {
-    const tokens = tokenizeMemoryText(`${entry.key} ${entry.content}`);
-    return { entry, tokens, counts: countTokens(tokens) };
+    const searchTermTokens = tokenizeMemoryText(entry.searchTerms.join(" "));
+    const tokens = tokenizeMemoryText(
+      `${entry.key} ${entry.content} ${entry.searchTerms.join(" ")}`,
+    );
+    return {
+      entry,
+      tokens,
+      counts: countTokens(tokens),
+      searchTermTokens: new Set(searchTermTokens),
+    };
   });
   const averageDocumentLength =
     documents.reduce((total, document) => total + document.tokens.length, 0) /
@@ -143,7 +151,7 @@ export const retrieveConversationMemory = (
   }
 
   const ranked = documents
-    .map(({ entry, tokens, counts }): RankedMemoryEntry => {
+    .map(({ entry, tokens, counts, searchTermTokens }): RankedMemoryEntry => {
       let bm25 = 0;
       let matchedQueryTokens = 0;
 
@@ -179,6 +187,16 @@ export const retrieveConversationMemory = (
         queryBigrams.size > 0 ? matchingBigrams / queryBigrams.size : 0;
       const coverageScore =
         queryCounts.size > 0 ? matchedQueryTokens / queryCounts.size : 0;
+      const matchingSearchTerms = Array.from(queryCounts.keys()).filter(
+        (token) => searchTermTokens.has(token),
+      ).length;
+      const expandedKeyScore =
+        matchingSearchTerms > 0
+          ? Math.min(
+              1,
+              0.5 + matchingSearchTerms / Math.max(1, queryCounts.size),
+            )
+          : 0;
       const recencyScore = calculateRecency(entry, now);
       const importanceScore = (entry.importance - 1) / 4;
       const scopeRecencyWeight = entry.scope === "session" ? 0.08 : 0.03;
@@ -188,6 +206,7 @@ export const retrieveConversationMemory = (
         lexicalScore * 0.57 +
         coverageScore * 0.12 +
         phraseScore * 0.1 +
+        expandedKeyScore * 0.1 +
         recencyScore * scopeRecencyWeight +
         importanceScore * 0.06 +
         entry.confidence * 0.04 +
@@ -195,6 +214,7 @@ export const retrieveConversationMemory = (
       const reasons = [
         ...(matchedQueryTokens > 0 ? ["lexical"] : []),
         ...(matchingBigrams > 0 ? ["phrase"] : []),
+        ...(matchingSearchTerms > 0 ? ["expanded-key"] : []),
         ...(recencyScore >= 0.5 ? ["recent"] : []),
         ...(importanceScore >= 0.75 ? ["important"] : []),
         ...(generalPreferenceWeight > 0 ? ["global-preference"] : []),

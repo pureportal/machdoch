@@ -313,6 +313,7 @@
         "key",
         "kind",
         "content",
+        "searchTerms",
         "importance",
         "confidence",
         "createdAt",
@@ -333,6 +334,13 @@
         },
         "content": {
           "type": "string"
+        },
+        "searchTerms": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string"
+          }
         },
         "importance": {
           "type": "integer",

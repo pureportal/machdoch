@@ -1240,7 +1240,7 @@ describe("executeTask", () => {
 
   it("returns session memory updates from model-driven memory tool calls", async () => {
     const workspaceRoot = await createWorkspace();
-    const memoryFact = "The user prefers concise implementation summaries.";
+    const memoryFact = "Prefers concise implementation summaries.";
 
     const memoryAdapter: AgentModelAdapter = {
       startTurn: async (params) => {
@@ -1258,6 +1258,7 @@ describe("executeTask", () => {
                 fact: memoryFact,
                 memory_key: "implementation-summary-style",
                 kind: "preference",
+                search_terms: ["response style"],
                 importance: 3,
                 sensitivity: "non-sensitive",
               },
@@ -1308,6 +1309,7 @@ describe("executeTask", () => {
         key: "implementation-summary-style",
         kind: "preference",
         content: memoryFact,
+        searchTerms: ["response style"],
       },
     });
     expect(

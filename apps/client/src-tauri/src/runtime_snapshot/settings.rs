@@ -29,7 +29,10 @@ use crate::runtime_contract_generated::{
 };
 
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
+const MAX_WORKSPACE_MEMORY_ENTRIES: usize = 64;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
+const MAX_MEMORY_SEARCH_TERMS: usize = 8;
+const MAX_MEMORY_SEARCH_TERM_LENGTH: usize = 48;
 
 pub(super) fn clamp_assistant_bubble_hide_seconds(value: u32) -> u32 {
     value.clamp(
@@ -297,6 +300,41 @@ fn normalize_memory_kind(value: &str) -> String {
     }
 }
 
+fn normalize_memory_statement(content: &str) -> String {
+    let prefix = "the user prefers";
+    if !content.to_lowercase().starts_with(prefix) {
+        return content.to_string();
+    }
+
+    let remainder = content[prefix.len()..].trim_start();
+    if let Some(labeled) = remainder.strip_prefix(':') {
+        return labeled.trim_start().to_string();
+    }
+
+    if remainder.is_empty() {
+        content.to_string()
+    } else {
+        format!("Prefers {remainder}")
+    }
+}
+
+fn normalize_memory_search_terms(values: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+
+    values
+        .iter()
+        .filter_map(|value| normalize_optional_string(Some(value.as_str())))
+        .map(|value| {
+            value
+                .chars()
+                .take(MAX_MEMORY_SEARCH_TERM_LENGTH)
+                .collect::<String>()
+        })
+        .filter(|value| seen.insert(value.to_lowercase()))
+        .take(MAX_MEMORY_SEARCH_TERMS)
+        .collect()
+}
+
 pub(super) fn normalize_user_memory_entries(
     entries: &[UserMemoryEntry],
     scope: &str,
@@ -304,9 +342,11 @@ pub(super) fn normalize_user_memory_entries(
     let mut normalized = Vec::new();
 
     for (index, entry) in entries.iter().enumerate() {
-        let Some(content) = normalize_memory_content(&entry.content) else {
+        let Some(normalized_content) = normalize_memory_content(&entry.content) else {
             continue;
         };
+        let kind = normalize_memory_kind(&entry.kind);
+        let content = normalize_memory_statement(&normalized_content);
 
         let created_at = if entry.created_at == 0 {
             create_timestamp_millis()
@@ -320,11 +360,12 @@ pub(super) fn normalize_user_memory_entries(
         };
         let normalized_entry = UserMemoryEntry {
             id: normalize_optional_string(Some(entry.id.as_str()))
-                .unwrap_or_else(|| format!("global-memory-{}-{}", updated_at, index)),
+                .unwrap_or_else(|| format!("{}-memory-{}-{}", scope, updated_at, index)),
             scope: scope.to_string(),
             key: normalize_memory_key(&entry.key, &content),
-            kind: normalize_memory_kind(&entry.kind),
+            kind,
             content: content.clone(),
+            search_terms: normalize_memory_search_terms(&entry.search_terms),
             importance: entry.importance.clamp(1, 5),
             confidence: if entry.confidence.is_finite() {
                 entry.confidence.clamp(0.0, 1.0)
@@ -343,7 +384,11 @@ pub(super) fn normalize_user_memory_entries(
     normalized.retain(|entry| {
         keys.insert(entry.key.clone()) && contents.insert(entry.content.to_lowercase())
     });
-    normalized.truncate(MAX_GLOBAL_MEMORY_ENTRIES);
+    normalized.truncate(if scope == "workspace" {
+        MAX_WORKSPACE_MEMORY_ENTRIES
+    } else {
+        MAX_GLOBAL_MEMORY_ENTRIES
+    });
     normalized
 }
 
@@ -358,6 +403,7 @@ mod tests {
             key: key.to_string(),
             kind: "preference".to_string(),
             content: content.to_string(),
+            search_terms: Vec::new(),
             importance: 4,
             confidence: 0.9,
             created_at: 1,
@@ -377,6 +423,46 @@ mod tests {
 
         assert_eq!(normalized.len(), 1);
         assert_eq!(normalized[0].id, "new");
+        assert_eq!(normalized[0].content, "Compact summaries");
+    }
+
+    #[test]
+    fn internal_task_model_normalization_preserves_valid_reasoning() {
+        let normalized =
+            normalize_user_internal_task_model_settings(&UserInternalTaskModelConfigFile {
+                provider: Some("codex-cli".to_string()),
+                model: Some("gpt-5.6-terra".to_string()),
+                reasoning: Some("high".to_string()),
+            });
+
+        assert_eq!(normalized.provider.as_deref(), Some("codex-cli"));
+        assert_eq!(normalized.model.as_deref(), Some("gpt-5.6-terra"));
+        assert_eq!(normalized.reasoning, "high");
+    }
+
+    #[test]
+    fn internal_task_model_normalization_defaults_invalid_reasoning() {
+        let normalized =
+            normalize_user_internal_task_model_settings(&UserInternalTaskModelConfigFile {
+                provider: Some("openai".to_string()),
+                model: Some("gpt-5.5".to_string()),
+                reasoning: Some("unsupported".to_string()),
+            });
+
+        assert_eq!(normalized.reasoning, "default");
+    }
+
+    #[test]
+    fn memory_normalization_removes_generic_preference_framing() {
+        let entries = vec![memory_entry(
+            "style",
+            "summary-style",
+            "The user prefers: Compact summaries",
+            1,
+        )];
+
+        let normalized = normalize_user_memory_entries(&entries, "global");
+
         assert_eq!(normalized[0].content, "Compact summaries");
     }
 }

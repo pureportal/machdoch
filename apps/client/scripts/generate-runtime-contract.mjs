@@ -429,6 +429,7 @@ export interface RuntimeMemoryEntry {
   key: string;
   kind: RuntimeMemoryKind;
   content: string;
+  searchTerms: string[];
   importance: number;
   confidence: number;
   createdAt: number;

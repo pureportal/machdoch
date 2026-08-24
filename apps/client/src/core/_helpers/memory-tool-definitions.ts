@@ -5,6 +5,7 @@ import {
   MAX_WORKSPACE_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
   rememberConversationMemoryEntry,
+  normalizeMemorySearchTerms,
   type ConversationMemoryMetadata,
 } from "../memory.js";
 import type { ConversationMemoryKind } from "../types.js";
@@ -21,6 +22,7 @@ const MEMORY_ARGUMENT_KEYS = [
   "importance",
   "kind",
   "memory_key",
+  "search_terms",
   "sensitivity",
 ] as const;
 
@@ -40,6 +42,7 @@ const parseMemoryMetadata = (
   const keys = Object.keys(args).sort();
   const fact = coerceString(args, "fact");
   const memoryKey = coerceString(args, "memory_key");
+  const searchTerms = normalizeMemorySearchTerms(args.search_terms);
 
   if (
     keys.length !== MEMORY_ARGUMENT_KEYS.length ||
@@ -51,6 +54,8 @@ const parseMemoryMetadata = (
     !Number.isInteger(args.importance) ||
     args.importance < 1 ||
     args.importance > 5 ||
+    !Array.isArray(args.search_terms) ||
+    searchTerms.length !== args.search_terms.length ||
     args.sensitivity !== "non-sensitive"
   ) {
     return undefined;
@@ -59,6 +64,7 @@ const parseMemoryMetadata = (
   return {
     key: memoryKey,
     kind: args.kind,
+    searchTerms,
     importance: args.importance,
     confidence: 1,
   };
@@ -80,6 +86,13 @@ const createMemoryInputSchema = (factDescription: string) => ({
     kind: {
       type: "string",
       enum: ["preference", "constraint", "decision", "fact", "workaround"],
+    },
+    search_terms: {
+      type: "array",
+      maxItems: 8,
+      items: { type: "string", minLength: 1, maxLength: 48 },
+      description:
+        "Short query terms that could retrieve this memory when the request uses different wording. Use an empty array when none are needed.",
     },
     importance: {
       type: "integer",
@@ -120,7 +133,7 @@ export const createMemoryToolDefinitions = (
       spec: {
         name: "remember_session_memory",
         description:
-          "Save or replace information that will matter later in the current chat only.",
+          "Save or replace current-chat information in session memory. Use the narrowest useful scope and neutral wording without 'The user'.",
         inputSchema: createMemoryInputSchema(
           "A concise standalone session fact, constraint, decision, or workaround.",
         ),
@@ -175,7 +188,7 @@ export const createMemoryToolDefinitions = (
       spec: {
         name: "remember_workspace_memory",
         description:
-          "Save or replace durable project information for the active workspace only.",
+          "Save or replace durable project information for the active workspace only. Project-specific preferences belong here, not in global memory.",
         inputSchema: createMemoryInputSchema(
           "A concise standalone project fact, constraint, decision, or verified workaround.",
         ),
@@ -226,7 +239,7 @@ export const createMemoryToolDefinitions = (
       spec: {
         name: "remember_global_memory",
         description:
-          "Save or replace a stable user preference or identity fact across all sessions.",
+          "Save or replace a stable fact or explicit preference about the user that applies across unrelated workspaces.",
         inputSchema: createMemoryInputSchema(
           "A concise standalone stable cross-session user preference or identity fact.",
         ),

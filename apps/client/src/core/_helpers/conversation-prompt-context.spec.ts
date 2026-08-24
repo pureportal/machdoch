@@ -211,7 +211,8 @@ describe("conversation memory prompt context", () => {
         scope: "global",
         key: "verification-output-style",
         kind: "preference",
-        content: "The user prefers compact verification output",
+        content: "Prefers compact verification output",
+        searchTerms: [],
         importance: 4,
         confidence: 1,
         createdAt: Date.now(),
@@ -232,6 +233,7 @@ describe("conversation memory prompt context", () => {
             key: "unrelated-database",
             kind: "fact",
             content: "The test database is PostgreSQL",
+            searchTerms: [],
             importance: 3,
             confidence: 1,
             createdAt: Date.now(),
@@ -248,7 +250,7 @@ describe("conversation memory prompt context", () => {
     );
     expect(context.promptBlock).toContain("<global_memory>");
     expect(context.promptBlock).toContain(
-      "The user prefers compact verification output",
+      "Prefers compact verification output",
     );
     expect(context.promptBlock).not.toContain("Gallery thumbnails");
     expect(context.promptBlock).not.toContain("PostgreSQL");

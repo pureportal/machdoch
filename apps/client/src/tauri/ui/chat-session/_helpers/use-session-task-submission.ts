@@ -380,6 +380,7 @@ export const useSessionTaskSubmission = (options: {
   runtime: Pick<
     ChatSessionRuntimeController,
     | "applyLoadedUserMemorySettings"
+    | "refreshWorkspaceMemoryEntries"
     | "refreshWorkspaceRuntimeSnapshot"
     | "runtimeSnapshot"
     | "userMemorySettings"
@@ -1252,6 +1253,10 @@ export const useSessionTaskSubmission = (options: {
             taskRun.execution.memoryUpdates?.some(
               (update) => update.scope === "global",
             ) ?? false;
+          const wroteWorkspaceMemory =
+            taskRun.execution.memoryUpdates?.some(
+              (update) => update.scope === "workspace",
+            ) ?? false;
 
           if (!isQuickTaskSessionSnapshot && sessionMemoryUpdates.length > 0) {
             currentOptions.state.updateSessionById(sessionId, (session) => {
@@ -1274,6 +1279,14 @@ export const useSessionTaskSubmission = (options: {
               .then(currentOptions.runtime.applyLoadedUserMemorySettings)
               .catch((error) => {
                 console.error("Failed to refresh user memory settings", error);
+              });
+          }
+
+          if (wroteWorkspaceMemory) {
+            void currentOptions.runtime
+              .refreshWorkspaceMemoryEntries()
+              .catch((error) => {
+                console.error("Failed to refresh workspace memory", error);
               });
           }
 

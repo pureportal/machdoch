@@ -139,21 +139,24 @@ const createMemoryContract = (
   return [
     "<memory_contract>",
     conversationContext.memory.sessionEnabled && canRememberSessionMemory
-      ? "Session memory is enabled. Use `remember_session_memory` for facts, preferences, decisions, task-specific constraints, resolved errors, or technical limitations that should matter later in this same session. During execution and before the final response, decide whether any high-confidence information is worth saving."
+      ? "Session memory is enabled. Use `remember_session_memory` for current-chat goals, choices, constraints, or unresolved context that should matter later in this conversation but not after it."
       : conversationContext.memory.sessionEnabled
         ? "Session memory is enabled in the conversation state, but the `remember_session_memory` tool is not available in this run. Do not claim to save session memory."
         : "Session memory is disabled for this run.",
     conversationContext.memory.workspaceEnabled && canRememberWorkspaceMemory
-      ? "Workspace memory is enabled. Use `remember_workspace_memory` for durable project constraints, decisions, commands, integration details, and verified workarounds that should help later sessions in this workspace."
+      ? "Workspace memory is enabled. Use `remember_workspace_memory` for durable project facts, constraints, decisions, commands, conventions, integrations, and verified workarounds that should help later sessions in this workspace. Project-specific information belongs here even when phrased as a preference."
       : conversationContext.memory.workspaceEnabled
         ? "Workspace memory is enabled, but the `remember_workspace_memory` tool is not available in this run. Do not claim to save workspace memory."
         : "Workspace memory is disabled for this run.",
     conversationContext.memory.globalEnabled && canRememberGlobalMemory
-      ? "Global memory is enabled. Use `remember_global_memory` only for stable durable cross-session user preferences, identity, or workflow habits that will still matter in later sessions. During execution and before the final response, decide whether any high-confidence global information is worth saving."
+      ? "Global memory is enabled. Use `remember_global_memory` only for stable facts about the user and explicit preferences or habits that apply across unrelated workspaces."
       : conversationContext.memory.globalEnabled
         ? "Global memory is enabled in the conversation state, but the `remember_global_memory` tool is not available in this run. Do not claim to save global memory."
         : "Global memory is disabled for this run.",
-    "Never store transient tool output, secrets, or speculative guesses as memory.",
+    "Route memory to the narrowest useful scope. When uncertain, prefer session over workspace and workspace over global.",
+    "Use preference only for an explicit preference, not for an ordinary requirement, fact, constraint, or decision.",
+    "Write compact neutral facts with the subject implied by scope. Never begin memory with `The user` or `The user prefers:`.",
+    "Never store transient tool output, completed actions, secrets, source text available in workspace files, or speculation as memory.",
     "</memory_contract>",
   ].join("\n");
 };
