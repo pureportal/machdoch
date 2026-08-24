@@ -400,7 +400,10 @@ describe("createExecutorSystemPrompt", () => {
     );
     expect(userPrompt).toContain("<current_task_authority>");
     expect(userPrompt.indexOf("<conversation_context>")).toBeLessThan(
-      userPrompt.indexOf("<original_task>"),
+      userPrompt.indexOf("<current_task>"),
+    );
+    expect(userPrompt.match(/Create the Docker Compose files/gu)).toHaveLength(
+      1,
     );
   });
 });

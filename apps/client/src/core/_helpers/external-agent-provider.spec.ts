@@ -1215,6 +1215,40 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
+  it("delivers prepared conversation context exactly once", async () => {
+    const workspaceRoot = await createWorkspace();
+    const marker = "conversation-context-exact-once";
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot);
+    params.preparedConversationContext = {
+      ...preparedConversationContext,
+      promptBlock: [
+        "<conversation_context>",
+        marker,
+        "</conversation_context>",
+      ].join("\n"),
+      sections: [
+        {
+          title: "Recent conversation",
+          lines: [marker],
+        },
+      ],
+    };
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+
+    expect(call.child.stdinText.match(new RegExp(marker, "gu"))).toHaveLength(
+      1,
+    );
+    expect(call.child.stdinText).not.toContain("### Recent conversation");
+
+    writeStructuredAnswer(call, "Codex delegated answer.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it.each([
     ["codex-cli", "MACHDOCH_CODEX_CLI_PATH", "--image"],
     ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH", "--attachment"],

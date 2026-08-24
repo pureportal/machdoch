@@ -271,10 +271,16 @@ export const createAutopilotMonitorUserPrompt = (
             : []),
         ])
       : ["No prior validator decisions."];
+  const taskLines =
+    task === taskContext.effectiveTask
+      ? [`<current_task>${task}</current_task>`]
+      : [
+          `<original_task>${task}</original_task>`,
+          `<effective_task>${taskContext.effectiveTask}</effective_task>`,
+        ];
 
   return [
-    `<original_task>${task}</original_task>`,
-    `<effective_task>${taskContext.effectiveTask}</effective_task>`,
+    ...taskLines,
     `<executor_summary>${cycleResult.result.summary}</executor_summary>`,
     `<executed_tools>${cycleResult.result.executedTools.join(", ") || "none"}</executed_tools>`,
     `<assistant_answer>${cycleResult.loopState.lastAssistantText ?? "(none)"}</assistant_answer>`,

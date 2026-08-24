@@ -349,7 +349,7 @@ const createExternalAgentPrompt = (
           ...attachmentPaths.map((path) => `- ${path}`),
         ].join("\n")
       : undefined;
-  const resolvedContext = [...contextSections, ...conversationContext.sections]
+  const resolvedContext = contextSections
     .map(formatSectionForPrompt)
     .join("\n\n");
   const prompt = [
