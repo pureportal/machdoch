@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type {
   Message as AnthropicMessage,
   MessageParam as AnthropicMessageParam,
+  TextBlockParam as AnthropicTextBlockParam,
   Tool as AnthropicTool,
   ToolUseBlock as AnthropicToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
@@ -31,6 +32,7 @@ import {
   normalizeAnthropicUsage,
 } from "./stream-events.js";
 import { normalizeToolResultContent } from "./tool-result-content.js";
+import { resolveProviderPromptCacheDirectives } from "../provider-prompt-cache.js";
 
 export const createAnthropicToolSelection = () => ({
   tool_choice: {
@@ -100,6 +102,30 @@ export const createAnthropicTools = (
   }));
 };
 
+export const createAnthropicSystemPrompt = (
+  provider: ConfiguredModelProvider,
+  model: string,
+  systemPrompt: string,
+  tools: readonly AgentModelToolSpec[],
+): string | AnthropicTextBlockParam[] => {
+  const cache = resolveProviderPromptCacheDirectives(
+    provider,
+    model,
+    systemPrompt,
+    tools,
+  );
+
+  return cache.cacheSystemPrompt
+    ? [
+        {
+          type: "text" as const,
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" as const },
+        },
+      ]
+    : systemPrompt;
+};
+
 const createAnthropicToolResultContent = (toolResult: AgentModelToolResult) => {
   const content = normalizeToolResultContent(toolResult).map((contentPart) => {
     if (contentPart.type === "text") {
@@ -162,7 +188,12 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         const request = {
           model: params.model,
           max_tokens: getAnthropicMaxOutputTokens(params.reasoning),
-          system: params.systemPrompt,
+          system: createAnthropicSystemPrompt(
+            this.provider,
+            params.model,
+            params.systemPrompt,
+            params.tools,
+          ),
           messages: [...this.messages],
           tools: createAnthropicTools(params.tools),
           ...createAnthropicOutputConfig(
@@ -232,7 +263,12 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         const request = {
           model: startParams.model,
           max_tokens: getAnthropicMaxOutputTokens(startParams.reasoning),
-          system: startParams.systemPrompt,
+          system: createAnthropicSystemPrompt(
+            this.provider,
+            startParams.model,
+            startParams.systemPrompt,
+            this.tools,
+          ),
           messages: [...this.messages],
           tools: createAnthropicTools(this.tools),
           ...createAnthropicOutputConfig(

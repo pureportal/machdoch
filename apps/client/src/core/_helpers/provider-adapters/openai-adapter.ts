@@ -35,6 +35,7 @@ import {
   normalizeOpenAIUsage,
 } from "./stream-events.js";
 import { normalizeToolResultContent } from "./tool-result-content.js";
+import { resolveProviderPromptCacheDirectives } from "../provider-prompt-cache.js";
 
 export const createOpenAITools = (tools: AgentModelToolSpec[]) => {
   return tools.map((tool) => ({
@@ -311,11 +312,20 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
         ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
+        const promptCache = resolveProviderPromptCacheDirectives(
+          "openai",
+          params.model,
+          params.systemPrompt,
+          params.tools,
+        );
         const request = {
           model: params.model,
           instructions: params.systemPrompt,
           input: createOpenAIUserInput(params),
           tools: createOpenAITools(params.tools),
+          ...(promptCache.cacheKey
+            ? { prompt_cache_key: promptCache.cacheKey }
+            : {}),
           ...createOpenAIReasoningConfig(
             params.model,
             params.reasoning,
@@ -374,6 +384,12 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
         ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
+        const promptCache = resolveProviderPromptCacheDirectives(
+          "openai",
+          startParams.model,
+          startParams.systemPrompt,
+          this.tools,
+        );
         const request = {
           model: startParams.model,
           instructions: startParams.systemPrompt,
@@ -384,6 +400,9 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             output: createOpenAIFunctionCallOutput(toolResult),
           })),
           tools: createOpenAITools(this.tools),
+          ...(promptCache.cacheKey
+            ? { prompt_cache_key: promptCache.cacheKey }
+            : {}),
           ...createOpenAIReasoningConfig(
             startParams.model,
             startParams.reasoning,

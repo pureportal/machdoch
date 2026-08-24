@@ -148,7 +148,13 @@ describe("Anthropic Messages conformance", () => {
     expect(calls[0]?.body).toMatchObject({
       model: "claude-sonnet-4-5",
       max_tokens: 4096,
-      system: "System prompt.",
+      system: [
+        {
+          type: "text",
+          text: "System prompt.",
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       messages: [{ role: "user", content: "Read README.md" }],
       tool_choice: {
         type: "any",
