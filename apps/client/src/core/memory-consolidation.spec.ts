@@ -146,6 +146,12 @@ describe("consolidateTaskExecutionMemory", () => {
         expect(params.model).toBe("claude-internal");
         expect(params.systemPrompt).toContain("post-task memory manager");
         expect(params.systemPrompt).toContain("verified workarounds");
+        expect(params.systemPrompt).toContain(
+          "Project-specific information always belongs to workspace memory",
+        );
+        expect(params.systemPrompt).toContain(
+          "Never begin content with 'The user'",
+        );
         expect(params.userPrompt).toContain("Tool retry guard");
         expect(params.tools).toEqual([]);
         expect(params.structuredOutput?.name).toBe("memory_decisions");
@@ -156,6 +162,7 @@ describe("consolidateTaskExecutionMemory", () => {
             key: "vite-health-check-port-conflict",
             kind: "workaround",
             content: memoryFact,
+            searchTerms: ["dev server", "verification"],
             reason:
               "This limitation can affect later verification in this session.",
             importance: 3,
@@ -203,6 +210,7 @@ describe("consolidateTaskExecutionMemory", () => {
         key: "vite-health-check-port-conflict",
         kind: "workaround",
         content: memoryFact,
+        searchTerms: ["dev server", "verification"],
       },
     });
     expect(result.outputSections).toEqual(
@@ -220,7 +228,7 @@ describe("consolidateTaskExecutionMemory", () => {
   it("saves model-decided global memory and filters low-confidence or sensitive memories", async () => {
     const workspaceRoot = await createWorkspace();
     const task = "Fix the build and summarize verification.";
-    const globalMemory = "The user prefers compact verification notes";
+    const globalMemory = "Prefers compact verification notes";
     const memoryAdapter: AgentModelAdapter = {
       startTurn: async () =>
         createMemoryTurn([
@@ -229,6 +237,7 @@ describe("consolidateTaskExecutionMemory", () => {
             key: "verification-note-style",
             kind: "preference",
             content: globalMemory,
+            searchTerms: ["summary style"],
             reason:
               "This is a stable user workflow preference across sessions.",
             importance: 3,
@@ -240,6 +249,7 @@ describe("consolidateTaskExecutionMemory", () => {
             key: "api-key",
             kind: "fact",
             content: "The user's API key is sk-test-value",
+            searchTerms: [],
             reason: "Sensitive data should be rejected by the runtime.",
             importance: 5,
             confidence: "high",
@@ -250,6 +260,7 @@ describe("consolidateTaskExecutionMemory", () => {
             key: "task-status",
             kind: "fact",
             content: "The task finished successfully",
+            searchTerms: [],
             reason: "Transient status is not worth saving.",
             importance: 1,
             confidence: "low",
@@ -289,6 +300,7 @@ describe("consolidateTaskExecutionMemory", () => {
         key: "verification-note-style",
         kind: "preference",
         content: globalMemory,
+        searchTerms: ["summary style"],
       },
     });
     expect(settings.entries.map((entry) => entry.content)).toEqual([
@@ -307,6 +319,7 @@ describe("consolidateTaskExecutionMemory", () => {
             key: "release-build-command",
             kind: "constraint",
             content: "Use pnpm package for release builds",
+            searchTerms: ["packaging", "distribution"],
             reason: "This command applies to future work in this repository.",
             importance: 4,
             confidence: "high",
@@ -346,6 +359,50 @@ describe("consolidateTaskExecutionMemory", () => {
     await expect(loadWorkspaceMemory(otherWorkspaceRoot)).resolves.toEqual([]);
   });
 
+  it("rejects workspace memory when no workspace is selected", async () => {
+    const workspaceRoot = await createWorkspace();
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async () =>
+        createMemoryTurn([
+          {
+            scope: "workspace",
+            key: "package-manager",
+            kind: "decision",
+            content: "Package manager: pnpm",
+            searchTerms: ["dependencies"],
+            reason: "This applies to the project.",
+            importance: 4,
+            confidence: "high",
+            sensitivity: "non-sensitive",
+          },
+        ]),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The memory adapter should only run one turn.");
+      },
+    };
+
+    const result = await consolidateTaskExecutionMemory(
+      "Inspect package scripts",
+      createConfig(workspaceRoot),
+      createExecutionResult("Inspect package scripts"),
+      {
+        history: [],
+        workspace: { selection: "not-set" },
+        sessionMemoryEnabled: true,
+        sessionMemory: [],
+        globalMemoryEnabled: false,
+      },
+      { modelAdapter: memoryAdapter },
+    );
+
+    expect(result.memoryUpdates).toBeUndefined();
+    expect(result.metadata?.memoryCapture).toMatchObject({
+      status: "completed",
+      candidateCount: 0,
+    });
+    await expect(loadWorkspaceMemory(workspaceRoot)).resolves.toEqual([]);
+  });
+
   it("keeps the task and result in review context when memory stores are full", async () => {
     const workspaceRoot = await createWorkspace();
     const task = "Diagnose the release verification failure";
@@ -367,6 +424,7 @@ describe("consolidateTaskExecutionMemory", () => {
       key: `session-fact-${index}`,
       kind: "fact" as const,
       content: `Session fact ${index} ${"x".repeat(240)}`,
+      searchTerms: [],
       importance: 3,
       confidence: 1,
       createdAt: index,

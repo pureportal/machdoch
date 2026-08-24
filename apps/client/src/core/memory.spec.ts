@@ -4,6 +4,8 @@ import {
   mergeConversationMemoryEntries,
   normalizeConversationMemoryEntries,
   normalizeMemoryContent,
+  normalizeMemorySearchTerms,
+  normalizeMemoryStatement,
   rememberConversationMemoryEntry,
 } from "./memory.ts";
 import type { ConversationMemoryEntry } from "./types.ts";
@@ -18,6 +20,7 @@ const createEntry = (
   key: content.toLowerCase().replaceAll(" ", "-"),
   kind: "fact",
   content,
+  searchTerms: [],
   importance: 3,
   confidence: 1,
   createdAt: updatedAt - 1,
@@ -45,6 +48,41 @@ describe("normalizeMemoryContent", () => {
 
     expect(normalized).toHaveLength(280);
     expect(normalized?.endsWith("…")).toBe(true);
+  });
+});
+
+describe("normalizeMemorySearchTerms", () => {
+  it("deduplicates and bounds retrieval aliases", () => {
+    expect(
+      normalizeMemorySearchTerms([
+        " dining ",
+        "DINING",
+        "restaurant recommendations",
+        ...Array.from({ length: 10 }, (_, index) => `term-${index}`),
+      ]),
+    ).toEqual([
+      "dining",
+      "restaurant recommendations",
+      "term-0",
+      "term-1",
+      "term-2",
+      "term-3",
+      "term-4",
+      "term-5",
+    ]);
+  });
+});
+
+describe("normalizeMemoryStatement", () => {
+  it("removes generic user preference framing", () => {
+    expect(
+      normalizeMemoryStatement(
+        "The user prefers: Opens in the active workspace",
+      ),
+    ).toBe("Opens in the active workspace");
+    expect(
+      normalizeMemoryStatement("The user prefers compact verification output"),
+    ).toBe("Prefers compact verification output");
   });
 });
 

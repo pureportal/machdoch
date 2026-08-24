@@ -16,6 +16,7 @@ const createEntry = (
   key,
   kind: "fact",
   content,
+  searchTerms: [],
   importance: 3,
   confidence: 1,
   createdAt: 1_700_000_000_000,
@@ -25,6 +26,25 @@ const createEntry = (
 
 describe("retrieveConversationMemory", () => {
   const now = 1_700_000_000_000;
+
+  it("uses expanded search terms without exposing them as memory content", () => {
+    const result = retrieveConversationMemory(
+      "Find dinner restaurants nearby",
+      [
+        createEntry(
+          "diet",
+          "global",
+          "dietary-restriction",
+          "Avoids animal products",
+          { searchTerms: ["dinner", "restaurant", "meal"] },
+        ),
+      ],
+      { now },
+    );
+
+    expect(result.entries.map((entry) => entry.id)).toEqual(["diet"]);
+    expect(result.entries[0]?.content).toBe("Avoids animal products");
+  });
 
   it("ranks task-relevant memories ahead of unrelated recent facts", () => {
     const result = retrieveConversationMemory(

@@ -9,7 +9,10 @@ import {
 } from "react";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { isMcpConfigConflictError } from "../../mcp-config-error";
+import type { ConversationMemoryEntry } from "../../../../core/types.js";
 import {
+  forgetUserGlobalMemoryEntry,
+  forgetWorkspaceMemoryEntry,
   loadGlobalProviderAvailability,
   authorizeMcpOAuth,
   discoverMcpServer,
@@ -25,6 +28,7 @@ import {
   loadUserVoiceSettings,
   loadUserWebSearchSettings,
   loadWorkspaceRuntimeSnapshot,
+  loadWorkspaceMemoryEntries,
   openUserProviderApiKeyPortal,
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
@@ -134,6 +138,7 @@ export interface ChatSessionRuntimeController {
   mcpOAuthBusy: boolean;
   mcpConfigMessage: SettingsStatusMessage | null;
   userMemorySettings: UserMemorySettings;
+  workspaceMemoryEntries: ConversationMemoryEntry[];
   memorySetupSaving: boolean;
   memorySetupMessage: SettingsStatusMessage | null;
   setGlobalProviders: Dispatch<
@@ -198,6 +203,9 @@ export interface ChatSessionRuntimeController {
     authorizationResponse?: string,
   ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
+  handleGlobalMemoryForget: (id: string) => Promise<void>;
+  handleWorkspaceMemoryForget: (id: string) => Promise<void>;
+  refreshWorkspaceMemoryEntries: () => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
   applyLoadedUserAgentLimitsSettings: (
     settings: UserAgentLimitsSettings,
@@ -498,6 +506,9 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [userMemorySettings, setUserMemorySettings] =
     useState<UserMemorySettings>(createEmptyUserMemorySettings());
+  const [workspaceMemoryEntries, setWorkspaceMemoryEntries] = useState<
+    ConversationMemoryEntry[]
+  >([]);
   const [memorySetupSaving, setMemorySetupSaving] = useState(false);
   const [memorySetupMessage, setMemorySetupMessage] =
     useState<SettingsStatusMessage | null>(null);
@@ -1307,6 +1318,45 @@ export const useChatSessionRuntime = (
       cancelled = true;
     };
   }, [applyLoadedUserMemorySettings]);
+
+  const refreshWorkspaceMemoryEntries = useCallback(async (): Promise<void> => {
+    const workspaceRoot = options.activeSessionWorkspace?.trim();
+
+    if (!workspaceRoot) {
+      setWorkspaceMemoryEntries([]);
+      return;
+    }
+
+    const entries = await loadWorkspaceMemoryEntries(workspaceRoot);
+    setWorkspaceMemoryEntries(entries);
+  }, [options.activeSessionWorkspace]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const workspaceRoot = options.activeSessionWorkspace?.trim();
+
+    if (!workspaceRoot) {
+      setWorkspaceMemoryEntries([]);
+      return;
+    }
+
+    void loadWorkspaceMemoryEntries(workspaceRoot)
+      .then((entries) => {
+        if (!cancelled) {
+          setWorkspaceMemoryEntries(entries);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load workspace memory", error);
+          setWorkspaceMemoryEntries([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options.activeSessionWorkspace]);
 
   useEffect(() => {
     if (!options.catalogOpen) {
@@ -2920,6 +2970,70 @@ export const useChatSessionRuntime = (
     [applyLoadedUserMemorySettings, userMemorySettings],
   );
 
+  const handleGlobalMemoryForget = useCallback(
+    async (id: string): Promise<void> => {
+      setMemorySetupSaving(true);
+      setMemorySetupMessage(null);
+
+      try {
+        if (isTauri()) {
+          applyLoadedUserMemorySettings(await forgetUserGlobalMemoryEntry(id));
+        } else {
+          applyLoadedUserMemorySettings({
+            ...userMemorySettings,
+            entries: userMemorySettings.entries.filter(
+              (entry) => entry.id !== id,
+            ),
+          });
+        }
+        setMemorySetupMessage({ tone: "success", text: "Memory removed." });
+      } catch (error) {
+        setMemorySetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Memory could not be removed.",
+        });
+      } finally {
+        setMemorySetupSaving(false);
+      }
+    },
+    [applyLoadedUserMemorySettings, userMemorySettings],
+  );
+
+  const handleWorkspaceMemoryForget = useCallback(
+    async (id: string): Promise<void> => {
+      const workspaceRoot = options.activeSessionWorkspace?.trim();
+
+      if (!workspaceRoot) {
+        return;
+      }
+
+      setMemorySetupSaving(true);
+      setMemorySetupMessage(null);
+
+      try {
+        const entries = isTauri()
+          ? await forgetWorkspaceMemoryEntry(workspaceRoot, id)
+          : workspaceMemoryEntries.filter((entry) => entry.id !== id);
+        setWorkspaceMemoryEntries(entries);
+        setMemorySetupMessage({ tone: "success", text: "Memory removed." });
+      } catch (error) {
+        setMemorySetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Memory could not be removed.",
+        });
+      } finally {
+        setMemorySetupSaving(false);
+      }
+    },
+    [options.activeSessionWorkspace, workspaceMemoryEntries],
+  );
+
   return {
     globalProviders,
     runtimeSnapshot,
@@ -2970,6 +3084,7 @@ export const useChatSessionRuntime = (
     mcpOAuthBusy,
     mcpConfigMessage,
     userMemorySettings,
+    workspaceMemoryEntries,
     memorySetupSaving,
     memorySetupMessage,
     setGlobalProviders,
@@ -3005,6 +3120,9 @@ export const useChatSessionRuntime = (
     handleMcpOAuthStart,
     handleMcpOAuthFinish,
     handleGlobalMemoryEnabledSave,
+    handleGlobalMemoryForget,
+    handleWorkspaceMemoryForget,
+    refreshWorkspaceMemoryEntries,
     applyLoadedUserDesktopSettings,
     applyLoadedUserAgentLimitsSettings,
     applyLoadedUserReviewModelSettings,

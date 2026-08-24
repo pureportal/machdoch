@@ -27,6 +27,7 @@ const createMemoryEntry = (
     key: content.toLowerCase().replaceAll(" ", "-"),
     kind: "fact",
     content,
+    searchTerms: [],
     importance: 3,
     confidence: 1,
     createdAt: 1,

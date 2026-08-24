@@ -59,9 +59,13 @@ export interface WebSearchSetupControls {
 
 export interface MemorySettingsControls {
   settings: UserMemorySettings;
+  workspaceRoot: string | null;
+  workspaceEntries: UserMemorySettings["entries"];
   saving: boolean;
   message: SettingsStatusMessage | null;
   onGlobalEnabledChange: (enabled: boolean) => Promise<void> | void;
+  onForgetGlobal: (id: string) => Promise<void> | void;
+  onForgetWorkspace: (id: string) => Promise<void> | void;
 }
 
 export interface WorkspaceSettingsControls {

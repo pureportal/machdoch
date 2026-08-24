@@ -320,14 +320,12 @@ describe("createExecutorSystemPrompt", () => {
     );
 
     expect(prompt).toContain(
-      "Use `remember_session_memory` for facts, preferences, decisions",
+      "Use `remember_session_memory` for current-chat goals, choices, constraints",
     );
     expect(prompt).toContain(
-      "Use `remember_global_memory` only for stable durable cross-session",
+      "Use `remember_global_memory` only for stable facts about the user",
     );
-    expect(prompt).toContain(
-      "decide whether any high-confidence information is worth saving",
-    );
+    expect(prompt).toContain("Route memory to the narrowest useful scope");
   });
 
   it("surfaces the desktop host elevation state when provided", () => {

@@ -21,6 +21,7 @@ const memoryArgs = (
   fact,
   memory_key: key,
   kind: "constraint",
+  search_terms: ["runtime"],
   importance: 4,
   sensitivity: "non-sensitive",
 });
@@ -61,6 +62,7 @@ describe("memory tool definitions", () => {
         id: first?.memoryUpdate?.entry.id,
         key: "node-version",
         content: "Use Node 22",
+        searchTerms: ["runtime"],
       });
       expect(replacement?.sections[0]?.lines).toContain("status: replaced");
       expect(memory.sessionEntries).toHaveLength(1);

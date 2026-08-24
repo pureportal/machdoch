@@ -321,6 +321,18 @@ pub(super) fn save_user_global_memory_enabled_value(enabled: bool) -> Result<Pat
     })
 }
 
+pub(super) fn forget_user_global_memory_value(id: &str) -> Result<PathBuf, String> {
+    let normalized_id = normalize_optional_string(Some(id))
+        .ok_or_else(|| "Expected a global memory id.".to_string())?;
+
+    update_user_config_file(|config| {
+        config.memory.entries = normalize_user_memory_entries(&config.memory.entries, "global")
+            .into_iter()
+            .filter(|entry| entry.id != normalized_id)
+            .collect();
+    })
+}
+
 pub(super) fn load_user_agent_limits_settings() -> Result<UserAgentLimitsSettings, String> {
     let (config, _) = load_user_config_file()?;
 

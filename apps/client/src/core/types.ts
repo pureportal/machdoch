@@ -142,6 +142,7 @@ export interface ConversationMemoryEntry {
   key: string;
   kind: ConversationMemoryKind;
   content: string;
+  searchTerms: string[];
   importance: number;
   confidence: number;
   createdAt: number;

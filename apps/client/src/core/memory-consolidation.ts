@@ -11,6 +11,7 @@ import {
   normalizeConversationMemoryEntries,
   normalizeMemoryContent,
   normalizeMemoryKey,
+  normalizeMemorySearchTerms,
   rememberConversationMemoryEntry,
   type ConversationMemoryMetadata,
 } from "./memory.js";
@@ -111,7 +112,14 @@ const createMemoryDecisionOutput = (): AgentModelStructuredOutput => ({
             content: {
               type: "string",
               description:
-                "A concise standalone fact with enough retrieval context.",
+                "A concise standalone fact in neutral language. Do not start with 'The user'.",
+            },
+            searchTerms: {
+              type: "array",
+              maxItems: 8,
+              items: { type: "string", minLength: 1, maxLength: 48 },
+              description:
+                "Short query aliases that retrieve the fact when a future request uses different wording.",
             },
             reason: { type: "string" },
             importance: {
@@ -133,6 +141,7 @@ const createMemoryDecisionOutput = (): AgentModelStructuredOutput => ({
             "key",
             "kind",
             "content",
+            "searchTerms",
             "reason",
             "importance",
             "confidence",
@@ -149,10 +158,16 @@ const createMemoryReviewSystemPrompt = (): string => {
   return [
     "You are Machdoch's post-task memory manager.",
     "Return only the structured memory decision output. Do not write prose.",
-    "Save session memory for current-chat context that will matter on a later turn.",
-    "Save workspace memory for durable project constraints, decisions, commands, integrations, and verified workarounds that should matter across sessions in this workspace.",
-    "Save global memory only for stable cross-workspace user preferences or identity.",
+    "Route each memory to the narrowest scope where it remains useful.",
+    "Session: current-chat goals, choices, constraints, and unresolved context that will matter on a later turn but not after this conversation.",
+    "Workspace: durable facts, constraints, decisions, commands, integrations, conventions, and verified workarounds for the active project across sessions.",
+    "Global: stable facts about the user and explicit preferences or habits that apply across unrelated workspaces.",
+    "Project-specific information always belongs to workspace memory, even when the user phrases it as a preference.",
+    "When scope is ambiguous, choose session over workspace and workspace over global.",
+    "Use kind=preference only for an explicit preference, not for an ordinary task requirement, project fact, constraint, or decision.",
     "Prefer updating an existing concept key over adding another version of the same fact.",
+    "Write compact neutral content with the subject implied by its scope, such as 'Prefers concise answers', 'Package manager: pnpm', or 'Release builds require Node 22'. Never begin content with 'The user' or add labels such as 'The user prefers:'.",
+    "Add only useful search terms that are not already obvious words in the content. Use an empty array when no aliases are needed.",
     "Do not save secrets, credentials, raw logs, transient progress, generic facts, completed actions, source code that can be read from the workspace, or speculation.",
     "Use an empty array when nothing is worth remembering.",
   ].join("\n");
@@ -294,6 +309,7 @@ const parseMemoryDecisionCandidates = (
         "kind",
         "reason",
         "scope",
+        "searchTerms",
         "sensitivity",
       ];
       const scope = record.scope;
@@ -302,6 +318,7 @@ const parseMemoryDecisionCandidates = (
           ? record.content.slice(0, MAX_MEMORY_REVIEW_FACT_LENGTH)
           : undefined,
       );
+      const searchTerms = normalizeMemorySearchTerms(record.searchTerms);
 
       if (
         keys.length !== expectedKeys.length ||
@@ -310,6 +327,8 @@ const parseMemoryDecisionCandidates = (
         !enabled[scope] ||
         !isMemoryKind(record.kind) ||
         !content ||
+        !Array.isArray(record.searchTerms) ||
+        searchTerms.length !== record.searchTerms.length ||
         typeof record.key !== "string" ||
         typeof record.reason !== "string" ||
         record.reason.trim().length === 0 ||
@@ -329,6 +348,7 @@ const parseMemoryDecisionCandidates = (
           key: normalizeMemoryKey(record.key, content),
           kind: record.kind,
           content,
+          searchTerms,
           importance: record.importance,
           confidence: record.confidence === "high" ? 1 : 0.75,
         },
@@ -414,13 +434,17 @@ const extractModelMemoryCandidates = async (
             },
           },
           async (onRequestAttempt) =>
-            await executeInternalTaskModelInference(config, {
-              systemPrompt,
-              userPrompt,
-              structuredOutput: decisionOutput,
-              signal,
-              ...(onRequestAttempt ? { onRequestAttempt } : {}),
-            }, options.modelAdapter),
+            await executeInternalTaskModelInference(
+              config,
+              {
+                systemPrompt,
+                userPrompt,
+                structuredOutput: decisionOutput,
+                signal,
+                ...(onRequestAttempt ? { onRequestAttempt } : {}),
+              },
+              options.modelAdapter,
+            ),
         ),
         aborted,
       ]);
@@ -509,7 +533,7 @@ export const consolidateTaskExecutionMemory = async (
   }
 
   const workspaceEnabled =
-    conversationContext?.workspace?.selection !== "not-set";
+    conversationContext?.workspace?.selection === "selected";
   const workspaceRoot = config.workspaceRoot;
   const enabled: Record<ConversationMemoryScope, boolean> = {
     session:

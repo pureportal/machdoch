@@ -14,18 +14,55 @@ export const MAX_WORKSPACE_MEMORY_ENTRIES = 64;
 export const MAX_GLOBAL_MEMORY_ENTRIES = 40;
 const MAX_MEMORY_CONTENT_LENGTH = 280;
 const MAX_MEMORY_KEY_LENGTH = 96;
+const MAX_MEMORY_SEARCH_TERMS = 8;
+const MAX_MEMORY_SEARCH_TERM_LENGTH = 48;
 const DEFAULT_MEMORY_IMPORTANCE = 3;
 const DEFAULT_MEMORY_CONFIDENCE = 1;
 
 export interface ConversationMemoryMetadata {
   key?: string;
   kind?: ConversationMemoryKind;
+  searchTerms?: string[];
   importance?: number;
   confidence?: number;
 }
 
 const createContentKey = (content: string): string => {
   return content.replace(/\s+/gu, " ").trim().toLowerCase();
+};
+
+export const normalizeMemorySearchTerms = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+
+  return value
+    .flatMap((candidate) => {
+      if (typeof candidate !== "string") {
+        return [];
+      }
+
+      const normalized = normalizeOptionalString(candidate)
+        ?.normalize("NFKC")
+        .replace(/\s+/gu, " ")
+        .slice(0, MAX_MEMORY_SEARCH_TERM_LENGTH);
+
+      if (!normalized) {
+        return [];
+      }
+
+      const identity = normalized.toLowerCase();
+
+      if (seen.has(identity)) {
+        return [];
+      }
+
+      seen.add(identity);
+      return [normalized];
+    })
+    .slice(0, MAX_MEMORY_SEARCH_TERMS);
 };
 
 export const normalizeMemoryContent = (
@@ -42,6 +79,20 @@ export const normalizeMemoryContent = (
   }
 
   return `${normalized.slice(0, MAX_MEMORY_CONTENT_LENGTH - 1)}…`;
+};
+
+export const normalizeMemoryStatement = (content: string): string => {
+  const labeledPreference = content.match(/^the user prefers\s*:\s*(.+)$/iu);
+
+  if (labeledPreference?.[1]) {
+    return labeledPreference[1];
+  }
+
+  const preferenceStatement = content.match(/^the user prefers\s+(.+)$/iu);
+
+  return preferenceStatement?.[1]
+    ? `Prefers ${preferenceStatement[1]}`
+    : content;
 };
 
 export const normalizeMemoryKey = (
@@ -103,6 +154,7 @@ export const createConversationMemoryEntry = (
     key: normalizeMemoryKey(metadata.key, content),
     kind: normalizeMemoryKind(metadata.kind),
     content,
+    searchTerms: normalizeMemorySearchTerms(metadata.searchTerms),
     importance: normalizeMemoryImportance(metadata.importance),
     confidence: normalizeMemoryConfidence(metadata.confidence),
     createdAt: timestamp,
@@ -124,11 +176,13 @@ export const normalizeConversationMemoryEntries = (
     }
 
     const candidate = entry as Partial<ConversationMemoryEntry>;
-    const content = normalizeMemoryContent(candidate.content);
+    const normalizedKind = normalizeMemoryKind(candidate.kind);
+    const normalizedContent = normalizeMemoryContent(candidate.content);
 
-    if (!content) {
+    if (!normalizedContent) {
       return [];
     }
+    const content = normalizeMemoryStatement(normalizedContent);
 
     const createdAt =
       typeof candidate.createdAt === "number" &&
@@ -149,8 +203,9 @@ export const normalizeConversationMemoryEntries = (
             : crypto.randomUUID(),
         scope,
         key: normalizeMemoryKey(candidate.key, content),
-        kind: normalizeMemoryKind(candidate.kind),
+        kind: normalizedKind,
         content,
+        searchTerms: normalizeMemorySearchTerms(candidate.searchTerms),
         importance: normalizeMemoryImportance(candidate.importance),
         confidence: normalizeMemoryConfidence(candidate.confidence),
         createdAt,
@@ -176,18 +231,21 @@ export const mergeConversationMemoryEntries = (
 
   return [...incomingEntries, ...existingEntries]
     .flatMap((entry) => {
-      const content = normalizeMemoryContent(entry.content);
+      const kind = normalizeMemoryKind(entry.kind);
+      const normalizedContent = normalizeMemoryContent(entry.content);
 
-      if (!content) {
+      if (!normalizedContent) {
         return [];
       }
+      const content = normalizeMemoryStatement(normalizedContent);
 
       return [
         {
           ...entry,
           key: normalizeMemoryKey(entry.key, content),
-          kind: normalizeMemoryKind(entry.kind),
+          kind,
           content,
+          searchTerms: normalizeMemorySearchTerms(entry.searchTerms),
           importance: normalizeMemoryImportance(entry.importance),
           confidence: normalizeMemoryConfidence(entry.confidence),
         },
@@ -227,9 +285,10 @@ export const rememberConversationMemoryEntry = (
   if (!normalizedContent) {
     throw new Error("Expected non-empty memory content.");
   }
+  const statement = normalizeMemoryStatement(normalizedContent);
 
-  const memoryKey = normalizeMemoryKey(metadata.key, normalizedContent);
-  const contentKey = createContentKey(normalizedContent);
+  const memoryKey = normalizeMemoryKey(metadata.key, statement);
+  const contentKey = createContentKey(statement);
   const existingEntry = existingEntries.find(
     (entry) =>
       entry.scope === scope &&
@@ -238,11 +297,18 @@ export const rememberConversationMemoryEntry = (
   );
 
   if (existingEntry) {
+    const refreshedKind = normalizeMemoryKind(
+      metadata.kind ?? existingEntry.kind,
+    );
+    const refreshedContent = normalizeMemoryStatement(normalizedContent);
     const refreshedEntry: ConversationMemoryEntry = {
       ...existingEntry,
       key: memoryKey,
-      kind: normalizeMemoryKind(metadata.kind ?? existingEntry.kind),
-      content: normalizedContent,
+      kind: refreshedKind,
+      content: refreshedContent,
+      searchTerms: normalizeMemorySearchTerms(
+        metadata.searchTerms ?? existingEntry.searchTerms,
+      ),
       importance: normalizeMemoryImportance(
         metadata.importance ?? existingEntry.importance,
       ),
@@ -260,13 +326,15 @@ export const rememberConversationMemoryEntry = (
         maxEntries,
       ),
       added: false,
-      replaced: createContentKey(existingEntry.content) !== contentKey,
+      replaced:
+        createContentKey(existingEntry.content) !==
+        createContentKey(refreshedContent),
     };
   }
 
   const nextEntry = createConversationMemoryEntry(
     scope,
-    normalizedContent,
+    statement,
     timestamp,
     metadata,
   );
