@@ -16,6 +16,12 @@ export type ModelProviderMode = ProviderModelMode;
 
 export type ModelVoiceCapability = ProviderModelVoiceCapability;
 
+export type ProviderPromptCachingCapability =
+  | "automatic-keyed"
+  | "automatic"
+  | "explicit"
+  | "provider-managed";
+
 export interface ModelCapabilityProfile {
   provider: ConfiguredModelProvider;
   model: string;
@@ -35,6 +41,7 @@ export interface ProviderCapabilityProfile {
   imageInputMediaTypes: readonly AgentModelImageMediaType[];
   providerManagedImageInput: boolean;
   providerModes: readonly ModelProviderMode[];
+  promptCaching: ProviderPromptCachingCapability;
 }
 
 export interface DiscoveredModelCapabilities {
@@ -136,30 +143,35 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
     imageInputMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
     providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.anthropic,
+    promptCaching: "explicit",
   },
   "claude-cli": {
     provider: "claude-cli",
     imageInputMediaTypes: WITHOUT_IMAGE_MEDIA_TYPES,
     providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES["claude-cli"],
+    promptCaching: "provider-managed",
   },
   "codex-cli": {
     provider: "codex-cli",
     imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
     providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES["codex-cli"],
+    promptCaching: "provider-managed",
   },
   "copilot-cli": {
     provider: "copilot-cli",
     imageInputMediaTypes: COPILOT_CLI_IMAGE_MEDIA_TYPES,
     providerManagedImageInput: true,
     providerModes: PROVIDER_MODEL_MODES["copilot-cli"],
+    promptCaching: "provider-managed",
   },
   google: {
     provider: "google",
     imageInputMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
     providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.google,
+    promptCaching: "automatic",
   },
   langdock: {
     provider: "langdock",
@@ -169,12 +181,14 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
     ],
     providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.langdock,
+    promptCaching: "provider-managed",
   },
   openai: {
     provider: "openai",
     imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
     providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.openai,
+    promptCaching: "automatic-keyed",
   },
 };
 
