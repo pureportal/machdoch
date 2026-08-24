@@ -357,6 +357,9 @@ export const getReasoningModesForProviderModel = (
   discoveredModes?: readonly string[] | null,
 ): readonly ReasoningMode[] => {
   const normalizedModel = normalizeModelId(model);
+  if (provider === "copilot-cli" && normalizedModel === "auto") {
+    return DEFAULT_ONLY_REASONING_MODES;
+  }
   const effectiveDiscoveredModes =
     discoveredModes ??
     (provider && model

@@ -160,11 +160,6 @@ describe("provider model reasoning modes", () => {
     ]);
     expect(getReasoningModesForProviderModel("copilot-cli", "auto")).toEqual([
       "default",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
     ]);
   });
 
@@ -233,6 +228,9 @@ describe("provider model reasoning modes", () => {
     expect(
       normalizeReasoningModeForProviderModel("none", "codex-cli", "gpt-5.5"),
     ).toBe("none");
+    expect(
+      normalizeReasoningModeForProviderModel("low", "copilot-cli", "auto"),
+    ).toBe("default");
   });
 
   it("rejects unsupported execution settings and honors discovered effort lists", () => {
