@@ -2,6 +2,7 @@ import { hasConfiguredValue, loadWorkspaceEnv } from "../env.js";
 import type { AgentModelAdapter, AgentModelToolSpec } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import { assertContextWindowSupportedForProviderModel } from "../context-windows.js";
+import { createObservedProviderFetch } from "../model-usage.js";
 
 const LANGDOCK_DEFAULT_REGION = "eu";
 const LANGDOCK_SUPPORTED_REGIONS = new Set(["eu", "us"]);
@@ -215,6 +216,7 @@ export const createProviderAdapter = async (
       return new OpenAIResponsesAdapter(
         new OpenAI({
           apiKey: env.OPENAI_API_KEY,
+          fetch: createObservedProviderFetch("openai"),
         }),
         tools,
         config.reasoningMode ?? "standard",
@@ -235,6 +237,7 @@ export const createProviderAdapter = async (
       return new AnthropicMessagesAdapter(
         new Anthropic({
           apiKey: env.ANTHROPIC_API_KEY,
+          fetch: createObservedProviderFetch("anthropic"),
         }),
         tools,
       );
@@ -280,6 +283,7 @@ export const createProviderAdapter = async (
             apiKey: null,
             authToken: apiKey,
             baseURL: resolveLangdockAnthropicBaseURL(env),
+            fetch: createObservedProviderFetch("langdock"),
           }),
           tools,
           "langdock",
@@ -316,6 +320,7 @@ export const createProviderAdapter = async (
         new OpenAI({
           apiKey,
           baseURL: resolveLangdockBaseURL(env),
+          fetch: createObservedProviderFetch("langdock"),
         }),
         tools,
       );

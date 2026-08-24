@@ -159,9 +159,17 @@ export const normalizeOpenAIUsage = (
     getNumber(usage, "input_tokens") ?? getNumber(usage, "prompt_tokens");
   const outputTokens =
     getNumber(usage, "output_tokens") ?? getNumber(usage, "completion_tokens");
-  const totalTokens = getNumber(usage, "total_tokens");
+  const reportedTotalTokens = getNumber(usage, "total_tokens");
+  const totalTokens =
+    reportedTotalTokens ??
+    (inputTokens !== undefined && outputTokens !== undefined
+      ? inputTokens + outputTokens
+      : undefined);
   const cachedInputTokens = inputDetails
     ? getNumber(inputDetails, "cached_tokens")
+    : undefined;
+  const cacheWriteInputTokens = inputDetails
+    ? getNumber(inputDetails, "cache_write_tokens")
     : undefined;
   const reasoningTokens = outputDetails
     ? getNumber(outputDetails, "reasoning_tokens")
@@ -182,6 +190,11 @@ export const normalizeOpenAIUsage = (
 
   if (cachedInputTokens !== undefined) {
     normalized.cachedInputTokens = cachedInputTokens;
+    normalized.cacheReadInputTokens = cachedInputTokens;
+  }
+
+  if (cacheWriteInputTokens !== undefined) {
+    normalized.cacheWriteInputTokens = cacheWriteInputTokens;
   }
 
   if (reasoningTokens !== undefined) {
@@ -198,11 +211,18 @@ export const normalizeAnthropicUsage = (
     return undefined;
   }
 
-  const cacheCreationTokens =
-    getNumber(usage, "cache_creation_input_tokens") ?? 0;
-  const cacheReadTokens = getNumber(usage, "cache_read_input_tokens") ?? 0;
-  const inputTokens = getNumber(usage, "input_tokens");
+  const cacheCreationTokens = getNumber(usage, "cache_creation_input_tokens");
+  const cacheReadTokens = getNumber(usage, "cache_read_input_tokens");
+  const uncachedInputTokens = getNumber(usage, "input_tokens");
   const outputTokens = getNumber(usage, "output_tokens");
+  const inputTokens =
+    uncachedInputTokens === undefined &&
+    cacheCreationTokens === undefined &&
+    cacheReadTokens === undefined
+      ? undefined
+      : (uncachedInputTokens ?? 0) +
+        (cacheCreationTokens ?? 0) +
+        (cacheReadTokens ?? 0);
 
   return {
     ...(inputTokens !== undefined ? { inputTokens } : {}),
@@ -210,8 +230,14 @@ export const normalizeAnthropicUsage = (
     ...(inputTokens !== undefined && outputTokens !== undefined
       ? { totalTokens: inputTokens + outputTokens }
       : {}),
-    ...(cacheCreationTokens + cacheReadTokens > 0
-      ? { cachedInputTokens: cacheCreationTokens + cacheReadTokens }
+    ...(cacheReadTokens !== undefined
+      ? {
+          cachedInputTokens: cacheReadTokens,
+          cacheReadInputTokens: cacheReadTokens,
+        }
+      : {}),
+    ...(cacheCreationTokens !== undefined
+      ? { cacheWriteInputTokens: cacheCreationTokens }
       : {}),
     raw: usage,
   };
@@ -229,6 +255,8 @@ export const normalizeGeminiUsage = (
   const outputTokens = getNumber(usage, "candidatesTokenCount");
   const totalTokens = getNumber(usage, "totalTokenCount");
   const reasoningTokens = getNumber(usage, "thoughtsTokenCount");
+  const cachedInputTokens = getNumber(usage, "cachedContentTokenCount");
+  const toolUseInputTokens = getNumber(usage, "toolUsePromptTokenCount");
 
   if (inputTokens !== undefined) {
     normalized.inputTokens = inputTokens;
@@ -244,6 +272,15 @@ export const normalizeGeminiUsage = (
 
   if (reasoningTokens !== undefined) {
     normalized.reasoningTokens = reasoningTokens;
+  }
+
+  if (cachedInputTokens !== undefined) {
+    normalized.cachedInputTokens = cachedInputTokens;
+    normalized.cacheReadInputTokens = cachedInputTokens;
+  }
+
+  if (toolUseInputTokens !== undefined) {
+    normalized.toolUseInputTokens = toolUseInputTokens;
   }
 
   return normalized;

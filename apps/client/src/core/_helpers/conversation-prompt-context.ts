@@ -11,6 +11,7 @@ import type {
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
 import { createInternalTaskModelExecution } from "../internal-task-model.js";
+import { observeAgentModelCall } from "../model-usage.js";
 import {
   compactTraceText,
   createTextSection,
@@ -355,23 +356,36 @@ const summarizeConversationHistory = async (
     }
 
     const transcript = createConversationTranscript(history);
-    const turn = await execution.adapter.startTurn({
-      model: execution.config.model,
-      systemPrompt: [
-        "You summarize prior chat context for a coding agent.",
-        "Extract only durable facts that matter for the next turn: user preferences, goals, decisions, relevant files, blockers, and unresolved follow-ups.",
-        "Keep the summary compact, factual, and grounded in the transcript.",
-        "Use plain Markdown bullets and do not invent anything.",
-      ].join("\n"),
-      userPrompt: [
-        `Current task: ${task}`,
-        "Summarize the earlier conversation below so the next task can continue with the right context.",
-        "Transcript:",
-        transcript.slice(0, MAX_CONVERSATION_SUMMARY_INPUT_CHARS),
-      ].join("\n\n"),
-      tools: [],
-      ...(signal ? { signal } : {}),
-    });
+    const systemPrompt = [
+      "You summarize prior chat context for a coding agent.",
+      "Extract only durable facts that matter for the next turn: user preferences, goals, decisions, relevant files, blockers, and unresolved follow-ups.",
+      "Keep the summary compact, factual, and grounded in the transcript.",
+      "Use plain Markdown bullets and do not invent anything.",
+    ].join("\n");
+    const userPrompt = [
+      `Current task: ${task}`,
+      "Summarize the earlier conversation below so the next task can continue with the right context.",
+      "Transcript:",
+      transcript.slice(0, MAX_CONVERSATION_SUMMARY_INPUT_CHARS),
+    ].join("\n\n");
+    const turn = await observeAgentModelCall(
+      {
+        stage: "conversation-summary",
+        provider: execution.config.provider,
+        model: execution.config.model,
+        operation: "summarizeConversationHistory",
+        requestPayload: { systemPrompt, userPrompt, tools: [] },
+      },
+      async (onRequestAttempt) =>
+        await execution.adapter.startTurn({
+          model: execution.config.model,
+          systemPrompt,
+          userPrompt,
+          tools: [],
+          ...(signal ? { signal } : {}),
+          ...(onRequestAttempt ? { onRequestAttempt } : {}),
+        }),
+    );
 
     const summary = turn.text.trim();
 

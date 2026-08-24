@@ -215,6 +215,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
         provider: "langdock",
         operation: "startTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = this.createRequest(params, this.messages, params.tools);
@@ -267,6 +268,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
         provider: "langdock",
         operation: "continueTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = this.createRequest(
@@ -325,6 +327,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
     const streamRequest: ChatCompletionCreateParamsStreaming = {
       ...request,
       stream: true,
+      stream_options: { include_usage: true },
     };
     const textParts: string[] = [];
     const toolCallsByIndex = new Map<number, LangdockStreamingToolCall>();
@@ -476,6 +479,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
   private normalizeResponse(response: ChatCompletion): AgentModelTurn {
     const message = response.choices[0]?.message;
     const toolCalls: AgentModelToolCall[] = [];
+    const usage = normalizeOpenAIUsage(response.usage);
 
     for (const toolCall of message?.tool_calls ?? []) {
       if (toolCall.type !== "function") {
@@ -495,6 +499,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
     return {
       text: message?.content?.trim() ?? "",
       toolCalls,
+      ...(usage ? { usage } : {}),
     };
   }
 }

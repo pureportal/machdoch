@@ -2,6 +2,7 @@ import { rememberUserGlobalMemory } from "./env.js";
 import { compactTraceText } from "./_helpers/runtime-text.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createInternalTaskModelExecution } from "./internal-task-model.js";
+import { observeAgentModelCall } from "./model-usage.js";
 import {
   MAX_SESSION_MEMORY_ENTRIES,
   normalizeConversationMemoryEntries,
@@ -390,22 +391,40 @@ const extractModelMemoryCandidates = async (
         { once: true },
       );
     });
+    const systemPrompt = createMemoryReviewSystemPrompt();
+    const userPrompt = createMemoryReviewUserPrompt(
+      task,
+      result,
+      existingEntries,
+      enabled,
+    );
     let turn;
 
     try {
       turn = await Promise.race([
-        execution.adapter.startTurn({
-          model: execution.config.model,
-          systemPrompt: createMemoryReviewSystemPrompt(),
-          userPrompt: createMemoryReviewUserPrompt(
-            task,
-            result,
-            existingEntries,
-            enabled,
-          ),
-          tools: [decisionTool],
-          signal,
-        }),
+        observeAgentModelCall(
+          {
+            stage: "memory-consolidation",
+            provider: execution.config.provider,
+            model: execution.config.model,
+            operation: "extractMemoryCandidates",
+            requestPayload: {
+              systemPrompt,
+              userPrompt,
+              tools: [decisionTool],
+            },
+            toolDefinitions: [decisionTool],
+          },
+          async (onRequestAttempt) =>
+            await execution.adapter.startTurn({
+              model: execution.config.model,
+              systemPrompt,
+              userPrompt,
+              tools: [decisionTool],
+              signal,
+              ...(onRequestAttempt ? { onRequestAttempt } : {}),
+            }),
+        ),
         aborted,
       ]);
     } finally {

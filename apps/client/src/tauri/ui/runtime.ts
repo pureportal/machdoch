@@ -1831,6 +1831,9 @@ const isTaskExecutionTokenUsage = (value: unknown): boolean => {
     value.outputTokens,
     value.totalTokens,
     value.cachedInputTokens,
+    value.cacheReadInputTokens,
+    value.cacheWriteInputTokens,
+    value.toolUseInputTokens,
     value.reasoningTokens,
   ].every(
     (entry) =>

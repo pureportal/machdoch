@@ -54,6 +54,7 @@ import { normalizeOptionalString } from "../../helpers/normalize-optional-string
 import { loadRuntimeConfig } from "../config.js";
 import { loadWorkspaceEnv } from "../env.js";
 import { createInternalTaskModelExecution } from "../internal-task-model.js";
+import { observeAgentModelCall } from "../model-usage.js";
 import type { AgentModelImageInput } from "../types.js";
 import {
   getEnabledMcpServer,
@@ -416,16 +417,29 @@ export const createProviderSamplingHandler: McpSamplingHandler = async ({
   const imageInputs: AgentModelImageInput[] = [];
   const requestedMaxChars = Math.max(1, request.params.maxTokens) * 4;
   const maxChars = Math.min(server.maxResponseChars, requestedMaxChars);
-  const turn = await execution.adapter.startTurn({
-    model: execution.config.model,
-    systemPrompt:
-      request.params.systemPrompt ??
-      "Answer the MCP server sampling request. Do not call tools.",
-    userPrompt: createSamplingUserPrompt(request, imageInputs),
-    ...(imageInputs.length > 0 ? { imageInputs } : {}),
-    tools: [],
-    ...(signal ? { signal } : {}),
-  });
+  const systemPrompt =
+    request.params.systemPrompt ??
+    "Answer the MCP server sampling request. Do not call tools.";
+  const userPrompt = createSamplingUserPrompt(request, imageInputs);
+  const turn = await observeAgentModelCall(
+    {
+      stage: "mcp-sampling",
+      provider: execution.config.provider,
+      model: execution.config.model,
+      operation: "createMcpSamplingMessage",
+      requestPayload: { systemPrompt, userPrompt, imageInputs, tools: [] },
+    },
+    async (onRequestAttempt) =>
+      await execution.adapter.startTurn({
+        model: execution.config.model,
+        systemPrompt,
+        userPrompt,
+        ...(imageInputs.length > 0 ? { imageInputs } : {}),
+        tools: [],
+        ...(signal ? { signal } : {}),
+        ...(onRequestAttempt ? { onRequestAttempt } : {}),
+      }),
+  );
   const text = limitSamplingText(turn.text, maxChars);
   const truncated = text.length < turn.text.length;
 

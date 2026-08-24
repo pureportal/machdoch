@@ -375,6 +375,9 @@ const TOKEN_USAGE_KEYS = [
   "outputTokens",
   "totalTokens",
   "cachedInputTokens",
+  "cacheReadInputTokens",
+  "cacheWriteInputTokens",
+  "toolUseInputTokens",
   "reasoningTokens",
 ] as const satisfies ReadonlyArray<keyof TaskExecutionTokenUsage>;
 

@@ -308,6 +308,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
         provider: "openai",
         operation: "startTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = {
@@ -370,6 +371,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
         provider: "openai",
         operation: "continueTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = {
@@ -676,6 +678,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
 
   private normalizeResponse(response: OpenAIResponseLike): AgentModelTurn {
     const toolCalls: AgentModelToolCall[] = [];
+    const usage = normalizeOpenAIUsage(response.usage);
 
     for (const outputItem of response.output ?? []) {
       if (outputItem.type !== "function_call") {
@@ -713,6 +716,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
     return {
       text: getOpenAIResponseText(response),
       toolCalls,
+      ...(usage ? { usage } : {}),
     };
   }
 }

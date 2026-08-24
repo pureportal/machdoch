@@ -156,6 +156,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         provider: this.provider,
         operation: "startTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = {
@@ -225,6 +226,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         provider: this.provider,
         operation: "continueTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = {
@@ -417,10 +419,11 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
   }
 
   private normalizeResponse(
-    message: Pick<AnthropicMessage, "content" | "stop_reason">,
+    message: Pick<AnthropicMessage, "content" | "stop_reason" | "usage">,
   ): AgentModelTurn {
     const toolCalls: AgentModelToolCall[] = [];
     const textParts: string[] = [];
+    const usage = normalizeAnthropicUsage(message.usage);
 
     for (const contentBlock of message.content) {
       if (
@@ -449,6 +452,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       text: textParts.join("\n").trim(),
       toolCalls,
       ...(message.stop_reason ? { stopReason: message.stop_reason } : {}),
+      ...(usage ? { usage } : {}),
     };
   }
 }
