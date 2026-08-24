@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
@@ -23,8 +23,8 @@ describe("resolveLangdockBaseURL", () => {
   it("normalizes Langdock Cloud roots with the configured region", () => {
     expect(
       resolveLangdockBaseURL({
-        LANGDOCK_BASE_URL: "https://api.langdock.com/",
-        LANGDOCK_REGION: "us",
+        MACHDOCH_LANGDOCK_BASE_URL: "https://api.langdock.com/",
+        MACHDOCH_LANGDOCK_REGION: "us",
       }),
     ).toBe("https://api.langdock.com/openai/us/v1");
   });
@@ -32,8 +32,8 @@ describe("resolveLangdockBaseURL", () => {
   it("normalizes dedicated deployment roots with the configured region", () => {
     expect(
       resolveLangdockBaseURL({
-        LANGDOCK_BASE_URL: "https://langdock.example.com/api/public/",
-        LANGDOCK_REGION: "us",
+        MACHDOCH_LANGDOCK_BASE_URL: "https://langdock.example.com/api/public/",
+        MACHDOCH_LANGDOCK_REGION: "us",
       }),
     ).toBe("https://langdock.example.com/api/public/openai/us/v1");
   });
@@ -41,7 +41,7 @@ describe("resolveLangdockBaseURL", () => {
   it("preserves OpenAI-compatible bases and strips endpoint suffixes", () => {
     expect(
       resolveLangdockBaseURL({
-        LANGDOCK_BASE_URL:
+        MACHDOCH_LANGDOCK_BASE_URL:
           "https://api.langdock.com/openai/eu/v1/chat/completions",
       }),
     ).toBe("https://api.langdock.com/openai/eu/v1");
@@ -49,8 +49,8 @@ describe("resolveLangdockBaseURL", () => {
 
   it("derives provider-specific bases from a dedicated deployment root", () => {
     const env = {
-      LANGDOCK_BASE_URL: "https://langdock.example.com/api/public",
-      LANGDOCK_REGION: "us",
+      MACHDOCH_LANGDOCK_BASE_URL: "https://langdock.example.com/api/public",
+      MACHDOCH_LANGDOCK_REGION: "us",
     };
 
     expect(resolveLangdockBaseURL(env)).toBe(
@@ -66,9 +66,9 @@ describe("resolveLangdockBaseURL", () => {
 
   it("derives sibling provider bases from an already configured Langdock endpoint", () => {
     const env = {
-      LANGDOCK_BASE_URL:
+      MACHDOCH_LANGDOCK_BASE_URL:
         "https://api.langdock.com/google/us/v1beta/models/gemini-2.5-pro:generateContent",
-      LANGDOCK_REGION: "eu",
+      MACHDOCH_LANGDOCK_REGION: "eu",
     };
 
     expect(resolveLangdockBaseURL(env)).toBe(
@@ -127,17 +127,12 @@ describe("createProviderAdapter Langdock routing", () => {
 
   beforeEach(async () => {
     workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-langdock-"));
-    await writeFile(
-      join(workspaceRoot, ".env"),
-      [
-        "LANGDOCK_API_KEY=sk-real-langdock-test",
-        "LANGDOCK_BASE_URL=https://api.langdock.com",
-      ].join("\n"),
-      "utf8",
-    );
+    vi.stubEnv("LANGDOCK_API_KEY", "sk-real-langdock-test");
+    vi.stubEnv("MACHDOCH_LANGDOCK_BASE_URL", "https://api.langdock.com");
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await rm(workspaceRoot, { force: true, recursive: true });
   });
 

@@ -15,7 +15,7 @@ import {
   loadUserReviewModelSettings,
   loadUserWebSearchApiKeys,
   loadUserWebSearchSettings,
-  loadWorkspaceEnv,
+  loadRuntimeEnvironment,
   rememberUserGlobalMemory,
   saveUserAgentCliPath,
   saveUserApiKey,
@@ -143,8 +143,8 @@ describe("loadProcessEnv", () => {
   });
 });
 
-describe("loadWorkspaceEnv", () => {
-  it("loads workspace .env values and process overrides for runtime config resolution", async () => {
+describe("loadRuntimeEnvironment", () => {
+  it("loads saved provider settings and current-process overrides", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
     const userConfigDirectory = join(workspaceRoot, ".user-config");
@@ -162,22 +162,18 @@ describe("loadWorkspaceEnv", () => {
         2,
       )}\n`,
     );
-    await writeFile(
-      join(workspaceRoot, ".env"),
-      ["OPENAI_API_KEY=sk-workspace", "MACHDOCH_MODEL=workspace-model"].join(
-        "\n",
-      ),
-    );
+    process.env.OPENAI_API_KEY = "  ";
+    process.env.MACHDOCH_MODEL = "process-model";
     process.env.MACHDOCH_MODE = "machdoch";
 
-    const env = await loadWorkspaceEnv(workspaceRoot);
+    const env = await loadRuntimeEnvironment();
 
-    expect(env.OPENAI_API_KEY).toBe("sk-workspace");
-    expect(env.MACHDOCH_MODEL).toBe("workspace-model");
+    expect(env.OPENAI_API_KEY).toBe("sk-test-user-config-123456");
+    expect(env.MACHDOCH_MODEL).toBe("process-model");
     expect(env.MACHDOCH_MODE).toBe("machdoch");
   });
 
-  it("does not load agent CLI binary paths from workspace .env files", async () => {
+  it("does not parse workspace .env files", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
     const untrustedBinaryPath = join(workspaceRoot, "untrusted-codex.cmd");
@@ -193,13 +189,13 @@ describe("loadWorkspaceEnv", () => {
       ].join("\n"),
     );
 
-    let env = await loadWorkspaceEnv(workspaceRoot);
+    let env = await loadRuntimeEnvironment();
 
     expect(env.MACHDOCH_CODEX_CLI_PATH).toBeUndefined();
-    expect(env.MACHDOCH_MODEL).toBe("workspace-model");
+    expect(env.MACHDOCH_MODEL).toBeUndefined();
 
     process.env.MACHDOCH_CODEX_CLI_PATH = trustedBinaryPath;
-    env = await loadWorkspaceEnv(workspaceRoot);
+    env = await loadRuntimeEnvironment();
 
     expect(env.MACHDOCH_CODEX_CLI_PATH).toBe(trustedBinaryPath);
   });
@@ -218,7 +214,7 @@ describe("user config API key helpers", () => {
     await saveUserApiKey("quiver", "quiver-test-key-1234567890");
     await saveUserApiKey("recraft", "recraft-test-key-1234567890");
     const apiKeys = await loadUserApiKeys();
-    const env = await loadWorkspaceEnv(configDirectory);
+    const env = await loadRuntimeEnvironment();
     const availability = await getUserProviderAvailability();
 
     expect(savedPath).toBe(join(configDirectory, "user-config.json"));
@@ -246,7 +242,7 @@ describe("user config API key helpers", () => {
 
     const savedPath = await saveUserAgentCliPath("codex-cli", binaryPath);
     const paths = await loadUserAgentCliPaths();
-    const env = await loadWorkspaceEnv(configDirectory);
+    const env = await loadRuntimeEnvironment();
 
     expect(savedPath).toBe(join(configDirectory, "user-config.json"));
     expect(paths["codex-cli"]).toBe(binaryPath);
@@ -283,7 +279,7 @@ describe("user config API key helpers", () => {
     await saveUserWebSearchApiKey("serper", "serper-test-key-1234567890");
     await saveUserWebSearchActiveProvider("serper");
 
-    const env = await loadWorkspaceEnv(configDirectory);
+    const env = await loadRuntimeEnvironment();
     const settings = await loadUserWebSearchSettings();
 
     expect(env.SERPER_API_KEY).toBe("serper-test-key-1234567890");

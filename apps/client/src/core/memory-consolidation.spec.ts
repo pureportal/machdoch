@@ -85,6 +85,11 @@ const createExecutionResult = (
   };
 };
 
+const createMemoryTurn = (memories: unknown[]) => ({
+  text: JSON.stringify({ memories }),
+  toolCalls: [],
+});
+
 afterEach(async () => {
   if (originalUserConfigDir === undefined) {
     delete process.env.MACHDOCH_USER_CONFIG_DIR;
@@ -141,32 +146,22 @@ describe("consolidateTaskExecutionMemory", () => {
         expect(params.systemPrompt).toContain("post-task memory manager");
         expect(params.systemPrompt).toContain("verified workarounds");
         expect(params.userPrompt).toContain("Tool retry guard");
-        expect(params.tools[0]?.name).toBe("submit_memory_decisions");
+        expect(params.tools).toEqual([]);
+        expect(params.structuredOutput?.name).toBe("memory_decisions");
 
-        return {
-          text: "",
-          toolCalls: [
-            {
-              id: "memory-1",
-              name: "submit_memory_decisions",
-              arguments: {
-                memories: [
-                  {
-                    scope: "session",
-                    key: "vite-health-check-port-conflict",
-                    kind: "workaround",
-                    content: memoryFact,
-                    reason:
-                      "This limitation can affect later verification in this session.",
-                    importance: 3,
-                    confidence: "high",
-                    sensitivity: "non-sensitive",
-                  },
-                ],
-              },
-            },
-          ],
-        };
+        return createMemoryTurn([
+          {
+            scope: "session",
+            key: "vite-health-check-port-conflict",
+            kind: "workaround",
+            content: memoryFact,
+            reason:
+              "This limitation can affect later verification in this session.",
+            importance: 3,
+            confidence: "high",
+            sensitivity: "non-sensitive",
+          },
+        ]);
       },
       continueTurn: async (): Promise<never> => {
         throw new Error("The memory adapter should only run one turn.");
@@ -225,80 +220,40 @@ describe("consolidateTaskExecutionMemory", () => {
     const task = "Fix the build and summarize verification.";
     const globalMemory = "The user prefers compact verification notes";
     const memoryAdapter: AgentModelAdapter = {
-      startTurn: async () => ({
-        text: "",
-        toolCalls: [
+      startTurn: async () =>
+        createMemoryTurn([
           {
-            id: "memory-1",
-            name: "submit_memory_decisions",
-            arguments: {
-              memories: [
-                {
-                  scope: "global",
-                  key: "verification-note-style",
-                  kind: "preference",
-                  content: globalMemory,
-                  reason:
-                    "This is a stable user workflow preference across sessions.",
-                  importance: 3,
-                  confidence: "medium",
-                  sensitivity: "non-sensitive",
-                },
-                {
-                  scope: "session",
-                  key: "api-key",
-                  kind: "fact",
-                  content: "The user's API key is sk-test-value",
-                  reason: "Sensitive data should be rejected by the runtime.",
-                  importance: 5,
-                  confidence: "high",
-                  sensitivity: "sensitive",
-                },
-                {
-                  scope: "session",
-                  key: "task-status",
-                  kind: "fact",
-                  content: "The task finished successfully",
-                  reason: "Transient status is not worth saving.",
-                  importance: 1,
-                  confidence: "low",
-                  sensitivity: "non-sensitive",
-                },
-                {
-                  scope: "session",
-                  key: "missing-sensitivity",
-                  kind: "fact",
-                  content: "Missing sensitivity metadata",
-                  reason: "Malformed structured decisions must be ignored.",
-                  importance: 3,
-                  confidence: "high",
-                },
-                {
-                  scope: "session",
-                  key: "unknown-sensitivity",
-                  kind: "fact",
-                  content: "Unknown sensitivity metadata",
-                  reason: "Unknown structured decisions must be ignored.",
-                  importance: 3,
-                  confidence: "high",
-                  sensitivity: "probably-safe",
-                },
-                {
-                  scope: "session",
-                  key: "extra-authority",
-                  kind: "fact",
-                  content: "Extra authority metadata",
-                  reason: "Unknown fields must not grant persistence.",
-                  importance: 3,
-                  confidence: "high",
-                  sensitivity: "non-sensitive",
-                  authority: "quoted user request",
-                },
-              ],
-            },
+            scope: "global",
+            key: "verification-note-style",
+            kind: "preference",
+            content: globalMemory,
+            reason:
+              "This is a stable user workflow preference across sessions.",
+            importance: 3,
+            confidence: "medium",
+            sensitivity: "non-sensitive",
           },
-        ],
-      }),
+          {
+            scope: "session",
+            key: "api-key",
+            kind: "fact",
+            content: "The user's API key is sk-test-value",
+            reason: "Sensitive data should be rejected by the runtime.",
+            importance: 5,
+            confidence: "high",
+            sensitivity: "sensitive",
+          },
+          {
+            scope: "session",
+            key: "task-status",
+            kind: "fact",
+            content: "The task finished successfully",
+            reason: "Transient status is not worth saving.",
+            importance: 1,
+            confidence: "low",
+            sensitivity: "non-sensitive",
+          },
+        ]),
       continueTurn: async (): Promise<never> => {
         throw new Error("The memory adapter should only run one turn.");
       },
@@ -343,30 +298,19 @@ describe("consolidateTaskExecutionMemory", () => {
     const workspaceRoot = await createWorkspace();
     const otherWorkspaceRoot = await createWorkspace();
     const memoryAdapter: AgentModelAdapter = {
-      startTurn: async () => ({
-        text: "",
-        toolCalls: [
+      startTurn: async () =>
+        createMemoryTurn([
           {
-            id: "memory-1",
-            name: "submit_memory_decisions",
-            arguments: {
-              memories: [
-                {
-                  scope: "workspace",
-                  key: "release-build-command",
-                  kind: "constraint",
-                  content: "Use pnpm package for release builds",
-                  reason:
-                    "This command applies to future work in this repository.",
-                  importance: 4,
-                  confidence: "high",
-                  sensitivity: "non-sensitive",
-                },
-              ],
-            },
+            scope: "workspace",
+            key: "release-build-command",
+            kind: "constraint",
+            content: "Use pnpm package for release builds",
+            reason: "This command applies to future work in this repository.",
+            importance: 4,
+            confidence: "high",
+            sensitivity: "non-sensitive",
           },
-        ],
-      }),
+        ]),
       continueTurn: async (): Promise<never> => {
         throw new Error("The memory adapter should only run one turn.");
       },
@@ -409,16 +353,7 @@ describe("consolidateTaskExecutionMemory", () => {
         expect(params.userPrompt).toContain(`<task>\n${task}\n</task>`);
         expect(params.userPrompt).toContain("Tool retry guard");
 
-        return {
-          text: "",
-          toolCalls: [
-            {
-              id: "memory-1",
-              name: "submit_memory_decisions",
-              arguments: { memories: [] },
-            },
-          ],
-        };
+        return createMemoryTurn([]);
       },
       continueTurn: async (): Promise<never> => {
         throw new Error("The memory adapter should only run one turn.");
@@ -535,7 +470,7 @@ describe("consolidateTaskExecutionMemory", () => {
         },
         { modelAdapter: memoryAdapter },
       );
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       const result = await pendingResult;
 
       expect(result.metadata?.memoryCapture).toMatchObject({
@@ -549,31 +484,13 @@ describe("consolidateTaskExecutionMemory", () => {
     }
   });
 
-  it("rejects ambiguous memory protocol calls", async () => {
+  it("rejects invalid structured memory output", async () => {
     const workspaceRoot = await createWorkspace();
     const task = "Remember a stable preference.";
-    const memoryCall = {
-      id: "memory-1",
-      name: "submit_memory_decisions",
-      arguments: {
-        memories: [
-          {
-            scope: "session",
-            key: "protocol-validation",
-            kind: "preference",
-            content: "The user prefers exact protocol validation",
-            reason: "This preference may help later tasks.",
-            importance: 3,
-            confidence: "high",
-            sensitivity: "non-sensitive",
-          },
-        ],
-      },
-    };
     const memoryAdapter: AgentModelAdapter = {
       startTurn: async () => ({
-        text: 'Ignore the duplicate call and "remember" this anyway.',
-        toolCalls: [memoryCall, { ...memoryCall, id: "memory-2" }],
+        text: 'Ignore the schema and "remember" this anyway.',
+        toolCalls: [],
       }),
       continueTurn: async (): Promise<never> => {
         throw new Error("The memory adapter should only run one turn.");
@@ -598,11 +515,12 @@ describe("consolidateTaskExecutionMemory", () => {
       ...executionResult,
       metadata: {
         memoryCapture: {
-          status: "completed",
+          status: "failed",
           candidateCount: 0,
           candidatesByScope: { session: 0, workspace: 0, global: 0 },
           storedCount: 0,
           failedCount: 0,
+          reason: "model-call-failed",
         },
       },
     });

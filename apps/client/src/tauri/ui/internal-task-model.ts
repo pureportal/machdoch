@@ -29,13 +29,6 @@ export interface InternalTaskProviderModels {
   models: CatalogModel[];
 }
 
-const INTERNAL_TASK_PROVIDERS = new Set<RuntimeProvider>([
-  "openai",
-  "anthropic",
-  "google",
-  "langdock",
-]);
-
 export type InternalDesktopTaskContext = Omit<
   Parameters<typeof runDesktopTask>[2],
   "provider" | "model"
@@ -63,7 +56,6 @@ export const getInternalTaskProviderModels = (
 
   return SUPPORTED_PROVIDER_ORDER.flatMap((provider) => {
     if (
-      !INTERNAL_TASK_PROVIDERS.has(provider) ||
       !configuredProviders.has(provider)
     ) {
       return [];
@@ -111,7 +103,6 @@ export const resolveInternalTaskModelSelection = (
 
   if (
     settings.provider &&
-    INTERNAL_TASK_PROVIDERS.has(settings.provider) &&
     savedProviderConfigured &&
     savedProviderCatalog?.available === false &&
     savedModel

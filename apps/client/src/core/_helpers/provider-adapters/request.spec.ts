@@ -201,7 +201,7 @@ describe("withProviderRequest", () => {
         },
       ),
     ).rejects.toThrow(
-      /LANGDOCK_BASE_URL.*https:\/\/api\.langdock\.com\/openai\/eu\/v1.*Original error: 400 No body/s,
+      /MACHDOCH_LANGDOCK_BASE_URL.*https:\/\/api\.langdock\.com\/openai\/eu\/v1.*Original error: 400 No body/s,
     );
   });
 

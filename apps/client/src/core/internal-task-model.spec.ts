@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseInternalTaskStructuredOutput,
   requireInternalTaskRuntimeConfig,
   resolveInternalTaskRuntimeConfig,
 } from "./internal-task-model.js";
@@ -52,5 +53,33 @@ describe("internal task runtime model", () => {
     expect(() => requireInternalTaskRuntimeConfig(config)).toThrow(
       "Choose an internal task model",
     );
+  });
+
+  it("validates structured internal-task results before use", () => {
+    const structuredOutput = {
+      name: "memory_decisions",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          memories: { type: "array", items: { type: "string" } },
+        },
+        required: ["memories"],
+      },
+      strict: true,
+    };
+
+    expect(
+      parseInternalTaskStructuredOutput<{ memories: string[] }>(
+        '{"memories":["fact"]}',
+        structuredOutput,
+      ),
+    ).toEqual({ memories: ["fact"] });
+    expect(() =>
+      parseInternalTaskStructuredOutput(
+        '{"memories":"fact"}',
+        structuredOutput,
+      ),
+    ).toThrow("does not match memory_decisions");
   });
 });

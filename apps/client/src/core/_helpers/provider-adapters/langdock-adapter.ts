@@ -102,7 +102,18 @@ export const createLangdockReasoningConfig = (
 export const createLangdockStructuredOutputConfig = (
   structuredOutput: AgentModelStartParams["structuredOutput"],
 ): Pick<ChatCompletionCreateParamsNonStreaming, "response_format"> => {
-  return structuredOutput ? { response_format: { type: "json_object" } } : {};
+  return structuredOutput
+    ? {
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: structuredOutput.name,
+            schema: structuredOutput.schema as Record<string, unknown>,
+            strict: structuredOutput.strict !== false,
+          },
+        },
+      }
+    : {};
 };
 
 const createLangdockUserMessage = (

@@ -2102,7 +2102,7 @@ describe("executeTask", () => {
     const progress: TaskExecutionProgress[] = [];
     const providerError = Object.assign(
       new Error(
-        "The langdock provider returned 400 No body. Check LANGDOCK_BASE_URL.",
+        "The langdock provider returned 400 No body. Check MACHDOCH_LANGDOCK_BASE_URL.",
       ),
       {
         status: 400,
@@ -2149,7 +2149,7 @@ describe("executeTask", () => {
       "Code: bad_request",
       "Request ID: req_langdock_123",
       "Delivery: DELIVERY_INDETERMINATE (automatic replay prohibited)",
-      "Error: The langdock provider returned 400 No body. Check LANGDOCK_BASE_URL.",
+      "Error: The langdock provider returned 400 No body. Check MACHDOCH_LANGDOCK_BASE_URL.",
     ]);
     expect(result.metadata?.instructionDeliveryReceipts).toEqual([
       expect.objectContaining({

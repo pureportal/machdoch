@@ -1,7 +1,10 @@
 import { rememberUserGlobalMemory } from "./env.js";
 import { compactTraceText } from "./_helpers/runtime-text.js";
-import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
-import { createInternalTaskModelExecution } from "./internal-task-model.js";
+import {
+  executeInternalTaskModelInference,
+  parseInternalTaskStructuredOutput,
+  resolveInternalTaskRuntimeConfig,
+} from "./internal-task-model.js";
 import { observeAgentModelCall } from "./model-usage.js";
 import {
   MAX_SESSION_MEMORY_ENTRIES,
@@ -17,8 +20,7 @@ import {
 } from "./workspace-memory.js";
 import type {
   AgentModelAdapter,
-  AgentModelToolCall,
-  AgentModelToolSpec,
+  AgentModelStructuredOutput,
   ConversationMemoryKind,
   ConversationMemoryScope,
   TaskConversationContext,
@@ -34,8 +36,8 @@ const MAX_MEMORY_REVIEW_FACT_LENGTH = 220;
 const MAX_MEMORY_CANDIDATES = 4;
 const MAX_EXISTING_MEMORY_PER_SCOPE = 6;
 const MAX_EXISTING_MEMORY_CONTENT_LENGTH = 120;
-const MAX_MEMORY_EXTRACTION_DURATION_MS = 10_000;
-const MEMORY_DECISION_TOOL_NAME = "submit_memory_decisions";
+const MAX_MEMORY_EXTRACTION_DURATION_MS = 60_000;
+const MEMORY_DECISION_OUTPUT_NAME = "memory_decisions";
 
 interface MemoryCandidate extends ConversationMemoryMetadata {
   scope: ConversationMemoryScope;
@@ -73,11 +75,10 @@ const upsertMemoryUpdate = (
   ];
 };
 
-const createMemoryDecisionTool = (): AgentModelToolSpec => ({
-  name: MEMORY_DECISION_TOOL_NAME,
-  description:
-    "Report only high-signal memories that should improve future task execution.",
-  inputSchema: {
+const createMemoryDecisionOutput = (): AgentModelStructuredOutput => ({
+  name: MEMORY_DECISION_OUTPUT_NAME,
+  strict: true,
+  schema: {
     type: "object",
     additionalProperties: false,
     properties: {
@@ -147,7 +148,7 @@ const createMemoryDecisionTool = (): AgentModelToolSpec => ({
 const createMemoryReviewSystemPrompt = (): string => {
   return [
     "You are Machdoch's post-task memory manager.",
-    "Call `submit_memory_decisions` exactly once. Do not write prose.",
+    "Return only the structured memory decision output. Do not write prose.",
     "Save session memory for current-chat context that will matter on a later turn.",
     "Save workspace memory for durable project constraints, decisions, commands, integrations, and verified workarounds that should matter across sessions in this workspace.",
     "Save global memory only for stable cross-workspace user preferences or identity.",
@@ -262,19 +263,21 @@ const isMemoryKind = (value: unknown): value is ConversationMemoryKind => {
 };
 
 const parseMemoryDecisionCandidates = (
-  toolCall: AgentModelToolCall | undefined,
+  value: unknown,
   enabled: Record<ConversationMemoryScope, boolean>,
 ): MemoryCandidate[] => {
   if (
-    !toolCall ||
-    Object.keys(toolCall.arguments).length !== 1 ||
-    !Object.hasOwn(toolCall.arguments, "memories") ||
-    !Array.isArray(toolCall.arguments.memories)
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    !Object.hasOwn(value, "memories") ||
+    !Array.isArray((value as { memories?: unknown }).memories)
   ) {
     return [];
   }
 
-  const candidates = toolCall.arguments.memories
+  const candidates = (value as { memories: unknown[] }).memories
     .slice(0, MAX_MEMORY_CANDIDATES)
     .flatMap((memory): MemoryCandidate[] => {
       if (!memory || typeof memory !== "object") {
@@ -361,18 +364,14 @@ const extractModelMemoryCandidates = async (
   }
 
   try {
-    const decisionTool = createMemoryDecisionTool();
-    const execution = await createInternalTaskModelExecution(
-      config,
-      [decisionTool],
-      options.modelAdapter,
-    );
+    const decisionOutput = createMemoryDecisionOutput();
+    const internalConfig = resolveInternalTaskRuntimeConfig(config);
 
-    if (!execution) {
+    if (!internalConfig) {
       return {
         status: "unavailable",
         candidates: [],
-        reason: "internal-model-adapter-unavailable",
+        reason: "internal-model-unavailable",
       };
     }
 
@@ -398,47 +397,45 @@ const extractModelMemoryCandidates = async (
       existingEntries,
       enabled,
     );
-    let turn;
+    let inference;
 
     try {
-      turn = await Promise.race([
+      inference = await Promise.race([
         observeAgentModelCall(
           {
             stage: "memory-consolidation",
-            provider: execution.config.provider,
-            model: execution.config.model,
+            provider: internalConfig.provider,
+            model: internalConfig.model,
             operation: "extractMemoryCandidates",
             requestPayload: {
               systemPrompt,
               userPrompt,
-              tools: [decisionTool],
+              structuredOutput: decisionOutput,
             },
-            toolDefinitions: [decisionTool],
           },
           async (onRequestAttempt) =>
-            await execution.adapter.startTurn({
-              model: execution.config.model,
+            await executeInternalTaskModelInference(config, {
               systemPrompt,
               userPrompt,
-              tools: [decisionTool],
+              structuredOutput: decisionOutput,
               signal,
               ...(onRequestAttempt ? { onRequestAttempt } : {}),
-            }),
+            }, options.modelAdapter),
         ),
         aborted,
       ]);
     } finally {
       clearTimeout(timeout);
     }
-    const decisionCall =
-      turn.toolCalls.length === 1 &&
-      turn.toolCalls[0]?.name === MEMORY_DECISION_TOOL_NAME
-        ? turn.toolCalls[0]
-        : undefined;
-
     return {
       status: "completed",
-      candidates: parseMemoryDecisionCandidates(decisionCall, enabled),
+      candidates: parseMemoryDecisionCandidates(
+        parseInternalTaskStructuredOutput<{ memories: unknown[] }>(
+          inference.text,
+          decisionOutput,
+        ),
+        enabled,
+      ),
     };
   } catch (error) {
     console.error("Post-task memory extraction failed", error);
@@ -500,7 +497,14 @@ export const consolidateTaskExecutionMemory = async (
     return result;
   }
 
-  if (!options.modelAdapter && !isAgentCliProvider(config.provider)) {
+  const internalProvider = config.internalTaskModel.provider;
+  if (
+    !options.modelAdapter &&
+    (internalProvider === "unconfigured" ||
+      !config.providerAvailability.some(
+        (entry) => entry.provider === internalProvider && entry.configured,
+      ))
+  ) {
     return result;
   }
 

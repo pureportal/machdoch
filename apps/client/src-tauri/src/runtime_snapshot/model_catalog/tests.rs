@@ -591,14 +591,14 @@ mod model_catalog_parser_tests {
             "https://api.langdock.com/openai/eu/v1"
         );
 
-        env.insert("LANGDOCK_REGION".to_string(), "US".to_string());
+        env.insert("MACHDOCH_LANGDOCK_REGION".to_string(), "US".to_string());
         assert_eq!(
             resolve_langdock_base_url(&env),
             "https://api.langdock.com/openai/us/v1"
         );
 
         env.insert(
-            "LANGDOCK_BASE_URL".to_string(),
+            "MACHDOCH_LANGDOCK_BASE_URL".to_string(),
             " https://example.test/api/public/// ".to_string(),
         );
         assert_eq!(
@@ -615,7 +615,7 @@ mod model_catalog_parser_tests {
         );
 
         env.insert(
-            "LANGDOCK_BASE_URL".to_string(),
+            "MACHDOCH_LANGDOCK_BASE_URL".to_string(),
             "https://api.langdock.com/google/eu/v1beta/models/gemini-2.5-pro:generateContent"
                 .to_string(),
         );

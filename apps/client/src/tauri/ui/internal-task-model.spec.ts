@@ -132,7 +132,7 @@ describe("internal task model selection", () => {
     ).toBeNull();
   });
 
-  it("does not retain a delegated CLI as the internal task provider", () => {
+  it("preserves a configured CLI as the internal task provider", () => {
     const cliAvailability = [
       ...availability,
       { provider: "codex-cli" as const, configured: true },
@@ -155,7 +155,7 @@ describe("internal task model selection", () => {
         cliAvailability,
         cliCatalog,
       ),
-    ).toEqual({ provider: "openai", model: "gpt-5.5" });
+    ).toEqual({ provider: "codex-cli", model: "gpt-5.6-sol" });
   });
 
   it("runs internal tasks with the resolved provider and model", async () => {
