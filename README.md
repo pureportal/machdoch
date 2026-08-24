@@ -6,13 +6,13 @@
 </div>
 
 <p align="center">
-  <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange" />
+  <img alt="Status: active development" src="https://img.shields.io/badge/status-active%20development-orange" />
   <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&amp;logoColor=white" />
   <img alt="Linux x64" src="https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&amp;logoColor=black" />
 </p>
 
 > [!WARNING]
-> Machdoch is pre-alpha software. Expect bugs and changes between releases. In **Machdoch mode**, the assistant can edit or delete files, run commands, control a browser, and interact with the desktop when enabled. Keep backups, begin with unimportant data, and review results before relying on them.
+> Machdoch is under active development. Expect bugs and changes between releases. In **Machdoch mode**, the assistant can edit or delete files, run commands, control a browser, and interact with the desktop when enabled. Keep backups, begin with unimportant data, and review results before relying on them.
 
 ## Contents
 
@@ -506,7 +506,7 @@ Chat history, memory, flows, schedules, and Media Studio data are also ordinary 
 
 ## Limitations
 
-- Machdoch is pre-alpha. Features, settings, data formats, provider models, and compatibility can change, and data loss is possible.
+- Machdoch is under active development. Features, settings, data formats, provider models, and compatibility can change, and data loss is possible.
 - Published installers currently cover Windows x64 and Linux x64 only. There is no published macOS or ARM package.
 - Normal chat requires an available cloud API provider or an authenticated supported CLI provider. Offline mode does not provide a local language model and blocks model-driven tasks.
 - AI models can misunderstand instructions, overlook files, invent facts, or incorrectly claim success. Tool verification reduces risk but does not eliminate it.
@@ -556,7 +556,7 @@ When reporting a problem, include the Machdoch version shown in the app, operati
 
 ## Updates and help
 
-Machdoch releases are distributed through GitHub. Before updating a pre-alpha installation, back up important work and use **Settings > Settings transfer > Export Encrypted File** for the supported global settings you want to preserve. Then read the release notes and install the new package for your platform.
+Machdoch releases are distributed through GitHub. Before updating Machdoch, back up important work and use **Settings > Settings transfer > Export Encrypted File** for the supported global settings you want to preserve. Then read the release notes and install the new package for your platform.
 
 - [Latest release and downloads](https://github.com/pureportal/machdoch/releases/latest)
 - [All releases and notes](https://github.com/pureportal/machdoch/releases)
@@ -569,11 +569,11 @@ Third-party model providers, MCP servers, websites, search services, media model
 
 Open `machdoch.code-workspace` to load the repository root, desktop client, and landing page together.
 
-| Path               | Purpose                                                                   |
-| ------------------ | ------------------------------------------------------------------------- |
-| `apps/client`  | Desktop application, CLI, Tauri crate, tests, and client-specific scripts |
-| `apps/landing` | Public landing page                                                       |
-| `assets/branding`  | Shared Machdoch branding                                                  |
+| Path              | Purpose                                                                   |
+| ----------------- | ------------------------------------------------------------------------- |
+| `apps/client`     | Desktop application, CLI, Tauri crate, tests, and client-specific scripts |
+| `apps/landing`    | Public landing page                                                       |
+| `assets/branding` | Shared Machdoch branding                                                  |
 
 Run workspace commands from the repository root:
 
