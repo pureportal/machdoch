@@ -989,7 +989,7 @@ const shouldRejectPrematureBlockedFinalResponse = (
 const createPrematureBlockedFinalResponseMessage = (): string => {
   return [
     "Premature final response rejected: the invoked prompt declares required tools, but no tool has run yet.",
-    "Treat the current `<original_task>` and `<effective_task>` as authoritative over prior conversation.",
+    "Treat the current task fields as authoritative over prior conversation.",
     "Use the available tools for the resolved context before blocking.",
     "Infer labels from repository URLs, domains, target folders, and file paths when they are provided instead of asking the user for a generic name.",
     "Only submit a blocked final response after a concrete attempted lookup/action or when an actually unavailable credential, tool, mode limit, or detail prevents progress.",

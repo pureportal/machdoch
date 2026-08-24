@@ -156,6 +156,9 @@ describe("autopilot monitor prompts", () => {
     expect(prompt).toContain("invoked prompt declares network research");
     expect(prompt).toContain("<verification_expectation>");
     expect(prompt).toContain("concrete verification evidence");
+    expect(prompt.match(/<current_task>/gu)).toHaveLength(1);
+    expect(prompt).not.toContain("<original_task>");
+    expect(prompt).not.toContain("<effective_task>");
   });
 
   it("requires the structured monitor tool call instead of parsing JSON from prose", () => {
