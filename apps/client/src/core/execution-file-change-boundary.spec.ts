@@ -37,7 +37,11 @@ const createConfig = (workspaceRoot: string): RuntimeConfig => ({
   providerAvailability: [],
   webSearch: { activeProvider: "none", providerAvailability: [] },
   reviewModel: { mode: "base" },
-  internalTaskModel: { provider: "unconfigured", model: "gpt-5.5" },
+  internalTaskModel: {
+    provider: "unconfigured",
+    model: "gpt-5.5",
+    reasoning: "default",
+  },
 });
 
 const createCustomizations = (

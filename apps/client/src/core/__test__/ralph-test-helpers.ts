@@ -135,6 +135,7 @@ export const runtimeConfig: RuntimeConfig = {
   internalTaskModel: {
     provider: "openai",
     model: "gpt-internal",
+    reasoning: "default",
   },
 };
 

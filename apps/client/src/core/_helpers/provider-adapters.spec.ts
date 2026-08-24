@@ -120,6 +120,7 @@ describe("createProviderAdapter Langdock routing", () => {
     internalTaskModel: {
       provider: "langdock",
       model,
+      reasoning: "default",
     },
   });
 

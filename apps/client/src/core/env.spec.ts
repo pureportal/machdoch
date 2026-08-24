@@ -404,24 +404,31 @@ describe("user config API key helpers", () => {
     const configDirectory = await createWorkspace();
     process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
 
-    expect(await loadUserInternalTaskModelSettings()).toEqual({});
+    expect(await loadUserInternalTaskModelSettings()).toEqual({
+      reasoning: "default",
+    });
 
     await saveUserInternalTaskModelSettings({
       provider: "google",
       model: "gemini-internal-fast",
+      reasoning: "high",
     });
 
     expect(await loadUserInternalTaskModelSettings()).toEqual({
       provider: "google",
       model: "gemini-internal-fast",
+      reasoning: "high",
     });
     expect(await loadUserReviewModelSettings()).toEqual({ mode: "base" });
 
     await saveUserInternalTaskModelSettings({
       provider: "google",
       model: " ",
+      reasoning: "low",
     });
 
-    expect(await loadUserInternalTaskModelSettings()).toEqual({});
+    expect(await loadUserInternalTaskModelSettings()).toEqual({
+      reasoning: "low",
+    });
   });
 });

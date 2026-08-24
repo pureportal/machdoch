@@ -42,7 +42,8 @@ const runtimeConfig: RuntimeConfig = {
   },
   internalTaskModel: {
     provider: "anthropic",
-    model: "claude-internal",
+    model: "claude-sonnet-5",
+    reasoning: "high",
   },
 };
 
@@ -161,8 +162,8 @@ describe("createTaskInterviewWithAgent", () => {
       expect.objectContaining({
         mode: "ask",
         provider: "anthropic",
-        model: "claude-internal",
-        reasoning: "medium",
+        model: "claude-sonnet-5",
+        reasoning: "high",
       }),
     );
     expect(executeCall?.[0]).toContain("Linear: CLOUD-1781");

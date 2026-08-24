@@ -27,6 +27,7 @@ beforeEach(() => {
   runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
     provider: "openai",
     model: "gpt-5.5",
+    reasoning: "high",
   });
   runtime.loadProviderModelCatalog.mockResolvedValue({
     generatedAt: 1,
@@ -84,10 +85,36 @@ describe("InternalTaskModelSettingsPanel", () => {
       expect(runtime.saveUserInternalTaskModelSettings).toHaveBeenCalledWith({
         provider: "anthropic",
         model: "claude-sonnet-5",
+        reasoning: "high",
       }),
     );
     expect(
       (screen.getByLabelText("Internal task model") as HTMLSelectElement).value,
     ).toBe("claude-sonnet-5");
+  });
+
+  it("persists the selected internal-task reasoning", async () => {
+    render(
+      createElement(InternalTaskModelSettingsPanel, {
+        providerAvailability: [
+          { provider: "openai", configured: true },
+          { provider: "codex-cli", configured: true },
+          { provider: "anthropic", configured: true },
+        ],
+      }),
+    );
+
+    const reasoning = await screen.findByLabelText("Internal task reasoning");
+    expect((reasoning as HTMLSelectElement).value).toBe("high");
+
+    fireEvent.change(reasoning, { target: { value: "low" } });
+
+    await waitFor(() =>
+      expect(runtime.saveUserInternalTaskModelSettings).toHaveBeenCalledWith({
+        provider: "openai",
+        model: "gpt-5.5",
+        reasoning: "low",
+      }),
+    );
   });
 });

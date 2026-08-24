@@ -2876,7 +2876,6 @@ export const createRalphGenerationInterviewWithAgent = async (
   const interviewerConfig: RuntimeConfig = {
     ...requireInternalTaskRuntimeConfig(config),
     mode: "ask",
-    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
   };
 
   const customizations =

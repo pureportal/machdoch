@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
@@ -171,8 +178,9 @@ describe("createRalphFlowWithAgent", () => {
       );
       expect(executeTask).toHaveBeenCalledTimes(1);
       await expect(readFile(result.flowPath, "utf8")).rejects.toThrow();
-      await expect(readdir(join(workspace, ".machdoch", "ralph", "flows")))
-        .resolves.toEqual([]);
+      await expect(
+        readdir(join(workspace, ".machdoch", "ralph", "flows")),
+      ).resolves.toEqual([]);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -242,44 +250,50 @@ describe("createRalphFlowWithAgent", () => {
       }),
     );
 
-    const result = await createRalphGenerationInterviewWithAgent("C:/workspace", {
-      prompt: "Create a release flow.",
-      config: {
-        ...runtimeConfig,
-        internalTaskModel: {
-          provider: "anthropic",
-          model: "claude-internal",
+    const result = await createRalphGenerationInterviewWithAgent(
+      "C:/workspace",
+      {
+        prompt: "Create a release flow.",
+        config: {
+          ...runtimeConfig,
+          internalTaskModel: {
+            provider: "anthropic",
+            model: "claude-internal",
+            reasoning: "default",
+          },
+        },
+        customizations,
+        session: {
+          id: "interview-1",
+          prompt: "Create a release flow.",
+          scope: "workspace",
+          target: "flow",
+          turn: 1,
+          maxTurns: 5,
+          findings: [],
+          assumptions: [],
+          relevantFiles: [],
+          transcript: [
+            {
+              turn: 1,
+              questions: [
+                {
+                  id: "scope",
+                  label: "Scope?",
+                  type: "text",
+                },
+              ],
+              answers: [],
+              createdAt: "2026-06-19T00:00:00.000Z",
+            },
+          ],
+        },
+        answers: { scope: null },
+        answerComments: {
+          scope: "Skipped because the flow should infer scope.",
         },
       },
-      customizations,
-      session: {
-        id: "interview-1",
-        prompt: "Create a release flow.",
-        scope: "workspace",
-        target: "flow",
-        turn: 1,
-        maxTurns: 5,
-        findings: [],
-        assumptions: [],
-        relevantFiles: [],
-        transcript: [
-          {
-            turn: 1,
-            questions: [
-              {
-                id: "scope",
-                label: "Scope?",
-                type: "text",
-              },
-            ],
-            answers: [],
-            createdAt: "2026-06-19T00:00:00.000Z",
-          },
-        ],
-      },
-      answers: { scope: null },
-      answerComments: { scope: "Skipped because the flow should infer scope." },
-    });
+    );
 
     expect(result.status).toBe("questions");
     expect(result.session.transcript[0]?.answers[0]).toMatchObject({
@@ -292,7 +306,7 @@ describe("createRalphFlowWithAgent", () => {
         mode: "ask",
         provider: "anthropic",
         model: "claude-internal",
-        reasoning: "medium",
+        reasoning: "default",
       }),
     );
     expect(
@@ -304,39 +318,42 @@ describe("createRalphFlowWithAgent", () => {
   });
 
   it("includes answer comments in the final interview generation prompt", async () => {
-    const result = await createRalphGenerationInterviewWithAgent("C:/workspace", {
-      prompt: "Create a release flow.",
-      maxTurns: 1,
-      config: runtimeConfig,
-      customizations,
-      session: {
-        id: "interview-1",
+    const result = await createRalphGenerationInterviewWithAgent(
+      "C:/workspace",
+      {
         prompt: "Create a release flow.",
-        scope: "workspace",
-        target: "flow",
-        turn: 1,
         maxTurns: 1,
-        findings: [],
-        assumptions: [],
-        relevantFiles: [],
-        transcript: [
-          {
-            turn: 1,
-            questions: [
-              {
-                id: "scope",
-                label: "Scope?",
-                type: "text",
-              },
-            ],
-            answers: [],
-            createdAt: "2026-06-19T00:00:00.000Z",
-          },
-        ],
+        config: runtimeConfig,
+        customizations,
+        session: {
+          id: "interview-1",
+          prompt: "Create a release flow.",
+          scope: "workspace",
+          target: "flow",
+          turn: 1,
+          maxTurns: 1,
+          findings: [],
+          assumptions: [],
+          relevantFiles: [],
+          transcript: [
+            {
+              turn: 1,
+              questions: [
+                {
+                  id: "scope",
+                  label: "Scope?",
+                  type: "text",
+                },
+              ],
+              answers: [],
+              createdAt: "2026-06-19T00:00:00.000Z",
+            },
+          ],
+        },
+        answers: { scope: "src/core" },
+        answerComments: { scope: "Include related tests if touched." },
       },
-      answers: { scope: "src/core" },
-      answerComments: { scope: "Include related tests if touched." },
-    });
+    );
 
     expect(result.status).toBe("complete");
     expect(result.finalPrompt).toContain(
@@ -590,11 +607,14 @@ describe("createRalphFlowWithAgent", () => {
           }),
         ]),
       );
-      expect(result.validatorResults.map((validatorResult) => validatorResult.summary))
-        .toEqual([
-          "Local Ralph generation validator returned RETRY.",
-          "Local Ralph generation validator returned DONE.",
-        ]);
+      expect(
+        result.validatorResults.map(
+          (validatorResult) => validatorResult.summary,
+        ),
+      ).toEqual([
+        "Local Ralph generation validator returned RETRY.",
+        "Local Ralph generation validator returned DONE.",
+      ]);
       expect(firstTask).toContain("-round-1.json");
       expect(secondTask).toContain("-round-2.json");
       expect(flowDirectoryEntries).toHaveLength(1);
@@ -725,10 +745,12 @@ describe("createRalphFlowWithAgent", () => {
       expect(result.events).toHaveLength(events.length);
       expect(result.generationLogPath).toBeTruthy();
       expect(result.traceLogPath).toBeTruthy();
-      await expect(readFile(result.generationLogPath ?? "", "utf8")).resolves
-        .toContain("Created Ralph flow `Observable flow`");
-      await expect(readFile(result.traceLogPath ?? "", "utf8")).resolves
-        .toContain('"type":"created"');
+      await expect(
+        readFile(result.generationLogPath ?? "", "utf8"),
+      ).resolves.toContain("Created Ralph flow `Observable flow`");
+      await expect(
+        readFile(result.traceLogPath ?? "", "utf8"),
+      ).resolves.toContain('"type":"created"');
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -745,7 +767,8 @@ describe("createRalphFlowWithAgent", () => {
             task: "Ralph generator",
             mode: runtimeConfig.mode,
             state: "checking-tools",
-            message: "Resolve the available tool surface before any execution starts.",
+            message:
+              "Resolve the available tool surface before any execution starts.",
             executedTools: [],
             outputSections: [],
             cancellable: true,
@@ -897,12 +920,18 @@ describe("createRalphFlowWithAgent", () => {
 
       expect(result.status).toBe("created");
       expect(generatorTask).toContain("Output contract:");
-      expect(generatorTask).toContain("Preferred: call ralph_submit_flow_candidate");
+      expect(generatorTask).toContain(
+        "Preferred: call ralph_submit_flow_candidate",
+      );
       expect(generatorTask).toContain("<ralph_flow_json>");
       expect(generatorTask).toContain("Minimal schema example:");
       expect(generatorTask).toContain("Do not write files yourself");
-      expect(generatorTask).toContain("Use tools only when they materially reduce uncertainty.");
-      expect(generatorTask).toContain("inspect workspace files or run short read-only commands");
+      expect(generatorTask).toContain(
+        "Use tools only when they materially reduce uncertainty.",
+      );
+      expect(generatorTask).toContain(
+        "inspect workspace files or run short read-only commands",
+      );
       expect(generatorTask).toContain("Do not write files, modify code");
       expect(generatorTask).toContain("Detected package manager: pnpm.");
       expect(generatorTask).toContain(
@@ -1078,9 +1107,9 @@ describe("createRalphFlowWithAgent", () => {
 
       expect(result.status).toBe("created");
       expect(
-        vi.mocked(executeTask).mock.calls.map(([, , , options]) =>
-          options?.maxDurationMs,
-        ),
+        vi
+          .mocked(executeTask)
+          .mock.calls.map(([, , , options]) => options?.maxDurationMs),
       ).toEqual([180_000]);
       expect(result.validatorResults).toHaveLength(1);
     } finally {
@@ -1150,8 +1179,7 @@ describe("createRalphFlowWithAgent", () => {
           createExecutionResult({
             status: "blocked",
             summary: `${provider} execution failed before completing the task.`,
-            reason:
-              `${provider} quota exceeded: Quota exceeded. Check your plan and billing details.`,
+            reason: `${provider} quota exceeded: Quota exceeded. Check your plan and billing details.`,
           }),
         );
 
@@ -1165,7 +1193,9 @@ describe("createRalphFlowWithAgent", () => {
 
         expect(result.status).toBe("blocked");
         expect(
-          vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider),
+          vi
+            .mocked(executeTask)
+            .mock.calls.map(([, config]) => config.provider),
         ).toEqual([provider]);
         expect(result.generatorResults).toHaveLength(1);
         expect(result.validatorResults).toHaveLength(0);
@@ -1190,20 +1220,22 @@ describe("createRalphFlowWithAgent", () => {
     };
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (_task, attemptConfig) => {
-        if (attemptConfig.provider !== "codex-cli") {
-          throw new Error(
-            `Unexpected additional Ralph provider attempt with ${attemptConfig.provider}.`,
-          );
-        }
+      vi.mocked(executeTask).mockImplementation(
+        async (_task, attemptConfig) => {
+          if (attemptConfig.provider !== "codex-cli") {
+            throw new Error(
+              `Unexpected additional Ralph provider attempt with ${attemptConfig.provider}.`,
+            );
+          }
 
-        return createExecutionResult({
-          status: "blocked",
-          summary: "Codex CLI execution failed before completing the task.",
-          reason:
-            "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
-        });
-      });
+          return createExecutionResult({
+            status: "blocked",
+            summary: "Codex CLI execution failed before completing the task.",
+            reason:
+              "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
+          });
+        },
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "codex-only-flow",
@@ -1214,8 +1246,9 @@ describe("createRalphFlowWithAgent", () => {
       });
 
       expect(result.status).toBe("blocked");
-      expect(vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider))
-        .toEqual(["codex-cli"]);
+      expect(
+        vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider),
+      ).toEqual(["codex-cli"]);
       expect(result.generatorResults).toHaveLength(1);
       expect(result.validatorResults).toHaveLength(0);
       expect(result.summary).toContain("Codex CLI quota exceeded");
@@ -1238,19 +1271,23 @@ describe("createRalphFlowWithAgent", () => {
     };
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (_task, attemptConfig) => {
-        if (attemptConfig.provider !== "codex-cli") {
-          throw new Error(
-            `Unexpected additional Ralph provider attempt with ${attemptConfig.provider}.`,
-          );
-        }
+      vi.mocked(executeTask).mockImplementation(
+        async (_task, attemptConfig) => {
+          if (attemptConfig.provider !== "codex-cli") {
+            throw new Error(
+              `Unexpected additional Ralph provider attempt with ${attemptConfig.provider}.`,
+            );
+          }
 
-        return createExecutionResult({
-          status: "cancelled",
-          summary: "Execution stopped after exceeding the safety timeout of 3 minutes.",
-          reason: "Execution stopped after exceeding the safety timeout of 3 minutes.",
-        });
-      });
+          return createExecutionResult({
+            status: "cancelled",
+            summary:
+              "Execution stopped after exceeding the safety timeout of 3 minutes.",
+            reason:
+              "Execution stopped after exceeding the safety timeout of 3 minutes.",
+          });
+        },
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "timeout-codex-flow",
@@ -1261,14 +1298,14 @@ describe("createRalphFlowWithAgent", () => {
       });
 
       expect(result.status).toBe("blocked");
-      expect(vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider))
-        .toEqual(["codex-cli"]);
-      expect(vi.mocked(executeTask).mock.calls.map(([, config]) => config.mode))
-        .toEqual(["ask"]);
+      expect(
+        vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider),
+      ).toEqual(["codex-cli"]);
+      expect(
+        vi.mocked(executeTask).mock.calls.map(([, config]) => config.mode),
+      ).toEqual(["ask"]);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });
 });
-
-

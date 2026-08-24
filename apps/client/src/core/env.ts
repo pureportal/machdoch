@@ -27,6 +27,7 @@ import {
   USER_WEB_SEARCH_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
   isConfiguredModelProvider,
+  isReasoningMode,
   isUserApiProvider as isSchemaUserApiProvider,
   isRuntimeContractValue,
   isUserWebSearchProvider as isSchemaUserWebSearchProvider,
@@ -63,8 +64,7 @@ const USER_API_PROVIDERS = SCHEMA_USER_API_PROVIDERS;
 const USER_API_PROVIDER_DESCRIPTION = USER_API_PROVIDERS.join(", ");
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
-export type UserInternalTaskModelSettings =
-  SharedUserInternalTaskModelSettings;
+export type UserInternalTaskModelSettings = SharedUserInternalTaskModelSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
 type UserConfigFile = SharedUserConfigFile;
 
@@ -163,14 +163,18 @@ const normalizeUserInternalTaskModelSettings = (
 ): UserInternalTaskModelSettings => {
   const provider = normalizeOptionalString(settings?.provider);
   const model = normalizeOptionalString(settings?.model);
+  const reasoning = isReasoningMode(settings?.reasoning)
+    ? settings.reasoning
+    : DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS.reasoning;
 
   if (!provider || !isConfiguredModelProvider(provider) || !model) {
-    return { ...DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS };
+    return { reasoning };
   }
 
   return {
     provider,
     model,
+    reasoning,
   };
 };
 
@@ -255,8 +259,7 @@ export const loadRuntimeEnvironment = async (): Promise<
       typeof binaryPath === "string" &&
       binaryPath.trim().length > 0
     ) {
-      env[AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER[provider]] =
-        binaryPath.trim();
+      env[AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER[provider]] = binaryPath.trim();
     }
   }
 
@@ -505,7 +508,9 @@ export const saveUserVoiceActiveProvider = async (
   provider: VoiceAiProvider,
 ): Promise<string> => {
   if (!isVoiceAiProvider(provider)) {
-    throw new Error("Expected voice.provider to be one of none, openai, or google.");
+    throw new Error(
+      "Expected voice.provider to be one of none, openai, or google.",
+    );
   }
 
   return updateUserConfigFile((config) => ({
@@ -538,7 +543,8 @@ export const saveUserSpeechToTextActiveProvider = async (
 export const saveUserSpeechToTextInputDevice = async (
   inputDeviceId: string | null,
 ): Promise<string> => {
-  const normalizedInputDeviceId = normalizeOptionalString(inputDeviceId) ?? null;
+  const normalizedInputDeviceId =
+    normalizeOptionalString(inputDeviceId) ?? null;
 
   return updateUserConfigFile((config) => {
     const speechToText = {

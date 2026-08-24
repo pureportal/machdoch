@@ -9,6 +9,11 @@ import {
   getProviderLabel,
 } from "../../../model-catalog";
 import {
+  getReasoningModesForProvider,
+  normalizeReasoningModeForProvider,
+  REASONING_LABELS,
+} from "../../../reasoning-options";
+import {
   loadProviderModelCatalog,
   loadUserInternalTaskModelSettings,
   saveUserInternalTaskModelSettings,
@@ -23,7 +28,9 @@ export const InternalTaskModelSettingsPanel = ({
 }: {
   providerAvailability: readonly RuntimeProviderAvailability[];
 }): JSX.Element => {
-  const [settings, setSettings] = useState<UserInternalTaskModelSettings>({});
+  const [settings, setSettings] = useState<UserInternalTaskModelSettings>({
+    reasoning: "default",
+  });
   const [catalog, setCatalog] = useState<Awaited<
     ReturnType<typeof loadProviderModelCatalog>
   > | null>(null);
@@ -81,11 +88,7 @@ export const InternalTaskModelSettingsPanel = ({
     [catalog, providerAvailability],
   );
   const selection = catalog
-    ? resolveInternalTaskModelSelection(
-        settings,
-        providerAvailability,
-        catalog,
-      )
+    ? resolveInternalTaskModelSelection(settings, providerAvailability, catalog)
     : null;
   const selectedProvider = providers.find(
     (entry) => entry.provider === selection?.provider,
@@ -108,6 +111,16 @@ export const InternalTaskModelSettingsPanel = ({
           },
         ]
       : []);
+  const selectedModel = selectedProvider?.models.find(
+    (model) => model.id === selection?.model,
+  );
+  const reasoningOptions = selection
+    ? getReasoningModesForProvider(
+        selection.provider,
+        selection.model,
+        selectedModel?.capabilities,
+      )
+    : (["default"] as const);
 
   const saveSelection = async (
     nextSelection: InternalTaskModelSelection,
@@ -152,6 +165,12 @@ export const InternalTaskModelSettingsPanel = ({
               void saveSelection({
                 provider: provider.provider,
                 model: model.id,
+                reasoning: normalizeReasoningModeForProvider(
+                  settings.reasoning,
+                  provider.provider,
+                  model.id,
+                  model.capabilities,
+                ),
               });
             }
           }}
@@ -175,9 +194,23 @@ export const InternalTaskModelSettingsPanel = ({
           disabled={disabled || !selection}
           onChange={(event) => {
             if (selectedProvider) {
+              const model = selectedProvider.models.find(
+                (entry) => entry.id === event.target.value,
+              );
+
+              if (!model) {
+                return;
+              }
+
               void saveSelection({
                 provider: selectedProvider.provider,
-                model: event.target.value,
+                model: model.id,
+                reasoning: normalizeReasoningModeForProvider(
+                  settings.reasoning,
+                  selectedProvider.provider,
+                  model.id,
+                  model.capabilities,
+                ),
               });
             }
           }}
@@ -187,6 +220,33 @@ export const InternalTaskModelSettingsPanel = ({
           {modelOptions.map((model) => (
             <option key={model.id} value={model.id}>
               {model.label}
+            </option>
+          ))}
+        </select>
+      </SettingPanel>
+
+      <SettingPanel label="Reasoning">
+        <select
+          aria-label="Internal task reasoning"
+          value={selection?.reasoning ?? "default"}
+          disabled={disabled || !selection}
+          onChange={(event) => {
+            const reasoning = reasoningOptions.find(
+              (mode) => mode === event.target.value,
+            );
+
+            if (selection && reasoning) {
+              void saveSelection({
+                ...selection,
+                reasoning,
+              });
+            }
+          }}
+          className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40 disabled:opacity-50"
+        >
+          {reasoningOptions.map((reasoning) => (
+            <option key={reasoning} value={reasoning}>
+              {REASONING_LABELS[reasoning]}
             </option>
           ))}
         </select>

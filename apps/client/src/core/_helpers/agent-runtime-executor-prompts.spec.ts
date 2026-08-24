@@ -34,6 +34,7 @@ const createRuntimeConfig = (
     internalTaskModel: {
       provider: "openai",
       model: "gpt-5.5",
+      reasoning: "default",
     },
     ...overrides,
   };

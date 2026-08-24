@@ -22,9 +22,9 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
-    DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_REVIEW_MODEL_MODE,
-    MAX_CONFIGURED_AUTOPILOT_ITERATIONS, MAX_CONFIGURED_EXECUTOR_TURNS,
-    MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING,
+    DEFAULT_USER_REVIEW_MODEL_MODE, MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
+    MAX_CONFIGURED_EXECUTOR_TURNS, MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
@@ -169,10 +169,17 @@ fn normalized_internal_task_model(value: &Map<String, Value>) -> Value {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|model| !model.is_empty());
+    let reasoning = value
+        .get("reasoning")
+        .and_then(Value::as_str)
+        .filter(|reasoning| REASONING_MODES.contains(reasoning))
+        .unwrap_or(DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING);
 
     match (provider, model) {
-        (Some(provider), Some(model)) => json!({ "provider": provider, "model": model }),
-        _ => json!({ "provider": null, "model": null }),
+        (Some(provider), Some(model)) => {
+            json!({ "provider": provider, "model": model, "reasoning": reasoning })
+        }
+        _ => json!({ "provider": null, "model": null, "reasoning": reasoning }),
     }
 }
 
@@ -1215,9 +1222,16 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
         .get("internalTaskModel")
         .and_then(Value::as_object)
         .ok_or_else(|| "Internal-task model preferences are invalid.".to_string())?;
-    require_exact_keys(internal_task, &["provider", "model"])?;
+    require_exact_keys(internal_task, &["provider", "model", "reasoning"])?;
     let internal_provider = internal_task.get("provider");
     let internal_model = internal_task.get("model");
+    if !internal_task
+        .get("reasoning")
+        .and_then(Value::as_str)
+        .is_some_and(|reasoning| REASONING_MODES.contains(&reasoning))
+    {
+        return Err("Internal-task reasoning is unsupported.".to_string());
+    }
     match (internal_provider, internal_model) {
         (Some(provider), Some(model)) if provider.is_null() && model.is_null() => {}
         (Some(provider), Some(model))
@@ -2126,7 +2140,7 @@ mod tests {
                 "autopilotExecutorIterations": 16
             },
             "reviewModel": { "mode": "base", "provider": null, "model": null },
-            "internalTaskModel": { "provider": null, "model": null },
+            "internalTaskModel": { "provider": null, "model": null, "reasoning": "default" },
             "providerEnrollment": {
                 "schemaVersion": 1,
                 "enabled": true,
@@ -2148,6 +2162,9 @@ mod tests {
             }
         });
         assert!(validate_agent_provider_value(&provider).is_ok());
+        let mut provider_with_invalid_reasoning = provider.clone();
+        provider_with_invalid_reasoning["internalTaskModel"]["reasoning"] = json!("unsupported");
+        assert!(validate_agent_provider_value(&provider_with_invalid_reasoning).is_err());
         let mut provider_with_device_field = provider;
         provider_with_device_field["providerEnrollment"]["persistentSync"]["daemonAtLogin"] =
             json!(true);

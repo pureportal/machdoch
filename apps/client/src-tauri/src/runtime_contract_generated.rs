@@ -105,6 +105,7 @@ pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [
     ("copilot-cli", "auto"),
 ];
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = "base";
+pub const DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING: &str = "default";
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = false;
 pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = 64;

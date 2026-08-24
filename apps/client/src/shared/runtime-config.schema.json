@@ -288,6 +288,22 @@
         }
       }
     },
+    "RuntimeInternalTaskModelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "reasoning"],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ModelProvider"
+        },
+        "model": {
+          "type": "string"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
+        }
+      }
+    },
     "RuntimeMemoryEntry": {
       "type": "object",
       "additionalProperties": false,
@@ -485,12 +501,16 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
         }
       }
     },
     "UserInternalTaskModelSettings": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["reasoning"],
       "properties": {
         "provider": {
           "$ref": "#/$defs/ConfiguredModelProvider"
@@ -498,6 +518,10 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode",
+          "default": "default"
         }
       }
     },
@@ -816,7 +840,8 @@
         "compatibility",
         "providerAvailability",
         "webSearch",
-        "reviewModel"
+        "reviewModel",
+        "internalTaskModel"
       ],
       "properties": {
         "workspaceRoot": {
@@ -866,6 +891,9 @@
         },
         "reviewModel": {
           "$ref": "#/$defs/RuntimeReviewModelConfig"
+        },
+        "internalTaskModel": {
+          "$ref": "#/$defs/RuntimeInternalTaskModelConfig"
         }
       }
     },
