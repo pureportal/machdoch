@@ -31,6 +31,9 @@ describe("model image input capabilities", () => {
     expect(providerSupportsImageInputMediaType("google", "image/heic")).toBe(
       true,
     );
+    expect(
+      providerSupportsImageInputMediaType("copilot-cli", "image/heic"),
+    ).toBe(true);
     expect(getSupportedImageInputExtensions("anthropic")).toContain("webp");
   });
 
@@ -75,7 +78,21 @@ describe("model image input capabilities", () => {
     expect(modelSupportsImageInput("google", "gemini-2.5-flash")).toBe(true);
     expect(modelSupportsImageInput("google", "gemini-3.7-flash")).toBe(true);
     expect(modelSupportsImageInput("langdock", "gpt-5.6-terra")).toBe(true);
+    expect(modelSupportsImageInput("copilot-cli", "gpt-5.6-terra")).toBe(true);
     expect(modelSupportsImageInput("openai", "gpt-3.5-turbo")).toBe(false);
+  });
+
+  it("honors explicit text-only Copilot model metadata", () => {
+    replaceDiscoveredModelCapabilities("copilot-cli", [
+      {
+        id: "text-only-model",
+        capabilities: { imageInput: false },
+      },
+    ]);
+
+    expect(modelSupportsImageInput("copilot-cli", "text-only-model")).toBe(
+      false,
+    );
   });
 
   it("uses documented OpenAI capabilities when the Models API is sparse", () => {

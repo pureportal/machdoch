@@ -90,6 +90,15 @@ export const OPENAI_IMAGE_MEDIA_TYPES = [
   "image/webp",
 ] as const satisfies readonly AgentModelImageMediaType[];
 
+export const COPILOT_CLI_IMAGE_MEDIA_TYPES = [
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const satisfies readonly AgentModelImageMediaType[];
+
 export const LANGDOCK_IMAGE_MEDIA_TYPES = [
   "image/gif",
   "image/heic",
@@ -201,7 +210,9 @@ const createCopilotCliCapabilities = (
   overrides: Partial<ProviderModelCapabilityMetadata>,
 ): ProviderModelCapabilityMetadata =>
   createCapabilities("copilot-cli", {
+    imageInput: true,
     reasoning: true,
+    supportedImageMediaTypes: COPILOT_CLI_IMAGE_MEDIA_TYPES,
     ...overrides,
   });
 
