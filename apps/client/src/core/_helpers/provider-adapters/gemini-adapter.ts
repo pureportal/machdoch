@@ -200,6 +200,7 @@ const createGeminiFunctionResponsePayload = (
 type GeminiResponsePart = Pick<Part, "text" | "thought" | "functionCall">;
 type GeminiResponseLike = {
   candidates?: GenerateContentResponse["candidates"] | undefined;
+  usageMetadata?: GenerateContentResponse["usageMetadata"] | undefined;
 };
 
 const extractGeminiResponseParts = (
@@ -222,6 +223,7 @@ export const normalizeGeminiResponse = (
 ): AgentModelTurn => {
   let text = "";
   const toolCalls: AgentModelToolCall[] = [];
+  const usage = normalizeGeminiUsage(response.usageMetadata);
 
   for (const part of extractGeminiResponseParts(response)) {
     if (typeof part.text === "string" && part.thought !== true) {
@@ -247,6 +249,7 @@ export const normalizeGeminiResponse = (
   return {
     text: text.trim(),
     toolCalls,
+    ...(usage ? { usage } : {}),
   };
 };
 
@@ -310,6 +313,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
         provider: this.provider,
         operation: "startTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = {
@@ -359,6 +363,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
         provider: this.provider,
         operation: "continueTurn",
         signal: params.signal,
+        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
       },
       async (requestSignal) => {
         const request = {
@@ -397,6 +402,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
 
   private normalizeResponse(response: {
     candidates?: GenerateContentResponse["candidates"];
+    usageMetadata?: GenerateContentResponse["usageMetadata"];
   }): AgentModelTurn {
     return normalizeGeminiResponse(response);
   }
@@ -416,6 +422,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
     let text = "";
     let didEmitInProgress = false;
     const toolCallsByKey = new Map<string, AgentModelToolCall>();
+    let usage: AgentModelTurn["usage"];
 
     try {
       for await (const chunk of stream) {
@@ -429,13 +436,11 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           );
         }
 
-        emitUsageStreamEvent(
-          onStreamEvent,
-          this.provider,
-          normalizeGeminiUsage(
-            (chunk as { usageMetadata?: unknown }).usageMetadata,
-          ),
+        const chunkUsage = normalizeGeminiUsage(
+          (chunk as { usageMetadata?: unknown }).usageMetadata,
         );
+        usage = chunkUsage ?? usage;
+        emitUsageStreamEvent(onStreamEvent, this.provider, chunkUsage);
 
         for (const part of extractGeminiResponseParts(chunk)) {
           if (typeof part.text === "string" && part.thought === true) {
@@ -510,6 +515,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
     return {
       text: text.trim(),
       toolCalls: [...toolCallsByKey.values()],
+      ...(usage ? { usage } : {}),
     };
   }
 }

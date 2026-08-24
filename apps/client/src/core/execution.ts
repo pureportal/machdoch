@@ -32,6 +32,7 @@ import {
   maybeExecuteModelDrivenTask,
 } from "./agent-runtime.js";
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
+import { runWithTaskModelUsageRecording } from "./model-usage.js";
 import { resolveTaskContext } from "./task-context.js";
 import {
   createInstructionDeliveryPlan,
@@ -460,9 +461,7 @@ const runTaskExecutionStateMachine = async (
           }
         }
 
-        if (
-          !runtime.deterministicAction
-        ) {
+        if (!runtime.deterministicAction) {
           const unavailable = createLiveExecutionUnavailableMessage(config);
 
           return emitTerminalResultWithInstructions(
@@ -706,25 +705,26 @@ export const createTaskExecutionController = (
           config.mode === "machdoch" && options.captureFileChanges !== false
             ? await startTaskFileChangeCapture(config.workspaceRoot)
             : undefined;
-        const result = await runTaskExecutionStateMachine(
-          task,
-          config,
-          customizations,
-          createActivityAwareExecutionOptions(options, managedTimeout),
-        );
-        const fileChanges = await fileChangeCapture?.finish();
+        return await runWithTaskModelUsageRecording(async () => {
+          const result = await runTaskExecutionStateMachine(
+            task,
+            config,
+            customizations,
+            createActivityAwareExecutionOptions(options, managedTimeout),
+          );
+          const fileChanges = await fileChangeCapture?.finish();
+          const consolidatedResult = await consolidateTaskExecutionMemory(
+            task,
+            config,
+            result,
+            options.conversationContext,
+            { signal: managedTimeout.signal },
+          );
 
-        const consolidatedResult = await consolidateTaskExecutionMemory(
-          task,
-          config,
-          result,
-          options.conversationContext,
-          { signal: managedTimeout.signal },
-        );
-
-        return fileChanges
-          ? { ...consolidatedResult, fileChanges }
-          : consolidatedResult;
+          return fileChanges
+            ? { ...consolidatedResult, fileChanges }
+            : consolidatedResult;
+        });
       } finally {
         await fileChangeCapture?.dispose();
         managedTimeout.cleanup();
@@ -745,20 +745,22 @@ export const executeTask = async (
   );
 
   try {
-    const result = await runTaskExecutionStateMachine(
-      task,
-      config,
-      customizations,
-      createActivityAwareExecutionOptions(options, managedTimeout),
-    );
+    return await runWithTaskModelUsageRecording(async () => {
+      const result = await runTaskExecutionStateMachine(
+        task,
+        config,
+        customizations,
+        createActivityAwareExecutionOptions(options, managedTimeout),
+      );
 
-    return await consolidateTaskExecutionMemory(
-      task,
-      config,
-      result,
-      options.conversationContext,
-      { signal: managedTimeout.signal },
-    );
+      return await consolidateTaskExecutionMemory(
+        task,
+        config,
+        result,
+        options.conversationContext,
+        { signal: managedTimeout.signal },
+      );
+    });
   } finally {
     managedTimeout.cleanup();
   }

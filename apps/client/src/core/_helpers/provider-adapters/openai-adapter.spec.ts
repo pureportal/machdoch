@@ -398,9 +398,14 @@ describe("OpenAI Responses conformance", () => {
         reasoning: "ultra",
         onStreamEvent: (event) => events.push(event),
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       text: "Root result.",
       toolCalls: [],
+      usage: {
+        inputTokens: 20,
+        outputTokens: 10,
+        totalTokens: 30,
+      },
     });
 
     expect(events.filter((event) => event.type === "text-delta")).toEqual([

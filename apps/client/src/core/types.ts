@@ -225,6 +225,7 @@ export interface AgentModelTurn {
   text: string;
   toolCalls: AgentModelToolCall[];
   stopReason?: string;
+  usage?: AgentModelStreamUsage;
 }
 
 export interface AgentModelStreamUsage {
@@ -232,9 +233,26 @@ export interface AgentModelStreamUsage {
   outputTokens?: number;
   totalTokens?: number;
   cachedInputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  toolUseInputTokens?: number;
   reasoningTokens?: number;
   raw?: unknown;
 }
+
+export interface AgentModelRequestAttempt {
+  provider: string;
+  operation: string;
+  attempt: number;
+  elapsedMs: number;
+  ok: boolean;
+  errorName?: string;
+  errorMessage?: string;
+}
+
+export type AgentModelRequestAttemptHandler = (
+  attempt: AgentModelRequestAttempt,
+) => void;
 
 export type AgentModelStreamEvent =
   | {
@@ -320,12 +338,14 @@ export interface AgentModelStartParams {
   structuredOutput?: AgentModelStructuredOutput;
   signal?: AbortSignal | undefined;
   onStreamEvent?: AgentModelStreamEventHandler;
+  onRequestAttempt?: AgentModelRequestAttemptHandler;
 }
 
 export interface AgentModelContinueParams {
   toolResults: AgentModelToolResult[];
   signal?: AbortSignal | undefined;
   onStreamEvent?: AgentModelStreamEventHandler;
+  onRequestAttempt?: AgentModelRequestAttemptHandler;
 }
 
 export interface AgentModelAdapter {
@@ -424,7 +444,77 @@ export interface TaskExecutionTokenUsage {
   outputTokens?: number;
   totalTokens?: number;
   cachedInputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  toolUseInputTokens?: number;
   reasoningTokens?: number;
+}
+
+export type TaskModelCallStage =
+  | "conversation-summary"
+  | "executor"
+  | "validator"
+  | "memory-consolidation"
+  | "mcp-sampling"
+  | "external-agent";
+
+export interface TaskModelRequestAttemptUsage {
+  attempt: number;
+  durationMs: number;
+  status: "completed" | "failed";
+  errorName?: string;
+}
+
+export interface TaskModelUsageCall {
+  sequence: number;
+  stage: TaskModelCallStage;
+  provider: ModelProvider;
+  model: string;
+  executionPath: "api" | "cli";
+  operation: string;
+  status: "completed" | "failed";
+  modelCallCount: number;
+  modelCallCountReported: boolean;
+  providerRequestCount: number;
+  providerRequestCountReported: boolean;
+  durationMs: number;
+  requestBytes: number;
+  responseBytes: number;
+  toolDefinitionBytes: number;
+  toolResultBytes: number;
+  attempts: TaskModelRequestAttemptUsage[];
+  retryCount: number;
+  retryCountReported: boolean;
+  usageReported: boolean;
+  usage?: TaskExecutionTokenUsage;
+}
+
+export interface TaskModelUsageTotals extends TaskExecutionTokenUsage {
+  callCount: number;
+  modelCallCount: number;
+  providerRequestCount: number;
+  apiCallCount: number;
+  cliCallCount: number;
+  auxiliaryCallCount: number;
+  retryCount: number;
+  modelCallTelemetryUnavailableCallCount: number;
+  providerRequestTelemetryUnavailableCallCount: number;
+  retryTelemetryUnavailableCallCount: number;
+  failedCallCount: number;
+  failedRequestCount: number;
+  usageReportedCallCount: number;
+  usageUnavailableCallCount: number;
+  requestBytes: number;
+  responseBytes: number;
+  toolDefinitionBytes: number;
+  toolResultBytes: number;
+  aggregateCallDurationMs: number;
+}
+
+export interface TaskModelUsageReport {
+  version: 1;
+  calls: TaskModelUsageCall[];
+  totals: TaskModelUsageTotals;
 }
 
 export type TaskExecutionTimelineEventKind =

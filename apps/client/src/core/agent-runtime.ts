@@ -44,6 +44,7 @@ import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
+import { observeAgentModelCall } from "./model-usage.js";
 import {
   createApiEnrollmentSection,
   createApiEnrollmentSnapshot,
@@ -251,6 +252,11 @@ const createTokenUsageSnapshot = (
   const outputTokens = normalizeTokenCount(usage.outputTokens);
   const totalTokens = normalizeTokenCount(usage.totalTokens);
   const cachedInputTokens = normalizeTokenCount(usage.cachedInputTokens);
+  const cacheReadInputTokens = normalizeTokenCount(usage.cacheReadInputTokens);
+  const cacheWriteInputTokens = normalizeTokenCount(
+    usage.cacheWriteInputTokens,
+  );
+  const toolUseInputTokens = normalizeTokenCount(usage.toolUseInputTokens);
   const reasoningTokens = normalizeTokenCount(usage.reasoningTokens);
 
   if (
@@ -258,6 +264,9 @@ const createTokenUsageSnapshot = (
     outputTokens === undefined &&
     totalTokens === undefined &&
     cachedInputTokens === undefined &&
+    cacheReadInputTokens === undefined &&
+    cacheWriteInputTokens === undefined &&
+    toolUseInputTokens === undefined &&
     reasoningTokens === undefined
   ) {
     return undefined;
@@ -268,6 +277,9 @@ const createTokenUsageSnapshot = (
     ...(outputTokens !== undefined ? { outputTokens } : {}),
     ...(totalTokens !== undefined ? { totalTokens } : {}),
     ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
+    ...(cacheWriteInputTokens !== undefined ? { cacheWriteInputTokens } : {}),
+    ...(toolUseInputTokens !== undefined ? { toolUseInputTokens } : {}),
     ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
   };
 };
@@ -281,6 +293,12 @@ const formatTokenUsage = (usage: ProgressTokenUsage): string => {
     usage.totalTokens !== undefined ? `${usage.totalTokens} total` : undefined,
     usage.cachedInputTokens !== undefined
       ? `${usage.cachedInputTokens} cached`
+      : undefined,
+    usage.cacheWriteInputTokens !== undefined
+      ? `${usage.cacheWriteInputTokens} cache write`
+      : undefined,
+    usage.toolUseInputTokens !== undefined
+      ? `${usage.toolUseInputTokens} tool input`
       : undefined,
     usage.reasoningTokens !== undefined
       ? `${usage.reasoningTokens} reasoning`
@@ -1152,19 +1170,33 @@ const runExecutorCycle = async (
   let turn: AgentModelTurn;
 
   try {
-    turn = await adapter.startTurn({
-      model: config.model,
-      reasoning: config.reasoning,
-      systemPrompt: executorSystemPrompt,
-      userPrompt: executorUserPrompt,
-      ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
-      tools: toolSpecs,
-      ...(structuredOutput ? { structuredOutput } : {}),
-      ...(signal ? { signal } : {}),
-      ...(onStateChange || onStreamActivity
-        ? { onStreamEvent: modelStreamProgress.handleEvent }
-        : {}),
-    });
+    turn = await observeAgentModelCall(
+      {
+        stage: "executor",
+        provider: config.provider,
+        model: config.model,
+        operation: continuationRequest
+          ? "startContinuationExecutorCycle"
+          : "startExecutorCycle",
+        requestBytes: accumulatedRequestBytes,
+        toolDefinitions: toolSpecs,
+      },
+      async (onRequestAttempt) =>
+        await adapter.startTurn({
+          model: config.model,
+          reasoning: config.reasoning,
+          systemPrompt: executorSystemPrompt,
+          userPrompt: executorUserPrompt,
+          ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
+          tools: toolSpecs,
+          ...(structuredOutput ? { structuredOutput } : {}),
+          ...(signal ? { signal } : {}),
+          ...(onStateChange || onStreamActivity
+            ? { onStreamEvent: modelStreamProgress.handleEvent }
+            : {}),
+          ...(onRequestAttempt ? { onRequestAttempt } : {}),
+        }),
+    );
     const receipt = createInstructionDeliveryReceipt({
       plan: instructionPlan,
       phase: continuationRequest ? "retry" : "initial",
@@ -1325,13 +1357,26 @@ const runExecutorCycle = async (
 
     let nextTurn: AgentModelTurn;
     try {
-      nextTurn = await adapter.continueTurn({
-        toolResults,
-        ...(signal ? { signal } : {}),
-        ...(onStateChange || onStreamActivity
-          ? { onStreamEvent: modelStreamProgress.handleEvent }
-          : {}),
-      });
+      nextTurn = await observeAgentModelCall(
+        {
+          stage: "executor",
+          provider: config.provider,
+          model: config.model,
+          operation: "continueExecutorTurn",
+          requestBytes: prospectiveRequestBytes,
+          toolDefinitions: toolSpecs,
+          toolResults,
+        },
+        async (onRequestAttempt) =>
+          await adapter.continueTurn({
+            toolResults,
+            ...(signal ? { signal } : {}),
+            ...(onStateChange || onStreamActivity
+              ? { onStreamEvent: modelStreamProgress.handleEvent }
+              : {}),
+            ...(onRequestAttempt ? { onRequestAttempt } : {}),
+          }),
+      );
       const receipt = createInstructionDeliveryReceipt({
         plan: instructionPlan,
         phase: "continuation",
@@ -1960,14 +2005,26 @@ const runAutopilotMonitorPass = async (
   );
   let turn: AgentModelTurn;
   try {
-    turn = await adapter.startTurn({
-      model: reviewConfig.model,
-      reasoning: reviewConfig.reasoning,
-      systemPrompt: monitorSystemPrompt,
-      userPrompt: monitorUserPrompt,
-      tools: [monitorTool],
-      ...(signal ? { signal } : {}),
-    });
+    turn = await observeAgentModelCall(
+      {
+        stage: "validator",
+        provider: reviewConfig.provider,
+        model: reviewConfig.model,
+        operation: "runAutopilotMonitorPass",
+        requestPayload: monitorRequestIdentity,
+        toolDefinitions: [monitorTool],
+      },
+      async (onRequestAttempt) =>
+        await adapter.startTurn({
+          model: reviewConfig.model,
+          reasoning: reviewConfig.reasoning,
+          systemPrompt: monitorSystemPrompt,
+          userPrompt: monitorUserPrompt,
+          tools: [monitorTool],
+          ...(signal ? { signal } : {}),
+          ...(onRequestAttempt ? { onRequestAttempt } : {}),
+        }),
+    );
     const receipt = createInstructionDeliveryReceipt({
       plan: reviewInstructionPlan,
       phase: "validator",

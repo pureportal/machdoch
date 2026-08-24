@@ -239,6 +239,7 @@ import {
 import { executeTask } from "./execution.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
+import { isTaskModelUsageReport } from "./model-usage.js";
 import { mcpClientManager } from "./mcp/client.js";
 import {
   createImageInputUnsupportedModelMessage,
@@ -11311,6 +11312,12 @@ const addTokenUsage = (
     totalTokens: (total.totalTokens ?? 0) + (usage.totalTokens ?? 0),
     cachedInputTokens:
       (total.cachedInputTokens ?? 0) + (usage.cachedInputTokens ?? 0),
+    cacheReadInputTokens:
+      (total.cacheReadInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0),
+    cacheWriteInputTokens:
+      (total.cacheWriteInputTokens ?? 0) + (usage.cacheWriteInputTokens ?? 0),
+    toolUseInputTokens:
+      (total.toolUseInputTokens ?? 0) + (usage.toolUseInputTokens ?? 0),
     reasoningTokens:
       (total.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0),
   };
@@ -11341,6 +11348,10 @@ const createBlockPerformanceMetrics = (
   result: RalphBlockExecutionResult,
 ): Record<string, unknown> => {
   const progress = result.progress ?? [];
+  const modelUsageValue = result.result?.metadata?.modelUsage;
+  const modelUsageReport = isTaskModelUsageReport(modelUsageValue)
+    ? modelUsageValue
+    : undefined;
   let modelCallCount = 0;
   let monitorPassCount = 0;
   let modelCallDurationMs = 0;
@@ -11373,6 +11384,40 @@ const createBlockPerformanceMetrics = (
     tokenUsage = addTokenUsage(tokenUsage, event.tokenUsage);
   }
 
+  if (modelUsageReport) {
+    modelCallCount = modelUsageReport.totals.modelCallCount;
+    monitorPassCount = modelUsageReport.calls
+      .filter((call) => call.stage === "validator")
+      .reduce((count, call) => count + call.modelCallCount, 0);
+    modelCallDurationMs = modelUsageReport.totals.aggregateCallDurationMs;
+    tokenUsage = addTokenUsage({}, modelUsageReport.totals);
+  }
+
+  const modelUsageMetrics = modelUsageReport
+    ? {
+        providerRequestCount: modelUsageReport.totals.providerRequestCount,
+        apiCallCount: modelUsageReport.totals.apiCallCount,
+        cliCallCount: modelUsageReport.totals.cliCallCount,
+        auxiliaryCallCount: modelUsageReport.totals.auxiliaryCallCount,
+        retryCount: modelUsageReport.totals.retryCount,
+        modelCallTelemetryUnavailableCallCount:
+          modelUsageReport.totals.modelCallTelemetryUnavailableCallCount,
+        providerRequestTelemetryUnavailableCallCount:
+          modelUsageReport.totals.providerRequestTelemetryUnavailableCallCount,
+        retryTelemetryUnavailableCallCount:
+          modelUsageReport.totals.retryTelemetryUnavailableCallCount,
+        failedModelCallCount: modelUsageReport.totals.failedCallCount,
+        failedProviderRequestCount: modelUsageReport.totals.failedRequestCount,
+        usageReportedCallCount: modelUsageReport.totals.usageReportedCallCount,
+        usageUnavailableCallCount:
+          modelUsageReport.totals.usageUnavailableCallCount,
+        modelRequestBytes: modelUsageReport.totals.requestBytes,
+        modelResponseBytes: modelUsageReport.totals.responseBytes,
+        toolDefinitionBytes: modelUsageReport.totals.toolDefinitionBytes,
+        toolResultBytes: modelUsageReport.totals.toolResultBytes,
+      }
+    : {};
+
   const metrics = {
     ...(result.durationMs !== undefined
       ? { durationMs: result.durationMs }
@@ -11384,6 +11429,7 @@ const createBlockPerformanceMetrics = (
     ...(monitorPassCount > 0 ? { monitorPassCount } : {}),
     ...(modelCallDurationMs > 0 ? { modelCallDurationMs } : {}),
     ...(toolCallDurationMs > 0 ? { toolCallDurationMs } : {}),
+    ...modelUsageMetrics,
     ...(omitEmptyTokenUsage(tokenUsage)
       ? { tokenUsage: omitEmptyTokenUsage(tokenUsage) }
       : {}),
@@ -11436,6 +11482,22 @@ const createFinalReportPerformanceSummary = (
   let monitorPassCount = 0;
   let modelCallDurationMs = 0;
   let toolCallDurationMs = 0;
+  let providerRequestCount = 0;
+  let apiCallCount = 0;
+  let cliCallCount = 0;
+  let auxiliaryCallCount = 0;
+  let retryCount = 0;
+  let modelCallTelemetryUnavailableCallCount = 0;
+  let providerRequestTelemetryUnavailableCallCount = 0;
+  let retryTelemetryUnavailableCallCount = 0;
+  let failedModelCallCount = 0;
+  let failedProviderRequestCount = 0;
+  let usageReportedCallCount = 0;
+  let usageUnavailableCallCount = 0;
+  let modelRequestBytes = 0;
+  let modelResponseBytes = 0;
+  let toolDefinitionBytes = 0;
+  let toolResultBytes = 0;
   let tokenUsage: TaskExecutionTokenUsage = {};
   let changedFileCount = 0;
   let validationTier = "";
@@ -11463,6 +11525,62 @@ const createFinalReportPerformanceSummary = (
       typeof metrics.toolCallDurationMs === "number"
         ? metrics.toolCallDurationMs
         : 0;
+    providerRequestCount +=
+      typeof metrics.providerRequestCount === "number"
+        ? metrics.providerRequestCount
+        : 0;
+    apiCallCount +=
+      typeof metrics.apiCallCount === "number" ? metrics.apiCallCount : 0;
+    cliCallCount +=
+      typeof metrics.cliCallCount === "number" ? metrics.cliCallCount : 0;
+    auxiliaryCallCount +=
+      typeof metrics.auxiliaryCallCount === "number"
+        ? metrics.auxiliaryCallCount
+        : 0;
+    retryCount +=
+      typeof metrics.retryCount === "number" ? metrics.retryCount : 0;
+    modelCallTelemetryUnavailableCallCount +=
+      typeof metrics.modelCallTelemetryUnavailableCallCount === "number"
+        ? metrics.modelCallTelemetryUnavailableCallCount
+        : 0;
+    providerRequestTelemetryUnavailableCallCount +=
+      typeof metrics.providerRequestTelemetryUnavailableCallCount === "number"
+        ? metrics.providerRequestTelemetryUnavailableCallCount
+        : 0;
+    retryTelemetryUnavailableCallCount +=
+      typeof metrics.retryTelemetryUnavailableCallCount === "number"
+        ? metrics.retryTelemetryUnavailableCallCount
+        : 0;
+    failedModelCallCount +=
+      typeof metrics.failedModelCallCount === "number"
+        ? metrics.failedModelCallCount
+        : 0;
+    failedProviderRequestCount +=
+      typeof metrics.failedProviderRequestCount === "number"
+        ? metrics.failedProviderRequestCount
+        : 0;
+    usageReportedCallCount +=
+      typeof metrics.usageReportedCallCount === "number"
+        ? metrics.usageReportedCallCount
+        : 0;
+    usageUnavailableCallCount +=
+      typeof metrics.usageUnavailableCallCount === "number"
+        ? metrics.usageUnavailableCallCount
+        : 0;
+    modelRequestBytes +=
+      typeof metrics.modelRequestBytes === "number"
+        ? metrics.modelRequestBytes
+        : 0;
+    modelResponseBytes +=
+      typeof metrics.modelResponseBytes === "number"
+        ? metrics.modelResponseBytes
+        : 0;
+    toolDefinitionBytes +=
+      typeof metrics.toolDefinitionBytes === "number"
+        ? metrics.toolDefinitionBytes
+        : 0;
+    toolResultBytes +=
+      typeof metrics.toolResultBytes === "number" ? metrics.toolResultBytes : 0;
     tokenUsage = addTokenUsage(
       tokenUsage,
       isRecord(metrics.tokenUsage)
@@ -11488,6 +11606,22 @@ const createFinalReportPerformanceSummary = (
     monitorPassCount,
     modelCallDurationMs,
     toolCallDurationMs,
+    providerRequestCount,
+    apiCallCount,
+    cliCallCount,
+    auxiliaryCallCount,
+    retryCount,
+    modelCallTelemetryUnavailableCallCount,
+    providerRequestTelemetryUnavailableCallCount,
+    retryTelemetryUnavailableCallCount,
+    failedModelCallCount,
+    failedProviderRequestCount,
+    usageReportedCallCount,
+    usageUnavailableCallCount,
+    modelRequestBytes,
+    modelResponseBytes,
+    toolDefinitionBytes,
+    toolResultBytes,
     changedFileCount,
     ...(validationTier ? { validationTier } : {}),
     ...(validationCommand ? { validationCommand } : {}),
