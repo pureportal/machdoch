@@ -44,6 +44,17 @@ interface SpawnCall {
 }
 
 const spawnCalls: SpawnCall[] = [];
+const writeCopilotAssistantMessage = (
+  child: MockChildProcess,
+  content: string,
+): void => {
+  child.stdout.write(
+    `${JSON.stringify({ type: "assistant.message", data: { content } })}\n`,
+  );
+};
+const writeCopilotResult = (child: MockChildProcess, exitCode = 0): void => {
+  child.stdout.write(`${JSON.stringify({ type: "result", exitCode })}\n`);
+};
 const waitForCondition = async (callback: () => unknown): Promise<void> => {
   await vi.waitFor(callback, { timeout: 5_000 });
 };
@@ -64,6 +75,7 @@ vi.mock("node:child_process", () => ({
           "--effort",
           "--no-auto-update",
           "--no-custom-instructions",
+          "--output-format",
           "--stream",
           "--additional-mcp-config",
           "--disable-builtin-mcps",
@@ -274,6 +286,7 @@ const createExternalInstructionPlan = (
                 "--effort",
                 "--no-auto-update",
                 "--no-custom-instructions",
+                "--output-format",
                 "--stream",
                 "--additional-mcp-config",
                 "--disable-builtin-mcps",
@@ -2094,6 +2107,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.executable).toBe(process.execPath);
     expect(call?.args).toContain("-s");
     expect(call?.args).toContain("--stream=off");
+    expect(call?.args).toContain("--output-format=json");
     expect(call?.args).not.toContain("-p");
     expect(call?.args).not.toContain("--prompt");
     expect(call?.args).toContain("--autopilot");
@@ -2118,7 +2132,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     );
     expect(call?.child.stdinText).toContain("User task:");
 
-    call?.child.stdout.write("Copilot delegated answer.");
+    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -2127,7 +2141,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Copilot delegated answer.");
   });
 
-  it("preserves the final Copilot answer when the CLI does not exit", async () => {
+  it("waits for Copilot's result record before recovering a non-exiting CLI", async () => {
     const workspaceRoot = await createWorkspace();
     const processKillSpy =
       process.platform === "win32"
@@ -2146,7 +2160,19 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       vi.useFakeTimers();
-      call.child.stdout.write("Copilot completed answer.");
+      writeCopilotAssistantMessage(
+        call.child,
+        "Copilot is still inspecting the repository.",
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(spawnCalls).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).not.toHaveBeenCalled();
+      }
+
+      writeCopilotAssistantMessage(call.child, "Copilot completed answer.");
+      writeCopilotResult(call.child);
       await vi.advanceTimersByTimeAsync(10_000);
 
       if (process.platform === "win32") {
@@ -2212,7 +2238,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ).toContain("Run with full local access");
     expect(call?.child.stdinText).not.toContain("Run in read-only mode");
 
-    call?.child.stdout.write("Copilot delegated answer.");
+    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2241,7 +2267,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(childEnv?.GITHUB_TOKEN).toBeUndefined();
 
-    call?.child.stdout.write("Copilot delegated answer.");
+    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2288,13 +2314,13 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN",
     );
 
-    call?.child.stdout.write("Copilot delegated answer.");
+    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
-  it("passes explicit copilot models and reports nonzero exits as blocked", async () => {
+  it("passes explicit copilot models and reports nonzero results as blocked", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
@@ -2312,7 +2338,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--model=gpt-5.3-codex");
 
     call?.child.stderr.write("Copilot authentication required");
-    call?.child.emit("close", 1, null);
+    writeCopilotResult(call!.child, 1);
+    call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
 
@@ -2342,7 +2369,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--effort=xhigh");
     expect(call?.args).toContain("--context=long_context");
 
-    call?.child.stdout.write("Copilot delegated answer.");
+    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -2372,7 +2399,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--autopilot");
     expect(call?.args).toContain("--max-autopilot-continues=9");
 
-    call?.child.stdout.write("Copilot delegated answer.");
+    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;

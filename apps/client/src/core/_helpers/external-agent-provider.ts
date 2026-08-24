@@ -49,6 +49,10 @@ import {
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
 } from "../../shared/unicode.js";
+import {
+  CopilotCliOutputDecoder,
+  type CopilotCliOutputUpdate,
+} from "./copilot-cli-output.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
@@ -751,6 +755,11 @@ const finalizeBoundedOutput = (buffer: BoundedOutputBuffer): string => {
     : buffer.text;
 };
 
+const limitCapturedOutput = (value: string, limit: number): string =>
+  value.length > limit
+    ? `${sliceUtf16PrefixAtCodePointBoundary(value, limit)}${TRUNCATED_OUTPUT_MARKER}`
+    : value;
+
 const createActionOutputBatcher = (
   onActionOutput: TaskActionOutputHandler | undefined,
 ): {
@@ -847,6 +856,8 @@ const runExternalAgentCommand = async (
     });
     const stdout: BoundedOutputBuffer = { text: "", truncated: false };
     const stderr: BoundedOutputBuffer = { text: "", truncated: false };
+    const copilotOutputDecoder =
+      provider === "copilot-cli" ? new CopilotCliOutputDecoder() : undefined;
     const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
     let settled = false;
     let abortError: Error | undefined;
@@ -861,6 +872,7 @@ const runExternalAgentCommand = async (
       | ReturnType<typeof setTimeout>
       | undefined;
     let providerShutdownFinalizationStarted = false;
+    let copilotResultExitCode: number | undefined;
     let observedChildExit:
       | {
           exitCode: number | null;
@@ -919,7 +931,12 @@ const runExternalAgentCommand = async (
       resolve({
         exitCode,
         signal: exitSignal,
-        stdout: finalizeBoundedOutput(stdout),
+        stdout: copilotOutputDecoder
+          ? limitCapturedOutput(
+              copilotOutputDecoder.getFinalOutput(),
+              MAX_CAPTURED_STDOUT_CHARS,
+            )
+          : finalizeBoundedOutput(stdout),
         stderr: finalizeBoundedOutput(stderr),
         ...(shutdownRecovery
           ? { providerShutdownRecovery: shutdownRecovery }
@@ -932,10 +949,14 @@ const runExternalAgentCommand = async (
         return;
       }
 
+      if (copilotOutputDecoder) {
+        handleCopilotOutputUpdate(copilotOutputDecoder.finish());
+      }
+
       resolveOnce(
         providerShutdownRecovery.childExitObservedBeforeRecovery
           ? providerShutdownRecovery.childExitCode
-          : null,
+          : (copilotResultExitCode ?? null),
         providerShutdownRecovery.childExitObservedBeforeRecovery
           ? providerShutdownRecovery.childExitSignal
           : null,
@@ -973,7 +994,10 @@ const runExternalAgentCommand = async (
     };
 
     const beginProviderShutdownRecovery = (): void => {
-      const finalOutputObserved = cleanCliText(stdout.text).length > 0;
+      const finalOutputObserved =
+        provider === "copilot-cli"
+          ? copilotResultExitCode !== undefined
+          : cleanCliText(stdout.text).length > 0;
       if (
         settled ||
         abortError ||
@@ -1021,7 +1045,10 @@ const runExternalAgentCommand = async (
       }
 
       const hasCompletionEvidence =
-        cleanCliText(stdout.text).length > 0 || observedChildExit !== undefined;
+        (provider === "copilot-cli"
+          ? copilotResultExitCode !== undefined
+          : cleanCliText(stdout.text).length > 0) ||
+        observedChildExit !== undefined;
       if (!hasCompletionEvidence) {
         if (completionShutdownHandle) {
           clearTimeout(completionShutdownHandle);
@@ -1101,8 +1128,26 @@ const runExternalAgentCommand = async (
         return;
       }
 
+      if (copilotOutputDecoder) {
+        handleCopilotOutputUpdate(copilotOutputDecoder.push(chunk));
+        return;
+      }
+
       appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
       actionOutputBatcher.enqueue("stdout", chunk);
+      scheduleCompletionShutdownCheck();
+    }
+
+    function handleCopilotOutputUpdate(update: CopilotCliOutputUpdate): void {
+      for (const displayText of update.displayText) {
+        actionOutputBatcher.enqueue("stdout", displayText);
+      }
+
+      if (update.resultExitCode === undefined) {
+        return;
+      }
+
+      copilotResultExitCode = update.resultExitCode;
       scheduleCompletionShutdownCheck();
     }
 
@@ -1159,6 +1204,9 @@ const runExternalAgentCommand = async (
       if (settled) {
         return;
       }
+      if (copilotOutputDecoder) {
+        handleCopilotOutputUpdate(copilotOutputDecoder.finish());
+      }
       if (providerShutdownRecovery) {
         // On Unix the direct child can exit before descendants in its group.
         // Escalate the already-requested group shutdown before settling.
@@ -1185,7 +1233,11 @@ const runExternalAgentCommand = async (
         return;
       }
 
-      resolveOnce(exitCode, exitSignal);
+      const effectiveExitCode =
+        copilotResultExitCode !== undefined && exitCode === 0
+          ? copilotResultExitCode
+          : exitCode;
+      resolveOnce(effectiveExitCode, exitSignal);
     }
 
     child.stdout?.setEncoding("utf8");
@@ -1445,14 +1497,18 @@ const createCopilotCommand = ({
   const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);
   const maxTurns = getExecutorTurnLimit(config);
   const secretEnvKeys = getProviderSecretEnvKeys("copilot-cli");
-  if (!providerFeatures.includes("--stream")) {
+  if (
+    !providerFeatures.includes("--stream") ||
+    !providerFeatures.includes("--output-format")
+  ) {
     throw new Error(
-      "The selected Copilot CLI cannot provide bounded result delivery because its capability probe did not expose --stream.",
+      "The selected Copilot CLI cannot provide structured result delivery. Upgrade to a version that supports --stream and --output-format.",
     );
   }
   const args = [
     "-s",
     "--stream=off",
+    "--output-format=json",
     "--autopilot",
     "--no-ask-user",
     `--secret-env-vars=${secretEnvKeys.join(",")}`,
@@ -1983,10 +2039,11 @@ const executeExternalAgentCliTask = async (
     ],
   };
 
-  const finalAnswerRecoveredWithoutChildExit =
+  const finalAnswerRecoveredWithoutExitCode =
     result.providerShutdownRecovery !== undefined &&
-    !result.providerShutdownRecovery.childExitObservedBeforeRecovery;
-  if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutChildExit) {
+    !result.providerShutdownRecovery.childExitObservedBeforeRecovery &&
+    result.exitCode === null;
+  if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutExitCode) {
     const reason = createExternalAgentFailureReason(
       providerLabel,
       stdout,

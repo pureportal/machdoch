@@ -80,7 +80,8 @@ describe("provider capability registry", () => {
       })
       .mockReturnValueOnce({
         status: 0,
-        stdout: "Usage: copilot --stream --effort <level> --context <mode>",
+        stdout:
+          "Usage: copilot --stream --output-format <format> --effort <level> --context <mode>",
         stderr: "",
       });
 
@@ -90,6 +91,11 @@ describe("provider capability registry", () => {
       { force: true },
     );
 
-    expect(result.features).toEqual(["--context", "--effort", "--stream"]);
+    expect(result.features).toEqual([
+      "--context",
+      "--effort",
+      "--output-format",
+      "--stream",
+    ]);
   });
 });

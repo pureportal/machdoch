@@ -136,6 +136,7 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
             "--effort",
             "--no-auto-update",
             "--no-custom-instructions",
+            "--output-format",
             "--stream",
             "--additional-mcp-config",
             "--disable-builtin-mcps",
