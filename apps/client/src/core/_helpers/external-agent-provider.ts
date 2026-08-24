@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { extname } from "node:path";
+import { extname, join } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
 import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
@@ -10,6 +10,7 @@ import type {
   RuntimeConfig,
 } from "../runtime-contract.generated.js";
 import type {
+  AgentModelStreamUsage,
   TaskActionOutputHandler,
   TaskExecutionResult,
   TaskExecutionSection,
@@ -49,16 +50,27 @@ import {
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
 } from "../../shared/unicode.js";
+import { CopilotCliOutputDecoder } from "./copilot-cli-output.js";
+import { readCopilotCliTelemetry } from "./copilot-cli-telemetry.js";
 import {
-  CopilotCliOutputDecoder,
-  type CopilotCliOutputUpdate,
-} from "./copilot-cli-output.js";
+  ClaudeCliOutputDecoder,
+  CodexCliOutputDecoder,
+  type ExternalAgentCliOutputDecoder,
+  type ExternalAgentCliOutputUpdate,
+} from "./external-agent-cli-output.js";
+import { recordExternalAgentModelCall } from "../model-usage.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+  stdoutBytes: number;
+  stderrBytes: number;
+  modelCallCount: number;
+  modelCallCountReported: boolean;
+  usage?: AgentModelStreamUsage;
+  retryCount?: number;
   providerShutdownRecovery?: {
     kind: "final-output-exit-timeout" | "child-exit-close-timeout";
     graceMs: number;
@@ -854,10 +866,13 @@ const runExternalAgentCommand = async (
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
-    const stdout: BoundedOutputBuffer = { text: "", truncated: false };
     const stderr: BoundedOutputBuffer = { text: "", truncated: false };
-    const copilotOutputDecoder =
-      provider === "copilot-cli" ? new CopilotCliOutputDecoder() : undefined;
+    const outputDecoder: ExternalAgentCliOutputDecoder =
+      provider === "codex-cli"
+        ? new CodexCliOutputDecoder()
+        : provider === "claude-cli"
+          ? new ClaudeCliOutputDecoder()
+          : new CopilotCliOutputDecoder();
     const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
     let settled = false;
     let abortError: Error | undefined;
@@ -872,7 +887,9 @@ const runExternalAgentCommand = async (
       | ReturnType<typeof setTimeout>
       | undefined;
     let providerShutdownFinalizationStarted = false;
-    let copilotResultExitCode: number | undefined;
+    let structuredResultExitCode: number | undefined;
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     let observedChildExit:
       | {
           exitCode: number | null;
@@ -928,16 +945,24 @@ const runExternalAgentCommand = async (
 
       settled = true;
       cleanup();
+      const usage = outputDecoder.getUsage();
+      const retryCount = outputDecoder.getRetryCount();
+      const effectiveExitCode =
+        exitCode === 0 && !outputDecoder.hasTerminalResult() ? 1 : exitCode;
       resolve({
-        exitCode,
+        exitCode: effectiveExitCode,
         signal: exitSignal,
-        stdout: copilotOutputDecoder
-          ? limitCapturedOutput(
-              copilotOutputDecoder.getFinalOutput(),
-              MAX_CAPTURED_STDOUT_CHARS,
-            )
-          : finalizeBoundedOutput(stdout),
+        stdout: limitCapturedOutput(
+          outputDecoder.getFinalOutput(),
+          MAX_CAPTURED_STDOUT_CHARS,
+        ),
         stderr: finalizeBoundedOutput(stderr),
+        stdoutBytes,
+        stderrBytes,
+        modelCallCount: outputDecoder.getModelCallCount(),
+        modelCallCountReported: outputDecoder.isModelCallCountReported(),
+        ...(usage ? { usage } : {}),
+        ...(retryCount === undefined ? {} : { retryCount }),
         ...(shutdownRecovery
           ? { providerShutdownRecovery: shutdownRecovery }
           : {}),
@@ -949,14 +974,12 @@ const runExternalAgentCommand = async (
         return;
       }
 
-      if (copilotOutputDecoder) {
-        handleCopilotOutputUpdate(copilotOutputDecoder.finish());
-      }
+      handleStructuredOutputUpdate(outputDecoder.finish());
 
       resolveOnce(
         providerShutdownRecovery.childExitObservedBeforeRecovery
           ? providerShutdownRecovery.childExitCode
-          : (copilotResultExitCode ?? null),
+          : (structuredResultExitCode ?? null),
         providerShutdownRecovery.childExitObservedBeforeRecovery
           ? providerShutdownRecovery.childExitSignal
           : null,
@@ -994,15 +1017,11 @@ const runExternalAgentCommand = async (
     };
 
     const beginProviderShutdownRecovery = (): void => {
-      const finalOutputObserved =
-        provider === "copilot-cli"
-          ? copilotResultExitCode !== undefined
-          : cleanCliText(stdout.text).length > 0;
+      const finalOutputObserved = outputDecoder.hasTerminalResult();
       if (
         settled ||
         abortError ||
         providerShutdownRecovery ||
-        (provider !== "codex-cli" && provider !== "copilot-cli") ||
         (!finalOutputObserved && observedChildExit === undefined)
       ) {
         return;
@@ -1035,20 +1054,12 @@ const runExternalAgentCommand = async (
     };
 
     const scheduleCompletionShutdownCheck = (): void => {
-      if (
-        (provider !== "codex-cli" && provider !== "copilot-cli") ||
-        settled ||
-        abortError ||
-        providerShutdownRecovery
-      ) {
+      if (settled || abortError || providerShutdownRecovery) {
         return;
       }
 
       const hasCompletionEvidence =
-        (provider === "copilot-cli"
-          ? copilotResultExitCode !== undefined
-          : cleanCliText(stdout.text).length > 0) ||
-        observedChildExit !== undefined;
+        outputDecoder.hasTerminalResult() || observedChildExit !== undefined;
       if (!hasCompletionEvidence) {
         if (completionShutdownHandle) {
           clearTimeout(completionShutdownHandle);
@@ -1128,17 +1139,14 @@ const runExternalAgentCommand = async (
         return;
       }
 
-      if (copilotOutputDecoder) {
-        handleCopilotOutputUpdate(copilotOutputDecoder.push(chunk));
-        return;
-      }
-
-      appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
-      actionOutputBatcher.enqueue("stdout", chunk);
+      stdoutBytes += Buffer.byteLength(chunk, "utf8");
+      handleStructuredOutputUpdate(outputDecoder.push(chunk));
       scheduleCompletionShutdownCheck();
     }
 
-    function handleCopilotOutputUpdate(update: CopilotCliOutputUpdate): void {
+    function handleStructuredOutputUpdate(
+      update: ExternalAgentCliOutputUpdate,
+    ): void {
       for (const displayText of update.displayText) {
         actionOutputBatcher.enqueue("stdout", displayText);
       }
@@ -1147,7 +1155,7 @@ const runExternalAgentCommand = async (
         return;
       }
 
-      copilotResultExitCode = update.resultExitCode;
+      structuredResultExitCode = update.resultExitCode;
       scheduleCompletionShutdownCheck();
     }
 
@@ -1157,6 +1165,7 @@ const runExternalAgentCommand = async (
       }
 
       appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
+      stderrBytes += Buffer.byteLength(chunk, "utf8");
       actionOutputBatcher.enqueue("stderr", chunk);
     }
 
@@ -1204,9 +1213,7 @@ const runExternalAgentCommand = async (
       if (settled) {
         return;
       }
-      if (copilotOutputDecoder) {
-        handleCopilotOutputUpdate(copilotOutputDecoder.finish());
-      }
+      handleStructuredOutputUpdate(outputDecoder.finish());
       if (providerShutdownRecovery) {
         // On Unix the direct child can exit before descendants in its group.
         // Escalate the already-requested group shutdown before settling.
@@ -1234,9 +1241,11 @@ const runExternalAgentCommand = async (
       }
 
       const effectiveExitCode =
-        copilotResultExitCode !== undefined && exitCode === 0
-          ? copilotResultExitCode
-          : exitCode;
+        structuredResultExitCode !== undefined && exitCode === 0
+          ? structuredResultExitCode
+          : exitCode === 0 && !outputDecoder.hasTerminalResult()
+            ? 1
+            : exitCode;
       resolveOnce(effectiveExitCode, exitSignal);
     }
 
@@ -1331,6 +1340,7 @@ const createCodexArgs = (
   }
 
   args.push(
+    "--json",
     "--skip-git-repo-check",
     "--ignore-rules",
     "--cd",
@@ -1414,7 +1424,13 @@ const createCodexCommand = ({
   imageInputs,
   delegationMode,
   enrollmentArgs,
+  providerFeatures,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
+  if (!providerFeatures.includes("--json")) {
+    throw new Error(
+      "The selected Codex CLI cannot provide structured result delivery. Upgrade to a version that supports codex exec --json.",
+    );
+  }
   const command = createCodexArgs(config, imageInputs, delegationMode);
   command.args.splice(-1, 0, ...enrollmentArgs);
   return { ...command, input: prompt };
@@ -1432,10 +1448,19 @@ const createClaudeCommand = ({
     contextWindow,
   );
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
+  if (
+    !providerFeatures.includes("--output-format") ||
+    !providerFeatures.includes("--verbose")
+  ) {
+    throw new Error(
+      "The selected Claude CLI cannot provide structured streaming results. Upgrade to a version that supports --output-format and --verbose.",
+    );
+  }
   const args = [
     "-p",
     "--output-format",
-    "text",
+    "stream-json",
+    "--verbose",
     "--model",
     model,
     "--dangerously-skip-permissions",
@@ -1469,6 +1494,7 @@ const createClaudeCommand = ({
       ...(effort ? [`effort: ${effort}`] : []),
       ...(contextWindow === "long" ? ["context window: long"] : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
+      "structured output: stream-json",
     ],
     metadata: {
       access: "dangerously-skip-permissions",
@@ -1477,6 +1503,7 @@ const createClaudeCommand = ({
       effectiveModel: model,
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
+      structuredOutput: "stream-json",
     },
   };
 };
@@ -1709,6 +1736,20 @@ const executeExternalAgentCliTask = async (
     );
   }
 
+  const copilotTelemetryPath =
+    provider === "copilot-cli"
+      ? join(enrollment.rootPath, "copilot-otel.jsonl")
+      : undefined;
+  const externalAgentEnv: NodeJS.ProcessEnv = {
+    ...enrollment.env,
+    ...(copilotTelemetryPath
+      ? {
+          COPILOT_OTEL_FILE_EXPORTER_PATH: copilotTelemetryPath,
+          COPILOT_OTEL_EXPORTER_TYPE: "file",
+          OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false",
+        }
+      : {}),
+  };
   let command: ReturnType<typeof createExternalAgentCommand>;
   let externalAssembledRequestDigest: string;
   try {
@@ -1739,7 +1780,7 @@ const executeExternalAgentCliTask = async (
       executable: binary.executable,
       args: command.args,
       input: command.input,
-      environmentKeys: Object.keys(enrollment.env).sort(),
+      environmentKeys: Object.keys(externalAgentEnv).sort(),
       canonicalDigest: resolution.canonicalDigest,
     });
   } catch (error) {
@@ -1803,6 +1844,10 @@ const executeExternalAgentCliTask = async (
   }
 
   const startedAt = Date.now();
+  const externalRequestBytes =
+    Buffer.byteLength(command.input ?? "", "utf8") +
+    Buffer.byteLength(JSON.stringify(command.args), "utf8") +
+    enrollment.instructionDelivery.instructionPayloadBytes;
   const instructionReceipts = params.instructionDeliveryReceipts ?? [];
   const receiptEvidence = [
     ...enrollment.manifest.renderedFiles
@@ -1831,6 +1876,9 @@ const executeExternalAgentCliTask = async (
     },
   ];
   let result: SpawnedAgentResult;
+  let copilotTelemetry:
+    | Awaited<ReturnType<typeof readCopilotCliTelemetry>>
+    | undefined;
   try {
     result = await runExternalAgentCommand(
       binary.executable,
@@ -1838,11 +1886,46 @@ const executeExternalAgentCliTask = async (
       command.input,
       executionConfig,
       provider,
-      enrollment.env,
+      externalAgentEnv,
       params.signal,
       params.onActionOutput,
     );
+    if (copilotTelemetryPath) {
+      copilotTelemetry = await readCopilotCliTelemetry(copilotTelemetryPath);
+      if (copilotTelemetry) {
+        result = {
+          ...result,
+          modelCallCount: copilotTelemetry.modelCallCount,
+          modelCallCountReported: true,
+          ...(copilotTelemetry.usage ? { usage: copilotTelemetry.usage } : {}),
+        };
+      }
+    }
   } catch (error) {
+    if (copilotTelemetryPath) {
+      copilotTelemetry = await readCopilotCliTelemetry(copilotTelemetryPath);
+    }
+    recordExternalAgentModelCall({
+      stage: "external-agent",
+      provider,
+      model: params.config.model,
+      executionPath: "cli",
+      operation: "executeExternalAgentCli",
+      status: "failed",
+      durationMs: Date.now() - startedAt,
+      requestBytes: externalRequestBytes,
+      responseBytes: 0,
+      ...(copilotTelemetry
+        ? {
+            modelCallCount: copilotTelemetry.modelCallCount,
+            ...(copilotTelemetry.usage
+              ? { usage: copilotTelemetry.usage }
+              : {}),
+          }
+        : {}),
+      retryCountReported: false,
+      modelCallCountReported: copilotTelemetry !== undefined,
+    });
     const failureReceipt = createInstructionDeliveryReceipt({
       plan: instructionPlan,
       phase: "initial",
@@ -2007,6 +2090,23 @@ const executeExternalAgentCliTask = async (
   const stdout = cleanCliText(result.stdout);
   const stderr = cleanCliText(result.stderr);
   const durationMs = Date.now() - startedAt;
+  recordExternalAgentModelCall({
+    stage: "external-agent",
+    provider,
+    model: params.config.model,
+    executionPath: "cli",
+    operation: "executeExternalAgentCli",
+    status: result.exitCode === 0 ? "completed" : "failed",
+    durationMs,
+    requestBytes: externalRequestBytes,
+    responseBytes: result.stdoutBytes + result.stderrBytes,
+    modelCallCount: result.modelCallCount,
+    modelCallCountReported: result.modelCallCountReported,
+    ...(result.usage ? { usage: result.usage } : {}),
+    ...(result.retryCount === undefined
+      ? { retryCountReported: false }
+      : { retryCount: result.retryCount, retryCountReported: true }),
+  });
   const providerShutdownDetail = result.providerShutdownRecovery
     ? result.providerShutdownRecovery.kind === "child-exit-close-timeout"
       ? `provider shutdown: child exited but inherited stdio did not close within ${result.providerShutdownRecovery.graceMs / 1_000} seconds; descendant-tree termination requested and inherited streams closed`

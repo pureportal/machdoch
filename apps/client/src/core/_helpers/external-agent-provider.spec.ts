@@ -55,6 +55,52 @@ const writeCopilotAssistantMessage = (
 const writeCopilotResult = (child: MockChildProcess, exitCode = 0): void => {
   child.stdout.write(`${JSON.stringify({ type: "result", exitCode })}\n`);
 };
+const writeCodexMessage = (child: MockChildProcess, content: string): void => {
+  child.stdout.write(
+    `${JSON.stringify({
+      type: "item.completed",
+      item: { id: randomUUID(), type: "agent_message", text: content },
+    })}\n`,
+  );
+};
+const writeCodexResult = (child: MockChildProcess): void => {
+  child.stdout.write(
+    `${JSON.stringify({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 100,
+        cached_input_tokens: 50,
+        cache_write_input_tokens: 0,
+        output_tokens: 20,
+        reasoning_output_tokens: 5,
+      },
+    })}\n`,
+  );
+};
+const writeStructuredAnswer = (call: SpawnCall, content: string): void => {
+  if (call.args.includes("--json")) {
+    writeCodexMessage(call.child, content);
+    writeCodexResult(call.child);
+    return;
+  }
+
+  if (call.args.includes("stream-json")) {
+    call.child.stdout.write(
+      `${JSON.stringify({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 1,
+        result: content,
+        usage: { input_tokens: 100, output_tokens: 20 },
+      })}\n`,
+    );
+    return;
+  }
+
+  writeCopilotAssistantMessage(call.child, content);
+  writeCopilotResult(call.child);
+};
 const waitForCondition = async (callback: () => unknown): Promise<void> => {
   await vi.waitFor(callback, { timeout: 5_000 });
 };
@@ -65,6 +111,7 @@ vi.mock("node:child_process", () => ({
     stdout: args.includes("--help")
       ? [
           "--config",
+          "--json",
           "--append-system-prompt-file",
           "--mcp-config",
           "--setting-sources",
@@ -76,6 +123,7 @@ vi.mock("node:child_process", () => ({
           "--no-auto-update",
           "--no-custom-instructions",
           "--output-format",
+          "--verbose",
           "--stream",
           "--additional-mcp-config",
           "--disable-builtin-mcps",
@@ -275,8 +323,10 @@ const createExternalInstructionPlan = (
               "--append-system-prompt-file",
               "--effort",
               "--mcp-config",
+              "--output-format",
               "--setting-sources",
               "--strict-mcp-config",
+              "--verbose",
             ]
           : resolution.providerId === "copilot-cli"
             ? [
@@ -292,7 +342,7 @@ const createExternalInstructionPlan = (
                 "--disable-builtin-mcps",
                 "--disable-mcp-server",
               ]
-            : ["--config"],
+            : ["--config", "--json"],
       warnings: [],
     }),
   });
@@ -430,13 +480,13 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "exec",
       "--dangerously-bypass-approvals-and-sandbox",
       "--ephemeral",
+      "--json",
       "--skip-git-repo-check",
       "--ignore-rules",
       "--cd",
       workspaceRoot,
       "--model",
       "gpt-5.5",
-      "--config",
     ]);
     expect(call?.args).not.toContain("--ask-for-approval");
     expect(call?.args).not.toContain("--sandbox");
@@ -450,7 +500,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.child.stdinText).toContain("User task:");
     expect(call?.options.cwd).toBe(workspaceRoot);
 
-    call?.child.stdout.write("Codex delegated answer.");
+    writeStructuredAnswer(call!, "Codex delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -495,7 +545,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         "exactly one Machdoch control record",
       );
 
-      call.child.stdout.write(`Completed delegated work.\n${doneLine}`);
+      writeStructuredAnswer(call, `Completed delegated work.\n${doneLine}`);
       call.child.emit("close", 0, null);
 
       const result = await resultPromise;
@@ -518,7 +568,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0]!;
-    call.child.stdout.write("Completed without controller data.");
+    writeStructuredAnswer(call, "Completed without controller data.");
     call.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({
@@ -543,7 +593,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       vi.useFakeTimers();
-      call.child.stdout.write("Codex delegated answer.");
+      writeStructuredAnswer(call, "Codex delegated answer.");
       call.child.emit("exit", 0, null);
       call.child.emit("close", 0, null);
 
@@ -587,7 +637,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         const call = spawnCalls[0]!;
 
         vi.useFakeTimers();
-        call.child.stdout.write("Codex completed answer.");
+        writeStructuredAnswer(call, "Codex completed answer.");
         if (exitBeforeRecovery) {
           call.child.emit("exit", 0, null);
         }
@@ -643,7 +693,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           result?.outputSections.find(
             (section) => section.title === "Codex CLI",
           )?.lines,
-        ).toContain(`exit code: ${exitBeforeRecovery ? "0" : "unknown"}`);
+        ).toContain("exit code: 0");
         expect(
           spawnCalls.filter((spawnCall) => spawnCall.executable !== "taskkill"),
         ).toHaveLength(1);
@@ -668,7 +718,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
-  it("uses a fixed completion drain window while preserving chunked Codex output", async () => {
+  it("starts completion recovery only after a chunked Codex terminal event", async () => {
     const workspaceRoot = await createWorkspace();
     const processKillSpy =
       process.platform === "win32"
@@ -685,18 +735,31 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       const call = spawnCalls[0]!;
       vi.useFakeTimers();
 
-      call.child.stdout.write(" \r\n\t");
+      const structuredOutput = [
+        JSON.stringify({
+          type: "item.completed",
+          item: {
+            id: "chunked-answer",
+            type: "agent_message",
+            text: "Codex completed in chunks.",
+          },
+        }),
+        JSON.stringify({
+          type: "turn.completed",
+          usage: { input_tokens: 100, output_tokens: 20 },
+        }),
+        "",
+      ].join("\n");
+      const splitIndex = structuredOutput.indexOf(" in chunks");
+      call.child.stdout.write(structuredOutput.slice(0, splitIndex));
       await vi.advanceTimersByTimeAsync(10_000);
       expect(spawnCalls).toHaveLength(1);
       if (processKillSpy) {
         expect(processKillSpy).not.toHaveBeenCalled();
       }
 
-      call.child.stdout.write("Codex completed");
-      await vi.advanceTimersByTimeAsync(9_000);
-      call.child.stdout.write(" in chunks.");
-      call.child.stdout.write("  \r\n\t");
-      await vi.advanceTimersByTimeAsync(1_000);
+      call.child.stdout.write(structuredOutput.slice(splitIndex));
+      await vi.advanceTimersByTimeAsync(10_000);
 
       if (process.platform === "win32") {
         expect(spawnCalls[1]).toMatchObject({
@@ -742,7 +805,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       vi.useFakeTimers();
-      call.child.stdout.write("Codex completed answer.");
+      writeStructuredAnswer(call, "Codex completed answer.");
       await vi.advanceTimersByTimeAsync(10_000);
       controller.abort("late cancellation");
 
@@ -794,9 +857,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       vi.useFakeTimers();
 
       call.child.stdout.write(
-        "SUCCESS: The process with PID 1234 (child process",
+        "SUCCESS: The process with PID 1234 (child process of PID 5678) has been terminated.\r\n",
       );
-      call.child.stdout.write(" of PID 5678) has been terminated.\r\n");
       await vi.advanceTimersByTimeAsync(10_000);
 
       expect(spawnCalls).toHaveLength(1);
@@ -804,7 +866,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         expect(processKillSpy).not.toHaveBeenCalled();
       }
 
-      call.child.stdout.write("Actual Codex answer.");
+      writeStructuredAnswer(call, "Actual Codex answer.");
       call.child.emit("close", 0, null);
       const result = await resultPromise;
       expect(result).toMatchObject({
@@ -817,7 +879,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     }
   });
 
-  it("recovers a successful Codex exit when only whitespace and inherited stdio remain", async () => {
+  it("rejects a successful Codex exit without a terminal result event", async () => {
     const workspaceRoot = await createWorkspace();
     const processKillSpy =
       process.platform === "win32"
@@ -849,11 +911,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }
 
       await expect(resultPromise).resolves.toMatchObject({
-        status: "executed",
-        response: {
-          markdown:
-            "Codex CLI completed successfully but did not print a final message.",
-        },
+        status: "blocked",
         metadata: {
           providerShutdownRecoveryKind: "child-exit-close-timeout",
           providerChildExitObservedBeforeRecovery: true,
@@ -934,7 +992,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       vi.useFakeTimers();
-      call.child.stdout.write("Codex completed answer.");
+      writeStructuredAnswer(call, "Codex completed answer.");
       await vi.advanceTimersByTimeAsync(10_000);
       await vi.advanceTimersByTimeAsync(
         process.platform === "win32" ? 5_000 : 6_000,
@@ -981,7 +1039,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         throw new Error("simulated direct-child kill failure");
       });
       vi.useFakeTimers();
-      call.child.stdout.write("Codex completed answer.");
+      writeStructuredAnswer(call, "Codex completed answer.");
       await vi.advanceTimersByTimeAsync(10_000);
 
       if (process.platform === "win32") {
@@ -1005,7 +1063,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     }
   });
 
-  it("does not apply final-output teardown inference to Claude CLI", async () => {
+  it("recovers a non-exiting Claude CLI only after its terminal result event", async () => {
     const workspaceRoot = await createWorkspace();
     const processKillSpy =
       process.platform === "win32"
@@ -1024,19 +1082,29 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
       vi.useFakeTimers();
-      call.child.stdout.write("Delegated answer.");
-      call.child.emit("exit", 0, null);
-      await vi.advanceTimersByTimeAsync(20_000);
+      writeStructuredAnswer(call, "Delegated answer.");
+      await vi.advanceTimersByTimeAsync(10_000);
 
-      expect(spawnCalls).toHaveLength(1);
-      if (processKillSpy) {
-        expect(processKillSpy).not.toHaveBeenCalled();
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]).toMatchObject({
+          executable: "taskkill",
+          args: ["/PID", String(call.child.pid), "/T", "/F"],
+        });
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", null, "SIGTERM");
       }
 
-      call.child.emit("close", 0, null);
       await expect(resultPromise).resolves.toMatchObject({
         status: "executed",
         response: { markdown: "Delegated answer." },
+        metadata: {
+          providerShutdownRecoveryKind: "final-output-exit-timeout",
+        },
       });
     } finally {
       processKillSpy?.mockRestore();
@@ -1060,7 +1128,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
 
-    call?.child.stdout.write(
+    writeStructuredAnswer(
+      call!,
       `${"x".repeat(511_999)}\ud83e\udd8a${"x".repeat(100_000)}`,
     );
     call?.child.emit("close", 0, null);
@@ -1136,7 +1205,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
             ? childEnv.CLAUDE_CONFIG_DIR
             : childEnv.COPILOT_HOME;
 
-      call.child.stdout.write("Delegated answer.");
+      writeStructuredAnswer(call, "Delegated answer.");
       call.child.emit("close", 0, null);
 
       await expect(resultPromise).resolves.toMatchObject({
@@ -1181,7 +1250,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         ),
       ).toHaveLength(1);
 
-      call.child.stdout.write("Delegated answer.");
+      writeStructuredAnswer(call, "Delegated answer.");
       call.child.emit("close", 0, null);
       await expect(resultPromise).resolves.toMatchObject({
         status: "executed",
@@ -1239,7 +1308,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const resultPromise = maybeExecuteExternalAgentProviderTask(params);
     await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0];
-    call?.child.stdout.write("Budget telemetry did not block execution.");
+    writeStructuredAnswer(call!, "Budget telemetry did not block execution.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -1314,7 +1383,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain('model_reasoning_effort="ultra"');
     expect(call?.args).toContain("model_context_window=1050000");
 
-    call?.child.stdout.write("Codex Ultra answer.");
+    writeStructuredAnswer(call!, "Codex Ultra answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({
@@ -1323,7 +1392,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     });
   });
 
-  it("strips Windows taskkill success lines from Codex stdout", async () => {
+  it("ignores non-JSON process diagnostics around Codex result events", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
@@ -1336,11 +1405,11 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     call?.child.stdout.write(
-      [
-        "SUCCESS: The process with PID 1234 (child process of PID 5678) has been terminated.",
-        "Codex delegated answer.",
-        "SUCCESS: The process with PID 9012 has been terminated.",
-      ].join("\r\n"),
+      "SUCCESS: The process with PID 1234 (child process of PID 5678) has been terminated.\r\n",
+    );
+    writeStructuredAnswer(call!, "Codex delegated answer.");
+    call?.child.stdout.write(
+      "SUCCESS: The process with PID 9012 has been terminated.\r\n",
     );
     call?.child.emit("close", 0, null);
 
@@ -1373,7 +1442,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       `Workspace: ${workspaceRoot}`,
     );
 
-    call?.child.stdout.write("Codex delegated answer.");
+    writeStructuredAnswer(call!, "Codex delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({
@@ -1444,7 +1513,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "Run as a bounded artifact worker for Machdoch.",
     );
 
-    call?.child.stdout.write("<ralph_flow_json>{}</ralph_flow_json>");
+    writeStructuredAnswer(call!, "<ralph_flow_json>{}</ralph_flow_json>");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -1581,7 +1650,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0];
 
-      call?.child.stdout.write("Codex completed-looking answer.");
+      writeCodexMessage(call!.child, "Codex completed-looking answer.");
       controller.abort(
         "Execution stopped after exceeding the safety timeout of 25ms.",
       );
@@ -1760,7 +1829,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(childEnv?.CODEX_API_KEY).toBeUndefined();
 
-    call?.child.stdout.write("Codex delegated answer.");
+    writeStructuredAnswer(call!, "Codex delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -1789,7 +1858,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
 
-    call?.child.stdout.write("Codex delegated answer.");
+    writeStructuredAnswer(call!, "Codex delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -1822,7 +1891,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
     expect(childEnv?.PERPLEXITY_API_KEY).toBeUndefined();
 
-    call?.child.stdout.write("Codex delegated answer.");
+    writeStructuredAnswer(call!, "Codex delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -1854,7 +1923,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       expect.arrayContaining([
         "-p",
         "--output-format",
-        "text",
+        "stream-json",
+        "--verbose",
         "--model",
         "claude-sonnet-4-6[1m]",
         "--dangerously-skip-permissions",
@@ -1884,7 +1954,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     );
     expect(call?.child.stdinText).toContain("User task:");
 
-    call?.child.stdout.write("Claude delegated answer.");
+    writeStructuredAnswer(call!, "Claude delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -1944,7 +2014,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       expect(stdinOccurrences + nativeOccurrences).toBe(1);
       expect(stdinOccurrences).toBe(0);
       expect(nativeOccurrences).toBe(1);
-      call.child.stdout.write("Delegated answer.");
+      writeStructuredAnswer(call, "Delegated answer.");
       call.child.emit("close", 0, null);
       await expect(resultPromise).resolves.toMatchObject({
         status: "executed",
@@ -2015,7 +2085,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(childEnv?.ANTHROPIC_API_KEY).toBeUndefined();
 
-    call?.child.stdout.write("Claude delegated answer.");
+    writeStructuredAnswer(call!, "Claude delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2052,7 +2122,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(childEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
     expect(childEnv?.PERPLEXITY_API_KEY).toBeUndefined();
 
-    call?.child.stdout.write("Claude delegated answer.");
+    writeStructuredAnswer(call!, "Claude delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2083,7 +2153,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ).toContain("Run with full local access");
     expect(call?.child.stdinText).not.toContain("Run in read-only mode");
 
-    call?.child.stdout.write("Claude delegated answer.");
+    writeStructuredAnswer(call!, "Claude delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2132,7 +2202,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     );
     expect(call?.child.stdinText).toContain("User task:");
 
-    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -2238,7 +2308,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ).toContain("Run with full local access");
     expect(call?.child.stdinText).not.toContain("Run in read-only mode");
 
-    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2267,7 +2337,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(childEnv?.GITHUB_TOKEN).toBeUndefined();
 
-    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2314,7 +2384,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN",
     );
 
-    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
@@ -2369,7 +2439,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--effort=xhigh");
     expect(call?.args).toContain("--context=long_context");
 
-    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;
@@ -2399,7 +2469,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--autopilot");
     expect(call?.args).toContain("--max-autopilot-continues=9");
 
-    writeCopilotAssistantMessage(call!.child, "Copilot delegated answer.");
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
 
     const result = await resultPromise;

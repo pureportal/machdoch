@@ -1,3 +1,9 @@
+import type { AgentModelStreamUsage } from "../types.js";
+import type {
+  ExternalAgentCliOutputDecoder,
+  ExternalAgentCliOutputUpdate,
+} from "./external-agent-cli-output.js";
+
 const MAX_JSON_LINE_CHARS = 2_000_000;
 const MAX_DIAGNOSTIC_LINES = 20;
 const MAX_DIAGNOSTIC_LINE_CHARS = 2_000;
@@ -14,10 +20,7 @@ interface AssistantMessageChunks {
   hasToolRequests: boolean;
 }
 
-export interface CopilotCliOutputUpdate {
-  displayText: string[];
-  resultExitCode?: number;
-}
+export type CopilotCliOutputUpdate = ExternalAgentCliOutputUpdate;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -44,7 +47,7 @@ const parseEvent = (line: string): CopilotCliEvent | undefined => {
 const formatDisplayText = (content: string): string =>
   content.endsWith("\n") ? `${content}\n` : `${content}\n\n`;
 
-export class CopilotCliOutputDecoder {
+export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
   private pendingLine = "";
   private discardingOversizedLine = false;
   private readonly incompleteMessages = new Map<
@@ -113,6 +116,26 @@ export class CopilotCliOutputDecoder {
       this.latestAssistantText.trim() ||
       this.diagnostics.join("\n").trim()
     );
+  }
+
+  getUsage(): AgentModelStreamUsage | undefined {
+    return undefined;
+  }
+
+  getRetryCount(): number | undefined {
+    return undefined;
+  }
+
+  getModelCallCount(): number {
+    return 1;
+  }
+
+  isModelCallCountReported(): boolean {
+    return false;
+  }
+
+  hasTerminalResult(): boolean {
+    return this.reportedResultExitCode !== undefined;
   }
 
   private appendLineFragment(fragment: string): void {
