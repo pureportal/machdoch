@@ -82,7 +82,7 @@ describe("provider capability registry", () => {
     expect(spawnSyncMock).toHaveBeenCalledTimes(3);
   });
 
-  it("discovers Copilot reasoning and context controls from help output", async () => {
+  it("discovers Copilot attachment, reasoning, and context controls from help output", async () => {
     spawnSyncMock
       .mockReturnValueOnce({
         status: 0,
@@ -92,7 +92,7 @@ describe("provider capability registry", () => {
       .mockReturnValueOnce({
         status: 0,
         stdout:
-          "Usage: copilot --stream --output-format <format> --effort <level> --context <mode>",
+          "Usage: copilot --stream --output-format <format> --attachment <path> --effort <level> --context <mode>",
         stderr: "",
       });
 
@@ -103,6 +103,7 @@ describe("provider capability registry", () => {
     );
 
     expect(result.features).toEqual([
+      "--attachment",
       "--context",
       "--effort",
       "--output-format",

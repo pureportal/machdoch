@@ -1,5 +1,6 @@
 import {
   ANTHROPIC_IMAGE_MEDIA_TYPES,
+  COPILOT_CLI_IMAGE_MEDIA_TYPES,
   findProviderModelMetadata,
   GOOGLE_IMAGE_MEDIA_TYPES,
   OPENAI_IMAGE_MEDIA_TYPES,
@@ -32,6 +33,7 @@ export interface ModelCapabilityProfile {
 export interface ProviderCapabilityProfile {
   provider: ConfiguredModelProvider;
   imageInputMediaTypes: readonly AgentModelImageMediaType[];
+  providerManagedImageInput: boolean;
   providerModes: readonly ModelProviderMode[];
 }
 
@@ -132,26 +134,31 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
   anthropic: {
     provider: "anthropic",
     imageInputMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.anthropic,
   },
   "claude-cli": {
     provider: "claude-cli",
     imageInputMediaTypes: WITHOUT_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES["claude-cli"],
   },
   "codex-cli": {
     provider: "codex-cli",
     imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES["codex-cli"],
   },
   "copilot-cli": {
     provider: "copilot-cli",
-    imageInputMediaTypes: WITHOUT_IMAGE_MEDIA_TYPES,
+    imageInputMediaTypes: COPILOT_CLI_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: true,
     providerModes: PROVIDER_MODEL_MODES["copilot-cli"],
   },
   google: {
     provider: "google",
     imageInputMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.google,
   },
   langdock: {
@@ -160,11 +167,13 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
       ...OPENAI_IMAGE_MEDIA_TYPES,
       ...GOOGLE_IMAGE_MEDIA_TYPES,
     ],
+    providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.langdock,
   },
   openai: {
     provider: "openai",
     imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: false,
     providerModes: PROVIDER_MODEL_MODES.openai,
   },
 };
@@ -345,7 +354,18 @@ export const modelSupportsImageInput = (
     return discovered;
   }
 
-  return getModelCapabilityProfile(provider, model)?.imageInput ?? false;
+  const modelProfile = getModelCapabilityProfile(provider, model);
+
+  if (modelProfile) {
+    return modelProfile.imageInput;
+  }
+
+  const providerProfile = getProviderCapabilityProfile(provider);
+
+  return (
+    providerProfile?.providerManagedImageInput === true &&
+    providerProfile.imageInputMediaTypes.length > 0
+  );
 };
 
 export const modelSupportsToolUse = (

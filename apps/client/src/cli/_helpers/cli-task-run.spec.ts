@@ -171,6 +171,25 @@ describe("createImageInputsFromPaths", () => {
     ]);
   });
 
+  it("loads images for Copilot CLI provider-managed model selection", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await writeFile(join(workspaceRoot, "screen.png"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["screen.png"], workspaceRoot, {
+        provider: "copilot-cli",
+        model: "gpt-5.6-terra",
+      }),
+    ).resolves.toEqual([
+      {
+        path: join(workspaceRoot, "screen.png"),
+        mediaType: "image/png",
+        data: Buffer.from("image").toString("base64"),
+      },
+    ]);
+  });
+
   it("rejects image attachments for text-only models", async () => {
     const workspaceRoot = await createWorkspace();
 
