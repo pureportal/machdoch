@@ -60,8 +60,11 @@ vi.mock("node:child_process", () => ({
           "--strict-mcp-config",
           "--agent",
           "--attachment",
+          "--context",
+          "--effort",
           "--no-auto-update",
           "--no-custom-instructions",
+          "--stream",
           "--additional-mcp-config",
           "--disable-builtin-mcps",
           "--disable-mcp-server",
@@ -166,7 +169,12 @@ const createConfig = (
   overrides: Partial<
     Pick<
       RuntimeConfig,
-      "mode" | "provider" | "model" | "reasoning" | "agentLimits"
+      | "mode"
+      | "provider"
+      | "model"
+      | "reasoning"
+      | "contextWindow"
+      | "agentLimits"
     >
   > = {},
 ): RuntimeConfig => ({
@@ -175,6 +183,7 @@ const createConfig = (
   provider: overrides.provider ?? "codex-cli",
   model: overrides.model ?? "gpt-5.5",
   reasoning: overrides.reasoning ?? "default",
+  contextWindow: overrides.contextWindow ?? "default",
   offline: false,
   compatibility: {
     discoverGithubCustomizations: false,
@@ -252,6 +261,7 @@ const createExternalInstructionPlan = (
         resolution.providerId === "claude-cli"
           ? [
               "--append-system-prompt-file",
+              "--effort",
               "--mcp-config",
               "--setting-sources",
               "--strict-mcp-config",
@@ -260,8 +270,11 @@ const createExternalInstructionPlan = (
             ? [
                 "--agent",
                 "--attachment",
+                "--context",
+                "--effort",
                 "--no-auto-update",
                 "--no-custom-instructions",
+                "--stream",
                 "--additional-mcp-config",
                 "--disable-builtin-mcps",
                 "--disable-mcp-server",
@@ -276,7 +289,12 @@ const createParams = (
   overrides: Partial<
     Pick<
       RuntimeConfig,
-      "mode" | "provider" | "model" | "reasoning" | "agentLimits"
+      | "mode"
+      | "provider"
+      | "model"
+      | "reasoning"
+      | "contextWindow"
+      | "agentLimits"
     >
   > & {
     executionRole?: TaskExecutionRole;
@@ -974,54 +992,43 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     }
   });
 
-  it.each([
-    {
-      provider: "claude-cli" as const,
-      binaryKey: "MACHDOCH_CLAUDE_CLI_PATH" as const,
-      model: "claude-sonnet-4-6",
-    },
-    {
-      provider: "copilot-cli" as const,
-      binaryKey: "MACHDOCH_COPILOT_CLI_PATH" as const,
-      model: "auto",
-    },
-  ])(
-    "does not apply Codex teardown inference to $provider",
-    async ({ provider, binaryKey, model }) => {
-      const workspaceRoot = await createWorkspace();
-      const processKillSpy =
-        process.platform === "win32"
-          ? undefined
-          : vi.spyOn(process, "kill").mockReturnValue(true);
+  it("does not apply final-output teardown inference to Claude CLI", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
 
-      try {
-        process.env[binaryKey] = process.execPath;
-        const resultPromise = maybeExecuteExternalAgentProviderTask(
-          createParams(workspaceRoot, { provider, model }),
-        );
+    try {
+      process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider: "claude-cli",
+          model: "claude-sonnet-4-6",
+        }),
+      );
 
-        await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
-        const call = spawnCalls[0]!;
-        vi.useFakeTimers();
-        call.child.stdout.write("Delegated answer.");
-        call.child.emit("exit", 0, null);
-        await vi.advanceTimersByTimeAsync(20_000);
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write("Delegated answer.");
+      call.child.emit("exit", 0, null);
+      await vi.advanceTimersByTimeAsync(20_000);
 
-        expect(spawnCalls).toHaveLength(1);
-        if (processKillSpy) {
-          expect(processKillSpy).not.toHaveBeenCalled();
-        }
-
-        call.child.emit("close", 0, null);
-        await expect(resultPromise).resolves.toMatchObject({
-          status: "executed",
-          response: { markdown: "Delegated answer." },
-        });
-      } finally {
-        processKillSpy?.mockRestore();
+      expect(spawnCalls).toHaveLength(1);
+      if (processKillSpy) {
+        expect(processKillSpy).not.toHaveBeenCalled();
       }
-    },
-  );
+
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Delegated answer." },
+      });
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
 
   it("bounds captured and streamed delegated output", async () => {
     const workspaceRoot = await createWorkspace();
@@ -1283,6 +1290,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "codex-cli",
         model: "gpt-5.6-sol",
         reasoning: "ultra",
+        contextWindow: 1_050_000,
       }),
     );
 
@@ -1291,6 +1299,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(call?.args).toContain("--config");
     expect(call?.args).toContain('model_reasoning_effort="ultra"');
+    expect(call?.args).toContain("model_context_window=1050000");
 
     call?.child.stdout.write("Codex Ultra answer.");
     call?.child.emit("close", 0, null);
@@ -1372,7 +1381,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         mode: "ask",
         provider: "codex-cli",
         model: "gpt-5.5",
-        reasoning: "minimal",
+        reasoning: "low",
         executionRole: "generator",
         task: [
           "Create or update a Ralph flow graph.",
@@ -1396,7 +1405,6 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).not.toContain("--dangerously-bypass-hook-trust");
     expect(call?.args).toContain("--config");
     expect(call?.args).toContain('model_reasoning_effort="low"');
-    expect(call?.args).not.toContain('model_reasoning_effort="minimal"');
     expect(call?.args).toContain('model_verbosity="low"');
     const systemInstructions = await readRunScopedSystemInstructions(
       "codex-cli",
@@ -1817,6 +1825,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "claude-cli",
         model: "claude-sonnet-4-6",
         reasoning: "high",
+        contextWindow: "long",
         agentLimits: {
           executorTurns: 7,
           autopilotExecutorIterations: 3,
@@ -1834,7 +1843,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         "--output-format",
         "text",
         "--model",
-        "claude-sonnet-4-6",
+        "claude-sonnet-4-6[1m]",
         "--dangerously-skip-permissions",
         "--no-session-persistence",
         "--append-system-prompt-file",
@@ -2084,6 +2093,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(call?.executable).toBe(process.execPath);
     expect(call?.args).toContain("-s");
+    expect(call?.args).toContain("--stream=off");
     expect(call?.args).not.toContain("-p");
     expect(call?.args).not.toContain("--prompt");
     expect(call?.args).toContain("--autopilot");
@@ -2115,6 +2125,59 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(result?.status).toBe("executed");
     expect(result?.response?.markdown).toBe("Copilot delegated answer.");
+  });
+
+  it("preserves the final Copilot answer when the CLI does not exit", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider: "copilot-cli",
+          model: "auto",
+        }),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      call.child.stdout.write("Copilot completed answer.");
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]).toMatchObject({
+          executable: "taskkill",
+          args: ["/PID", String(call.child.pid), "/T", "/F"],
+        });
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", null, "SIGTERM");
+      }
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "Copilot completed answer." },
+        metadata: {
+          providerShutdownRecovered: true,
+          providerShutdownRecoveryKind: "final-output-exit-timeout",
+          providerShutdownRecoveryGraceMs: 10_000,
+          providerChildExitObservedBeforeRecovery: false,
+        },
+      });
+      expect(call.child.stdout.destroyed).toBe(true);
+      expect(call.child.stderr.destroyed).toBe(true);
+    } finally {
+      processKillSpy?.mockRestore();
+    }
   });
 
   it("keeps copilot full-access even when the surrounding mode is ask", async () => {
@@ -2258,7 +2321,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.reason).toContain("Copilot authentication required");
   });
 
-  it("passes explicit copilot reasoning effort when configured", async () => {
+  it("passes explicit copilot reasoning effort and context tier when configured", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
@@ -2268,6 +2331,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "copilot-cli",
         model: "gpt-5.3-codex",
         reasoning: "xhigh",
+        contextWindow: "long",
       }),
     );
 
@@ -2276,6 +2340,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(call?.args).toContain("--model=gpt-5.3-codex");
     expect(call?.args).toContain("--effort=xhigh");
+    expect(call?.args).toContain("--context=long_context");
 
     call?.child.stdout.write("Copilot delegated answer.");
     call?.child.emit("close", 0, null);

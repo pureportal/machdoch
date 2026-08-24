@@ -439,13 +439,13 @@ export const PROVIDER_MODEL_METADATA = [
   },
   {
     provider: "google",
-    id: "gemini-3.5-flash",
-    label: "Gemini 3.5 Flash",
+    id: "gemini-3.7-flash",
+    label: "Gemini 3.7 Flash",
     lifecycle: "stable",
-    releaseDate: "2026-05-19",
+    releaseDate: "2026-08-13",
     recommendedFor: ["coding", "fast", "vision"],
     capabilities: createGoogleCapabilities({
-      contextWindowTokens: 1_000_000,
+      contextWindowTokens: 1_048_576,
       maxOutputTokens: 65_536,
     }),
     warnings: [],

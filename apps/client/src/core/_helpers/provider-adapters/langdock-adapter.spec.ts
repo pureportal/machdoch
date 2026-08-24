@@ -1,8 +1,5 @@
 import type OpenAI from "openai";
-import type {
-  AgentModelStartParams,
-  AgentModelToolSpec,
-} from "../../types.js";
+import type { AgentModelStartParams, AgentModelToolSpec } from "../../types.js";
 import {
   LangdockChatCompletionsAdapter,
   createLangdockReasoningConfig,
@@ -85,19 +82,25 @@ describe("Langdock Chat Completions conformance", () => {
     ]);
   });
 
-  it("normalizes reasoning effort for Langdock-routed model families", () => {
-    expect(createLangdockReasoningConfig("gpt-5", "none")).toEqual({
+  it("validates reasoning effort for Langdock-routed model families", () => {
+    expect(createLangdockReasoningConfig("gpt-5", "minimal")).toEqual({
       reasoning_effort: "minimal",
     });
-    expect(createLangdockReasoningConfig("gemini-2.5-pro", "max")).toEqual({
+    expect(createLangdockReasoningConfig("gemini-2.5-pro", "high")).toEqual({
       reasoning_effort: "high",
     });
-    expect(createLangdockReasoningConfig("gpt-5.6-sol", "max")).toEqual({
-      reasoning_effort: "max",
+    expect(createLangdockReasoningConfig("gpt-5.5", "xhigh")).toEqual({
+      reasoning_effort: "xhigh",
     });
-    expect(createLangdockReasoningConfig("gpt-5.6-sol", "ultra")).toEqual({
-      reasoning_effort: "max",
-    });
+    expect(() => createLangdockReasoningConfig("gpt-5", "none")).toThrow(
+      "Reasoning mode `none` is not supported",
+    );
+    expect(() => createLangdockReasoningConfig("gpt-5.6-sol", "max")).toThrow(
+      "Reasoning mode `max` is not supported",
+    );
+    expect(() => createLangdockReasoningConfig("gpt-5.6-sol", "ultra")).toThrow(
+      "Reasoning mode `ultra` is not supported",
+    );
   });
 
   it("sends start and continuation turns using Chat Completions messages", async () => {
@@ -123,7 +126,7 @@ describe("Langdock Chat Completions conformance", () => {
                   type: "function",
                   function: {
                     name: "inspect_file",
-                    arguments: "{\"path\":\"README.md\"}",
+                    arguments: '{"path":"README.md"}',
                   },
                 },
               ],
@@ -162,14 +165,16 @@ describe("Langdock Chat Completions conformance", () => {
     } as unknown as OpenAI;
     const adapter = new LangdockChatCompletionsAdapter(client, [tool]);
 
-    await expect(adapter.startTurn(startParams)).resolves.toEqual({
+    await expect(
+      adapter.startTurn({ ...startParams, reasoning: "minimal" }),
+    ).resolves.toEqual({
       text: "Need the file.",
       toolCalls: [
         {
           id: "call_1",
           name: "inspect_file",
           arguments: { path: "README.md" },
-          rawArguments: "{\"path\":\"README.md\"}",
+          rawArguments: '{"path":"README.md"}',
         },
       ],
     });
@@ -207,7 +212,7 @@ describe("Langdock Chat Completions conformance", () => {
     });
     expect(calls[0]?.body).not.toHaveProperty("parallel_tool_calls");
     expect(calls[0]?.body).not.toHaveProperty("stream_options");
-    expect(calls[0]?.body).not.toHaveProperty("reasoning_effort");
+    expect(calls[0]?.body).toHaveProperty("reasoning_effort", "minimal");
     expect(calls[0]?.options).not.toHaveProperty("timeout");
     expect(calls[1]?.body).toMatchObject({
       messages: [
@@ -222,7 +227,7 @@ describe("Langdock Chat Completions conformance", () => {
               type: "function",
               function: {
                 name: "inspect_file",
-                arguments: "{\"path\":\"README.md\"}",
+                arguments: '{"path":"README.md"}',
               },
             },
           ],
@@ -236,7 +241,7 @@ describe("Langdock Chat Completions conformance", () => {
     });
   });
 
-  it("omits reasoning effort when function tools are required", async () => {
+  it("preserves reasoning effort when function tools are required", async () => {
     const calls: Array<{ body: unknown; options: unknown }> = [];
     const client = {
       chat: {
@@ -263,7 +268,7 @@ describe("Langdock Chat Completions conformance", () => {
                         type: "function",
                         function: {
                           name: "inspect_file",
-                          arguments: "{\"path\":\"README.md\"}",
+                          arguments: '{"path":"README.md"}',
                         },
                       },
                     ],
@@ -286,7 +291,7 @@ describe("Langdock Chat Completions conformance", () => {
     expect(calls[0]?.body).toMatchObject({
       model: "gpt-5.5",
       tool_choice: "required",
+      reasoning_effort: "xhigh",
     });
-    expect(calls[0]?.body).not.toHaveProperty("reasoning_effort");
   });
 });

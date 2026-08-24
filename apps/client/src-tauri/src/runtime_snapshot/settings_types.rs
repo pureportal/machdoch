@@ -98,9 +98,25 @@ pub(super) struct WorkspaceConfigFile {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) reasoning: Option<String>,
+    pub(super) reasoning_mode: Option<ReasoningExecutionMode>,
+    pub(super) context_window: Option<ContextWindow>,
     pub(super) offline: Option<bool>,
     pub(super) agent_limits: Option<UserAgentLimitsConfigFile>,
     pub(super) compatibility: Option<WorkspaceCompatibilityConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ContextWindow {
+    Mode(String),
+    Tokens(u32),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningExecutionMode {
+    Standard,
+    Pro,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

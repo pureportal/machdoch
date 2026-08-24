@@ -20,6 +20,7 @@ const createConfig = (
     provider: "unconfigured",
     model: "gpt-5.5",
     reasoning: "default",
+    contextWindow: "default",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,
@@ -220,9 +221,7 @@ describe("previewTaskRun", () => {
     expect(preview.invokedPrompt?.name).toBe("debug-build");
     expect(preview.suggestedTools).toEqual(["filesystem", "shell"]);
     expect(
-      preview.notes.some((note) =>
-        note.includes("prefers model `gpt-5.5`"),
-      ),
+      preview.notes.some((note) => note.includes("prefers model `gpt-5.5`")),
     ).toBe(true);
   });
 
@@ -276,5 +275,4 @@ describe("previewTaskRun", () => {
       ),
     ).toBe(true);
   });
-
 });

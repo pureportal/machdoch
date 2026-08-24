@@ -379,6 +379,8 @@ pub fn run() {
             runtime_snapshot::save_user_web_search_api_key,
             runtime_snapshot::save_workspace_default_mode,
             runtime_snapshot::save_workspace_reasoning_mode,
+            runtime_snapshot::save_workspace_context_window,
+            runtime_snapshot::save_workspace_reasoning_execution_mode,
             runtime_snapshot::save_workspace_mcp_config_document,
             voice::synthesize_user_voice_audio,
             voice::transcribe_user_speech_audio

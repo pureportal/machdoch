@@ -97,12 +97,16 @@ describe("getLangdockModelRoute", () => {
 });
 
 describe("createProviderAdapter Langdock routing", () => {
-  const createConfig = (workspaceRoot: string, model: string): RuntimeConfig => ({
+  const createConfig = (
+    workspaceRoot: string,
+    model: string,
+  ): RuntimeConfig => ({
     workspaceRoot,
     mode: "machdoch",
     provider: "langdock",
     model,
     reasoning: "default",
+    contextWindow: "default",
     offline: false,
     compatibility: {},
     providerAvailability: [],
@@ -139,7 +143,11 @@ describe("createProviderAdapter Langdock routing", () => {
 
   it("instantiates the documented provider adapter for Langdock model families", async () => {
     await expect(
-      createProviderAdapter(createConfig(workspaceRoot, "gpt-5.5"), [], undefined),
+      createProviderAdapter(
+        createConfig(workspaceRoot, "gpt-5.5"),
+        [],
+        undefined,
+      ),
     ).resolves.toBeInstanceOf(LangdockChatCompletionsAdapter);
     await expect(
       createProviderAdapter(
@@ -155,5 +163,18 @@ describe("createProviderAdapter Langdock routing", () => {
         undefined,
       ),
     ).resolves.toBeInstanceOf(GeminiChatAdapter);
+  });
+
+  it("rejects request-level context settings for API providers", async () => {
+    await expect(
+      createProviderAdapter(
+        {
+          ...createConfig(workspaceRoot, "gpt-5.5"),
+          contextWindow: "long",
+        },
+        [],
+        undefined,
+      ),
+    ).rejects.toThrow("Long context is not supported");
   });
 });

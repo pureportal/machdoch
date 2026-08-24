@@ -3,7 +3,7 @@ import { extname } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
 import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
-import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "../reasoning-modes.js";
 import type {
   AgentCliProvider,
   ReasoningMode,
@@ -41,6 +41,11 @@ import {
 } from "../instruction-system/delivery.js";
 import { canonicalDigest } from "../instruction-system/normalization.js";
 import {
+  assertContextWindowSupportedForProviderModel,
+  resolveClaudeCliModelForContextWindow,
+} from "../context-windows.js";
+import { getModelContextWindowTokens } from "../model-capabilities.js";
+import {
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
 } from "../../shared/unicode.js";
@@ -65,7 +70,7 @@ interface ExternalAgentExecutionParams extends ModelDrivenExecutionParams {
 
 const MAX_DIAGNOSTIC_CHARS = 12_000;
 const EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS = 5_000;
-const CODEX_COMPLETION_SHUTDOWN_GRACE_MS = 10_000;
+const EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS = 10_000;
 const MAX_CAPTURED_STDOUT_CHARS = 512_000;
 const MAX_CAPTURED_STDERR_CHARS = 128_000;
 const MAX_ACTION_OUTPUT_BATCH_CHARS = 32_000;
@@ -95,79 +100,55 @@ const mapReasoningToCodexCliEffort = (
   model: string,
   reasoning: ReasoningMode,
 ): CodexCliReasoningEffort | undefined => {
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "codex-cli",
-    model,
-  );
-
-  if (normalizedReasoning === "default") {
+  if (reasoning === "default") {
     return undefined;
   }
 
-  switch (normalizedReasoning) {
-    case "none":
-    case "minimal":
-    case "low":
-    case "medium":
-    case "high":
-    case "xhigh":
-    case "max":
-    case "ultra":
-      return normalizedReasoning;
-  }
+  assertReasoningModeSupportedForProviderModel(reasoning, "codex-cli", model);
+
+  return reasoning;
 };
 
 const mapReasoningToClaudeCliEffort = (
   model: string,
   reasoning: ReasoningMode,
 ): ClaudeCliReasoningEffort | undefined => {
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "claude-cli",
-    model,
-  );
-
-  switch (normalizedReasoning) {
-    case "low":
-    case "medium":
-    case "high":
-    case "xhigh":
-    case "max":
-      return normalizedReasoning;
-    case "ultra":
-      return "max";
-    case "default":
-    case "none":
-    case "minimal":
-      return undefined;
+  if (reasoning === "default") {
+    return undefined;
   }
+
+  assertReasoningModeSupportedForProviderModel(reasoning, "claude-cli", model);
+
+  if (
+    reasoning === "none" ||
+    reasoning === "minimal" ||
+    reasoning === "ultra"
+  ) {
+    throw new Error(`Unsupported Claude CLI reasoning effort: ${reasoning}.`);
+  }
+
+  return reasoning;
 };
 
 const mapReasoningToCopilotCliEffort = (
   model: string,
   reasoning: ReasoningMode,
 ): CopilotCliReasoningEffort | undefined => {
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "copilot-cli",
-    model,
-  );
-
-  switch (normalizedReasoning) {
-    case "low":
-    case "medium":
-    case "high":
-    case "xhigh":
-    case "max":
-      return normalizedReasoning;
-    case "ultra":
-      return "max";
-    case "default":
-    case "none":
-    case "minimal":
-      return undefined;
+  if (reasoning === "default") {
+    return undefined;
   }
+
+  assertReasoningModeSupportedForProviderModel(reasoning, "copilot-cli", model);
+
+  if (
+    reasoning === "none" ||
+    reasoning === "minimal" ||
+    reasoning === "ultra"
+  ) {
+    throw new Error(`Copilot CLI does not accept reasoning mode ${reasoning}.`);
+  }
+
+  return reasoning;
 };
 
 const cleanCliText = (value: string): string => {
@@ -871,9 +852,7 @@ const runExternalAgentCommand = async (
     let abortError: Error | undefined;
     let abortTerminationPromise: Promise<void> | undefined;
     let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
-    let codexCompletionShutdownHandle:
-      | ReturnType<typeof setTimeout>
-      | undefined;
+    let completionShutdownHandle: ReturnType<typeof setTimeout> | undefined;
     let providerShutdownRecovery:
       | SpawnedAgentResult["providerShutdownRecovery"]
       | undefined;
@@ -903,9 +882,9 @@ const runExternalAgentCommand = async (
         clearTimeout(abortSettlementHandle);
         abortSettlementHandle = undefined;
       }
-      if (codexCompletionShutdownHandle) {
-        clearTimeout(codexCompletionShutdownHandle);
-        codexCompletionShutdownHandle = undefined;
+      if (completionShutdownHandle) {
+        clearTimeout(completionShutdownHandle);
+        completionShutdownHandle = undefined;
       }
       if (providerShutdownSettlementHandle) {
         clearTimeout(providerShutdownSettlementHandle);
@@ -999,7 +978,7 @@ const runExternalAgentCommand = async (
         settled ||
         abortError ||
         providerShutdownRecovery ||
-        provider !== "codex-cli" ||
+        (provider !== "codex-cli" && provider !== "copilot-cli") ||
         (!finalOutputObserved && observedChildExit === undefined)
       ) {
         return;
@@ -1010,7 +989,7 @@ const runExternalAgentCommand = async (
           observedChildExit === undefined
             ? "final-output-exit-timeout"
             : "child-exit-close-timeout",
-        graceMs: CODEX_COMPLETION_SHUTDOWN_GRACE_MS,
+        graceMs: EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS,
         childExitObservedBeforeRecovery: observedChildExit !== undefined,
         childExitCode: observedChildExit?.exitCode ?? null,
         childExitSignal: observedChildExit?.signal ?? null,
@@ -1031,9 +1010,9 @@ const runExternalAgentCommand = async (
       unrefTimer(providerShutdownSettlementHandle);
     };
 
-    const scheduleCodexCompletionShutdownCheck = (): void => {
+    const scheduleCompletionShutdownCheck = (): void => {
       if (
-        provider !== "codex-cli" ||
+        (provider !== "codex-cli" && provider !== "copilot-cli") ||
         settled ||
         abortError ||
         providerShutdownRecovery
@@ -1044,27 +1023,22 @@ const runExternalAgentCommand = async (
       const hasCompletionEvidence =
         cleanCliText(stdout.text).length > 0 || observedChildExit !== undefined;
       if (!hasCompletionEvidence) {
-        if (codexCompletionShutdownHandle) {
-          clearTimeout(codexCompletionShutdownHandle);
-          codexCompletionShutdownHandle = undefined;
+        if (completionShutdownHandle) {
+          clearTimeout(completionShutdownHandle);
+          completionShutdownHandle = undefined;
         }
         return;
       }
 
-      if (codexCompletionShutdownHandle) {
+      if (completionShutdownHandle) {
         return;
       }
 
-      // Non-JSON `codex exec` reserves stdout for the final answer and emits it
-      // once, during shutdown. Use a fixed drain window from the first evidence
-      // of completion: later inherited or whitespace output must not postpone
-      // cleanup indefinitely. A successful/failed `exit` is also definitive even
-      // when Codex produced an empty final message and only stdio remains open.
-      codexCompletionShutdownHandle = setTimeout(() => {
-        codexCompletionShutdownHandle = undefined;
+      completionShutdownHandle = setTimeout(() => {
+        completionShutdownHandle = undefined;
         beginProviderShutdownRecovery();
-      }, CODEX_COMPLETION_SHUTDOWN_GRACE_MS);
-      unrefTimer(codexCompletionShutdownHandle);
+      }, EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS);
+      unrefTimer(completionShutdownHandle);
     };
 
     const beginTermination = (
@@ -1129,7 +1103,7 @@ const runExternalAgentCommand = async (
 
       appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
       actionOutputBatcher.enqueue("stdout", chunk);
-      scheduleCodexCompletionShutdownCheck();
+      scheduleCompletionShutdownCheck();
     }
 
     function handleStderrData(chunk: string): void {
@@ -1150,7 +1124,7 @@ const runExternalAgentCommand = async (
       }
 
       observedChildExit = { exitCode, signal: exitSignal };
-      scheduleCodexCompletionShutdownCheck();
+      scheduleCompletionShutdownCheck();
     }
 
     function handleChildError(error: Error): void {
@@ -1280,19 +1254,21 @@ const getExecutorTurnLimit = (config: RuntimeConfig): number | undefined => {
     : undefined;
 };
 
-const normalizeCodexCliReasoningEffort = (
-  effort: CodexCliReasoningEffort | undefined,
-): CodexCliReasoningEffort | undefined => {
-  return effort === "minimal" ? "low" : effort;
-};
-
 const createCodexArgs = (
   config: RuntimeConfig,
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
   delegationMode: ExternalAgentDelegationMode,
 ): ExternalAgentCommand => {
-  const reasoningEffort = normalizeCodexCliReasoningEffort(
-    mapReasoningToCodexCliEffort(config.model, config.reasoning),
+  const contextWindow = config.contextWindow ?? "default";
+  assertContextWindowSupportedForProviderModel(
+    contextWindow,
+    "codex-cli",
+    config.model,
+    getModelContextWindowTokens("codex-cli", config.model),
+  );
+  const reasoningEffort = mapReasoningToCodexCliEffort(
+    config.model,
+    config.reasoning,
   );
   const args = ["exec"];
 
@@ -1314,6 +1290,10 @@ const createCodexArgs = (
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
+  }
+
+  if (typeof contextWindow === "number") {
+    args.push("--config", `model_context_window=${contextWindow}`);
   }
 
   if (delegationMode === "read-only-artifact") {
@@ -1347,6 +1327,9 @@ const createCodexArgs = (
       "git repo check: skipped",
       "execpolicy rules: ignored",
       ...(reasoningEffort ? [`reasoning effort: ${reasoningEffort}`] : []),
+      ...(typeof contextWindow === "number"
+        ? [`context window: ${contextWindow}`]
+        : []),
       ...(delegationMode === "read-only-artifact"
         ? ["model verbosity: low"]
         : []),
@@ -1365,6 +1348,7 @@ const createCodexArgs = (
       hookTrust: "not-bypassed",
       requestedReasoning: config.reasoning,
       effectiveReasoning: reasoningEffort ?? "default",
+      contextWindow,
       ...(delegationMode === "read-only-artifact"
         ? { modelVerbosity: "low" }
         : {}),
@@ -1388,14 +1372,20 @@ const createClaudeCommand = ({
   config,
   prompt,
   enrollmentArgs,
+  providerFeatures,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
+  const contextWindow = config.contextWindow ?? "default";
+  const model = resolveClaudeCliModelForContextWindow(
+    config.model,
+    contextWindow,
+  );
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
   const args = [
     "-p",
     "--output-format",
     "text",
     "--model",
-    config.model,
+    model,
     "--dangerously-skip-permissions",
     "--no-session-persistence",
     ...enrollmentArgs,
@@ -1403,6 +1393,12 @@ const createClaudeCommand = ({
   const maxTurns = getExecutorTurnLimit(config);
 
   if (effort) {
+    if (!providerFeatures.includes("--effort")) {
+      throw new Error(
+        "The selected Claude CLI does not expose --effort. Upgrade Claude Code or use the default reasoning mode.",
+      );
+    }
+
     args.push("--effort", effort);
   }
 
@@ -1419,11 +1415,14 @@ const createClaudeCommand = ({
     commandLines: [
       "access: dangerously skip permissions",
       ...(effort ? [`effort: ${effort}`] : []),
+      ...(contextWindow === "long" ? ["context window: long"] : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
     ],
     metadata: {
       access: "dangerously-skip-permissions",
       reasoning: config.reasoning,
+      contextWindow,
+      effectiveModel: model,
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
     },
@@ -1437,11 +1436,23 @@ const createCopilotCommand = ({
   enrollmentArgs,
   providerFeatures,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
+  const contextWindow = config.contextWindow ?? "default";
+  assertContextWindowSupportedForProviderModel(
+    contextWindow,
+    "copilot-cli",
+    config.model,
+  );
   const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);
   const maxTurns = getExecutorTurnLimit(config);
   const secretEnvKeys = getProviderSecretEnvKeys("copilot-cli");
+  if (!providerFeatures.includes("--stream")) {
+    throw new Error(
+      "The selected Copilot CLI cannot provide bounded result delivery because its capability probe did not expose --stream.",
+    );
+  }
   const args = [
     "-s",
+    "--stream=off",
     "--autopilot",
     "--no-ask-user",
     `--secret-env-vars=${secretEnvKeys.join(",")}`,
@@ -1451,7 +1462,23 @@ const createCopilotCommand = ({
   args.push(`--model=${config.model}`);
 
   if (effort) {
+    if (!providerFeatures.includes("--effort")) {
+      throw new Error(
+        "The selected Copilot CLI does not expose --effort. Upgrade Copilot CLI or use the default reasoning mode.",
+      );
+    }
+
     args.push(`--effort=${effort}`);
+  }
+
+  if (contextWindow === "long") {
+    if (!providerFeatures.includes("--context")) {
+      throw new Error(
+        "The selected Copilot CLI does not expose --context. Upgrade Copilot CLI or use the default context window.",
+      );
+    }
+
+    args.push("--context=long_context");
   }
 
   if (maxTurns !== undefined) {
@@ -1484,6 +1511,7 @@ const createCopilotCommand = ({
       `secret env redaction: ${secretEnvKeys.join(", ")}`,
       `model argument: ${config.model}`,
       ...(effort ? [`effort: ${effort}`] : []),
+      ...(contextWindow === "long" ? ["context window: long"] : []),
       ...(maxTurns !== undefined
         ? [`max autopilot continues: ${maxTurns}`]
         : []),
@@ -1494,6 +1522,7 @@ const createCopilotCommand = ({
       secretEnvRedaction: secretEnvKeys.join(","),
       reasoning: config.reasoning,
       modelArgument: config.model,
+      contextWindow,
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
     },

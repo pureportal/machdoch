@@ -53,6 +53,7 @@ pub(super) use settings_commands::{
     merge_user_web_search_api_keys_into_env,
 };
 pub(crate) use settings_types::UserDesktopLaunchPreferences;
+pub use settings_types::{ContextWindow, ReasoningExecutionMode};
 pub use settings_types::{
     McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserInternalTaskModelSettings,
     UserMemorySettings, UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings,
@@ -65,7 +66,10 @@ pub use types::{
     RuntimeWebSearchConfig, WebSearchProviderAvailability,
 };
 pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
-use workspace::{save_workspace_default_mode_value, save_workspace_reasoning_mode_value};
+use workspace::{
+    save_workspace_context_window_value, save_workspace_default_mode_value,
+    save_workspace_reasoning_execution_mode_value, save_workspace_reasoning_mode_value,
+};
 
 const PROVIDER_MODEL_CATALOG_CACHE_TTL: Duration = Duration::from_secs(60);
 
@@ -392,6 +396,27 @@ pub async fn save_workspace_reasoning_mode(
     reasoning: String,
 ) -> Result<String, String> {
     let config_path = save_workspace_reasoning_mode_value(&workspace_root, &reasoning)?;
+
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn save_workspace_context_window(
+    workspace_root: String,
+    context_window: ContextWindow,
+) -> Result<String, String> {
+    let config_path = save_workspace_context_window_value(&workspace_root, &context_window)?;
+
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn save_workspace_reasoning_execution_mode(
+    workspace_root: String,
+    reasoning_mode: ReasoningExecutionMode,
+) -> Result<String, String> {
+    let config_path =
+        save_workspace_reasoning_execution_mode_value(&workspace_root, &reasoning_mode)?;
 
     Ok(config_path.display().to_string())
 }

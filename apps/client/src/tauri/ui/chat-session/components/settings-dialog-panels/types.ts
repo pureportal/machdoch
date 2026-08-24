@@ -11,6 +11,8 @@ import type {
   UserMemorySettings,
   UserReviewModelSettings,
   ReasoningMode,
+  ReasoningExecutionMode,
+  ContextWindow,
   UserWebSearchApiKeyProvider,
   WebSearchProviderAvailability,
   VoiceAiProvider,
@@ -69,12 +71,20 @@ export interface WorkspaceSettingsControls {
   effectiveMode: RunMode;
   defaultReasoning: ReasoningMode;
   effectiveReasoning: ReasoningMode;
+  defaultReasoningExecutionMode: ReasoningExecutionMode;
+  effectiveReasoningExecutionMode: ReasoningExecutionMode;
+  defaultContextWindow: ContextWindow;
+  effectiveContextWindow: ContextWindow;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
   saving: boolean;
   message: SettingsStatusMessage | null;
   onDefaultModeChange: (mode: RunMode) => Promise<void> | void;
   onReasoningModeChange: (reasoning: ReasoningMode) => Promise<void> | void;
+  onReasoningExecutionModeChange: (
+    reasoningMode: ReasoningExecutionMode,
+  ) => Promise<void> | void;
+  onContextWindowChange: (contextWindow: ContextWindow) => Promise<void> | void;
 }
 
 export interface McpSettingsControls {

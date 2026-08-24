@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod model_catalog_parser_tests {
     use super::super::{
+        claude_cli::create_claude_cli_runtime_model,
         codex_cli::parse_codex_cli_model_catalog,
         copilot_cli::create_copilot_cli_runtime_model,
-        provider_api::parse_langdock_model_catalog,
+        provider_api::{finish_langdock_model_catalog, parse_langdock_model_catalog},
         provider_api_types::{
             create_anthropic_runtime_model, create_google_runtime_model,
             create_openai_runtime_model, parse_anthropic_model_catalog, parse_google_model_catalog,
@@ -13,19 +14,41 @@ mod model_catalog_parser_tests {
     };
     use std::collections::HashMap;
 
+    fn string_values(values: Option<&[String]>) -> Option<Vec<&str>> {
+        values.map(|entries| entries.iter().map(String::as_str).collect())
+    }
+
     #[test]
     fn codex_cli_model_catalog_parser_keeps_only_codex_runtime_models() {
         let raw = r#"
         {
             "models": [
                 { "slug": "gpt-5.5", "display_name": "GPT-5.5" },
-                { "slug": "gpt-5.6-sol", "display_name": "GPT-5.6 Sol" },
+                {
+                    "slug": "gpt-5.6-sol",
+                    "display_name": "GPT-5.6 Sol",
+                    "input_modalities": ["text", "image"],
+                    "context_window": 400000,
+                    "max_context_window": 1050000,
+                    "maxOutputTokens": 128000,
+                    "supportsComputerUse": true,
+                    "supported_reasoning_levels": [
+                        { "effort": "none", "description": "No reasoning" },
+                        { "effort": "low", "description": "Low" },
+                        { "effort": "medium", "description": "Medium" },
+                        { "effort": "high", "description": "High" },
+                        { "effort": "xhigh", "description": "Extra high" },
+                        { "effort": "max", "description": "Maximum" }
+                    ],
+                    "default_reasoning_level": "medium"
+                },
                 { "slug": "gpt-5.6-terra", "display_name": "GPT-5.6 Terra" },
                 { "slug": "gpt-5.6-luna", "display_name": "GPT-5.6 Luna" },
                 { "slug": "gpt-5.3-codex-spark", "display_name": "GPT-5.3 Codex Spark" },
                 { "slug": "gpt-5.3-codex", "display_name": "GPT-5.3 Codex" },
                 { "slug": "gpt-5.2", "display_name": "GPT-5.2" },
                 { "slug": "gpt-5.1", "display_name": "GPT-5.1", "status": "deprecated" },
+                { "slug": "gpt-5.7", "display_name": "GPT-5.7", "visibility": "hide" },
                 { "slug": "claude-opus-4-8", "display_name": "Claude Opus 4.8" },
                 { "slug": "gemini-3.1-pro-preview", "display_name": "Gemini 3.1 Pro" },
                 { "slug": "codex-auto-review", "display_name": "Codex Auto Review" },
@@ -43,6 +66,8 @@ mod model_catalog_parser_tests {
         assert_eq!(
             model_ids,
             vec![
+                "gpt-5.2",
+                "gpt-5.3-codex",
                 "gpt-5.3-codex-spark",
                 "gpt-5.5",
                 "gpt-5.6-luna",
@@ -50,11 +75,32 @@ mod model_catalog_parser_tests {
                 "gpt-5.6-terra"
             ]
         );
-        assert!(models
+        let sol = models
             .iter()
-            .filter(|model| model.id.starts_with("gpt-5.6-"))
-            .all(|model| model.capabilities.image_input == Some(true)
-                && model.capabilities.computer_use == Some(true)));
+            .find(|model| model.id == "gpt-5.6-sol")
+            .expect("Sol metadata should be present");
+        assert_eq!(sol.capabilities.image_input, Some(true));
+        assert_eq!(sol.capabilities.computer_use, Some(true));
+        assert_eq!(sol.capabilities.context_window_tokens, Some(400_000));
+        assert_eq!(sol.capabilities.long_context_window_tokens, Some(1_050_000));
+        assert_eq!(sol.capabilities.max_output_tokens, Some(128_000));
+        assert_eq!(
+            string_values(sol.capabilities.reasoning_modes.as_deref()),
+            Some(vec![
+                "default", "none", "low", "medium", "high", "xhigh", "max"
+            ])
+        );
+        assert_eq!(
+            sol.capabilities.default_reasoning_mode.as_deref(),
+            Some("medium")
+        );
+        assert_eq!(
+            models
+                .iter()
+                .find(|model| model.id == "gpt-5.6-terra")
+                .and_then(|model| model.capabilities.image_input),
+            None
+        );
     }
 
     #[test]
@@ -64,14 +110,29 @@ mod model_catalog_parser_tests {
             "name": "MAI-Code-1-Flash",
             "capabilities": {
                 "supports": {
-                    "reasoningEffort": false,
+                    "reasoningEffort": true,
                     "vision": true
                 },
                 "limits": {
                     "max_context_window_tokens": 200000,
-                    "max_output_tokens": 32000
+                    "max_output_tokens": 32000,
+                    "vision": {
+                        "max_prompt_image_size": 20971520,
+                        "max_prompt_images": 5,
+                        "supported_media_types": ["image/png", "image/jpeg"]
+                    }
                 }
-            }
+            },
+            "billing": {
+                "tokenPrices": {
+                    "maxPromptTokens": 168000,
+                    "longContext": {
+                        "maxPromptTokens": 968000
+                    }
+                }
+            },
+            "defaultReasoningEffort": "low",
+            "supportedReasoningEfforts": ["none", "minimal", "low", "high"]
         }))
         .expect("Copilot SDK model fixture should deserialize");
         let runtime_model =
@@ -86,6 +147,25 @@ mod model_catalog_parser_tests {
             Some(200000)
         );
         assert_eq!(runtime_model.capabilities.max_output_tokens, Some(32000));
+        assert_eq!(
+            runtime_model.capabilities.long_context_window_tokens,
+            Some(1_000_000)
+        );
+        assert_eq!(
+            string_values(runtime_model.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default", "low", "high"])
+        );
+        assert_eq!(
+            runtime_model.capabilities.default_reasoning_mode.as_deref(),
+            Some("low")
+        );
+        assert_eq!(
+            runtime_model
+                .capabilities
+                .supported_image_media_types
+                .as_deref(),
+            Some(["image/png".to_string(), "image/jpeg".to_string()].as_slice())
+        );
     }
 
     #[test]
@@ -97,7 +177,7 @@ mod model_catalog_parser_tests {
                 {
                     "id": "gpt-5.5",
                     "object": "model",
-                    "created": 0,
+                    "created": 1782432000,
                     "region": "eu"
                 },
                 {
@@ -132,8 +212,10 @@ mod model_catalog_parser_tests {
             model_ids,
             vec!["gpt-5.4-mini", "gpt-5.5", "langdock-llama-3.3-70b-2"]
         );
-        assert_eq!(models[1].release_date.as_deref(), Some("1970-01-01"));
-        assert_eq!(models[1].capabilities.reasoning, Some(true));
+        assert_eq!(models[1].release_date.as_deref(), Some("2026-06-26"));
+        assert_eq!(models[0].release_date, None);
+        assert_eq!(models[2].release_date, None);
+        assert_eq!(models[1].capabilities.reasoning, None);
         assert!(!model_ids.contains(&"text-embedding-3-large"));
     }
 
@@ -158,7 +240,7 @@ mod model_catalog_parser_tests {
                 {
                     "id": "gpt-5.5",
                     "object": "model",
-                    "created": 86400000,
+                    "created": 86400,
                     "region": "us"
                 }
             ]
@@ -173,20 +255,34 @@ mod model_catalog_parser_tests {
                 .collect::<Vec<_>>(),
             vec!["gpt-5.4-mini", "gpt-5.5"]
         );
-        assert_eq!(models[1].release_date.as_deref(), Some("1970-01-01"));
+        assert_eq!(models[1].release_date.as_deref(), Some("1970-01-02"));
     }
 
     #[test]
-    fn provider_api_type_helpers_normalize_openai_capabilities() {
+    fn langdock_partial_discovery_marks_available_models() {
+        let model = create_openai_runtime_model("gpt-5.6-sol", None);
+        let models = finish_langdock_model_catalog(
+            vec![model],
+            vec!["Google endpoint returned no models.".to_string()],
+        )
+        .expect("partial Langdock discovery should keep available models");
+
+        assert_eq!(
+            models[0].warnings,
+            vec!["Langdock model discovery is partial: Google endpoint returned no models."]
+        );
+    }
+
+    #[test]
+    fn provider_api_type_helpers_do_not_infer_openai_capabilities() {
         let model = create_openai_runtime_model("gpt-5.4-mini", Some("2026-01-02".to_string()));
 
         assert_eq!(model.id, "gpt-5.4-mini");
         assert_eq!(model.release_date.as_deref(), Some("2026-01-02"));
-        assert!(model.recommended_for.contains(&"coding".to_string()));
-        assert!(model.recommended_for.contains(&"fast".to_string()));
-        assert_eq!(model.capabilities.image_input, Some(true));
-        assert_eq!(model.capabilities.reasoning, Some(true));
-        assert_eq!(model.capabilities.computer_use, Some(true));
+        assert!(model.recommended_for.is_empty());
+        assert_eq!(model.capabilities.image_input, None);
+        assert_eq!(model.capabilities.reasoning, None);
+        assert_eq!(model.capabilities.computer_use, None);
         assert_eq!(model.source, "provider-api");
     }
 
@@ -199,6 +295,8 @@ mod model_catalog_parser_tests {
                 { "id": "gpt-5.6-terra", "created": 1782432000 },
                 { "id": "gpt-5.6-luna", "created": 1782432000 },
                 { "id": "gpt-5.4-mini", "created": 1767312000 },
+                { "id": "gpt-5.1", "created": 0 },
+                { "id": "gpt-5.5-pro", "created": 1767225600 },
                 { "id": "gpt-5.5", "created": 1767225600 }
             ]
         });
@@ -210,8 +308,10 @@ mod model_catalog_parser_tests {
         assert_eq!(
             openai_ids,
             vec![
+                ("gpt-5.1".to_string(), None),
                 ("gpt-5.4-mini".to_string(), Some("2026-01-02".to_string())),
                 ("gpt-5.5".to_string(), Some("2026-01-01".to_string())),
+                ("gpt-5.5-pro".to_string(), Some("2026-01-01".to_string())),
                 ("gpt-5.6-luna".to_string(), Some("2026-06-26".to_string())),
                 ("gpt-5.6-sol".to_string(), Some("2026-06-26".to_string())),
                 ("gpt-5.6-terra".to_string(), Some("2026-06-26".to_string()))
@@ -244,7 +344,7 @@ mod model_catalog_parser_tests {
             "models": [
                 {
                     "name": "models/gemini-3.1-pro-preview",
-                    "supportedGenerationMethods": ["generateContent"]
+                    "supportedActions": ["generateContent"]
                 },
                 {
                     "name": "models/gemini-embedding-001",
@@ -289,9 +389,17 @@ mod model_catalog_parser_tests {
             "display_name": "Claude Sonnet 4.5",
             "created_at": "2026-03-04T00:00:00Z",
             "capabilities": {
-                "vision": true,
-                "tool_use": true,
-                "extended_thinking": true
+                "image_input": { "supported": true },
+                "tool_use": { "supported": true },
+                "thinking": { "supported": true },
+                "effort": {
+                    "supported": true,
+                    "low": { "supported": true },
+                    "medium": { "supported": true },
+                    "high": { "supported": true },
+                    "max": { "supported": true },
+                    "xhigh": { "supported": false }
+                }
             },
             "max_input_tokens": 200000,
             "max_tokens": 8192
@@ -303,8 +411,36 @@ mod model_catalog_parser_tests {
         assert_eq!(model.release_date.as_deref(), Some("2026-03-04"));
         assert!(model.recommended_for.contains(&"coding".to_string()));
         assert_eq!(model.capabilities.reasoning, Some(true));
+        assert_eq!(model.capabilities.image_input, Some(true));
+        assert_eq!(model.capabilities.tool_use, Some(true));
+        assert_eq!(
+            string_values(model.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default", "low", "medium", "high", "max"])
+        );
         assert_eq!(model.capabilities.context_window_tokens, Some(200000));
         assert_eq!(model.capabilities.max_output_tokens, Some(8192));
+    }
+
+    #[test]
+    fn provider_api_type_helpers_handle_contradictory_anthropic_metadata() {
+        let entry = serde_json::json!({
+            "id": "claude-sonnet-5",
+            "capabilities": {
+                "thinking": { "supported": true },
+                "effort": { "supported": false }
+            },
+            "max_input_tokens": 0,
+            "max_tokens": 0
+        });
+        let model = create_anthropic_runtime_model(&entry).expect("model should parse");
+
+        assert_eq!(model.capabilities.reasoning, Some(true));
+        assert_eq!(
+            string_values(model.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default"])
+        );
+        assert_eq!(model.capabilities.context_window_tokens, None);
+        assert_eq!(model.capabilities.max_output_tokens, None);
     }
 
     #[test]
@@ -319,22 +455,132 @@ mod model_catalog_parser_tests {
         let entry = serde_json::json!({
             "name": "models/gemini-3.1-pro-preview",
             "baseModelId": "gemini-3.1-pro-preview",
-            "displayName": "Gemini 3.1 Pro Preview",
+            "display_name": "Gemini 3.1 Pro Preview",
             "description": "Preview reasoning model",
-            "supportedGenerationMethods": ["generateContent"],
+            "supported_actions": ["generateContent"],
             "thinking": true,
-            "inputTokenLimit": 1048576,
-            "outputTokenLimit": 65536
+            "inputModalities": ["TEXT", "IMAGE"],
+            "input_token_limit": 1048576,
+            "output_token_limit": 65536
         });
         let model = create_google_runtime_model(&entry).expect("model should parse");
 
         assert_eq!(model.id, "gemini-3.1-pro-preview");
         assert_eq!(model.label.as_deref(), Some("Gemini 3.1 Pro Preview"));
         assert_eq!(model.capabilities.reasoning, Some(true));
+        assert_eq!(model.capabilities.image_input, Some(true));
+        assert_eq!(model.capabilities.tool_use, None);
         assert_eq!(model.capabilities.context_window_tokens, Some(1048576));
         assert_eq!(model.capabilities.max_output_tokens, Some(65536));
+        assert_eq!(
+            string_values(model.capabilities.supported_image_media_types.as_deref()),
+            Some(vec![
+                "image/heic",
+                "image/heif",
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+            ])
+        );
         assert!(model.recommended_for.contains(&"coding".to_string()));
         assert!(model.recommended_for.contains(&"vision".to_string()));
+    }
+
+    #[test]
+    fn provider_api_type_helpers_accept_google_method_case_and_ignore_zero_limits() {
+        let entry = serde_json::json!({
+            "name": "models/gemini-3.7-flash",
+            "supportedActions": ["GENERATECONTENT"],
+            "inputTokenLimit": 0,
+            "outputTokenLimit": 0
+        });
+        let model = create_google_runtime_model(&entry).expect("model should parse");
+
+        assert_eq!(model.capabilities.context_window_tokens, None);
+        assert_eq!(model.capabilities.max_output_tokens, None);
+        assert_eq!(model.capabilities.image_input, Some(true));
+        assert_eq!(model.capabilities.streaming, Some(true));
+    }
+
+    #[test]
+    fn claude_cli_catalog_models_keep_documented_alias_constraints() {
+        let default = create_claude_cli_runtime_model("default");
+        let sonnet = create_claude_cli_runtime_model("sonnet");
+        let opus = create_claude_cli_runtime_model("opus");
+        let haiku = create_claude_cli_runtime_model("haiku");
+
+        assert_eq!(
+            string_values(default.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default"])
+        );
+        assert_eq!(
+            string_values(sonnet.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default", "low", "medium", "high", "max"])
+        );
+        assert_eq!(
+            sonnet.capabilities.long_context_window_tokens,
+            Some(1_000_000)
+        );
+        assert_eq!(
+            string_values(opus.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default", "low", "medium", "high", "xhigh", "max"])
+        );
+        assert_eq!(
+            string_values(haiku.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default"])
+        );
+    }
+
+    #[test]
+    fn copilot_sdk_model_conversion_ignores_contradictory_reasoning_defaults() {
+        let model = serde_json::from_value(serde_json::json!({
+            "id": "non-reasoning-model",
+            "name": "Non-reasoning model",
+            "capabilities": {
+                "supports": {
+                    "reasoningEffort": false,
+                    "vision": false
+                }
+            },
+            "defaultReasoningEffort": "high",
+            "supportedReasoningEfforts": ["high"]
+        }))
+        .expect("Copilot SDK model fixture should deserialize");
+        let runtime_model =
+            create_copilot_cli_runtime_model(&model).expect("Copilot SDK model should convert");
+
+        assert_eq!(
+            string_values(runtime_model.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default"])
+        );
+        assert_eq!(runtime_model.capabilities.default_reasoning_mode, None);
+    }
+
+    #[test]
+    fn copilot_sdk_model_conversion_ignores_zero_token_limits() {
+        let model = serde_json::from_value(serde_json::json!({
+            "id": "zero-limit-model",
+            "name": "Zero limit model",
+            "capabilities": {
+                "limits": {
+                    "max_context_window_tokens": 0,
+                    "max_output_tokens": 0
+                }
+            },
+            "billing": {
+                "tokenPrices": {
+                    "maxPromptTokens": 0,
+                    "longContext": { "maxPromptTokens": 0 }
+                }
+            }
+        }))
+        .expect("Copilot SDK model fixture should deserialize");
+        let runtime_model =
+            create_copilot_cli_runtime_model(&model).expect("Copilot SDK model should convert");
+
+        assert_eq!(runtime_model.capabilities.context_window_tokens, None);
+        assert_eq!(runtime_model.capabilities.long_context_window_tokens, None);
+        assert_eq!(runtime_model.capabilities.max_output_tokens, None);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { PROVIDER_MODEL_METADATA } from "./provider-model-registry.js";
 import {
+  assertReasoningModeSupportedForProviderModel,
   getReasoningModesForProviderModel,
   normalizeReasoningModeForProviderModel,
 } from "./reasoning-modes.js";
@@ -7,10 +8,7 @@ import {
 describe("provider model reasoning modes", () => {
   it("defines a non-empty default-first mode list for every curated model", () => {
     for (const model of PROVIDER_MODEL_METADATA) {
-      const modes = getReasoningModesForProviderModel(
-        model.provider,
-        model.id,
-      );
+      const modes = getReasoningModesForProviderModel(model.provider, model.id);
 
       expect(modes[0]).toBe("default");
       expect(new Set(modes).size).toBe(modes.length);
@@ -36,6 +34,15 @@ describe("provider model reasoning modes", () => {
       "high",
       "xhigh",
     ]);
+    expect(getReasoningModesForProviderModel("openai", "gpt-5.6")).toContain(
+      "ultra",
+    );
+    expect(
+      getReasoningModesForProviderModel("openai", "gpt-5.6-terra"),
+    ).toContain("ultra");
+    expect(
+      getReasoningModesForProviderModel("openai", "gpt-5.6-luna"),
+    ).toContain("ultra");
     expect(getReasoningModesForProviderModel("openai", "gpt-5")).toEqual([
       "default",
       "minimal",
@@ -46,6 +53,31 @@ describe("provider model reasoning modes", () => {
     expect(
       getReasoningModesForProviderModel("openai", "gpt-5.4-mini"),
     ).not.toContain("max");
+    expect(getReasoningModesForProviderModel("openai", "gpt-5.5-pro")).toEqual([
+      "default",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(getReasoningModesForProviderModel("openai", "gpt-5.2")).toEqual([
+      "default",
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(getReasoningModesForProviderModel("openai", "gpt-5.1")).toEqual([
+      "default",
+      "none",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getReasoningModesForProviderModel("openai", "gpt-5-pro")).toEqual([
+      "default",
+      "high",
+    ]);
   });
 
   it("matches Anthropic effort levels by Claude model", () => {
@@ -72,35 +104,60 @@ describe("provider model reasoning modes", () => {
     ).toEqual(["default", "low", "medium", "high"]);
     expect(
       getReasoningModesForProviderModel("google", "gemini-2.5-pro"),
-    ).toEqual(["default", "minimal", "low", "medium", "high"]);
+    ).toEqual(["default", "low", "medium", "high"]);
     expect(
       getReasoningModesForProviderModel("google", "gemini-2.5-flash"),
-    ).toEqual(["default", "none", "minimal", "low", "medium", "high"]);
+    ).toEqual(["default", "none", "low", "medium", "high"]);
+    expect(
+      getReasoningModesForProviderModel("google", "gemini-3.7-flash"),
+    ).toEqual(["default", "low", "medium", "high"]);
+    expect(
+      getReasoningModesForProviderModel("google", "gemini-3-pro-preview"),
+    ).toEqual(["default", "low", "high"]);
+    expect(
+      getReasoningModesForProviderModel(
+        "google",
+        "gemini-3.1-flash-lite-image",
+      ),
+    ).toEqual(["default", "minimal", "high"]);
+    expect(
+      getReasoningModesForProviderModel("google", "gemini-3.1-flash-lite"),
+    ).toEqual(["default", "minimal", "low", "medium", "high"]);
   });
 
   it("matches CLI provider effort switches", () => {
     expect(
       getReasoningModesForProviderModel("codex-cli", "gpt-5.6-terra"),
-    ).toEqual([
+    ).toEqual(["default", "none", "low", "medium", "high", "xhigh", "max"]);
+    expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.5")).toEqual([
       "default",
       "none",
       "low",
       "medium",
       "high",
       "xhigh",
-      "max",
-      "ultra",
     ]);
-    expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.5")).toEqual([
+    expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-5.4-pro"),
+    ).toEqual(["default", "medium", "high", "xhigh"]);
+    expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.2")).toEqual([
       "default",
+      "none",
       "low",
       "medium",
       "high",
       "xhigh",
     ]);
-    expect(
-      getReasoningModesForProviderModel("claude-cli", "sonnet"),
-    ).toEqual(["default", "low", "medium", "high", "xhigh", "max"]);
+    expect(getReasoningModesForProviderModel("claude-cli", "sonnet")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "max",
+    ]);
+    expect(getReasoningModesForProviderModel("claude-cli", "default")).toEqual([
+      "default",
+    ]);
     expect(getReasoningModesForProviderModel("copilot-cli", "auto")).toEqual([
       "default",
       "low",
@@ -111,51 +168,47 @@ describe("provider model reasoning modes", () => {
     ]);
   });
 
-  it("normalizes stale or unsupported modes to provider-safe values", () => {
+  it("does not silently translate unsupported modes", () => {
     expect(
-      normalizeReasoningModeForProviderModel(
-        "ultra",
-        "openai",
-        "gpt-5.6-sol",
-      ),
+      normalizeReasoningModeForProviderModel("ultra", "openai", "gpt-5.6-sol"),
     ).toBe("ultra");
     expect(
       normalizeReasoningModeForProviderModel("ultra", "openai", "gpt-5.5"),
-    ).toBe("xhigh");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel(
         "ultra",
         "anthropic",
         "claude-sonnet-5",
       ),
-    ).toBe("max");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel(
         "ultra",
         "google",
         "gemini-3.5-flash",
       ),
-    ).toBe("high");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel(
         "ultra",
         "langdock",
         "gpt-5.6-sol",
       ),
-    ).toBe("max");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel("max", "openai", "gpt-5.5"),
-    ).toBe("xhigh");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel("none", "openai", "gpt-5"),
-    ).toBe("minimal");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel(
         "xhigh",
         "anthropic",
         "claude-sonnet-4-6",
       ),
-    ).toBe("high");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel(
         "high",
@@ -169,16 +222,53 @@ describe("provider model reasoning modes", () => {
         "google",
         "gemini-3.1-pro-preview",
       ),
-    ).toBe("low");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel(
         "none",
         "google",
         "gemini-2.5-pro",
       ),
-    ).toBe("minimal");
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel("none", "codex-cli", "gpt-5.5"),
-    ).toBe("low");
+    ).toBe("none");
+  });
+
+  it("rejects unsupported execution settings and honors discovered effort lists", () => {
+    expect(() =>
+      assertReasoningModeSupportedForProviderModel(
+        "ultra",
+        "openai",
+        "gpt-5.6-terra",
+      ),
+    ).not.toThrow();
+    expect(
+      getReasoningModesForProviderModel("copilot-cli", "dynamic-model", [
+        "low",
+        "high",
+        "ultra",
+        "provider-only-value",
+      ]),
+    ).toEqual(["default", "low", "high"]);
+    expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-5.6-sol", [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ]),
+    ).toEqual([
+      "default",
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
   });
 });

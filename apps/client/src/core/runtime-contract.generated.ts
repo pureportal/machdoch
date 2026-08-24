@@ -10,6 +10,14 @@ export type RunMode = (typeof RUN_MODES)[number];
 export const REASONING_MODES = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
 export type ReasoningMode = (typeof REASONING_MODES)[number];
 
+export const REASONING_EXECUTION_MODES = ["standard", "pro"] as const;
+export type ReasoningExecutionMode = (typeof REASONING_EXECUTION_MODES)[number];
+
+export const CONTEXT_WINDOW_MODES = ["default", "long"] as const;
+export const MIN_CONTEXT_WINDOW_TOKENS = 1 as const;
+export const MAX_CONTEXT_WINDOW_TOKENS = 10000000 as const;
+export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number] | number;
+
 export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
@@ -49,16 +57,16 @@ export type UserReviewModelMode = (typeof USER_REVIEW_MODEL_MODES)[number];
 
 export const DEFAULT_MODEL_PROVIDER = "openai" as const satisfies ConfiguredModelProvider;
 export const DEFAULT_MODEL_BY_PROVIDER = {
-  "openai": "gpt-5.5",
+  "openai": "gpt-5.6-sol",
   "anthropic": "claude-sonnet-5",
-  "google": "gemini-3.5-flash",
+  "google": "gemini-3.7-flash",
   "langdock": "gpt-5.5",
-  "codex-cli": "gpt-5.5",
+  "codex-cli": "gpt-5.6-sol",
   "claude-cli": "sonnet",
   "copilot-cli": "auto"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 
-export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_OFFLINE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH", "LANGDOCK_REGION", "LANGDOCK_BASE_URL"] as const;
+export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_REASONING_MODE", "MACHDOCH_CONTEXT_WINDOW", "MACHDOCH_OFFLINE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH", "LANGDOCK_REGION", "LANGDOCK_BASE_URL"] as const;
 export const PROVIDER_ENV_KEY_BY_PROVIDER = {
   "openai": "OPENAI_API_KEY",
   "anthropic": "ANTHROPIC_API_KEY",
@@ -154,6 +162,18 @@ export const isReasoningMode = (
 ): value is ReasoningMode =>
   isRuntimeContractValue(REASONING_MODES, value);
 
+export const isReasoningExecutionMode = (
+  value: string | undefined,
+): value is ReasoningExecutionMode =>
+  isRuntimeContractValue(REASONING_EXECUTION_MODES, value);
+
+export const isContextWindow = (value: unknown): value is ContextWindow =>
+  (typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value)) ||
+  (typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_CONTEXT_WINDOW_TOKENS &&
+    value <= MAX_CONTEXT_WINDOW_TOKENS);
+
 export const isConfiguredModelProvider = (
   value: string | undefined,
 ): value is ConfiguredModelProvider =>
@@ -206,6 +226,8 @@ export interface WorkspaceConfigFile {
   provider?: ConfiguredModelProvider;
   model?: string;
   reasoning?: ReasoningMode;
+  reasoningMode?: ReasoningExecutionMode;
+  contextWindow?: ContextWindow;
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
@@ -267,6 +289,8 @@ export interface RuntimeConfig {
   provider: ModelProvider;
   model: string;
   reasoning: ReasoningMode;
+  reasoningMode?: ReasoningExecutionMode;
+  contextWindow: ContextWindow;
   offline: boolean;
   agentLimits?: RuntimeAgentLimits;
   compatibility: WorkspaceCompatibilityConfig;
@@ -286,9 +310,12 @@ export interface UiControlAvailability {
   reason?: string;
 }
 
-export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "internalTaskModel"> {
+export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "contextWindow" | "internalTaskModel"> {
   defaultMode: RunMode;
   defaultReasoning: ReasoningMode;
+  defaultReasoningMode?: ReasoningExecutionMode;
+  defaultContextWindow?: ContextWindow;
+  contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;
   uiControl?: UiControlAvailability;
 }

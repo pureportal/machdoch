@@ -18,10 +18,10 @@ import type {
   AgentModelTurn,
 } from "../../types.js";
 import type {
-  ModelProvider,
+  ConfiguredModelProvider,
   ReasoningMode,
 } from "../../runtime-contract.generated.js";
-import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import {
@@ -78,31 +78,28 @@ const isGemini25ProModel = (model: string): boolean => {
   return /\bgemini-2\.5\b.*\bpro\b/i.test(model);
 };
 
-const isGemini3ProModel = (model: string): boolean => {
-  return /\bgemini-3(?:\.\d+)?\b.*\bpro\b/i.test(model);
-};
-
 const mapReasoningToGeminiThinkingLevel = (
-  model: string,
   reasoning: Exclude<ReasoningMode, "default">,
 ): ThinkingLevel => {
-  if (reasoning === "none" || reasoning === "minimal") {
-    return isGemini3ProModel(model) ? ThinkingLevel.LOW : ThinkingLevel.MINIMAL;
+  if (reasoning === "none") {
+    throw new Error("Gemini thinking cannot be disabled with thinkingLevel.");
   }
 
-  if (
-    reasoning === "xhigh" ||
-    reasoning === "max" ||
-    reasoning === "ultra"
-  ) {
-    return ThinkingLevel.HIGH;
+  if (reasoning === "minimal") {
+    return ThinkingLevel.MINIMAL;
   }
 
-  return {
+  const level = {
     low: ThinkingLevel.LOW,
     medium: ThinkingLevel.MEDIUM,
     high: ThinkingLevel.HIGH,
-  }[reasoning];
+  }[reasoning as "low" | "medium" | "high"];
+
+  if (!level) {
+    throw new Error(`Unsupported Gemini thinking level: ${reasoning}.`);
+  }
+
+  return level;
 };
 
 const mapReasoningToGeminiThinkingBudget = (
@@ -111,59 +108,52 @@ const mapReasoningToGeminiThinkingBudget = (
 ): number => {
   switch (reasoning) {
     case "none":
-      return isGemini25ProModel(model) ? 128 : 0;
+      if (isGemini25ProModel(model)) {
+        throw new Error("Gemini 2.5 Pro thinking cannot be disabled.");
+      }
+
+      return 0;
     case "minimal":
-      return isGemini25ProModel(model) ? 128 : 512;
+      throw new Error(
+        "Gemini 2.5 has no distinct minimal thinking budget; use low, medium, or high.",
+      );
     case "low":
       return 1_024;
     case "medium":
-      return 4_096;
-    case "high":
       return 8_192;
+    case "high":
+      return 24_576;
     case "xhigh":
-      return 16_384;
     case "max":
-      return 24_576;
     case "ultra":
-      return 24_576;
+      throw new Error(`Unsupported Gemini 2.5 thinking mode: ${reasoning}.`);
   }
 };
 
 export const createGeminiThinkingConfig = (
   model: string,
   reasoning?: ReasoningMode,
-): { thinkingConfig?: { thinkingLevel?: ThinkingLevel; thinkingBudget?: number } } => {
+  provider: ConfiguredModelProvider = "google",
+): {
+  thinkingConfig?: { thinkingLevel?: ThinkingLevel; thinkingBudget?: number };
+} => {
   if (!reasoning || reasoning === "default") {
     return {};
   }
 
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "google",
-    model,
-  );
-
-  if (normalizedReasoning === "default") {
-    return {};
-  }
+  assertReasoningModeSupportedForProviderModel(reasoning, provider, model);
 
   if (isGemini25Model(model)) {
     return {
       thinkingConfig: {
-        thinkingBudget: mapReasoningToGeminiThinkingBudget(
-          model,
-          normalizedReasoning,
-        ),
+        thinkingBudget: mapReasoningToGeminiThinkingBudget(model, reasoning),
       },
     };
   }
 
   return {
     thinkingConfig: {
-      thinkingLevel: mapReasoningToGeminiThinkingLevel(
-        model,
-        normalizedReasoning,
-      ),
+      thinkingLevel: mapReasoningToGeminiThinkingLevel(reasoning),
     },
   };
 };
@@ -217,7 +207,10 @@ const extractGeminiResponseParts = (
 ): GeminiResponsePart[] => {
   const firstCandidate = response.candidates?.[0];
 
-  if (!firstCandidate?.content || !Array.isArray(firstCandidate.content.parts)) {
+  if (
+    !firstCandidate?.content ||
+    !Array.isArray(firstCandidate.content.parts)
+  ) {
     return [];
   }
 
@@ -269,7 +262,7 @@ const isAgentModelTurn = (value: unknown): value is AgentModelTurn => {
 export class GeminiChatAdapter implements AgentModelAdapter {
   private readonly chat: ReturnType<GoogleGenAI["chats"]["create"]>;
   private readonly tools: AgentModelToolSpec[];
-  private readonly provider: ModelProvider;
+  private readonly provider: ConfiguredModelProvider;
   private startParams?: AgentModelStartParams;
 
   private createConfig(model: string, tools: AgentModelToolSpec[]) {
@@ -299,7 +292,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
     client: GoogleGenAI,
     model: string,
     tools: AgentModelToolSpec[],
-    provider: ModelProvider = "google",
+    provider: ConfiguredModelProvider = "google",
   ) {
     this.tools = tools;
     this.provider = provider;
@@ -324,23 +317,26 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           config: {
             systemInstruction: params.systemPrompt,
             ...this.createConfig(params.model, params.tools),
-            ...createGeminiThinkingConfig(params.model, params.reasoning),
+            ...createGeminiThinkingConfig(
+              params.model,
+              params.reasoning,
+              this.provider,
+            ),
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
         };
 
         if (params.onStreamEvent) {
-          return await this.sendStreamingMessage(
-            request,
-            params.onStreamEvent,
-          );
+          return await this.sendStreamingMessage(request, params.onStreamEvent);
         }
 
         return await this.chat.sendMessage(request);
       },
     );
 
-    return isAgentModelTurn(response) ? response : this.normalizeResponse(response);
+    return isAgentModelTurn(response)
+      ? response
+      : this.normalizeResponse(response);
   }
 
   async continueTurn(
@@ -380,23 +376,23 @@ export class GeminiChatAdapter implements AgentModelAdapter {
             ...createGeminiThinkingConfig(
               startParams.model,
               startParams.reasoning,
+              this.provider,
             ),
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
         };
 
         if (params.onStreamEvent) {
-          return await this.sendStreamingMessage(
-            request,
-            params.onStreamEvent,
-          );
+          return await this.sendStreamingMessage(request, params.onStreamEvent);
         }
 
         return await this.chat.sendMessage(request);
       },
     );
 
-    return isAgentModelTurn(response) ? response : this.normalizeResponse(response);
+    return isAgentModelTurn(response)
+      ? response
+      : this.normalizeResponse(response);
   }
 
   private normalizeResponse(response: {

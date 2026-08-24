@@ -3,14 +3,17 @@ use std::collections::HashMap;
 use super::{
     normalize::{
         is_anthropic_runtime_model, is_google_runtime_model, is_langdock_runtime_model,
-        is_openai_runtime_model, json_bool_from_keys, json_date_prefix, json_string, json_u64,
-        runtime_model_stage, unix_milliseconds_to_utc_date, unix_seconds_to_utc_date,
+        is_openai_runtime_model, json_date_prefix, json_string, json_u64, runtime_model_stage,
+        unix_seconds_to_utc_date,
     },
     ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
 };
 
 const LANGDOCK_DEFAULT_REGION: &str = "eu";
 const LANGDOCK_SUPPORTED_REGIONS: [&str; 2] = ["eu", "us"];
+const ANTHROPIC_IMAGE_MEDIA_TYPES: [&str; 4] =
+    ["image/gif", "image/jpeg", "image/png", "image/webp"];
+const CANONICAL_REASONING_MODES: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 
 #[derive(Clone, Copy)]
 pub(super) enum LangdockApiFamily {
@@ -72,6 +75,93 @@ fn create_langdock_root(url: &reqwest::Url, root_segments: &[&str]) -> Option<St
     }
 
     Some(format!("{origin}/{}", root_segments.join("/")))
+}
+
+fn capability_supported(capabilities: Option<&serde_json::Value>, key: &str) -> Option<bool> {
+    let capability = capabilities?.get(key)?;
+
+    capability.as_bool().or_else(|| {
+        capability
+            .get("supported")
+            .and_then(serde_json::Value::as_bool)
+    })
+}
+
+fn combine_capability_support(left: Option<bool>, right: Option<bool>) -> Option<bool> {
+    if left == Some(true) || right == Some(true) {
+        return Some(true);
+    }
+
+    if left == Some(false) || right == Some(false) {
+        return Some(false);
+    }
+
+    None
+}
+
+fn positive_json_u64_from_keys(entry: &serde_json::Value, keys: &[&str]) -> Option<u64> {
+    keys.iter()
+        .find_map(|key| json_u64(entry, key).filter(|value| *value > 0))
+}
+
+fn canonical_reasoning_modes(capability: Option<&serde_json::Value>) -> Option<Vec<String>> {
+    let capability = capability?;
+
+    if capability
+        .get("supported")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+    {
+        return Some(vec!["default".to_string()]);
+    }
+
+    if capability
+        .get("supported")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
+        return None;
+    }
+
+    let mut modes = vec!["default".to_string()];
+
+    for mode in CANONICAL_REASONING_MODES {
+        if capability
+            .get(mode)
+            .and_then(|entry| entry.get("supported"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            modes.push(mode.to_string());
+        }
+    }
+
+    Some(modes)
+}
+
+fn array_capability_contains(
+    entry: &serde_json::Value,
+    keys: &[&str],
+    accepted_values: &[&str],
+) -> Option<bool> {
+    for key in keys {
+        let Some(values) = entry.get(*key).and_then(serde_json::Value::as_array) else {
+            continue;
+        };
+
+        return Some(
+            values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .any(|value| {
+                    accepted_values
+                        .iter()
+                        .any(|accepted| value.eq_ignore_ascii_case(accepted))
+                }),
+        );
+    }
+
+    None
 }
 
 fn parse_langdock_configured_base_url(value: &str) -> Option<(String, Option<String>)> {
@@ -186,51 +276,25 @@ pub(super) fn create_openai_runtime_model(
     model_id: &str,
     release_date: Option<String>,
 ) -> ProviderRuntimeModel {
-    let normalized = model_id.to_ascii_lowercase();
-    let voice = false;
-    let computer_use = normalized.starts_with("gpt-5.6")
-        || normalized.starts_with("gpt-5.5")
-        || normalized.starts_with("gpt-5.4");
-    let latest_text_model = normalized.starts_with("gpt-5");
-    let mut recommended_for = Vec::new();
-
-    if latest_text_model {
-        recommended_for.push("coding".to_string());
-        recommended_for.push("vision".to_string());
-    }
-
-    if normalized.contains("mini") || normalized.contains("nano") || normalized.contains("luna") {
-        recommended_for.push("fast".to_string());
-        recommended_for.push("cheap".to_string());
-    }
-
-    if voice {
-        recommended_for.push("voice".to_string());
-    }
-
-    if computer_use {
-        recommended_for.push("computer-use".to_string());
-    }
-
     ProviderRuntimeModel {
         id: model_id.to_string(),
         label: None,
         stage: runtime_model_stage(model_id),
         release_date,
-        recommended_for,
+        recommended_for: Vec::new(),
         capabilities: ProviderRuntimeModelCapabilities {
-            image_input: Some(latest_text_model),
-            tool_use: Some(true),
-            reasoning: Some(
-                normalized.starts_with("gpt-5")
-                    || normalized.starts_with('o')
-                    || normalized.contains("reasoning"),
-            ),
-            streaming: Some(true),
+            image_input: None,
+            tool_use: None,
+            reasoning: None,
+            streaming: None,
             context_window_tokens: None,
+            long_context_window_tokens: None,
             max_output_tokens: None,
-            voice: Some(voice),
-            computer_use: Some(computer_use),
+            reasoning_modes: None,
+            default_reasoning_mode: None,
+            supported_image_media_types: None,
+            voice: None,
+            computer_use: None,
         },
         warnings: Vec::new(),
         source: "provider-api".to_string(),
@@ -245,28 +309,15 @@ pub(super) fn create_anthropic_runtime_model(
         json_string(entry, "display_name").or_else(|| json_string(entry, "displayName"));
     let capabilities = entry.get("capabilities");
     let normalized = id.to_ascii_lowercase();
-    let image_input = json_bool_from_keys(
-        capabilities,
-        &["vision", "image_input", "imageInput", "images"],
-    )
-    .unwrap_or(true);
-    let tool_use = json_bool_from_keys(
-        capabilities,
-        &["tool_use", "toolUse", "function_calling", "functionCalling"],
-    )
-    .unwrap_or(true);
-    let reasoning = json_bool_from_keys(
-        capabilities,
-        &[
-            "reasoning",
-            "thinking",
-            "extended_thinking",
-            "extendedThinking",
-            "adaptive_thinking",
-            "adaptiveThinking",
-        ],
-    )
-    .unwrap_or_else(|| normalized.contains("opus") || normalized.contains("sonnet"));
+    let image_input = capability_supported(capabilities, "image_input")
+        .or_else(|| capability_supported(capabilities, "imageInput"));
+    let tool_use = capability_supported(capabilities, "tool_use")
+        .or_else(|| capability_supported(capabilities, "toolUse"));
+    let thinking = capability_supported(capabilities, "thinking");
+    let effort = capabilities.and_then(|value| value.get("effort"));
+    let effort_supported = capability_supported(capabilities, "effort");
+    let reasoning_modes = canonical_reasoning_modes(effort);
+    let reasoning = combine_capability_support(effort_supported, thinking);
     let mut recommended_for = Vec::new();
 
     if normalized.contains("opus") || normalized.contains("sonnet") {
@@ -281,7 +332,7 @@ pub(super) fn create_anthropic_runtime_model(
         recommended_for.push("cheap".to_string());
     }
 
-    if image_input {
+    if image_input == Some(true) {
         recommended_for.push("vision".to_string());
     }
 
@@ -293,14 +344,24 @@ pub(super) fn create_anthropic_runtime_model(
             .or_else(|| json_date_prefix(entry, "createdAt")),
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
-            image_input: Some(image_input),
-            tool_use: Some(tool_use),
-            reasoning: Some(reasoning),
+            image_input,
+            tool_use,
+            reasoning,
             streaming: Some(true),
-            context_window_tokens: json_u64(entry, "max_input_tokens")
-                .or_else(|| json_u64(entry, "maxInputTokens")),
-            max_output_tokens: json_u64(entry, "max_tokens")
-                .or_else(|| json_u64(entry, "maxTokens")),
+            context_window_tokens: positive_json_u64_from_keys(
+                entry,
+                &["max_input_tokens", "maxInputTokens"],
+            ),
+            long_context_window_tokens: None,
+            max_output_tokens: positive_json_u64_from_keys(entry, &["max_tokens", "maxTokens"]),
+            reasoning_modes,
+            default_reasoning_mode: None,
+            supported_image_media_types: image_input.filter(|supported| *supported).map(|_| {
+                ANTHROPIC_IMAGE_MEDIA_TYPES
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect()
+            }),
             voice: Some(false),
             computer_use: Some(false),
         },
@@ -317,66 +378,87 @@ pub(super) fn create_google_runtime_model(
         .strip_prefix("models/")
         .unwrap_or(resource_name.as_str())
         .to_string();
-    let methods = entry
-        .get("supportedGenerationMethods")
-        .and_then(serde_json::Value::as_array)
-        .map(|methods| {
-            methods
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let methods = [
+        "supportedGenerationMethods",
+        "supportedActions",
+        "supported_generation_methods",
+        "supported_actions",
+    ]
+    .into_iter()
+    .find_map(|key| entry.get(key).and_then(serde_json::Value::as_array))
+    .map(|methods| {
+        methods
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
 
-    if !methods.iter().any(|method| method == "generateContent") {
+    if !methods
+        .iter()
+        .any(|method| method.eq_ignore_ascii_case("generateContent"))
+    {
         return None;
     }
 
-    let normalized = id.to_ascii_lowercase();
-    let voice = normalized.contains("tts") || normalized.contains("audio");
-    let image_input = !voice
-        && !normalized.contains("embedding")
-        && !normalized.contains("imagen")
-        && !normalized.contains("veo");
-    let reasoning = entry
-        .get("thinking")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or_else(|| normalized.contains("pro") || normalized.contains("2.5"));
+    let image_input = array_capability_contains(
+        entry,
+        &[
+            "inputModalities",
+            "supportedInputModalities",
+            "input_modalities",
+        ],
+        &["image", "IMAGE"],
+    )
+    .or(Some(true));
+    let reasoning = entry.get("thinking").and_then(serde_json::Value::as_bool);
     let mut recommended_for = Vec::new();
 
-    if reasoning || normalized.contains("pro") {
+    if reasoning == Some(true) {
         recommended_for.push("coding".to_string());
     }
 
-    if normalized.contains("flash") {
-        recommended_for.push("fast".to_string());
-        recommended_for.push("cheap".to_string());
-    }
-
-    if image_input {
+    if image_input == Some(true) {
         recommended_for.push("vision".to_string());
-    }
-
-    if voice {
-        recommended_for.push("voice".to_string());
     }
 
     Some(ProviderRuntimeModel {
         id,
-        label: json_string(entry, "displayName"),
+        label: json_string(entry, "displayName").or_else(|| json_string(entry, "display_name")),
         stage: runtime_model_stage(&resource_name),
         release_date: None,
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
-            image_input: Some(image_input),
-            tool_use: Some(true),
-            reasoning: Some(reasoning),
+            image_input,
+            tool_use: None,
+            reasoning,
             streaming: Some(true),
-            context_window_tokens: json_u64(entry, "inputTokenLimit"),
-            max_output_tokens: json_u64(entry, "outputTokenLimit"),
-            voice: Some(voice),
-            computer_use: Some(false),
+            context_window_tokens: positive_json_u64_from_keys(
+                entry,
+                &["inputTokenLimit", "input_token_limit"],
+            ),
+            long_context_window_tokens: None,
+            max_output_tokens: positive_json_u64_from_keys(
+                entry,
+                &["outputTokenLimit", "output_token_limit"],
+            ),
+            reasoning_modes: None,
+            default_reasoning_mode: None,
+            supported_image_media_types: image_input.filter(|supported| *supported).map(|_| {
+                [
+                    "image/heic",
+                    "image/heif",
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp",
+                ]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+            }),
+            voice: None,
+            computer_use: None,
         },
         warnings: Vec::new(),
         source: "provider-api".to_string(),
@@ -386,20 +468,9 @@ pub(super) fn create_google_runtime_model(
 fn create_langdock_runtime_model(entry: &serde_json::Value) -> Option<ProviderRuntimeModel> {
     let id = json_string(entry, "id")?;
     let normalized = id.to_ascii_lowercase();
-    let supports_extended_thinking = entry
+    let reasoning = entry
         .get("supportsExtendedThinking")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let image_input = normalized.starts_with("gpt-")
-        || normalized.starts_with("claude-")
-        || normalized.starts_with("gemini-");
-    let reasoning = supports_extended_thinking
-        || normalized.starts_with("gpt-")
-        || normalized.starts_with('o')
-        || normalized.starts_with("claude-")
-        || normalized.starts_with("gemini-")
-        || normalized.contains("reason")
-        || normalized.contains("thinking");
+        .and_then(serde_json::Value::as_bool);
     let mut recommended_for = Vec::new();
 
     if normalized.starts_with("gpt-")
@@ -423,23 +494,25 @@ fn create_langdock_runtime_model(entry: &serde_json::Value) -> Option<ProviderRu
         recommended_for.push("cheap".to_string());
     }
 
-    if image_input {
-        recommended_for.push("vision".to_string());
-    }
-
     Some(ProviderRuntimeModel {
         id,
         label: None,
         stage: runtime_model_stage(&normalized),
-        release_date: json_u64(entry, "created").and_then(unix_milliseconds_to_utc_date),
+        release_date: json_u64(entry, "created")
+            .filter(|seconds| *seconds > 0)
+            .and_then(unix_seconds_to_utc_date),
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
-            image_input: Some(image_input),
-            tool_use: Some(true),
-            reasoning: Some(reasoning),
+            image_input: None,
+            tool_use: None,
+            reasoning,
             streaming: Some(true),
             context_window_tokens: None,
+            long_context_window_tokens: None,
             max_output_tokens: None,
+            reasoning_modes: None,
+            default_reasoning_mode: None,
+            supported_image_media_types: None,
             voice: Some(false),
             computer_use: Some(false),
         },
@@ -455,13 +528,80 @@ pub(super) fn sorted_runtime_models(
     models
 }
 
+fn merge_runtime_model(existing: &mut ProviderRuntimeModel, incoming: ProviderRuntimeModel) {
+    existing.label = incoming.label.or(existing.label.take());
+    existing.stage = incoming.stage.or(existing.stage.take());
+    existing.release_date = incoming.release_date.or(existing.release_date.take());
+
+    for recommendation in incoming.recommended_for {
+        if !existing.recommended_for.contains(&recommendation) {
+            existing.recommended_for.push(recommendation);
+        }
+    }
+
+    existing.capabilities.image_input = incoming
+        .capabilities
+        .image_input
+        .or(existing.capabilities.image_input);
+    existing.capabilities.tool_use = incoming
+        .capabilities
+        .tool_use
+        .or(existing.capabilities.tool_use);
+    existing.capabilities.reasoning = incoming
+        .capabilities
+        .reasoning
+        .or(existing.capabilities.reasoning);
+    existing.capabilities.streaming = incoming
+        .capabilities
+        .streaming
+        .or(existing.capabilities.streaming);
+    existing.capabilities.context_window_tokens = incoming
+        .capabilities
+        .context_window_tokens
+        .or(existing.capabilities.context_window_tokens);
+    existing.capabilities.long_context_window_tokens = incoming
+        .capabilities
+        .long_context_window_tokens
+        .or(existing.capabilities.long_context_window_tokens);
+    existing.capabilities.max_output_tokens = incoming
+        .capabilities
+        .max_output_tokens
+        .or(existing.capabilities.max_output_tokens);
+    existing.capabilities.reasoning_modes = incoming
+        .capabilities
+        .reasoning_modes
+        .or_else(|| existing.capabilities.reasoning_modes.take());
+    existing.capabilities.default_reasoning_mode = incoming
+        .capabilities
+        .default_reasoning_mode
+        .or_else(|| existing.capabilities.default_reasoning_mode.take());
+    existing.capabilities.supported_image_media_types = incoming
+        .capabilities
+        .supported_image_media_types
+        .or_else(|| existing.capabilities.supported_image_media_types.take());
+    existing.capabilities.voice = incoming.capabilities.voice.or(existing.capabilities.voice);
+    existing.capabilities.computer_use = incoming
+        .capabilities
+        .computer_use
+        .or(existing.capabilities.computer_use);
+
+    for warning in incoming.warnings {
+        if !existing.warnings.contains(&warning) {
+            existing.warnings.push(warning);
+        }
+    }
+}
+
 pub(super) fn sorted_unique_runtime_models(
     models: impl IntoIterator<Item = ProviderRuntimeModel>,
 ) -> Vec<ProviderRuntimeModel> {
     let mut by_id = HashMap::<String, ProviderRuntimeModel>::new();
 
     for model in models {
-        by_id.entry(model.id.clone()).or_insert(model);
+        by_id
+            .entry(model.id.clone())
+            .and_modify(|existing| merge_runtime_model(existing, model.clone()))
+            .or_insert(model);
     }
 
     sorted_runtime_models(by_id.into_values().collect())
@@ -537,5 +677,7 @@ pub(super) fn parse_langdock_model_catalog(raw: &str) -> Result<Vec<ProviderRunt
 }
 
 pub(super) fn openai_release_date(entry: &serde_json::Value) -> Option<String> {
-    json_u64(entry, "created").and_then(unix_seconds_to_utc_date)
+    json_u64(entry, "created")
+        .filter(|seconds| *seconds > 0)
+        .and_then(unix_seconds_to_utc_date)
 }

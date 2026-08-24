@@ -1095,6 +1095,11 @@ export const useChatSessionController = (
   const workspaceDefaultRunMode =
     runtime.runtimeSnapshot?.defaultMode ?? defaultRunMode;
   const effectiveReasoning = runtime.runtimeSnapshot?.reasoning ?? "default";
+  const workspaceReasoningProvider =
+    runtime.runtimeSnapshot?.provider === "unconfigured"
+      ? undefined
+      : runtime.runtimeSnapshot?.provider;
+  const workspaceReasoningModel = runtime.runtimeSnapshot?.model;
   const normalizedEffectiveReasoning = normalizeReasoningModeForProvider(
     effectiveReasoning,
     activeComposerSession.provider,
@@ -1102,9 +1107,18 @@ export const useChatSessionController = (
   );
   const workspaceDefaultReasoning = normalizeReasoningModeForProvider(
     runtime.runtimeSnapshot?.defaultReasoning ?? effectiveReasoning,
-    activeComposerSession.provider,
-    activeComposerSession.model,
+    workspaceReasoningProvider ?? null,
+    workspaceReasoningModel,
   );
+  const effectiveReasoningExecutionMode =
+    runtime.runtimeSnapshot?.reasoningMode ?? "standard";
+  const workspaceDefaultReasoningExecutionMode =
+    runtime.runtimeSnapshot?.defaultReasoningMode ??
+    effectiveReasoningExecutionMode;
+  const effectiveContextWindow =
+    runtime.runtimeSnapshot?.contextWindow ?? "default";
+  const workspaceDefaultContextWindow =
+    runtime.runtimeSnapshot?.defaultContextWindow ?? effectiveContextWindow;
   const activeSessionReasoningOverride = normalizeSessionReasoningOverride(
     activeComposerSession.reasoning,
     activeComposerSession.provider,
@@ -4052,8 +4066,10 @@ export const useChatSessionController = (
                 filters: [
                   {
                     name: "Images",
-                    extensions:
-                      getSupportedImageInputExtensions(targetProvider),
+                    extensions: getSupportedImageInputExtensions(
+                      targetProvider,
+                      targetModel,
+                    ),
                   },
                 ],
               }
@@ -4125,11 +4141,16 @@ export const useChatSessionController = (
 
         if (
           !mediaType ||
-          !providerSupportsImageInputMediaType(targetProvider, mediaType)
+          !providerSupportsImageInputMediaType(
+            targetProvider,
+            mediaType,
+            targetModel,
+          )
         ) {
           console.error(
             `Unsupported pasted image format \`${file.type || file.name || "unknown"}\`. Supported extensions for provider \`${targetProvider}\`: ${getSupportedImageInputExtensions(
               targetProvider,
+              targetModel,
             ).join(", ")}.`,
           );
           return [];
@@ -6246,6 +6267,7 @@ export const useChatSessionController = (
                     name: "Images",
                     extensions: getSupportedImageInputExtensions(
                       targetSession.provider,
+                      targetSession.model,
                     ),
                   },
                 ],
@@ -8479,12 +8501,19 @@ export const useChatSessionController = (
         effectiveMode: defaultRunMode,
         defaultReasoning: workspaceDefaultReasoning,
         effectiveReasoning,
-        reasoningProvider: state.activeSession.provider,
-        reasoningModel: state.activeSession.model,
+        defaultReasoningExecutionMode: workspaceDefaultReasoningExecutionMode,
+        effectiveReasoningExecutionMode,
+        defaultContextWindow: workspaceDefaultContextWindow,
+        effectiveContextWindow,
+        reasoningProvider: workspaceReasoningProvider,
+        reasoningModel: workspaceReasoningModel,
         saving: runtime.workspaceSetupSaving,
         message: runtime.workspaceSetupMessage,
         onDefaultModeChange: runtime.handleWorkspaceDefaultModeSave,
         onReasoningModeChange: runtime.handleWorkspaceReasoningModeSave,
+        onReasoningExecutionModeChange:
+          runtime.handleWorkspaceReasoningExecutionModeSave,
+        onContextWindowChange: runtime.handleWorkspaceContextWindowSave,
       },
       webSearchSetup: {
         activeProvider: runtime.webSearchActiveProvider,

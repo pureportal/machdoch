@@ -187,14 +187,20 @@ export const createImageInputsFromPaths = async (
         fail(
           `Unsupported image attachment format for \`${imagePath}\`. Supported extensions for provider \`${config.provider}\`: ${getSupportedImageInputExtensions(
             config.provider,
+            config.model,
           ).join(", ")}.`,
         );
 
       if (
-        !providerSupportsImageInputMediaType(config.provider, imageMediaType)
+        !providerSupportsImageInputMediaType(
+          config.provider,
+          imageMediaType,
+          config.model,
+        )
       ) {
         const supportedExtensions = getSupportedImageInputExtensions(
           config.provider,
+          config.model,
         ).join(", ");
 
         fail(

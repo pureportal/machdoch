@@ -16,10 +16,10 @@ import type {
   AgentModelTurn,
 } from "../../types.js";
 import type {
-  ModelProvider,
+  ConfiguredModelProvider,
   ReasoningMode,
 } from "../../runtime-contract.generated.js";
-import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import {
@@ -41,32 +41,24 @@ export const createAnthropicToolSelection = () => ({
 
 type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
+export const getAnthropicMaxOutputTokens = (
+  reasoning?: ReasoningMode,
+): number => (reasoning === "xhigh" || reasoning === "max" ? 64_000 : 4_096);
+
 export const createAnthropicOutputConfig = (
   model: string,
   reasoning?: ReasoningMode,
+  provider: ConfiguredModelProvider = "anthropic",
 ): { output_config?: { effort: AnthropicEffort } } => {
   if (!reasoning || reasoning === "default") {
     return {};
   }
 
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "anthropic",
-    model,
-  );
-
-  if (normalizedReasoning === "default") {
-    return {};
-  }
+  assertReasoningModeSupportedForProviderModel(reasoning, provider, model);
 
   return {
     output_config: {
-      effort:
-        normalizedReasoning === "none" || normalizedReasoning === "minimal"
-          ? "low"
-          : normalizedReasoning === "ultra"
-            ? "max"
-            : normalizedReasoning,
+      effort: reasoning as AnthropicEffort,
     },
   };
 };
@@ -108,9 +100,7 @@ export const createAnthropicTools = (
   }));
 };
 
-const createAnthropicToolResultContent = (
-  toolResult: AgentModelToolResult,
-) => {
+const createAnthropicToolResultContent = (toolResult: AgentModelToolResult) => {
   const content = normalizeToolResultContent(toolResult).map((contentPart) => {
     if (contentPart.type === "text") {
       return {
@@ -139,14 +129,14 @@ const createAnthropicToolResultContent = (
 export class AnthropicMessagesAdapter implements AgentModelAdapter {
   private readonly client: Anthropic;
   private readonly tools: AgentModelToolSpec[];
-  private readonly provider: ModelProvider;
+  private readonly provider: ConfiguredModelProvider;
   private readonly messages: AnthropicMessageParam[] = [];
   private startParams?: AgentModelStartParams;
 
   constructor(
     client: Anthropic,
     tools: AgentModelToolSpec[],
-    provider: ModelProvider = "anthropic",
+    provider: ConfiguredModelProvider = "anthropic",
   ) {
     this.client = client;
     this.tools = tools;
@@ -170,11 +160,15 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       async (requestSignal) => {
         const request = {
           model: params.model,
-          max_tokens: 4_096,
+          max_tokens: getAnthropicMaxOutputTokens(params.reasoning),
           system: params.systemPrompt,
           messages: [...this.messages],
           tools: createAnthropicTools(params.tools),
-          ...createAnthropicOutputConfig(params.model, params.reasoning),
+          ...createAnthropicOutputConfig(
+            params.model,
+            params.reasoning,
+            this.provider,
+          ),
           ...createAnthropicToolSelection(),
         };
 
@@ -235,13 +229,14 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       async (requestSignal) => {
         const request = {
           model: startParams.model,
-          max_tokens: 4_096,
+          max_tokens: getAnthropicMaxOutputTokens(startParams.reasoning),
           system: startParams.systemPrompt,
           messages: [...this.messages],
           tools: createAnthropicTools(this.tools),
           ...createAnthropicOutputConfig(
             startParams.model,
             startParams.reasoning,
+            this.provider,
           ),
           ...createAnthropicToolSelection(),
         };

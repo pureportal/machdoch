@@ -11,6 +11,22 @@ export type CatalogProviderId = RuntimeProvider;
 export interface CatalogModel {
   id: string;
   label: string;
+  capabilities?: RuntimeModelCapabilities;
+}
+
+export interface RuntimeModelCapabilities {
+  imageInput?: boolean | null;
+  toolUse?: boolean | null;
+  reasoning?: boolean | null;
+  streaming?: boolean | null;
+  contextWindowTokens?: number | null;
+  longContextWindowTokens?: number | null;
+  maxOutputTokens?: number | null;
+  reasoningModes?: readonly string[] | null;
+  defaultReasoningMode?: string | null;
+  supportedImageMediaTypes?: readonly string[] | null;
+  voice?: boolean | null;
+  computerUse?: boolean | null;
 }
 
 export interface RuntimeCatalogModel {
@@ -18,6 +34,7 @@ export interface RuntimeCatalogModel {
   label?: string;
   stage?: string;
   releaseDate?: string;
+  capabilities?: RuntimeModelCapabilities;
 }
 
 export interface RuntimeProviderModelCatalog {
@@ -57,69 +74,17 @@ export const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
   "copilot-cli": "Copilot CLI",
 };
 
-const MAX_MODELS_PER_PROVIDER = Number.MAX_SAFE_INTEGER;
-const MAX_CODEX_CLI_MODELS = Number.MAX_SAFE_INTEGER;
-const MAX_LANGDOCK_MODELS = Number.MAX_SAFE_INTEGER;
-
-const OPENAI_RUNTIME_MODEL_PATTERN =
-  /^gpt-(\d+)(?:\.\d+)?(?:-(?:mini|nano|sol|terra|luna))?(?:-preview)?$/u;
-
-const OPENAI_EXCLUDED_MODEL_ID_PARTS = [
-  "audio",
-  "chatgpt",
-  "codex",
-  "computer-use",
-  "dall",
-  "embedding",
-  "image",
-  "moderation",
-  "realtime",
-  "search",
-  "sora",
-  "transcribe",
-  "tts",
-  "whisper",
-] as const;
-
-const GOOGLE_EXCLUDED_MODEL_ID_PARTS = [
-  "aqa",
-  "audio",
-  "banana",
-  "customtools",
-  "embedding",
-  "gemma",
-  "imagen",
-  "image",
-  "learnlm",
-  "live",
-  "lyria",
-  "tts",
-  "veo",
-] as const;
-
-const LANGDOCK_EXCLUDED_MODEL_ID_PARTS = [
-  "audio",
-  "dall",
-  "embed",
-  "embedding",
-  "imagen",
-  "image",
-  "moderation",
-  "realtime",
-  "rerank",
-  "search",
-  "sora",
-  "transcribe",
-  "tts",
-  "veo",
-  "whisper",
-] as const;
-
 const REVIEW_MODEL_PATTERNS: Record<RuntimeProvider, readonly RegExp[]> = {
   openai: [/(?:^|-)mini$/u, /(?:^|-)nano$/u],
   anthropic: [/haiku/u],
   google: [/flash-lite/u, /flash/u],
-  langdock: [/(?:^|-)mini$/u, /(?:^|-)nano$/u, /flash-lite/u, /flash/u, /haiku/u],
+  langdock: [
+    /(?:^|-)mini$/u,
+    /(?:^|-)nano$/u,
+    /flash-lite/u,
+    /flash/u,
+    /haiku/u,
+  ],
   "codex-cli": [/(?:^|-)mini$/u, /(?:^|-)nano$/u],
   "claude-cli": [/haiku/u, /sonnet/u],
   "copilot-cli": [/auto/u],
@@ -145,16 +110,6 @@ const formatModelLabel = (modelId: string): string => {
         : `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
     })
     .join(" ");
-};
-
-const looksLikeDatedSnapshot = (modelId: string): boolean => {
-  const dateTail = modelId.match(/(?:^|-)(\d{4})-(\d{2})-(\d{2})$/u);
-
-  if (dateTail) {
-    return true;
-  }
-
-  return /(?:^|-)\d{8}$/u.test(modelId);
 };
 
 const parseReleaseTime = (date: string | undefined): number | null => {
@@ -231,176 +186,14 @@ const getModelVersionRank = (modelId: string): number | null => {
 const getReleaseTime = (model: RuntimeCatalogModel): number | null =>
   parseReleaseTime(model.releaseDate);
 
-const isModernOpenAiRuntimeModel = (modelId: string): boolean => {
-  const normalized = normalizeModelId(modelId);
-  const match = normalized.match(OPENAI_RUNTIME_MODEL_PATTERN);
-
-  if (
-    !match ||
-    looksLikeDatedSnapshot(normalized) ||
-    OPENAI_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
-  ) {
-    return false;
-  }
-
-  return Number.parseInt(match[1] ?? "0", 10) >= 5;
-};
-
-const isModernAnthropicRuntimeModel = (modelId: string): boolean => {
-  const normalized = normalizeModelId(modelId);
-
-  return (
-    /^claude-(?:fable|sonnet)-5(?:-\d{8})?$/u.test(normalized) ||
-    /^claude-(?:opus|sonnet|haiku)-4-\d+(?:-\d{8})?$/u.test(normalized) ||
-    /^claude-(?:5|4-\d+)-(?:fable|opus|sonnet|haiku)(?:-\d{8})?$/u.test(
-      normalized,
-    )
-  );
-};
-
-const isModernGoogleRuntimeModel = (modelId: string): boolean => {
-  const normalized = normalizeModelId(modelId);
-
-  if (
-    !normalized.startsWith("gemini-") ||
-    looksLikeDatedSnapshot(normalized) ||
-    GOOGLE_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
-  ) {
-    return false;
-  }
-
-  return (
-    /^gemini-\d+(?:\.\d+)?-(?:pro|flash|flash-lite)(?:-(?:preview|latest)(?:-\d{2}-\d{4})?)?$/u.test(
-      normalized,
-    ) || /^gemini-(?:pro|flash|flash-lite)-latest$/u.test(normalized)
-  );
-};
-
-const isModernLangdockRuntimeModel = (modelId: string): boolean => {
-  const normalized = normalizeModelId(modelId);
-
-  if (
-    normalized.length === 0 ||
-    looksLikeDatedSnapshot(normalized) ||
-    LANGDOCK_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
-  ) {
-    return false;
-  }
-
-  return ![
-    /^gpt-[34](?:[.-]|$)/u,
-    /^claude-(?:[123]|(?:opus|sonnet|haiku)-[123])(?:-|$)/u,
-    /^gemini-(?:1|2(?:\.0|\.1)?)(?:-|$)/u,
-  ].some((pattern) => pattern.test(normalized));
-};
-
-const isNumericModelVersion = (version: string): boolean => {
-  return version
-    .split(".")
-    .every(
-      (part) =>
-        part.length > 0 &&
-        part.split("").every((character) => /\d/u.test(character)),
-    );
-};
-
-const isModernCodexCliRuntimeModel = (modelId: string): boolean => {
-  const normalized = normalizeModelId(modelId);
-
-  if (
-    normalized === "auto" ||
-    normalized === "gpt-5.2" ||
-    normalized === "gpt-5.3-codex" ||
-    looksLikeDatedSnapshot(normalized)
-  ) {
-    return false;
-  }
-
-  const suffix = normalized.startsWith("gpt-")
-    ? normalized.slice("gpt-".length)
-    : null;
-
-  if (!suffix) {
-    return false;
-  }
-
-  const [version, ...suffixParts] = suffix.split("-");
-
-  if (!version || !isNumericModelVersion(version)) {
-    return false;
-  }
-
-  const majorVersion = Number.parseInt(version.split(".")[0] ?? "0", 10);
-
-  if (majorVersion < 5) {
-    return false;
-  }
-
-  if (suffixParts.length === 0) {
-    return true;
-  }
-
-  if (suffixParts.length === 1) {
-    return ["mini", "nano", "preview", "sol", "terra", "luna"].includes(
-      suffixParts[0] ?? "",
-    );
-  }
-
-  if (
-    suffixParts.length === 2 &&
-    ["mini", "nano"].includes(suffixParts[0] ?? "") &&
-    suffixParts[1] === "preview"
-  ) {
-    return true;
-  }
-
-  return suffixParts[0] === "codex";
-};
-
-const isModernRuntimeModel = (
-  provider: RuntimeProvider,
-  model: RuntimeCatalogModel,
-): boolean => {
-  if (model.stage?.trim().toLowerCase().includes("deprecated")) {
-    return false;
-  }
-
-  switch (provider) {
-    case "openai":
-      return isModernOpenAiRuntimeModel(model.id);
-    case "anthropic":
-      return isModernAnthropicRuntimeModel(model.id);
-    case "google":
-      return isModernGoogleRuntimeModel(model.id);
-    case "langdock":
-      return isModernLangdockRuntimeModel(model.id);
-    case "codex-cli":
-      return isModernCodexCliRuntimeModel(model.id);
-    case "claude-cli":
-    case "copilot-cli":
-      return true;
-  }
-};
-
 const toCatalogModel = (model: RuntimeCatalogModel): CatalogModel => {
   const id = normalizeModelId(model.id);
 
   return {
     id,
     label: model.label?.trim() || formatModelLabel(id),
+    ...(model.capabilities ? { capabilities: model.capabilities } : {}),
   };
-};
-
-const getModelLimitForProvider = (provider: RuntimeProvider): number => {
-  if (provider === "codex-cli") {
-    return MAX_CODEX_CLI_MODELS;
-  }
-
-  if (provider === "langdock") {
-    return MAX_LANGDOCK_MODELS;
-  }
-
-  return MAX_MODELS_PER_PROVIDER;
 };
 
 const getRuntimeCatalogModelsForProvider = (
@@ -416,7 +209,11 @@ const getRuntimeCatalogModelsForProvider = (
     const id = normalizeModelId(model.id);
     const normalizedModel = { ...model, id };
 
-    if (!id || !isModernRuntimeModel(provider, normalizedModel) || byId.has(id)) {
+    if (
+      !id ||
+      normalizedModel.stage?.trim().toLowerCase().includes("deprecated") ||
+      byId.has(id)
+    ) {
       continue;
     }
 
@@ -476,8 +273,7 @@ const getRuntimeCatalogModelsForProvider = (
 
       return left.id.localeCompare(right.id);
     })
-    .map(toCatalogModel)
-    .slice(0, getModelLimitForProvider(provider));
+    .map(toCatalogModel);
 };
 
 export const getProviderLabel = (provider: RuntimeProvider): string => {
@@ -499,14 +295,28 @@ export const getCatalogModelsForProvider = (
   return getRuntimeCatalogModelsForProvider(provider, runtimeCatalog);
 };
 
+export const getCatalogModelForProvider = (
+  provider: RuntimeProvider,
+  modelId: string,
+  snapshot?: ProviderModelCatalogSnapshot | null,
+): CatalogModel | undefined => {
+  const normalizedModelId = normalizeModelId(modelId);
+
+  return getCatalogModelsForProvider(provider, snapshot).find(
+    (model) => model.id === normalizedModelId,
+  );
+};
+
 export const getModelLabelForProvider = (
   provider: RuntimeProvider,
   modelId: string,
   snapshot?: ProviderModelCatalogSnapshot | null,
 ): string => {
   const normalizedModelId = normalizeModelId(modelId);
-  const liveModel = getCatalogModelsForProvider(provider, snapshot).find(
-    (model) => model.id === normalizedModelId,
+  const liveModel = getCatalogModelForProvider(
+    provider,
+    normalizedModelId,
+    snapshot,
   );
   const configuredModel = getProviderModelMetadata(provider).find(
     (model) => model.id === normalizedModelId,
@@ -534,5 +344,7 @@ export const getDefaultReviewModelForProvider = (
     REVIEW_MODEL_PATTERNS[provider].some((pattern) => pattern.test(model.id)),
   );
 
-  return reviewModel?.id ?? models[0]?.id ?? getDefaultModelForProvider(provider);
+  return (
+    reviewModel?.id ?? models[0]?.id ?? getDefaultModelForProvider(provider)
+  );
 };

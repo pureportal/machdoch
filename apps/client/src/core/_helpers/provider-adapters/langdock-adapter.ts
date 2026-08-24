@@ -20,7 +20,7 @@ import type {
   AgentModelTurn,
 } from "../../types.js";
 import type { ReasoningMode } from "../../runtime-contract.generated.js";
-import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
@@ -40,8 +40,7 @@ type LangdockReasoningEffort =
   | "low"
   | "medium"
   | "high"
-  | "xhigh"
-  | "max";
+  | "xhigh";
 
 type LangdockChatRequest = Omit<
   ChatCompletionCreateParamsNonStreaming,
@@ -87,24 +86,16 @@ export const createLangdockReasoningConfig = (
     return {};
   }
 
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "langdock",
-    model,
-  );
+  assertReasoningModeSupportedForProviderModel(reasoning, "langdock", model);
 
-  if (normalizedReasoning === "default") {
-    return {};
+  if (reasoning === "max" || reasoning === "ultra") {
+    throw new Error(
+      `Langdock Chat Completions does not accept reasoning effort ${reasoning}.`,
+    );
   }
 
   return {
-    reasoning_effort:
-      normalizedReasoning === "ultra"
-        ? "max"
-        : normalizedReasoning === "max" &&
-            !/^gpt-5\.6(?:-|$)/iu.test(model.trim())
-          ? "xhigh"
-          : normalizedReasoning,
+    reasoning_effort: reasoning,
   };
 };
 
@@ -170,7 +161,9 @@ const createLangdockToolMessageContent = (
   const textParts = content
     .filter((contentPart) => contentPart.type === "text")
     .map((contentPart) => contentPart.text);
-  const imageParts = content.filter((contentPart) => contentPart.type === "image");
+  const imageParts = content.filter(
+    (contentPart) => contentPart.type === "image",
+  );
   const lines = [...textParts];
 
   for (const imagePart of imageParts) {
@@ -312,11 +305,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
       messages: [...messages],
       ...(chatTools.length > 0 ? { tools: chatTools } : {}),
       ...createLangdockToolSelection(tools),
-      // Langdock rejects Chat Completions requests that combine function tools
-      // with reasoning_effort; Machdoch tool turns must keep function tools.
-      ...(chatTools.length === 0
-        ? createLangdockReasoningConfig(params.model, params.reasoning)
-        : {}),
+      ...createLangdockReasoningConfig(params.model, params.reasoning),
       ...createLangdockStructuredOutputConfig(params.structuredOutput),
     };
   }
@@ -388,9 +377,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
             const existing = toolCallsByIndex.get(index);
             const id = deltaToolCall.id ?? existing?.id ?? crypto.randomUUID();
             const name =
-              deltaToolCall.function?.name ??
-              existing?.name ??
-              "unknown_tool";
+              deltaToolCall.function?.name ?? existing?.name ?? "unknown_tool";
             const argumentsDelta = deltaToolCall.function?.arguments ?? "";
             const toolCall: LangdockStreamingToolCall = {
               index,
@@ -436,7 +423,11 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
         });
       }
 
-      emitUsageStreamEvent(onStreamEvent, "langdock", normalizeOpenAIUsage(usage));
+      emitUsageStreamEvent(
+        onStreamEvent,
+        "langdock",
+        normalizeOpenAIUsage(usage),
+      );
       emitProviderStreamStatus(
         onStreamEvent,
         "langdock",
@@ -452,8 +443,7 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
         choices: [
           {
             index: 0,
-            finish_reason:
-              toolCallsByIndex.size > 0 ? "tool_calls" : "stop",
+            finish_reason: toolCallsByIndex.size > 0 ? "tool_calls" : "stop",
             logprobs: null,
             message: {
               role: "assistant",

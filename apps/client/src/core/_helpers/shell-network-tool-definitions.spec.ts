@@ -34,6 +34,7 @@ const createRuntimeConfig = (): RuntimeConfig => ({
   provider: "unconfigured",
   model: "gpt-5.5",
   reasoning: "default",
+  contextWindow: "default",
   offline: true,
   compatibility: {},
   providerAvailability: [],
@@ -293,10 +294,11 @@ describe("run_shell_command", () => {
         cwd: expectedCwd,
       }),
     );
-    expect(result.sections?.find((section) => section.title === "Shell command"))
-      .toMatchObject({
-        lines: expect.arrayContaining([`cwd: ${expectedCwd}`]),
-      });
+    expect(
+      result.sections?.find((section) => section.title === "Shell command"),
+    ).toMatchObject({
+      lines: expect.arrayContaining([`cwd: ${expectedCwd}`]),
+    });
   });
 
   it("terminates the process tree when a streaming shell command times out", async () => {

@@ -57,10 +57,6 @@ pub(super) fn unix_seconds_to_utc_date(seconds: u64) -> Option<String> {
     Some(format!("{year:04}-{month:02}-{day:02}"))
 }
 
-pub(super) fn unix_milliseconds_to_utc_date(milliseconds: u64) -> Option<String> {
-    unix_seconds_to_utc_date(milliseconds / 1_000)
-}
-
 pub(super) fn json_bool_from_keys(
     value: Option<&serde_json::Value>,
     keys: &[&str],
@@ -157,7 +153,7 @@ pub(super) fn is_openai_runtime_model(model_id: &str) -> bool {
     matches!(
         parts.collect::<Vec<_>>().as_slice(),
         [] | ["preview"]
-            | ["mini" | "nano" | "sol" | "terra" | "luna"]
+            | ["mini" | "nano" | "pro" | "sol" | "terra" | "luna"]
             | ["mini" | "nano", "preview"]
     )
 }
@@ -170,13 +166,13 @@ pub(super) fn is_anthropic_runtime_model(model_id: &str) -> bool {
     }
 
     let parts = normalized.split('-').collect::<Vec<_>>();
+    let is_family = |value: &str| matches!(value, "fable" | "mythos" | "opus" | "sonnet" | "haiku");
+    let is_date =
+        |value: &str| value.len() == 8 && value.chars().all(|character| character.is_ascii_digit());
 
-    matches!(parts.as_slice(), ["claude", "fable" | "sonnet", "5"])
-        || matches!(
-            parts.as_slice(),
-            ["claude", "fable" | "sonnet", "5", date]
-                if date.len() == 8 && date.chars().all(|character| character.is_ascii_digit())
-        )
+    matches!(parts.as_slice(), ["claude", "mythos", "preview"])
+        || matches!(parts.as_slice(), ["claude", family, "5"] if is_family(family))
+        || matches!(parts.as_slice(), ["claude", family, "5", date] if is_family(family) && is_date(date))
         || matches!(
             parts.as_slice(),
             ["claude", "opus" | "sonnet" | "haiku", "4", minor]
@@ -185,11 +181,10 @@ pub(super) fn is_anthropic_runtime_model(model_id: &str) -> bool {
         || matches!(
             parts.as_slice(),
             ["claude", "opus" | "sonnet" | "haiku", "4", minor, date]
-                if minor.chars().all(|character| character.is_ascii_digit())
-                    && date.len() == 8
-                    && date.chars().all(|character| character.is_ascii_digit())
+                if minor.chars().all(|character| character.is_ascii_digit()) && is_date(date)
         )
-        || matches!(parts.as_slice(), ["claude", "5", "fable" | "sonnet"])
+        || matches!(parts.as_slice(), ["claude", "5", family] if is_family(family))
+        || matches!(parts.as_slice(), ["claude", "5", family, date] if is_family(family) && is_date(date))
         || matches!(
             parts.as_slice(),
             ["claude", "4", minor, "opus" | "sonnet" | "haiku"]

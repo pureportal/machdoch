@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadRuntimeConfig,
+  saveWorkspaceContextWindow,
   saveWorkspaceDefaultMode,
   saveWorkspaceDefaultModel,
+  saveWorkspaceReasoningExecutionMode,
+  saveWorkspaceReasoningMode,
   saveWorkspaceRuntimeProvider,
 } from "./config.ts";
 
@@ -16,6 +19,8 @@ const ISOLATED_ENV_KEYS = [
   "GOOGLE_API_KEY",
   "MACHDOCH_MODE",
   "MACHDOCH_MODEL",
+  "MACHDOCH_REASONING_MODE",
+  "MACHDOCH_CONTEXT_WINDOW",
   "MACHDOCH_OFFLINE",
   "MACHDOCH_USER_CONFIG_DIR",
   "MACHDOCH_EXECUTOR_TURNS",
@@ -89,7 +94,9 @@ describe("loadRuntimeConfig", () => {
     );
     expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("unconfigured");
-    expect(config.model).toBe("gpt-5.5");
+    expect(config.model).toBe("gpt-5.6-sol");
+    expect(config.contextWindow).toBe("default");
+    expect(config.reasoningMode).toBe("standard");
     expect(config.offline).toBe(false);
     expect(config.agentLimits).toEqual({
       executorTurns: 64,
@@ -131,7 +138,7 @@ describe("loadRuntimeConfig", () => {
 
     expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("openai");
-    expect(config.model).toBe("config-model");
+    expect(config.model).toBe("env-model");
     expect(config.offline).toBe(true);
     expect(config.workspaceConfigPath).toBe(
       join(workspaceRoot, ".machdoch", "config.json"),
@@ -168,7 +175,7 @@ describe("loadRuntimeConfig", () => {
     const config = await loadRuntimeConfig(workspaceRoot);
 
     expect(config.provider).toBe("google");
-    expect(config.model).toBe("gemini-3.5-flash");
+    expect(config.model).toBe("gemini-3.7-flash");
   });
 
   it("detects Codex CLI from PATH and uses its default model", async () => {
@@ -183,7 +190,7 @@ describe("loadRuntimeConfig", () => {
     const config = await loadRuntimeConfig(workspaceRoot);
 
     expect(config.provider).toBe("codex-cli");
-    expect(config.model).toBe("gpt-5.5");
+    expect(config.model).toBe("gpt-5.6-sol");
     expect(
       config.providerAvailability.find(
         (entry) => entry.provider === "codex-cli",
@@ -400,7 +407,7 @@ describe("loadRuntimeConfig", () => {
 
     expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
       provider: "openai",
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
     });
   });
 
@@ -416,6 +423,118 @@ describe("loadRuntimeConfig", () => {
 
     expect(configPath).toBe(join(workspaceRoot, ".machdoch", "config.json"));
     expect(config.model).toBe("gpt-5.4");
+  });
+
+  it("persists and loads a numeric Codex context window", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "codex-cli");
+    await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
+    await saveWorkspaceContextWindow(workspaceRoot, 400_000);
+
+    const runtime = await loadRuntimeConfig(workspaceRoot);
+    const stored = JSON.parse(
+      await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
+    ) as Record<string, unknown>;
+
+    expect(runtime.contextWindow).toBe(400_000);
+    expect(stored.contextWindow).toBe(400_000);
+  });
+
+  it("rejects context settings that the configured provider cannot apply", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "openai");
+    await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
+
+    await expect(
+      saveWorkspaceContextWindow(workspaceRoot, "long"),
+    ).rejects.toThrow("Long context is not supported");
+    await expect(
+      saveWorkspaceContextWindow(workspaceRoot, 400_000),
+    ).rejects.toThrow("cannot be configured");
+  });
+
+  it("rejects an invalid context window environment value", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CONTEXT_WINDOW = "automatic";
+
+    await expect(loadRuntimeConfig(workspaceRoot)).rejects.toThrow(
+      "MACHDOCH_CONTEXT_WINDOW must be default, long, or a positive token count",
+    );
+  });
+
+  it("persists GPT-5.6 pro mode independently of reasoning effort", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "openai");
+    await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.6-terra");
+    await saveWorkspaceReasoningMode(workspaceRoot, "high");
+    await saveWorkspaceReasoningExecutionMode(workspaceRoot, "pro");
+
+    const runtime = await loadRuntimeConfig(workspaceRoot);
+    expect(runtime.reasoning).toBe("high");
+    expect(runtime.reasoningMode).toBe("pro");
+    await expect(
+      saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5"),
+    ).rejects.toThrow("Reasoning execution mode `pro` is not supported");
+  });
+
+  it("rejects unsupported reasoning execution mode overrides", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_REASONING_MODE = "turbo";
+    await expect(loadRuntimeConfig(workspaceRoot)).rejects.toThrow(
+      "MACHDOCH_REASONING_MODE must be standard or pro",
+    );
+  });
+
+  it("uses the environment model override ahead of the saved model", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "openai");
+    await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
+    process.env.MACHDOCH_MODEL = "gpt-5";
+
+    expect((await loadRuntimeConfig(workspaceRoot)).model).toBe("gpt-5");
+  });
+
+  it("rejects provider and model changes that invalidate saved settings", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "codex-cli");
+    await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
+    await saveWorkspaceContextWindow(workspaceRoot, 400_000);
+
+    await expect(
+      saveWorkspaceRuntimeProvider(workspaceRoot, "openai"),
+    ).rejects.toThrow("numeric context window cannot be configured");
+
+    await saveWorkspaceContextWindow(workspaceRoot, "default");
+    await saveWorkspaceReasoningMode(workspaceRoot, "none");
+    await expect(
+      saveWorkspaceDefaultModel(workspaceRoot, "gpt-5"),
+    ).rejects.toThrow("Reasoning mode `none` is not supported");
+
+    const stored = JSON.parse(
+      await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(stored.provider).toBe("codex-cli");
+    expect(stored.model).toBe("gpt-5.5");
   });
 });
 

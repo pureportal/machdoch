@@ -3663,6 +3663,7 @@ export const RalphFlowEditor = ({
                   name: "Images",
                   extensions: getSupportedImageInputExtensions(
                     selectedBlockEffectiveProvider,
+                    selectedBlockEffectiveModel,
                   ),
                 },
               ],

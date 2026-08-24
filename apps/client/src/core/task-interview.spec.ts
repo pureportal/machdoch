@@ -14,6 +14,7 @@ const runtimeConfig: RuntimeConfig = {
   provider: "openai",
   model: "gpt-5.5",
   reasoning: "default",
+  contextWindow: "default",
   offline: false,
   agentLimits: {
     executorTurns: 64,

@@ -2,6 +2,13 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
+import {
+  assertContextWindowSupportedForProviderModel,
+  parseContextWindow,
+} from "./context-windows.js";
+import { getModelContextWindowTokens } from "./model-capabilities.js";
+import { assertReasoningExecutionModeSupportedForProviderModel } from "./reasoning-execution-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "./reasoning-modes.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { withoutObjectPath } from "./_helpers/without-object-path.helper.js";
@@ -23,6 +30,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_PROVIDER,
   PROVIDER_ENV_KEY_BY_PROVIDER,
+  isReasoningExecutionMode,
   isReasoningMode as isRuntimeSchemaReasoningMode,
   USER_API_PROVIDERS,
   VALID_MODEL_PROVIDERS,
@@ -34,7 +42,9 @@ import {
 import type {
   ModelProvider,
   ProviderAvailability,
+  ReasoningExecutionMode,
   ReasoningMode,
+  ContextWindow,
   RuntimeAgentLimitOverrides,
   RunMode,
   RuntimeConfig,
@@ -56,9 +66,7 @@ const isRunMode = (value: string | undefined): value is RunMode => {
   return isRuntimeSchemaRunMode(value);
 };
 
-const isReasoningMode = (
-  value: string | undefined,
-): value is ReasoningMode => {
+const isReasoningMode = (value: string | undefined): value is ReasoningMode => {
   return isRuntimeSchemaReasoningMode(value);
 };
 
@@ -136,6 +144,8 @@ export const saveWorkspaceDefaultModel = async (
     throw new Error("Expected --default-model to be followed by a model name.");
   }
 
+  await loadRuntimeConfig(workspaceRoot, undefined, normalizedModel);
+
   return saveWorkspaceConfigFile(workspaceRoot, {
     model: normalizedModel,
   });
@@ -152,6 +162,13 @@ export const saveWorkspaceRuntimeProvider = async (
       `Expected workspace.provider to be one of ${WORKSPACE_PROVIDER_DESCRIPTION}.`,
     );
   }
+
+  await loadRuntimeConfig(
+    workspaceRoot,
+    undefined,
+    undefined,
+    normalizedProvider,
+  );
 
   return saveWorkspaceConfigFile(workspaceRoot, {
     provider: normalizedProvider,
@@ -185,8 +202,84 @@ export const saveWorkspaceReasoningMode = async (
     );
   }
 
+  await loadRuntimeConfig(
+    workspaceRoot,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    normalizedReasoning,
+  );
+
   return saveWorkspaceConfigFile(workspaceRoot, {
     reasoning: normalizedReasoning,
+  });
+};
+
+export const saveWorkspaceReasoningExecutionMode = async (
+  workspaceRoot: string,
+  reasoningMode: string,
+): Promise<string> => {
+  const normalizedReasoningMode = normalizeOptionalString(reasoningMode);
+
+  if (
+    !normalizedReasoningMode ||
+    !isReasoningExecutionMode(normalizedReasoningMode)
+  ) {
+    throw new Error(
+      "Expected workspace.reasoning-mode to be one of standard or pro.",
+    );
+  }
+
+  await loadRuntimeConfig(
+    workspaceRoot,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    normalizedReasoningMode,
+  );
+
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    reasoningMode: normalizedReasoningMode,
+  });
+};
+
+export const saveWorkspaceContextWindow = async (
+  workspaceRoot: string,
+  contextWindow: string | number,
+): Promise<string> => {
+  const parsedContextWindow = parseContextWindow(contextWindow);
+
+  if (parsedContextWindow === undefined) {
+    throw new Error(
+      "Expected workspace.context-window to be default, long, or a positive token count up to 10000000.",
+    );
+  }
+
+  const runtime = await loadRuntimeConfig(
+    workspaceRoot,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    parsedContextWindow,
+  );
+
+  if (
+    runtime.provider === "unconfigured" &&
+    parsedContextWindow !== "default"
+  ) {
+    throw new Error(
+      "Configure a model provider before selecting a non-default context window.",
+    );
+  }
+
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    contextWindow: parsedContextWindow,
   });
 };
 
@@ -390,6 +483,8 @@ export const loadRuntimeConfig = async (
   overrideProvider?: Exclude<ModelProvider, "unconfigured">,
   overrideAgentLimits?: RuntimeAgentLimitOverrides,
   overrideReasoning?: ReasoningMode,
+  overrideContextWindow?: ContextWindow,
+  overrideReasoningExecutionMode?: ReasoningExecutionMode,
 ): Promise<RuntimeConfig> => {
   const env = await loadWorkspaceEnv(workspaceRoot);
   const userWebSearchSettings = await loadUserWebSearchSettings();
@@ -407,31 +502,117 @@ export const loadRuntimeConfig = async (
     ? config.defaultMode
     : undefined;
   const mode = overrideMode ?? modeFromEnv ?? configuredMode ?? "machdoch";
-  const reasoningFromEnv = isReasoningMode(env.MACHDOCH_REASONING)
-    ? env.MACHDOCH_REASONING
+  const rawReasoningFromEnv = normalizeOptionalString(env.MACHDOCH_REASONING);
+  const reasoningFromEnv = isReasoningMode(rawReasoningFromEnv)
+    ? rawReasoningFromEnv
     : undefined;
+
+  if (rawReasoningFromEnv && reasoningFromEnv === undefined) {
+    throw new Error(
+      "MACHDOCH_REASONING must be default, none, minimal, low, medium, high, xhigh, max, or ultra.",
+    );
+  }
+
   const configuredReasoning = isReasoningMode(config.reasoning)
     ? config.reasoning
     : undefined;
+
+  if (
+    overrideReasoning === undefined &&
+    config.reasoning !== undefined &&
+    configuredReasoning === undefined
+  ) {
+    throw new Error(
+      "workspace.reasoning must be default, none, minimal, low, medium, high, xhigh, max, or ultra.",
+    );
+  }
   const reasoning =
-    overrideReasoning ??
-    reasoningFromEnv ??
-    configuredReasoning ??
+    overrideReasoning ?? reasoningFromEnv ?? configuredReasoning ?? "default";
+  const rawReasoningModeFromEnv = normalizeOptionalString(
+    env.MACHDOCH_REASONING_MODE,
+  );
+  const reasoningModeFromEnv = isReasoningExecutionMode(rawReasoningModeFromEnv)
+    ? rawReasoningModeFromEnv
+    : undefined;
+
+  if (rawReasoningModeFromEnv && reasoningModeFromEnv === undefined) {
+    throw new Error("MACHDOCH_REASONING_MODE must be standard or pro.");
+  }
+
+  const configuredReasoningMode = isReasoningExecutionMode(config.reasoningMode)
+    ? config.reasoningMode
+    : undefined;
+
+  if (
+    overrideReasoningExecutionMode === undefined &&
+    config.reasoningMode !== undefined &&
+    configuredReasoningMode === undefined
+  ) {
+    throw new Error("workspace.reasoningMode must be standard or pro.");
+  }
+
+  const reasoningMode =
+    overrideReasoningExecutionMode ??
+    reasoningModeFromEnv ??
+    configuredReasoningMode ??
+    "standard";
+  const rawContextWindowFromEnv = normalizeOptionalString(
+    env.MACHDOCH_CONTEXT_WINDOW,
+  );
+  const contextWindowFromEnv = parseContextWindow(rawContextWindowFromEnv);
+
+  if (rawContextWindowFromEnv && contextWindowFromEnv === undefined) {
+    throw new Error(
+      "MACHDOCH_CONTEXT_WINDOW must be default, long, or a positive token count up to 10000000.",
+    );
+  }
+
+  const configuredContextWindow = parseContextWindow(config.contextWindow);
+
+  if (
+    overrideContextWindow === undefined &&
+    config.contextWindow !== undefined &&
+    configuredContextWindow === undefined
+  ) {
+    throw new Error(
+      "workspace.contextWindow must be default, long, or a positive token count up to 10000000.",
+    );
+  }
+
+  const contextWindow: ContextWindow =
+    overrideContextWindow ??
+    contextWindowFromEnv ??
+    configuredContextWindow ??
     "default";
-  const provider = resolveProvider(overrideProvider ?? config.provider, providerAvailability);
+  const provider = resolveProvider(
+    overrideProvider ?? config.provider,
+    providerAvailability,
+  );
   const model =
     normalizeOptionalString(overrideModel) ??
+    normalizeOptionalString(env.MACHDOCH_MODEL) ??
     config.model ??
-    env.MACHDOCH_MODEL ??
     getDefaultModelForRuntimeProvider(provider);
+
+  if (provider !== "unconfigured") {
+    assertReasoningModeSupportedForProviderModel(reasoning, provider, model);
+    assertReasoningExecutionModeSupportedForProviderModel(
+      reasoningMode,
+      provider,
+      model,
+    );
+    assertContextWindowSupportedForProviderModel(
+      contextWindow,
+      provider,
+      model,
+      getModelContextWindowTokens(provider, model),
+    );
+  }
+
   const offline =
-    env.MACHDOCH_OFFLINE === "true"
-      ? true
-      : (config.offline ?? false);
+    env.MACHDOCH_OFFLINE === "true" ? true : (config.offline ?? false);
   const agentLimits = normalizeAgentLimitOverrides(
-    overrideAgentLimits ??
-      parseAgentLimitsFromEnv(env) ??
-      config.agentLimits,
+    overrideAgentLimits ?? parseAgentLimitsFromEnv(env) ?? config.agentLimits,
     normalizeAgentLimitOverrides(userAgentLimitsSettings),
   );
 
@@ -443,6 +624,8 @@ export const loadRuntimeConfig = async (
     provider,
     model,
     reasoning,
+    reasoningMode,
+    contextWindow,
     offline,
     agentLimits,
     compatibility: {

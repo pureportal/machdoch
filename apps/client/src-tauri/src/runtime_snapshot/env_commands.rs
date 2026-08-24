@@ -248,7 +248,12 @@ mod tests {
 
         create_executable_file(&directory.join(binary_name));
 
-        let env = cli_test_env(directory.display().to_string(), ".CMD;.EXE", None, None);
+        let env = cli_test_env(
+            directory.display().to_string(),
+            ".CMD;.EXE",
+            Some(&directory),
+            Some(&directory),
+        );
 
         assert!(resolve_agent_cli_binary("copilot-cli", &env).is_none());
 

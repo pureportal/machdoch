@@ -37,6 +37,8 @@ import {
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
   saveWorkspaceDefaultMode,
+  saveWorkspaceContextWindow,
+  saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
   subscribeToDesktopSettingsChanged,
   subscribeToUserSettingsChanged,
@@ -53,6 +55,7 @@ import {
   type McpPresetSummary,
   type RuntimeProviderAvailability,
   type RuntimeSnapshot,
+  type ReasoningExecutionMode,
   type UserSpeechToTextSettings,
   type UserAgentLimitsSettings,
   type UserReviewModelSettings,
@@ -172,6 +175,12 @@ export interface ChatSessionRuntimeController {
   ) => Promise<void>;
   handleWorkspaceReasoningModeSave: (
     reasoning: RuntimeSnapshot["reasoning"],
+  ) => Promise<void>;
+  handleWorkspaceReasoningExecutionModeSave: (
+    reasoningMode: ReasoningExecutionMode,
+  ) => Promise<void>;
+  handleWorkspaceContextWindowSave: (
+    contextWindow: NonNullable<RuntimeSnapshot["contextWindow"]>,
   ) => Promise<void>;
   handleMcpConfigScopeChange: (scope: McpConfigScope) => void;
   handleMcpConfigDraftChange: (value: string) => void;
@@ -2183,6 +2192,148 @@ export const useChatSessionRuntime = (
     [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
   );
 
+  const handleWorkspaceReasoningExecutionModeSave = useCallback(
+    async (reasoningMode: ReasoningExecutionMode): Promise<void> => {
+      const workspaceRoot = options.activeSessionWorkspace;
+      if (!workspaceRoot) {
+        setWorkspaceSetupMessage({
+          tone: "error",
+          text: "Select a workspace before changing its reasoning mode.",
+        });
+        return;
+      }
+
+      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+      const requestId = workspaceSaveRequestIdRef.current + 1;
+      workspaceSaveRequestIdRef.current = requestId;
+
+      setWorkspaceSetupSaving(true);
+      setWorkspaceSetupMessage(null);
+
+      try {
+        await saveWorkspaceReasoningExecutionMode(workspaceRoot, reasoningMode);
+
+        if (
+          workspaceSaveRequestIdRef.current !== requestId ||
+          activeWorkspaceKeyRef.current !== workspaceKey
+        ) {
+          return;
+        }
+
+        if (!isTauri()) {
+          setRuntimeSnapshot((currentSnapshot) =>
+            currentSnapshot
+              ? {
+                  ...currentSnapshot,
+                  defaultReasoningMode: reasoningMode,
+                  reasoningMode,
+                }
+              : currentSnapshot,
+          );
+        }
+
+        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
+
+        if (activeWorkspaceKeyRef.current === workspaceKey) {
+          setWorkspaceSetupMessage({
+            tone: "success",
+            text: "Workspace reasoning mode saved.",
+          });
+        }
+      } catch (error) {
+        if (
+          workspaceSaveRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === workspaceKey
+        ) {
+          setWorkspaceSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Workspace reasoning mode could not be updated.",
+          });
+        }
+      } finally {
+        if (workspaceSaveRequestIdRef.current === requestId) {
+          setWorkspaceSetupSaving(false);
+        }
+      }
+    },
+    [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
+  );
+
+  const handleWorkspaceContextWindowSave = useCallback(
+    async (
+      contextWindow: NonNullable<RuntimeSnapshot["contextWindow"]>,
+    ): Promise<void> => {
+      const workspaceRoot = options.activeSessionWorkspace;
+      if (!workspaceRoot) {
+        setWorkspaceSetupMessage({
+          tone: "error",
+          text: "Select a workspace before changing its context window.",
+        });
+        return;
+      }
+
+      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+      const requestId = workspaceSaveRequestIdRef.current + 1;
+      workspaceSaveRequestIdRef.current = requestId;
+
+      setWorkspaceSetupSaving(true);
+      setWorkspaceSetupMessage(null);
+
+      try {
+        await saveWorkspaceContextWindow(workspaceRoot, contextWindow);
+
+        if (
+          workspaceSaveRequestIdRef.current !== requestId ||
+          activeWorkspaceKeyRef.current !== workspaceKey
+        ) {
+          return;
+        }
+
+        if (!isTauri()) {
+          setRuntimeSnapshot((currentSnapshot) =>
+            currentSnapshot
+              ? {
+                  ...currentSnapshot,
+                  defaultContextWindow: contextWindow,
+                  contextWindow,
+                }
+              : currentSnapshot,
+          );
+        }
+
+        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
+
+        if (activeWorkspaceKeyRef.current === workspaceKey) {
+          setWorkspaceSetupMessage({
+            tone: "success",
+            text: "Workspace context window saved.",
+          });
+        }
+      } catch (error) {
+        if (
+          workspaceSaveRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === workspaceKey
+        ) {
+          setWorkspaceSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Workspace context window could not be updated.",
+          });
+        }
+      } finally {
+        if (workspaceSaveRequestIdRef.current === requestId) {
+          setWorkspaceSetupSaving(false);
+        }
+      }
+    },
+    [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
+  );
+
   const handleMcpConfigScopeChange = useCallback(
     (scope: McpConfigScope): void => {
       if (scope === "workspace" && !options.activeSessionWorkspace?.trim()) {
@@ -2839,6 +2990,8 @@ export const useChatSessionRuntime = (
     handleReviewModelSettingsSave,
     handleWorkspaceDefaultModeSave,
     handleWorkspaceReasoningModeSave,
+    handleWorkspaceReasoningExecutionModeSave,
+    handleWorkspaceContextWindowSave,
     handleMcpConfigScopeChange,
     handleMcpConfigDraftChange,
     handleMcpConfigSave,

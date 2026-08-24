@@ -70,4 +70,26 @@ describe("provider capability registry", () => {
     expect(result.features).not.toContain("--config");
     expect(spawnSyncMock).toHaveBeenCalledTimes(2);
   });
+
+  it("discovers Copilot reasoning and context controls from help output", async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "copilot 1.0.0",
+        stderr: "",
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Usage: copilot --stream --effort <level> --context <mode>",
+        stderr: "",
+      });
+
+    const result = await probeProviderCli(
+      "copilot-cli",
+      "C:\\tools\\copilot.exe",
+      { force: true },
+    );
+
+    expect(result.features).toEqual(["--context", "--effort", "--stream"]);
+  });
 });

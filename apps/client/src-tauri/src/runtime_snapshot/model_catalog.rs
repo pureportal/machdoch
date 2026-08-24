@@ -155,7 +155,7 @@ pub(super) async fn fetch_provider_model_catalog(
             Ok(models) => {
                 return ProviderModelCatalogProvider {
                     provider: provider.to_string(),
-                    source: "provider-probe".to_string(),
+                    source: "provider-docs".to_string(),
                     available: true,
                     error: None,
                     models,
@@ -171,13 +171,19 @@ pub(super) async fn fetch_provider_model_catalog(
     };
 
     match fetch_result {
-        Ok(models) => ProviderModelCatalogProvider {
+        Ok(models) if !models.is_empty() => ProviderModelCatalogProvider {
             provider: provider.to_string(),
             source: "provider-api".to_string(),
             available: true,
             error: None,
             models,
         },
+        Ok(_) => provider_model_catalog_unavailable(
+            provider,
+            &format!(
+                "{api_key_name} is configured, but the provider returned no supported text-generation models."
+            ),
+        ),
         Err(error) => provider_model_catalog_unavailable(
             provider,
             &format!("{api_key_name} is configured, but {error}"),

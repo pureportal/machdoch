@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::{
     env::{has_configured_value, load_workspace_env, resolve_agent_cli_binary},
     settings::{normalize_user_agent_limits_settings, normalize_user_review_model_settings},
-    settings_types::{UserConfigFile, WorkspaceConfigFile},
+    settings_types::{ContextWindow, ReasoningExecutionMode, UserConfigFile, WorkspaceConfigFile},
     user_config::load_user_config_file,
     workspace::{load_workspace_config, resolve_workspace_root_path},
     ProviderAvailability, RuntimeAgentLimits, RuntimeCompatibilityConfig, RuntimeReviewModelConfig,
@@ -11,10 +11,83 @@ use super::{
 };
 use super::{normalize_optional_string, AudioProviderAvailability};
 use crate::runtime_contract_generated::{
-    AGENT_CLI_PROVIDERS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS,
-    REASONING_MODES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
+    AGENT_CLI_PROVIDERS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
+    MAX_CONTEXT_WINDOW_TOKENS, MIN_CONTEXT_WINDOW_TOKENS, PROVIDER_ENV_KEYS, REASONING_MODES,
+    USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
     VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
 };
+
+fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, String> {
+    match value {
+        ContextWindow::Mode(mode) if matches!(mode.trim(), "default" | "long") => {
+            Ok(ContextWindow::Mode(mode.trim().to_string()))
+        }
+        ContextWindow::Tokens(tokens)
+            if (*tokens >= MIN_CONTEXT_WINDOW_TOKENS) && (*tokens <= MAX_CONTEXT_WINDOW_TOKENS) =>
+        {
+            Ok(ContextWindow::Tokens(*tokens))
+        }
+        _ => Err(
+            "Context window must be default, long, or a positive token count up to 10000000."
+                .to_string(),
+        ),
+    }
+}
+
+fn parse_context_window(value: &str) -> Result<ContextWindow, String> {
+    let normalized = value.trim().to_ascii_lowercase();
+
+    if matches!(normalized.as_str(), "default" | "long") {
+        return Ok(ContextWindow::Mode(normalized));
+    }
+
+    normalized
+        .parse::<u32>()
+        .ok()
+        .map(ContextWindow::Tokens)
+        .as_ref()
+        .map(normalize_context_window)
+        .transpose()?
+        .ok_or_else(|| {
+            "Context window must be default, long, or a positive token count up to 10000000."
+                .to_string()
+        })
+}
+
+fn parse_reasoning_execution_mode(value: &str) -> Result<ReasoningExecutionMode, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "standard" => Ok(ReasoningExecutionMode::Standard),
+        "pro" => Ok(ReasoningExecutionMode::Pro),
+        _ => Err("Reasoning mode must be standard or pro.".to_string()),
+    }
+}
+
+fn is_date_suffix(value: &str) -> bool {
+    value.len() == 11
+        && value.starts_with('-')
+        && value.as_bytes()[5] == b'-'
+        && value.as_bytes()[8] == b'-'
+        && value
+            .chars()
+            .enumerate()
+            .all(|(index, character)| matches!(index, 0 | 5 | 8) || character.is_ascii_digit())
+}
+
+fn openai_model_supports_pro_mode(provider: &str, model: &str) -> bool {
+    if provider != "openai" {
+        return false;
+    }
+
+    let normalized = model.trim().to_ascii_lowercase();
+
+    ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+        .iter()
+        .any(|base| {
+            normalized
+                .strip_prefix(base)
+                .is_some_and(|suffix| suffix.is_empty() || is_date_suffix(suffix))
+        })
+}
 
 fn resolve_runtime_agent_limits(
     user_config: &UserConfigFile,
@@ -254,16 +327,26 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
     } else {
         "machdoch".to_string()
     };
-    let default_reasoning = if is_valid_reasoning_mode(config.reasoning.as_deref()) {
-        config
-            .reasoning
-            .as_deref()
-            .unwrap_or("default")
-            .trim()
-            .to_string()
-    } else {
-        "default".to_string()
+    let default_reasoning = match normalize_optional_string(config.reasoning.as_deref()) {
+        Some(value) if is_valid_reasoning_mode(Some(value.as_str())) => value,
+        Some(value) => {
+            return Err(format!(
+                "Invalid workspace reasoning mode '{value}'. Expected one of: {}.",
+                REASONING_MODES.join(", ")
+            ));
+        }
+        None => "default".to_string(),
     };
+    let default_context_window = config
+        .context_window
+        .as_ref()
+        .map(normalize_context_window)
+        .transpose()?
+        .unwrap_or_else(|| ContextWindow::Mode("default".to_string()));
+    let default_reasoning_mode = config
+        .reasoning_mode
+        .clone()
+        .unwrap_or(ReasoningExecutionMode::Standard);
     let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
         env.get("MACHDOCH_MODE")
             .map(String::as_str)
@@ -277,24 +360,43 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
     let provider = resolve_provider(config.provider.as_deref(), &provider_availability);
 
     let model = normalize_optional_string(
-        config
-            .model
-            .as_deref()
-            .or(env.get("MACHDOCH_MODEL").map(String::as_str)),
+        env.get("MACHDOCH_MODEL")
+            .map(String::as_str)
+            .or(config.model.as_deref()),
     )
     .unwrap_or_else(|| default_model_for_provider(&provider).to_string());
 
-    let reasoning = if is_valid_reasoning_mode(env.get("MACHDOCH_REASONING").map(String::as_str)) {
-        env.get("MACHDOCH_REASONING")
-            .map(String::as_str)
-            .unwrap_or("default")
-            .trim()
-            .to_string()
-    } else if is_valid_reasoning_mode(config.reasoning.as_deref()) {
-        default_reasoning.clone()
-    } else {
-        "default".to_string()
-    };
+    let reasoning =
+        match normalize_optional_string(env.get("MACHDOCH_REASONING").map(String::as_str)) {
+            Some(value) if is_valid_reasoning_mode(Some(value.as_str())) => value,
+            Some(value) => {
+                return Err(format!(
+                    "MACHDOCH_REASONING has unsupported value '{value}'. Expected one of: {}.",
+                    REASONING_MODES.join(", ")
+                ));
+            }
+            None => default_reasoning.clone(),
+        };
+    let context_window = env
+        .get("MACHDOCH_CONTEXT_WINDOW")
+        .map(String::as_str)
+        .map(parse_context_window)
+        .transpose()?
+        .unwrap_or_else(|| default_context_window.clone());
+    let reasoning_mode = env
+        .get("MACHDOCH_REASONING_MODE")
+        .map(String::as_str)
+        .map(parse_reasoning_execution_mode)
+        .transpose()?
+        .unwrap_or_else(|| default_reasoning_mode.clone());
+
+    if matches!(reasoning_mode, ReasoningExecutionMode::Pro)
+        && !openai_model_supports_pro_mode(&provider, &model)
+    {
+        return Err(format!(
+            "Reasoning execution mode `pro` is not supported by `{model}` on `{provider}`."
+        ));
+    }
 
     let offline = matches!(
         env.get("MACHDOCH_OFFLINE").map(String::as_str),
@@ -307,10 +409,14 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         workspace_config_path,
         default_mode,
         default_reasoning,
+        default_reasoning_mode,
+        default_context_window,
         mode,
         provider,
         model,
         reasoning,
+        reasoning_mode,
+        context_window,
         offline,
         agent_limits: resolve_runtime_agent_limits(&user_config, &config, &env),
         compatibility: resolve_compatibility(&config),

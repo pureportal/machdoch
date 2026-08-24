@@ -23,6 +23,8 @@ const ISOLATED_ENV_KEYS = [
   "MACHDOCH_MODE",
   "MACHDOCH_MODEL",
   "MACHDOCH_REASONING",
+  "MACHDOCH_REASONING_MODE",
+  "MACHDOCH_CONTEXT_WINDOW",
   "MACHDOCH_OFFLINE",
   "MACHDOCH_WEB_SEARCH_PROVIDER",
   "MACHDOCH_EXECUTOR_TURNS",
@@ -67,6 +69,8 @@ describe("CLI configuration catalog", () => {
 
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("review-model");
+    expect(names).toContain("workspace.context-window");
+    expect(names).toContain("workspace.reasoning-mode");
     expect(names).toContain("workspace.github-customizations");
     expect(names).toContain("desktop.quick-voice-shortcut");
     expect(names).not.toContain("desktop.autostart-enabled");
@@ -118,6 +122,53 @@ describe("CLI configuration catalog", () => {
     await expect(
       saveConfigSetting(workspaceRoot, "desktop.autostart-enabled", "on"),
     ).rejects.toThrow("must be changed in the desktop app");
+  });
+
+  it("persists and reports the provider context-window setting", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    await saveConfigSetting(workspaceRoot, "workspace.provider", "codex-cli");
+    await saveConfigSetting(workspaceRoot, "workspace.model", "gpt-5.5");
+    await saveConfigSetting(
+      workspaceRoot,
+      "workspace.context-window",
+      "400000",
+    );
+
+    const entries = await loadCliConfigEntries(workspaceRoot);
+    expect(
+      entries.find((entry) => entry.setting === "workspace.context-window"),
+    ).toMatchObject({ value: 400_000, source: "saved" });
+
+    await clearConfigSetting(workspaceRoot, "workspace.context-window");
+    const stored = JSON.parse(
+      await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(stored).not.toHaveProperty("contextWindow");
+  });
+
+  it("persists and reports OpenAI GPT-5.6 pro mode", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
+    await saveConfigSetting(workspaceRoot, "workspace.provider", "openai");
+    await saveConfigSetting(workspaceRoot, "workspace.model", "gpt-5.6-luna");
+    await saveConfigSetting(workspaceRoot, "workspace.reasoning", "high");
+    await saveConfigSetting(workspaceRoot, "workspace.reasoning-mode", "pro");
+
+    const entries = await loadCliConfigEntries(workspaceRoot);
+    expect(
+      entries.find((entry) => entry.setting === "workspace.reasoning-mode"),
+    ).toMatchObject({ value: "pro", source: "saved" });
+
+    await clearConfigSetting(workspaceRoot, "workspace.reasoning-mode");
+    const stored = JSON.parse(
+      await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(stored).not.toHaveProperty("reasoningMode");
   });
 
   it("unsets nested user and workspace values without retaining empty sections", async () => {

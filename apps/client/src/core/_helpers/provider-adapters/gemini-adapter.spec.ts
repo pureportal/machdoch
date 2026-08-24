@@ -84,7 +84,9 @@ describe("Gemini function-calling conformance", () => {
       ],
       get text() {
         textGetterAccessed = true;
-        throw new Error("normalizeGeminiResponse should not access response.text");
+        throw new Error(
+          "normalizeGeminiResponse should not access response.text",
+        );
       },
     };
 
@@ -103,18 +105,33 @@ describe("Gemini function-calling conformance", () => {
     });
   });
 
-  it("normalizes thinking controls for the selected Gemini model", () => {
-    expect(
-      createGeminiThinkingConfig("gemini-3.1-pro-preview", "minimal"),
-    ).toEqual({
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+  it("validates thinking controls for the selected Gemini model", () => {
+    expect(createGeminiThinkingConfig("gemini-3.1-pro-preview", "low")).toEqual(
+      {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    );
+    expect(createGeminiThinkingConfig("gemini-2.5-pro", "low")).toEqual({
+      thinkingConfig: { thinkingBudget: 1_024 },
     });
-    expect(createGeminiThinkingConfig("gemini-2.5-pro", "none")).toEqual({
-      thinkingConfig: { thinkingBudget: 128 },
+    expect(createGeminiThinkingConfig("gemini-2.5-flash", "high")).toEqual({
+      thinkingConfig: { thinkingBudget: 24_576 },
     });
-    expect(createGeminiThinkingConfig("gemini-2.5-flash", "max")).toEqual({
-      thinkingConfig: { thinkingBudget: 8_192 },
+    expect(createGeminiThinkingConfig("gemini-2.5-pro", "high")).toEqual({
+      thinkingConfig: { thinkingBudget: 24_576 },
     });
+    expect(() => createGeminiThinkingConfig("gemini-2.5-flash", "max")).toThrow(
+      "Reasoning mode `max` is not supported",
+    );
+    expect(() =>
+      createGeminiThinkingConfig("gemini-3.7-flash", "minimal"),
+    ).toThrow("Reasoning mode `minimal` is not supported");
+    expect(() => createGeminiThinkingConfig("gemini-2.5-pro", "none")).toThrow(
+      "Reasoning mode `none` is not supported",
+    );
+    expect(() =>
+      createGeminiThinkingConfig("gemini-2.5-flash", "minimal"),
+    ).toThrow("Reasoning mode `minimal` is not supported");
   });
 
   it("uses validated function calling for Gemini 3 models", () => {
@@ -323,7 +340,7 @@ describe("Gemini function-calling conformance", () => {
         expect.objectContaining({
           type: "tool-call-done",
           provider: "google",
-          argumentsText: "{\"path\":\"README.md\"}",
+          argumentsText: '{"path":"README.md"}',
         }),
         expect.objectContaining({
           type: "usage",

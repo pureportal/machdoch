@@ -6,7 +6,7 @@ use std::{
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
 use crate::cooperative_file_lock::with_cooperative_file_lock;
 
-use super::settings_types::WorkspaceConfigFile;
+use super::settings_types::{ContextWindow, ReasoningExecutionMode, WorkspaceConfigFile};
 use super::{is_valid_mode, is_valid_reasoning_mode, normalize_optional_string};
 
 pub(crate) fn get_user_config_directory() -> Result<PathBuf, String> {
@@ -212,6 +212,57 @@ pub(super) fn save_workspace_reasoning_mode_value(
         config.insert(
             "reasoning".to_string(),
             serde_json::Value::String(normalized_reasoning),
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
+
+    Ok(config_path)
+}
+
+pub(super) fn save_workspace_context_window_value(
+    workspace_root: &str,
+    context_window: &ContextWindow,
+) -> Result<PathBuf, String> {
+    match context_window {
+        ContextWindow::Mode(mode) if matches!(mode.as_str(), "default" | "long") => {}
+        ContextWindow::Tokens(tokens)
+            if *tokens >= crate::runtime_contract_generated::MIN_CONTEXT_WINDOW_TOKENS
+                && *tokens <= crate::runtime_contract_generated::MAX_CONTEXT_WINDOW_TOKENS => {}
+        _ => {
+            return Err(
+                "Expected workspace context window to be default, long, or a positive token count up to 10000000."
+                    .to_string(),
+            );
+        }
+    }
+
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "contextWindow".to_string(),
+            serde_json::to_value(context_window)
+                .map_err(|error| format!("Failed to serialize context window: {error}"))?,
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
+
+    Ok(config_path)
+}
+
+pub(super) fn save_workspace_reasoning_execution_mode_value(
+    workspace_root: &str,
+    reasoning_mode: &ReasoningExecutionMode,
+) -> Result<PathBuf, String> {
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "reasoningMode".to_string(),
+            serde_json::to_value(reasoning_mode)
+                .map_err(|error| format!("Failed to serialize reasoning mode: {error}"))?,
         );
         write_workspace_config_json(&config_path, &config)
     })?;

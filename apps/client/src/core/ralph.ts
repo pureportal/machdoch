@@ -3557,14 +3557,22 @@ const createImageInputsFromAttachments = async (
         throw new Error(
           `Unsupported image attachment format for \`${attachment.value}\`. Supported extensions for provider \`${config.provider}\`: ${getSupportedImageInputExtensions(
             config.provider,
+            config.model,
           ).join(", ")}.`,
         );
       }
 
-      if (!providerSupportsImageInputMediaType(config.provider, mediaType)) {
+      if (
+        !providerSupportsImageInputMediaType(
+          config.provider,
+          mediaType,
+          config.model,
+        )
+      ) {
         throw new Error(
           `Unsupported image attachment format for \`${attachment.value}\`. Supported extensions for provider \`${config.provider}\`: ${getSupportedImageInputExtensions(
             config.provider,
+            config.model,
           ).join(", ")}.`,
         );
       }

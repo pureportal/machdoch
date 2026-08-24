@@ -46,6 +46,7 @@ const runtimeConfig: RuntimeConfig = {
   provider: "openai",
   model: "gpt-primary",
   reasoning: "default",
+  contextWindow: "default",
   offline: false,
   compatibility: { discoverGithubCustomizations: false },
   providerAvailability: [

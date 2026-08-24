@@ -1,9 +1,7 @@
 import { hasConfiguredValue, loadWorkspaceEnv } from "../env.js";
-import type {
-  AgentModelAdapter,
-  AgentModelToolSpec,
-} from "../types.js";
+import type { AgentModelAdapter, AgentModelToolSpec } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import { assertContextWindowSupportedForProviderModel } from "../context-windows.js";
 
 const LANGDOCK_DEFAULT_REGION = "eu";
 const LANGDOCK_SUPPORTED_REGIONS = new Set(["eu", "us"]);
@@ -194,6 +192,12 @@ export const createProviderAdapter = async (
     return undefined;
   }
 
+  assertContextWindowSupportedForProviderModel(
+    config.contextWindow ?? "default",
+    config.provider,
+    config.model,
+  );
+
   const env = await loadWorkspaceEnv(config.workspaceRoot);
 
   switch (config.provider) {
@@ -202,16 +206,18 @@ export const createProviderAdapter = async (
         return undefined;
       }
 
-      const [{ default: OpenAI }, { OpenAIResponsesAdapter }] = await Promise.all([
-        import("openai"),
-        import("./provider-adapters/openai-adapter.js"),
-      ]);
+      const [{ default: OpenAI }, { OpenAIResponsesAdapter }] =
+        await Promise.all([
+          import("openai"),
+          import("./provider-adapters/openai-adapter.js"),
+        ]);
 
       return new OpenAIResponsesAdapter(
         new OpenAI({
           apiKey: env.OPENAI_API_KEY,
         }),
         tools,
+        config.reasoningMode ?? "standard",
       );
     }
 

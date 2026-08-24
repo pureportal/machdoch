@@ -10,6 +10,10 @@ pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
 pub const REASONING_MODES: [&str; 9] = [
     "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 ];
+pub const REASONING_EXECUTION_MODES: [&str; 2] = ["standard", "pro"];
+pub const CONTEXT_WINDOW_MODES: [&str; 2] = ["default", "long"];
+pub const MIN_CONTEXT_WINDOW_TOKENS: u32 = 1;
+pub const MAX_CONTEXT_WINDOW_TOKENS: u32 = 10000000;
 pub const VALID_TOOLS: [&str; 10] = [
     "filesystem",
     "shell",
@@ -55,10 +59,12 @@ pub const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
 pub const USER_REVIEW_MODEL_MODES: [&str; 2] = ["base", "dedicated"];
-pub const RUNTIME_ENV_KEYS: [&str; 13] = [
+pub const RUNTIME_ENV_KEYS: [&str; 15] = [
     "MACHDOCH_MODE",
     "MACHDOCH_MODEL",
     "MACHDOCH_REASONING",
+    "MACHDOCH_REASONING_MODE",
+    "MACHDOCH_CONTEXT_WINDOW",
     "MACHDOCH_OFFLINE",
     "MACHDOCH_WEB_SEARCH_PROVIDER",
     "MACHDOCH_EXECUTOR_TURNS",
@@ -90,11 +96,11 @@ pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [
 ];
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [
-    ("openai", "gpt-5.5"),
+    ("openai", "gpt-5.6-sol"),
     ("anthropic", "claude-sonnet-5"),
-    ("google", "gemini-3.5-flash"),
+    ("google", "gemini-3.7-flash"),
     ("langdock", "gpt-5.5"),
-    ("codex-cli", "gpt-5.5"),
+    ("codex-cli", "gpt-5.6-sol"),
     ("claude-cli", "sonnet"),
     ("copilot-cli", "auto"),
 ];

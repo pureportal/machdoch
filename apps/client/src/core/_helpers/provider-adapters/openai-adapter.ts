@@ -16,8 +16,12 @@ import type {
   AgentModelToolSpec,
   AgentModelTurn,
 } from "../../types.js";
-import type { ReasoningMode } from "../../runtime-contract.generated.js";
-import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
+import type {
+  ReasoningExecutionMode,
+  ReasoningMode,
+} from "../../runtime-contract.generated.js";
+import { assertReasoningExecutionModeSupportedForProviderModel } from "../../reasoning-execution-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
@@ -65,24 +69,33 @@ const OPENAI_ULTRA_MAX_CONCURRENT_SUBAGENTS = 4;
 export const createOpenAIReasoningConfig = (
   model: string,
   reasoning?: ReasoningMode,
-): { reasoning?: { effort: OpenAIReasoningEffort } } => {
-  if (!reasoning || reasoning === "default") {
-    return {};
-  }
-
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
+  reasoningMode: ReasoningExecutionMode = "standard",
+): {
+  reasoning?: {
+    effort?: OpenAIReasoningEffort;
+    mode?: ReasoningExecutionMode;
+  };
+} => {
+  assertReasoningExecutionModeSupportedForProviderModel(
+    reasoningMode,
     "openai",
     model,
   );
 
-  if (normalizedReasoning === "default") {
+  if ((!reasoning || reasoning === "default") && reasoningMode === "standard") {
     return {};
+  }
+
+  if (reasoning && reasoning !== "default") {
+    assertReasoningModeSupportedForProviderModel(reasoning, "openai", model);
   }
 
   return {
     reasoning: {
-      effort: normalizedReasoning === "ultra" ? "max" : normalizedReasoning,
+      ...(reasoning && reasoning !== "default"
+        ? { effort: reasoning === "ultra" ? "max" : reasoning }
+        : {}),
+      ...(reasoningMode === "pro" ? { mode: "pro" as const } : {}),
     },
   };
 };
@@ -90,21 +103,14 @@ export const createOpenAIReasoningConfig = (
 export const createOpenAIMultiAgentConfig = (
   model: string,
   reasoning?: ReasoningMode,
-): Pick<
-  BetaResponseCreateParamsNonStreaming,
-  "betas" | "multi_agent"
-> => {
+): Pick<BetaResponseCreateParamsNonStreaming, "betas" | "multi_agent"> => {
   if (!reasoning || reasoning === "default") {
     return {};
   }
 
-  const normalizedReasoning = normalizeReasoningModeForProviderModel(
-    reasoning,
-    "openai",
-    model,
-  );
+  assertReasoningModeSupportedForProviderModel(reasoning, "openai", model);
 
-  if (normalizedReasoning !== "ultra") {
+  if (reasoning !== "ultra") {
     return {};
   }
 
@@ -128,7 +134,9 @@ const normalizeOpenAIStructuredOutputName = (name: string): string => {
 };
 
 const isSchemaRecord = (schema: unknown): schema is Record<string, unknown> => {
-  return typeof schema === "object" && schema !== null && !Array.isArray(schema);
+  return (
+    typeof schema === "object" && schema !== null && !Array.isArray(schema)
+  );
 };
 
 const normalizeOpenAIStructuredOutputSchema = (
@@ -212,10 +220,7 @@ type OpenAIStreamEvent = ResponseStreamEvent | BetaResponseStreamEvent;
 
 interface OpenAIResponseStreamLike {
   abort: () => void;
-  on: (
-    eventName: "event",
-    handler: (event: OpenAIStreamEvent) => void,
-  ) => void;
+  on: (eventName: "event", handler: (event: OpenAIStreamEvent) => void) => void;
   finalResponse: () => Promise<OpenAIResponseLike>;
 }
 
@@ -228,7 +233,8 @@ const getOpenAIResponseText = (response: OpenAIResponseLike): string => {
   const finalMessages = rootMessages.filter(
     (item) => item.phase === "final_answer",
   );
-  const visibleMessages = finalMessages.length > 0 ? finalMessages : rootMessages;
+  const visibleMessages =
+    finalMessages.length > 0 ? finalMessages : rootMessages;
   const rootText = visibleMessages
     .flatMap((item) => item.content ?? [])
     .filter(
@@ -280,12 +286,18 @@ const createOpenAIFunctionCallOutput = (toolResult: AgentModelToolResult) => {
 export class OpenAIResponsesAdapter implements AgentModelAdapter {
   private readonly client: OpenAI;
   private readonly tools: AgentModelToolSpec[];
+  private readonly reasoningMode: ReasoningExecutionMode;
   private previousResponseId?: string;
   private startParams?: AgentModelStartParams;
 
-  constructor(client: OpenAI, tools: AgentModelToolSpec[]) {
+  constructor(
+    client: OpenAI,
+    tools: AgentModelToolSpec[],
+    reasoningMode: ReasoningExecutionMode = "standard",
+  ) {
     this.client = client;
     this.tools = tools;
+    this.reasoningMode = reasoningMode;
   }
 
   async startTurn(params: AgentModelStartParams): Promise<AgentModelTurn> {
@@ -303,7 +315,11 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           instructions: params.systemPrompt,
           input: createOpenAIUserInput(params),
           tools: createOpenAITools(params.tools),
-          ...createOpenAIReasoningConfig(params.model, params.reasoning),
+          ...createOpenAIReasoningConfig(
+            params.model,
+            params.reasoning,
+            this.reasoningMode,
+          ),
           ...createOpenAIMultiAgentConfig(params.model, params.reasoning),
           ...createOpenAIStructuredOutputTextConfig(params.structuredOutput),
           ...createOpenAIResponseToolSelection(),
@@ -369,12 +385,15 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           ...createOpenAIReasoningConfig(
             startParams.model,
             startParams.reasoning,
+            this.reasoningMode,
           ),
           ...createOpenAIMultiAgentConfig(
             startParams.model,
             startParams.reasoning,
           ),
-          ...createOpenAIStructuredOutputTextConfig(startParams.structuredOutput),
+          ...createOpenAIStructuredOutputTextConfig(
+            startParams.structuredOutput,
+          ),
           ...createOpenAIResponseToolSelection(),
         };
 

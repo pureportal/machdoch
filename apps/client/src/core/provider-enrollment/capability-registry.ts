@@ -123,6 +123,7 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
       : provider === "claude-cli"
         ? [
             "--append-system-prompt-file",
+            "--effort",
             "--mcp-config",
             "--strict-mcp-config",
             "--bare",
@@ -131,8 +132,11 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
         : [
             "--agent",
             "--attachment",
+            "--context",
+            "--effort",
             "--no-auto-update",
             "--no-custom-instructions",
+            "--stream",
             "--additional-mcp-config",
             "--disable-builtin-mcps",
             "--disable-mcp-server",

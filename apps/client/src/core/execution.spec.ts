@@ -83,6 +83,7 @@ const createConfig = (
     provider: "unconfigured",
     model: "gpt-5.5",
     reasoning: "default",
+    contextWindow: "default",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,

@@ -87,8 +87,8 @@ describe("OpenAI Responses conformance", () => {
     ]);
   });
 
-  it("normalizes reasoning effort for the selected OpenAI model", () => {
-    expect(createOpenAIReasoningConfig("gpt-5.5", "max")).toEqual({
+  it("validates reasoning effort for the selected OpenAI model", () => {
+    expect(createOpenAIReasoningConfig("gpt-5.5", "xhigh")).toEqual({
       reasoning: { effort: "xhigh" },
     });
     expect(createOpenAIReasoningConfig("gpt-5.6-sol", "max")).toEqual({
@@ -97,12 +97,26 @@ describe("OpenAI Responses conformance", () => {
     expect(createOpenAIReasoningConfig("gpt-5.6-sol", "ultra")).toEqual({
       reasoning: { effort: "max" },
     });
-    expect(createOpenAIReasoningConfig("gpt-5", "none")).toEqual({
-      reasoning: { effort: "minimal" },
+    expect(
+      createOpenAIReasoningConfig("gpt-5.6-terra", "default", "pro"),
+    ).toEqual({
+      reasoning: { mode: "pro" },
     });
+    expect(createOpenAIReasoningConfig("gpt-5.6-luna", "high", "pro")).toEqual({
+      reasoning: { effort: "high", mode: "pro" },
+    });
+    expect(() => createOpenAIReasoningConfig("gpt-5.5", "high", "pro")).toThrow(
+      "Reasoning execution mode `pro` is not supported",
+    );
+    expect(() => createOpenAIReasoningConfig("gpt-5.5", "max")).toThrow(
+      "Reasoning mode `max` is not supported",
+    );
+    expect(() => createOpenAIReasoningConfig("gpt-5", "none")).toThrow(
+      "Reasoning mode `none` is not supported",
+    );
   });
 
-  it("enables four-agent Ultra orchestration only for GPT-5.6", () => {
+  it("enables four-agent Ultra orchestration for every GPT-5.6 tier", () => {
     expect(createOpenAIMultiAgentConfig("gpt-5.6-sol", "ultra")).toEqual({
       multi_agent: {
         enabled: true,
@@ -110,8 +124,40 @@ describe("OpenAI Responses conformance", () => {
       },
       betas: ["responses_multi_agent=v1"],
     });
+    expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "ultra")).toEqual({
+      multi_agent: {
+        enabled: true,
+        max_concurrent_subagents: 4,
+      },
+      betas: ["responses_multi_agent=v1"],
+    });
     expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "max")).toEqual({});
-    expect(createOpenAIMultiAgentConfig("gpt-5.5", "ultra")).toEqual({});
+    expect(() => createOpenAIMultiAgentConfig("gpt-5.5", "ultra")).toThrow(
+      "Reasoning mode `ultra` is not supported",
+    );
+  });
+
+  it("constructs GPT-5.6 pro requests independently of effort", async () => {
+    const create = vi.fn(async () => ({ id: "resp_pro", output: [] }));
+    const client = {
+      responses: { create },
+      beta: { responses: { create: vi.fn() } },
+    } as unknown as OpenAI;
+    const adapter = new OpenAIResponsesAdapter(client, [tool], "pro");
+
+    await adapter.startTurn({
+      ...startParams,
+      model: "gpt-5.6-luna",
+      reasoning: "high",
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5.6-luna",
+        reasoning: { effort: "high", mode: "pro" },
+      }),
+      expect.not.objectContaining({ timeout: expect.anything() }),
+    );
   });
 
   it("serializes image inputs for the Responses API", () => {
@@ -180,7 +226,7 @@ describe("OpenAI Responses conformance", () => {
             type: "function_call",
             call_id: "call_1",
             name: "inspect_file",
-            arguments: "{\"path\":\"README.md\"}",
+            arguments: '{"path":"README.md"}',
           },
         ],
       },
@@ -207,7 +253,7 @@ describe("OpenAI Responses conformance", () => {
           id: "call_1",
           name: "inspect_file",
           arguments: { path: "README.md" },
-          rawArguments: "{\"path\":\"README.md\"}",
+          rawArguments: '{"path":"README.md"}',
         },
       ],
     });
@@ -322,7 +368,10 @@ describe("OpenAI Responses conformance", () => {
     const betaCreate = vi.fn(async () => ({
       controller: { abort: vi.fn() },
       async *[Symbol.asyncIterator]() {
-        yield { type: "response.created", response: { id: "resp_ultra_stream" } };
+        yield {
+          type: "response.created",
+          response: { id: "resp_ultra_stream" },
+        };
         yield {
           type: "response.output_text.delta",
           agent: { agent_name: "/root/researcher" },
@@ -354,9 +403,7 @@ describe("OpenAI Responses conformance", () => {
       toolCalls: [],
     });
 
-    expect(
-      events.filter((event) => event.type === "text-delta"),
-    ).toEqual([
+    expect(events.filter((event) => event.type === "text-delta")).toEqual([
       { type: "text-delta", provider: "openai", delta: "Root result." },
     ]);
     expect(events.filter((event) => event.type === "usage")).toHaveLength(1);
@@ -388,13 +435,13 @@ describe("OpenAI Responses conformance", () => {
         eventHandler({
           type: "response.function_call_arguments.delta",
           item_id: "item_1",
-          delta: "{\"path\"",
+          delta: '{"path"',
         });
         eventHandler({
           type: "response.function_call_arguments.done",
           item_id: "item_1",
           name: "inspect_file",
-          arguments: "{\"path\":\"README.md\"}",
+          arguments: '{"path":"README.md"}',
         });
         eventHandler({
           type: "response.output_item.done",
@@ -428,7 +475,7 @@ describe("OpenAI Responses conformance", () => {
               type: "function_call",
               call_id: "call_1",
               name: "inspect_file",
-              arguments: "{\"path\":\"README.md\"}",
+              arguments: '{"path":"README.md"}',
             },
           ],
         };
@@ -463,12 +510,12 @@ describe("OpenAI Responses conformance", () => {
         expect.objectContaining({
           type: "tool-call-arguments-delta",
           provider: "openai",
-          delta: "{\"path\"",
+          delta: '{"path"',
         }),
         expect.objectContaining({
           type: "tool-call-done",
           provider: "openai",
-          argumentsText: "{\"path\":\"README.md\"}",
+          argumentsText: '{"path":"README.md"}',
         }),
         expect.objectContaining({
           type: "usage",
@@ -477,9 +524,9 @@ describe("OpenAI Responses conformance", () => {
         }),
       ]),
     );
-    expect(events.filter((event) => event.type === "tool-call-done")).toHaveLength(
-      1,
-    );
+    expect(
+      events.filter((event) => event.type === "tool-call-done"),
+    ).toHaveLength(1);
     expect(events.filter((event) => event.type === "usage")).toHaveLength(1);
   });
 });

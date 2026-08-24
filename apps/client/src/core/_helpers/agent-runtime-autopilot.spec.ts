@@ -18,6 +18,7 @@ const createRuntimeConfig = (
     provider: "openai",
     model: "gpt-5.5",
     reasoning: "default",
+    contextWindow: "default",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,
@@ -152,9 +153,7 @@ describe("autopilot monitor prompts", () => {
     expect(prompt).toContain("<tool_trace>");
     expect(prompt).toContain("search_web(perplexity");
     expect(prompt).toContain("<research_expectation>");
-    expect(prompt).toContain(
-      "invoked prompt declares network research",
-    );
+    expect(prompt).toContain("invoked prompt declares network research");
     expect(prompt).toContain("<verification_expectation>");
     expect(prompt).toContain("concrete verification evidence");
   });

@@ -15,6 +15,7 @@ import type {
   TaskRunPreview,
 } from "../../core/types.js";
 import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action-validation.js";
+import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilities.js";
 import {
   normalizeDesktopTaskRunError,
   type DesktopTaskRunFailure,
@@ -62,6 +63,8 @@ import {
   USER_AUDIO_AI_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
+  isContextWindow,
+  isReasoningExecutionMode,
 } from "../../core/runtime-contract.generated.js";
 import { MAX_TASK_INPUT_BYTES } from "../../shared/task-input-limits.js";
 import {
@@ -84,6 +87,8 @@ import type {
   WorkspaceCompatibilityConfig as SharedRuntimeCompatibilityConfig,
   RuntimeSnapshot as SharedRuntimeSnapshot,
   ReasoningMode as SharedReasoningMode,
+  ReasoningExecutionMode as SharedReasoningExecutionMode,
+  ContextWindow as SharedContextWindow,
   RuntimeWebSearchConfig as SharedRuntimeWebSearchConfig,
   SpeechToTextProvider as SharedSpeechToTextProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
@@ -641,6 +646,8 @@ export type RuntimeAgentLimits = SharedRuntimeAgentLimits;
 export type RuntimeSnapshot = SharedRuntimeSnapshot;
 
 export type ReasoningMode = SharedReasoningMode;
+export type ReasoningExecutionMode = SharedReasoningExecutionMode;
+export type ContextWindow = SharedContextWindow;
 
 export const REASONING_MODE_ORDER: readonly ReasoningMode[] = [
   ...REASONING_MODES,
@@ -3284,11 +3291,17 @@ export const loadGlobalProviderAvailability = async (): Promise<
 
 export const loadProviderModelCatalog =
   async (): Promise<ProviderModelCatalogSnapshot> => {
-    return loadTauriValueOrFallback(
+    const snapshot = await loadTauriValueOrFallback(
       "get_provider_model_catalog",
       createUnavailableProviderModelCatalog,
       "Failed to load provider model catalog",
     );
+
+    for (const provider of snapshot.providers) {
+      replaceDiscoveredModelCapabilities(provider.provider, provider.models);
+    }
+
+    return snapshot;
   };
 
 export const loadUserProviderApiKeys =
@@ -3804,6 +3817,67 @@ export const saveWorkspaceReasoningMode = async (
       workspaceRoot: normalizedWorkspaceRoot,
       reasoning,
     });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveWorkspaceContextWindow = async (
+  workspaceRoot: string | null | undefined,
+  contextWindow: ContextWindow,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing its context window.");
+  }
+
+  if (!isContextWindow(contextWindow)) {
+    throw new Error(
+      "Expected workspace context window to be default, long, or a positive token count up to 10000000.",
+    );
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<string>("save_workspace_context_window", {
+      workspaceRoot: normalizedWorkspaceRoot,
+      contextWindow,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveWorkspaceReasoningExecutionMode = async (
+  workspaceRoot: string | null | undefined,
+  reasoningMode: ReasoningExecutionMode,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing its reasoning mode.");
+  }
+
+  if (!isReasoningExecutionMode(reasoningMode)) {
+    throw new Error("Expected workspace reasoning mode to be standard or pro.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<string>(
+      "save_workspace_reasoning_execution_mode",
+      {
+        workspaceRoot: normalizedWorkspaceRoot,
+        reasoningMode,
+      },
+    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }

@@ -46,8 +46,7 @@ export const createFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
       id: "validate",
       type: "VALIDATOR",
       title: "Validate",
-      prompt:
-        "Validate {{scope:path=ALL}} using {{lastResultSummary}}.",
+      prompt: "Validate {{scope:path=ALL}} using {{lastResultSummary}}.",
       validationScope: { mode: "sinceLastValidator" },
     },
     {
@@ -115,6 +114,7 @@ export const runtimeConfig: RuntimeConfig = {
   provider: "openai",
   model: "gpt-5.5",
   reasoning: "default",
+  contextWindow: "default",
   offline: false,
   compatibility: {
     discoverGithubCustomizations: false,

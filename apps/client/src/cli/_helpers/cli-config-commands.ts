@@ -5,11 +5,14 @@ import {
   loadWorkspaceConfigFile,
   saveWorkspaceDefaultMode,
   saveWorkspaceDefaultModel,
+  saveWorkspaceContextWindow,
   saveWorkspaceGithubCustomizations,
   saveWorkspaceOffline,
+  saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
   saveWorkspaceRuntimeProvider,
 } from "../../core/config.js";
+import { parseContextWindow } from "../../core/context-windows.js";
 import {
   clearUserConfigValue,
   hasConfiguredValue,
@@ -38,12 +41,14 @@ import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
   PROVIDER_ENV_KEY_BY_PROVIDER,
+  REASONING_EXECUTION_MODES,
   REASONING_MODES,
   USER_API_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
   isAgentCliProvider,
+  isReasoningExecutionMode,
   isUserApiProvider,
   isUserWebSearchProvider,
   isVoiceAiProvider,
@@ -225,6 +230,21 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
     description: "Default reasoning effort for this workspace.",
     acceptedValues: REASONING_MODES.join("|"),
     choices: REASONING_MODES,
+  },
+  {
+    setting: "workspace.reasoning-mode",
+    category: "Workspace",
+    scope: "workspace",
+    description: "OpenAI GPT-5.6 reasoning execution mode.",
+    acceptedValues: REASONING_EXECUTION_MODES.join("|"),
+    choices: REASONING_EXECUTION_MODES,
+  },
+  {
+    setting: "workspace.context-window",
+    category: "Workspace",
+    scope: "workspace",
+    description: "Context window requested from the selected provider model.",
+    acceptedValues: "default|long|token count",
   },
   {
     setting: "workspace.offline",
@@ -733,6 +753,42 @@ export const saveConfigSetting = async (
     };
   }
 
+  if (normalizedSetting === "workspace.reasoning-mode") {
+    if (!isReasoningExecutionMode(normalizedValue)) {
+      fail("Expected workspace.reasoning-mode to be standard or pro.");
+    }
+
+    return {
+      setting: normalizedSetting,
+      scope: "workspace",
+      configPath: await saveWorkspaceReasoningExecutionMode(
+        workspaceRoot,
+        normalizedValue,
+      ),
+      status: "configured",
+      value: normalizedValue,
+    };
+  }
+
+  if (normalizedSetting === "workspace.context-window") {
+    const contextWindow =
+      parseContextWindow(normalizedValue) ??
+      fail(
+        "Expected workspace.context-window to be default, long, or a positive token count up to 10000000.",
+      );
+
+    return {
+      setting: normalizedSetting,
+      scope: "workspace",
+      configPath: await saveWorkspaceContextWindow(
+        workspaceRoot,
+        contextWindow,
+      ),
+      status: "configured",
+      value: contextWindow,
+    };
+  }
+
   if (normalizedSetting === "workspace.offline") {
     const offline = parseConfigBoolean(normalizedSetting, normalizedValue);
     return {
@@ -785,6 +841,8 @@ export const clearConfigSetting = async (
       "workspace.provider": ["provider"],
       "workspace.model": ["model"],
       "workspace.reasoning": ["reasoning"],
+      "workspace.reasoning-mode": ["reasoningMode"],
+      "workspace.context-window": ["contextWindow"],
       "workspace.offline": ["offline"],
       "workspace.github-customizations": [
         "compatibility",
@@ -1061,6 +1119,20 @@ const resolveConfigEntry = (
             : undefined,
         );
         break;
+      case "workspace.reasoning-mode":
+        value = snapshot.runtime.reasoningMode ?? "standard";
+        source = configSource(
+          snapshot.workspaceConfig.reasoningMode,
+          snapshot.env.MACHDOCH_REASONING_MODE,
+        );
+        break;
+      case "workspace.context-window":
+        value = snapshot.runtime.contextWindow ?? "default";
+        source = configSource(
+          snapshot.workspaceConfig.contextWindow,
+          snapshot.env.MACHDOCH_CONTEXT_WINDOW,
+        );
+        break;
       case "workspace.offline":
         value = snapshot.runtime.offline;
         source = configSource(
@@ -1278,6 +1350,8 @@ export const printConfigSummary = async (
     ["Provider", config.provider],
     ["Model", config.model],
     ["Reasoning", config.reasoning],
+    ["Reasoning mode", config.reasoningMode ?? "standard"],
+    ["Context window", String(config.contextWindow ?? "default")],
     ["Offline", String(config.offline)],
     ["Executor turns", formatLimit(agentLimits.executorTurns)],
     [

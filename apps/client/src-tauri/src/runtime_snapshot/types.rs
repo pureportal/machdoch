@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use super::settings_types::{ContextWindow, ReasoningExecutionMode};
 use crate::ui_control::UiControlAvailability;
 
 #[derive(Debug, Clone, Serialize)]
@@ -9,10 +10,14 @@ pub struct RuntimeSnapshot {
     pub(super) workspace_config_path: Option<String>,
     pub(super) default_mode: String,
     pub(super) default_reasoning: String,
+    pub(super) default_reasoning_mode: ReasoningExecutionMode,
+    pub(super) default_context_window: ContextWindow,
     pub(super) mode: String,
     pub(super) provider: String,
     pub(super) model: String,
     pub(super) reasoning: String,
+    pub(super) reasoning_mode: ReasoningExecutionMode,
+    pub(super) context_window: ContextWindow,
     pub(super) offline: bool,
     pub(super) agent_limits: RuntimeAgentLimits,
     pub(super) compatibility: RuntimeCompatibilityConfig,
@@ -80,7 +85,11 @@ pub struct ProviderRuntimeModelCapabilities {
     pub(super) reasoning: Option<bool>,
     pub(super) streaming: Option<bool>,
     pub(super) context_window_tokens: Option<u64>,
+    pub(super) long_context_window_tokens: Option<u64>,
     pub(super) max_output_tokens: Option<u64>,
+    pub(super) reasoning_modes: Option<Vec<String>>,
+    pub(super) default_reasoning_mode: Option<String>,
+    pub(super) supported_image_media_types: Option<Vec<String>>,
     pub(super) voice: Option<bool>,
     pub(super) computer_use: Option<bool>,
 }

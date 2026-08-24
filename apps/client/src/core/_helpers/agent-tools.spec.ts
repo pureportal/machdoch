@@ -22,6 +22,7 @@ const createRuntimeConfig = (
     provider: "unconfigured",
     model: "gpt-5.5",
     reasoning: "default",
+    contextWindow: "default",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,
@@ -49,7 +50,9 @@ const memory: ConversationMemoryRuntime = {
   globalEntries: [],
 };
 
-const writeWorkspaceMcpConfig = async (workspaceRoot: string): Promise<void> => {
+const writeWorkspaceMcpConfig = async (
+  workspaceRoot: string,
+): Promise<void> => {
   const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
 
   await mkdir(configDirectory, { recursive: true });
@@ -140,7 +143,10 @@ describe("createToolDefinitions", () => {
     const originalConfigDir = process.env.MACHDOCH_USER_CONFIG_DIR;
 
     try {
-      process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
+      process.env.MACHDOCH_USER_CONFIG_DIR = join(
+        workspaceRoot,
+        ".user-config",
+      );
       await writeWorkspaceMcpConfig(workspaceRoot);
 
       const askToolNames = createToolDefinitions(
@@ -219,5 +225,4 @@ describe("executeToolCall", () => {
 
     expect(result.result?.toolResult.output).toBe("done");
   });
-
 });

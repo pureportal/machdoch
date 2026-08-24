@@ -4,8 +4,14 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const schemaPath = resolve(repoRoot, "src/shared/runtime-config.schema.json");
-const tsOutputPath = resolve(repoRoot, "src/core/runtime-contract.generated.ts");
-const rustOutputPath = resolve(repoRoot, "src-tauri/src/runtime_contract_generated.rs");
+const tsOutputPath = resolve(
+  repoRoot,
+  "src/core/runtime-contract.generated.ts",
+);
+const rustOutputPath = resolve(
+  repoRoot,
+  "src-tauri/src/runtime_contract_generated.rs",
+);
 
 const schema = JSON.parse(await readFile(schemaPath, "utf8"));
 const defs = schema.$defs ?? {};
@@ -14,7 +20,10 @@ const metadata = schema["x-machdoch"] ?? {};
 const getEnum = (name) => {
   const values = defs[name]?.enum;
 
-  if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) {
+  if (
+    !Array.isArray(values) ||
+    values.some((value) => typeof value !== "string")
+  ) {
     throw new Error(`Expected $defs.${name}.enum to be a string enum.`);
   }
 
@@ -24,7 +33,11 @@ const getEnum = (name) => {
 const getObjectProperties = (name) => {
   const properties = defs[name]?.properties;
 
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  ) {
     throw new Error(`Expected $defs.${name}.properties to be an object.`);
   }
 
@@ -73,7 +86,8 @@ const pascalToScreamingSnake = (value) =>
 
 const json = (value) => JSON.stringify(value, null, 2);
 
-const tsReadonlyArray = (values) => `[${values.map((value) => json(value)).join(", ")}]`;
+const tsReadonlyArray = (values) =>
+  `[${values.map((value) => json(value)).join(", ")}]`;
 
 const rustStringArray = (values) =>
   `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
@@ -88,6 +102,10 @@ const rustConstName = (prefix, propertyName) =>
 
 const runtimeModes = getEnum("RunMode");
 const reasoningModes = getEnum("ReasoningMode");
+const reasoningExecutionModes = getEnum("ReasoningExecutionMode");
+const contextWindowVariants = defs.ContextWindow?.oneOf;
+const contextWindowModes = contextWindowVariants?.[0]?.enum;
+const contextWindowBounds = contextWindowVariants?.[1];
 const validTools = getEnum("ToolName");
 const configuredModelProviders = getEnum("ConfiguredModelProvider");
 const modelProviders = getEnum("ModelProvider");
@@ -116,6 +134,18 @@ const defaultDesktopSettings = getDefaultObject("UserDesktopSettings");
 const desktopSettingBounds = getBoundsObject("UserDesktopSettings");
 const schemaVersion = metadata.schemaVersion;
 
+if (
+  !Array.isArray(contextWindowModes) ||
+  contextWindowModes.some((value) => typeof value !== "string") ||
+  contextWindowBounds?.type !== "integer" ||
+  typeof contextWindowBounds.minimum !== "number" ||
+  typeof contextWindowBounds.maximum !== "number"
+) {
+  throw new Error(
+    "Expected $defs.ContextWindow to define string modes and integer bounds.",
+  );
+}
+
 for (const [name, value] of Object.entries({
   defaultModelByProvider,
   defaultModelProvider,
@@ -141,6 +171,14 @@ export type RunMode = (typeof RUN_MODES)[number];
 
 export const REASONING_MODES = ${tsReadonlyArray(reasoningModes)} as const;
 export type ReasoningMode = (typeof REASONING_MODES)[number];
+
+export const REASONING_EXECUTION_MODES = ${tsReadonlyArray(reasoningExecutionModes)} as const;
+export type ReasoningExecutionMode = (typeof REASONING_EXECUTION_MODES)[number];
+
+export const CONTEXT_WINDOW_MODES = ${tsReadonlyArray(contextWindowModes)} as const;
+export const MIN_CONTEXT_WINDOW_TOKENS = ${contextWindowBounds.minimum} as const;
+export const MAX_CONTEXT_WINDOW_TOKENS = ${contextWindowBounds.maximum} as const;
+export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number] | number;
 
 export const VALID_TOOLS = ${tsReadonlyArray(validTools)} as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
@@ -208,6 +246,18 @@ export const isReasoningMode = (
 ): value is ReasoningMode =>
   isRuntimeContractValue(REASONING_MODES, value);
 
+export const isReasoningExecutionMode = (
+  value: string | undefined,
+): value is ReasoningExecutionMode =>
+  isRuntimeContractValue(REASONING_EXECUTION_MODES, value);
+
+export const isContextWindow = (value: unknown): value is ContextWindow =>
+  (typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value)) ||
+  (typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_CONTEXT_WINDOW_TOKENS &&
+    value <= MAX_CONTEXT_WINDOW_TOKENS);
+
 export const isConfiguredModelProvider = (
   value: string | undefined,
 ): value is ConfiguredModelProvider =>
@@ -260,6 +310,8 @@ export interface WorkspaceConfigFile {
   provider?: ConfiguredModelProvider;
   model?: string;
   reasoning?: ReasoningMode;
+  reasoningMode?: ReasoningExecutionMode;
+  contextWindow?: ContextWindow;
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
@@ -321,6 +373,8 @@ export interface RuntimeConfig {
   provider: ModelProvider;
   model: string;
   reasoning: ReasoningMode;
+  reasoningMode?: ReasoningExecutionMode;
+  contextWindow: ContextWindow;
   offline: boolean;
   agentLimits?: RuntimeAgentLimits;
   compatibility: WorkspaceCompatibilityConfig;
@@ -340,9 +394,12 @@ export interface UiControlAvailability {
   reason?: string;
 }
 
-export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "internalTaskModel"> {
+export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "contextWindow" | "internalTaskModel"> {
   defaultMode: RunMode;
   defaultReasoning: ReasoningMode;
+  defaultReasoningMode?: ReasoningExecutionMode;
+  defaultContextWindow?: ContextWindow;
+  contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;
   uiControl?: UiControlAvailability;
 }
@@ -482,7 +539,8 @@ const rustNumericConst = (name, value, forceFloat = false) => {
 const rustDefaultDesktopConstants = Object.entries(defaultDesktopSettings)
   .map(([key, value]) => {
     const constName = rustConstName("DEFAULT_DESKTOP_SETTING", key);
-    const forceFloat = getObjectProperties("UserDesktopSettings")[key]?.type === "number";
+    const forceFloat =
+      getObjectProperties("UserDesktopSettings")[key]?.type === "number";
 
     if (typeof value === "boolean") {
       return `pub const ${constName}: bool = ${value};`;
@@ -499,7 +557,8 @@ const rustDefaultDesktopConstants = Object.entries(defaultDesktopSettings)
 const rustDesktopBoundsConstants = Object.entries(desktopSettingBounds)
   .flatMap(([key, value]) => {
     const prefix = rustConstName("DESKTOP_SETTING", key);
-    const forceFloat = getObjectProperties("UserDesktopSettings")[key]?.type === "number";
+    const forceFloat =
+      getObjectProperties("UserDesktopSettings")[key]?.type === "number";
     const constants = [];
 
     if (value.min !== undefined) {
@@ -519,6 +578,10 @@ pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = ${schemaVersion};
 
 pub const RUN_MODES: [&str; ${runtimeModes.length}] = ${rustStringArray(runtimeModes)};
 pub const REASONING_MODES: [&str; ${reasoningModes.length}] = ${rustStringArray(reasoningModes)};
+pub const REASONING_EXECUTION_MODES: [&str; ${reasoningExecutionModes.length}] = ${rustStringArray(reasoningExecutionModes)};
+pub const CONTEXT_WINDOW_MODES: [&str; ${contextWindowModes.length}] = ${rustStringArray(contextWindowModes)};
+pub const MIN_CONTEXT_WINDOW_TOKENS: u32 = ${contextWindowBounds.minimum};
+pub const MAX_CONTEXT_WINDOW_TOKENS: u32 = ${contextWindowBounds.maximum};
 pub const VALID_TOOLS: [&str; ${validTools.length}] = ${rustStringArray(validTools)};
 pub const VALID_MODEL_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};
 pub const MODEL_PROVIDERS: [&str; ${modelProviders.length}] = ${rustStringArray(modelProviders)};

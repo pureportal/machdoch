@@ -7,6 +7,7 @@ import type {
 import {
   AnthropicMessagesAdapter,
   createAnthropicOutputConfig,
+  getAnthropicMaxOutputTokens,
   createAnthropicToolSelection,
   createAnthropicUserContent,
 } from "./anthropic-adapter.js";
@@ -41,25 +42,25 @@ describe("Anthropic Messages conformance", () => {
     });
   });
 
-  it("normalizes effort for the selected Claude model", () => {
-    expect(
+  it("validates effort for the selected Claude model", () => {
+    expect(createAnthropicOutputConfig("claude-sonnet-4-6", "max")).toEqual({
+      output_config: { effort: "max" },
+    });
+    expect(() =>
       createAnthropicOutputConfig("claude-sonnet-4-6", "xhigh"),
-    ).toEqual({
-      output_config: { effort: "high" },
-    });
-    expect(
-      createAnthropicOutputConfig("claude-sonnet-4-6", "max"),
-    ).toEqual({
-      output_config: { effort: "max" },
-    });
-    expect(
+    ).toThrow("Reasoning mode `xhigh` is not supported");
+    expect(() =>
       createAnthropicOutputConfig("claude-sonnet-5", "ultra"),
-    ).toEqual({
-      output_config: { effort: "max" },
-    });
-    expect(createAnthropicOutputConfig("claude-haiku-4-5", "high")).toEqual(
-      {},
-    );
+    ).toThrow("Reasoning mode `ultra` is not supported");
+    expect(() =>
+      createAnthropicOutputConfig("claude-haiku-4-5", "high"),
+    ).toThrow("Reasoning mode `high` is not supported");
+  });
+
+  it("reserves enough output capacity for xhigh and max effort", () => {
+    expect(getAnthropicMaxOutputTokens("high")).toBe(4_096);
+    expect(getAnthropicMaxOutputTokens("xhigh")).toBe(64_000);
+    expect(getAnthropicMaxOutputTokens("max")).toBe(64_000);
   });
 
   it("places image blocks before text", () => {
@@ -228,7 +229,7 @@ describe("Anthropic Messages conformance", () => {
           index: 1,
           delta: {
             type: "input_json_delta",
-            partial_json: "{\"path\":\"README.md\"}",
+            partial_json: '{"path":"README.md"}',
           },
         });
         streamEventHandler({
@@ -291,12 +292,12 @@ describe("Anthropic Messages conformance", () => {
         expect.objectContaining({
           type: "tool-call-arguments-delta",
           provider: "anthropic",
-          snapshot: "{\"path\":\"README.md\"}",
+          snapshot: '{"path":"README.md"}',
         }),
         expect.objectContaining({
           type: "tool-call-done",
           provider: "anthropic",
-          argumentsText: "{\"path\":\"README.md\"}",
+          argumentsText: '{"path":"README.md"}',
         }),
         expect.objectContaining({
           type: "usage",
