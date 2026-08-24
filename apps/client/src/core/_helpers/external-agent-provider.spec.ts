@@ -280,6 +280,7 @@ const createConfig = (
   internalTaskModel: {
     provider: overrides.provider ?? "codex-cli",
     model: overrides.model ?? "gpt-5.5",
+    reasoning: "default",
   },
 });
 

@@ -12,7 +12,8 @@ use super::{is_valid_model_provider, normalize_optional_string};
 use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SHORTCUT,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
-    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_REVIEW_MODEL_MODE,
+    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_USER_AGENT_LIMITS_INFINITE,
+    DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING, DEFAULT_USER_REVIEW_MODEL_MODE,
     MAX_CONFIGURED_AUTOPILOT_ITERATIONS, MAX_CONFIGURED_EXECUTOR_TURNS,
     MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
@@ -24,7 +25,7 @@ use crate::runtime_contract_generated::{
     MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    USER_REVIEW_MODEL_MODES,
+    REASONING_MODES, USER_REVIEW_MODEL_MODES,
 };
 
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
@@ -166,17 +167,22 @@ pub(super) fn normalize_user_internal_task_model_settings(
 ) -> UserInternalTaskModelSettings {
     let provider = normalize_optional_string(settings.provider.as_deref());
     let model = normalize_optional_string(settings.model.as_deref());
+    let reasoning = normalize_optional_string(settings.reasoning.as_deref())
+        .filter(|reasoning| REASONING_MODES.contains(&reasoning.as_str()))
+        .unwrap_or_else(|| DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING.to_string());
 
     match (provider, model) {
         (Some(provider), Some(model)) if is_valid_model_provider(&provider) => {
             UserInternalTaskModelSettings {
                 provider: Some(provider),
                 model: Some(model),
+                reasoning,
             }
         }
         _ => UserInternalTaskModelSettings {
             provider: None,
             model: None,
+            reasoning,
         },
     }
 }
@@ -187,6 +193,7 @@ pub(super) fn normalize_user_internal_task_model_settings_input(
     normalize_user_internal_task_model_settings(&UserInternalTaskModelConfigFile {
         provider: settings.provider.clone(),
         model: settings.model.clone(),
+        reasoning: Some(settings.reasoning.clone()),
     })
 }
 

@@ -367,6 +367,7 @@ describe("loadRuntimeConfig", () => {
         internalTaskModel: {
           provider: "anthropic",
           model: "claude-internal",
+          reasoning: "high",
         },
       }),
     );
@@ -375,6 +376,7 @@ describe("loadRuntimeConfig", () => {
     expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
       provider: "anthropic",
       model: "claude-internal",
+      reasoning: "high",
     });
   });
 
@@ -389,6 +391,7 @@ describe("loadRuntimeConfig", () => {
         internalTaskModel: {
           provider: "codex-cli",
           model: "gpt-5.6-sol",
+          reasoning: "xhigh",
         },
       }),
     );
@@ -397,6 +400,7 @@ describe("loadRuntimeConfig", () => {
     expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
       provider: "codex-cli",
       model: "gpt-5.6-sol",
+      reasoning: "xhigh",
     });
   });
 

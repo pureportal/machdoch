@@ -5,6 +5,7 @@ import {
   type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "./model-catalog";
+import { normalizeReasoningModeForProvider } from "./reasoning-options";
 import {
   loadGlobalProviderAvailability,
   loadProviderModelCatalog,
@@ -14,6 +15,7 @@ import {
   runTaskInterview,
   saveUserInternalTaskModelSettings,
   type RalphGenerationInterviewInput,
+  type ReasoningMode,
   type RuntimeProviderAvailability,
   type TaskInterviewInput,
   type UserInternalTaskModelSettings,
@@ -22,6 +24,7 @@ import {
 export interface InternalTaskModelSelection {
   provider: RuntimeProvider;
   model: string;
+  reasoning: ReasoningMode;
 }
 
 export interface InternalTaskProviderModels {
@@ -30,19 +33,41 @@ export interface InternalTaskProviderModels {
 }
 
 export type InternalDesktopTaskContext = Omit<
-  Parameters<typeof runDesktopTask>[2],
-  "provider" | "model"
+  NonNullable<Parameters<typeof runDesktopTask>[2]>,
+  "provider" | "model" | "reasoning"
 >;
 
 export type InternalTaskInterviewInput = Omit<
   TaskInterviewInput,
-  "provider" | "model"
+  "provider" | "model" | "reasoning"
 >;
 
 export type InternalRalphGenerationInterviewInput = Omit<
   RalphGenerationInterviewInput,
-  "provider" | "model"
+  "provider" | "model" | "reasoning"
 >;
+
+const createInternalTaskModelSelection = (
+  provider: RuntimeProvider,
+  model: string,
+  reasoning: ReasoningMode,
+  catalog: ProviderModelCatalogSnapshot,
+): InternalTaskModelSelection => {
+  const capabilities = catalog.providers
+    .find((entry) => entry.provider === provider)
+    ?.models.find((entry) => entry.id === model)?.capabilities;
+
+  return {
+    provider,
+    model,
+    reasoning: normalizeReasoningModeForProvider(
+      reasoning,
+      provider,
+      model,
+      capabilities,
+    ),
+  };
+};
 
 export const getInternalTaskProviderModels = (
   providerAvailability: readonly RuntimeProviderAvailability[],
@@ -55,9 +80,7 @@ export const getInternalTaskProviderModels = (
   );
 
   return SUPPORTED_PROVIDER_ORDER.flatMap((provider) => {
-    if (
-      !configuredProviders.has(provider)
-    ) {
+    if (!configuredProviders.has(provider)) {
       return [];
     }
 
@@ -80,24 +103,24 @@ export const resolveInternalTaskModelSelection = (
     : undefined;
   const savedProviderConfigured = settings.provider
     ? providerAvailability.some(
-        (entry) =>
-          entry.provider === settings.provider && entry.configured,
+        (entry) => entry.provider === settings.provider && entry.configured,
       )
     : false;
   const savedProviderCatalog = settings.provider
-    ? catalog.providers.find(
-        (entry) => entry.provider === settings.provider,
-      )
+    ? catalog.providers.find((entry) => entry.provider === settings.provider)
     : undefined;
   const savedModel = settings.model?.trim();
 
   if (savedProvider && savedModel) {
-    const model = savedProvider.models.find(
-      (entry) => entry.id === savedModel,
-    );
+    const model = savedProvider.models.find((entry) => entry.id === savedModel);
 
     if (model) {
-      return { provider: savedProvider.provider, model: model.id };
+      return createInternalTaskModelSelection(
+        savedProvider.provider,
+        model.id,
+        settings.reasoning,
+        catalog,
+      );
     }
   }
 
@@ -107,56 +130,65 @@ export const resolveInternalTaskModelSelection = (
     savedProviderCatalog?.available === false &&
     savedModel
   ) {
-    return { provider: settings.provider, model: savedModel };
+    return createInternalTaskModelSelection(
+      settings.provider,
+      savedModel,
+      settings.reasoning,
+      catalog,
+    );
   }
 
   const provider = savedProvider ?? providers[0];
   const model = provider?.models[0];
 
   return provider && model
-    ? { provider: provider.provider, model: model.id }
+    ? createInternalTaskModelSelection(
+        provider.provider,
+        model.id,
+        settings.reasoning,
+        catalog,
+      )
     : null;
 };
 
-export const loadInternalTaskModelSelection = async (): Promise<
-  InternalTaskModelSelection | null
-> => {
-  const [settings, providerAvailability, catalog] = await Promise.all([
-    loadUserInternalTaskModelSettings(),
-    loadGlobalProviderAvailability(),
-    loadProviderModelCatalog(),
-  ]);
+export const loadInternalTaskModelSelection =
+  async (): Promise<InternalTaskModelSelection | null> => {
+    const [settings, providerAvailability, catalog] = await Promise.all([
+      loadUserInternalTaskModelSettings(),
+      loadGlobalProviderAvailability(),
+      loadProviderModelCatalog(),
+    ]);
 
-  const selection = resolveInternalTaskModelSelection(
-    settings,
-    providerAvailability,
-    catalog,
-  );
-
-  if (
-    selection &&
-    (settings.provider !== selection.provider ||
-      settings.model?.trim() !== selection.model)
-  ) {
-    await saveUserInternalTaskModelSettings(selection);
-  }
-
-  return selection;
-};
-
-const requireInternalTaskModelSelection = async (): Promise<
-  InternalTaskModelSelection
-> => {
-  const selection = await loadInternalTaskModelSelection();
-
-  if (!selection) {
-    throw new Error(
-      "Choose an internal task model in Settings > Providers before running this AI task.",
+    const selection = resolveInternalTaskModelSelection(
+      settings,
+      providerAvailability,
+      catalog,
     );
-  }
 
-  return selection;
-};
+    if (
+      selection &&
+      (settings.provider !== selection.provider ||
+        settings.model?.trim() !== selection.model ||
+        settings.reasoning !== selection.reasoning)
+    ) {
+      await saveUserInternalTaskModelSettings(selection);
+    }
+
+    return selection;
+  };
+
+const requireInternalTaskModelSelection =
+  async (): Promise<InternalTaskModelSelection> => {
+    const selection = await loadInternalTaskModelSelection();
+
+    if (!selection) {
+      throw new Error(
+        "Choose an internal task model in Settings > Providers before running this AI task.",
+      );
+    }
+
+    return selection;
+  };
 
 export const runInternalDesktopTask = async (
   workspaceRoot: string | null | undefined,

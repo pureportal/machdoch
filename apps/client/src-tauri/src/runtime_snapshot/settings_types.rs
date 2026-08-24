@@ -56,6 +56,7 @@ pub struct UserReviewModelSettings {
 pub struct UserInternalTaskModelSettings {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) reasoning: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -218,6 +219,7 @@ pub(super) struct UserReviewModelConfigFile {
 pub(super) struct UserInternalTaskModelConfigFile {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

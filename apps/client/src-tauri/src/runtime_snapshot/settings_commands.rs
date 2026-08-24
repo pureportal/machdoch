@@ -360,5 +360,6 @@ pub(super) fn save_user_internal_task_model_settings_value(
     update_user_config_file(|config| {
         config.internal_task_model.provider = normalized_settings.provider.clone();
         config.internal_task_model.model = normalized_settings.model.clone();
+        config.internal_task_model.reasoning = Some(normalized_settings.reasoning.clone());
     })
 }

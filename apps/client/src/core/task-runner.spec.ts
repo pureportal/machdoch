@@ -39,6 +39,7 @@ const createConfig = (
     internalTaskModel: {
       provider: "unconfigured",
       model: "gpt-5.5",
+      reasoning: "default",
     },
   };
 };

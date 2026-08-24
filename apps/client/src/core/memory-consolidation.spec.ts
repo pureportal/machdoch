@@ -54,6 +54,7 @@ const createConfig = (
     internalTaskModel: {
       provider: "openai",
       model: "gpt-5.5",
+      reasoning: "default",
     },
     ...overrides,
   };
@@ -179,6 +180,7 @@ describe("consolidateTaskExecutionMemory", () => {
         internalTaskModel: {
           provider: "anthropic",
           model: "claude-internal",
+          reasoning: "default",
         },
       }),
       createExecutionResult(task),

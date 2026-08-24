@@ -78,37 +78,65 @@ describe("internal task model selection", () => {
   it("keeps a current saved selection", () => {
     expect(
       resolveInternalTaskModelSelection(
-        { provider: "anthropic", model: "claude-sonnet-5" },
+        {
+          provider: "anthropic",
+          model: "claude-sonnet-5",
+          reasoning: "high",
+        },
         availability,
         catalog,
       ),
-    ).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
+    ).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      reasoning: "high",
+    });
   });
 
   it("replaces an unavailable model within the saved provider", () => {
     expect(
       resolveInternalTaskModelSelection(
-        { provider: "anthropic", model: "removed-model" },
+        {
+          provider: "anthropic",
+          model: "removed-model",
+          reasoning: "high",
+        },
         availability,
         catalog,
       ),
-    ).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
+    ).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      reasoning: "high",
+    });
   });
 
   it("replaces an unavailable provider with a configured selection", () => {
     expect(
       resolveInternalTaskModelSelection(
-        { provider: "google", model: "gemini-3.5-flash" },
+        {
+          provider: "google",
+          model: "gemini-3.5-flash",
+          reasoning: "high",
+        },
         availability,
         catalog,
       ),
-    ).toEqual({ provider: "openai", model: "gpt-5.5" });
+    ).toEqual({
+      provider: "openai",
+      model: "gpt-5.5",
+      reasoning: "high",
+    });
   });
 
   it("preserves a saved selection when model discovery is unavailable", () => {
     expect(
       resolveInternalTaskModelSelection(
-        { provider: "anthropic", model: "claude-saved-model" },
+        {
+          provider: "anthropic",
+          model: "claude-saved-model",
+          reasoning: "default",
+        },
         availability,
         {
           ...catalog,
@@ -119,13 +147,17 @@ describe("internal task model selection", () => {
           ),
         },
       ),
-    ).toEqual({ provider: "anthropic", model: "claude-saved-model" });
+    ).toEqual({
+      provider: "anthropic",
+      model: "claude-saved-model",
+      reasoning: "default",
+    });
   });
 
   it("returns no selection without a configured provider model", () => {
     expect(
       resolveInternalTaskModelSelection(
-        {},
+        { reasoning: "default" },
         availability.map((entry) => ({ ...entry, configured: false })),
         catalog,
       ),
@@ -151,17 +183,26 @@ describe("internal task model selection", () => {
 
     expect(
       resolveInternalTaskModelSelection(
-        { provider: "codex-cli", model: "gpt-5.6-sol" },
+        {
+          provider: "codex-cli",
+          model: "gpt-5.6-sol",
+          reasoning: "xhigh",
+        },
         cliAvailability,
         cliCatalog,
       ),
-    ).toEqual({ provider: "codex-cli", model: "gpt-5.6-sol" });
+    ).toEqual({
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+      reasoning: "xhigh",
+    });
   });
 
   it("runs internal tasks with the resolved provider and model", async () => {
     runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
       provider: "anthropic",
       model: "claude-sonnet-5",
+      reasoning: "high",
     });
     runtime.loadGlobalProviderAvailability.mockResolvedValue(availability);
     runtime.loadProviderModelCatalog.mockResolvedValue(catalog);
@@ -182,14 +223,64 @@ describe("internal task model selection", () => {
         taskId: "internal-task",
         provider: "anthropic",
         model: "claude-sonnet-5",
+        reasoning: "high",
       },
     );
+  });
+
+  it("normalizes unsupported saved reasoning before execution", async () => {
+    runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
+      provider: "codex-cli",
+      model: "gpt-5.6-terra",
+      reasoning: "ultra",
+    });
+    runtime.loadGlobalProviderAvailability.mockResolvedValue([
+      ...availability,
+      { provider: "codex-cli", configured: true },
+    ]);
+    runtime.loadProviderModelCatalog.mockResolvedValue({
+      ...catalog,
+      providers: [
+        ...catalog.providers,
+        {
+          provider: "codex-cli",
+          available: false,
+          models: [],
+        },
+      ],
+    });
+    runtime.runDesktopTask.mockResolvedValue({
+      execution: { status: "executed" },
+    });
+
+    await runInternalDesktopTask("C:/workspace", "Enhance this prompt", {
+      mode: "ask",
+      taskId: "prompt-enhancement",
+    });
+
+    expect(runtime.runDesktopTask).toHaveBeenCalledWith(
+      "C:/workspace",
+      "Enhance this prompt",
+      {
+        mode: "ask",
+        taskId: "prompt-enhancement",
+        provider: "codex-cli",
+        model: "gpt-5.6-terra",
+        reasoning: "default",
+      },
+    );
+    expect(runtime.saveUserInternalTaskModelSettings).toHaveBeenCalledWith({
+      provider: "codex-cli",
+      model: "gpt-5.6-terra",
+      reasoning: "default",
+    });
   });
 
   it("persists a corrected selection before executing through another wrapper", async () => {
     runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
       provider: "anthropic",
       model: "removed-model",
+      reasoning: "high",
     });
     runtime.loadGlobalProviderAvailability.mockResolvedValue(availability);
     runtime.loadProviderModelCatalog.mockResolvedValue(catalog);
@@ -205,6 +296,7 @@ describe("internal task model selection", () => {
     expect(runtime.saveUserInternalTaskModelSettings).toHaveBeenCalledWith({
       provider: "anthropic",
       model: "claude-sonnet-5",
+      reasoning: "high",
     });
     expect(runtime.runTaskInterview).toHaveBeenCalledWith("C:/workspace", {
       prompt: "Clarify the task",
@@ -213,6 +305,7 @@ describe("internal task model selection", () => {
       sessionId: "session-1",
       provider: "anthropic",
       model: "claude-sonnet-5",
+      reasoning: "high",
     });
   });
 
@@ -220,6 +313,7 @@ describe("internal task model selection", () => {
     runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
       provider: "anthropic",
       model: "claude-sonnet-5",
+      reasoning: "low",
     });
     runtime.loadGlobalProviderAvailability.mockResolvedValue(availability);
     runtime.loadProviderModelCatalog.mockResolvedValue(catalog);
@@ -241,6 +335,7 @@ describe("internal task model selection", () => {
         taskId: "ralph-interview",
         provider: "anthropic",
         model: "claude-sonnet-5",
+        reasoning: "low",
       },
     );
   });
@@ -249,6 +344,7 @@ describe("internal task model selection", () => {
     runtime.loadUserInternalTaskModelSettings.mockResolvedValue({
       provider: "anthropic",
       model: "claude-sonnet-5",
+      reasoning: "high",
     });
     runtime.loadGlobalProviderAvailability.mockResolvedValue(availability);
     runtime.loadProviderModelCatalog.mockResolvedValue(catalog);
@@ -256,6 +352,7 @@ describe("internal task model selection", () => {
     await expect(loadInternalTaskModelSelection()).resolves.toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
+      reasoning: "high",
     });
     expect(runtime.saveUserInternalTaskModelSettings).not.toHaveBeenCalled();
   });

@@ -18,7 +18,11 @@ const config: RuntimeConfig = {
   providerAvailability: [],
   webSearch: { activeProvider: "none", providerAvailability: [] },
   reviewModel: { mode: "base" },
-  internalTaskModel: { provider: "codex-cli", model: "gpt-5.6-sol" },
+  internalTaskModel: {
+    provider: "codex-cli",
+    model: "gpt-5.6-sol",
+    reasoning: "default",
+  },
 };
 
 const params: AgentCliInferenceParams = {

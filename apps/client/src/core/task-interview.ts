@@ -19,7 +19,10 @@ import {
   type RalphInputFieldType,
   type RalphInputValue,
 } from "./ralph.js";
-import type { ModelProvider, RuntimeConfig } from "./runtime-contract.generated.js";
+import type {
+  ModelProvider,
+  RuntimeConfig,
+} from "./runtime-contract.generated.js";
 import type {
   CustomizationDiscoveryResult,
   TaskActionOutputHandler,
@@ -294,17 +297,19 @@ const applyTaskInterviewAnswers = (
     return session;
   }
 
-  const answerList: TaskInterviewAnswer[] = latestTurn.questions.map((field) => {
-    const comment = answerComments?.[field.id]?.trim();
+  const answerList: TaskInterviewAnswer[] = latestTurn.questions.map(
+    (field) => {
+      const comment = answerComments?.[field.id]?.trim();
 
-    return {
-      fieldId: field.id,
-      label: field.label,
-      type: field.type,
-      value: answers?.[field.id] ?? null,
-      ...(comment ? { comment } : {}),
-    };
-  });
+      return {
+        fieldId: field.id,
+        label: field.label,
+        type: field.type,
+        value: answers?.[field.id] ?? null,
+        ...(comment ? { comment } : {}),
+      };
+    },
+  );
 
   return {
     ...session,
@@ -342,7 +347,9 @@ const formatTaskInterviewTranscript = (
     `Turn ${turn.turn}:`,
     ...(turn.questionScope ? [`Question scope: ${turn.questionScope}`] : []),
     ...(turn.summary ? [`Summary: ${turn.summary}`] : []),
-    ...turn.questions.map((field) => `Question: ${field.label} (${field.type})`),
+    ...turn.questions.map(
+      (field) => `Question: ${field.label} (${field.type})`,
+    ),
     ...(turn.answers.length > 0
       ? turn.answers.flatMap((answer) => [
           `Answer: ${answer.label} = ${formatTaskInterviewValue(answer.value)}`,
@@ -364,7 +371,7 @@ const createTaskInterviewSystemPrompt = (): string => {
     "Do not edit files, start or restart servers, run destructive commands, mutate external systems, or perform broad scans unrelated to the request.",
     "Ask questions only when the answer would materially change the implementation, verification, UX, safety boundary, or acceptance criteria.",
     "Ask multiple concise questions in one round when useful. Use rich field types: select, multiselect, number, boolean, text, textarea, url, path, file, files, image, or images.",
-    "When asking questions, optionally set questionScope to a short group name such as \"Scope\", \"UX\", \"Data\", \"Verification\", or \"Constraints\".",
+    'When asking questions, optionally set questionScope to a short group name such as "Scope", "UX", "Data", "Verification", or "Constraints".',
     "For every question, set help to one short reason phrase explaining why the answer matters. Keep help under 140 characters; do not write paragraphs.",
     "For string answers that need a format, include validation.pattern. For numbers, include min, max, or step when helpful.",
     "Keep questions skippable unless missing information would block correctness.",
@@ -378,46 +385,52 @@ const createTaskInterviewTask = (
   workspaceRoot: string,
   session: TaskInterviewSession,
   nextTurn: number,
-): string => [
-  "Prepare the next Machdoch chat task interview step.",
-  "",
-  `Workspace root: ${workspaceRoot}`,
-  `Interview turn to prepare: ${nextTurn} of ${session.maxTurns}`,
-  "",
-  "Original user request:",
-  session.prompt,
-  "",
-  "Additional chat context:",
-  ...(session.contextNotes && session.contextNotes.length > 0
-    ? session.contextNotes
-    : ["None."]),
-  "",
-  "Accumulated context summary:",
-  session.contextSummary ?? "None yet.",
-  "",
-  "Findings:",
-  ...(session.findings.length > 0 ? session.findings : ["None yet."]),
-  "",
-  "Assumptions:",
-  ...(session.assumptions.length > 0 ? session.assumptions : ["None yet."]),
-  "",
-  "Relevant files:",
-  ...(session.relevantFiles.length > 0 ? session.relevantFiles : ["None yet."]),
-  "",
-  "Interview transcript so far:",
-  ...formatTaskInterviewTranscript(session),
-  "",
-  "Decide whether to complete the interview or ask the next round.",
-  "If asking questions, return no more than 6 fields and make each field useful for the final task.",
-  "If complete, include a summary that can be used directly by the task executor.",
-].join("\n");
+): string =>
+  [
+    "Prepare the next Machdoch chat task interview step.",
+    "",
+    `Workspace root: ${workspaceRoot}`,
+    `Interview turn to prepare: ${nextTurn} of ${session.maxTurns}`,
+    "",
+    "Original user request:",
+    session.prompt,
+    "",
+    "Additional chat context:",
+    ...(session.contextNotes && session.contextNotes.length > 0
+      ? session.contextNotes
+      : ["None."]),
+    "",
+    "Accumulated context summary:",
+    session.contextSummary ?? "None yet.",
+    "",
+    "Findings:",
+    ...(session.findings.length > 0 ? session.findings : ["None yet."]),
+    "",
+    "Assumptions:",
+    ...(session.assumptions.length > 0 ? session.assumptions : ["None yet."]),
+    "",
+    "Relevant files:",
+    ...(session.relevantFiles.length > 0
+      ? session.relevantFiles
+      : ["None yet."]),
+    "",
+    "Interview transcript so far:",
+    ...formatTaskInterviewTranscript(session),
+    "",
+    "Decide whether to complete the interview or ask the next round.",
+    "If asking questions, return no more than 6 fields and make each field useful for the final task.",
+    "If complete, include a summary that can be used directly by the task executor.",
+  ].join("\n");
 
 export const createTaskPromptFromInterview = (
   session: TaskInterviewSession,
   finalSummary?: string,
 ): string => {
   const interviewSummary =
-    finalSummary ?? session.finalSummary ?? session.contextSummary ?? "No final summary.";
+    finalSummary ??
+    session.finalSummary ??
+    session.contextSummary ??
+    "No final summary.";
   const contextSummary = session.contextSummary?.trim();
 
   return [
@@ -475,7 +488,13 @@ export const createTaskInterviewWithAgent = async (
   );
   const config =
     options.config ??
-    (await loadRuntimeConfig(workspaceRoot, "machdoch", undefined, undefined, undefined));
+    (await loadRuntimeConfig(
+      workspaceRoot,
+      "machdoch",
+      undefined,
+      undefined,
+      undefined,
+    ));
 
   if (!prompt) {
     return {
@@ -514,15 +533,15 @@ export const createTaskInterviewWithAgent = async (
   const interviewerConfig: RuntimeConfig = {
     ...requireInternalTaskRuntimeConfig(config),
     mode: "ask",
-    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
   };
 
   const customizations =
     options.customizations ??
     (await discoverCustomizations(workspaceRoot, {
       discoverUserCustomizations: true,
-      discoverGithubCustomizations:
-        Boolean(config.compatibility.discoverGithubCustomizations),
+      discoverGithubCustomizations: Boolean(
+        config.compatibility.discoverGithubCustomizations,
+      ),
       includeDiagnostics: true,
     }));
   const nextTurn = session.turn + 1;
@@ -532,8 +551,12 @@ export const createTaskInterviewWithAgent = async (
     customizations,
     {
       ...(options.runId ? { runId: options.runId } : {}),
-      ...(options.onStateChange ? { onStateChange: options.onStateChange } : {}),
-      ...(options.onActionOutput ? { onActionOutput: options.onActionOutput } : {}),
+      ...(options.onStateChange
+        ? { onStateChange: options.onStateChange }
+        : {}),
+      ...(options.onActionOutput
+        ? { onActionOutput: options.onActionOutput }
+        : {}),
       ...(options.signal ? { signal: options.signal } : {}),
       additionalToolDefinitions: createTaskInterviewToolDefinitions(),
       systemPromptSections: [createTaskInterviewSystemPrompt()],

@@ -346,6 +346,7 @@ export interface RuntimeReviewModelConfig {
 export interface RuntimeInternalTaskModelConfig {
   provider: ModelProvider;
   model: string;
+  reasoning: ReasoningMode;
 }
 
 export interface UserWebSearchSettings {
@@ -495,11 +496,13 @@ export interface UserReviewModelSettings {
 export interface UserInternalTaskModelConfigFile {
   provider?: ConfiguredModelProvider;
   model?: string;
+  reasoning?: ReasoningMode;
 }
 
 export interface UserInternalTaskModelSettings {
   provider?: ConfiguredModelProvider;
   model?: string;
+  reasoning: ReasoningMode;
 }
 
 export interface UserDesktopSettings {
@@ -599,6 +602,7 @@ pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); ${Object.keys(webSearchEnvKeys).le
 pub const DEFAULT_MODEL_PROVIDER: &str = ${JSON.stringify(defaultModelProvider)};
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); ${Object.keys(defaultModelByProvider).length}] = ${rustPairs(defaultModelByProvider)};
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = ${JSON.stringify(defaultReviewModelSettings.mode ?? "base")};
+pub const DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING: &str = ${JSON.stringify(defaultInternalTaskModelSettings.reasoning ?? "default")};
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = ${defaultAgentLimits.infinite};
 pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = ${defaultAgentLimits.executorTurns};

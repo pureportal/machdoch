@@ -466,6 +466,7 @@ const resolveInternalTaskModel = (
       provider === savedProvider && savedModel
         ? savedModel
         : getDefaultModelForRuntimeProvider(provider),
+    reasoning: settings.reasoning,
   };
 };
 

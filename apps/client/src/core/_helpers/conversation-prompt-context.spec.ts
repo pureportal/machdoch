@@ -58,6 +58,7 @@ const runtimeConfig: RuntimeConfig = {
   internalTaskModel: {
     provider: "anthropic",
     model: "claude-internal",
+    reasoning: "default",
   },
 };
 

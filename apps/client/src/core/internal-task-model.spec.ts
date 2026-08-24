@@ -26,19 +26,41 @@ const createConfig = (
   internalTaskModel: {
     provider: "anthropic",
     model: "claude-internal",
+    reasoning: "low",
   },
   ...overrides,
 });
 
 describe("internal task runtime model", () => {
-  it("replaces only the provider and model used for an internal operation", () => {
-    const config = createConfig();
+  it("uses the configured internal-task reasoning", () => {
+    const config = createConfig({
+      reasoning: "high",
+      internalTaskModel: {
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        reasoning: "low",
+      },
+    });
 
     expect(resolveInternalTaskRuntimeConfig(config)).toEqual({
       ...config,
       provider: "anthropic",
-      model: "claude-internal",
+      model: "claude-sonnet-5",
+      reasoning: "low",
     });
+  });
+
+  it("normalizes reasoning for the selected internal task model", () => {
+    const config = createConfig({
+      reasoning: "ultra",
+      internalTaskModel: {
+        provider: "codex-cli",
+        model: "gpt-5.6-terra",
+        reasoning: "ultra",
+      },
+    });
+
+    expect(resolveInternalTaskRuntimeConfig(config)?.reasoning).toBe("default");
   });
 
   it("does not fall back to the primary task model", () => {
@@ -46,6 +68,7 @@ describe("internal task runtime model", () => {
       internalTaskModel: {
         provider: "unconfigured",
         model: "gpt-primary",
+        reasoning: "default",
       },
     });
 

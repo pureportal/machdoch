@@ -3092,6 +3092,9 @@ const normalizeUserInternalTaskModelSettings = (
 ): UserInternalTaskModelSettings => {
   const provider = settings.provider?.trim();
   const model = settings.model?.trim();
+  const reasoning = REASONING_MODES.includes(settings.reasoning)
+    ? settings.reasoning
+    : DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS.reasoning;
 
   if (
     !provider ||
@@ -3100,12 +3103,13 @@ const normalizeUserInternalTaskModelSettings = (
     ) ||
     !model
   ) {
-    return createDefaultUserInternalTaskModelSettings();
+    return { reasoning };
   }
 
   return {
     provider: provider as (typeof VALID_MODEL_PROVIDERS)[number],
     model,
+    reasoning,
   };
 };
 
